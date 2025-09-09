@@ -78,7 +78,13 @@ impl RingBufferState {
         //
         // Reading / writing to the header is safe because the access is exclusive thanks to the
         // mutable reference to `self` and userspace has only a read only access to this memory.
-        unsafe { &mut *(self.data_position(position) as *mut RingBufferRecordHeader) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            &mut *(self.data_position(position) as *mut RingBufferRecordHeader)
+        }
     }
 }
 
@@ -149,6 +155,10 @@ impl RingBuffer {
         // The returned value and all pointer to the allocated memory will be part of `Self` and
         // all pointers will be dropped before the vmar. This ensures the deallocated memory will
         // not be used after it has been freed.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let vmar = unsafe {
             AllocatedVmar::allocate(
                 &kernel_root_vmar,
@@ -215,6 +225,10 @@ impl RingBuffer {
         //
         // This is safe as long as the vmar mapping stays alive. This will be ensured by the
         // `RingBuffer` itself.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let storage_position = unsafe { &mut *(vmar.base() as *mut *const Self) };
         let storage = Box::pin(Self { vmo: Arc::new(vmo), vmar, mask });
         // Store the pointer to the storage to the start of the technical vmo. This is required to

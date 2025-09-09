@@ -375,6 +375,10 @@ impl CurrentTask {
     pub fn set_creds(&self, creds: Credentials) {
         let overridden_creds = self.overridden_creds.borrow();
         assert!(overridden_creds.is_none());
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             // SAFETY: this is allowed because we are the CurrentTask.
             *self.persistent_info.creds_mut() = creds;
@@ -1140,6 +1144,10 @@ impl CurrentTask {
                 if maybe_set_id.is_none() { DumpPolicy::User } else { DumpPolicy::Disable };
             *mm.dumpable.lock(locked) = dumpable;
 
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let mut creds = unsafe {
                 // SAFETY: this is allowed because we are the CurrentTask.
                 self.persistent_info.creds_mut()

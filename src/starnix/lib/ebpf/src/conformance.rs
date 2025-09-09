@@ -4,6 +4,10 @@
 
 #[cfg(test)]
 pub mod test {
+    #![allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     use crate::{
         BPF_ABS, BPF_ADD, BPF_ALU, BPF_ALU64, BPF_AND, BPF_ARSH, BPF_ATOMIC, BPF_B, BPF_CALL,
         BPF_CMPXCHG, BPF_DIV, BPF_DW, BPF_END, BPF_EXIT, BPF_FETCH, BPF_H, BPF_IMM, BPF_IND,

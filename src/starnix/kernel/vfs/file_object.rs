@@ -1126,6 +1126,10 @@ pub fn default_ioctl(
                 return error!(ENOTSUP);
             }
             let user_id = current_task.with_current_creds(|creds| creds.uid);
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let identifier = unsafe { fscrypt_remove_key_arg.key_spec.u.identifier.value };
             current_task.kernel().crypt_service.forget_wrapping_key(identifier, user_id)?;
             Ok(SUCCESS)
@@ -1789,6 +1793,10 @@ impl FileObject {
             }
             // TODO(https://fxbug.dev/333540469): write_fn should take L: LockBefore<FsNodeAppend>,
             // but FileOpsCore must be after FsNodeAppend
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let locked = unsafe { Unlocked::new() };
             let mut offset = self.offset.lock();
             let bytes_written = if self.flags().contains(OpenFlags::APPEND) {
@@ -1828,6 +1836,10 @@ impl FileObject {
         self.write_fn(locked, current_task, |_locked| {
             // TODO(https://fxbug.dev/333540469): write_fn should take L: LockBefore<FsNodeAppend>,
             // but FileOpsCore must be after FsNodeAppend
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let locked = unsafe { Unlocked::new() };
             let (_guard, locked) = self.node().append_lock.read_and(locked, current_task)?;
 

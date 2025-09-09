@@ -40,7 +40,15 @@ where
     //
     // The safety of the operation is ensured by the bpf verifier. The `map` must be a reference to
     // a `Map` object kept alive by the program itself and the key must be valid for said map.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let key =
         unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
 
@@ -76,9 +84,21 @@ where
     //
     // The safety of the operation is ensured by the bpf verifier. The `map` must be a reference to
     // a `Map` object kept alive by the program itself.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let key =
         unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let value =
         unsafe { std::slice::from_raw_parts(value.as_ptr::<u8>(), map.schema.value_size as usize) };
     let flags = flags.as_u64();
@@ -105,7 +125,15 @@ where
     //
     // The safety of the operation is ensured by the bpf verifier. The `map` must be a reference to
     // a `Map` object kept alive by the program itself.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let key =
         unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
 
@@ -149,6 +177,10 @@ fn bpf_ringbuf_reserve<C: EbpfProgramContext>(
     //
     // The safety of the operation is ensured by the bpf verifier. The `map` must be a reference to
     // a `Map` object kept alive by the program itself.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
     let size = u32::from(size);
     let flags = u64::from(flags);
@@ -169,6 +201,10 @@ fn bpf_ringbuf_submit<C: EbpfProgramContext>(
     //
     // The safety of the operation is ensured by the bpf verifier. The data has to come from the
     // result of a reserve call.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe {
         RingBuffer::submit(u64::from(data), flags);
     }
@@ -189,6 +225,10 @@ fn bpf_ringbuf_discard<C: EbpfProgramContext>(
     //
     // The safety of the operation is ensured by the bpf verifier. The data has to come from the
     // result of a reserve call.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe {
         RingBuffer::discard(u64::from(data), flags);
     }

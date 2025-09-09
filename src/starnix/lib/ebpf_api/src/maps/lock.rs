@@ -84,7 +84,13 @@ impl<'a, T> Deref for RwMapLockReadGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.state.value.get() }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            &*self.state.value.get()
+        }
     }
 }
 
@@ -103,13 +109,25 @@ impl<'a, T> Deref for RwMapLockWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.state.value.get() }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            &*self.state.value.get()
+        }
     }
 }
 
 impl<'a, T> DerefMut for RwMapLockWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.state.value.get() }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            &mut *self.state.value.get()
+        }
     }
 }
 
@@ -400,6 +418,10 @@ mod test {
 
         // Returns a new lock that stores the state in `state` and uses VMO
         // handle for signaling.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let lock = || unsafe { RwMapLock::new(&state, buf.vmo().as_handle_ref(), LOCK_SIGNAL, ()) };
 
         let readers = AtomicU32::new(0);
@@ -437,10 +459,22 @@ mod test {
 
     impl LockedState {
         fn value(&self) -> &usize {
-            unsafe { &*(self.addr as *const usize) }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                &*(self.addr as *const usize)
+            }
         }
         fn value_mut(&mut self) -> &mut usize {
-            unsafe { &mut *(self.addr as *mut usize) }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                &mut *(self.addr as *mut usize)
+            }
         }
     }
 
@@ -462,6 +496,10 @@ mod test {
         }
 
         fn lock<'a>(&'a self) -> RwMapLock<'a, LockedState> {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 let base_ptr = self.buf.ptr().raw_ptr();
                 let lock_cell = &*(base_ptr as *const AtomicU32);

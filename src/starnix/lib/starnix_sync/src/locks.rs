@@ -306,6 +306,10 @@ mod test {
         let _b: OrderedMutex<u16, B> = OrderedMutex::new(30);
         let c: OrderedMutex<u32, C> = OrderedMutex::new(45);
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
 
         let (a_data, mut next_locked) = a.lock_and(locked);
@@ -324,6 +328,10 @@ mod test {
         let _e: OrderedRwLock<u16, E> = OrderedRwLock::new(30);
         let f: OrderedRwLock<u32, F> = OrderedRwLock::new(45);
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         {
             let (d_data, mut next_locked) = d.write_and(locked);
@@ -353,6 +361,10 @@ mod test {
     fn test_lock_both() {
         let a1: OrderedMutex<u8, A> = OrderedMutex::new(15);
         let a2: OrderedMutex<u8, A> = OrderedMutex::new(30);
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         {
             let (a1_data, a2_data, _) = lock_both(locked, &a1, &a2);

@@ -272,6 +272,10 @@ mod internal {
 
             // By returning `HashMapEntryRef` we ensure that the ref-counter
             // will decremented, unless the entry is inserted to a bucket.
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let ref_count = unsafe { entry.ref_count().fetch_add(1, Ordering::Relaxed) };
             assert!(ref_count == 0);
 

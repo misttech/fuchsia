@@ -493,6 +493,10 @@ pub struct zx_iovec {
 impl Default for zx_iovec {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -614,6 +618,10 @@ pub struct zxio_node_attr_zxio_node_attr_has_t {
 impl Default for zxio_node_attr {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -631,6 +639,10 @@ pub struct zxio_dirent_iterator {
 impl Default for zxio_dirent_iterator {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -659,6 +671,10 @@ pub struct zxio_dirent_zxio_dirent_has_t {
 impl Default for zxio_dirent {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -679,6 +695,10 @@ pub struct zxio_xattr_data {
 impl Default for zxio_xattr_data {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -697,6 +717,10 @@ pub struct zxio_open_options {
 impl Default for zxio_open_options {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1085,6 +1109,10 @@ pub struct iovec {
 impl Default for iovec {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1109,6 +1137,10 @@ pub struct msghdr {
 impl Default for msghdr {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1138,6 +1170,10 @@ pub struct sockaddr_storage {
 impl Default for sockaddr_storage {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1266,6 +1302,10 @@ pub struct zxio_socket_creation_options {
 impl Default for zxio_socket_creation_options {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1338,6 +1378,10 @@ pub union in6_addr__bindgen_ty_1 {
 impl Default for in6_addr__bindgen_ty_1 {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1347,6 +1391,10 @@ impl Default for in6_addr__bindgen_ty_1 {
 impl Default for in6_addr {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1365,6 +1413,10 @@ pub struct sockaddr_in6 {
 impl Default for sockaddr_in6 {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1380,6 +1432,10 @@ pub struct in6_pktinfo {
 impl Default for in6_pktinfo {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -1440,6 +1496,10 @@ pub struct __va_list_tag {
 impl Default for __va_list_tag {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()

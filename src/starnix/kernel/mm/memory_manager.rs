@@ -1119,6 +1119,10 @@ impl MemoryManagerState {
 
         // Unmap the range, including the the tail of any range that would have been split. This
         // operation is safe because we're operating on another process.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match unsafe { self.user_vmar.unmap(addr.ptr(), length) } {
             Ok(_) => (),
             Err(zx::Status::NOT_FOUND) => (),

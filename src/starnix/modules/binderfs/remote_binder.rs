@@ -1237,6 +1237,10 @@ mod tests {
                 let starnix_thread = std::thread::Builder::new()
                     .name("user-thread".to_string())
                     .spawn(move || {
+                        #[allow(
+                            clippy::undocumented_unsafe_blocks,
+                            reason = "Force documented unsafe blocks in Starnix"
+                        )]
                         let locked = unsafe { Unlocked::new() };
                         let builder = create_task(
                             locked,
@@ -1416,7 +1420,7 @@ mod tests {
                 .map(0, &vmo, 0, VMO_SIZE, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
                 .expect("map");
             scopeguard::defer! {
-              // SAFETY This is a ffi call to a kernel syscall.
+              // SAFETY: This is a ffi call to a kernel syscall.
               unsafe { fuchsia_runtime::vmar_root_self().unmap(addr, VMO_SIZE).expect("unmap"); }
             }
 
@@ -1432,7 +1436,7 @@ mod tests {
                 .expect("ioctl")
                 .expect("ioctl");
             for user_write in user_writes.iter() {
-                // SAFETY This is required to emulate the scattered writes for tests.
+                // SAFETY: This is required to emulate the scattered writes for tests.
                 unsafe {
                     dup.read_raw(
                         user_write.address as *mut u8,
@@ -1442,7 +1446,7 @@ mod tests {
                     .expect("read_raw")
                 }
             }
-            // SAFETY This is safe, because version is repr(C)
+            // SAFETY: This is safe, because version is repr(C)
             let version = unsafe { std::ptr::read_volatile(version_ref) };
             assert_eq!(version.protocol_version, uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32);
             binder

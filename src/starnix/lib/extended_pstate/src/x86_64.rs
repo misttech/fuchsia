@@ -149,6 +149,10 @@ impl State {
 
     #[inline(always)]
     pub(crate) fn save(&mut self) {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match self.strategy {
             Strategy::XSaveOpt => unsafe {
                 std::arch::x86_64::_xsaveopt(self.buffer.addr_mut(), SUPPORTED_XSAVE_FEATURES);
@@ -182,7 +186,15 @@ impl State {
     }
 
     pub(crate) fn set_xsave_area(&mut self, xsave_area: [u8; XSAVE_AREA_SIZE]) {
-        self.buffer = unsafe { std::mem::transmute(xsave_area) };
+        self.buffer = {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                std::mem::transmute(xsave_area)
+            }
+        };
 
         // The tail of the FXSAVE are is unused and is ignored. It may be modified when returning
         // from a signal handler. Reset it to zeros.
@@ -214,11 +226,19 @@ mod test {
 
             // We expect the FPU stack to be empty. Pop a value to generate a stack underflow exception
             let flt = [0u8; 8];
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("fstp dword ptr [{flt}]", flt = in(reg) &flt as *const u8);
             }
             // Check that the IE and SF bits are 1 and the C1 flag is 0. [intel/vol1] 8.5.1.1 Stack Overflow or Underflow Exception (#IS)
             let fpust = 0u16;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("fnstsw [{fpust}]", fpust = in(reg)&fpust);
             }
@@ -228,21 +248,37 @@ mod test {
 
             // x87 FPU control word.
             let mut fpucw = 0u16;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw);
             }
             // Unmask all 6 x87 exceptions
             fpucw &= !0x3f;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("fldcw [{fpucw}]", fpucw = in(reg) &fpucw);
             }
 
             let mut mxcsr = 0u32;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("stmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
             }
             // Unmask the lowest 3 exceptions.
             mxcsr &= !(0x7 << 7);
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("ldmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
             }
@@ -251,6 +287,10 @@ mod test {
             let vals_a = [0x42u8; 16];
             let vals_b = [0x43u8; 16];
             let vals_c = [0x44u8; 16];
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups xmm0, [{vals_a}]
                           movups xmm1, [{vals_b}]
@@ -266,6 +306,10 @@ mod test {
         };
 
         let clear_state = || {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 // Reinitialize x87 FPU
                 asm!("fninit");
@@ -286,33 +330,59 @@ mod test {
         let dest = [0u8; 16];
         let validate_state_cleared = || {
             let fpust = 0u16;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("fnstsw [{fpust}]", fpust = in(reg)&fpust);
             }
             assert_eq!(fpust, 0);
 
             let fpucw = 0u16;
-            unsafe { asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw) };
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw)
+            };
             assert_eq!(fpucw, 0x37f); // Initial FPU state per [intel/vol1] 8.1.5 x87 FPU Control Word
 
             let mxcsr = 0u32;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("stmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
             }
             assert_eq!(mxcsr & 0x1f, 0); // No exceptions raised.
             assert_eq!((mxcsr >> 7) & 0x3f, 0x3f); // All exceptions masked.
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups [{dest}], xmm0", dest = in(reg) &dest);
             }
             for i in 0..16 {
                 assert_eq!(dest[i], 0);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups [{dest}], xmm1", dest = in(reg) &dest);
             }
             for i in 0..16 {
                 assert_eq!(dest[i], 0);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups [{dest}], xmm2", dest = in(reg) &dest);
             }
@@ -326,6 +396,10 @@ mod test {
 
             // Check that the IE and SF bits are 1 and the C1 flag is 0. [intel/vol1] 8.5.1.1 Stack Overflow or Underflow Exception (#IS)
             let fpust = 0u16;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("fnstsw [{fpust}]", fpust = in(reg)&fpust);
             }
@@ -335,10 +409,20 @@ mod test {
 
             // x87 FPU control word
             let fpucw = 0u16;
-            unsafe { asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw) };
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw)
+            };
             assert_eq!(fpucw, 0x340); // All exceptions masked, 64 bit precision, round to nearest.
 
             let mxcsr = 0u32;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("stmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
             }
@@ -346,18 +430,30 @@ mod test {
             assert_eq!((mxcsr >> 7) & 0x3f, 0x38); // First 3 exceptions unmasked, rest masked.
 
             // SSE registers
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups [{dest}], xmm0", dest = in(reg) &dest);
             }
             for i in 0..16 {
                 assert_eq!(dest[i], 0x42);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups [{dest}], xmm1", dest = in(reg) &dest);
             }
             for i in 0..16 {
                 assert_eq!(dest[i], 0x43);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("movups [{dest}], xmm2", dest = in(reg) &dest);
             }
@@ -371,6 +467,10 @@ mod test {
         state.save();
         clear_state();
         validate_state_cleared();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             state.restore();
         }

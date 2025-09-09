@@ -47,6 +47,10 @@ pub union magma_poll_item__bindgen_ty_1 {
 impl Default for magma_poll_item__bindgen_ty_1 {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -56,6 +60,10 @@ impl Default for magma_poll_item__bindgen_ty_1 {
 impl Default for magma_poll_item {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -94,6 +102,10 @@ pub struct magma_command_descriptor {
 impl Default for magma_command_descriptor {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -113,6 +125,10 @@ pub struct magma_inline_command_buffer {
 impl Default for magma_inline_command_buffer {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()

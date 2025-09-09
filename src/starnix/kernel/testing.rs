@@ -130,6 +130,10 @@ fn spawn_kernel_and_run_internal<F>(callback: F, security_server: Option<Arc<Sec
 where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
 {
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let locked = unsafe { Unlocked::new() };
     let kernel = create_test_kernel(locked, security_server);
     let fs = create_test_fs_context(locked, &kernel, TmpFs::new_fs);
@@ -228,6 +232,10 @@ fn create_test_init_task(
 fn create_kernel_task_and_unlocked_with_fs(
     create_fs: impl FnOnce(&mut Locked<Unlocked>, &Kernel) -> FileSystemHandle,
 ) -> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let locked = unsafe { Unlocked::new() };
     let kernel = create_test_kernel(locked, None);
     let fs = create_fs(locked, &kernel);
@@ -581,6 +589,10 @@ impl<'a> KernelOrTask<'a> for &'a AutoReleasableTask {
 impl Drop for AutoReleasableTask {
     fn drop(&mut self) {
         // TODO(mariagl): Find a way to avoid creating a new locked context here.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         self.0.take().unwrap().release(locked);
     }

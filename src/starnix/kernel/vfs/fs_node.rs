@@ -1245,6 +1245,10 @@ impl FsNode {
             };
             #[cfg(any(test, debug_assertions))]
             {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 let locked = unsafe { Unlocked::new() };
                 let _l1 = result.append_lock.read_for_lock_ordering(locked);
                 let _l2 = result.info.read();

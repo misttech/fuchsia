@@ -77,6 +77,10 @@ impl IfReq {
 
     fn name(&self) -> &[uapi::c_char; 16] {
         // SAFETY Union is read with zerocopy, so all bytes are set.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match self.inner() {
             IfReqInner::Arch64(ifreq) => unsafe { &ifreq.ifr_ifrn.ifrn_name },
             IfReqInner::Arch32(ifreq) => unsafe { &ifreq.ifr_ifrn.ifrn_name },
@@ -94,6 +98,10 @@ impl IfReq {
 
     fn ifru_addr(&self) -> &uapi::sockaddr {
         // SAFETY Union is read with zerocopy, so all bytes are set.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match self.inner() {
             IfReqInner::Arch64(ifreq) => unsafe { &ifreq.ifr_ifru.ifru_addr },
             IfReqInner::Arch32(ifreq) => unsafe {
@@ -109,6 +117,10 @@ impl IfReq {
 
     pub fn ifru_flags(&self) -> i16 {
         // SAFETY Union is read with zerocopy, so all bytes are set.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match self.inner() {
             IfReqInner::Arch64(ifreq) => unsafe { ifreq.ifr_ifru.ifru_flags },
             IfReqInner::Arch32(ifreq) => unsafe { ifreq.ifr_ifru.ifru_flags },

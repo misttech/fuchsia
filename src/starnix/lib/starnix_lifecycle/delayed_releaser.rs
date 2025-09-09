@@ -32,6 +32,10 @@ impl<T, F: ReleaserAction<T>> Drop for ObjectReleaser<T, F> {
         // SAFETY
         // The `ManuallyDrop` is only ever extracted in this `drop` method, so it is guaranteed
         // that it still exists.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let object = unsafe { ManuallyDrop::take(&mut self.0) };
         F::release(object);
     }

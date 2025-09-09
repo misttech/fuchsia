@@ -263,6 +263,10 @@ impl RunningThread {
                 .name("kthread-dynamic-worker".to_string())
                 .spawn(move || {
                     // It's ok to create a new lock context here, since we are on a new thread.
+                    #[allow(
+                        clippy::undocumented_unsafe_blocks,
+                        reason = "Force documented unsafe blocks in Starnix"
+                    )]
                     let locked = unsafe { Unlocked::new() };
                     let result =
                         with_new_current_task(locked, &system_task, |locked, current_task| {
@@ -307,6 +311,10 @@ impl RunningThread {
                 .name("kthread-persistent-worker".to_string())
                 .spawn(move || {
                     // It's ok to create a new lock context here, since we are on a new thread.
+                    #[allow(
+                        clippy::undocumented_unsafe_blocks,
+                        reason = "Force documented unsafe blocks in Starnix"
+                    )]
                     let locked = unsafe { Unlocked::new() };
                     let current_task = {
                         let Some(system_task) = system_task.upgrade() else {

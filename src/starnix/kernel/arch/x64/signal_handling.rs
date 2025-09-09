@@ -135,11 +135,23 @@ impl SignalStackFrame {
     }
 
     pub fn as_bytes(&self) -> &[u8; SIG_STACK_SIZE] {
-        unsafe { std::mem::transmute(self) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            std::mem::transmute(self)
+        }
     }
 
     pub fn from_bytes(bytes: [u8; SIG_STACK_SIZE]) -> SignalStackFrame {
-        unsafe { std::mem::transmute(bytes) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            std::mem::transmute(bytes)
+        }
     }
 
     pub fn get_signal_mask(&self) -> SigSet {
@@ -159,6 +171,10 @@ pub fn align_stack_pointer(pointer: u64) -> u64 {
 fn get_xstate(extended_pstate: &ExtendedPstateState) -> XState {
     const_assert_eq!(std::mem::size_of::<uapi::_xstate>(), extended_pstate::X64_XSAVE_AREA_SIZE);
 
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let mut xstate = XState {
         // `_xstate` layout matches the layout of the XSAVE area.
         base_xstate: unsafe { std::mem::transmute(extended_pstate.get_x64_xsave_area()) },
@@ -213,6 +229,10 @@ pub fn restore_registers(
     .into();
 
     let xstate = &signal_stack_frame.xstate;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let fpx_sw_bytes = unsafe { xstate.base_xstate.fpstate.__bindgen_anon_1.sw_reserved };
     if fpx_sw_bytes.magic1 != uapi::FP_XSTATE_MAGIC1
         || fpx_sw_bytes.extended_size != std::mem::size_of::<XState>() as u32
@@ -224,6 +244,10 @@ pub fn restore_registers(
         return error!(EINVAL);
     }
 
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     current_task
         .thread_state
         .extended_pstate

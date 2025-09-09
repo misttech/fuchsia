@@ -107,7 +107,13 @@ impl ExtendedPstateState {
 
     #[cfg(target_arch = "x86_64")]
     pub fn get_x64_xsave_area(&self) -> [u8; X64_XSAVE_AREA_SIZE] {
-        unsafe { std::mem::transmute(self.state.buffer) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            std::mem::transmute(self.state.buffer)
+        }
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -135,6 +141,10 @@ mod test {
     #[::fuchsia::test]
     fn extended_pstate_state_lifecycle() {
         let mut state = ExtendedPstateState::default();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             state.save();
             state.restore();

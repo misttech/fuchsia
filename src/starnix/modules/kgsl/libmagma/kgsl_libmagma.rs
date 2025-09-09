@@ -37,6 +37,10 @@ impl<T> KgslErrorLogger for Result<T, magma_status_t> {
 }
 
 pub fn initialize_logging(channel: zx::Channel) -> Result<(), ()> {
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let result = unsafe { magma_initialize_logging(channel.into_raw()) };
     if result == MAGMA_STATUS_OK { Ok(()) } else { Err(()) }
 }
@@ -50,13 +54,23 @@ struct DeviceInternal {
 
 impl Drop for DeviceInternal {
     fn drop(&mut self) {
-        unsafe { magma_device_release(self.magma_device) };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            magma_device_release(self.magma_device)
+        };
     }
 }
 
 impl Device {
     pub fn from_channel(channel: zx::Channel) -> Result<Self, magma_status_t> {
         let mut magma_device: magma_device_t = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let result = unsafe { magma_device_import(channel.into_raw(), &mut magma_device) };
         magma_result(result).kgsl_log_error()?;
         Ok(Device { inner: Arc::new(DeviceInternal { magma_device }) })
@@ -65,6 +79,10 @@ impl Device {
     pub fn query_value(&self, id: magma_query_t) -> Result<u64, magma_status_t> {
         let mut result_out: u64 = 0;
         let mut result_buffer_out: magma_handle_t = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let result = unsafe {
             magma_device_query(self.inner.magma_device, id, &mut result_buffer_out, &mut result_out)
         };
@@ -75,6 +93,10 @@ impl Device {
 
     pub fn create_connection(&self) -> Result<Connection, magma_status_t> {
         let mut magma_connection: magma_connection_t = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let result = unsafe {
             magma_device_create_connection(self.inner.magma_device, &mut magma_connection)
         };
@@ -93,13 +115,23 @@ struct ConnectionInternal {
 
 impl Drop for ConnectionInternal {
     fn drop(&mut self) {
-        unsafe { magma_connection_release(self.magma_connection) };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            magma_connection_release(self.magma_connection)
+        };
     }
 }
 
 impl Connection {
     pub fn create_context(&self, priority: magma_priority_t) -> Result<Context, magma_status_t> {
         let mut magma_context_id: u32 = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let result = unsafe {
             magma_connection_create_context2(
                 self.inner.magma_connection,
@@ -125,6 +157,10 @@ struct ContextInternal {
 
 impl Drop for ContextInternal {
     fn drop(&mut self) {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             magma_connection_release_context(
                 self.connection.magma_connection,

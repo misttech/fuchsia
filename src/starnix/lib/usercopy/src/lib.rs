@@ -249,6 +249,10 @@ unsafe fn do_hermetic_copy(
     count: usize,
     ret_dest: bool,
 ) -> usize {
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let unread_address = unsafe { f(dest as *mut u8, source as *const u8, count, ret_dest) };
 
     let ret_base = if ret_dest { dest } else { source };
@@ -439,6 +443,10 @@ impl Usercopy {
             return 0;
         }
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let unset_address = unsafe { hermetic_zero(dest_addr as *mut u8, count) };
         debug_assert!(
             unset_address >= dest_addr,
@@ -556,6 +564,10 @@ impl Usercopy {
         load_fn: unsafe extern "C" fn(usize) -> u64,
         addr: usize,
     ) -> Result<u32, ()> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let value_or_error = unsafe { load_fn(addr) };
         if value_or_error & ATOMIC_ERROR_MASK == 0 { Ok(value_or_error as u32) } else { Err(()) }
     }
@@ -578,6 +590,10 @@ impl Usercopy {
         addr: usize,
         value: u32,
     ) -> Result<(), ()> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match unsafe { store_fn(addr, value) } {
             0 => Ok(()),
             _ => Err(()),
@@ -605,6 +621,10 @@ impl Usercopy {
         desired: u32,
     ) -> Result<Result<u32, u32>, ()> {
         let mut expected = expected;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let value_or_error = unsafe {
             atomic_compare_exchange_u32_acq_rel(addr, &mut expected as *mut u32, desired)
         };
@@ -620,6 +640,10 @@ impl Usercopy {
         desired: u32,
     ) -> Result<Result<u32, u32>, ()> {
         let mut expected = expected;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let value_or_error = unsafe {
             atomic_compare_exchange_weak_u32_acq_rel(addr, &mut expected as *mut u32, desired)
         };
@@ -647,6 +671,10 @@ impl Drop for Usercopy {
 
 #[cfg(test)]
 mod test {
+    #![allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     use super::*;
 
     use test_case::test_case;

@@ -94,8 +94,15 @@ pub fn create_connection(
     connections: &mut ConnectionMap,
 ) {
     let mut connection_out: magma_connection_t = 0;
-    response.result_return =
-        unsafe { magma_device_create_connection(control.device, &mut connection_out) as u64 };
+    response.result_return = {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            magma_device_create_connection(control.device, &mut connection_out) as u64
+        }
+    };
 
     response.connection_out = connection_out;
     response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION as u32;
@@ -126,6 +133,10 @@ fn attempt_open_path(
     let device_channel = client_channel.raw_handle();
 
     let mut device_out: u64 = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let result = unsafe { magma_device_import(device_channel, &mut device_out as *mut u64) };
 
     if result != MAGMA_STATUS_OK {
@@ -135,6 +146,10 @@ fn attempt_open_path(
 
     let mut result_out = 0;
     let mut result_buffer_out = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let query_result = unsafe {
         magma_device_query(
             device_out,
@@ -198,6 +213,10 @@ fn get_magma_vendor_id(supported_vendor_list: &Vec<u16>) -> Result<u64, Errno> {
     let magma_device = magma_devices.next().ok_or_else(|| errno!(EINVAL))?;
     let mut result_out = 0;
     let mut result_buffer_out = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let query_result = unsafe {
         magma_device_query(
             magma_device.handle,
@@ -352,12 +371,18 @@ where
             &mut command_buffers[0] as *mut magma_exec_command_buffer;
         magma_command_descriptor.semaphore_ids = &mut child_semaphore_ids[0] as *mut u64;
 
-        status = unsafe {
-            magma_connection_execute_command(
-                connection.handle,
-                control.context_id,
-                &mut magma_command_descriptor as *mut magma_command_descriptor,
-            )
+        status = {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                magma_connection_execute_command(
+                    connection.handle,
+                    control.context_id,
+                    &mut magma_command_descriptor as *mut magma_command_descriptor,
+                )
+            }
         };
     }
 
@@ -435,21 +460,27 @@ where
     }
 
     if status == MAGMA_STATUS_OK {
-        status = unsafe {
-            for i in 0..control.command_count as usize {
-                commands[i].data = &mut commands_vec[i][0] as *mut u8 as *mut std::ffi::c_void;
-                commands[i].semaphore_ids = if commands[i].semaphore_count == 0 {
-                    std::ptr::null_mut()
-                } else {
-                    &mut semaphore_ids_vec[i][0]
-                };
+        status = {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+            unsafe {
+                for i in 0..control.command_count as usize {
+                    commands[i].data = &mut commands_vec[i][0] as *mut u8 as *mut std::ffi::c_void;
+                    commands[i].semaphore_ids = if commands[i].semaphore_count == 0 {
+                        std::ptr::null_mut()
+                    } else {
+                        &mut semaphore_ids_vec[i][0]
+                    };
+                }
+                magma_connection_execute_inline_commands(
+                    connection.handle,
+                    control.context_id,
+                    control.command_count,
+                    &mut commands[0],
+                )
             }
-            magma_connection_execute_inline_commands(
-                connection.handle,
-                control.context_id,
-                control.command_count,
-                &mut commands[0],
-            )
         };
     }
 
@@ -480,6 +511,10 @@ pub fn export_buffer(
     connections: &ConnectionMap,
 ) -> Result<(), Errno> {
     let mut buffer_handle_out = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let status = unsafe {
         magma_buffer_export(
             buffer.handle as magma_buffer_t,
@@ -487,8 +522,12 @@ pub fn export_buffer(
         )
     };
     if status == MAGMA_STATUS_OK {
-        let memory =
-            MemoryObject::from(unsafe { zx::Vmo::from(zx::Handle::from_raw(buffer_handle_out)) });
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(buffer_handle_out)) };
+        let memory = MemoryObject::from(vmo);
 
         let mut image_info_opt: Option<ImageInfo> = None;
         'outer: for image_map in connections.values() {
@@ -535,7 +574,15 @@ pub fn flush(
     response: &mut virtio_magma_connection_flush_resp_t,
     connection: &Arc<MagmaConnection>,
 ) {
-    response.result_return = unsafe { magma_connection_flush(connection.handle) as u64 };
+    response.result_return = {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            magma_connection_flush(connection.handle) as u64
+        }
+    };
     response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_FLUSH as u32;
 }
 
@@ -556,6 +603,10 @@ pub fn get_buffer_handle(
     buffer: &Arc<MagmaBuffer>,
 ) -> Result<(), Errno> {
     let mut buffer_handle_out = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let status = unsafe {
         magma_buffer_get_handle(
             buffer.handle as magma_buffer_t,
@@ -566,8 +617,12 @@ pub fn get_buffer_handle(
     if status != MAGMA_STATUS_OK {
         response.result_return = status as u64;
     } else {
-        let memory =
-            MemoryObject::from(unsafe { zx::Vmo::from(zx::Handle::from_raw(buffer_handle_out)) });
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(buffer_handle_out)) };
+        let memory = MemoryObject::from(vmo);
         // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
         let file = Anon::new_private_file(
             locked,
@@ -601,14 +656,24 @@ pub fn query(
 ) -> Result<(), Errno> {
     let mut result_buffer_out = 0;
     let mut result_out = 0;
-    response.result_return = unsafe {
-        magma_device_query(control.device, control.id, &mut result_buffer_out, &mut result_out)
-            as u64
+    response.result_return = {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            magma_device_query(control.device, control.id, &mut result_buffer_out, &mut result_out)
+                as u64
+        }
     };
 
     if result_buffer_out != zx::sys::ZX_HANDLE_INVALID {
-        let memory =
-            MemoryObject::from(unsafe { zx::Vmo::from(zx::Handle::from_raw(result_buffer_out)) });
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(result_buffer_out)) };
+        let memory = MemoryObject::from(vmo);
         let memory_size = memory.get_size();
         // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
         let mut info = FsNodeInfo::new(FileMode::from_bits(0o600), current_task.current_fscred());
@@ -652,14 +717,20 @@ pub fn read_notification_channel(
     let mut buffer_size_out = 0;
     let mut more_data_out: u8 = 0;
 
-    response.result_return = unsafe {
-        magma_connection_read_notification_channel(
-            connection.handle,
-            &mut buffer[0] as *mut u8 as *mut std::ffi::c_void,
-            control.buffer_size,
-            &mut buffer_size_out,
-            &mut more_data_out as *mut u8,
-        ) as u64
+    response.result_return = {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            magma_connection_read_notification_channel(
+                connection.handle,
+                &mut buffer[0] as *mut u8 as *mut std::ffi::c_void,
+                control.buffer_size,
+                &mut buffer_size_out,
+                &mut more_data_out as *mut u8,
+            ) as u64
+        }
     };
 
     response.more_data_out = more_data_out as u64;
@@ -700,6 +771,10 @@ pub fn import_semaphore2(
 ) -> (i32, u64, u64) {
     let mut semaphore = 0;
     let mut semaphore_id = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let status = unsafe {
         magma_connection_import_semaphore2(
             connection.handle,

@@ -1893,6 +1893,10 @@ mod tests {
             let task = task.weak_task();
             move || {
                 // Create child
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 let locked = unsafe { Unlocked::new() };
                 let task = task.upgrade().expect("task must be alive");
                 let child: AutoReleasableTask = child.into();

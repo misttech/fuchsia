@@ -24,6 +24,10 @@ const_assert_eq!(std::mem::align_of::<u128>(), 16);
 impl State {
     #[inline(always)]
     pub(crate) fn save(&mut self) {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             asm!(
               "stp  q0,  q1, [{q}, #( 0 * 32)]",
@@ -148,6 +152,10 @@ mod test {
             // Divide by zero to raise DZC (bit 1) in FPSR
             let one = 1.0;
             let zero = 0.0;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!(
                     "fdiv {dest:d}, {one:d}, {zero:d}",
@@ -157,6 +165,10 @@ mod test {
                 );
             }
             let mut fpsr: u64;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!(
                     "mrs {fpsr}, fpsr",
@@ -186,11 +198,19 @@ mod test {
             const FPCR_INTERRUPT_ENABLE_BITS: u64 = 1 << 15 | 0x1f << 8;
             custom_fpcr = FPCR_CONTROL_BITS | FPCR_INTERRUPT_ENABLE_BITS;
 
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("msr fpcr, {fpcr}", fpcr = in(reg) custom_fpcr);
             }
             // The implementation may not support setting some of these bits. Read back fpcr to see
             // what the hardware actually allows so we can verify that it was restored later on.
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!(
                     "mrs {fpcr}, fpcr",
@@ -199,6 +219,10 @@ mod test {
             }
 
             // Load in known values to the first 3 vector registers, first callee preserved register, and non preserved register.
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("
                     ldr  q0,  [{q0}]
@@ -222,6 +246,10 @@ mod test {
         {
             let fpcr = 0u64;
             let fpsr = 0u64;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("
                     msr fpcr, {fpcr}
@@ -246,6 +274,10 @@ mod test {
         {
             let mut fpcr: u64;
             let mut fpsr: u64;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!(
                     "
@@ -259,6 +291,10 @@ mod test {
             assert_eq!(fpcr, 0);
             assert_eq!(fpsr, 0);
 
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q0, [{dest}]",
                      dest = in(reg) &dest);
@@ -266,6 +302,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q1, [{dest}]",
                      dest = in(reg) &dest);
@@ -273,6 +313,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q2, [{dest}]",
                      dest = in(reg) &dest);
@@ -280,6 +324,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q8, [{dest}]",
                      dest = in(reg) &dest);
@@ -287,6 +335,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q20, [{dest}]",
                      dest = in(reg) &dest);
@@ -296,6 +348,10 @@ mod test {
             }
         }
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             state.restore();
         }
@@ -303,6 +359,10 @@ mod test {
         {
             let mut fpcr: u64;
             let mut fpsr: u64;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("
                     mrs {fpcr}, fpcr
@@ -315,6 +375,10 @@ mod test {
             assert_eq!(fpcr, custom_fpcr);
             assert_eq!(fpsr, 1 << 1);
 
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q0, [{dest}]",
                      dest = in(reg) &dest);
@@ -322,6 +386,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0x42);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q1, [{dest}]",
                      dest = in(reg) &dest);
@@ -329,6 +397,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0x43);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q2, [{dest}]",
                      dest = in(reg) &dest);
@@ -336,6 +408,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0x44);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q8, [{dest}]",
                      dest = in(reg) &dest);
@@ -343,6 +419,10 @@ mod test {
             for i in 0..16 {
                 assert_eq!(dest[i], 0x45);
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 asm!("str q20, [{dest}]",
                      dest = in(reg) &dest);

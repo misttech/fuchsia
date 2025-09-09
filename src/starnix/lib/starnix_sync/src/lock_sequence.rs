@@ -456,6 +456,10 @@ mod test {
 
         let state = HoldsLocks::default();
         // Create a new lock session with the "root" lock level (empty tuple).
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         // Access locked state.
         let (_a, locked_a) = locked.lock_and::<LockA, _>(&state);
@@ -570,6 +574,10 @@ mod test {
     fn lock_a_then_c() {
         let data = Data::default();
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let w = unsafe { Unlocked::new() };
         let (_a, wa) = w.lock_and::<A, _>(&data);
         let (_c, _wc) = wa.lock_and::<C, _>(&data);
@@ -581,6 +589,10 @@ mod test {
     fn cast_a_then_c() {
         let data = Data::default();
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let w = unsafe { Unlocked::new() };
         let wa = w.cast_locked::<A>();
         let (_c, _wc) = wa.lock_and::<C, _>(&data);
@@ -592,6 +604,10 @@ mod test {
     fn unlocked_access_does_not_prevent_locking() {
         let data = Data { a: Mutex::new(15), u: 34, ..Data::default() };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         let u = &data.u;
 
@@ -606,6 +622,10 @@ mod test {
     fn nested_locks() {
         let data = Data { e: Mutex::new(Mutex::new(1)), ..Data::default() };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         let (e, next_locked) = locked.lock_and::<E, _>(&data);
         let v = next_locked.lock::<F, _>(&*e);
@@ -616,6 +636,10 @@ mod test {
     fn rw_lock() {
         let data = Data { d: RwLock::new(1), ..Data::default() };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         {
             let mut d = locked.write_lock::<D, _>(&data);
@@ -629,6 +653,10 @@ mod test {
     fn collections() {
         let data = Data { g: Mutex::new(vec![Mutex::new(0), Mutex::new(1)]), ..Data::default() };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         let (g, next_locked) = locked.lock_and::<G, _>(&data);
         let v = next_locked.lock::<H, _>(&g[1]);
@@ -639,6 +667,10 @@ mod test {
     fn lock_same_level() {
         let data1 = Data { a: Mutex::new(5), b: Mutex::new(15), ..Data::default() };
         let data2 = Data { a: Mutex::new(10), b: Mutex::new(20), ..Data::default() };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         {
             let (a1, a2, new_locked) = locked.lock_both_and::<A, _>(&data1, &data2);

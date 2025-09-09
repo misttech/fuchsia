@@ -32,7 +32,9 @@ pub struct EbpfPtr<'a, T> {
     phantom: PhantomData<&'a T>,
 }
 
+#[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl<'a, T> Send for EbpfPtr<'a, T> {}
+#[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl<'a, T> Sync for EbpfPtr<'a, T> {}
 
 impl<'a, T> EbpfPtr<'a, T> {
@@ -63,13 +65,25 @@ impl EbpfPtr<'_, u64> {
     /// Loads the value referenced by the pointer. Atomicity is guaranteed
     /// if and only if the pointer is 8-byte aligned.
     pub fn load_relaxed(&self) -> u64 {
-        unsafe { arch::load_u64(self.ptr) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            arch::load_u64(self.ptr)
+        }
     }
 
     /// Stores the `value` at the memory referenced by the pointer. Atomicity
     /// is guaranteed if and only if the pointer is 8-byte aligned.
     pub fn store_relaxed(&self, value: u64) {
-        unsafe { arch::store_u64(self.ptr, value) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            arch::store_u64(self.ptr, value)
+        }
     }
 }
 
@@ -77,13 +91,25 @@ impl EbpfPtr<'_, u32> {
     /// Loads the value referenced by the pointer. Atomicity is guaranteed
     /// if and only if the pointer is 8-byte aligned.
     pub fn load_relaxed(&self) -> u32 {
-        unsafe { arch::load_u32(self.ptr) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            arch::load_u32(self.ptr)
+        }
     }
 
     /// Stores the `value` at the memory referenced by the pointer. Atomicity
     /// is guaranteed if and only if the pointer is 8-byte aligned.
     pub fn store_relaxed(&self, value: u32) {
-        unsafe { arch::store_u32(self.ptr, value) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            arch::store_u32(self.ptr, value)
+        }
     }
 }
 
@@ -229,6 +255,10 @@ mod test {
         let addr = vmar_root_self()
             .map(0, &vmo, 0, vmo_size, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
             .unwrap();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let shared_ptr = unsafe { EbpfPtr::new(addr as *mut u64) };
 
         const NUM_THREADS: usize = 10;
@@ -278,7 +308,13 @@ mod test {
             }
         });
 
-        unsafe { vmar_root_self().unmap(addr, vmo_size).unwrap() };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            vmar_root_self().unmap(addr, vmo_size).unwrap()
+        };
     }
 
     #[test]
@@ -286,6 +322,10 @@ mod test {
         const SIZE: usize = 32;
 
         let mut buf = [0; SIZE];
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
 
         buf_ptr.slice(8..16).unwrap().store(&[1, 2, 3, 4, 5, 6, 7, 8]);
@@ -302,6 +342,10 @@ mod test {
         const SIZE: usize = 32;
 
         let mut buf = (0..(SIZE as u8)).map(|v| v as u8).collect::<Vec<_>>();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
         let v = buf_ptr.load();
         assert_eq!(v, (0..SIZE).map(|v| v as u8).collect::<Vec<_>>());
@@ -312,6 +356,10 @@ mod test {
         const SIZE: usize = 32;
 
         let mut buf = [0u8; SIZE];
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
 
         // Write values from `s` to `e` to range `s..e`.

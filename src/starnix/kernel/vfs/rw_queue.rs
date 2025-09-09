@@ -142,6 +142,10 @@ impl<L> RwQueue<L> {
     fn unlock_read(&self) {
         self.inner.lock().unlock_read();
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         #[cfg(any(test, debug_assertions))]
         unsafe {
             self.tracer.unlock_shared();
@@ -151,6 +155,10 @@ impl<L> RwQueue<L> {
     fn unlock_write(&self) {
         self.inner.lock().unlock_write();
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         #[cfg(any(test, debug_assertions))]
         unsafe {
             self.tracer.unlock_exclusive();
@@ -318,6 +326,10 @@ mod tracer {
     #[derive(Debug, Default)]
     pub struct FakeRwLock {}
 
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe impl lock_api::RawRwLock for FakeRwLock {
         const INIT: Self = Self {};
 

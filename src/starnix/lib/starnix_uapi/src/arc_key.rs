@@ -114,7 +114,9 @@ impl<T> Hash for PtrKey<T> {
         self.0.hash(state)
     }
 }
+#[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl<T> Sync for PtrKey<T> {}
+#[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl<T> Send for PtrKey<T> {}
 
 impl<T: std::fmt::Debug> std::fmt::Debug for PtrKey<T> {

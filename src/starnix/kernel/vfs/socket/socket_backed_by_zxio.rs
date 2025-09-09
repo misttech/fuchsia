@@ -330,6 +330,10 @@ impl ZxioBackedSocket {
         )
         .into_sync_proxy();
         let code = program.to_code();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let code = unsafe { std::slice::from_raw_parts(code.as_ptr() as *const u64, code.len()) };
         let result = packet_socket.attach_bpf_filter_unsafe(code, zx::MonotonicInstant::INFINITE);
         result.map_err(|_: fidl::Error| errno!(EIO))?.map_err(|e| {

@@ -108,6 +108,10 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         // The address has been verified by the verifier that ensured the memory is valid for
         // writing.
         let addr = addr.add(instruction_offset);
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         match width {
             DataWidth::U8 => unsafe { std::ptr::write_unaligned(addr.as_ptr(), value.as_u8()) },
             DataWidth::U16 => unsafe { std::ptr::write_unaligned(addr.as_ptr(), value.as_u16()) },
@@ -124,16 +128,36 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         // reading.
         let addr = addr.add(instruction_offset);
         match width {
-            DataWidth::U8 => {
+            DataWidth::U8 =>
+            {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u8>()) })
             }
-            DataWidth::U16 => {
+            DataWidth::U16 =>
+            {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u16>()) })
             }
-            DataWidth::U32 => {
+            DataWidth::U32 =>
+            {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u32>()) })
             }
-            DataWidth::U64 => {
+            DataWidth::U64 =>
+            {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u64>()) })
             }
         }
@@ -179,6 +203,10 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         //
         // The address has been verified by the verifier that ensured the memory is valid for
         // reading and writing.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let atomic = unsafe { &*addr.as_ptr::<AtomicU32>() };
         let value = self.reg(src).as_u32();
         let old_value = op(self, atomic, value);
@@ -206,6 +234,10 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         //
         // The address has been verified by the verifier that ensured the memory is valid for
         // reading and writing.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let atomic = unsafe { &*addr.as_ptr::<AtomicU64>() };
         let value = self.reg(src).as_u64();
         let old_value = op(self, atomic, value);

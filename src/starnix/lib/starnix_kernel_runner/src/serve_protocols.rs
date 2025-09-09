@@ -256,6 +256,10 @@ pub async fn serve_container_controller(
                     if let Some(ProcessEntryRef::Process(target_thread_group)) =
                         pids.get_process(pid)
                     {
+                        #[allow(
+                            clippy::undocumented_unsafe_blocks,
+                            reason = "Force documented unsafe blocks in Starnix"
+                        )]
                         match unsafe {
                             target_thread_group.send_signal_unchecked_debug(
                                 system_task,

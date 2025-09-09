@@ -63,6 +63,10 @@ pub struct StarnixPollItem {
 
 impl StarnixPollItem {
     pub fn new(poll_item: &magma_poll_item_t) -> StarnixPollItem {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let semaphore_or_handle = unsafe {
             if poll_item.type_ == MAGMA_POLL_TYPE_SEMAPHORE {
                 poll_item.__bindgen_anon_1.semaphore

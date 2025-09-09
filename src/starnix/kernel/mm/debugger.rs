@@ -45,6 +45,10 @@ pub fn notify_debugger_of_module_list(current_task: &mut CurrentTask) -> Result<
             .map_err(|err| from_status_like_fdio!(err))?;
     }
 
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe {
         breakpoint_for_module_changes();
     }

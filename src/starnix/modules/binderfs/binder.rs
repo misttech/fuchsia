@@ -9647,6 +9647,10 @@ pub mod tests {
     fn apply_writes(ioctl_writes: Vec<fbinder::IoctlWrite>, vmo: &zx::Vmo) {
         for ioctl_write in ioctl_writes.iter() {
             // SAFETY This is required to emulate the scattered writes for tests.
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             unsafe {
                 vmo.read_raw(
                     ioctl_write.address as *mut u8,

@@ -26,6 +26,10 @@ pub struct user_fpregs_struct {
 impl Default for user_fpregs_struct {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
@@ -92,6 +96,10 @@ pub struct user {
 impl Default for user {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()

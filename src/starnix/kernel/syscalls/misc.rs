@@ -47,6 +47,10 @@ pub fn do_uname(
 ) -> Result<(), Errno> {
     fn init_array(fixed: &mut [c_char; 65], init: &[u8]) {
         let len = init.len();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let as_c_char = unsafe { std::mem::transmute::<&[u8], &[c_char]>(init) };
         fixed[..len].copy_from_slice(as_c_char)
     }

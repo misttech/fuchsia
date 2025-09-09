@@ -125,6 +125,10 @@ pub struct DirentIterator<'a> {
 impl DirentIterator<'_> {
     /// Rewind the iterator to the beginning.
     pub fn rewind(&mut self) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_dirent_iterator_rewind(&mut *self.iterator) };
         zx::ok(status)?;
         self.finished = false;
@@ -149,6 +153,10 @@ impl Iterator for DirentIterator<'_> {
         // The types are equivalent for all practical purposes and Rust permits casting between the types,
         // so we insert a type cast here in the FFI bindings.
         entry.name = name_buffer.as_mut_ptr() as *mut c_char;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio_dirent_iterator_next(&mut *self.iterator.as_mut(), &mut entry) };
         let result = match zx::ok(status) {
             Ok(()) => {
@@ -167,13 +175,19 @@ impl Iterator for DirentIterator<'_> {
 
 impl Drop for DirentIterator<'_> {
     fn drop(&mut self) {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             zxio::zxio_dirent_iterator_destroy(&mut *self.iterator.as_mut());
         }
     }
 }
 
+#[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl Send for DirentIterator<'_> {}
+#[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl Sync for DirentIterator<'_> {}
 
 impl ZxioDirent {
@@ -182,7 +196,13 @@ impl ZxioDirent {
         let abilities = if dirent.has.abilities { Some(dirent.abilities) } else { None };
         let id = if dirent.has.id { Some(dirent.id) } else { None };
         let mut name = name_buffer;
-        unsafe { name.set_len(dirent.name_length as usize) };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            name.set_len(dirent.name_length as usize)
+        };
         ZxioDirent { protocols, abilities, id, name: name.into() }
     }
 
@@ -341,6 +361,10 @@ fn parse_control_messages(data: &[u8]) -> Vec<ControlMessage> {
             }
             (zxio::SOL_IPV6, zxio::IPV6_PKTINFO) => {
                 let pkt_info = zxio::in6_pktinfo::read_from_prefix(msg_data).unwrap().0;
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 ControlMessage::Ipv6PacketInfo {
                     local_addr: unsafe { pkt_info.ipi6_addr.__in6_union.__s6_addr },
                     iface: pkt_info.ipi6_ifindex,
@@ -680,6 +704,10 @@ impl Zxio {
             marks: marks.as_mut_ptr() as *mut _,
         };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_socket_with_options(
                 Some(service_connector::<S>),
@@ -709,6 +737,10 @@ impl Zxio {
 
     pub fn create(handle: zx::Handle) -> Result<Zxio, zx::Status> {
         let zxio = Zxio::default();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_create(handle.into_raw(), zxio.as_storage_ptr()) };
         zx::ok(status)?;
         Ok(zxio)
@@ -716,9 +748,19 @@ impl Zxio {
 
     pub fn release(self) -> Result<zx::Handle, zx::Status> {
         let mut handle = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_release(self.as_ptr(), &mut handle) };
         zx::ok(status)?;
-        unsafe { Ok(zx::Handle::from_raw(handle)) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            Ok(zx::Handle::from_raw(handle))
+        }
     }
 
     pub fn open(
@@ -739,6 +781,10 @@ impl Zxio {
             None => std::ptr::null_mut(),
         };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_open(
                 self.as_ptr(),
@@ -765,6 +811,10 @@ impl Zxio {
             validate_pointer_fields(attr);
         }
         let zxio = Zxio::default();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_create_with_on_representation(
                 handle.into_raw(),
@@ -785,6 +835,10 @@ impl Zxio {
     ) -> Result<Self, zx::Status> {
         let zxio = Zxio::default();
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_open(
                 self.as_ptr(),
@@ -806,6 +860,10 @@ impl Zxio {
 
     pub fn unlink(&self, name: &str, flags: fio::UnlinkFlags) -> Result<(), zx::Status> {
         let flags_bits = flags.bits().try_into().map_err(|_| zx::Status::INVALID_ARGS)?;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_unlink(self.as_ptr(), name.as_ptr() as *const c_char, name.len(), flags_bits)
         };
@@ -815,6 +873,10 @@ impl Zxio {
     pub fn read(&self, data: &mut [u8]) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0usize;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_read(
                 self.as_ptr(),
@@ -859,9 +921,19 @@ impl Zxio {
 
     pub fn clone_handle(&self) -> Result<zx::Handle, zx::Status> {
         let mut handle = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_clone(self.as_ptr(), &mut handle) };
         zx::ok(status)?;
-        unsafe { Ok(zx::Handle::from_raw(handle)) }
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            Ok(zx::Handle::from_raw(handle))
+        }
     }
 
     pub fn downgrade(&self) -> ZxioWeak {
@@ -871,6 +943,10 @@ impl Zxio {
     pub fn read_at(&self, offset: u64, data: &mut [u8]) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0usize;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_read_at(
                 self.as_ptr(),
@@ -919,6 +995,10 @@ impl Zxio {
     pub fn write(&self, data: &[u8]) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_write(
                 self.as_ptr(),
@@ -961,6 +1041,10 @@ impl Zxio {
     pub fn write_at(&self, offset: u64, data: &[u8]) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_write_at(
                 self.as_ptr(),
@@ -1007,6 +1091,10 @@ impl Zxio {
     }
 
     pub fn truncate(&self, length: u64) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_truncate(self.as_ptr(), length) };
         zx::ok(status)?;
         Ok(())
@@ -1014,6 +1102,10 @@ impl Zxio {
 
     pub fn seek(&self, seek_origin: SeekOrigin, offset: i64) -> Result<usize, zx::Status> {
         let mut result = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status =
             unsafe { zxio::zxio_seek(self.as_ptr(), seek_origin.into(), offset, &mut result) };
         zx::ok(status)?;
@@ -1022,8 +1114,16 @@ impl Zxio {
 
     pub fn vmo_get(&self, flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status> {
         let mut vmo = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_vmo_get(self.as_ptr(), flags.bits(), &mut vmo) };
         zx::ok(status)?;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let handle = unsafe { zx::Handle::from_raw(vmo) };
         Ok(zx::Vmo::from(handle))
     }
@@ -1049,6 +1149,10 @@ impl Zxio {
         query: zxio_node_attr_has_t,
     ) -> Result<zxio_node_attributes_t, zx::Status> {
         let mut attributes = self.node_attributes_from_query(query, None);
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_attr_get(self.as_ptr(), &mut attributes) };
         zx::ok(status)?;
         Ok(attributes)
@@ -1090,6 +1194,10 @@ impl Zxio {
         fsverity_root_hash: &mut [u8; ZXIO_ROOT_HASH_LENGTH],
     ) -> Result<zxio_node_attributes_t, zx::Status> {
         let mut attributes = self.node_attributes_from_query(query, Some(fsverity_root_hash));
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_attr_get(self.as_ptr(), &mut attributes) };
         clean_pointer_fields(&mut attributes);
         zx::ok(status)?;
@@ -1098,12 +1206,20 @@ impl Zxio {
 
     pub fn attr_set(&self, attributes: &zxio_node_attributes_t) -> Result<(), zx::Status> {
         validate_pointer_fields(attributes);
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_attr_set(self.as_ptr(), attributes) };
         zx::ok(status)?;
         Ok(())
     }
 
     pub fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_enable_verity(self.as_ptr(), descriptor) };
         zx::ok(status)?;
         Ok(())
@@ -1116,8 +1232,16 @@ impl Zxio {
         new_path: &str,
     ) -> Result<(), zx::Status> {
         let mut handle = zx::sys::ZX_HANDLE_INVALID;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_token_get(new_directory.as_ptr(), &mut handle) };
         zx::ok(status)?;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_rename(
                 self.as_ptr(),
@@ -1138,7 +1262,17 @@ impl Zxio {
     ) -> (zx::Unowned<'_, zx::Handle>, zx::Signals) {
         let mut handle = zx::sys::ZX_HANDLE_INVALID;
         let mut zx_signals = zx::sys::ZX_SIGNAL_NONE;
-        unsafe { zxio::zxio_wait_begin(self.as_ptr(), zxio_signals, &mut handle, &mut zx_signals) };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
+        unsafe {
+            zxio::zxio_wait_begin(self.as_ptr(), zxio_signals, &mut handle, &mut zx_signals)
+        };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let handle = unsafe { zx::Unowned::<zx::Handle>::from_raw_handle(handle) };
         let signals = zx::Signals::from_bits_truncate(zx_signals);
         (handle, signals)
@@ -1146,6 +1280,10 @@ impl Zxio {
 
     pub fn wait_end(&self, signals: zx::Signals) -> zxio_signals_t {
         let mut zxio_signals = ZxioSignals::NONE.bits();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             zxio::zxio_wait_end(self.as_ptr(), signals.bits(), &mut zxio_signals);
         }
@@ -1154,6 +1292,10 @@ impl Zxio {
 
     pub fn create_dirent_iterator(&self) -> Result<DirentIterator<'_>, zx::Status> {
         let mut zxio_iterator = Box::default();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_dirent_iterator_init(&mut *zxio_iterator, self.as_ptr()) };
         zx::ok(status)?;
         let iterator =
@@ -1163,6 +1305,10 @@ impl Zxio {
 
     pub fn connect(&self, addr: &[u8]) -> Result<Result<(), ZxioErrorCode>, zx::Status> {
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_connect(
                 self.as_ptr(),
@@ -1180,6 +1326,10 @@ impl Zxio {
 
     pub fn bind(&self, addr: &[u8]) -> Result<Result<(), ZxioErrorCode>, zx::Status> {
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_bind(
                 self.as_ptr(),
@@ -1197,6 +1347,10 @@ impl Zxio {
 
     pub fn listen(&self, backlog: i32) -> Result<Result<(), ZxioErrorCode>, zx::Status> {
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_listen(self.as_ptr(), backlog as c_int, &mut out_code) };
         zx::ok(status)?;
         match out_code {
@@ -1210,6 +1364,10 @@ impl Zxio {
         let mut addr = vec![0u8; addrlen as usize];
         let zxio = Zxio::default();
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_accept(
                 self.as_ptr(),
@@ -1230,6 +1388,10 @@ impl Zxio {
         let mut addrlen = std::mem::size_of::<sockaddr_storage>() as socklen_t;
         let mut addr = vec![0u8; addrlen as usize];
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_getsockname(
                 self.as_ptr(),
@@ -1249,6 +1411,10 @@ impl Zxio {
         let mut addrlen = std::mem::size_of::<sockaddr_storage>() as socklen_t;
         let mut addr = vec![0u8; addrlen as usize];
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_getpeername(
                 self.as_ptr(),
@@ -1272,6 +1438,10 @@ impl Zxio {
     ) -> Result<Result<socklen_t, ZxioErrorCode>, zx::Status> {
         let mut optlen = optval.len() as socklen_t;
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_getsockopt(
                 self.as_ptr(),
@@ -1307,6 +1477,10 @@ impl Zxio {
         optval: &[u8],
     ) -> Result<Result<(), ZxioErrorCode>, zx::Status> {
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_setsockopt(
                 self.as_ptr(),
@@ -1329,6 +1503,10 @@ impl Zxio {
         flags: ZxioShutdownFlags,
     ) -> Result<Result<(), ZxioErrorCode>, zx::Status> {
         let mut out_code = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_shutdown(self.as_ptr(), flags.bits(), &mut out_code) };
         zx::ok(status)?;
         match out_code {
@@ -1362,6 +1540,10 @@ impl Zxio {
         let mut out_code = 0;
         let mut out_actual = 0;
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_sendmsg(self.as_ptr(), &msg, flags as c_int, &mut out_actual, &mut out_code)
         };
@@ -1394,6 +1576,10 @@ impl Zxio {
 
         let mut out_code = 0;
         let mut out_actual = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_recvmsg(
                 self.as_ptr(),
@@ -1422,6 +1608,10 @@ impl Zxio {
     pub fn read_link(&self) -> Result<&[u8], zx::Status> {
         let mut target = std::ptr::null();
         let mut target_len = 0;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_read_link(self.as_ptr(), &mut target, &mut target_len) };
         zx::ok(status)?;
         // SAFETY: target will live as long as the underlying zxio object lives.
@@ -1431,6 +1621,10 @@ impl Zxio {
     pub fn create_symlink(&self, name: &str, target: &[u8]) -> Result<Zxio, zx::Status> {
         let name = name.as_bytes();
         let zxio = Zxio::default();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_create_symlink(
                 self.as_ptr(),
@@ -1452,6 +1646,10 @@ impl Zxio {
             out_names.push(name_slice.to_vec());
         }
         let mut out_names = Vec::new();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_xattr_list(
                 self.as_ptr(),
@@ -1482,6 +1680,10 @@ impl Zxio {
             zx::Status::OK.into_raw()
         }
         let mut out_value = Vec::new();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_xattr_get(
                 self.as_ptr(),
@@ -1501,6 +1703,10 @@ impl Zxio {
         value: &[u8],
         mode: XattrSetMode,
     ) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_xattr_set(
                 self.as_ptr(),
@@ -1515,28 +1721,52 @@ impl Zxio {
     }
 
     pub fn xattr_remove(&self, name: &[u8]) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         zx::ok(unsafe { zxio::zxio_xattr_remove(self.as_ptr(), name.as_ptr(), name.len()) })
     }
 
     pub fn link_into(&self, target_dir: &Zxio, name: &str) -> Result<(), zx::Status> {
         let mut handle = zx::sys::ZX_HANDLE_INVALID;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         zx::ok(unsafe { zxio::zxio_token_get(target_dir.as_ptr(), &mut handle) })?;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         zx::ok(unsafe {
             zxio::zxio_link_into(self.as_ptr(), handle, name.as_ptr() as *const c_char, name.len())
         })
     }
 
     pub fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_allocate(self.as_ptr(), offset, len, mode.bits()) };
         zx::ok(status)
     }
 
     pub fn sync(&self) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_sync(self.as_ptr()) };
         zx::ok(status)
     }
 
     pub fn close(&self) -> Result<(), zx::Status> {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe { zxio::zxio_close(self.as_ptr()) };
         zx::ok(status)
     }
@@ -1549,6 +1779,10 @@ impl Drop for ZxioStorage {
         // like WaitCanceler, will then always operate on a non-poisoned `zxio_t as long as the
         // `ZxioStorage` is alive.
         let zxio_ptr: *mut zxio::zxio_t = &mut self.storage.io;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             zxio::zxio_destroy(zxio_ptr);
         };
@@ -1846,6 +2080,10 @@ mod test {
             .expect("failed to convert proxy into channel")
             .into_zx_channel();
         let storage = zxio::zxio_storage_t::default();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let status = unsafe {
             zxio::zxio_create(
                 zx_channel.into_raw(),
@@ -1854,8 +2092,16 @@ mod test {
         };
         assert_eq!(status, zx::sys::ZX_OK);
         let io = &storage.io as *const zxio::zxio_t as *mut zxio::zxio_t;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let close_status = unsafe { zxio::zxio_close(io) };
         assert_eq!(close_status, zx::sys::ZX_OK);
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             zxio::zxio_destroy(io);
         }
@@ -1909,6 +2155,10 @@ mod test {
         let mut out_context = Zxio::default();
         let mut out_context_ptr = &mut out_context as *mut Zxio;
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let out = unsafe {
             storage_allocator(
                 0 as zxio_object_type_t,
@@ -1926,6 +2176,10 @@ mod test {
 
         let out_context = std::ptr::null_mut();
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let out = unsafe {
             storage_allocator(
                 0 as zxio_object_type_t,

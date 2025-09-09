@@ -225,6 +225,10 @@ impl TryFrom<&Program> for febpf::VerifiedProgram {
 
         // SAFETY: EbpfInstruction is 64-bit, so it's safe to transmute it to u64.
         let code = program.program.code();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let code_u64 =
             unsafe { std::slice::from_raw_parts(code.as_ptr() as *const u64, code.len()) };
 

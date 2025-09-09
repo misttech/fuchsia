@@ -88,6 +88,10 @@ impl FileOps for NanohubFirmwareFile {
         //
         // For full context see the discussion on
         // https://fuchsia-review.googlesource.com/c/fuchsia/+/1221058
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let mut unlocked = unsafe { Unlocked::new() };
 
         for prefix_path in FIRMWARE_DIRECTORIES {

@@ -1457,6 +1457,10 @@ impl Task {
     pub fn interrupt(&self) {
         self.read().signals.run_state.wake();
         if let Some(thread) = self.thread.read().as_ref() {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let status = unsafe { zx::sys::zx_restricted_kick(thread.raw_handle(), 0) };
             if status != zx::sys::ZX_OK {
                 // zx_restricted_kick() could return ZX_ERR_BAD_STATE if the target thread is already in the

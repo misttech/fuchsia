@@ -649,6 +649,10 @@ impl TryFrom<sigevent> for SignalEvent {
     fn try_from(value: sigevent) -> Result<Self, Self::Error> {
         // SAFETY: _sigev_un was created with FromBytes so it's safe to access any variant
         // because all variants must be valid with all bit patterns.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let notify = match value.sigev_notify as u32 {
             SIGEV_SIGNAL => SignalEventNotify::Signal,
             SIGEV_NONE => SignalEventNotify::None,
@@ -704,6 +708,10 @@ pub struct SignalEventValue(pub u64);
 
 impl From<sigval_t> for SignalEventValue {
     fn from(value: sigval_t) -> Self {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         SignalEventValue(zerocopy::transmute!(unsafe { value._bindgen_opaque_blob }))
     }
 }

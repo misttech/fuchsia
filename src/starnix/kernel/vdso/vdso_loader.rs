@@ -49,6 +49,10 @@ impl MemoryMappedVvar {
     }
 
     fn get_pointer_to_memory_mapped_vvar(&self) -> &uapi::vvar_data {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let vvar_data = unsafe {
             // SAFETY: It is checked in the assertion in MemporyMappedVvar's constructor that the
             // size of the memory region map_addr points to is larger than the size of

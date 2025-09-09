@@ -191,6 +191,10 @@ impl Drop for KernelThreads {
     fn drop(&mut self) {
         // TODO: Replace with .release. Creating a new lock context here is not
         // actually safe, since locks may be held elsewhere on this thread.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         if let Some(system_task) = self.system_task.take() {
             system_task.system_task.into_inner().release(locked);
@@ -252,6 +256,10 @@ struct UnlockedForAsync {
 
 impl UnlockedForAsync {
     fn new() -> Self {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         Self { unlocked: Fragile::new(RefCell::new(unsafe { Unlocked::new_instance() })) }
     }
 }

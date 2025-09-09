@@ -234,6 +234,10 @@ impl FileOps for PerfEventFile {
 
                 // SAFETY: sample_period is a u64 field in a union with u64 sample_freq.
                 // This is always sound regardless of the union's tag.
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 if perf_event_file.attr.freq() == 0
                     && unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period != 0 }
                 {
@@ -346,6 +350,10 @@ impl FileOps for PerfEventFile {
         // data_offset. Don't mind the unsafe block.
         // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
         // says it cannot fail, but rust compiler needs it.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let page_size: u64 = unsafe { zx_system_get_page_size() } as u64;
         metadata.extend(page_size.to_ne_bytes());
         // data_size
@@ -698,6 +706,10 @@ pub fn sys_perf_event_open(
 
     // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
     // says it cannot fail, but rust compiler needs it.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let page_size: u64 = unsafe { zx_system_get_page_size() } as u64;
     let mut perf_event_file = PerfEventFileState::new(
         perf_event_attrs,

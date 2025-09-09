@@ -107,6 +107,10 @@ fn create_shared(
     let name_len = name.len();
     let mut process_out = 0;
     let mut restricted_vmar_out = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let status = unsafe {
         zx::sys::zx_process_create_shared(
             self_raw,
@@ -118,6 +122,10 @@ fn create_shared(
         )
     };
     zx::ok(status)?;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe {
         Ok((
             zx::Process::from(zx::Handle::from_raw(process_out)),

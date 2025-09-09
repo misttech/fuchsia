@@ -873,6 +873,10 @@ impl IptReplaceParser {
                 // SAFETY: This union object was created with FromBytes so it's safe to access any
                 // variant because all variants must be valid with all bit patterns. All variants of
                 // `nf_conntrack_man_proto` are `u16`.
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 Ok(Target::Redirect(NfNatRange {
                     flags,
                     start: u16::from_be(unsafe { range.min.all }),
@@ -894,6 +898,10 @@ impl IptReplaceParser {
                 // SAFETY: This union object was created with FromBytes so it's safe to access any
                 // variant because all variants must be valid with all bit patterns. All variants of
                 // `nf_conntrack_man_proto` are `u16`.
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 Ok(Target::Redirect(NfNatRange {
                     flags,
                     start: u16::from_be(unsafe { range.min_proto.all }),
@@ -916,6 +924,10 @@ impl IptReplaceParser {
         // because all variants must be valid with all bit patterns. `nf_inet_addr` is a IPv4 or
         // or IPv6 address, depending on the protocol of the table.
         let address = if unsafe { tproxy_target.laddr.all } != [0u32; 4] {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             Some(match self.protocol {
                 Ip::V4 => ipv4_addr_to_ip_address(unsafe { tproxy_target.laddr.in_ }),
                 Ip::V6 => ipv6_addr_to_ip_address(unsafe { tproxy_target.laddr.in6 }),

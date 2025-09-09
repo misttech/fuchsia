@@ -345,6 +345,10 @@ impl CallbackState {
         assert!(record_bytes.len() % std::mem::size_of::<u64>() == 0);
         let num_words = record_bytes.len() / std::mem::size_of::<u64>();
         let record_data = record_bytes.as_ptr();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let record_words =
             unsafe { std::slice::from_raw_parts(record_data.cast::<u64>(), num_words) };
 

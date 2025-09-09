@@ -81,6 +81,10 @@ impl RestrictedState {
             state_size,
             zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
         )?;
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let bound_state =
             unsafe { std::slice::from_raw_parts_mut(state_address as *mut u8, state_size) };
         Ok(Self { state_size, bound_state })
@@ -125,6 +129,10 @@ impl RestrictedState {
     /// Returns a mutable reference to `state` as bytes. Used to read and write restricted state from
     /// the kernel.
     fn restricted_state_as_bytes_mut(state: &mut zx::sys::zx_restricted_state_t) -> &mut [u8] {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             std::slice::from_raw_parts_mut(
                 (state as *mut zx::sys::zx_restricted_state_t) as *mut u8,
@@ -133,6 +141,10 @@ impl RestrictedState {
         }
     }
     fn restricted_state_as_bytes(state: &zx::sys::zx_restricted_state_t) -> &[u8] {
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             std::slice::from_raw_parts(
                 (state as *const zx::sys::zx_restricted_state_t) as *const u8,
@@ -225,6 +237,10 @@ fn run_task(
         exit_status: Err(errno!(ENOEXEC).into()),
     };
 
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe {
         restricted_enter_loop(
             RESTRICTED_ENTER_OPTIONS,
@@ -241,6 +257,10 @@ extern "C" fn restricted_exit_callback_c(
     context: usize,
     reason_code: zx::sys::zx_restricted_reason_t,
 ) -> bool {
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let restricted_context = unsafe { &mut *(context as *mut RestrictedEnterContext<'_>) };
     restricted_exit_callback(
         reason_code,
@@ -309,6 +329,10 @@ fn process_restricted_exit(
     profiling_guard.pivot("NormalMode");
 
     // We can't hold any locks entering restricted mode so we can't be holding any locks on exit.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let locked = unsafe { Unlocked::new() };
 
     // Copy the register state out of the VMO.
@@ -437,6 +461,10 @@ where
     // Set the process handle to the new task's process, so the new thread is spawned in that
     // process.
     let process_handle = task_builder.task.thread_group().process.raw_handle();
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let old_process_handle = unsafe { thrd_set_zx_process(process_handle) };
 
     let weak_task = WeakRef::from(&task_builder.task);
@@ -457,6 +485,10 @@ where
     let (sender, receiver) = sync_channel::<TaskBuilder>(1);
     let result = std::thread::Builder::new().name("user-thread".to_string()).spawn(move || {
         // It's safe to create a new lock context since we are on a new thread.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
 
         // Note, cross-process shared resources allocated in this function that aren't freed by the
@@ -481,6 +513,10 @@ where
         } else {
             // Allocate a VMO and bind it to this thread.
             let mut out_vmo_handle = 0;
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let status =
                 zx::Status::from_raw(unsafe { zx_restricted_bind_state(0, &mut out_vmo_handle) });
             match { status } {
@@ -491,6 +527,10 @@ where
                 }
                 _ => panic!("zx_restricted_bind_state failed with {status}!"),
             }
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
             let state_vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(out_vmo_handle)) };
 
             // Unbind when we leave this scope to avoid unnecessarily retaining the VMO via this
@@ -498,6 +538,10 @@ where
             // handles that refer to the VMO to ensure it will be destroyed.  See note about
             // preventing resource leaks in this function's documentation.
             scopeguard::defer! {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 unsafe { zx_restricted_unbind_state(0); }
             }
 
@@ -546,6 +590,10 @@ where
 
     // Set the task's thread handle
     let pthread = join_handle.as_pthread_t();
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     let raw_thread_handle =
         unsafe { zx::Unowned::<'_, zx::Thread>::from_raw_handle(thrd_get_zx_handle(pthread)) };
     *task_thread_guard = Some(Arc::new(
@@ -573,6 +621,10 @@ where
     std::mem::drop(sender);
 
     // Reset the process handle used to create threads.
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
     unsafe {
         thrd_set_zx_process(old_process_handle);
     };
@@ -843,6 +895,10 @@ mod tests {
         let thread = std::thread::spawn({
             let task = task.weak_task();
             move || {
+                #[allow(
+                    clippy::undocumented_unsafe_blocks,
+                    reason = "Force documented unsafe blocks in Starnix"
+                )]
                 let locked = unsafe { Unlocked::new() };
                 let task = task.upgrade().expect("task must be alive");
                 // Wait for the task to have a waiter.

@@ -108,6 +108,10 @@ mod test {
         const C_DATA: char = '4';
         let state = FakeLocked { a: A_DATA.into(), c: C_DATA.into() };
 
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
 
         let (a, locked) = locked.lock_and::<A, _>(&state);
@@ -149,6 +153,10 @@ mod test {
         const A_DATA: u32 = 123;
         const C_DATA: char = '4';
         let state = FakeLocked { a: A_DATA.into(), c: C_DATA.into() };
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
 
         assert_eq!(relaxed(locked, &state), C_DATA);
@@ -192,6 +200,10 @@ mod test {
 
         let state = HoldsLocks::default();
         // Create a new lock session with the "root" lock level.
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let locked = unsafe { Unlocked::new() };
         // Access locked state.
         let (_a, _locked_a) = locked.lock_and::<LevelA, _>(&state);

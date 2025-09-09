@@ -1262,8 +1262,16 @@ mod tests {
         let map_addr = fuchsia_runtime::vmar_root_self()
             .map(0, status_vmo, 0, size_of::<TestSeLinuxStatusT>(), flags)
             .unwrap();
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         let mapped_status = unsafe { &mut *(map_addr as *mut TestSeLinuxStatusT) };
         let result = do_test(mapped_status);
+        #[allow(
+            clippy::undocumented_unsafe_blocks,
+            reason = "Force documented unsafe blocks in Starnix"
+        )]
         unsafe {
             fuchsia_runtime::vmar_root_self()
                 .unmap(map_addr, size_of::<TestSeLinuxStatusT>())

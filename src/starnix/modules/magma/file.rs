@@ -168,7 +168,10 @@ pub struct MagmaConnection {
 
 impl Drop for MagmaConnection {
     fn drop(&mut self) {
-        unsafe { magma_connection_release(self.handle) }
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            magma_connection_release(self.handle)
+        }
     }
 }
 
@@ -180,7 +183,10 @@ pub struct MagmaDevice {
 impl Drop for MagmaDevice {
     /// SAFETY: Makes an FFI call to release a handle that was imported using `magma_device_import`.
     fn drop(&mut self) {
-        unsafe { magma_device_release(self.handle) }
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            magma_device_release(self.handle)
+        }
     }
 }
 
@@ -195,7 +201,10 @@ impl Drop for MagmaBuffer {
     /// SAFETY: Makes an FFI call to release a a `magma_buffer_t` handle. `connection.handle` must
     /// be valid because `connection` is refcounted.
     fn drop(&mut self) {
-        unsafe { magma_connection_release_buffer(self.connection.handle, self.handle) }
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            magma_connection_release_buffer(self.connection.handle, self.handle)
+        }
     }
 }
 
@@ -213,7 +222,10 @@ impl Drop for MagmaSemaphore {
     /// be valid because `connection` is refcounted.
     fn drop(&mut self) {
         for handle in &self.handles {
-            unsafe { magma_connection_release_semaphore(self.connection.handle, *handle) }
+            #[allow(clippy::undocumented_unsafe_blocks)]
+            unsafe {
+                magma_connection_release_semaphore(self.connection.handle, *handle)
+            }
         }
     }
 }
@@ -256,6 +268,7 @@ impl MagmaFile {
         >(server_end);
 
         if result.is_ok() {
+            #[allow(clippy::undocumented_unsafe_blocks)]
             unsafe {
                 magma_initialize_logging(client_end.into_raw());
             }
@@ -592,14 +605,17 @@ impl FileOps for MagmaFile {
                 let mut buffer_out = magma_buffer_t::default();
                 let mut size_out = 0u64;
                 let mut id_out = magma_buffer_id_t::default();
-                response.result_return = unsafe {
-                    magma_connection_import_buffer(
-                        connection.handle,
-                        vmo.into_raw(),
-                        &mut size_out,
-                        &mut buffer_out,
-                        &mut id_out,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_import_buffer(
+                            connection.handle,
+                            vmo.into_raw(),
+                            &mut size_out,
+                            &mut buffer_out,
+                            &mut id_out,
+                        ) as u64
+                    }
                 };
 
                 // Store the information for the newly imported buffer.
@@ -621,8 +637,12 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let connection = self.get_connection(control.connection)?;
 
-                response.result_return =
-                    unsafe { magma_connection_get_notification_channel_handle(connection.handle) };
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_get_notification_channel_handle(connection.handle)
+                    }
+                };
 
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_NOTIFICATION_CHANNEL_HANDLE as u32;
@@ -636,8 +656,12 @@ impl FileOps for MagmaFile {
                 let connection = self.get_connection(control.connection)?;
 
                 let mut context_id_out = 0;
-                response.result_return = unsafe {
-                    magma_connection_create_context(connection.handle, &mut context_id_out) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_create_context(connection.handle, &mut context_id_out)
+                            as u64
+                    }
                 };
                 response.context_id_out = context_id_out as u64;
 
@@ -660,12 +684,15 @@ impl FileOps for MagmaFile {
                 };
 
                 let mut context_id_out = 0;
-                response.result_return = unsafe {
-                    magma_connection_create_context2(
-                        connection.handle,
-                        priority,
-                        &mut context_id_out,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_create_context2(
+                            connection.handle,
+                            priority,
+                            &mut context_id_out,
+                        ) as u64
+                    }
                 };
                 response.context_id_out = context_id_out as u64;
 
@@ -680,6 +707,7 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let connection = self.get_connection(control.connection)?;
 
+                #[allow(clippy::undocumented_unsafe_blocks)]
                 unsafe {
                     magma_connection_release_context(connection.handle, control.context_id);
                 }
@@ -698,14 +726,17 @@ impl FileOps for MagmaFile {
                 let mut size_out = 0;
                 let mut buffer_out = 0;
                 let mut id_out = 0;
-                response.result_return = unsafe {
-                    magma_connection_create_buffer(
-                        connection.handle,
-                        control.size,
-                        &mut size_out,
-                        &mut buffer_out,
-                        &mut id_out,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_create_buffer(
+                            connection.handle,
+                            control.size,
+                            &mut size_out,
+                            &mut buffer_out,
+                            &mut id_out,
+                        ) as u64
+                    }
                 };
                 response.size_out = size_out;
                 response.buffer_out = buffer_out;
@@ -757,8 +788,12 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let connection = self.get_connection(control.connection)?;
 
-                response.result_return =
-                    unsafe { magma_connection_get_error(connection.handle) as u64 };
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_get_error(connection.handle) as u64
+                    }
+                };
 
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_ERROR as u32;
@@ -800,11 +835,21 @@ impl FileOps for MagmaFile {
                     Ok(semaphore) => {
                         for handle in &semaphore.handles {
                             let mut raw_handle = 0;
-                            status = unsafe { magma_semaphore_export(*handle, &mut raw_handle) };
+                            status = {
+                                #[allow(clippy::undocumented_unsafe_blocks)]
+                                unsafe {
+                                    magma_semaphore_export(*handle, &mut raw_handle)
+                                }
+                            };
                             if status != MAGMA_STATUS_OK {
                                 break;
                             }
-                            let handle = unsafe { zx::Handle::from_raw(raw_handle) };
+                            let handle = {
+                                #[allow(clippy::undocumented_unsafe_blocks)]
+                                unsafe {
+                                    zx::Handle::from_raw(raw_handle)
+                                }
+                            };
 
                             sync_points.push(SyncPoint::new(Timeline::Magma, handle.into()));
                         }
@@ -843,6 +888,7 @@ impl FileOps for MagmaFile {
 
                 if let Ok(semaphore) = self.get_semaphore(control.semaphore) {
                     for handle in &semaphore.handles {
+                        #[allow(clippy::undocumented_unsafe_blocks)]
                         unsafe {
                             magma_semaphore_reset(*handle);
                         }
@@ -860,6 +906,7 @@ impl FileOps for MagmaFile {
 
                 if let Ok(semaphore) = self.get_semaphore(control.semaphore) {
                     for handle in &semaphore.handles {
+                        #[allow(clippy::undocumented_unsafe_blocks)]
                         unsafe {
                             magma_semaphore_signal(*handle);
                         }
@@ -877,15 +924,18 @@ impl FileOps for MagmaFile {
                 let connection = self.get_connection(control.connection)?;
                 let buffer = self.get_buffer(control.buffer)?;
 
-                response.result_return = unsafe {
-                    magma_connection_map_buffer(
-                        connection.handle,
-                        control.hw_va,
-                        buffer.handle,
-                        control.offset,
-                        control.length,
-                        control.map_flags,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_map_buffer(
+                            connection.handle,
+                            control.hw_va,
+                            buffer.handle,
+                            control.offset,
+                            control.length,
+                            control.map_flags,
+                        ) as u64
+                    }
                 };
 
                 response.hdr.type_ =
@@ -988,12 +1038,15 @@ impl FileOps for MagmaFile {
                         // TODO(https://fxbug.dev/42080364): Only interrupt the wait when needed.
                         let capped_rel_timeout_ns = std::cmp::min(rel_timeout_ns, 1_000_000_000);
 
-                        status = unsafe {
-                            magma_poll(
-                                &mut magma_items[0] as *mut magma_poll_item,
-                                magma_items.len() as u32,
-                                capped_rel_timeout_ns,
-                            )
+                        status = {
+                            #[allow(clippy::undocumented_unsafe_blocks)]
+                            unsafe {
+                                magma_poll(
+                                    &mut magma_items[0] as *mut magma_poll_item,
+                                    magma_items.len() as u32,
+                                    capped_rel_timeout_ns,
+                                )
+                            }
                         };
                         let current_time = zx::MonotonicInstant::get().into_nanos();
 
@@ -1117,6 +1170,7 @@ impl FileOps for MagmaFile {
                 let connection = self.get_connection(control.connection)?;
                 let buffer = self.get_buffer(control.buffer)?;
 
+                #[allow(clippy::undocumented_unsafe_blocks)]
                 unsafe {
                     magma_connection_unmap_buffer(connection.handle, control.hw_va, buffer.handle)
                 };
@@ -1134,14 +1188,17 @@ impl FileOps for MagmaFile {
                 let connection = self.get_connection(control.connection)?;
                 let buffer = self.get_buffer(control.buffer)?;
 
-                response.result_return = unsafe {
-                    magma_connection_perform_buffer_op(
-                        connection.handle,
-                        buffer.handle,
-                        control.options,
-                        control.start_offset,
-                        control.length,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_connection_perform_buffer_op(
+                            connection.handle,
+                            buffer.handle,
+                            control.options,
+                            control.start_offset,
+                            control.length,
+                        ) as u64
+                    }
                 };
 
                 response.hdr.type_ =
@@ -1158,7 +1215,12 @@ impl FileOps for MagmaFile {
 
                 let mut buffer_info = magma_buffer_info_t { committed_byte_count: 0, size: 0 };
 
-                let status = unsafe { magma_buffer_get_info(buffer.handle, &mut buffer_info) };
+                let status = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_buffer_get_info(buffer.handle, &mut buffer_info)
+                    }
+                };
 
                 if status == MAGMA_STATUS_OK {
                     current_task.write_object(
@@ -1179,11 +1241,14 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let buffer = self.get_buffer(control.buffer)?;
 
-                response.result_return = unsafe {
-                    magma_buffer_set_cache_policy(
-                        buffer.handle,
-                        control.policy as magma_cache_policy_t,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_buffer_set_cache_policy(
+                            buffer.handle,
+                            control.policy as magma_cache_policy_t,
+                        ) as u64
+                    }
                 };
 
                 response.hdr.type_ =
@@ -1200,7 +1265,12 @@ impl FileOps for MagmaFile {
 
                 let mut policy: magma_cache_policy_t = MAGMA_CACHE_POLICY_CACHED;
 
-                let status = unsafe { magma_buffer_get_cache_policy(buffer.handle, &mut policy) };
+                let status = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_buffer_get_cache_policy(buffer.handle, &mut policy)
+                    }
+                };
 
                 if status == MAGMA_STATUS_OK {
                     response.cache_policy_out = policy as u64;
@@ -1218,13 +1288,16 @@ impl FileOps for MagmaFile {
                 ) = read_control_and_response(current_task, &command)?;
                 let buffer = self.get_buffer(control.buffer)?;
 
-                response.result_return = unsafe {
-                    magma_buffer_clean_cache(
-                        buffer.handle,
-                        control.offset,
-                        control.size,
-                        control.operation as magma_cache_operation_t,
-                    ) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        magma_buffer_clean_cache(
+                            buffer.handle,
+                            control.offset,
+                            control.size,
+                            control.operation as magma_cache_operation_t,
+                        ) as u64
+                    }
                 };
 
                 response.hdr.type_ =
@@ -1249,9 +1322,12 @@ impl FileOps for MagmaFile {
                     length: wrapper.name_size as usize, // name_size includes null terminate byte
                 })?;
 
-                response.result_return = unsafe {
-                    let name_ptr = &name[0] as *const u8 as *const std::os::raw::c_char;
-                    magma_buffer_set_name(buffer.handle, name_ptr) as u64
+                response.result_return = {
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        let name_ptr = &name[0] as *const u8 as *const std::os::raw::c_char;
+                        magma_buffer_set_name(buffer.handle, name_ptr) as u64
+                    }
                 };
 
                 response.hdr.type_ =
