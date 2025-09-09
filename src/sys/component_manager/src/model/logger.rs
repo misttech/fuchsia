@@ -2,20 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::model::component::instance::ResolvedInstanceState;
 use crate::model::component::ComponentInstance;
+use crate::model::component::instance::ResolvedInstanceState;
 use diagnostics_log::{BufferedPublisher, PublisherOptions};
 use fidl::endpoints;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_logger as flogger;
 use log::Log;
 use moniker::Moniker;
 use routing::DictExt;
-use sandbox::{Capability, RemotableCapability};
+use sandbox::{Capability, RouterResponse};
 use std::collections::LinkedList;
 use std::sync::{Arc, LazyLock, Mutex};
-use vfs::directory::entry::OpenRequest;
-use vfs::ToObjectRequest;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_logger as flogger};
 
 const CACHE_SIZE: usize = 10;
 static LOGGER_CACHE: LazyLock<Mutex<LoggerCache>> =
@@ -67,19 +65,22 @@ impl LoggerCache {
             return false;
         };
 
-        let scope = resolved_instance_state.execution_scope.clone();
-        let Ok(dir_entry) = router.try_into_directory_entry(scope.clone()) else {
-            return false;
-        };
         let (logsink, server) = endpoints::create_endpoints::<flogger::LogSinkMarker>();
-        const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
-        FLAGS.to_object_request(server.into_channel()).handle(|object_request| {
-            dir_entry.clone().open_entry(OpenRequest::new(
-                scope,
-                FLAGS,
-                vfs::path::Path::dot(),
-                object_request,
-            ))
+        let scope = &resolved_instance_state.execution_scope;
+        scope.spawn(async move {
+            let Ok(res) = router.route(None, false).await else {
+                // router will take care of logging error
+                return;
+            };
+            match res {
+                RouterResponse::Capability(c) => {
+                    let _ = c.send(sandbox::Message { channel: server.into() });
+                }
+                RouterResponse::Unavailable => {}
+                RouterResponse::Debug(_) => {
+                    unreachable!("try_attributed_log: debug response from non-debug route");
+                }
+            }
         });
 
         let Ok(publisher) =
@@ -111,7 +112,7 @@ fn get_logsink_decl<'a>(decl: &'a cm_rust::ComponentDecl) -> Option<&'a cm_rust:
 
 #[cfg(test)]
 mod tests {
-    use super::{LoggerCache, CACHE_SIZE, LOGGER_CACHE};
+    use super::{CACHE_SIZE, LOGGER_CACHE, LoggerCache};
     use crate::model::component::instance::{ComponentDomain, ResolvedInstanceState};
     use crate::model::component::{Component, ComponentInstance, WeakExtendedInstance};
     use crate::model::context::ModelContext;
