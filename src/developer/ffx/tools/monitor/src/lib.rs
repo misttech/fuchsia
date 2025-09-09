@@ -26,12 +26,8 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 
-// Default value of these can be found in //src/developer/ffx/data/config.json
+// Default value of this can be found in //src/developer/ffx/data/config.json
 const CONFIG_PID_FILE: &str = "monitor.pid_file";
-const CONFIG_PORT: &str = "monitor.port";
-
-const LOCAL_SERVER_IP_ADDRESS: &str = "127.0.0.1";
-const LOCAL_SERVER_IP_ADDRESS_ARRAY: [u8; 4] = [127, 0, 0, 1];
 
 #[derive(FfxTool)]
 pub struct MonitorTool {
@@ -185,25 +181,21 @@ impl FfxMain for MonitorTool {
             .context
             .get(CONFIG_PID_FILE)
             .map_err(|e| fho::Error::from(anyhow::anyhow!("Failed to get pid file path: {}", e)))?;
-        let port: u16 = self
-            .context
-            .get(CONFIG_PORT)
-            .map_err(|e| fho::Error::from(anyhow::anyhow!("Failed to get port: {}", e)))?;
         match self.cmd.subcommand {
-            SubCommand::Start(_) => {
+            SubCommand::Start(start_cmd) => {
                 let pid = std::process::id();
                 if let Some(parent) = Path::new(&pid_file_path).parent() {
                     fs::create_dir_all(parent).context("creating pid file directory")?;
                 }
                 fs::write(&pid_file_path, pid.to_string()).context("writing pid file")?;
 
-                let addr = SocketAddr::from((LOCAL_SERVER_IP_ADDRESS_ARRAY, port));
+                let addr = SocketAddr::from(([127, 0, 0, 1], start_cmd.port));
                 writeln!(writer, "Starting server on http://{} with pid {}", addr, pid)
                     .context("writing start message")?;
 
                 start_server(addr).await.map_err(fho::Error::from)
             }
-            SubCommand::Stop(_) => {
+            SubCommand::Stop(_stop_cmd) => {
                 let pid_str = fs::read_to_string(&pid_file_path).context("reading pid file")?;
                 let pid: i32 = pid_str.trim().parse().context("parsing pid")?;
 
@@ -211,26 +203,6 @@ impl FfxMain for MonitorTool {
                     .context("writing stop message")?;
                 Command::new("kill").arg(pid.to_string()).status().context("killing process")?;
                 fs::remove_file(pid_file_path).context("removing pid file")?;
-                Ok(())
-            }
-            SubCommand::Status(_) => {
-                let url = format!("http://{}:{}/status", LOCAL_SERVER_IP_ADDRESS, port);
-                let client = fuchsia_hyper::new_client();
-                let response = client
-                    .get(
-                        url.parse()
-                            .map_err(|e: hyper::http::uri::InvalidUri| anyhow::anyhow!(e))?,
-                    )
-                    .await
-                    .context("sending request")?;
-
-                let body = hyper::body::to_bytes(response.into_body())
-                    .await
-                    .context("reading response body")?;
-                let json: serde_json::Value =
-                    serde_json::from_slice(&body).context("parsing json")?;
-                let pretty_json = serde_json::to_string_pretty(&json).context("formatting json")?;
-                writeln!(writer, "{}", pretty_json).context("writing response to writer")?;
                 Ok(())
             }
         }
