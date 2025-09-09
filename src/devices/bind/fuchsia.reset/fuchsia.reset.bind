@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(b/436070221): Add this to the SDK.
-
 library fuchsia.reset;
 
 // The numeric ID of this reset pin.
