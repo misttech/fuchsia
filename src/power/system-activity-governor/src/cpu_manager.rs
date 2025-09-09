@@ -6,6 +6,7 @@ use crate::events::{SagEvent, SagEventLogger};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_power_system::CpuLevel;
 use fuchsia_inspect::Node as INode;
 use futures::channel::mpsc::{self, Receiver, Sender};
@@ -233,13 +234,6 @@ impl CpuManager {
         log::debug!(required_level:?; "update_current_level: acquiring inner lock");
         let mut inner = self.inner.lock().await;
 
-        log::debug!(required_level:?; "update_current_level: updating current level");
-        let res = inner.cpu.current_level.update(required_level).await;
-        if let Err(error) = res {
-            log::warn!(error:?; "update_current_level: current_level.update failed");
-            return Err(error.into());
-        }
-
         // After other elements have been informed of required_level for cpu,
         // check whether the system can be suspended.
         if required_level == CpuLevel::Inactive.into_primitive() {
@@ -365,10 +359,14 @@ impl CpuManager {
         if suspend_failed { SuspendResult::Fail } else { SuspendResult::Success }
     }
 
-    pub fn run(self: &Rc<Self>, power_elements_node: &INode) {
+    pub fn run(
+        self: &Rc<Self>,
+        element_runner: ServerEnd<fbroker::ElementRunnerMarker>,
+        power_elements_node: &INode,
+    ) {
         let (suspend_tx, suspend_rx) = mpsc::channel(1);
         self.run_suspend_task(suspend_rx);
-        self.run_power_element(power_elements_node, suspend_tx);
+        self.run_power_element(element_runner, power_elements_node, suspend_tx);
     }
 
     fn run_suspend_task(self: &Rc<Self>, mut suspend_signal: Receiver<()>) {
@@ -387,6 +385,7 @@ impl CpuManager {
 
     pub fn run_power_element(
         self: &Rc<Self>,
+        element_runner: ServerEnd<fbroker::ElementRunnerMarker>,
         power_elements_node: &INode,
         suspend_signaller: Sender<()>,
     ) {
@@ -397,8 +396,9 @@ impl CpuManager {
             let cpu = cpu_manager.cpu().await;
 
             cpu.run(
+                element_runner,
                 Some(cpu_node),
-                Box::new(move |new_power_level: fbroker::PowerLevel| {
+                Some(Box::new(move |new_power_level: fbroker::PowerLevel| {
                     let cpu_manager = cpu_manager.clone();
                     let mut suspend_signaller = suspend_signaller.clone();
 
@@ -409,7 +409,7 @@ impl CpuManager {
                         }
                     }
                     .boxed_local()
-                }),
+                })),
             )
             .await;
         })

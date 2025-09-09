@@ -10,7 +10,7 @@ use anyhow::Result;
 use async_lock::{Semaphore, SemaphoreGuardArc};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher};
-use fidl::endpoints::{Proxy, create_endpoints};
+use fidl::endpoints::{Proxy, ServerEnd, create_endpoints};
 use fidl_fuchsia_power_system::{
     self as fsystem, ApplicationActivityLevel, CpuLevel, ExecutionStateLevel,
 };
@@ -23,7 +23,7 @@ use futures::future::FutureExt;
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
-use power_broker_client::{LeaseHelper, PowerElementContext, basic_update_fn_factory};
+use power_broker_client::{LeaseHelper, PowerElementContext};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -437,6 +437,10 @@ pub struct SystemActivityGovernor {
     booting_lease: Rc<RefCell<Option<fidl::endpoints::ClientEnd<fbroker::LeaseControlMarker>>>>,
     /// Logger for system-wide activity governor events.
     sag_event_logger: SagEventLogger,
+    /// ElementRunner ServerEnds for the Execution State, Application Activity and Boot Control
+    /// elements.
+    execution_state_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
+    application_activity_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
 }
 
 impl SystemActivityGovernor {
@@ -457,6 +461,8 @@ impl SystemActivityGovernor {
             ],
         ));
 
+        let (es_element_runner_client, execution_state_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
         let execution_state = PowerElementContext::builder(
             topology,
             "execution_state",
@@ -465,6 +471,7 @@ impl SystemActivityGovernor {
                 ExecutionStateLevel::Suspending.into_primitive(),
                 ExecutionStateLevel::Active.into_primitive(),
             ],
+            es_element_runner_client,
         )
         .dependencies(execution_state_dependencies)
         .build()
@@ -480,6 +487,8 @@ impl SystemActivityGovernor {
             ],
         ));
 
+        let (aa_element_runner_client, application_activity_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
         let application_activity = PowerElementContext::builder(
             topology,
             "application_activity",
@@ -487,6 +496,7 @@ impl SystemActivityGovernor {
                 ApplicationActivityLevel::Inactive.into_primitive(),
                 ApplicationActivityLevel::Active.into_primitive(),
             ],
+            aa_element_runner_client,
         )
         .dependencies(vec![fbroker::LevelDependency {
             dependency_type: fbroker::DependencyType::Assertive,
@@ -517,11 +527,14 @@ impl SystemActivityGovernor {
             ],
         ));
 
+        let (bc_element_runner_client, boot_control_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
         let boot_control = Rc::new(
             PowerElementContext::builder(
                 topology,
                 "boot_control",
                 &[BootControlLevel::Inactive.into(), BootControlLevel::Active.into()],
+                bc_element_runner_client,
             )
             .dependencies(vec![fbroker::LevelDependency {
                 dependency_type: fbroker::DependencyType::Assertive,
@@ -537,7 +550,9 @@ impl SystemActivityGovernor {
         );
         let bc_context = boot_control.clone();
         fasync::Task::local(async move {
-            bc_context.run(None /* inspect_node */, basic_update_fn_factory(&bc_context)).await;
+            bc_context
+                .run(boot_control_runner, None /* inspect_node */, None /* update_fun */)
+                .await;
         })
         .detach();
 
@@ -567,6 +582,8 @@ impl SystemActivityGovernor {
             is_running_signal: async_lock::OnceCell::new(),
             booting_lease: Rc::new(RefCell::new(None)),
             sag_event_logger,
+            execution_state_runner: Rc::new(RefCell::new(Some(execution_state_runner))),
+            application_activity_runner: Rc::new(RefCell::new(Some(application_activity_runner))),
         }))
     }
 
@@ -574,7 +591,10 @@ impl SystemActivityGovernor {
     pub async fn run(self: &Rc<Self>, elements_node: &INode) -> Result<()> {
         log::info!("Handling power elements");
 
-        self.run_execution_state(&elements_node);
+        self.run_execution_state(
+            self.execution_state_runner.take().expect("execution_state_runner not set"),
+            &elements_node,
+        );
         log::info!("System is booting. Acquiring boot control lease.");
         let boot_control_lease = self
             .boot_control
@@ -595,56 +615,49 @@ impl SystemActivityGovernor {
             boot_control_lease.into_client_end().expect("failed to convert to ClientEnd");
         let _ = self.booting_lease.borrow_mut().insert(booting_lease);
 
-        self.run_application_activity(&elements_node);
-
-        log::info!("Boot control required. Updating boot_control level to active.");
-        let res = self.boot_control.current_level.update(BootControlLevel::Active.into()).await;
-        if let Err(error) = res {
-            log::warn!(error:?; "failed to update boot_control level to Active");
-        }
+        self.run_application_activity(
+            self.application_activity_runner.take().expect("application_activity_runner not set"),
+            &elements_node,
+        );
 
         let _ = self.is_running_signal.set(()).await;
         Ok(())
     }
 
-    fn run_application_activity(self: &Rc<Self>, inspect_node: &INode) {
+    fn run_application_activity(
+        self: &Rc<Self>,
+        element_runner: ServerEnd<fbroker::ElementRunnerMarker>,
+        inspect_node: &INode,
+    ) {
         let application_activity_node = inspect_node.create_child("application_activity");
         let this = self.clone();
 
         fasync::Task::local(async move {
-            let update_fn = Rc::new(basic_update_fn_factory(&this.application_activity));
-
             this.application_activity
-                .run(
-                    Some(application_activity_node),
-                    Box::new(move |new_power_level: fbroker::PowerLevel| {
-                        let update_fn = update_fn.clone();
-                        async move {
-                            update_fn(new_power_level).await;
-                        }
-                        .boxed_local()
-                    }),
-                )
+                .run(element_runner, Some(application_activity_node), None /* update_fn */)
                 .await;
         })
         .detach();
     }
 
-    fn run_execution_state(self: &Rc<Self>, inspect_node: &INode) {
+    fn run_execution_state(
+        self: &Rc<Self>,
+        element_runner: ServerEnd<fbroker::ElementRunnerMarker>,
+        inspect_node: &INode,
+    ) {
         let execution_state_node = inspect_node.create_child("execution_state");
         let this = self.clone();
         let this_clone = this.clone();
 
         fasync::Task::local(async move {
-            let update_fn = Rc::new(basic_update_fn_factory(&this.execution_state));
             let previous_power_level =
                 Rc::new(Cell::new(ExecutionStateLevel::Inactive.into_primitive()));
 
             this.execution_state
                 .run(
+                    element_runner,
                     Some(execution_state_node),
-                    Box::new(move |new_power_level: fbroker::PowerLevel| {
-                        let update_fn = update_fn.clone();
+                    Some(Box::new(move |new_power_level: fbroker::PowerLevel| {
                         let previous_power_level = previous_power_level.clone();
                         let this = this_clone.clone();
 
@@ -672,11 +685,10 @@ impl SystemActivityGovernor {
                                     this.es_activation_after_resume_signal.borrow().set(()).await;
                             }
 
-                            update_fn(new_power_level).await;
                             previous_power_level.set(new_power_level);
                         }
                         .boxed_local()
-                    }),
+                    })),
                 )
                 .await;
         })
@@ -915,14 +927,6 @@ impl SystemActivityGovernor {
                     if self.booting_lease.borrow().is_some() {
                         log::info!("System has booted. Dropping boot control lease.");
                         self.booting_lease.borrow_mut().take();
-                        let res = self
-                            .boot_control
-                            .current_level
-                            .update(BootControlLevel::Inactive.into())
-                            .await;
-                        if let Err(error) = res {
-                            log::warn!(error:?; "update boot_control level to inactive failed");
-                        }
                         booting_node.set(false);
                     }
                     responder.send().unwrap();

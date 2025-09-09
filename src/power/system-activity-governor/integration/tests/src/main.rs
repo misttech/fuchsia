@@ -8,13 +8,14 @@ use diagnostics_assertions::{
 };
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
+use fidl::endpoints::create_endpoints;
 use fidl::{AsHandleRef, HandleBased};
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_test_systemactivitygovernor::RealmOptions;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
-use power_broker_client::{PowerElementContext, basic_update_fn_factory};
+use power_broker_client::PowerElementContext;
 use realm_proxy_client::RealmProxyClient;
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -98,20 +99,27 @@ async fn create_suspend_topology(realm: &RealmProxyClient) -> Result<Arc<PowerEl
     let power_elements = activity_governor.get_power_elements().await?;
     let aa_token = power_elements.application_activity.unwrap().assertive_dependency_token.unwrap();
 
+    let (element_runner_client, element_runner) =
+        create_endpoints::<fbroker::ElementRunnerMarker>();
     let suspend_controller = Arc::new(
-        PowerElementContext::builder(&topology, "suspend_controller", &[0, 1])
-            .dependencies(vec![fbroker::LevelDependency {
-                dependency_type: fbroker::DependencyType::Assertive,
-                dependent_level: 1,
-                requires_token: aa_token,
-                requires_level_by_preference: vec![1],
-            }])
-            .build()
-            .await?,
+        PowerElementContext::builder(
+            &topology,
+            "suspend_controller",
+            &[0, 1],
+            element_runner_client,
+        )
+        .dependencies(vec![fbroker::LevelDependency {
+            dependency_type: fbroker::DependencyType::Assertive,
+            dependent_level: 1,
+            requires_token: aa_token,
+            requires_level_by_preference: vec![1],
+        }])
+        .build()
+        .await?,
     );
     let sc_context = suspend_controller.clone();
     fasync::Task::local(async move {
-        sc_context.run(None /* inspect_node */, basic_update_fn_factory(&sc_context)).await;
+        sc_context.run(element_runner, None /* inspect_node */, None /* update_fn */).await;
     })
     .detach();
 
@@ -2031,8 +2039,10 @@ async fn create_cpu_driver_topology(
         .assertive_dependency_token
         .unwrap();
 
+    let (element_runner_client, element_runner) =
+        create_endpoints::<fbroker::ElementRunnerMarker>();
     let cpu_driver_controller = Arc::new(
-        PowerElementContext::builder(&topology, "cpu_driver", &[0, 1])
+        PowerElementContext::builder(&topology, "cpu_driver", &[0, 1], element_runner_client)
             .dependencies(vec![fbroker::LevelDependency {
                 dependency_type: fbroker::DependencyType::Assertive,
                 dependent_level: 1,
@@ -2048,22 +2058,20 @@ async fn create_cpu_driver_topology(
     let cpu_driver_power_level2 = cpu_driver_power_level.clone();
 
     fasync::Task::local(async move {
-        let update_fn = Arc::new(basic_update_fn_factory(&cpu_driver_context));
         let cpu_driver_power_level = cpu_driver_power_level2.clone();
 
         cpu_driver_context
             .run(
+                element_runner,
                 None, /* inspect_node */
-                Box::new(move |new_power_level: fbroker::PowerLevel| {
-                    let update_fn = update_fn.clone();
+                Some(Box::new(move |new_power_level: fbroker::PowerLevel| {
                     let cpu_driver_power_level = cpu_driver_power_level.clone();
 
                     async move {
                         cpu_driver_power_level.set(new_power_level);
-                        update_fn(new_power_level).await;
                     }
                     .boxed_local()
-                }),
+                })),
             )
             .await;
     })

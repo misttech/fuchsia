@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl::endpoints::{DiscoverableProtocolMarker, create_endpoints};
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_fuchsia_power_system::{self as fsystem, ApplicationActivityLevel, ExecutionStateLevel};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
@@ -132,28 +132,54 @@ async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() 
 
     let power_elements = activity_governor.get_power_elements().await?;
     let es_token = power_elements.execution_state.unwrap().opportunistic_dependency_token.unwrap();
+    let (td_runner_client, td_runner) = create_endpoints::<fbroker::ElementRunnerMarker>();
+    let mut td_runner_stream = td_runner.into_stream();
 
-    let test_driver = PowerElementContext::builder(&topology, "test_driver", &[0, 1])
-        .dependencies(vec![fbroker::LevelDependency {
-            dependency_type: fbroker::DependencyType::Opportunistic,
-            dependent_level: 1,
-            requires_token: es_token,
-            requires_level_by_preference: vec![2],
-        }])
-        .build()
-        .await?;
-    assert_eq!(0, test_driver.required_level.watch().await?.unwrap());
-
-    let test_driver_controller =
-        PowerElementContext::builder(&topology, "test_driver_controller", &[0, 1])
+    let test_driver =
+        PowerElementContext::builder(&topology, "test_driver", &[0, 1], td_runner_client)
             .dependencies(vec![fbroker::LevelDependency {
-                dependency_type: fbroker::DependencyType::Assertive,
+                dependency_type: fbroker::DependencyType::Opportunistic,
                 dependent_level: 1,
-                requires_token: test_driver.assertive_dependency_token().unwrap(),
-                requires_level_by_preference: vec![1],
+                requires_token: es_token,
+                requires_level_by_preference: vec![2],
             }])
             .build()
             .await?;
+    let (required_level, responder) = td_runner_stream
+        .next()
+        .await
+        .unwrap()
+        .expect("ElementRunnerRequestStream next failed")
+        .into_set_level()
+        .unwrap();
+    assert_eq!(0, required_level);
+    assert!(responder.send().is_ok());
+
+    let (tdc_runner_client, tdc_runner) = create_endpoints::<fbroker::ElementRunnerMarker>();
+    let mut tdc_runner_stream = tdc_runner.into_stream();
+    let test_driver_controller = PowerElementContext::builder(
+        &topology,
+        "test_driver_controller",
+        &[0, 1],
+        tdc_runner_client,
+    )
+    .dependencies(vec![fbroker::LevelDependency {
+        dependency_type: fbroker::DependencyType::Assertive,
+        dependent_level: 1,
+        requires_token: test_driver.assertive_dependency_token().unwrap(),
+        requires_level_by_preference: vec![1],
+    }])
+    .build()
+    .await?;
+    let (required_level, responder) = tdc_runner_stream
+        .next()
+        .await
+        .unwrap()
+        .expect("ElementRunnerRequestStream next failed")
+        .into_set_level()
+        .unwrap();
+    assert_eq!(0, required_level);
+    assert!(responder.send().is_ok());
 
     let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
     let registration_lease = activity_governor
@@ -253,20 +279,35 @@ async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() 
     current_state.execution_state_level.replace(ExecutionStateLevel::Active);
     assert_eq!(sag_ctrl_state.watch().await.unwrap(), current_state);
 
-    assert_eq!(1, test_driver.required_level.watch().await?.unwrap());
+    let (required_level, responder) = td_runner_stream
+        .next()
+        .await
+        .unwrap()
+        .expect("ElementRunnerRequestStream next failed")
+        .into_set_level()
+        .unwrap();
+    assert_eq!(1, required_level);
     assert_eq!(
         LeaseStatus::Pending,
         lease_control.watch_status(LeaseStatus::Unknown).await.unwrap()
     );
-    test_driver.current_level.update(1).await?.unwrap();
+    assert!(responder.send().is_ok());
     assert_eq!(
         LeaseStatus::Pending,
         lease_control.watch_status(LeaseStatus::Unknown).await.unwrap()
     );
-    test_driver_controller.current_level.update(1).await?.unwrap();
+    let (required_level, responder) = tdc_runner_stream
+        .next()
+        .await
+        .unwrap()
+        .expect("ElementRunnerRequestStream next failed")
+        .into_set_level()
+        .unwrap();
+    assert_eq!(1, required_level);
+    assert!(responder.send().is_ok());
     assert_eq!(
         LeaseStatus::Satisfied,
-        lease_control.watch_status(LeaseStatus::Unknown).await.unwrap()
+        lease_control.watch_status(LeaseStatus::Pending).await.unwrap()
     );
 
     // TODO(didis): Add test for setting ExecutionStateLevel to Inactive after

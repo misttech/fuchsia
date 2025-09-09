@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use async_utils::hanging_get::server::HangingGet;
+use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_fuchsia_power_system::{self as fsystem, ApplicationActivityLevel, ExecutionStateLevel};
 use fuchsia_component::client as fclient;
@@ -12,7 +13,7 @@ use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::lock::Mutex;
 use futures::prelude::*;
 use log::error;
-use power_broker_client::{PowerElementContext, basic_update_fn_factory};
+use power_broker_client::PowerElementContext;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -65,21 +66,28 @@ impl SystemActivityGovernorControl {
 
         let aa_token =
             sag_power_elements.application_activity.unwrap().assertive_dependency_token.unwrap();
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
         let application_activity_controller = Arc::new(
-            PowerElementContext::builder(&topology, "application_activity_controller", &[0, 1])
-                .dependencies(vec![fbroker::LevelDependency {
-                    dependency_type: fbroker::DependencyType::Assertive,
-                    dependent_level: 1,
-                    requires_token: aa_token,
-                    requires_level_by_preference: vec![1],
-                }])
-                .build()
-                .await
-                .unwrap(),
+            PowerElementContext::builder(
+                &topology,
+                "application_activity_controller",
+                &[0, 1],
+                element_runner_client,
+            )
+            .dependencies(vec![fbroker::LevelDependency {
+                dependency_type: fbroker::DependencyType::Assertive,
+                dependent_level: 1,
+                requires_token: aa_token,
+                requires_level_by_preference: vec![1],
+            }])
+            .build()
+            .await
+            .unwrap(),
         );
         let aac_context = application_activity_controller.clone();
         fasync::Task::local(async move {
-            aac_context.run(None /* inspect_node */, basic_update_fn_factory(&aac_context)).await;
+            aac_context.run(element_runner, None /* inspect_node */, None /* update_fn */).await;
         })
         .detach();
 

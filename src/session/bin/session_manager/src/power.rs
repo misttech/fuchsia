@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, anyhow};
-use fidl::endpoints::{ClientEnd, Proxy};
-use power_broker_client::{PowerElementContext, basic_update_fn_factory};
+use fidl::endpoints::{ClientEnd, Proxy, create_endpoints};
+use power_broker_client::PowerElementContext;
 use rand::Rng;
 use rand::distr::Alphanumeric;
 use std::sync::Arc;
@@ -67,11 +67,14 @@ impl PowerElement {
         let power_levels: Vec<u8> = (0..=POWER_ON_LEVEL).collect();
         let random_string: String =
             rand::rng().sample_iter(&Alphanumeric).take(8).map(char::from).collect();
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
         let power_element_context = Arc::new(
             PowerElementContext::builder(
                 &topology,
                 format!("session-manager-element-{random_string}").as_str(),
                 &power_levels,
+                element_runner_client,
             )
             .initial_current_level(POWER_ON_LEVEL)
             .dependencies(vec![fbroker::LevelDependency {
@@ -88,7 +91,7 @@ impl PowerElement {
         );
         let pe_context = power_element_context.clone();
         fasync::Task::local(async move {
-            pe_context.run(None /* inspect_node */, basic_update_fn_factory(&pe_context)).await;
+            pe_context.run(element_runner, None /* inspect_node */, None /* update_fn */).await;
         })
         .detach();
 

@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Result, anyhow};
-use fidl::endpoints::create_proxy;
-use fuchsia_inspect::Property;
-use futures::future::{FutureExt, LocalBoxFuture};
+use fidl::endpoints::{ClientEnd, ServerEnd, create_endpoints, create_proxy};
+use fuchsia_inspect::{self, Property};
+use futures::TryStreamExt;
+use futures::future::LocalBoxFuture;
 use std::sync::Arc;
 use zx::{HandleBased, Rights};
 use {fidl_fuchsia_power_broker as fbroker, fuchsia_async as fasync};
@@ -19,8 +20,6 @@ pub const BINARY_POWER_LEVELS: [fbroker::PowerLevel; 2] = [
 pub struct PowerElementContext {
     pub element_control: fbroker::ElementControlProxy,
     pub lessor: fbroker::LessorProxy,
-    pub required_level: fbroker::RequiredLevelProxy,
-    pub current_level: fbroker::CurrentLevelProxy,
     assertive_dependency_token: Option<fbroker::DependencyToken>,
     opportunistic_dependency_token: Option<fbroker::DependencyToken>,
     name: String,
@@ -32,8 +31,9 @@ impl PowerElementContext {
         topology: &'a fbroker::TopologyProxy,
         element_name: &'a str,
         valid_levels: &'a [fbroker::PowerLevel],
+        element_runner_client: ClientEnd<fbroker::ElementRunnerMarker>,
     ) -> PowerElementContextBuilder<'a> {
-        PowerElementContextBuilder::new(topology, element_name, valid_levels)
+        PowerElementContextBuilder::new(topology, element_name, valid_levels, element_runner_client)
     }
 
     pub fn assertive_dependency_token(&self) -> Option<fbroker::DependencyToken> {
@@ -54,53 +54,50 @@ impl PowerElementContext {
 
     /// Runs a procedure that calls an update function when the required power level changes.
     ///
-    /// The power element's power level is expected to be updated in `update_fn``.
-    /// A minimal update function can be created by calling `basic_update_fn_factory`.
+    /// The power element's power level is expected to be updated in `update_fn`, if supplied.
     pub async fn run<'a>(
         &self,
+        element_runner: ServerEnd<fbroker::ElementRunnerMarker>,
         inspect_node: Option<fuchsia_inspect::Node>,
-        update_fn: Box<dyn Fn(fbroker::PowerLevel) -> LocalBoxFuture<'a, ()> + 'a>,
+        update_fn: Option<Box<dyn Fn(fbroker::PowerLevel) -> LocalBoxFuture<'a, ()> + 'a>>,
     ) {
-        let mut last_required_level = self.initial_level;
+        let mut stream = element_runner.into_stream();
+
+        let mut last_required_level: fbroker::PowerLevel = self.initial_level;
         let power_level_node = inspect_node
             .as_ref()
             .map(|node| node.create_uint("power_level", last_required_level.into()));
 
-        loop {
-            let element_name = &self.name;
-            log::debug!(
-                element_name:?,
-                last_required_level:?;
-                "PowerElementContext::run: waiting for new level"
-            );
-            match self.required_level.watch().await {
-                Ok(Ok(required_level)) => {
+        while let Ok(Some(request)) = stream.try_next().await {
+            match request {
+                fbroker::ElementRunnerRequest::SetLevel { level: required_level, responder } => {
                     log::debug!(
-                        element_name:?,
+                        element_name:? = &self.name,
                         required_level:?,
                         last_required_level:?;
                         "PowerElementContext::run: new level requested"
                     );
-                    if required_level == last_required_level {
+                    if required_level != last_required_level {
+                        if let Some(update_fn) = &update_fn {
+                            update_fn(required_level).await;
+                        }
+                        if let Some(ref power_level_node) = power_level_node {
+                            power_level_node.set(required_level.into());
+                        }
+                        last_required_level = required_level;
+                    } else {
                         log::debug!(
-                            element_name:?,
+                            element_name:? = &self.name,
                             required_level:?,
                             last_required_level:?;
                             "PowerElementContext::run: required level has not changed, skipping."
                         );
-                        continue;
                     }
-
-                    update_fn(required_level).await;
-                    if let Some(ref power_level_node) = power_level_node {
-                        power_level_node.set(required_level.into());
+                    if let Some(err) = responder.send().err() {
+                        log::warn!("PowerElementContext::run: SetLevel response failed: {err}");
                     }
-                    last_required_level = required_level;
                 }
-                error => {
-                    log::warn!(element_name:?, error:?; "PowerElementContext::run: watch_required_level failed");
-                    return;
-                }
+                fbroker::ElementRunnerRequest::_UnknownMethod { .. } => {}
             }
         }
     }
@@ -110,6 +107,7 @@ pub struct PowerElementContextBuilder<'a> {
     topology: &'a fbroker::TopologyProxy,
     element_name: &'a str,
     initial_current_level: fbroker::PowerLevel,
+    element_runner_client: ClientEnd<fbroker::ElementRunnerMarker>,
     valid_levels: &'a [fbroker::PowerLevel],
     dependencies: Vec<fbroker::LevelDependency>,
     register_dependency_tokens: bool,
@@ -120,11 +118,13 @@ impl<'a> PowerElementContextBuilder<'a> {
         topology: &'a fbroker::TopologyProxy,
         element_name: &'a str,
         valid_levels: &'a [fbroker::PowerLevel],
+        element_runner_client: ClientEnd<fbroker::ElementRunnerMarker>,
     ) -> Self {
         Self {
             topology,
             element_name,
             valid_levels,
+            element_runner_client,
             initial_current_level: Default::default(),
             dependencies: Default::default(),
             register_dependency_tokens: true,
@@ -147,10 +147,6 @@ impl<'a> PowerElementContextBuilder<'a> {
     }
 
     pub async fn build(self) -> Result<PowerElementContext> {
-        let (current_level, current_level_server_end) =
-            create_proxy::<fbroker::CurrentLevelMarker>();
-        let (required_level, required_level_server_end) =
-            create_proxy::<fbroker::RequiredLevelMarker>();
         let (lessor, lessor_server_end) = create_proxy::<fbroker::LessorMarker>();
         let (element_control, element_control_server_end) =
             create_proxy::<fbroker::ElementControlMarker>();
@@ -160,12 +156,9 @@ impl<'a> PowerElementContextBuilder<'a> {
                 initial_current_level: Some(self.initial_current_level),
                 valid_levels: Some(self.valid_levels.to_vec()),
                 dependencies: Some(self.dependencies),
-                level_control_channels: Some(fbroker::LevelControlChannels {
-                    current: current_level_server_end,
-                    required: required_level_server_end,
-                }),
                 lessor_channel: Some(lessor_server_end),
                 element_control: Some(element_control_server_end),
+                element_runner: Some(self.element_runner_client),
                 ..Default::default()
             })
             .await?
@@ -208,44 +201,12 @@ impl<'a> PowerElementContextBuilder<'a> {
         Ok(PowerElementContext {
             element_control,
             lessor,
-            required_level,
-            current_level,
             assertive_dependency_token,
             opportunistic_dependency_token,
             name: self.element_name.to_string(),
             initial_level: self.initial_current_level,
         })
     }
-}
-
-/// Creates an update function for `PowerElementContext::run` that only updates `power_element`.
-///
-/// This helper function can be used to create an update function that has no side effects or
-/// conditions when the power level of the given power element changes.
-pub fn basic_update_fn_factory<'a>(
-    power_element: &'a PowerElementContext,
-) -> Box<dyn Fn(fbroker::PowerLevel) -> LocalBoxFuture<'a, ()> + 'a> {
-    Box::new(move |new_power_level: fbroker::PowerLevel| {
-        async move {
-            let element_name = power_element.name();
-
-            log::debug!(
-                element_name:?,
-                new_power_level:?;
-                "basic_update_fn_factory: updating current level"
-            );
-
-            let res = power_element.current_level.update(new_power_level).await;
-            if let Err(error) = res {
-                log::warn!(
-                    element_name:?,
-                    error:?;
-                    "basic_update_fn_factory: updating current level failed"
-                );
-            }
-        }
-        .boxed_local()
-    })
 }
 
 /// A dependency for a lease. It is equivalent to an fbroker::LevelDependency with the dependent
@@ -305,18 +266,23 @@ impl LeaseHelper {
             })
             .collect();
 
-        let element_context = PowerElementContext::builder(topology, name, &BINARY_POWER_LEVELS)
-            .dependencies(level_dependencies)
-            .initial_current_level(BINARY_POWER_LEVELS[0])
-            .build()
-            .await?;
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
+        let element_context = PowerElementContext::builder(
+            topology,
+            name,
+            &BINARY_POWER_LEVELS,
+            element_runner_client,
+        )
+        .dependencies(level_dependencies)
+        .initial_current_level(BINARY_POWER_LEVELS[0])
+        .build()
+        .await?;
 
         let lessor = element_context.lessor.clone();
 
         let _element_runner = fasync::Task::local(async move {
-            element_context
-                .run(None /* inspect_node */, basic_update_fn_factory(&element_context))
-                .await;
+            element_context.run(element_runner, None /* inspect_node */, None).await;
         });
 
         Ok(Arc::new(Self { lessor, _element_runner }))
@@ -346,76 +312,24 @@ impl LeaseHelper {
 mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
+    use fidl::endpoints::ClientEnd;
     use fuchsia_async as fasync;
-    use futures::StreamExt;
     use futures::channel::mpsc;
+    use futures::{FutureExt, StreamExt};
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    fn run_required_level_server(
-        mut required_power_levels: Vec<fbroker::PowerLevel>,
-    ) -> fbroker::RequiredLevelProxy {
-        let (required_level_proxy, mut required_level_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::RequiredLevelMarker>();
-
+    fn drive_element_runner(
+        element_runner: ClientEnd<fbroker::ElementRunnerMarker>,
+        required_power_levels: Vec<fbroker::PowerLevel>,
+    ) {
+        let proxy = element_runner.into_proxy();
         fasync::Task::local(async move {
-            while let Some(Ok(request)) = required_level_stream.next().await {
-                match request {
-                    fbroker::RequiredLevelRequest::Watch { responder } => {
-                        responder
-                            .send(
-                                required_power_levels
-                                    .pop()
-                                    .ok_or_else(|| fbroker::RequiredLevelError::Internal),
-                            )
-                            .unwrap();
-                    }
-                    _ => unreachable!("Unexpected method call"),
-                }
+            for level in required_power_levels.into_iter().rev() {
+                let _ = proxy.set_level(level).await;
             }
         })
         .detach();
-
-        required_level_proxy
-    }
-
-    #[fuchsia::test]
-    async fn basic_update_fn_factory_performs_update() -> Result<()> {
-        let (element_control, _element_control_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::ElementControlMarker>();
-        let (lessor, _lessor_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::LessorMarker>();
-        let (required_level, _required_level_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::RequiredLevelMarker>();
-        let (current_level, mut current_level_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::CurrentLevelMarker>();
-
-        let power_element = PowerElementContext {
-            element_control,
-            lessor,
-            required_level,
-            current_level,
-            assertive_dependency_token: Some(fbroker::DependencyToken::create()),
-            opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
-            name: "test_name".to_string(),
-            initial_level: 0,
-        };
-
-        fasync::Task::local(async move {
-            let update_fn = basic_update_fn_factory(&power_element);
-            update_fn(100).await;
-        })
-        .detach();
-
-        let Some(Ok(fbroker::CurrentLevelRequest::Update { current_level, responder })) =
-            current_level_stream.next().await
-        else {
-            unreachable!();
-        };
-
-        responder.send(Ok(())).unwrap();
-        assert_eq!(100, current_level);
-        Ok(())
     }
 
     #[fuchsia::test]
@@ -426,15 +340,13 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<fbroker::ElementControlMarker>();
         let (lessor, _lessor_stream) =
             fidl::endpoints::create_proxy_and_stream::<fbroker::LessorMarker>();
-        let required_level = run_required_level_server(vec![1, 2]);
-        let (current_level, _) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::CurrentLevelMarker>();
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
+        drive_element_runner(element_runner_client, vec![1, 2]);
 
         let power_element = PowerElementContext {
             element_control,
             lessor,
-            required_level,
-            current_level,
             assertive_dependency_token: Some(fbroker::DependencyToken::create()),
             opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
             name: "test_element".to_string(),
@@ -443,14 +355,15 @@ mod tests {
 
         power_element
             .run(
+                element_runner,
                 None,
-                Box::new(|power_level| {
+                Some(Box::new(|power_level| {
                     let mut tx = tx.clone();
                     async move {
                         tx.start_send(power_level).unwrap();
                     }
                     .boxed_local()
-                }),
+                })),
             )
             .await;
 
@@ -468,15 +381,13 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<fbroker::ElementControlMarker>();
         let (lessor, _lessor_stream) =
             fidl::endpoints::create_proxy_and_stream::<fbroker::LessorMarker>();
-        let required_level = run_required_level_server(vec![3, 1, 1, 2, 2, initial_level]);
-        let (current_level, _) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::CurrentLevelMarker>();
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
+        drive_element_runner(element_runner_client, vec![3, 1, 1, 2, 2, initial_level]);
 
         let power_element = PowerElementContext {
             element_control,
             lessor,
-            required_level,
-            current_level,
             assertive_dependency_token: Some(fbroker::DependencyToken::create()),
             opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
             name: "test_element".to_string(),
@@ -485,14 +396,15 @@ mod tests {
 
         power_element
             .run(
+                element_runner,
                 None,
-                Box::new(|power_level| {
+                Some(Box::new(|power_level| {
                     let mut tx = tx.clone();
                     async move {
                         tx.start_send(power_level).unwrap();
                     }
                     .boxed_local()
-                }),
+                })),
             )
             .await;
 
@@ -513,15 +425,13 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<fbroker::ElementControlMarker>();
         let (lessor, _lessor_stream) =
             fidl::endpoints::create_proxy_and_stream::<fbroker::LessorMarker>();
-        let required_level = run_required_level_server(vec![1, 4, 0, 3]);
-        let (current_level, _) =
-            fidl::endpoints::create_proxy_and_stream::<fbroker::CurrentLevelMarker>();
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
+        drive_element_runner(element_runner_client, vec![1, 4, 0, 3]);
 
         let power_element = PowerElementContext {
             element_control,
             lessor,
-            required_level,
-            current_level,
             assertive_dependency_token: Some(fbroker::DependencyToken::create()),
             opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
             name: "test_element".to_string(),
@@ -532,8 +442,9 @@ mod tests {
         fasync::Task::local(async move {
             power_element
                 .run(
+                    element_runner,
                     Some(root),
-                    Box::new(|_| {
+                    Some(Box::new(|_| {
                         let rx = rx.clone();
                         let mut tx2 = tx2.clone();
                         async move {
@@ -541,7 +452,7 @@ mod tests {
                             rx.borrow_mut().next().await.unwrap();
                         }
                         .boxed_local()
-                    }),
+                    })),
                 )
                 .await;
         })

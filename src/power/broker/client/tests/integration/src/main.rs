@@ -29,6 +29,7 @@ async fn build_power_broker_realm() -> Result<RealmInstance, Error> {
 mod tests {
     #![allow(unused_imports)]
     use super::*;
+    use fidl::endpoints::create_endpoints;
     use futures::channel::mpsc;
     use futures::future::FutureExt;
     use futures::{StreamExt, pin_mut};
@@ -45,27 +46,34 @@ mod tests {
         name: &str,
     ) -> Result<(fpb::DependencyToken, mpsc::UnboundedReceiver<fpb::PowerLevel>, fasync::Task<()>)>
     {
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fpb::ElementRunnerMarker>();
         let provider = Arc::new(
-            PowerElementContext::builder(topology, name, &BINARY_POWER_LEVELS).build().await?,
+            PowerElementContext::builder(
+                topology,
+                name,
+                &BINARY_POWER_LEVELS,
+                element_runner_client,
+            )
+            .build()
+            .await?,
         );
 
         let (provider_level_sender, provider_level_receiver) = mpsc::unbounded();
-        let current_level_proxy = provider.current_level.clone();
         let dep_token = provider.assertive_dependency_token().unwrap();
 
         let runner_task = fasync::Task::local(async move {
             provider
                 .run(
+                    element_runner,
                     None,
-                    Box::new(move |power_level| {
-                        let current_level_proxy = current_level_proxy.clone();
+                    Some(Box::new(move |power_level| {
                         let provider_level_sender = provider_level_sender.clone();
                         async move {
-                            current_level_proxy.update(power_level).await.unwrap().unwrap();
                             provider_level_sender.unbounded_send(power_level).unwrap();
                         }
                         .boxed_local()
-                    }),
+                    })),
                 )
                 .await;
         });
@@ -167,30 +175,35 @@ mod tests {
         let realm = build_power_broker_realm().await?;
         let topology = realm.root.connect_to_protocol_at_exposed_dir()?;
 
+        let (element_runner_client, element_runner) =
+            create_endpoints::<fpb::ElementRunnerMarker>();
         let provider = Arc::new(
-            PowerElementContext::builder(&topology, "Provider", &BINARY_POWER_LEVELS)
-                .build()
-                .await?,
+            PowerElementContext::builder(
+                &topology,
+                "Provider",
+                &BINARY_POWER_LEVELS,
+                element_runner_client,
+            )
+            .build()
+            .await?,
         );
 
         let provider_lock_local = Arc::new(futures::lock::Mutex::new(()));
         let provider_lock = provider_lock_local.clone();
-        let current_level_proxy = provider.current_level.clone();
         let dep_token = provider.assertive_dependency_token().unwrap();
 
         fasync::Task::local(async move {
             provider
                 .run(
+                    element_runner,
                     None,
-                    Box::new(move |power_level| {
+                    Some(Box::new(move |_power_level| {
                         let provider_lock = provider_lock.clone();
-                        let current_level_proxy = current_level_proxy.clone();
                         async move {
                             let _ = provider_lock.lock().await;
-                            current_level_proxy.update(power_level).await.unwrap().unwrap();
                         }
                         .boxed_local()
-                    }),
+                    })),
                 )
                 .await;
         })
