@@ -952,6 +952,7 @@ async fn get_timer_properties(hrtimer: &Box<dyn TimerOps>) -> TimerConfig {
 }
 
 /// The state of a single hardware timer that we must bookkeep.
+#[derive(Debug)]
 struct TimerState {
     // The task waiting for the proximate timer to expire.
     task: fasync::Task<()>,
@@ -1302,7 +1303,7 @@ async fn wake_timer_loop(
             }
             Cmd::UtcUpdated { transform } => {
                 trace::duration!(c"alarms", c"Cmd::UtcUpdated");
-                debug!("wake_timer_loop: applying new clock transform: {transform:?}");
+                log::info!("wake_timer_loop: applying new UTC clock transform: {transform:?}");
 
                 // Assigning to this shared reference updates the deadlines of all
                 // UTC timers.
@@ -1324,7 +1325,10 @@ async fn wake_timer_loop(
                             &timer_config,
                             &schedule_delay_prop,
                         ))),
-                    }
+                    };
+                    log::info!("UtcUpdated: rescheduling the UTC timer: {hrtimer_status:?}");
+                } else {
+                    debug!("UtcUpdated: no hrtimer change needed.");
                 }
             }
         }
