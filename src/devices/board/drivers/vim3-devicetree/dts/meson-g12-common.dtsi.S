@@ -303,7 +303,7 @@
 			pinctrl-0 = <&wifi_lpo_pwm>;
 		};
 
-		usb_phy: phy@ffe09000 {
+		usb_phy: usb-phy@ffe09000 {
 			compatible = "amlogic,g12b-usb-phy";
 			reg = <0x0 A311D_USBCTRL_BASE 0x0 A311D_USBCTRL_LENGTH>,
 				<0x0 A311D_USBPHY20_BASE 0x0 A311D_USBPHY20_LENGTH>,

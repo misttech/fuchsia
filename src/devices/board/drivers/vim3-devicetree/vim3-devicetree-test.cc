@@ -61,7 +61,6 @@ TEST_F(Vim3DevicetreeTest, DevicetreeEnumeration) {
       "sys/platform/mmc-ffe05000",
       "sys/platform/mmc-ffe07000",
       "sys/platform/nna-ff100000",
-      "sys/platform/phy-ffe09000",
       "sys/platform/power-controller",
       "sys/platform/pt",
       "sys/platform/pt/dt-root",
@@ -76,6 +75,7 @@ TEST_F(Vim3DevicetreeTest, DevicetreeEnumeration) {
       "sys/platform/temperature-sensor-ff634c00",
       "sys/platform/usb-ff400000",
       "sys/platform/usb-ff500000",
+      "sys/platform/usb-phy-ffe09000",
       "sys/platform/video-decoder-ffd00000",
       "sys/platform/wifi",
   };

@@ -9,8 +9,6 @@
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>
 
-#include <regex>
-
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
 #include <bind/fuchsia/hardware/usb/phy/cpp/bind.h>
@@ -28,17 +26,11 @@ UsbPhyVisitor::UsbPhyVisitor() {
 }
 
 bool UsbPhyVisitor::is_match(const std::string& name) {
-  // Check that it starts with "usb" and optionally contains a unit address (eg: usb@ffaa0000).
-  std::regex name_regex("^usb(@.*)?");
-  return std::regex_match(name, name_regex);
+  return name.find("usb-phy") != std::string::npos;
 }
 
 zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
                                   const devicetree::PropertyDecoder& decoder) {
-  if (!is_match(node.name())) {
-    return zx::ok();
-  }
-
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Usb visitor parse failed for node '%s' : %s", node.name().c_str(),
@@ -50,15 +42,18 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
   if (phys) {
     auto phy_names = parser_output->Get<std::vector<std::string>>(kPhyNames);
     if (!phy_names) {
-      FDF_LOG(ERROR, "Node '%s' is missing phy-names.", node.name().c_str());
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    if (phy_names->size() != phys->size()) {
-      FDF_LOG(ERROR,
-              "Node '%s' does not have required number of phy-names. Expected (%zu), actual (%zu).",
-              node.name().c_str(), phys->size(), phy_names->size());
-      return zx::error(ZX_ERR_INVALID_ARGS);
+      if (phys->size() > 1) {
+        FDF_LOG(ERROR, "Node '%s' is missing phy-names.", node.name().c_str());
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+    } else {
+      if (phy_names->size() != phys->size()) {
+        FDF_LOG(
+            ERROR,
+            "Node '%s' does not have required number of phy-names. Expected (%zu), actual (%zu).",
+            node.name().c_str(), phys->size(), phy_names->size());
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
     }
 
     for (uint32_t index = 0; index < phys->size(); index++) {
@@ -69,8 +64,12 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
-      auto& name = (*phy_names)[index];
-      auto result = AddChildNodeSpec(node, name);
+      if (!is_match(reference.reference_node().name())) {
+        // This reference is not to a usb-phy.
+        continue;
+      }
+
+      auto result = AddChildNodeSpec(node, phy_names ? (*phy_names)[index] : "");
       if (result.is_error()) {
         return result.take_error();
       }
@@ -84,43 +83,33 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   std::vector bind_rules = {
       fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
                                bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-
   };
   std::vector bind_properties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
                          bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
-                         bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
-                         bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-
   };
 
+  std::optional<uint32_t> did;
   if (phy_name == "xhci-phy") {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(
-        bind_fuchsia::PLATFORM_DEV_DID, bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI));
-    bind_properties.emplace_back(fdf::MakeProperty2(
-        bind_fuchsia::PLATFORM_DEV_DID, bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI));
+    did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI;
   } else if (phy_name == "dwc2-phy") {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(
-        bind_fuchsia::PLATFORM_DEV_DID, bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2));
-    bind_properties.emplace_back(fdf::MakeProperty2(
-        bind_fuchsia::PLATFORM_DEV_DID, bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2));
+    did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2;
   } else if (phy_name == "dwc3-phy") {
-    bind_rules.emplace_back(
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                                 bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3));
-    bind_properties.emplace_back(
-        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
-                           bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3));
-  } else {
-    FDF_LOG(ERROR, "Node '%s' has invalid phy-name '%s'.", child.name().c_str(),
-            std::string(phy_name).c_str());
-    return zx::error(ZX_ERR_INVALID_ARGS);
+    did = bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3;
+  }
+
+  if (did) {
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(
+        bind_fuchsia::PLATFORM_DEV_VID, bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC));
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(
+        bind_fuchsia::PLATFORM_DEV_PID, bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC));
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID, *did));
+
+    bind_properties.emplace_back(fdf::MakeProperty2(
+        bind_fuchsia::PLATFORM_DEV_VID, bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC));
+    bind_properties.emplace_back(fdf::MakeProperty2(
+        bind_fuchsia::PLATFORM_DEV_PID, bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC));
+    bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, *did));
   }
 
   auto phy_node = fuchsia_driver_framework::ParentSpec2{{bind_rules, bind_properties}};

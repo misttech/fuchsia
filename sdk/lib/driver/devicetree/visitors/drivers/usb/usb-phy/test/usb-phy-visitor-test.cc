@@ -47,7 +47,7 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
     auto node = usb_visitor_tester->env().SyncCall(
         &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
 
-    if (node.name()->find("usb") != std::string::npos) {
+    if (node.name()->find("test") != std::string::npos) {
       node_tested_count++;
       auto mgr_request = usb_visitor_tester->env().SyncCall(
           &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
@@ -59,7 +59,7 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
           {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
                                      bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
             fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                     bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+                                     bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
             fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
                                      bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
             fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
@@ -70,7 +70,7 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
               fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
                                  bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
-                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
                                  bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,

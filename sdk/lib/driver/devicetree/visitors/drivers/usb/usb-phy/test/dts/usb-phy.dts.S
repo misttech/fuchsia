@@ -9,13 +9,13 @@
     #address-cells = <2>;
     #size-cells = <2>;
 
-    usb_phy: phy@ff00000 {
+    usb_phy: usb-phy@ff00000 {
         compatible = "test-phy";
         reg = <0x0 0xff00000 0x0 0x2000>;
         #phy-cells = <0>;
     };
 
-    usb@ff400000 {
+    test@ff400000 {
         compatible = "test-controller";
         reg = <0x0 0xff400000 0x0 0x2000>;
         phys = <&usb_phy>;
