@@ -78,4 +78,7 @@ fuchsia_test_component("usercopy-unittests-component") {
 
 fuchsia_test_package("starnix-usercopy-unittests") {
   test_components = [ ":usercopy-unittests-component" ]
+  test_specs = {
+    create_no_exception_channel = true
+  }
 }
