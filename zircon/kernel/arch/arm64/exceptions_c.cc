@@ -274,8 +274,7 @@ void arm64_fpu_handler(iframe_t* iframe, uint exception_flags, uint32_t esr) {
 }
 
 void arm64_instruction_abort_handler(iframe_t* iframe, uint exception_flags, uint32_t esr) {
-  // Read the FAR, stripping any tag.  During an instruction abort the top eight bits are UNKNOWN.
-  uint64_t far = arch_detag_ptr(__arm_rsr64("far_el1"));
+  uint64_t far = __arm_rsr64("far_el1");
   uint32_t ec = BITS_SHIFT(esr, 31, 26);
   uint32_t iss = BITS(esr, 24, 0);
   uint32_t dfsc = BITS(iss, 5, 0);
@@ -289,6 +288,9 @@ void arm64_instruction_abort_handler(iframe_t* iframe, uint exception_flags, uin
     // Any instruction page fault in kernel mode is a bug.
     exception_die(iframe, esr, far, "instruction abort in kernel mode\n");
   }
+
+  // Strip any tag that might be present on the FAR.
+  far = arch_detag_ptr(far);
 
   // Spectre V2: If we took an instruction abort in EL0 but the faulting address is not a user
   // address, invalidate the branch predictor. The $PC may have been updated before the abort is

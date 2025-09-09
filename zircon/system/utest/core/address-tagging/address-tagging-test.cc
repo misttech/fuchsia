@@ -409,19 +409,34 @@ arch::ArmExceptionSyndromeRegister::ExceptionClass GetEC(uint64_t esr) {
 // Making it global static ensures this is in rodata.
 const uint32_t kUdf0 = 0;
 
-TEST(TopByteIgnoreTests, InstructionAbortNoTag) {
-  // Unlike a data abort, instruction aborts on AArch64 will not include the tag in the FAR, so a
-  // tag will never reach the VM layer via an instruction abort. This test verifies the FAR does not
-  // include the tag in this case.
-  uintptr_t pc = AddTagIfNeeded(reinterpret_cast<uintptr_t>(&kUdf0));
-  zx_exception_report_t report = {};
+// A thread entrypoint that simple branches to |arg1|.
+[[gnu::no_sanitize("all")]] [[noreturn]] void BranchTo(uintptr_t arg1, uintptr_t /*arg2*/) {
+  __asm__ volatile("br %0\n" : : "r"(arg1));
+  __builtin_trap();
+}
 
-  ASSERT_NO_FATAL_FAILURE(CatchCrash(reinterpret_cast<crash_function_t>(pc), /*arg1=*/0,
-                                     /*before_start=*/nullptr, &report));
-  EXPECT_EQ(report.header.type, ZX_EXCP_FATAL_PAGE_FAULT);
-  ASSERT_EQ(GetEC(report.context.arch.u.arm_64.esr),
-            arch::ArmExceptionSyndromeRegister::ExceptionClass::kInstructionAbortLowerEl);
-  EXPECT_EQ(report.context.arch.u.arm_64.far, RemoveTag(reinterpret_cast<uintptr_t>(&kUdf0)));
+// This test verifies that the FAR reported by a Zircon exception caused by an instruction abort
+// does not contain a tag.
+TEST(TopByteIgnoreTests, InstructionAbortNoTag) {
+  auto test_with_pc = [](uintptr_t pc) {
+    zx_exception_report_t report = {};
+    ASSERT_NO_FATAL_FAILURE(CatchCrash(BranchTo, pc, nullptr, &report));
+
+    EXPECT_EQ(report.header.type, ZX_EXCP_FATAL_PAGE_FAULT);
+    ASSERT_EQ(GetEC(report.context.arch.u.arm_64.esr),
+              arch::ArmExceptionSyndromeRegister::ExceptionClass::kInstructionAbortLowerEl);
+    EXPECT_EQ(report.context.arch.u.arm_64.far, RemoveTag(reinterpret_cast<uintptr_t>(pc)));
+  };
+
+  // Test with a tagged user address.
+  test_with_pc(AddTagIfNeeded(reinterpret_cast<uintptr_t>(&kUdf0)));
+
+  // Test with a tagged, kernel address.  This value was chosen because we have observed that on
+  // VIM3, branching to this address generates a Data Abort where the FAR contains this value,
+  // verbatim (i.e. the "tag" is present).  We want to verify that Zircon strips the tag.  See
+  // https://fxbug.dev/441337397.
+  const uintptr_t tagged_kernel = 0xffff'ffff'ffff'fff0;
+  test_with_pc(AddTagIfNeeded(reinterpret_cast<uintptr_t>(tagged_kernel)));
 }
 
 [[gnu::no_sanitize("all")]] [[noreturn]] void DoNothing() { zx_thread_exit(); }
