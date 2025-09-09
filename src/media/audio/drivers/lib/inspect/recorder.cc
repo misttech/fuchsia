@@ -33,6 +33,7 @@ RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at)
     : node_(std::move(node)) {
   started_at_ = node_.CreateInt(kStartedAt, started_at.get());
 }
+
 void RunningInterval::RecordStopTime(const zx::time& stopped_at) {
   stopped_at_ = node_.CreateInt(kStoppedAt, stopped_at.get());
 }
@@ -52,6 +53,7 @@ void RingBufferRecorder::RecordStartTime(const zx::time& started_at) {
       running_intervals_root_.CreateChild(std::to_string(running_intervals_.size())), started_at};
   running_intervals_.emplace_back(std::move(running_interval));
 }
+
 void RingBufferRecorder::RecordStopTime(const zx::time& stopped_at) {
   // It's pointless for clients to call Stop before Start, but we shouldn't crash if they do.
   if (!running_intervals_.empty()) {
@@ -78,6 +80,8 @@ RingBufferSpecification::RingBufferSpecification(inspect::Node node, uint64_t el
   element_id_ = node_.CreateUint(kElementId, element_id);
   supports_active_channels_ = node_.CreateBool(kSupportsActiveChannels, supports_active_channels);
   outgoing_ = node_.CreateBool(kIsOutgoingStream, outgoing);
+
+  ring_buffer_inspect_instances_.reserve(kMaxRingBufferInspectInstances);
 }
 
 Recorder::Recorder(inspect::Node& inspect_root) : inspect_root_(inspect_root) {
@@ -114,6 +118,7 @@ void Recorder::RecordSocPowerUp(const zx::time& called_at, const zx::time& compl
       power_transitions_node_.CreateChild(std::to_string(power_transitions_.size())), true,
       called_at, completed_at);
 }
+
 void Recorder::RecordSocPowerDown(const zx::time& called_at, const zx::time& completed_at) {
   if (!current_power_state_) {
     PopulatePowerNodes();

@@ -8,6 +8,8 @@
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 
+#include <format>
+
 namespace audio {
 
 //
@@ -75,16 +77,92 @@ class ActiveChannelsCall {
   inspect::IntProperty completed_at_;
 };
 
+class TaskRecords {
+ public:
+  enum class Type {
+    Startup,
+    Final,
+    Min,
+    Max,
+    Sum,
+  };
+
+  TaskRecords(inspect::Node node, Type type) : node_(std::move(node)), type_(type) {}
+
+  void RecordTaskRecords(std::string_view name, int64_t start_to_start_us, int64_t end_to_end_us,
+                         int64_t wall_time_us, int64_t cpu_time_us, int64_t queue_time_us,
+                         int64_t page_fault_time_us, int64_t kernel_lock_contention_time_us) {
+    auto& task_times = task_times_entries_.emplace_back();
+    task_times.node = node_.CreateChild(name);
+    if (type_ != Type::Sum) {
+      task_times.start_to_start_us =
+          task_times.node.CreateInt("start_to_start_us", start_to_start_us);
+      task_times.end_to_end_us = task_times.node.CreateInt("end_to_end_us", end_to_end_us);
+    }
+    task_times.wall_time_us = task_times.node.CreateInt("wall_time_us", wall_time_us);
+    task_times.cpu_time_us = task_times.node.CreateInt("cpu_time_us", cpu_time_us);
+    task_times.queue_time_us = task_times.node.CreateInt("queue_time_us", queue_time_us);
+    task_times.page_fault_time_us =
+        task_times.node.CreateInt("page_fault_time_us", page_fault_time_us);
+    task_times.kernel_lock_contention_time_us =
+        task_times.node.CreateInt("kernel_lock_contention_time_us", kernel_lock_contention_time_us);
+  }
+
+ private:
+  struct TaskTimes {
+    inspect::Node node;
+    inspect::IntProperty start_to_start_us;
+    inspect::IntProperty end_to_end_us;
+    inspect::IntProperty wall_time_us;
+    inspect::IntProperty cpu_time_us;
+    inspect::IntProperty queue_time_us;
+    inspect::IntProperty page_fault_time_us;
+    inspect::IntProperty kernel_lock_contention_time_us;
+  };
+
+  inspect::Node node_;
+  const Type type_;
+  std::vector<TaskTimes> task_times_entries_;
+};
+
 // Represents an interval during which a RingBuffer instance is started.
 class RunningInterval {
  public:
   RunningInterval(inspect::Node node, const zx::time& started_at);
+
   void RecordStopTime(const zx::time& stopped_at);
+
+  TaskRecords& CreateTaskRecords(TaskRecords::Type type, std::string_view name) {
+    std::optional<TaskRecords>* task_records;
+    switch (type) {
+      case TaskRecords::Type::Startup:
+        task_records = &startup_task_records_;
+        break;
+      case TaskRecords::Type::Final:
+        task_records = &final_task_records_;
+        break;
+      case TaskRecords::Type::Min:
+        task_records = &min_task_records_;
+        break;
+      case TaskRecords::Type::Max:
+        task_records = &max_task_records_;
+        break;
+      case TaskRecords::Type::Sum:
+        task_records = &sum_task_records_;
+        break;
+    }
+    return task_records->emplace(node_.CreateChild(name), type);
+  }
 
  private:
   inspect::Node node_;
   inspect::IntProperty started_at_;
   inspect::IntProperty stopped_at_;
+  std::optional<TaskRecords> startup_task_records_;
+  std::optional<TaskRecords> final_task_records_;
+  std::optional<TaskRecords> min_task_records_;
+  std::optional<TaskRecords> max_task_records_;
+  std::optional<TaskRecords> sum_task_records_;
 };
 
 // One of the primary classes used by an outside class.
@@ -97,6 +175,13 @@ class RingBufferRecorder {
 
   void RecordStartTime(const zx::time& started_at);
   void RecordStopTime(const zx::time& stopped_at);
+
+  TaskRecords* CreateTaskRecords(TaskRecords::Type type, std::string_view name) {
+    if (!running_intervals_.empty()) {
+      return &running_intervals_.rbegin()->CreateTaskRecords(type, name);
+    }
+    return nullptr;
+  }
 
   void RecordActiveChannelsCall(uint64_t active_channels_bitmask, const zx::time& called_at,
                                 const zx::time& completed_at);
@@ -118,15 +203,32 @@ class RingBufferSpecification {
  public:
   RingBufferSpecification(inspect::Node node, uint64_t element_id, bool supports_active_channels,
                           bool outgoing);
-  inspect::Node& node() { return node_; }
-  std::vector<RingBufferRecorder>& instances() { return ring_buffer_inspect_instances_; }
+
+  RingBufferRecorder& CreateRingBufferInspectInstance(const zx::time& created_at) {
+    RingBufferRecorder instance(
+        node_.CreateChild(std::format("instance {}", ring_buffer_instance_count_++)), created_at);
+
+    if (ring_buffer_instance_count_ <= kMaxRingBufferInspectInstances) {
+      return ring_buffer_inspect_instances_.emplace_back(std::move(instance));
+    }
+
+    // Retain (kMaxRingBufferInspectInstances) most recent instances.
+    RingBufferRecorder& existing_slot =
+        ring_buffer_inspect_instances_[(ring_buffer_instance_count_ - 1) %
+                                       kMaxRingBufferInspectInstances];
+    existing_slot = std::move(instance);
+    return existing_slot;
+  }
 
  private:
+  static constexpr size_t kMaxRingBufferInspectInstances = 20;
+
   inspect::Node node_;
   inspect::UintProperty element_id_;
   inspect::BoolProperty supports_active_channels_;
   inspect::BoolProperty outgoing_;
   std::vector<RingBufferRecorder> ring_buffer_inspect_instances_;
+  size_t ring_buffer_instance_count_ = 0;
 };
 
 // One of the primary classes used by an outside class.
@@ -147,9 +249,7 @@ class Recorder final {
     ZX_ASSERT_MSG(it != ring_buffer_specs_.end(), "No ring buffer with id %lu.", element_id);
     RingBufferSpecification& ring_buffer_spec = it->second;
 
-    std::string node_name = "instance " + std::to_string(ring_buffer_spec.instances().size());
-    return ring_buffer_spec.instances().emplace_back(ring_buffer_spec.node().CreateChild(node_name),
-                                                     created_at);
+    return ring_buffer_spec.CreateRingBufferInspectInstance(created_at);
   }
 
  private:
