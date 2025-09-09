@@ -21,16 +21,17 @@ pub struct MonitorCommand {
 pub enum SubCommand {
     Start(StartCommand),
     Stop(StopCommand),
+    Status(StatusCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "start", description = "Start the monitor server")]
-pub struct StartCommand {
-    #[argh(option, short = 'p', default = "8080")]
-    /// the port to listen on
-    pub port: u16,
-}
+pub struct StartCommand {}
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "stop", description = "Stop the monitor server")]
 pub struct StopCommand {}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "status", description = "Check the statuses")]
+pub struct StatusCommand {}
