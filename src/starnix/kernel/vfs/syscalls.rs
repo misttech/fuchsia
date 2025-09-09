@@ -74,7 +74,8 @@ use starnix_uapi::{
     io_uring_register_op_IORING_REGISTER_IOWQ_MAX_WORKERS as IORING_REGISTER_IOWQ_MAX_WORKERS,
     io_uring_register_op_IORING_REGISTER_PBUF_RING as IORING_REGISTER_PBUF_RING,
     io_uring_register_op_IORING_REGISTER_RING_FDS as IORING_REGISTER_RING_FDS,
-    io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS, iocb, off_t,
+    io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS,
+    io_uring_register_op_IORING_UNREGISTER_RING_FDS as IORING_UNREGISTER_RING_FDS, iocb, off_t,
     pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
 };
 use std::cmp::Ordering;
@@ -182,6 +183,12 @@ uapi::check_arch_independent_layout! {
         resv,
         sq_off,
         cq_off,
+    }
+
+    io_uring_rsrc_update {
+        offset,
+        resv,
+        data,
     }
 }
 
@@ -3294,7 +3301,34 @@ pub fn sys_io_uring_register(
                 "io_uring_register IORING_REGISTER_RING_FDS",
                 opcode
             );
-            return error!(EINVAL);
+            // The current implementation doesn't use any thread local specific identifier for
+            // performance. Instead, when registering a fd, just return the passed fd as the value
+            // to use.
+            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
+            if nr_args > 16 {
+                return error!(EINVAL);
+            }
+            let updates_addr = UserRef::<uapi::io_uring_rsrc_update>::from(arg);
+            let mut updates = current_task
+                .read_objects_to_smallvec::<uapi::io_uring_rsrc_update, 1>(updates_addr, nr_args)?;
+            let mut result = 0;
+            for update in updates.iter_mut() {
+                if update.offset == u32::MAX {
+                    update.offset = update.data.try_into().map_err(|_| errno!(EINVAL))?;
+                    result += 1;
+                }
+            }
+            current_task.write_objects(updates_addr, &updates)?;
+            return Ok(result.into());
+        }
+        IORING_UNREGISTER_RING_FDS => {
+            track_stub!(
+                TODO("https://fxbug.dev/297431387"),
+                "io_uring_register IORING_UNREGISTER_RING_FDS",
+                opcode
+            );
+            // Because registering a fd doesn't use any resource currently, unregistering is free.
+            return Ok(SUCCESS);
         }
         IORING_REGISTER_PBUF_RING => {
             track_stub!(
