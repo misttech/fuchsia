@@ -123,10 +123,9 @@ zx_status_t ImportImageForCapture(
 
   const WireBufferCollectionId display_buffer_collection_id =
       ToDisplayFidlBufferCollectionId(buffer_collection_id);
-  const WireImageId fidl_image_id = ToDisplayFidlImageId(image_id);
 
   auto import_image_result = display_coordinator.sync()->ImportImage(
-      image_metadata, display_buffer_collection_id, vmo_idx, fidl_image_id);
+      image_metadata, display_buffer_collection_id, vmo_idx, image_id.ToFidl());
   if (!import_image_result.ok()) {
     FX_LOGS(ERROR) << "ImportImage transport error: " << import_image_result.status_string();
     return import_image_result->error_value();

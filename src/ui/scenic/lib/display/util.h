@@ -56,10 +56,6 @@ inline WireBufferCollectionId ToDisplayFidlBufferCollectionId(
   return {.value = global_buffer_collection_id};
 }
 
-inline WireImageId ToDisplayFidlImageId(allocation::GlobalImageId global_image_id) {
-  return {.value = global_image_id};
-}
-
 }  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_UTIL_H_

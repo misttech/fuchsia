@@ -600,7 +600,7 @@ bool VkRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
   }
 
   if (ImageIsAlreadyRegisteredForUsage(metadata.identifier, usage)) {
-    FX_LOGS(WARNING) << "An image with identifier " << metadata.identifier
+    FX_LOGS(WARNING) << "An image with identifier " << metadata.identifier.value()
                      << " has already been registered for usage: " << static_cast<uint32_t>(usage);
     return false;
   }

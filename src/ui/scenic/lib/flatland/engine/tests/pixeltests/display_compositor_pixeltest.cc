@@ -601,9 +601,8 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     WaitOnVSync();
 
     // This ID would only be zero if we were running in an environment without capture support.
-    EXPECT_NE(capture_image_id, 0U);
-    const display::WireImageId fidl_capture_image_id =
-        display::ToDisplayFidlImageId(capture_image_id);
+    EXPECT_NE(capture_image_id, display::kInvalidImageId);
+    const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
 
     auto display = display_manager_->default_display();
     std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
@@ -853,7 +852,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
 
   // Set up buffer collection and image for display_coordinator capture.
-  allocation::GlobalImageId capture_image_id = allocation::GenerateUniqueBufferCollectionId();
+  allocation::GlobalImageId capture_image_id = allocation::GenerateUniqueImageId();
   fuchsia::sysmem2::BufferCollectionInfo capture_info;
   auto capture_collection_result =
       SetupCapture(kCaptureCollectionId, GetParam(), &capture_info, capture_image_id);
@@ -977,8 +976,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   EXPECT_TRUE(images_are_same);
 
   // Manually clean up the capture since we didn't in CaptureDisplayOutput.
-  const display::WireImageId fidl_capture_image_id =
-      display::ToDisplayFidlImageId(capture_image_id);
+  const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
   const fidl::OneWayStatus release_result =
       display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
   EXPECT_TRUE(release_result.ok())
@@ -1880,8 +1878,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
         EXPECT_TRUE(images_are_same);
 
         // Manually clean up the capture since we didn't in CaptureDisplayOutput.
-        const display::WireImageId fidl_capture_image_id =
-            display::ToDisplayFidlImageId(capture_image_id);
+        const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
         const fidl::OneWayStatus result =
             display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
         EXPECT_TRUE(result.ok()) << "Failed to call FIDL ReleaseImage: " << result.status_string();
@@ -2377,7 +2374,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_TRUE(images_are_same);
 
   // Cleanup.
-  display::WireImageId image_id = display::ToDisplayFidlImageId(capture_image_id);
+  display::WireImageId image_id = capture_image_id.ToFidl();
   const fidl::OneWayStatus release_image_result =
       display_coordinator->sync()->ReleaseImage(image_id);
   EXPECT_TRUE(release_image_result.ok())

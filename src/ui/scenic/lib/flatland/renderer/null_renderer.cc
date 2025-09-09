@@ -134,7 +134,7 @@ bool NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
 }
 
 void NullRenderer::ReleaseBufferImage(allocation::GlobalImageId image_id) {
-  FX_DCHECK(image_id != allocation::kInvalidImageId);
+  FX_DCHECK(image_id != display::kInvalidImageId);
   std::scoped_lock lock(lock_);
   image_map_.erase(image_id);
 }
@@ -152,7 +152,7 @@ void NullRenderer::Render(const allocation::ImageMetadata& render_target,
   std::scoped_lock lock(lock_);
   for (const auto& image : images) {
     auto image_id = image.identifier;
-    FX_DCHECK(image_id != allocation::kInvalidId);
+    FX_DCHECK(image_id != display::kInvalidImageId);
 
     const auto& image_map_itr_ = image_map_.find(image_id);
     FX_DCHECK(image_map_itr_ != image_map_.end());

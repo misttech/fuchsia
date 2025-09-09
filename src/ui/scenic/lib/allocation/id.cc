@@ -9,7 +9,6 @@
 namespace allocation {
 
 const GlobalBufferCollectionId kInvalidId = ZX_KOID_INVALID;
-const GlobalImageId kInvalidImageId = 0;
 
 GlobalBufferCollectionId GenerateUniqueBufferCollectionId() {
   // This function will be called from multiple threads, and thus needs an atomic
@@ -18,10 +17,11 @@ GlobalBufferCollectionId GenerateUniqueBufferCollectionId() {
   return ++buffer_collection_id;
 }
 
-GlobalImageId GenerateUniqueImageId() {
+display::ImageId GenerateUniqueImageId() {
   // This function will be called from multiple threads, and thus needs an atomic
   // incrementor for the id.
-  static std::atomic<GlobalImageId> image_id = 0;
-  return ++image_id;
+  static std::atomic<display::ImageId::ValueType> image_id = 0;
+  return display::ImageId(++image_id);
 }
+
 }  // namespace allocation

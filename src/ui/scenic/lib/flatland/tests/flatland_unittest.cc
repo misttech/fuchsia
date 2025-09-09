@@ -5235,7 +5235,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionHappensAfterCreateImage) {
 // in the other variations.
 TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) {
   allocation::GlobalBufferCollectionId global_collection_id;
-  ContentId global_image_id;
+  display::ImageId global_image_id;
   {
     std::shared_ptr<Allocator> allocator = CreateAllocator();
     std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -5248,7 +5248,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) 
     auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
                                       std::move(ref_pair), std::move(properties));
     global_collection_id = global_id_pair.collection_id;
-    global_image_id = {global_id_pair.image_id};
+    global_image_id = global_id_pair.image_id;
 
     // Release the image.
     flatland->ReleaseImage(kImageId);
@@ -5261,8 +5261,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) 
     RunLoopUntilIdle();
 
     // Present, apply updates, and signal fences so that we can verify that the image is released.
-    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id.value()))
-        .Times(1);
+    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
     {
       PRESENT_WITH_ARGS(flatland, PresentArgs{}, true);
     }
@@ -5270,8 +5269,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) 
 
     // |flatland| is about to fall out of scope.  Ensure that no image is released, because it
     // always was earlier..
-    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id.value()))
-        .Times(0);
+    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(0);
   }
 }
 
@@ -5280,7 +5278,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction1) 
 // verifies that we don't call ReleaseBufferImage() twice for the same image.
 TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) {
   allocation::GlobalBufferCollectionId global_collection_id;
-  ContentId global_image_id;
+  display::ImageId global_image_id;
   {
     std::shared_ptr<Allocator> allocator = CreateAllocator();
     std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -5293,7 +5291,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) 
     auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
                                       std::move(ref_pair), std::move(properties));
     global_collection_id = global_id_pair.collection_id;
-    global_image_id = {global_id_pair.image_id};
+    global_image_id = global_id_pair.image_id;
 
     // Release the image.
     flatland->ReleaseImage(kImageId);
@@ -5306,8 +5304,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) 
     RunLoopUntilIdle();
 
     // Skip session updates to test that release fences are what trigger the importer calls.
-    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id.value()))
-        .Times(0);
+    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(0);
     PresentArgs args;
     args.skip_session_update_and_release_fences = true;
     {
@@ -5315,8 +5312,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) 
     }
 
     // |flatland| is about to fall out of scope.  Ensure that the images is released.
-    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id.value()))
-        .Times(1);
+    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
   }
 }
 
@@ -5325,7 +5321,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction2) 
 // destroyed.
 TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) {
   allocation::GlobalBufferCollectionId global_collection_id;
-  ContentId global_image_id;
+  display::ImageId global_image_id;
   {
     std::shared_ptr<Allocator> allocator = CreateAllocator();
     std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -5338,7 +5334,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) 
     auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
                                       std::move(ref_pair), std::move(properties));
     global_collection_id = global_id_pair.collection_id;
-    global_image_id = {global_id_pair.image_id};
+    global_image_id = global_id_pair.image_id;
 
     // Release the buffer collection.
 
@@ -5348,8 +5344,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) 
     RunLoopUntilIdle();
 
     // Skip session updates to test that release fences are what trigger the importer calls.
-    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id.value()))
-        .Times(0);
+    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(0);
     PresentArgs args;
     args.skip_session_update_and_release_fences = true;
     {
@@ -5357,8 +5352,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionCompletesAfterFlatlandDestruction3) 
     }
 
     // |flatland| is about to fall out of scope.  Ensure that the image is released.
-    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id.value()))
-        .Times(1);
+    EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
   }
 }
 
@@ -5786,8 +5780,8 @@ TEST_F(FlatlandTest, ClearReleasesImagesAndBufferCollections) {
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id1, _))
       .Times(1);
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(1)).Times(1);
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(2)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(display::ImageId(1))).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(display::ImageId(2))).Times(1);
 
   PRESENT(flatland, true);
 

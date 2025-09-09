@@ -425,7 +425,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
               // when the Flatland session is being torn down, if this runs after the session is
               // destroyed, but before the session's loop/thread is stopped.
               FX_LOGS(WARNING) << "Flatland session << " << session_id
-                               << " did not find expected image " << image_id
+                               << " did not find expected image " << image_id.value()
                                << " in images_to_release_";
               continue;
             }

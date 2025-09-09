@@ -423,7 +423,7 @@ TEST_F(DisplayCompositorTest,
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce([](...) { return true; });
   ASSERT_TRUE(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
-                    .identifier = 1,
+                    .identifier = display::ImageId(1),
                     .vmo_index = 0,
                     .width = 1,
                     .height = 1},
@@ -539,7 +539,7 @@ TEST_F(DisplayCompositorTest,
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce([](...) { return true; });
   ASSERT_TRUE(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
-                    .identifier = 1,
+                    .identifier = display::ImageId(1),
                     .vmo_index = 0,
                     .width = 1,
                     .height = 1},
@@ -611,7 +611,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce([](...) { return true; });
   ASSERT_TRUE(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
-                    .identifier = 1,
+                    .identifier = display::ImageId(1),
                     .vmo_index = 0,
                     .width = 1,
                     .height = 1},
@@ -729,8 +729,7 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
   display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
 
   // Release buffer collection. Make sure that does not release Image.
-  const display::WireImageId kFidlImageId =
-      display::ToDisplayFidlImageId(image_metadata.identifier);
+  const display::WireImageId kFidlImageId = image_metadata.identifier.ToFidl();
   EXPECT_CALL(*mock_display_coordinator_,
               ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(kFidlImageId)), _))
       .Times(0);
@@ -755,7 +754,7 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   const allocation::GlobalImageId kImageId = allocation::GenerateUniqueImageId();
-  const display::WireImageId kFidlImageId = display::ToDisplayFidlImageId(kImageId);
+  const display::WireImageId kFidlImageId = kImageId.ToFidl();
   const uint32_t kVmoCount = 2;
   const uint32_t kVmoIdx = 1;
   const uint32_t kMaxWidth = 100;
@@ -874,7 +873,7 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
                           _))
       .Times(0);
   copy_metadata = metadata;
-  copy_metadata.identifier = allocation::kInvalidImageId;
+  copy_metadata.identifier = display::kInvalidImageId;
   result =
       display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage);
   EXPECT_FALSE(result);
@@ -1072,8 +1071,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
                                               std::nullopt);
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
-  const display::WireImageId fidl_parent_image_id =
-      display::ToDisplayFidlImageId(parent_image_metadata.identifier);
+  const display::WireImageId fidl_parent_image_id = parent_image_metadata.identifier.ToFidl();
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
                               MatchRequestField(ImportImage, buffer_collection_id,
@@ -1091,8 +1089,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   display_compositor_->ImportBufferImage(parent_image_metadata,
                                          BufferCollectionUsage::kClientImage);
 
-  const display::WireImageId fidl_child_image_id =
-      display::ToDisplayFidlImageId(child_image_metadata.identifier);
+  const display::WireImageId fidl_child_image_id = child_image_metadata.identifier.ToFidl();
 
   EXPECT_CALL(
       *mock_display_coordinator_,
@@ -1139,9 +1136,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       .WillOnce(Return());
 
   // Make sure each layer has all of its components set properly.
-  display::WireImageId fidl_image_ids[] = {
-      display::ToDisplayFidlImageId(child_image_metadata.identifier),
-      display::ToDisplayFidlImageId(parent_image_metadata.identifier)};
+  display::WireImageId fidl_image_ids[] = {child_image_metadata.identifier.ToFidl(),
+                                           parent_image_metadata.identifier.ToFidl()};
   for (uint32_t i = 0; i < 2; i++) {
     EXPECT_CALL(
         *mock_display_coordinator_,
@@ -1295,8 +1291,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
                                               std::nullopt);
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
-  const display::WireImageId fidl_parent_image_id =
-      display::ToDisplayFidlImageId(parent_image_metadata.identifier);
+  const display::WireImageId fidl_parent_image_id = parent_image_metadata.identifier.ToFidl();
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
                               MatchRequestField(ImportImage, buffer_collection_id,
@@ -1345,8 +1340,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
       .Times(1)
       .WillOnce(Return());
 
-  const display::WireImageId fidl_collection_image_id =
-      display::ToDisplayFidlImageId(parent_image_metadata.identifier);
+  const display::WireImageId fidl_collection_image_id = parent_image_metadata.identifier.ToFidl();
   EXPECT_CALL(
       *mock_display_coordinator_,
       SetLayerPrimaryConfig(MatchRequestField(SetLayerPrimaryConfig, layer_id, Eq(layers[0])), _))

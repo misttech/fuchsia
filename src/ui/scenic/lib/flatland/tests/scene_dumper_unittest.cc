@@ -523,7 +523,7 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
     ImageMetadata image;
     image.width = 800;
     image.height = 600;
-    image.identifier = 1;
+    image.identifier = display::ImageId(1);
     uber_struct->images.insert(std::make_pair(v[0].handle, image));
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }

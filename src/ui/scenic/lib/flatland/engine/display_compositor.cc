@@ -166,7 +166,7 @@ CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
 
 // Returns whether |metadata| describes a valid image.
 bool IsValidBufferImage(const allocation::ImageMetadata& metadata) {
-  if (metadata.identifier == 0) {
+  if (metadata.identifier == display::kInvalidImageId) {
     FX_LOGS(ERROR) << "ImageMetadata identifier is invalid.";
     return false;
   }
@@ -447,9 +447,8 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
   }
 
   const display::WireImageMetadata image_metadata = CreateImageMetadata(metadata);
-  const display::WireImageId fidl_image_id = display::ToDisplayFidlImageId(metadata.identifier);
   const auto import_image_result = display_coordinator_.sync()->ImportImage(
-      image_metadata, display_collection_id, metadata.vmo_index, fidl_image_id);
+      image_metadata, display_collection_id, metadata.vmo_index, metadata.identifier.ToFidl());
   if (!import_image_result.ok()) {
     FX_LOGS(ERROR) << "ImportImage transport error: " << import_image_result.status_string();
     return false;
@@ -471,13 +470,12 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
 
   renderer_->ReleaseBufferImage(image_id);
 
-  const display::WireImageId fidl_image_id = display::ToDisplayFidlImageId(image_id);
   std::scoped_lock lock(lock_);
 
   if (display_imported_images_.erase(image_id) == 1) {
     FX_DCHECK(display_coordinator_.is_valid());
 
-    fidl::OneWayStatus result = display_coordinator_->ReleaseImage(fidl_image_id);
+    fidl::OneWayStatus result = display_coordinator_->ReleaseImage(image_id.ToFidl());
     if (!result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL ReleaseImage method: " << result.status_string();
     }
@@ -690,9 +688,8 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
       << set_layer_primary_alpha_result.status_string();
 
   // Set the imported image on the layer.
-  const display::WireImageId image_id = display::ToDisplayFidlImageId(image.identifier);
-  const fidl::OneWayStatus set_layer_image_result =
-      display_coordinator_.sync()->SetLayerImage2(layer_id.ToFidl(), image_id, wait_id.ToFidl());
+  const fidl::OneWayStatus set_layer_image_result = display_coordinator_.sync()->SetLayerImage2(
+      layer_id.ToFidl(), image.identifier.ToFidl(), wait_id.ToFidl());
   FX_DCHECK(set_layer_image_result.ok())
       << "Failed to call FIDL SetLayerImage2 method: " << set_layer_image_result.status_string();
 }

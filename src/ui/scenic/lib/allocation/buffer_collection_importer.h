@@ -32,7 +32,7 @@ struct ImageMetadata {
   GlobalBufferCollectionId collection_id = kInvalidId;
 
   // The unique ID for this particular image.
-  GlobalImageId identifier = kInvalidImageId;
+  display::ImageId identifier = display::kInvalidImageId;
 
   // A single buffer collection may have several vmos. This tells the importer
   // which vmo in the collection specified by |collection_id| to use as the memory
@@ -61,10 +61,10 @@ struct ImageMetadata {
 };
 
 inline std::ostream& operator<<(std::ostream& str, const ImageMetadata& m) {
-  str << "size=" << (m.collection_id == kInvalidImageId ? 1 : m.width) << "x"
-      << (m.collection_id == kInvalidImageId ? 1 : m.height) << "  multiply_color=("
+  str << "size=" << (m.collection_id == kInvalidId ? 1 : m.width) << "x"
+      << (m.collection_id == kInvalidId ? 1 : m.height) << "  multiply_color=("
       << m.multiply_color[0] << "," << m.multiply_color[1] << "," << m.multiply_color[2] << ","
-      << m.multiply_color[3] << ")" << (m.collection_id == kInvalidImageId ? " (Solid Color)" : "")
+      << m.multiply_color[3] << ")" << (m.collection_id == kInvalidId ? " (Solid Color)" : "")
       << "  blend_mode=" << m.blend_mode;
   return str;
 }

@@ -850,7 +850,7 @@ TEST(ImageRectTest, MultipleParentTest) {
   const flatland::HitRegion kHitRegion({.x = 1, .y = 2, .width = 10, .height = 20});
   const float kScale = 2.0f;
 
-  const uint32_t kImageId = 7;
+  const display::ImageId kImageId(7);
   uber_struct->local_topology = {{{1, 0}, 2}, {{1, 1}, 1}, {{1, 4}, 0}, {{1, 3}, 1}, {{1, 4}, 0}};
   uber_struct->local_matrices[{1, 3}] = glm::mat3(kScale);
   uber_struct->images[{1, 4}].identifier = kImageId;
@@ -1294,13 +1294,13 @@ TEST(GlobalCullRectanglesTest, EmptySizeTest) {
   GlobalImageVector images;
   images.resize(3);
   for (uint32_t i = 0; i < images.size(); i++) {
-    images[i].identifier = i;
+    images[i].identifier = display::ImageId(i);
   }
 
   CullRectanglesInPlace(&rects, &images, display_width, display_height);
   EXPECT_EQ(rects.size(), 1U);
   EXPECT_EQ(images.size(), 1U);
-  EXPECT_EQ(images[0].identifier, 1U);
+  EXPECT_EQ(images[0].identifier, display::ImageId(1));
   EXPECT_EQ(rects[0], ImageRect(glm::vec2(0, 0), glm::vec2(20, 20)));
 }
 
@@ -1312,12 +1312,12 @@ TEST(GlobalCullRectanglesTest, SingleTest) {
   GlobalRectangleVector rects = {
       ImageRect(glm::vec2(0, 0), glm::vec2(display_width, display_height))};
   GlobalImageVector images = {allocation::ImageMetadata()};
-  images[0].identifier = 20;
+  images[0].identifier = display::ImageId(20);
 
   CullRectanglesInPlace(&rects, &images, display_width, display_height);
   EXPECT_EQ(rects.size(), 1U);
   EXPECT_EQ(images.size(), 1U);
-  EXPECT_EQ(images[0].identifier, 20U);
+  EXPECT_EQ(images[0].identifier, display::ImageId(20));
   EXPECT_EQ(rects[0], ImageRect(glm::vec2(0, 0), glm::vec2(display_width, display_height)));
 }
 
@@ -1333,12 +1333,12 @@ TEST(GlobalCullRectanglesTest, FullScreenRectIsLast) {
       ImageRect(glm::vec2(0, 0), glm::vec2(display_width, display_height))};
   GlobalImageVector images = {allocation::ImageMetadata(), allocation::ImageMetadata(),
                               allocation::ImageMetadata()};
-  images[2].identifier = 2;
+  images[2].identifier = display::ImageId(2);
 
   CullRectanglesInPlace(&rects, &images, display_width, display_height);
   EXPECT_EQ(rects.size(), 1U);
   EXPECT_EQ(images.size(), 1U);
-  EXPECT_EQ(images[0].identifier, 2U);
+  EXPECT_EQ(images[0].identifier, display::ImageId(2));
   EXPECT_EQ(rects[0], ImageRect(glm::vec2(0, 0), glm::vec2(display_width, display_height)));
 }
 
@@ -1354,7 +1354,7 @@ TEST(GlobalCullRectanglesTest, FullScreenRectIsFirst) {
   GlobalImageVector images = {allocation::ImageMetadata(), allocation::ImageMetadata(),
                               allocation::ImageMetadata()};
   for (uint32_t i = 0; i < images.size(); i++) {
-    images[i].identifier = i;
+    images[i].identifier = display::ImageId(i);
   }
 
   auto expected_rects = rects;
@@ -1381,8 +1381,8 @@ TEST(GlobalCullRectanglesTest, FullScreenRectIsMiddle) {
       ImageRect(glm::vec2(60, 100), glm::vec2(300, 200))};
   GlobalImageVector images = {allocation::ImageMetadata(), allocation::ImageMetadata(),
                               allocation::ImageMetadata()};
-  images[1].identifier = 3;
-  images[2].identifier = 5;
+  images[1].identifier = display::ImageId(3);
+  images[2].identifier = display::ImageId(5);
 
   GlobalRectangleVector expected_rects = {
       ImageRect(glm::vec2(0, 0), glm::vec2(display_width, display_height)),
@@ -1418,8 +1418,8 @@ TEST(GlobalCullRectanglesTest, MultipleFullScreenRects) {
                               allocation::ImageMetadata(), allocation::ImageMetadata(),
                               allocation::ImageMetadata(), allocation::ImageMetadata(),
                               allocation::ImageMetadata(), allocation::ImageMetadata()};
-  images[6].identifier = 6;
-  images[7].identifier = 7;
+  images[6].identifier = display::ImageId(6);
+  images[7].identifier = display::ImageId(7);
 
   GlobalRectangleVector expected_rects = {
       ImageRect(glm::vec2(0, 0), glm::vec2(display_width, display_height)),
@@ -1463,7 +1463,7 @@ TEST(GlobalCullRectanglesTest, MultipleFullScreenRectsWithTransparency) {
                               transparent_image_data,      allocation::ImageMetadata()};
 
   for (uint32_t i = 0; i < images.size(); i++) {
-    images[i].identifier = i;
+    images[i].identifier = display::ImageId(i);
   }
 
   GlobalRectangleVector expected_rects = {

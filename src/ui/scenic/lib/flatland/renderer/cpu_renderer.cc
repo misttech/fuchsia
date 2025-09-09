@@ -103,7 +103,7 @@ bool CpuRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
   }
 
   // The metadata can't have an invalid identifier.
-  if (metadata.identifier == allocation::kInvalidImageId) {
+  if (metadata.identifier == display::kInvalidImageId) {
     FX_LOGS(WARNING) << "Image has invalid identifier.";
     return false;
   }
@@ -160,7 +160,7 @@ bool CpuRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
 }
 
 void CpuRenderer::ReleaseBufferImage(allocation::GlobalImageId image_id) {
-  FX_DCHECK(image_id != allocation::kInvalidImageId);
+  FX_DCHECK(image_id != display::kInvalidImageId);
   std::scoped_lock lock(lock_);
   image_map_.erase(image_id);
 }
@@ -196,9 +196,9 @@ void CpuRenderer::Render(const allocation::ImageMetadata& render_target,
 
     constexpr uint64_t kBytesPerPixel = 4;
 
-    // |allocation::kInvalidImageId| indicates solid fill color. Create and fill vmo for common ops.
+    // |display::kInvalidImageId| indicates solid fill color. Create and fill vmo for common ops.
     // TODO(https://fxbug.dev/406903965): this is inefficient.
-    if (image_id == allocation::kInvalidImageId) {
+    if (image_id == display::kInvalidImageId) {
       image.width = rectangle_width;
       image.height = rectangle_height;
       fuchsia::sysmem2::ImageFormatConstraints constraints;
@@ -215,7 +215,7 @@ void CpuRenderer::Render(const allocation::ImageMetadata& render_target,
                              static_cast<uint8_t>(255 * image.multiply_color[i % kBytesPerPixel]);
                        }
                      });
-      image_map_[allocation::kInvalidImageId] =
+      image_map_[display::kInvalidImageId] =
           std::make_pair(std::move(solid_fill_vmo), std::move(constraints));
     }
 
@@ -229,7 +229,7 @@ void CpuRenderer::Render(const allocation::ImageMetadata& render_target,
 
     const auto& image_map_itr_ = image_map_.find(image_id);
     // Dereferencing the end marker later is UB, so better fail right here.
-    FX_CHECK(image_map_itr_ != image_map_.end()) << "not found image_id: " << image_id;
+    FX_CHECK(image_map_itr_ != image_map_.end()) << "not found image_id: " << image_id.value();
     const auto& image_constraints = image_map_itr_->second.second;
 
     // Make sure the image conforms to the constraints of the collection.
@@ -237,7 +237,7 @@ void CpuRenderer::Render(const allocation::ImageMetadata& render_target,
     FX_CHECK(image.height <= image_constraints.max_size().height);
 
     auto render_target_id = render_target.identifier;
-    FX_CHECK(render_target_id != allocation::kInvalidId);
+    FX_CHECK(render_target_id != display::kInvalidImageId);
     const auto& render_target_map_itr_ = image_map_.find(render_target_id);
     FX_CHECK(render_target_map_itr_ != image_map_.end());
     const auto& render_target_constraints = render_target_map_itr_->second.second;

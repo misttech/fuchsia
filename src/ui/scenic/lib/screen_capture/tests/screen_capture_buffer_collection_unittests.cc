@@ -122,7 +122,7 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage) {
   metadata.height = kHeight;
   metadata.vmo_index = 0;
   metadata.collection_id = collection_id;
-  metadata.identifier = 1;
+  metadata.identifier = display::ImageId(1);
 
   // Verify image has been imported correctly.
   bool success = importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);

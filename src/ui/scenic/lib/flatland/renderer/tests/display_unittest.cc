@@ -253,7 +253,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   allocation::GlobalImageId display_image_id = allocation::GenerateUniqueImageId();
 
   const auto import_image_result = display_coordinator->sync()->ImportImage(
-      image_metadata, display_collection_id, 0, display::ToDisplayFidlImageId(display_image_id));
+      image_metadata, display_collection_id, 0, display_image_id.ToFidl());
   ASSERT_TRUE(import_image_result.ok())
       << "Failed to call FIDL ImportImage: " << import_image_result.status_string();
   EXPECT_TRUE(import_image_result->is_ok())
@@ -314,13 +314,13 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   for (uint32_t i = 0; i < kNumVmos; i++) {
     image_ids[i] = allocation::GenerateUniqueImageId();
     const auto import_image_result = display_coordinator->sync()->ImportImage(
-        image_metadata, display_collection_id, i, display::ToDisplayFidlImageId(image_ids[i]));
+        image_metadata, display_collection_id, i, image_ids[i].ToFidl());
     ASSERT_TRUE(import_image_result.ok())
         << "Failed to call FIDL ImportImage: " << import_image_result.status_string();
     ASSERT_TRUE(import_image_result->is_ok())
         << "Failed to call ImportImage: "
         << zx_status_get_string(import_image_result->error_value());
-    ASSERT_NE(image_ids[i], fuchsia_hardware_display_types::kInvalidDispId);
+    ASSERT_NE(image_ids[i], display::kInvalidImageId);
   }
 
   // It is safe to release buffer collection because we are not going to import any more images.
@@ -349,8 +349,8 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   static const display::WireEventId kInvalidEventId = {
       .value = fuchsia_hardware_display_types::kInvalidDispId,
   };
-  const fidl::OneWayStatus set_layer_image_result = display_coordinator->sync()->SetLayerImage2(
-      layer_id, display::ToDisplayFidlImageId(image_ids[0]), kInvalidEventId);
+  const fidl::OneWayStatus set_layer_image_result =
+      display_coordinator->sync()->SetLayerImage2(layer_id, image_ids[0].ToFidl(), kInvalidEventId);
   EXPECT_TRUE(set_layer_image_result.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result.status_string();
 
@@ -378,7 +378,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   // Set the layer image again, to the second image, so that our first call to SetLayerImage2()
   // above will signal.
   const fidl::OneWayStatus set_layer_image_result2 = display_coordinator->sync()->SetLayerImage2(
-      layer_id, display::ToDisplayFidlImageId(image_ids[1]), display_wait_event_id.ToFidl());
+      layer_id, image_ids[1].ToFidl(), display_wait_event_id.ToFidl());
   EXPECT_TRUE(set_layer_image_result2.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result2.status_string();
 
