@@ -19,7 +19,7 @@ impl StatusCode {
 
 impl From<fidl_ieee80211::StatusCode> for StatusCode {
     fn from(fidl_status_code: fidl_ieee80211::StatusCode) -> StatusCode {
-        StatusCode(fidl_status_code as u16)
+        StatusCode(fidl_status_code.into_primitive())
     }
 }
 

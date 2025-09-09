@@ -1126,7 +1126,7 @@
     {
         "kind": "enum",
         "name": "fuchsia.wlan.ieee80211/StatusCode",
-        "strictness": "strict",
+        "strictness": "flexible",
         "type": "uint16"
     },
     {

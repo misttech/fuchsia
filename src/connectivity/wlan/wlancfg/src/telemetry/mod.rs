@@ -2402,7 +2402,7 @@ impl StatsLogger {
                     } else {
                         metrics::CONNECT_ATTEMPT_ON_NORMAL_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID
                     },
-                    event_codes: vec![*status_code as u32],
+                    event_codes: vec![(*status_code).into_primitive() as u32],
                     payload: MetricEventPayload::Count(*count),
                 });
             }
@@ -2976,7 +2976,7 @@ impl StatsLogger {
 
         metric_events.push(MetricEvent {
             metric_id: metrics::CONNECT_ATTEMPT_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-            event_codes: vec![code as u32],
+            event_codes: vec![code.into_primitive() as u32],
             payload: MetricEventPayload::Count(1),
         });
 
@@ -5302,7 +5302,10 @@ mod tests {
             metrics::CONNECT_ATTEMPT_ON_NORMAL_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
         );
         assert_eq!(status_codes.len(), 1);
-        assert_eq!(status_codes[0].event_codes, vec![fidl_ieee80211::StatusCode::Success as u32]);
+        assert_eq!(
+            status_codes[0].event_codes,
+            vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32]
+        );
         assert_eq!(status_codes[0].payload, MetricEventPayload::Count(10));
 
         test_helper.cobalt_events.clear();
@@ -5315,7 +5318,10 @@ mod tests {
             metrics::CONNECT_ATTEMPT_ON_NORMAL_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
         );
         assert_eq!(status_codes.len(), 1);
-        assert_eq!(status_codes[0].event_codes, vec![fidl_ieee80211::StatusCode::Success as u32]);
+        assert_eq!(
+            status_codes[0].event_codes,
+            vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32]
+        );
         assert_eq!(status_codes[0].payload, MetricEventPayload::Count(1));
     }
 
@@ -7482,7 +7488,7 @@ mod tests {
         assert_eq!(breakdowns_by_status_code.len(), 1);
         assert_eq!(
             breakdowns_by_status_code[0].event_codes,
-            vec![fidl_ieee80211::StatusCode::Success as u32]
+            vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32]
         );
         assert_eq!(breakdowns_by_status_code[0].payload, MetricEventPayload::Count(1));
 
@@ -7561,7 +7567,7 @@ mod tests {
         assert_eq!(breakdowns_by_status_code.len(), 1);
         assert_eq!(
             breakdowns_by_status_code[0].event_codes,
-            vec![fidl_ieee80211::StatusCode::RefusedCapabilitiesMismatch as u32]
+            vec![fidl_ieee80211::StatusCode::RefusedCapabilitiesMismatch.into_primitive() as u32]
         );
     }
 
@@ -7594,13 +7600,16 @@ mod tests {
                 MetricEvent {
                     metric_id:
                         metrics::CONNECT_ATTEMPT_ON_NORMAL_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-                    event_codes: vec![fidl_ieee80211::StatusCode::Success as u32],
+                    event_codes: vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32],
                     payload: MetricEventPayload::Count(1),
                 },
                 MetricEvent {
                     metric_id:
                         metrics::CONNECT_ATTEMPT_ON_NORMAL_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-                    event_codes: vec![fidl_ieee80211::StatusCode::RefusedReasonUnspecified as u32],
+                    event_codes: vec![
+                        fidl_ieee80211::StatusCode::RefusedReasonUnspecified.into_primitive()
+                            as u32,
+                    ],
                     payload: MetricEventPayload::Count(3),
                 },
             ],
@@ -7636,13 +7645,16 @@ mod tests {
                 MetricEvent {
                     metric_id:
                         metrics::CONNECT_ATTEMPT_ON_BAD_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-                    event_codes: vec![fidl_ieee80211::StatusCode::Success as u32],
+                    event_codes: vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32],
                     payload: MetricEventPayload::Count(1),
                 },
                 MetricEvent {
                     metric_id:
                         metrics::CONNECT_ATTEMPT_ON_BAD_DEVICE_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-                    event_codes: vec![fidl_ieee80211::StatusCode::RefusedReasonUnspecified as u32],
+                    event_codes: vec![
+                        fidl_ieee80211::StatusCode::RefusedReasonUnspecified.into_primitive()
+                            as u32,
+                    ],
                     payload: MetricEventPayload::Count(10),
                 },
             ],

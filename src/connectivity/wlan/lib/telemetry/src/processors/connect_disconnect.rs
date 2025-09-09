@@ -12,8 +12,8 @@ use fuchsia_inspect_contrib::nodes::{BoundedListNode, LruCacheNode};
 use fuchsia_inspect_contrib::{inspect_insert, inspect_log};
 use fuchsia_inspect_derive::Unit;
 use fuchsia_sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
 use windowed_stats::experimental::clock::Timed;
 use windowed_stats::experimental::series::interpolation::{Constant, LastSample};
@@ -264,7 +264,7 @@ impl ConnectDisconnectLogger {
         let mut metric_events = vec![];
         metric_events.push(MetricEvent {
             metric_id: metrics::CONNECT_ATTEMPT_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-            event_codes: vec![result as u32],
+            event_codes: vec![result.into_primitive() as u32],
             payload: MetricEventPayload::Count(1),
         });
 
@@ -538,7 +538,7 @@ mod tests {
     use super::*;
     use crate::testing::*;
     use diagnostics_assertions::{
-        assert_data_tree, AnyBoolProperty, AnyBytesProperty, AnyNumericProperty, AnyStringProperty,
+        AnyBoolProperty, AnyBytesProperty, AnyNumericProperty, AnyStringProperty, assert_data_tree,
     };
 
     use futures::task::Poll;
@@ -633,9 +633,9 @@ mod tests {
 
         // Log the event
         let bss_description = random_bss_description!();
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -695,9 +695,9 @@ mod tests {
         );
 
         // Log the event
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -709,7 +709,7 @@ mod tests {
         assert_eq!(breakdowns_by_status_code.len(), 1);
         assert_eq!(
             breakdowns_by_status_code[0].event_codes,
-            vec![fidl_ieee80211::StatusCode::Success as u32]
+            vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32]
         );
         assert_eq!(breakdowns_by_status_code[0].payload, MetricEventPayload::Count(1));
     }
@@ -727,9 +727,9 @@ mod tests {
         );
 
         let bss_description = random_bss_description!(Wpa2);
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -771,9 +771,9 @@ mod tests {
             test_helper.get_logged_metrics(metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID);
         assert!(metrics.is_empty());
 
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -786,9 +786,9 @@ mod tests {
 
         // Verify subsequent successes would report 0 failures
         test_helper.clear_cobalt_events();
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -1160,9 +1160,9 @@ mod tests {
         // Connect at 15th second
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(15_000_000_000));
         let bss_description = random_bss_description!(Wpa2);
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -1183,9 +1183,9 @@ mod tests {
 
         // Reconnect at 60th second
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(60_000_000_000));
-        let mut test_fut =
-            pin!(logger
-                .handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description));
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())

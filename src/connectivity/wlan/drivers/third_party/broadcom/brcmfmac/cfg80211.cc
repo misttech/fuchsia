@@ -5910,7 +5910,8 @@ static zx_status_t brcmf_bss_roam_done(brcmf_if* ifp, brcmf_connect_status_t con
       }
       default: {
         BRCMF_WARN("Reassociation failed with connect_status %s, status_code %d",
-                   brcmf_get_connect_status_str(connect_status), static_cast<int>(status_code));
+                   brcmf_get_connect_status_str(connect_status),
+                   static_cast<int>(fidl::ToUnderlying(status_code)));
         BRCMF_INFO("Reassociation failed, need to reset firmware state.");
         const zx_status_t err = brcmf_clear_firmware_connection_state(ifp);
         if (err != ZX_OK) {
@@ -6603,7 +6604,8 @@ static zx_status_t brcmf_bss_connect_done(brcmf_if* ifp, brcmf_connect_status_t 
       }
       default: {
         BRCMF_WARN("Unsuccessful connection: connect_status %s, assoc_result %d",
-                   brcmf_get_connect_status_str(connect_status), static_cast<int>(assoc_result));
+                   brcmf_get_connect_status_str(connect_status),
+                   static_cast<int>(fidl::ToUnderlying(assoc_result)));
         const zx_status_t err = brcmf_clear_firmware_connection_state(ifp);
         if (err != ZX_OK) {
           BRCMF_ERR("Failed to clear firmware connection state.");

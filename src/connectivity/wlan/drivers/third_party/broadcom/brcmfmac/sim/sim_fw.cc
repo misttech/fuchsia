@@ -442,7 +442,8 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
   uint16_t flags;
   if (err_inj_.CheckIfErrEventInjCmdEnabled(dcmd->cmd, ecode, estatus, reason, flags, ifidx)) {
     SendEventToDriver(0, nullptr, ecode, estatus, ifidx, nullptr, flags,
-                      static_cast<uint16_t>(reason), kZeroMac, kAssocEventDelay);
+                      static_cast<uint16_t>(fidl::ToUnderlying(reason)), kZeroMac,
+                      kAssocEventDelay);
     return ZX_OK;
   }
 
@@ -1298,7 +1299,7 @@ void SimFirmware::AssocHandleFailure(wlan_ieee80211_wire::StatusCode status) {
       auth_state_.sec_type == simulation::SEC_PROTO_TYPE_WPA3) {
     BRCMF_DBG(SIM, "Assoc failed. Send E_SET_SSID with failure");
     SendEventToDriver(0, nullptr, BRCMF_E_ASSOC, BRCMF_E_STATUS_FAIL, kClientIfidx, nullptr, 0,
-                      static_cast<uint32_t>(status), assoc_state_.opts->bssid);
+                      static_cast<uint32_t>(fidl::ToUnderlying(status)), assoc_state_.opts->bssid);
     SendEventToDriver(0, nullptr, BRCMF_E_SET_SSID, BRCMF_E_STATUS_FAIL, kClientIfidx);
     AssocClearContext();
   } else {
@@ -1516,7 +1517,8 @@ void SimFirmware::HandleAuthResp(std::shared_ptr<const simulation::SimAuthFrame>
         BRCMF_DBG(SIM, "Auth shared challenge failure, Handle failure");
         SendEventToDriver(0, nullptr, BRCMF_E_AUTH, BRCMF_E_STATUS_FAIL, kClientIfidx, nullptr,
                           0,  // TODO: determine what the flags should be
-                          static_cast<uint32_t>(frame->status_), frame->src_addr_);
+                          static_cast<uint32_t>(fidl::ToUnderlying(frame->status_)),
+                          frame->src_addr_);
         AssocHandleFailure(frame->status_);
         return;
       }
@@ -2247,7 +2249,7 @@ void SimFirmware::ReassocHandleFailure(wlan_ieee80211_wire::StatusCode status) {
   }
   BRCMF_DBG(SIM, "Reassoc failed.");
   SendEventToDriver(0, nullptr, BRCMF_E_REASSOC, BRCMF_E_STATUS_FAIL, kClientIfidx, nullptr, 0,
-                    static_cast<uint32_t>(status), bssid);
+                    static_cast<uint32_t>(fidl::ToUnderlying(status)), bssid);
   AssocClearContext();
 }
 
