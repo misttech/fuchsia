@@ -137,7 +137,6 @@ source_set("source_set") {
     "//src/lib/fsl",
     "//src/lib/inet",
     "//src/lib/json_parser",
-    "//src/lib/json_parser",
     "//third_party/rapidjson",
   ]
 

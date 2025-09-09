@@ -62,7 +62,6 @@ storage_driver_test_realm_v2_component("fs-management-rust-tests-component") {
     "//src/storage/fxfs:fxfs_component",
     "//src/storage/fxfs:test_fxfs_component_manifest_shard",
     "//src/storage/minfs/bin:minfs-component",
-    "//src/storage/minfs/bin:minfs-component",
   ]
 }
 

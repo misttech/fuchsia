@@ -24,7 +24,6 @@ rustc_library("lib") {
     "//src/storage/gpt/rust",
     "//src/storage/lib/block_client/rust",
     "//src/storage/lib/block_server",
-    "//src/storage/lib/block_server",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

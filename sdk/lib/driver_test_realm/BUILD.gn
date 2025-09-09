@@ -118,7 +118,6 @@ executable("dtr_support_bin") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_cpp",
-    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_cpp",
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/component/incoming/cpp",

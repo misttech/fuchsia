@@ -39,7 +39,6 @@ cc_test_executable("attachment_manager_unittest_exe") {
     "//src/developer/forensics/feedback/attachments",
     "//src/developer/forensics/feedback_data:constants",
     "//src/developer/forensics/testing:gmatchers",
-    "//src/developer/forensics/testing:gmatchers",
     "//src/developer/forensics/testing:gpretty_printers",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:log_message",

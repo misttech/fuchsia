@@ -37,7 +37,6 @@ source_set("amlogic-clk-driver-source") {
     "aml-a5-blocks.h",
     "aml-axg-blocks.h",
     "aml-clk-blocks.h",
-    "aml-clk-blocks.h",
     "aml-clk.cc",
     "aml-clk.h",
     "aml-fclk-rates.cc",

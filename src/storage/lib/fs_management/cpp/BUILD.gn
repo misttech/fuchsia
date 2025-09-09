@@ -62,7 +62,6 @@ if (is_fuchsia) {
       "//zircon/system/ulib/fzl",
       "//zircon/system/ulib/pretty",
       "//zircon/system/ulib/zx",
-      "//zircon/system/ulib/zx",
     ]
   }
 } else {
@@ -157,7 +156,6 @@ fuchsia_test_package("fs-management-tests") {
     "//src/storage/blobfs/bin:component",
     "//src/storage/f2fs/bin:f2fs-component",
     "//src/storage/fxfs:fxfs_component",
-    "//src/storage/minfs/bin:minfs-component",
     "//src/storage/minfs/bin:minfs-component",
   ]
 }

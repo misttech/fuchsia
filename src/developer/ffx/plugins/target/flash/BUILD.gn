@@ -37,7 +37,6 @@ ffx_plugin("ffx_flash") {
     "//src/lib/async-utils",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-async",
     "//src/lib/structured_ui",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",

@@ -42,7 +42,6 @@ rustc_library("binderfs") {
     "//src/lib/trace/rust:trace",
     "//src/starnix/kernel:starnix_core",
     "//src/starnix/lib/starnix_lifecycle",
-    "//src/starnix/lib/starnix_lifecycle",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",

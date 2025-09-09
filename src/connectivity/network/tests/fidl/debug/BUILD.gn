@@ -13,7 +13,6 @@ rustc_test("debug") {
     "//sdk/fidl/fuchsia.net.debug:fuchsia.net.debug_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
     "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
-    "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
     "//sdk/rust/zx",
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/network/testing/netemul/rust:lib",

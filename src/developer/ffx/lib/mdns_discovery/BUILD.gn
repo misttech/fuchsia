@@ -22,7 +22,6 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/netext:lib",
-    "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/target_errors:lib",
     "//src/developer/ffx/lib/timeout:lib",
     "//src/lib/fuchsia-async",

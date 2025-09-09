@@ -59,7 +59,6 @@ source_set("fidl") {
   public_deps = [
     "//sdk/fidl/fuchsia.audio:fuchsia.audio_cpp",
     "//sdk/fidl/fuchsia.audio.mixer:fuchsia.audio.mixer_cpp",
-    "//sdk/fidl/fuchsia.audio.mixer:fuchsia.audio.mixer_cpp",
     "//sdk/fidl/fuchsia.mediastreams:fuchsia.mediastreams_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/fit",

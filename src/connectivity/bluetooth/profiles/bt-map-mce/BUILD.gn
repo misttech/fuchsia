@@ -15,7 +15,6 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
     "//sdk/fidl/fuchsia.bluetooth.map:fuchsia.bluetooth.map_rust",
     "//sdk/rust/zx",
-    "//sdk/rust/zx",
     "//src/connectivity/bluetooth/lib/bt-map",
     "//src/connectivity/bluetooth/lib/bt-obex",
     "//src/connectivity/bluetooth/lib/bt-obex/objects",

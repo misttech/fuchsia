@@ -33,7 +33,6 @@ common_deps = [
   "//src/lib/ddktl",
   "//zircon/system/ulib/fbl",
   "//zircon/system/ulib/trace",
-  "//zircon/system/ulib/trace",
   "//zircon/system/ulib/zircon-internal",
   "//zircon/system/ulib/zx",
 ]

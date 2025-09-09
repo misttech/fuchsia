@@ -33,7 +33,6 @@ test("test") {
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
-    "//sdk/lib/sys/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk",
     "//src/lib/fxl",

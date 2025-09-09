@@ -19,7 +19,6 @@ driver_bind_rules("camera_controller_bind") {
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.camera",
-    "//src/devices/bind/fuchsia.camera",
     "//src/devices/bind/fuchsia.isp",
   ]
 }

@@ -40,8 +40,6 @@ source_set("ddktl") {
     "//sdk/lib/fidl/cpp/wire",
 
     # <ddktl/device.h> has #include <lib/zx/channel.h>.
-    "//zircon/system/ulib/zx",
-
     # <ddktl/device.h> has #include <lib/zx/result.h>.
     "//zircon/system/ulib/zx",
 
@@ -51,6 +49,7 @@ source_set("ddktl") {
 
   if (is_fuchsia) {
     public_deps += [
+      # <ddktl/device.h> has #include <lib/component/incoming/cpp/protocol.h>.
       # <ddktl/device.h> has #include <lib/component/incoming/cpp/protocol.h>.
       "//sdk/lib/component/incoming/cpp",
 
@@ -68,9 +67,6 @@ source_set("ddktl") {
 
       # <ddktl/metadata_server.h> has #include <lib/driver/outgoing/cpp/outgoing_directory.h>
       "//sdk/lib/driver/outgoing/cpp",
-
-      # <ddktl/device.h> has #include <lib/component/incoming/cpp/protocol.h>.
-      "//sdk/lib/component/incoming/cpp",
     ]
   }
 
@@ -197,7 +193,6 @@ source_set("ddktl") {
     "//src/devices/power/drivers/fusb302:*",
     "//src/devices/power/drivers/nelson-brownout-protection:*",
     "//src/devices/power/drivers/power:*",
-    "//src/devices/power/drivers/power:*",
     "//src/devices/power/drivers/ti-ina231:*",
     "//src/devices/pwm/drivers/aml-pwm:*",
     "//src/devices/pwm/drivers/aml-pwm-init:*",
@@ -296,9 +291,7 @@ source_set("ddktl") {
     "//src/media/audio/drivers/codecs/alc5663:*",
     "//src/media/audio/drivers/codecs/da7219:*",
     "//src/media/audio/drivers/codecs/max98373:*",
-    "//src/media/audio/drivers/codecs/max98373:*",
     "//src/media/audio/drivers/codecs/max98927:*",
-    "//src/media/audio/drivers/codecs/tas27xx:*",
     "//src/media/audio/drivers/codecs/tas27xx:*",
     "//src/media/audio/drivers/codecs/tas5707:*",
     "//src/media/audio/drivers/codecs/tas5720:*",

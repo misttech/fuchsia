@@ -25,7 +25,6 @@ fuchsia_cc_driver("driver") {
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/devices/tests/v2/compat-runtime-v1:fuchsia.compat.runtime_cpp",
-    "//src/devices/tests/v2/compat-runtime-v1:fuchsia.compat.runtime_cpp",
     "//src/devices/tests/v2/compat-runtime-v1/bind:fuchsia.compat_cpp",
     "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",

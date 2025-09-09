@@ -150,7 +150,6 @@ source_set("${udp_test_label}_socket_tests") {
     "gvisor/test/syscalls/linux/ip_socket_test_util.cc",
     "gvisor/test/syscalls/linux/ip_socket_test_util.h",
     "gvisor/test/syscalls/linux/socket_generic.h",
-    "gvisor/test/syscalls/linux/socket_generic.h",
     "gvisor/test/syscalls/linux/socket_generic_test_cases.cc",
     "gvisor/test/syscalls/linux/socket_ip_udp_generic.cc",
     "gvisor/test/syscalls/linux/socket_ip_udp_generic.h",

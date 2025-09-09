@@ -186,7 +186,6 @@ zx_library("x86") {
     "//zircon/kernel/lib/version",
     "//zircon/kernel/object",
     "//zircon/kernel/phys:handoff",
-    "//zircon/kernel/phys:handoff",
     "//zircon/kernel/platform/pc",
     "//zircon/system/ulib/bitmap",
     "//zircon/system/ulib/pretty",
@@ -196,22 +195,18 @@ zx_library("x86") {
     "//zircon/kernel/arch/x86/cpuid:headers",
 
     # arch/x86/apic.h has #include <dev/interrupt.h>.
+    # <arch/x86/apic.h> has #include <dev/interrupt.h>.
     "//zircon/kernel/dev/interrupt:headers",
 
     # arch/x86/hypervisor.h has #include <hypervisor/aspace.h>.
     "//zircon/kernel/hypervisor:headers",
 
     # <arch/aspace.h> has #include <bitmap/rle-bitmap.h>.
+    # <arch/x86/ioport.h> has #include <bitmap/rle-bitmap.h>.
     "//zircon/system/ulib/bitmap:headers",
 
     # <arch/aspace.h> uses various fbl things
     "//zircon/system/ulib/fbl:headers",
-
-    # <arch/x86/ioport.h> has #include <bitmap/rle-bitmap.h>.
-    "//zircon/system/ulib/bitmap:headers",
-
-    # <arch/x86/apic.h> has #include <dev/interrupt.h>.
-    "//zircon/kernel/dev/interrupt:headers",
 
     # <arch/x86/idle_states.h> has #include <ktl/atomic.h>.
     "//zircon/kernel/lib/ktl:headers",

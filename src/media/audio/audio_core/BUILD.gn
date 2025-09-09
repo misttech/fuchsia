@@ -192,7 +192,6 @@ source_set("audio_core_lib") {
     "audio_output.cc",
     "audio_output.h",
     "audio_policy.h",
-    "audio_policy.h",
     "audio_renderer.cc",
     "audio_renderer.h",
     "audio_tuner_impl.cc",

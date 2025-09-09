@@ -190,8 +190,8 @@ if (is_host) {
   host_test_data("failed_route_verify_test_data") {
     sources = get_target_outputs(":test_route_verification_bin")
     sources += [
-      files.product_bundle_dir,
       files.component_tree_config,
+      files.product_bundle_dir,
     ]
     deps = [
       ":test_route_verification_bin",

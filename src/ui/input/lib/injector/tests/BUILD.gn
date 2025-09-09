@@ -24,7 +24,6 @@ cc_test_executable("injector_tests") {
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
-    "//src/lib/testing/loop_fixture",
     "//src/ui/input/lib/injector",
     "//src/ui/input/lib/injector/tests/mocks",
     "//third_party/googletest:gmock",

@@ -37,7 +37,6 @@ source_set("factory_source") {
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/svc",
     "//sdk/lib/sys/cpp",
-    "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
     "//src/lib/fxl",

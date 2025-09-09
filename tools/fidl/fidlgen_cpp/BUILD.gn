@@ -150,10 +150,7 @@ group("goldens") {
         info[denylist_key]) {
       deps += [ "${info.target}_cpp" ]
       if (is_fuchsia) {
-        deps += [
-          "${info.target}_cpp",
-          "${info.target}_cpp",
-        ]
+        deps += [ "${info.target}_cpp" ]
       }
     }
   }

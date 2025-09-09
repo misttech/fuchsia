@@ -27,7 +27,6 @@ rustc_binary("bin") {
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/storage/minfs/bin:minfs-component",
-    "//src/storage/minfs/bin:minfs-component",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",

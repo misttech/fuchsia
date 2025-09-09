@@ -73,7 +73,6 @@ fuchsia_cc_driver("v1-driver") {
   deps = [
     ":compat-runtime-v1-bind",
     ":fuchsia.compat.runtime.test_cpp",
-    ":fuchsia.compat.runtime.test_cpp",
     "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia.test:fuchsia.test_cpp",
     "//src/devices/lib/driver",

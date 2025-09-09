@@ -26,7 +26,6 @@ rustc_binary("funnel_bin") {
     "//src/developer/ffx/lib/timeout:lib",
     "//src/lib/analytics/rust:lib",
     "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:camino",

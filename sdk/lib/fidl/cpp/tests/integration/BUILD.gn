@@ -56,7 +56,6 @@ test("fidl_cpp_wire_interop_tests_bin") {
   sources = [ "wire_interop_tests.cc" ]
   deps = [
     ":fidl.cpp.wire.interop.test_cpp",
-    ":fidl.cpp.wire.interop.test_cpp",
     "//sdk/lib/async-loop",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/stdcompat",

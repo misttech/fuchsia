@@ -35,7 +35,6 @@ rustc_library("ffx_inspect") {
     "src/tests/list.rs",
     "src/tests/list_accessors.rs",
     "src/tests/mod.rs",
-    "src/tests/mod.rs",
     "src/tests/selectors.rs",
     "src/tests/show.rs",
     "src/tests/utils.rs",

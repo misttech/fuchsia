@@ -30,11 +30,11 @@ _common = {
   ]
   deps = [
     "//src/lib/fidl/rust_next/fidl_next_codec",
-    "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:zerocopy",
 
     # Used for atomic wakers, but not for any APIs
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
   ]
   features = []
 }

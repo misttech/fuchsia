@@ -72,7 +72,6 @@ test("clock-test-bin") {
     "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/metadata/cpp",
-    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk:ddk-metadata-headers",

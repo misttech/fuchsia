@@ -128,13 +128,12 @@ template("icu_tzdata_resource") {
 
       # Used via the `config-data` capability.
       ":${_revision_label}",
+
+      # Used via the `tzdata-icu-44-le` capability.
       ":${_revision_versioned_label}",
 
       # Used via the `tzdata-icu` capability.
       ":${_revision_tzdata_icu_versioned_label}",
-
-      # Used via the `tzdata-icu-44-le` capability.
-      ":${_revision_versioned_label}",
     ]
   }
 

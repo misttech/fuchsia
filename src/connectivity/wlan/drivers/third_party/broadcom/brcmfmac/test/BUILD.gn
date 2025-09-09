@@ -130,7 +130,6 @@ cc_test_executable("device_inspect_test") {
     "//src/devices/bin/driver_runtime",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
-    "//src/lib/testing/loop_fixture",
     "//third_party/googletest:gmock",
     "//zircon/system/public",
     "//zircon/system/ulib/inspect",
