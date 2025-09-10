@@ -8,7 +8,7 @@ use crate::mode_management::recovery::{
 use crate::mode_management::{Defect, EventHistory, IfaceFailure, PhyFailure};
 use crate::regulatory_manager::REGION_CODE_LEN;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fuchsia_inspect::{self as inspect, NumericProperty};
@@ -390,7 +390,10 @@ impl PhyManagerApi for PhyManager {
                 fidl_common::WlanMacRole::Client => {
                     if phy.client_ifaces.insert(iface_id) {
                         // The iface wasn't in the hashset, so it was created by someone else
-                        warn!("Detected an unexpected client iface id {} created outside of PhyManager", iface_id);
+                        warn!(
+                            "Detected an unexpected client iface id {} created outside of PhyManager",
+                            iface_id
+                        );
                     }
                 }
                 fidl_common::WlanMacRole::Ap => {
@@ -820,31 +823,30 @@ impl PhyManagerApi for PhyManager {
                         iface_id
                     );
                 }
-                RecoveryAction::PhyRecovery(PhyRecoveryOperation::ResetPhy { phy_id: _ }) => {
-                    // TODO(https://fxbug.dev/424173437) - Re-enable PHY recovery once AP state machine
-                    // termination race has been resolved.
-                    info!("PHY reset recovery is currently disabled.");
+                RecoveryAction::PhyRecovery(PhyRecoveryOperation::ResetPhy { phy_id }) => {
+                    for recorded_phy_id in self.phys.keys() {
+                        if phy_id == *recorded_phy_id {
+                            if let Err(e) = reset_phy(&self.device_monitor, phy_id).await {
+                                warn!("Resetting PHY {} failed: {:?}", phy_id, e);
+                            }
 
-                    // for recorded_phy_id in self.phys.keys() {
-                    //     if phy_id == *recorded_phy_id {
-                    //         if let Err(e) = reset_phy(&self.device_monitor, phy_id).await {
-                    //             warn!("Resetting PHY {} failed: {:?}", phy_id, e);
-                    //         }
+                            // The phy reset may clear its country code. Re-set it now if we have one.
+                            if let Some(country_code) = self.saved_country_code {
+                                info!("Setting country code after phy reset");
+                                if let Err(e) =
+                                    set_phy_country_code(&self.device_monitor, phy_id, country_code)
+                                        .await
+                                {
+                                    warn!(
+                                        "Proceeding with default country code because we failed to set the cached one: {}",
+                                        e
+                                    );
+                                }
+                            };
 
-                    //         // The phy reset may clear its country code. Re-set it now if we have one.
-                    //         if let Some(country_code) = self.saved_country_code {
-                    //             info!("Setting country code after phy reset");
-                    //             if let Err(e) =
-                    //                 set_phy_country_code(&self.device_monitor, phy_id, country_code)
-                    //                     .await
-                    //             {
-                    //                 warn!("Proceeding with default country code because we failed to set the cached one: {}", e);
-                    //             }
-                    //         };
-
-                    //         return;
-                    //     }
-                    // }
+                            return;
+                        }
+                    }
                 }
                 RecoveryAction::IfaceRecovery(IfaceRecoveryOperation::Disconnect { iface_id }) => {
                     if let Err(e) = disconnect(&self.device_monitor, iface_id).await {
@@ -894,7 +896,6 @@ async fn destroy_iface(
     destroy_iface_response
 }
 
-#[cfg(test)]
 async fn reset_phy(
     proxy: &fidl_service::DeviceMonitorProxy,
     phy_id: u16,
@@ -982,7 +983,7 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints;
-    use fuchsia_async::{run_singlethreaded, TestExecutor};
+    use fuchsia_async::{TestExecutor, run_singlethreaded};
     use futures::channel::mpsc;
     use futures::stream::StreamExt;
     use futures::task::Poll;

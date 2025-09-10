@@ -3,24 +3,24 @@
 // found in the LICENSE file.
 
 use crate::client::roaming::lib::{
-    RoamingMode, RoamingPolicy, RoamingProfile, ROAMING_CHANNEL_BUFFER_SIZE,
+    ROAMING_CHANNEL_BUFFER_SIZE, RoamingMode, RoamingPolicy, RoamingProfile,
 };
-use crate::client::roaming::local_roam_manager::{serve_local_roam_manager_requests, RoamManager};
+use crate::client::roaming::local_roam_manager::{RoamManager, serve_local_roam_manager_requests};
 use crate::client::roaming::roam_monitor::stationary_monitor;
 use crate::client::{connection_selection, scan, serve_provider_requests, types};
 use crate::config_management::{
-    compatible_policy_securities, SavedNetworksManager, SavedNetworksManagerApi,
+    SavedNetworksManager, SavedNetworksManagerApi, compatible_policy_securities,
 };
 use crate::legacy;
 use crate::mode_management::iface_manager_api::IfaceManagerApi;
 use crate::mode_management::phy_manager::{PhyManager, PhyManagerApi};
-use crate::mode_management::{create_iface_manager, device_monitor, recovery, DEFECT_CHANNEL_SIZE};
+use crate::mode_management::{DEFECT_CHANNEL_SIZE, create_iface_manager, device_monitor, recovery};
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use crate::util::listener;
 use crate::util::testing::{
     create_inspect_persistence_channel, generate_ssid, run_until_completion, run_while,
 };
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use assert_matches::assert_matches;
 use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl_fuchsia_wlan_device_service::DeviceWatcherEvent;
@@ -28,7 +28,7 @@ use fidl_fuchsia_wlan_internal::SignalReportIndication;
 use fuchsia_async::{self as fasync, TestExecutor};
 use fuchsia_inspect::{self as inspect};
 use futures::channel::mpsc;
-use futures::future::{join_all, JoinAll};
+use futures::future::{JoinAll, join_all};
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
@@ -38,7 +38,7 @@ use log::{debug, info};
 use proc_macros::with_roam_protection_permutations;
 use rand::Rng;
 use std::convert::Infallible;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::rc::Rc;
 use std::sync::Arc;
 use test_case::test_case;
@@ -381,8 +381,10 @@ fn add_phy(exec: &mut TestExecutor, test_values: &mut TestValues) {
 
     run_until_completion(
         exec,
-        pin!(add_phy_fut
-            .expect_within(zx::MonotonicDuration::from_seconds(5), "future didn't complete")),
+        pin!(
+            add_phy_fut
+                .expect_within(zx::MonotonicDuration::from_seconds(5), "future didn't complete")
+        ),
     );
 }
 
@@ -1769,8 +1771,6 @@ fn test_autoconnect_to_hidden_saved_network_and_reconnect() {
     }
 }
 
-// TODO(https://fxbug.dev/424173437) - Re-enable once IfaceManager deadlock issue has been resolved.
-#[ignore]
 #[fuchsia::test]
 fn test_destroy_iface_recovery() {
     let mut exec = fasync::TestExecutor::new();
@@ -1839,8 +1839,6 @@ fn test_destroy_iface_recovery() {
     );
 }
 
-// TODO(https://fxbug.dev/424173437) - Re-enable once IfaceManager deadlock issue has been resolved.
-#[ignore]
 #[fuchsia::test]
 fn test_create_iface_recovery() {
     let mut exec = fasync::TestExecutor::new();
@@ -2737,7 +2735,9 @@ fn test_roam_profile_scans_obey_wait_time<F>(
     );
 
     // Expect failed attempt to solicit a roam scan, as the connection duration is too short.
-    assert!(roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_none());
+    assert!(
+        roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_none()
+    );
 
     // Advance past the minimum wait time between roam scans. This should never use a catch-all
     // branch, to ensure it is updated for future profiles.
@@ -2756,7 +2756,9 @@ fn test_roam_profile_scans_obey_wait_time<F>(
 
     // Expect a failed attempt to solicit a roam scan for the same roam reason, as the last roam scan
     // was too recent.
-    assert!(roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_none());
+    assert!(
+        roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_none()
+    );
 
     // Advance past the maximum backoff time between roam scans. This should never use a catch-all
     // branch, to ensure it is updated for future profiles.
@@ -2768,7 +2770,9 @@ fn test_roam_profile_scans_obey_wait_time<F>(
     );
 
     // Expect successful attempt to solicit a roam scan.
-    assert!(roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_some());
+    assert!(
+        roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_some()
+    );
 }
 
 fn assert_roam_request_expectation<F>(
@@ -3018,7 +3022,9 @@ fn test_roam_profile_obeys_max_roams_per_day<F>(
     ));
 
     // Expect a failed attempt to solict a roam scan, since roams per day limit has been reached.
-    assert!(roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_none());
+    assert!(
+        roam_scan_solicit_func(&mut exec, &mut test_values, &mut existing_connection).is_none()
+    );
 }
 
 #[fuchsia::test]
