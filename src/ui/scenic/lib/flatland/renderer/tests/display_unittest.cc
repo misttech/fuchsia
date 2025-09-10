@@ -46,7 +46,8 @@ class DisplayTest : public gtest::RealLoopFixture {
     }
     gtest::RealLoopFixture::SetUp();
 
-    realm_root_ = flatland::testing::BuildFakeDisplayRealm(dispatcher());
+    realm_root_ = flatland::testing::BuildFakeDisplayRealm(dispatcher(),
+                                                           flatland::testing::DisplayRealmConfig{});
 
     sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("display_unittest::Setup");
 

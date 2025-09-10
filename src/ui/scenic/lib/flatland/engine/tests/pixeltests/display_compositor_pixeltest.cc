@@ -292,7 +292,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     DisplayCompositorTestBase::SetUp();
 
 #ifdef FAKE_DISPLAY
-    realm_root_ = testing::BuildFakeDisplayRealm(dispatcher());
+    realm_root_ = testing::BuildFakeDisplayRealm(dispatcher(), testing::DisplayRealmConfig{});
 #else
     realm_root_ = std::nullopt;
 #endif  // FAKE_DISPLAY

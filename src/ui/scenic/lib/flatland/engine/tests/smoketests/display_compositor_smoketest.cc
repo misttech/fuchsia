@@ -59,7 +59,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
   void SetUp() override {
     DisplayCompositorTestBase::SetUp();
 
-    realm_root_ = testing::BuildFakeDisplayRealm(dispatcher());
+    realm_root_ = testing::BuildFakeDisplayRealm(dispatcher(), testing::DisplayRealmConfig{});
 
     // Create the SysmemAllocator.
     zx_status_t status = fdio_service_connect(
