@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::flatland_actor::FlatlandActor;
-use crate::flatland_instance::{FlatlandInstance, DISPLAY_HEIGHT, DISPLAY_WIDTH};
-use crate::input_actor::InputActor;
 use crate::Args;
+use crate::flatland_actor::FlatlandActor;
+use crate::flatland_instance::{DISPLAY_HEIGHT, DISPLAY_WIDTH, FlatlandInstance};
+use crate::input_actor::InputActor;
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::lock::Mutex;
-use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use std::sync::Arc;
 use std::time::Duration;
 use stress_test::actor::ActorRunner;
@@ -149,6 +149,9 @@ impl FlatlandEnvironment {
             )
             .await
             .unwrap();
+
+        // Set up fake-display-stack-host's config.
+        builder.init_mutable_config_from_package(&fake_display_stack_host).await.unwrap();
 
         let realm_instance = Arc::new(builder.build().await.expect("Failed to create realm"));
         Self { args, realm_instance }
