@@ -79,6 +79,7 @@ constexpr auto kSetUIAccessibilityUrl = "#meta/setui_accessibility.cm";
 constexpr auto kA11yManagerName = "a11y-manager";
 constexpr auto kScenicName = "scenic";
 constexpr auto kSceneManagerName = "scene_manager";
+constexpr auto kFakeDisplayStackHostName = "fake-display-stack-host";
 constexpr auto kTextManagerName = "text_manager";
 constexpr auto kVirtualKeyboardManagerName = "virtual_keyboard_manager";
 constexpr auto kSetUIAccessibility = "setui";
@@ -371,6 +372,27 @@ void UITestRealm::ConfigureScenic() {
   });
 }
 
+void UITestRealm::ConfigureFakeDisplayStackHost() {
+  realm_builder_.InitMutableConfigFromPackage(kFakeDisplayStackHostName);
+
+  FX_CHECK((config_.display_config.active_width_px == 0) ==
+           (config_.display_config.active_height_px == 0))
+      << "active_width_px or active_height_px must be both zero or both non-zero.";
+  if (config_.display_config.active_width_px != 0) {
+    realm_builder_.SetConfigValue(kFakeDisplayStackHostName, "active_width_px",
+                                  ConfigValue::Uint32(config_.display_config.active_width_px));
+  }
+  if (config_.display_config.active_height_px != 0) {
+    realm_builder_.SetConfigValue(kFakeDisplayStackHostName, "active_height_px",
+                                  ConfigValue::Uint32(config_.display_config.active_height_px));
+  }
+  if (config_.display_config.refresh_rate_millihertz != 0) {
+    realm_builder_.SetConfigValue(
+        kFakeDisplayStackHostName, "refresh_rate_millihertz",
+        ConfigValue::Uint32(config_.display_config.refresh_rate_millihertz));
+  }
+}
+
 void UITestRealm::ConfigureSceneOwner() {
   if (!config_.use_scene_owner) {
     return;
@@ -449,6 +471,9 @@ void UITestRealm::Build() {
 
   // Override flatland flags in Scenic configuration.
   ConfigureScenic();
+
+  // Override display configs in fake-display-stack-host configuration.
+  ConfigureFakeDisplayStackHost();
 
   // Configure Scene Manager if it is in use as the scene owner. This includes:
   // * routing input pipeline config data directories to Scene Manager

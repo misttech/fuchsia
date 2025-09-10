@@ -26,6 +26,18 @@ namespace {
 constexpr auto kViewProvider = "view-provider";
 constexpr float kEpsilon = 0.005f;
 
+struct DisplayConfig {
+  uint32_t width_px;
+  uint32_t height_px;
+  uint32_t refresh_rate_millihertz;
+};
+
+constexpr DisplayConfig kSherlockDisplayConfig = {
+    .width_px = 1280,
+    .height_px = 800,
+    .refresh_rate_millihertz = 60'000,
+};
+
 }  // namespace
 
 using component_testing::ChildRef;
@@ -36,16 +48,24 @@ using component_testing::Route;
 
 // This test verifies that Scene Manager propagates
 // 'config/data/device_pixel_ratio' correctly.
-class DisplayPixelRatioTest : public gtest::RealLoopFixture,
-                              public ::testing::WithParamInterface<float> {
+class DisplayPixelRatioTest
+    : public gtest::RealLoopFixture,
+      public ::testing::WithParamInterface<std::tuple</* pixel_ratio */ float, DisplayConfig>> {
  protected:
   // |testing::Test|
   void SetUp() override {
+    const auto& [device_pixel_ratio, display_config] = GetParam();
+
     ui_testing::UITestRealm::Config config;
     config.use_scene_owner = true;
     config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
     config.ui_to_client_services.push_back(fuchsia::ui::composition::Flatland::Name_);
-    config.device_pixel_ratio = GetParam();
+    config.device_pixel_ratio = device_pixel_ratio;
+    config.display_config = {
+        .active_width_px = display_config.width_px,
+        .active_height_px = display_config.height_px,
+        .refresh_rate_millihertz = display_config.refresh_rate_millihertz,
+    };
     ui_test_manager_.emplace(config);
 
     // Build realm.
@@ -110,10 +130,31 @@ class DisplayPixelRatioTest : public gtest::RealLoopFixture,
   std::optional<Realm> realm_;
 };
 
-INSTANTIATE_TEST_SUITE_P(DisplayPixelRatioTestWithParams, DisplayPixelRatioTest,
-                         ::testing::Values(ui_testing::kDefaultDevicePixelRatio,
-                                           ui_testing::kMediumResolutionDevicePixelRatio,
-                                           ui_testing::kHighResolutionDevicePixelRatio));
+namespace {
+
+std::string GetDisplayPixelRatioTestName(
+    const ::testing::TestParamInfo<DisplayPixelRatioTest::ParamType>& info) {
+  const auto& [pixel_ratio, display_config] = info.param;
+
+  std::string pixel_ratio_string = std::format("{:.2f}", pixel_ratio);
+  size_t pos_point = pixel_ratio_string.find(".");
+  if (pos_point != std::string::npos) {
+    pixel_ratio_string.replace(pos_point, 1, "p");
+  }
+
+  return std::format("{}x{}x{}HzxPixelRatio{}", display_config.width_px, display_config.height_px,
+                     display_config.refresh_rate_millihertz / 1'000, pixel_ratio_string);
+}
+
+}  // namespace
+
+INSTANTIATE_TEST_SUITE_P(
+    DisplayPixelRatioTestWithParams, DisplayPixelRatioTest,
+    ::testing::Combine(::testing::Values(ui_testing::kDefaultDevicePixelRatio,
+                                         ui_testing::kMediumResolutionDevicePixelRatio,
+                                         ui_testing::kHighResolutionDevicePixelRatio),
+                       ::testing::Values(kSherlockDisplayConfig)),
+    GetDisplayPixelRatioTestName);
 
 // This test leverage the coordinate test view to ensure that display pixel ratio is working
 // properly.
@@ -127,7 +168,7 @@ INSTANTIATE_TEST_SUITE_P(DisplayPixelRatioTestWithParams, DisplayPixelRatioTest,
 // |      RED       |     MAGENTA    |
 // |________________|________________|
 TEST_P(DisplayPixelRatioTest, TestScale) {
-  const auto expected_dpr = GetParam();
+  const auto expected_dpr = std::get<0>(GetParam());
 
   // TODO(https://fxbug.dev/42064286): Run this check when we update ClientScaleFactor()
   // to work with Flatland.

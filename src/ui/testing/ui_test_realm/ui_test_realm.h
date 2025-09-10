@@ -21,6 +21,17 @@ constexpr auto kDefaultDevicePixelRatio = 1.f;
 constexpr auto kMediumResolutionDevicePixelRatio = 1.25f;
 constexpr auto kHighResolutionDevicePixelRatio = 2.f;
 
+struct DisplayConfig {
+  // If zero, uses component's default configuration value.
+  // `active_width_px` and `active_height_px` must be either both non-zeroes
+  // or both zeroes.
+  uint32_t active_width_px = 0;
+  uint32_t active_height_px = 0;
+
+  // If zero, uses component's default configuration value.
+  uint32_t refresh_rate_millihertz = 0;
+};
+
 // Library class to manage test realm on behalf of UI integration test clients.
 class UITestRealm {
  public:
@@ -89,6 +100,9 @@ class UITestRealm {
 
     // Whether the power framework is treated as available.
     bool suspend_enabled = false;
+
+    // Overrides the default display config.
+    DisplayConfig display_config = {};
   };
 
   explicit UITestRealm(Config config);
@@ -121,6 +135,7 @@ class UITestRealm {
   void RouteConfigData();
   void ConfigureScenic();
   void ConfigureSceneOwner();
+  void ConfigureFakeDisplayStackHost();
 
   // Helper method to route a set of services from the specified source to the
   // spceified targets.
