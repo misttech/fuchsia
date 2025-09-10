@@ -4,15 +4,15 @@
 
 use std::marker::PhantomData;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use cm_types::{IterablePath, RelativePath};
 use fdf_sys::fdf_token_transfer;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServiceMarker, ServiceProxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::Flags;
 use fidl_next_bind::Service;
-use fuchsia_component::client::{connect_to_service_instance_at_dir_svc, Connect};
-use fuchsia_component::directory::{open_directory_async, AsRefDirectory, Directory};
+use fuchsia_component::client::{Connect, connect_to_service_instance_at_dir_svc};
+use fuchsia_component::directory::{AsRefDirectory, Directory, open_directory_async};
 use fuchsia_component::{DEFAULT_SERVICE_INSTANCE, SVC_DIR};
 use log::error;
 use namespace::{Entry, Namespace};
@@ -191,7 +191,7 @@ impl From<Namespace> for Incoming {
 fn match_prefix(match_in: &impl IterablePath, prefix: &impl IterablePath) -> Option<RelativePath> {
     let mut my_segments = match_in.iter_segments();
     let mut prefix_segments = prefix.iter_segments();
-    while let Some(prefix) = prefix_segments.next() {
+    for prefix in prefix_segments.by_ref() {
         if prefix != my_segments.next()? {
             return None;
         }
@@ -234,9 +234,9 @@ mod tests {
     use futures::stream::StreamExt;
 
     enum IncomingServices {
-        I2cDevice(fidl_fuchsia_hardware_i2c::DeviceRequestStream),
-        I2cDefaultService(fidl_fuchsia_hardware_i2c::ServiceRequest),
-        I2cOtherService(fidl_fuchsia_hardware_i2c::ServiceRequest),
+        Device(fidl_fuchsia_hardware_i2c::DeviceRequestStream),
+        DefaultService(fidl_fuchsia_hardware_i2c::ServiceRequest),
+        OtherService(fidl_fuchsia_hardware_i2c::ServiceRequest),
     }
 
     impl IncomingServices {
@@ -257,14 +257,13 @@ mod tests {
         }
 
         async fn handle(self) {
-            use fidl_fuchsia_hardware_i2c::ServiceRequest::*;
             use IncomingServices::*;
             match self {
-                I2cDevice(stream) => Self::handle_device_stream(stream, "device").await,
-                I2cDefaultService(Device(stream)) => {
+                Device(stream) => Self::handle_device_stream(stream, "device").await,
+                DefaultService(fidl_fuchsia_hardware_i2c::ServiceRequest::Device(stream)) => {
                     Self::handle_device_stream(stream, "default").await
                 }
-                I2cOtherService(Device(stream)) => {
+                OtherService(fidl_fuchsia_hardware_i2c::ServiceRequest::Device(stream)) => {
                     Self::handle_device_stream(stream, "other").await
                 }
             }
@@ -275,9 +274,9 @@ mod tests {
         let (client, server) = fidl::endpoints::create_endpoints();
         let mut fs = ServiceFs::new();
         fs.dir("svc")
-            .add_fidl_service(IncomingServices::I2cDevice)
-            .add_fidl_service_instance("default", IncomingServices::I2cDefaultService)
-            .add_fidl_service_instance("other", IncomingServices::I2cOtherService);
+            .add_fidl_service(IncomingServices::Device)
+            .add_fidl_service_instance("default", IncomingServices::DefaultService)
+            .add_fidl_service_instance("other", IncomingServices::OtherService);
         fs.serve_connection(server).expect("error serving handle");
 
         Task::spawn(fs.for_each_concurrent(100, IncomingServices::handle)).detach_on_drop();

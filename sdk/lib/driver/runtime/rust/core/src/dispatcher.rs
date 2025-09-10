@@ -11,14 +11,14 @@ use core::ffi;
 use core::future::Future;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
-use core::ptr::{addr_of_mut, null_mut, NonNull};
+use core::ptr::{NonNull, addr_of_mut, null_mut};
 use core::task::Context;
 use std::sync::{Arc, Mutex, Weak};
 
 use zx::Status;
 
 use futures::future::{BoxFuture, FutureExt};
-use futures::task::{waker_ref, ArcWake};
+use futures::task::{ArcWake, waker_ref};
 
 pub use fdf_sys::fdf_dispatcher_t;
 
@@ -62,7 +62,7 @@ impl DispatcherBuilder {
             !self.allows_thread_blocking(),
             "you may not create an unsynchronized dispatcher that allows synchronous calls"
         );
-        self.options = self.options | Self::UNSYNCHRONIZED;
+        self.options |= Self::UNSYNCHRONIZED;
         self
     }
 
@@ -81,7 +81,7 @@ impl DispatcherBuilder {
             !self.is_unsynchronized(),
             "you may not create an unsynchronized dispatcher that allows synchronous calls"
         );
-        self.options = self.options | Self::ALLOW_THREAD_BLOCKING;
+        self.options |= Self::ALLOW_THREAD_BLOCKING;
         self
     }
 
@@ -175,7 +175,7 @@ impl Dispatcher {
     }
 
     #[doc(hidden)]
-    pub fn inner<'a>(&'a self) -> &'a NonNull<fdf_dispatcher_t> {
+    pub fn inner(&self) -> &NonNull<fdf_dispatcher_t> {
         &self.0
     }
 
@@ -198,6 +198,7 @@ impl Dispatcher {
     pub fn post_task_sync(&self, p: impl TaskCallback) -> Result<(), Status> {
         // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
         let async_dispatcher = unsafe { fdf_dispatcher_get_async_dispatcher(self.0.as_ptr()) };
+        #[expect(clippy::arc_with_non_send_sync)]
         let task_arc = Arc::new(UnsafeCell::new(TaskFunc {
             task: async_task { handler: Some(TaskFunc::call), ..Default::default() },
             func: Box::new(p),
@@ -243,7 +244,7 @@ impl Dispatcher {
     #[doc(hidden)]
     pub fn override_current<R>(dispatcher: DispatcherRef<'_>, f: impl FnOnce() -> R) -> R {
         OVERRIDE_DISPATCHER.with(|global| {
-            let previous = global.replace(Some(dispatcher.0 .0));
+            let previous = global.replace(Some(dispatcher.0.0));
             let res = f();
             global.replace(previous);
             res
@@ -280,7 +281,7 @@ impl<'a> DispatcherRef<'a> {
 
 impl<'a> Clone for DispatcherRef<'a> {
     fn clone(&self) -> Self {
-        Self(ManuallyDrop::new(Dispatcher(self.0 .0)), PhantomData)
+        Self(ManuallyDrop::new(Dispatcher(self.0.0)), PhantomData)
     }
 }
 
@@ -328,13 +329,13 @@ pub trait OnDispatcher: Clone + Send + Sync + Unpin {
     }
 }
 
-impl<'a, D: OnDispatcher> OnDispatcher for &'a D {
+impl<D: OnDispatcher> OnDispatcher for &D {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
         D::on_dispatcher(*self, f)
     }
 }
 
-impl<'a> OnDispatcher for &'a Dispatcher {
+impl OnDispatcher for &Dispatcher {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
         f(Some(self.as_dispatcher_ref()))
     }
@@ -370,7 +371,7 @@ pub struct CurrentDispatcher;
 impl OnDispatcher for CurrentDispatcher {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
         let dispatcher = OVERRIDE_DISPATCHER
-            .with(|global| global.borrow().clone())
+            .with(|global| *global.borrow())
             .or_else(|| {
                 // SAFETY: NonNull::new will null-check that we have a current dispatcher.
                 NonNull::new(unsafe { fdf_dispatcher_get_current_dispatcher() })
@@ -456,7 +457,7 @@ impl TaskFunc {
         let task = unsafe { Arc::from_raw(task as *const UnsafeCell<Self>) };
         // SAFETY: if we can't get a mut ref from the arc, then the task is already
         // being cancelled, so we don't want to call it.
-        if let Some(task) = Arc::try_unwrap(task).ok() {
+        if let Ok(task) = Arc::try_unwrap(task) {
             (task.into_inner().func)(Status::from_raw(status));
         }
     }
@@ -529,7 +530,7 @@ impl ShutdownObserver {
 mod tests {
     use super::*;
 
-    use std::sync::{mpsc, Once};
+    use std::sync::{Once, mpsc};
 
     use futures::channel::mpsc as async_mpsc;
     use futures::{SinkExt, StreamExt};
@@ -564,7 +565,7 @@ mod tests {
         let mut observer = ShutdownObserver::new(move |dispatcher| {
             // SAFETY: we verify that the dispatcher has no tasks left queued in it,
             // just because this is testing code.
-            assert!(!unsafe { fdf_env_dispatcher_has_queued_tasks(dispatcher.0 .0.as_ptr()) });
+            assert!(!unsafe { fdf_env_dispatcher_has_queued_tasks(dispatcher.0.0.as_ptr()) });
             shutdown_tx.send(()).unwrap();
         })
         .into_ptr();
@@ -580,7 +581,7 @@ mod tests {
                 name.as_ptr() as *const c_char,
                 name.len(),
                 "".as_ptr() as *const c_char,
-                0 as usize,
+                0_usize,
                 observer,
                 &mut dispatcher,
             )

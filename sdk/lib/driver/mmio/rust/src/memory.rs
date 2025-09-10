@@ -33,7 +33,7 @@ impl<Claim> Memory<Claim> {
     ///
     /// # Safety
     /// - The given memory must be exclusively owned by the returned object for the lifetime of the
-    /// claim.
+    ///   claim.
     pub unsafe fn new_unchecked(claim: Claim, base_ptr: NonNull<u8>, len: usize) -> Self {
         Self { base_ptr, len, _claim: claim }
     }
@@ -279,14 +279,14 @@ mod tests {
 
             // Store each register with a different granularity.
             mmio.store64(r0, v64);
-            for j in 0..2 {
-                mmio.store32(r1 + j * size_of::<u32>(), v32s[j]);
+            for (j, v) in v32s.iter().enumerate() {
+                mmio.store32(r1 + j * size_of::<u32>(), *v);
             }
-            for j in 0..4 {
-                mmio.store16(r2 + j * size_of::<u16>(), v16s[j]);
+            for (j, v) in v16s.iter().enumerate() {
+                mmio.store16(r2 + j * size_of::<u16>(), *v);
             }
-            for j in 0..8 {
-                mmio.store8(r3 + j * size_of::<u8>(), v8s[j]);
+            for (j, v) in v8s.iter().enumerate() {
+                mmio.store8(r3 + j * size_of::<u8>(), *v);
             }
 
             // Now test loading each register back at the different granularities.
@@ -294,16 +294,16 @@ mod tests {
                 let r = base_offset + j * size_of::<u64>();
                 assert_eq!(mmio.load64(r), v64);
 
-                for j in 0..2 {
-                    assert_eq!(mmio.load32(r + j * size_of::<u32>()), v32s[j]);
+                for (j, v) in v32s.iter().enumerate() {
+                    assert_eq!(mmio.load32(r + j * size_of::<u32>()), *v);
                 }
 
-                for j in 0..4 {
-                    assert_eq!(mmio.load16(r + j * size_of::<u16>()), v16s[j]);
+                for (j, v) in v16s.iter().enumerate() {
+                    assert_eq!(mmio.load16(r + j * size_of::<u16>()), *v);
                 }
 
-                for j in 0..8 {
-                    assert_eq!(mmio.load8(r + j), v8s[j]);
+                for (j, v) in v8s.iter().enumerate() {
+                    assert_eq!(mmio.load8(r + j), *v);
                 }
             }
         }

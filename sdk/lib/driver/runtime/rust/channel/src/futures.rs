@@ -105,8 +105,9 @@ impl ReadMessageState {
     }
 
     /// Polls this channel read operation against the given dispatcher.
+    #[expect(clippy::type_complexity)]
     pub fn poll_with_dispatcher<D: OnDispatcher>(
-        self: &mut Self,
+        &mut self,
         cx: &mut Context<'_>,
         dispatcher: D,
     ) -> Poll<Result<Option<Message<[MaybeUninit<u8>]>>, Status>> {
@@ -200,7 +201,7 @@ mod test {
     use fdf_env::test::{spawn_in_driver, spawn_in_driver_etc};
 
     use crate::arena::Arena;
-    use crate::channel::{read_raw, Channel};
+    use crate::channel::{Channel, read_raw};
 
     use super::*;
 

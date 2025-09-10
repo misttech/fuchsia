@@ -7,7 +7,6 @@
 use crate::arena::{Arena, ArenaBox};
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
-use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use fdf_core::handle::MixedHandle;
 
@@ -106,7 +105,7 @@ impl<T: ?Sized> Message<T> {
     ///
     /// The caller is responsible for:
     /// - ensuring that the [`ArenaBox`]es came from the same arena as is being passed in to this
-    /// function, or the erased lifetime of the arena boxes might cause use-after-free.
+    ///   function, or the erased lifetime of the arena boxes might cause use-after-free.
     /// - the bytes in `data` are actually of type `T`, and are properly aligned for type `T`.
     pub(crate) unsafe fn new_unchecked(
         arena: Arena,
@@ -128,12 +127,12 @@ impl<T: ?Sized> Message<T> {
 
     /// Gets a reference to the data in this message, if there is any
     pub fn data(&self) -> Option<&T> {
-        self.data.as_ref().map(ArenaBox::deref)
+        self.data.as_deref()
     }
 
     /// Gets a mutable reference to the data in this message, if there is any
     pub fn data_mut(&mut self) -> Option<&mut T> {
-        self.data.as_mut().map(ArenaBox::deref_mut)
+        self.data.as_deref_mut()
     }
 
     /// Maps the message data to a new [`ArenaBox`] based on the arena and the old data.
@@ -155,30 +154,22 @@ impl<T: ?Sized> Message<T> {
 
     /// Gets a reference to the handles array in this message, if there is one.
     pub fn handles(&self) -> Option<&[Option<MixedHandle>]> {
-        self.handles.as_ref().map(ArenaBox::deref)
+        self.handles.as_deref()
     }
 
     /// Gets a mutable reference to the handles array in this message, if there is one.
     pub fn handles_mut(&mut self) -> Option<&mut [Option<MixedHandle>]> {
-        self.handles.as_mut().map(ArenaBox::deref_mut)
+        self.handles.as_deref_mut()
     }
 
     /// Gets a reference to all three of the arena, data, and handles of the message
     pub fn as_refs(&self) -> (&Arena, Option<&T>, Option<&[Option<MixedHandle>]>) {
-        (
-            &self.arena,
-            self.data.as_ref().map(ArenaBox::deref),
-            self.handles.as_ref().map(ArenaBox::deref),
-        )
+        (&self.arena, self.data.as_deref(), self.handles.as_deref())
     }
 
     /// Gets a reference to the arena and mutable references to the data handles of the message
     pub fn as_mut_refs(&mut self) -> (&Arena, Option<&mut T>, Option<&mut [Option<MixedHandle>]>) {
-        (
-            &self.arena,
-            self.data.as_mut().map(ArenaBox::deref_mut),
-            self.handles.as_mut().map(ArenaBox::deref_mut),
-        )
+        (&self.arena, self.data.as_deref_mut(), self.handles.as_deref_mut())
     }
 
     /// Unpacks the arena and buffers in this message to the caller.
@@ -186,6 +177,7 @@ impl<T: ?Sized> Message<T> {
     /// The `arena` argument provides a place to put the [`Arena`] from this message
     /// in the local lifetime of the caller so that the [`ArenaBox`]es can be tied to
     /// its lifetime.
+    #[expect(clippy::type_complexity)]
     pub fn into_arena_boxes<'a>(
         self,
         arena: &'a mut Option<Arena>,
@@ -200,9 +192,10 @@ impl<T: ?Sized> Message<T> {
 
     /// Takes the `ArenaBox`es for the data and handles from this [`Message`], but leaves
     /// the [`Arena`] in the [`Message`] to act as a holder of the arena lifetime.
+    #[expect(clippy::type_complexity)]
     pub fn take_arena_boxes(
         &mut self,
-    ) -> (&Arena, Option<ArenaBox<'_, T>>, Option<ArenaBox<'_, [Option<MixedHandle>]>>) {
+    ) -> (&'_ Arena, Option<ArenaBox<'_, T>>, Option<ArenaBox<'_, [Option<MixedHandle>]>>) {
         (&self.arena, self.data.take(), self.handles.take())
     }
 
@@ -211,6 +204,7 @@ impl<T: ?Sized> Message<T> {
     /// Care must be taken to ensure that the data and handle pointers are not used
     /// if the arena is freed. If they are never reconstituted into a [`Message`]
     /// or an [`Arena`] and [`ArenaBox`]es, they will be leaked.
+    #[expect(clippy::type_complexity)]
     pub fn into_raw(
         self,
     ) -> (NonNull<fdf_arena_t>, Option<NonNull<T>>, Option<NonNull<[Option<MixedHandle>]>>) {

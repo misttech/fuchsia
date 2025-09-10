@@ -11,6 +11,8 @@ rustc_library("fidl") {
   edition = "2024"
   with_unit_tests = true
 
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
+
   deps = [
     "//sdk/lib/driver/runtime/rust/channel",
     "//sdk/lib/driver/runtime/rust/core",

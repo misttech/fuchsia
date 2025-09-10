@@ -16,6 +16,7 @@ rustc_library("mmio") {
     "src/region.rs",
     "src/vmo.rs",
   ]
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
   deps = [
     "//sdk/rust/zx",
     "//sdk/rust/zx-status",

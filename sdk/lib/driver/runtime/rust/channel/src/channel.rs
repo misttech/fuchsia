@@ -15,10 +15,10 @@ use fdf_core::handle::{DriverHandle, MixedHandle};
 use fdf_sys::*;
 
 use core::marker::PhantomData;
-use core::mem::{size_of_val, MaybeUninit};
+use core::mem::{MaybeUninit, size_of_val};
 use core::num::NonZero;
 use core::pin::Pin;
-use core::ptr::{null_mut, NonNull};
+use core::ptr::{NonNull, null_mut};
 use core::task::{Context, Poll};
 
 pub use fdf_sys::fdf_handle_t;
@@ -86,7 +86,7 @@ impl<T: ?Sized + 'static> Channel<T> {
     /// The channel will take ownership of the data and handles passed in,
     pub fn write(&self, message: Message<T>) -> Result<(), Status> {
         // get the sizes while the we still have refs to the data and handles
-        let data_len = message.data().map_or(0, |data| size_of_val(&*data) as u32);
+        let data_len = message.data().map_or(0, |data| size_of_val(data) as u32);
         let handles_count = message.handles().map_or(0, |handles| handles.len() as u32);
 
         let (arena, data, handles) = message.into_raw();
@@ -164,7 +164,7 @@ pub(crate) fn try_read_raw(
         )
     })?;
     // if no arena was returned, that means no data was returned.
-    if out_arena == null_mut() {
+    if out_arena.is_null() {
         return Ok(None);
     }
     // SAFETY: we just checked that the `out_arena` is non-null
@@ -193,7 +193,7 @@ pub(crate) fn try_read_raw(
 /// # Panic
 ///
 /// Panics if this is not run from a driver framework dispatcher.
-pub(crate) fn read_raw<'a, D>(channel: &'a DriverHandle, dispatcher: D) -> ReadMessageRawFut<D> {
+pub(crate) fn read_raw<D>(channel: &DriverHandle, dispatcher: D) -> ReadMessageRawFut<D> {
     // SAFETY: Since the future's lifetime is bound to the original driver handle and it
     // holds the message state, the message state object can't outlive the handle.
     ReadMessageRawFut { raw_fut: unsafe { ReadMessageState::new(channel) }, dispatcher }
@@ -201,7 +201,7 @@ pub(crate) fn read_raw<'a, D>(channel: &'a DriverHandle, dispatcher: D) -> ReadM
 
 impl<T> Channel<T> {
     /// Attempts to read an object of type `T` and a handle set from the channel
-    pub fn try_read<'a>(&self) -> Result<Option<Message<T>>, Status> {
+    pub fn try_read(&self) -> Result<Option<Message<T>>, Status> {
         // read a message from the channel
         let Some(message) = try_read_raw(&self.0)? else {
             return Ok(None);
@@ -224,7 +224,7 @@ impl<T> Channel<T> {
 
 impl Channel<[u8]> {
     /// Attempts to read an object of type `T` and a handle set from the channel
-    pub fn try_read_bytes<'a>(&self) -> Result<Option<Message<[u8]>>, Status> {
+    pub fn try_read_bytes(&self) -> Result<Option<Message<[u8]>>, Status> {
         // read a message from the channel
         let Some(message) = try_read_raw(&self.0)? else {
             return Ok(None);
@@ -288,10 +288,10 @@ mod tests {
         let arena = Arena::new();
         assert_eq!(first.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
         first.write_with_data(arena.clone(), |arena| arena.insert_slice(&[1, 2, 3, 4])).unwrap();
-        assert_eq!(&*second.try_read_bytes().unwrap().unwrap().data().unwrap(), &[1, 2, 3, 4]);
+        assert_eq!(second.try_read_bytes().unwrap().unwrap().data().unwrap(), &[1, 2, 3, 4]);
         assert_eq!(second.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
         second.write_with_data(arena.clone(), |arena| arena.insert_slice(&[5, 6, 7, 8])).unwrap();
-        assert_eq!(&*first.try_read_bytes().unwrap().unwrap().data().unwrap(), &[5, 6, 7, 8]);
+        assert_eq!(first.try_read_bytes().unwrap().unwrap().data().unwrap(), &[5, 6, 7, 8]);
         assert_eq!(first.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
         assert_eq!(second.try_read_bytes().unwrap_err(), Status::from_raw(ZX_ERR_SHOULD_WAIT));
         drop(second);

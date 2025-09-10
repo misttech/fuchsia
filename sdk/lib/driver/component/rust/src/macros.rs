@@ -5,14 +5,14 @@
 //! Implementation of the [`driver_register`] macro for registering driver implementations
 //! with the driver host.
 
-use crate::server::DriverServer;
 use crate::Driver;
+use crate::server::DriverServer;
 
 /// These re-exports are for the use of the macro and so should not be surfaced in documentation.
 #[doc(hidden)]
 pub use fdf_sys::{
-    fdf_dispatcher_get_current_dispatcher, DriverRegistration,
-    DriverRegistration_driver_registration_v1, DRIVER_REGISTRATION_VERSION_1,
+    DRIVER_REGISTRATION_VERSION_1, DriverRegistration, DriverRegistration_driver_registration_v1,
+    fdf_dispatcher_get_current_dispatcher,
 };
 
 /// Called by the macro [`driver_register`] to create the driver registration struct
@@ -56,8 +56,9 @@ pub const fn make_driver_registration<T: Driver>() -> DriverRegistration {
 #[macro_export]
 macro_rules! driver_register {
     ($ty:ty) => {
-        #[no_mangle]
-        #[link_section = ".driver_registration"]
+        // SAFETY: There is no other global function of this name
+        #[unsafe(no_mangle)]
+        #[unsafe(link_section = ".driver_registration")]
         #[allow(non_upper_case_globals)]
         pub static __fuchsia_driver_registration__: $crate::macros::DriverRegistration =
             $crate::macros::make_driver_registration::<$ty>();

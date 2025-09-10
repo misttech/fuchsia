@@ -16,9 +16,9 @@
 //! with devices:
 //!
 //! - Guaranteed execution: I/O operations may be elided if the elision would have no impact on the
-//! observable behavior of the executing thread (they may also be repeated).
+//!   observable behavior of the executing thread (they may also be repeated).
 //! - Operation ordering: operations may be reordered if doing so does not impact the observable
-//! behavior of the executing thread.
+//!   behavior of the executing thread.
 //!
 //! For memory that is under the control of the Rust Abstract Machine, the semantics of a safe Rust
 //! program can depend on memory not changing value without a corresponding write.

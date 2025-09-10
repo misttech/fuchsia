@@ -20,12 +20,9 @@ impl<T: Clone> DropSender<T> {
 }
 impl<T: Clone> Drop for DropSender<T> {
     fn drop(&mut self) {
-        match self.1.get_mut() {
-            Some(sender) => {
-                println!("dropping a drop sender");
-                sender.send(self.0.clone()).unwrap();
-            }
-            _ => {}
+        if let Some(sender) = self.1.get_mut() {
+            println!("dropping a drop sender");
+            sender.send(self.0.clone()).unwrap();
         }
     }
 }

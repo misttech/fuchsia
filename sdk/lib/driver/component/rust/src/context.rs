@@ -16,6 +16,7 @@ use fdf::DispatcherRef;
 use fidl_fuchsia_driver_framework::DriverStartArgs;
 
 /// The context arguments passed to the driver in its start arguments.
+#[non_exhaustive]
 pub struct DriverContext {
     /// A reference to the root [`fdf::Dispatcher`] for this driver.
     pub root_dispatcher: DispatcherRef<'static>,
@@ -25,8 +26,6 @@ pub struct DriverContext {
     /// The incoming namespace constructed from [`DriverStartArgs::incoming`]. Since producing this
     /// consumes the incoming namespace from [`Self::start_args`], that will always be [`None`].
     pub incoming: Incoming,
-    #[doc(hidden)]
-    _private: (),
 }
 
 impl DriverContext {
@@ -104,18 +103,20 @@ impl DriverContext {
         let incoming_namespace: Namespace = start_args
             .incoming
             .take()
-            .unwrap_or_else(|| vec![])
+            .unwrap_or_default()
             .try_into()
             .map_err(|_| Status::INVALID_ARGS)?;
-        let incoming = incoming_namespace.try_into().map_err(|_| Status::INVALID_ARGS)?;
-        Ok(DriverContext { root_dispatcher, start_args, incoming, _private: () })
+        let incoming = Incoming::from(incoming_namespace);
+        Ok(DriverContext { root_dispatcher, start_args, incoming })
     }
 
     pub(crate) fn start_logging(&self, driver_name: &str) -> Result<(), Status> {
         let log_client = match self.incoming.connect_protocol() {
             Ok(log_client) => log_client,
             Err(err) => {
-                eprintln!("Error connecting to log sink proxy at driver startup: {err}. Continuing without logging.");
+                eprintln!(
+                    "Error connecting to log sink proxy at driver startup: {err}. Continuing without logging."
+                );
                 return Ok(());
             }
         };

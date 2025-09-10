@@ -11,6 +11,8 @@ rustc_library("rust") {
   edition = "2024"
   with_unit_tests = true
 
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
+
   deps = [
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/lib/driver/component/rust",

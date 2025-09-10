@@ -26,6 +26,12 @@ pub struct ZirconServiceOffer<S> {
     _p: PhantomData<S>,
 }
 
+impl<S: fidl_next::DiscoverableService> Default for ZirconServiceOffer<S> {
+    fn default() -> Self {
+        Self::new_next()
+    }
+}
+
 impl<S> ZirconServiceOffer<S> {
     /// Builds an offer for a zircon transport service based on the [`ServiceMarker`] for `S`.
     ///

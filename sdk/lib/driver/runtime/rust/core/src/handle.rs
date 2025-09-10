@@ -31,7 +31,7 @@ impl DriverHandle {
     ///
     /// - It has the marker bits set correctly
     /// - It is not "owned" elsewhere, or that it will not call [`Drop::drop`] on this new
-    /// object if it is.
+    ///   object if it is.
     pub unsafe fn new_unchecked(handle: NonZero<fdf_handle_t>) -> Self {
         Self(handle)
     }

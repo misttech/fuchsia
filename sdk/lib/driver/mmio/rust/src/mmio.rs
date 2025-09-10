@@ -47,11 +47,11 @@ pub enum MmioError {
 /// can be used to ensure these requirements:
 ///
 /// - [MmioExt::check_aligned_for<T>]: returns an [MmioError::Unaligned] error if the given offset is
-/// not suitably aligned.
+///   not suitably aligned.
 /// - [MmioExt::check_capacity_for<T>]: returns an [MmioError::OutOfRange] error if there is not
-/// sufficient capacity at the given offset.
+///   sufficient capacity at the given offset.
 /// - [MmioExt::check_suitable_for<T>]: returns an [MmioError] if there is not sufficient capacity at
-/// the given offset or it is not suitably aligned.
+///   the given offset or it is not suitably aligned.
 ///
 /// # Dyn Compatibility
 /// This trait is dyn compatible. See the [MmioExt] trait for useful utilities that extend this
@@ -59,6 +59,11 @@ pub enum MmioError {
 pub trait Mmio {
     /// Returns the size in bytes of this MMIO region.
     fn len(&self) -> usize;
+
+    /// Returns true if the MMIO region has a length of 0.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Computes the first offset within this region that is aligned to `align`.
     ///
@@ -378,7 +383,7 @@ pub trait MmioExt: Mmio {
         let align = align_of::<T>();
         let align_offset = self.align_offset(align);
         // An offset is aligned if (offset = align_offset + i * align) for some i.
-        if offset.wrapping_sub(align_offset) % align == 0 {
+        if offset.wrapping_sub(align_offset).is_multiple_of(align) {
             Ok(())
         } else {
             Err(MmioError::Unaligned)
@@ -390,11 +395,7 @@ pub trait MmioExt: Mmio {
     /// [MmioExt::check_capacity_for].
     fn check_capacity_for<T>(&self, offset: usize) -> Result<(), MmioError> {
         let capacity_at_offset = self.len().checked_sub(offset).ok_or(MmioError::OutOfRange)?;
-        if capacity_at_offset >= size_of::<T>() {
-            Ok(())
-        } else {
-            Err(MmioError::OutOfRange)
-        }
+        if capacity_at_offset >= size_of::<T>() { Ok(()) } else { Err(MmioError::OutOfRange) }
     }
 
     /// Checks that the given offset into this MMIO rgion is suitably aligned and has sufficient

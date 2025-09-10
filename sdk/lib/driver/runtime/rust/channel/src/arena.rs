@@ -9,7 +9,7 @@ use core::cmp::max;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
-use core::ptr::{null_mut, slice_from_raw_parts_mut, NonNull};
+use core::ptr::{NonNull, null_mut, slice_from_raw_parts_mut};
 use std::sync::{Arc, Weak};
 
 use zx::Status;
@@ -26,6 +26,12 @@ pub struct Arena(pub(crate) NonNull<fdf_arena_t>);
 // SAFETY: The api for `fdf_arena_t` is thread safe
 unsafe impl Send for Arena {}
 unsafe impl Sync for Arena {}
+
+impl Default for Arena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Arena {
     /// Allocates a new arena for use with the driver runtime
@@ -213,7 +219,7 @@ impl Arena {
     /// - initialized to a value of `T`.
     /// - properly aligned for `T`.
     /// - pointing to the beginning of the object, and not to a subfield of another
-    /// [`ArenaBox`]ed object.
+    ///   [`ArenaBox`]ed object.
     pub unsafe fn assume<T: ?Sized>(&self, ptr: NonNull<T>) -> ArenaBox<'_, T> {
         // SAFETY: caller promises the pointer is initialized and valid
         assert!(
@@ -221,8 +227,7 @@ impl Arena {
             "Arena can't assume ownership over a pointer not allocated from within it"
         );
         // SAFETY: we will verify the provenance below
-        let data = unsafe { self.assume_unchecked(ptr) };
-        data
+        unsafe { self.assume_unchecked(ptr) }
     }
 
     /// Moves the given [`ArenaBox`] into an [`ArenaRc`] with an owned
@@ -310,7 +315,7 @@ impl Arena {
     pub fn into_raw(self) -> NonNull<fdf_arena_t> {
         let res = self.0;
         core::mem::forget(self);
-        return res;
+        res
     }
 }
 
@@ -770,7 +775,7 @@ impl<T: ?Sized> ArenaWeak<T> {
 /// In addition to all the safety requirements of [`std::alloc::alloc`], the
 /// caller must ensure that `T` is the type of elements of `ActualType`.
 unsafe fn global_alloc<T>(layout: Layout) -> NonNull<T> {
-    let storage = if layout.size() == 0 {
+    if layout.size() == 0 {
         NonNull::dangling()
     } else {
         let ptr = unsafe { std::alloc::alloc(layout) };
@@ -778,8 +783,7 @@ unsafe fn global_alloc<T>(layout: Layout) -> NonNull<T> {
             std::alloc::handle_alloc_error(layout);
         }
         unsafe { NonNull::new_unchecked(ptr as *mut T) }
-    };
-    storage
+    }
 }
 
 #[cfg(test)]
@@ -997,7 +1001,7 @@ mod tests {
         // empty slice to vec
         let val: ArenaBox<'_, [()]> = arena.insert_slice(&[]);
         let vec_val = Vec::from_iter(val);
-        assert!(vec_val.len() == 0);
+        assert!(vec_val.is_empty());
 
         // filled slice to vec
         let val = arena.insert_slice(&[1, 2, 3, 4]);

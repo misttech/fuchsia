@@ -102,14 +102,14 @@ impl NodeBuilder {
     pub fn add_property(mut self, key: impl Into<String>, value: impl Into<PropertyValue>) -> Self {
         let key = key.into();
         let value = value.into().0;
-        self.0.properties2.get_or_insert_with(|| vec![]).push(NodeProperty2 { key, value });
+        self.0.properties2.get_or_insert_with(Vec::new).push(NodeProperty2 { key, value });
         self
     }
 
     /// Adds a service offer to the node. The `offer` can be built with the
     /// [`offers::ZirconServiceOffer`] builder.
     pub fn add_offer(mut self, offer: Offer) -> Self {
-        self.0.offers2.get_or_insert_with(|| vec![]).push(offer);
+        self.0.offers2.get_or_insert_with(Vec::new).push(offer);
         self
     }
 
@@ -118,11 +118,7 @@ impl NodeBuilder {
     where
         F: FnOnce(Self) -> Self,
     {
-        if condition {
-            callback(self)
-        } else {
-            self
-        }
+        if condition { callback(self) } else { self }
     }
 
     /// Triggers the callback if |value| has a some value in it.
@@ -130,11 +126,7 @@ impl NodeBuilder {
     where
         F: FnOnce(Self, T) -> Self,
     {
-        if let Some(value) = value {
-            callback(self, value)
-        } else {
-            self
-        }
+        if let Some(value) = value { callback(self, value) } else { self }
     }
 
     /// Finalize the construction of the node for use with [`Node::add_child`] or

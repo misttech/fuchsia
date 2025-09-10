@@ -225,13 +225,13 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
         }
         let pos = self.data_offset;
         self.data_offset += count;
-        Ok(unsafe { NonNull::new_unchecked((&mut data[pos..(pos + count)]).as_mut_ptr()) })
+        Ok(unsafe { NonNull::new_unchecked((data[pos..(pos + count)]).as_mut_ptr()) })
     }
 
     fn commit(&mut self) {
         if let Some(handles) = self.buffer.as_mut().and_then(Message::handles_mut) {
-            for i in 0..self.handle_offset {
-                core::mem::forget(handles[i].take());
+            for handle in handles.iter_mut().take(self.handle_offset) {
+                core::mem::forget(handle.take());
             }
         }
     }
@@ -364,7 +364,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
         let message = Message::new_with(arena, |arena| {
             let data = arena.insert_slice(&buffer.data);
             let handles = buffer.handles.split_off(0);
-            let handles = arena.insert_from_iter(handles.into_iter());
+            let handles = arena.insert_from_iter(handles);
             (Some(data), Some(handles))
         });
         let result = match shared.channel.channel.write(message) {
@@ -406,14 +406,13 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
                         // SAFETY: we verified that the size of the message we received was the correct
                         // multiple of chunks and we know that the data pointer is otherwise valid and
                         // from the correct arena by construction.
-                        let new_box = unsafe {
+                        unsafe {
                             let ptr = ArenaBox::into_ptr(data).cast();
                             ArenaBox::new(NonNull::slice_from_raw_parts(
                                 ptr,
                                 bytes / size_of::<Chunk>(),
                             ))
-                        };
-                        new_box
+                        }
                     })
                 });
 
@@ -465,7 +464,7 @@ mod test {
         ) {
             responder
                 .respond(
-                    &sender,
+                    sender,
                     Result::<_, i32>::Ok(DeviceGetHardwareIdResponse { response: 4004 }),
                 )
                 .await
@@ -480,7 +479,7 @@ mod test {
             let event = Event::create();
             event.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
             let response = DeviceGetEventResponse { event };
-            responder.respond(&sender, response).await.unwrap();
+            responder.respond(sender, response).await.unwrap();
         }
     }
 

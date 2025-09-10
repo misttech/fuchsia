@@ -10,7 +10,7 @@ use fdf_sys::*;
 
 use core::ffi;
 use core::marker::PhantomData;
-use core::ptr::{null_mut, NonNull};
+use core::ptr::{NonNull, null_mut};
 
 use zx::Status;
 
@@ -234,7 +234,7 @@ impl<T> Drop for Driver<T> {
 
 impl<T> PartialEq<UnownedDriver> for Driver<T> {
     fn eq(&self, other: &UnownedDriver) -> bool {
-        return self.inner.as_ptr() as *const _ == other.inner;
+        self.inner.as_ptr() as *const _ == other.inner
     }
 }
 
@@ -302,7 +302,7 @@ impl Environment {
     /// such as from tasks or ChannelRead callbacks.
     pub fn reset(&self) {
         assert!(
-            Self::current_thread_managed_by_driver_runtime() == false,
+            !Self::current_thread_managed_by_driver_runtime(),
             "reset must be called from a thread not managed by the driver runtime"
         );
         // SAFETY: calling fdf_env_reset, which does not have any soundness
@@ -320,8 +320,10 @@ impl Environment {
     /// This method should not be called from a thread managed by the driver runtime,
     /// such as from tasks or ChannelRead callbacks.
     pub fn destroy_all_dispatchers(&self) {
-        assert!(Self::current_thread_managed_by_driver_runtime() == false,
-            "destroy_all_dispatchers must be called from a thread not managed by the driver runtime");
+        assert!(
+            !Self::current_thread_managed_by_driver_runtime(),
+            "destroy_all_dispatchers must be called from a thread not managed by the driver runtime"
+        );
         unsafe { fdf_env_destroy_all_dispatchers() };
     }
 
@@ -361,10 +363,6 @@ impl Environment {
         unsafe {
             Status::ok(fdf_env_get_driver_on_tid(thread_koid.raw_koid(), &mut driver)).ok()?;
         }
-        if driver.is_null() {
-            None
-        } else {
-            Some(UnownedDriver { inner: driver })
-        }
+        if driver.is_null() { None } else { Some(UnownedDriver { inner: driver }) }
     }
 }

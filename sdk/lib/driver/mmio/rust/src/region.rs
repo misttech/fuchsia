@@ -33,13 +33,18 @@ use std::sync::Arc;
 ///
 /// # Safety
 /// - Callers must ensure that stores are never performed concurrently with any other operation on
-/// an overlapping range.
+///   an overlapping range.
 /// - Concurrent loads are allowed on overlapping ranges.
 /// - Callers must ensure that offsets are suitably aligned for the type being loaded or stored.
 pub trait UnsafeMmio {
     /// Returns the size, in bytes, of the underlying MMIO region that can be accessed through this
     /// object.
     fn len(&self) -> usize;
+
+    /// Returns true if the MMIO region has a length of 0.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Returns the first offset into this MMIO region that is suitably aligned for`align`.
     ///
@@ -167,7 +172,7 @@ impl<Impl: UnsafeMmio, Owner: Borrow<Impl>> MmioRegion<Impl, Owner> {
     ///
     /// # Safety
     /// - For the lifetime of this MmioRegion or any split off from it the given range must only be
-    /// accessed through this MmioRegion or a region split off from it.
+    ///   accessed through this MmioRegion or a region split off from it.
     unsafe fn new_unchecked(owner: Owner, bounds: Range<usize>) -> Self {
         Self { owner, bounds, phantom: PhantomData }
     }
@@ -373,7 +378,7 @@ mod tests {
             // detected.
             self.sleep();
 
-            borrows.into_iter().zip(bytes.into_iter()).for_each(|(mut r, b)| *r = b);
+            borrows.into_iter().zip(bytes).for_each(|(mut r, b)| *r = b);
         }
     }
 
@@ -506,7 +511,7 @@ mod tests {
             v: T,
         ) {
             let absolute_offset = offset + region_offset;
-            let is_aligned = (absolute_offset % align_of::<T>()) == 0;
+            let is_aligned = absolute_offset.is_multiple_of(align_of::<T>());
             let expected_res = if is_aligned { Ok(()) } else { Err(MmioError::Unaligned) };
             assert_eq!(mmio.check_suitable_for::<T>(offset), expected_res);
             assert_eq!(mmio.try_store(offset, v), expected_res);
@@ -520,7 +525,7 @@ mod tests {
                 assert_alignment(&mut region, relative_offset, region_offset, v as u8);
                 assert_alignment(&mut region, relative_offset, region_offset, v as u16);
                 assert_alignment(&mut region, relative_offset, region_offset, v as u32);
-                assert_alignment(&mut region, relative_offset, region_offset, v as u64);
+                assert_alignment(&mut region, relative_offset, region_offset, v);
             }
             // Throw away the first byte to advance the region's bounds.
             let _ = region.split_off(1);
