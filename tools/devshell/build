@@ -758,7 +758,12 @@ job_count: $concurrency
     fi
 
     declare -r end_time="${EPOCHREALTIME/./}"
-    track-build-event "${start_time}" "${end_time}" "${status}" "${extra_switches[*]}" "${ninja_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}"&
+    # For historical reason, arguments 4-6 were {ninja_switches}, {switches} and {fuchsia_targets} in
+    # previous versions of this script. {ninja_switches} and {switches} are now merged into {extra_switches}
+    # and {fuchsia_targets} is now renamed {ninja_targets}. To ensure our dashboard can parse this data
+    # properly, make the fourth argument empty here.
+    local empty_switches=()
+    track-build-event "${start_time}" "${end_time}" "${status}" "${empty_switches[*]}" "${extra_switches[*]}" "${ninja_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}"&
   fi
   exit-with-message
 }

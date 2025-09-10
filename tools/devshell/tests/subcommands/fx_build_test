@@ -54,7 +54,6 @@ setup_parsing_validation_test() {
 }
 
 # This function must be called by regular build tests.
-# $1: optional, set to "enable_landmines" to enable landmine checks.
 setup_build_test() {
   # Set up mocked replacements for system utils.
 
@@ -389,6 +388,48 @@ TEST_fx-build-with-bazel-label-with-config-host() {
       @//src/foo
     )
     BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+}
+
+TEST_fx-build-produces-build-tracking-events() {
+    setup_build_test
+
+    track_build_event=$(btf::make_mock_binary track-build-event)
+
+    cat > "${BT_TEMP_DIR}/tools/devshell/lib/metrics.sh.mock_side_effects" <<EOF
+  function metrics-init {
+    echo ""
+  }
+  function track-command-execution {
+    echo ""
+  }
+  function track-feature-status {
+    echo ""
+  }
+  function track-command-finished {
+    echo ""
+  }
+  function track-build-event {
+    "${track_build_event}" "\$@"
+  }
+EOF
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    BT_EXPECT "${fx}" build "-j4" //src:foo
+    source "${ninja}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -C ${TEST_BUILD_DIR} -j4 obj/src/foo"
+
+    source "${track_build_event}.mock_state"
+    BT_EXPECT_EQ "${#BT_MOCK_ARGS[@]}" "11"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[0]}" "${track_build_event}"
+    # [1] is start time (time-dependent)
+    # [2] is end time (time-dependent)
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[3]}" "0"   # status
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[4]}" ""    # empty switches
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[5]}" "-j4"    # extra switches
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[6]}" "obj/src/foo"  # ninja targets
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[7]}" "${TEST_BUILD_DIR}"  # fuchsia build dir
+    # [8] is_no_op (timestamp-dependent)
+    # [9] is_clean_build (timestamp-dependent)
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[10]}" ""  # quiet
 }
 
 BT_RUN_TESTS "$@"
