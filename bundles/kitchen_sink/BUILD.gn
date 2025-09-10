@@ -16,6 +16,7 @@ group("kitchen_sink") {
   public_deps = [
     "//bundles/tests",
     "//examples",
+    "//src/camera",
     "//src/graphics/examples",
     "//src/lib/ui/carnelian:examples",
     "//src/media/bundles:examples",

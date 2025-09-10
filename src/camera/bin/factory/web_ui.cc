@@ -15,6 +15,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <zircon/types.h>
 
 #include <memory>
@@ -50,9 +51,10 @@ void WebUI::Listen(int port) {
     close(listen_sock_);
     return;
   }
-  const struct sockaddr_in6 saddr {
-    .sin6_family = AF_INET6, .sin6_port = htons(static_cast<uint16_t>(port)),
-    .sin6_addr = in6addr_any,
+  const struct sockaddr_in6 saddr{
+      .sin6_family = AF_INET6,
+      .sin6_port = htons(static_cast<uint16_t>(port)),
+      .sin6_addr = in6addr_any,
   };
   int enable = 1;
   if (setsockopt(listen_sock_, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof enable) < 0) {
@@ -81,7 +83,7 @@ void WebUI::ListenWaiter() {
 }
 
 void WebUI::OnListenReady(zx_status_t success, uint32_t events) {
-  struct sockaddr_in6 peer {};
+  struct sockaddr_in6 peer{};
   socklen_t peer_len = sizeof(peer);
   int fd = accept(listen_sock_, reinterpret_cast<struct sockaddr*>(&peer), &peer_len);
   if (fd < 0) {
