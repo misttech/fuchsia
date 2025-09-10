@@ -26,7 +26,7 @@ async fn cached_packages_are_retained() {
     ];
 
     // Packages to be written to BlobFS to emulate data available for GC.
-    let garbage_packages = vec![
+    let garbage_packages = [
         PackageBuilder::new("pkg-b").build().await.unwrap(),
         PackageBuilder::new("multi-pkg-b")
             .add_resource_at("bin/bar", "b-bin-bar".as_bytes())

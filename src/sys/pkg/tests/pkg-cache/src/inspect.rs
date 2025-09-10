@@ -415,7 +415,7 @@ async fn retained_index_inital_state() {
 #[fuchsia::test]
 async fn retained_index_updated_and_persisted() {
     let env = TestEnv::builder().build().await;
-    let packages = vec![
+    let packages = [
         PackageBuilder::new("pkg-a").build().await.unwrap(),
         PackageBuilder::new("multi-pkg-a")
             .add_resource_at("bin/foo", "a-bin-foo".as_bytes())

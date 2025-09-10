@@ -7,7 +7,7 @@ use crate::client::types;
 use crate::config_management::SavedNetworksManagerApi;
 use crate::mode_management::iface_manager_api::{IfaceManagerApi, SmeForScan};
 use crate::telemetry::{ScanEventInspectData, ScanIssue, TelemetryEvent, TelemetrySender};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
@@ -483,13 +483,13 @@ mod tests {
         generate_channel, generate_random_sme_scan_result, run_until_completion,
     };
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, ControlHandle, Responder};
+    use fidl::endpoints::{ControlHandle, Responder, create_proxy};
     use futures::future;
     use futures::task::Poll;
     use std::pin::pin;
     use test_case::test_case;
     use wlan_common::ie::IeType;
-    use wlan_common::scan::{write_vmo, Compatible, Incompatible};
+    use wlan_common::scan::{Compatible, Incompatible, write_vmo};
     use wlan_common::security::SecurityDescriptor;
     use wlan_common::test_utils::fake_frames::fake_unknown_rsne;
     use wlan_common::test_utils::fake_stas::IesOverrides;
@@ -589,8 +589,8 @@ mod tests {
     }
 
     /// Creates a Client wrapper.
-    async fn create_iface_manager(
-    ) -> (Arc<Mutex<FakeIfaceManager>>, fidl_sme::ClientSmeRequestStream) {
+    async fn create_iface_manager()
+    -> (Arc<Mutex<FakeIfaceManager>>, fidl_sme::ClientSmeRequestStream) {
         let (client_sme, remote) = create_proxy::<fidl_sme::ClientSmeMarker>();
         let iface_manager = FakeIfaceManager::new(client_sme);
         let iface_manager = Arc::new(Mutex::new(iface_manager));
@@ -1137,7 +1137,7 @@ mod tests {
             ),
         };
 
-        let sme_results = vec![
+        let sme_results = [
             first_result.clone(),
             second_result.clone(),
             // same bssid as first_result
