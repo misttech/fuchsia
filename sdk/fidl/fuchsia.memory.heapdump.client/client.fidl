@@ -36,24 +36,30 @@ type ProcessSelector = flexible union {
     1: by_name string:zx.MAX_NAME_LEN;
 
     /// Matches the process with the given koid.
+    /// ZX_KOID_KERNEL(1) stands for the kernel.
     2: by_koid zx.Koid;
 };
 
-/// An allocated memory block.
+/// One or more allocated memory blocks.
 type Allocation = table {
-    /// The address of the memory block.
+    /// Address of the memory block.
     1: address uint64;
 
-    /// Block size, in bytes.
+    /// Total memory blocks size, in bytes.
     2: size uint64;
 
-    /// The stack trace of the allocation site.
+    /// Number of allocated memory blocks that have been aggregated into this element.
+    /// 1 by default.
+    @available(added=NEXT)
+    6: count uint64;
+
+    /// Stack trace of the allocation site.
     3: stack_trace_key StackTraceKey;
 
     /// Allocation timestamp.
     4: timestamp zx.InstantMono;
 
-    /// The allocating thread.
+    /// Allocating thread.
     5: thread_info_key ThreadInfoKey;
 };
 

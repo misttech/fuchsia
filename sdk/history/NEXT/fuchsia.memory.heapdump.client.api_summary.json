@@ -7,6 +7,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.memory.heapdump.client/Allocation.count",
+        "ordinal": "6",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.memory.heapdump.client/Allocation.size",
         "ordinal": "2",
         "type": "uint64"
