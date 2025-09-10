@@ -557,7 +557,7 @@ async fn wake_group_tcp_socket(name: &str) {
     assert_eq!(&buf[..read_count], PAYLOAD.as_bytes());
 
     // If we arm the hanging get, incoming data should notify the wake group.
-    wake_group.arm().await.expect("arm hanging get");
+    assert!(wake_group.arm().await.expect("arm hanging get"));
 
     let write_count = client.write(PAYLOAD.as_bytes()).await.expect("send payload to server");
     assert_eq!(write_count, PAYLOAD.as_bytes().len());
@@ -624,7 +624,7 @@ async fn wake_group_hanging_get_called_when_armed(name: &str) {
 
     let wake_group = wake_group.into_proxy();
     let fut = wake_group.wait_for_data();
-    wake_group.arm().await.expect("arm hanging get");
+    assert!(wake_group.arm().await.expect("arm hanging get"));
 
     // Call `WaitForData` again and observe the protocol close.
     assert_matches!(
@@ -653,7 +653,7 @@ async fn wake_group_arm_called_when_armed(name: &str) {
 
     let wake_group = wake_group.into_proxy();
     let fut = wake_group.wait_for_data();
-    wake_group.arm().await.expect("arm hanging get");
+    assert!(wake_group.arm().await.expect("arm hanging get"));
 
     // Call `Arm` again and observe the protocol close.
     assert_matches!(
@@ -664,4 +664,25 @@ async fn wake_group_arm_called_when_armed(name: &str) {
         )
     );
     assert!(wake_group.is_closed());
+}
+
+#[netstack_test]
+async fn wake_group_arm_called_with_no_hanging_get(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
+        .expect("connect to protocol");
+    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
+    let _response = provider
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
+        .await
+        .expect("create wake group");
+
+    let wake_group = wake_group.into_proxy();
+
+    // Calling `Arm` when there is no hanging get is allowed, but the netstack
+    // should notify us that it was a no-op since there was no hanging get pending.
+    assert_eq!(wake_group.arm().await.expect("arm hanging get"), false);
 }

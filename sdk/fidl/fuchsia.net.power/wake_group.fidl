@@ -15,7 +15,8 @@ type Empty = struct {};
 /// This may be useful to, for example, allow a client to suspend execution
 /// until it is notified that some data is available to be processed.
 ///
-/// Each connection to this protocol represents a distinct wake group.
+/// Each connection to this protocol represents a distinct wake group. Closing
+/// the connection to the protocol results in removal of the wake group.
 closed protocol WakeGroup {
     /// Registers the client to be woken up (in the form of a response) when
     /// there is incoming data available for any of the resources registered
@@ -55,7 +56,22 @@ closed protocol WakeGroup {
     /// pending `WaitForData` call.
     ///
     /// In other words, calling this method "re-arms" the hanging get.
-    strict Arm() -> ();
+    ///
+    /// `Arm` must be called *after* a `WaitForData` hanging get has been
+    /// posted. Calling `Arm` when there is no hanging get is a no-op.
+    strict Arm() -> (struct {
+        /// Whether or not the hanging get was successfully armed.
+        ///
+        /// This is provided so that the client can tell whether it is safe to
+        /// suspend and wait for a data notification, or if it needs to post a
+        /// new hanging get and arm it in order to be woken up.
+        ///
+        /// This is `false` if there is no hanging get pending at the time that
+        /// `Arm` is called. This can happen even with correct client behavior,
+        /// if the client's arming the hanging get races with the netstack's
+        /// responding to the hanging get to delegate a lease.
+        armed bool;
+    });
 };
 
 const MAX_NAME_LEN uint8 = 255;
@@ -64,6 +80,10 @@ type WakeGroupOptions = table {
     /// A name to identify the wake group for the purposes of debugging.
     ///
     /// Optional. If absent, the netstack chooses a debug name.
+    ///
+    /// Note: the debug name is not required to be, nor is it guaranteed to be,
+    /// unique. Wake groups are uniquely identified by their
+    /// [`fuchsia.net.resources/WakeGroupToken`].
     1: debug_name string:MAX_NAME_LEN;
 };
 

@@ -204,10 +204,12 @@ impl WakeGroup {
                             // to the hanging get (in order to delegate a lease) races with the
                             // client arming the hanging get. In this scenario, `Arm` may be called
                             // with no hanging get pending. In that scenario, rather than close the
-                            // channel, we just ignore the `Arm` and expect the client to post
-                            // another hanging get (and eventually arm it when they wish to be woken
-                            // up).
-                            responder.send().unwrap_or_log("failed to respond to WakeGroup::Arm");
+                            // channel, we just ignore the `Arm` and notify the client that arming
+                            // the hanging get failed; it should just post another hanging get (and
+                            // eventually arm it when it wishes to be woken up).
+                            responder
+                                .send(/* armed */ false)
+                                .unwrap_or_log("failed to respond to WakeGroup::Arm");
                             continue;
                         };
 
@@ -222,7 +224,9 @@ impl WakeGroup {
 
                         debug!("wake group '{name}' is armed");
 
-                        responder.send().unwrap_or_log("failed to respond to WakeGroup::Arm");
+                        responder
+                            .send(/* armed */ true)
+                            .unwrap_or_log("failed to respond to WakeGroup::Arm");
                     }
                 },
                 Work::DataAvailable(responder) => {
