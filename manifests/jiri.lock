@@ -211,62 +211,62 @@
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/arm64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
-        "instance_id": "swQiiB4cBZeHrWswHya6aIPU70N4TLIdXLoAYWJqN_wC"
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
+        "instance_id": "RpMZdhh_F2Lhj5K-HT3F1FDDkplgVUdY1OQJLUWZshwC"
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/debug-symbols-arm64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
-        "instance_id": "J5fzPbNRJBJMJwlhAiFpe1i_TwktJY7gBAnUitv5REAC"
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
+        "instance_id": "wdWfFrSWLs8Zy_Kz3uHMIfiuDJnpTmXAKQroXm5R-LgC"
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/debug-symbols-riscv64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
-        "instance_id": "KLjRLTowkRCQeNBtJ8i-5iOjd9DgxhlcZGXIc7Q87aAC"
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
+        "instance_id": "EcZ7T5D6U0zdC3WhsI4xwIpRxsl7uXqCXAwnK2MGeIkC"
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/debug-symbols-x86_64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
-        "instance_id": "YV3dhCGH6dD8_y5jYRtu0nwX7KgeudXg-Gx2ocvl0swC"
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
+        "instance_id": "KvvL_kU0dAFl81pQpntymCmC__0qhY2vbWeC-1pInVIC"
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/riscv64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
-        "instance_id": "anCo_jYKQbAaYRWUIZpDo-cU-qg7r-1HPholB9r-7MIC"
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
+        "instance_id": "COOib36-b8dJiaHDYqtVGjKJXdm-yvEOM3Df1L4qP9wC"
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/x86_64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
-        "instance_id": "doSQZLVo6ah7f5M6xPI12NQjTePsKsMXGM9aitUH7LIC"
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
+        "instance_id": "Oq7Kfs32aVsrjI-mnPovDQQOijjDD9EWIYeItg8DhLgC"
     },
     {
         "package": "fuchsia/prebuilt/bt-host/arm64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
         "instance_id": "SmbMiV5arn4J27u8Q9IWT14RBZtW7qZoFau0TFHJTkMC"
     },
     {
         "package": "fuchsia/prebuilt/bt-host/debug-symbols-arm64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
         "instance_id": "kaIDs9HScQpETSn7RYpTf1iJqej_nkUnMzZC6i-05psC"
     },
     {
         "package": "fuchsia/prebuilt/bt-host/debug-symbols-riscv64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
         "instance_id": "_bjjwi3Al4kpBg95hWfZPVbP3EtCFm9rjWlp8I9g0DkC"
     },
     {
         "package": "fuchsia/prebuilt/bt-host/debug-symbols-x86_64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
         "instance_id": "VjlCvoqcsHJwm2DP13PgkC0UyK41tDLZAMY70nkq7Q0C"
     },
     {
         "package": "fuchsia/prebuilt/bt-host/riscv64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
         "instance_id": "jeTA2REE2E0myxORhGxnebejBQXVdKIkr34Mi98H02YC"
     },
     {
         "package": "fuchsia/prebuilt/bt-host/x86_64",
-        "version": "git_revision:a55756c9b3b462009dc22144159f8784d43dd026",
+        "version": "git_revision:2bf5b5c6b2f5aeb32e7728b4a27dc5a19411795e",
         "instance_id": "R7OsU99w75xzT66brEkuYmOhJRpobVJrRG0Mw-4nIyQC"
     },
     {
