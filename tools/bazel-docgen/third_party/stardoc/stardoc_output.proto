@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Vendored from src/main/java/com/google/devtools/build/skydoc/rendering/proto/stardoc_output.proto
-// in the Bazel source tree at commit bf5504a8c8f2d5e91acb18db864b2dae0d90ca7f
+// Vendored from src/main/protobuf/stardoc_output.proto
+// in the Bazel source tree at commit 5301289b0c2ec10578797903183a136a6916cc57
 //
 // Protos for Stardoc data.
 //
@@ -23,7 +23,7 @@ syntax = "proto3";
 package stardoc_output;
 
 // option java_api_version = 2;
-option java_package = "com.google.devtools.build.skydoc.rendering.proto";
+option java_package = "com.google.devtools.build.lib.starlarkdocextract";
 option java_outer_classname = "StardocOutputProtos";
 
 // This go_package is needed to make this proto usable within fuchsia.git
@@ -52,6 +52,8 @@ message ModuleInfo {
   repeated ModuleExtensionInfo module_extension_info = 7;
 
   repeated RepositoryRuleInfo repository_rule_info = 8;
+
+  repeated MacroInfo macro_info = 9;
 }
 
 // Representation of a Starlark rule attribute type. These generally
@@ -74,12 +76,17 @@ enum AttributeType {
   STRING_LIST_DICT = 11;
   OUTPUT = 12;
   OUTPUT_LIST = 13;
+  LABEL_DICT_UNARY = 14;
 }
 
 // Representation of a Starlark rule definition.
 message RuleInfo {
-  // The name under which the rule is made accessible to a user of this module,
-  // including any structs it is nested in, for example "foo.foo_library".
+  // In Stardoc and starlark_doc_extract output, this is the name under which
+  // the rule is made accessible to a user of this module, including any structs
+  // it is nested in, for example "foo.foo_library".
+  //
+  // In query output, this is the name under which the rule was defined (which
+  // might be a private symbol prefixed with "_").
   string rule_name = 1;
 
   // The documentation string of the rule.
@@ -105,6 +112,29 @@ message RuleInfo {
   // Note: if test is true, executable is also true (test rules are implicitly
   // executable).
   bool executable = 7;
+}
+
+// Representation of a Starlark symbolic macro definition.
+// Note: symbolic macros (and thus, their documentation format) are an
+// experimental feature gated by the --experimental_enable_first_class_macros
+// flag.
+message MacroInfo {
+  // The name under which the macro is made accessible to a user of this module,
+  // including any structs it is nested in, for example "foo.foo_library".
+  string macro_name = 1;
+
+  // The documentation string of the macro.
+  string doc_string = 2;
+
+  // The attributes of the macro.
+  repeated AttributeInfo attribute = 3;
+
+  // The module where and the name under which the macro was originally
+  // declared.
+  OriginKey origin_key = 4;
+
+  // True if this macro is a rule finalizer.
+  bool finalizer = 5;
 }
 
 // Representation of a Starlark rule, repository rule, or module extension tag
@@ -140,6 +170,9 @@ message AttributeInfo {
 
   // If true, the attribute is non-configurable.
   bool nonconfigurable = 7;
+
+  // If true, the attribute is defined in Bazel's native code, not in Starlark.
+  bool natively_defined = 8;
 }
 
 // Representation of a set of providers.
@@ -174,7 +207,16 @@ message StarlarkFunctionInfo {
   // "foo.frobnicate".
   string function_name = 1;
 
-  // The parameters for the function.
+  // The parameters for the function, in the following order:
+  // - positional parameters
+  // - keyword-only parameters
+  // - residual varargs parameter (`*args`)
+  // - residual keyword arguments parameter (`**kwargs`)
+  // This order differs from the order in which parameters are listed in the
+  // function's declaration (where positional parameters and keyword-only
+  // parameters are separated either by `*` or `*args`). The declaration order
+  // can be recovered by looking for the transition from ordinary/positional to
+  // keyword-only.
   repeated FunctionParamInfo parameter = 2;
 
   // The documented description of the function (if specified in the function's
@@ -194,9 +236,28 @@ message StarlarkFunctionInfo {
   OriginKey origin_key = 6;
 }
 
+// Representation of the syntactic role of a given function parameter.
+enum FunctionParamRole {
+  PARAM_ROLE_UNSPECIFIED = 0;
+  // An ordinary parameter which may be used as a positional or by keyword.
+  PARAM_ROLE_ORDINARY = 1;
+  // A positional-only parameter; such parameters cannot be defined in pure
+  // Starlark code, but exist in some natively-defined functions.
+  PARAM_ROLE_POSITIONAL_ONLY = 2;
+  // A keyword-only parameter, i.e. a non-vararg/kwarg parameter that follows
+  // `*` or `*args` in the function's declaration.
+  PARAM_ROLE_KEYWORD_ONLY = 3;
+  // Residual varargs, typically `*args` in the function's declaration.
+  PARAM_ROLE_VARARGS = 4;
+  // Residual keyword arguments, typically `**kwargs` in the function's
+  // declaration.
+  PARAM_ROLE_KWARGS = 5;
+}
+
 // Representation of a Starlark function parameter definition.
 message FunctionParamInfo {
-  // The name of the parameter.
+  // The name of the parameter. This does *not* include the `*` or `**` prefix
+  // for varargs or residual keyword argument parameters.
   string name = 1;
 
   // The documented description of the parameter (if specified in the function's
@@ -211,6 +272,9 @@ message FunctionParamInfo {
   // parameter. This might be false even if defaultValue is empty in the case of
   // special parameter such as *args and **kwargs"
   bool mandatory = 4;
+
+  // The parameter's syntactic role.
+  FunctionParamRole role = 5;
 }
 
 message FunctionReturnInfo {
