@@ -17,8 +17,8 @@ use fuchsia_repo::repo_client::RepoClient;
 use fuchsia_repo::repository::PmRepository;
 use fuchsia_url::{Hash, UnpinnedAbsolutePackageUrl};
 use log::debug;
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::env::current_exe;
@@ -77,6 +77,7 @@ impl ProcessCommand {
                     | Image::FVMFastboot(_)
                     | Image::Fxfs(_)
                     | Image::QemuKernel(_)
+                    | Image::TestRamdisk(_)
                     | Image::VBMeta(_)
                     | Image::ZBI { path: _, signed: _ } => return Box::new(std::iter::empty()),
                     // We skip this one, its contents are listed in the blobfs and fxfs contents.
@@ -149,11 +150,7 @@ impl ProcessCommand {
                 .parent()
                 .map(|v| v.join("exe.unstripped").join(path.file_name().unwrap_or_default()));
             let path = if let Some(alt_path) = alt_path {
-                if alt_path.is_file() {
-                    alt_path
-                } else {
-                    path
-                }
+                if alt_path.is_file() { alt_path } else { path }
             } else {
                 path
             };
@@ -220,16 +217,16 @@ impl ProcessCommand {
         let duration = Instant::now() - start;
 
         println!(
-        "Loaded in {:?}. {} manifests, {} valid, {} manifest errors, {} file errors. {} ELF / {} Other files found. Contents processed: {}",
-        duration,
-        manifest_count.load(Ordering::Relaxed),
-        names.lock().unwrap().len(),
-        errors.manifest_errors.load(Ordering::Relaxed),
-        errors.manifest_file_errors.load(Ordering::Relaxed),
-        elf_count.load(Ordering::Relaxed),
-        other_count.load(Ordering::Relaxed),
-        content_hash_to_path.lock().unwrap().len(),
-    );
+            "Loaded in {:?}. {} manifests, {} valid, {} manifest errors, {} file errors. {} ELF / {} Other files found. Contents processed: {}",
+            duration,
+            manifest_count.load(Ordering::Relaxed),
+            names.lock().unwrap().len(),
+            errors.manifest_errors.load(Ordering::Relaxed),
+            errors.manifest_file_errors.load(Ordering::Relaxed),
+            elf_count.load(Ordering::Relaxed),
+            other_count.load(Ordering::Relaxed),
+            content_hash_to_path.lock().unwrap().len(),
+        );
 
         let start = Instant::now();
 

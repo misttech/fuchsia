@@ -174,7 +174,8 @@ impl PbGetArtifactsTool {
                         | Image::Fxfs(_)
                         | Image::FVM(_)
                         | Image::FVMSparse(_)
-                        | Image::QemuKernel(_) => continue,
+                        | Image::QemuKernel(_)
+                        | Image::TestRamdisk(_) => continue,
                     }
                 }
             }
@@ -200,6 +201,7 @@ impl PbGetArtifactsTool {
                     match image {
                         Image::ZBI { path: _, signed: _ }
                         | Image::QemuKernel(_)
+                        | Image::TestRamdisk(_)
                         | Image::VBMeta(_)
                         | Image::FVM(_)
                         | Image::FxfsSparse { path: _, contents: _ } => {

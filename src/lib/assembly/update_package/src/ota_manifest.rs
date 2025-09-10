@@ -84,7 +84,8 @@ pub fn write_ota_manifest(
                 | Image::FVMSparse(_)
                 | Image::Fxfs(_)
                 | Image::FxfsSparse { .. }
-                | Image::QemuKernel(_) => continue,
+                | Image::QemuKernel(_)
+                | Image::TestRamdisk(_) => continue,
             };
             images.push(
                 manifest::Image::from_path(path, slot, image_type, delivery_blob_type)
@@ -121,7 +122,8 @@ pub fn write_ota_manifest(
                         | Image::FVMSparse(_)
                         | Image::Fxfs(_)
                         | Image::FxfsSparse { .. }
-                        | Image::QemuKernel(_) => continue,
+                        | Image::QemuKernel(_)
+                        | Image::TestRamdisk(_) => continue,
                     };
                     images.push(
                         manifest::Image::from_path(

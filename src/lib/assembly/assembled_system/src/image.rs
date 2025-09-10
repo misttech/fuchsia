@@ -62,6 +62,13 @@ pub enum Image {
 
     /// Qemu Kernel.
     QemuKernel(Utf8PathBuf),
+
+    /// A test-only ramdisk. This is mutually exclusive with ZBI and signals to
+    /// tooling that consumes a product bundle to treat this image as an opaque
+    /// ramdisk and not to modify it.
+    ///
+    /// Corresponds to AssemblyMode::TestRamdisk. See variant for more details.
+    TestRamdisk(Utf8PathBuf),
 }
 
 impl Image {
@@ -79,6 +86,7 @@ impl Image {
             Image::Fxfs(s) => s.as_path(),
             Image::FxfsSparse { path, .. } => path.as_path(),
             Image::QemuKernel(s) => s.as_path(),
+            Image::TestRamdisk(s) => s.as_path(),
         }
     }
 
@@ -96,6 +104,7 @@ impl Image {
             Image::Fxfs(s) => s,
             Image::FxfsSparse { path, .. } => path,
             Image::QemuKernel(s) => s,
+            Image::TestRamdisk(s) => s,
         }
     }
 
@@ -114,6 +123,7 @@ impl Image {
             Image::Fxfs(s) => *s = source,
             Image::FxfsSparse { path, .. } => *path = source,
             Image::QemuKernel(s) => *s = source,
+            Image::TestRamdisk(s) => *s = source,
         }
     }
 
@@ -130,7 +140,8 @@ impl Image {
             | Image::FVMSparse(_)
             | Image::FVMFastboot(_)
             | Image::Fxfs(_)
-            | Image::QemuKernel(_) => None,
+            | Image::QemuKernel(_)
+            | Image::TestRamdisk(_) => None,
         }
     }
 
@@ -147,7 +158,8 @@ impl Image {
             | Image::FVMSparse(_)
             | Image::FVMFastboot(_)
             | Image::Fxfs { .. }
-            | Image::QemuKernel(_) => None,
+            | Image::QemuKernel(_)
+            | Image::TestRamdisk(_) => None,
         }
     }
 }
@@ -264,6 +276,13 @@ impl Serialize for Image {
             Image::QemuKernel(path) => ImageSerializeHelper {
                 partition_type: "kernel",
                 name: "qemu-kernel",
+                path,
+                signed: None,
+                contents: None,
+            },
+            Image::TestRamdisk(path) => ImageSerializeHelper {
+                partition_type: "test-ramdisk",
+                name: "test-ramdisk",
                 path,
                 signed: None,
                 contents: None,
@@ -485,6 +504,7 @@ impl<'de> Deserialize<'de> for Image {
             ("blk", "storage-sparse", None) => Ok(Image::FVMSparse(helper.path)),
             ("blk", "fvm.fastboot", None) => Ok(Image::FVMFastboot(helper.path)),
             ("kernel", _, None) => Ok(Image::QemuKernel(helper.path)),
+            ("test-ramdisk", _, None) => Ok(Image::TestRamdisk(helper.path)),
             (partition_type, name, _) => Err(de::Error::unknown_variant(
                 &format!("({partition_type}, {name})"),
                 &[
@@ -496,6 +516,7 @@ impl<'de> Deserialize<'de> for Image {
                     "(blk, storage-sparse)",
                     "(blk, fvm.fastboot)",
                     "(kernel, _)",
+                    "(test-ramdisk, _)",
                 ],
             )),
         }
@@ -529,6 +550,7 @@ mod tests {
             Image::FVMSparse("path/to/fvm.sparse.blk".into()),
             Image::FVMFastboot("path/to/fvm.fastboot.blk".into()),
             Image::QemuKernel("path/to/qemu/kernel".into()),
+            Image::TestRamdisk("path/to/test/ramdisk".into()),
         ];
         assert_eq!(generate_test_value(), serde_json::to_value(images).unwrap());
     }
@@ -546,6 +568,7 @@ mod tests {
                 contents: Default::default(),
             },
             Image::QemuKernel("path/to/qemu/kernel".into()),
+            Image::TestRamdisk("path/to/test/ramdisk".into()),
         ];
 
         assert_eq!(generate_test_value_fxfs(), serde_json::to_value(images).unwrap());
@@ -569,7 +592,7 @@ mod tests {
     #[test]
     fn deserialize() {
         let images: Vec<Image> = serde_json::from_value(generate_test_value()).unwrap();
-        assert_eq!(images.len(), 9);
+        assert_eq!(images.len(), 10);
 
         for image in &images {
             let (expected, actual) = match image {
@@ -588,6 +611,7 @@ mod tests {
                 Image::FVMSparse(path) => ("path/to/fvm.sparse.blk", path),
                 Image::FVMFastboot(path) => ("path/to/fvm.fastboot.blk", path),
                 Image::QemuKernel(path) => ("path/to/qemu/kernel", path),
+                Image::TestRamdisk(path) => ("path/to/test/ramdisk", path),
                 _ => panic!("Unexpected item {image:?}"),
             };
             assert_eq!(&Utf8PathBuf::from(expected), actual);
@@ -597,7 +621,7 @@ mod tests {
     #[test]
     fn deserialize_fxfs() {
         let images: Vec<Image> = serde_json::from_value(generate_test_value_fxfs()).unwrap();
-        assert_eq!(images.len(), 7);
+        assert_eq!(images.len(), 8);
 
         for image in &images {
             let (expected, actual) = match image {
@@ -614,6 +638,7 @@ mod tests {
                     ("path/to/fxfs.sparse.blk", path)
                 }
                 Image::QemuKernel(path) => ("path/to/qemu/kernel", path),
+                Image::TestRamdisk(path) => ("path/to/test/ramdisk", path),
                 _ => panic!("Unexpected item {image:?}"),
             };
             assert_eq!(&Utf8PathBuf::from(expected), actual);
@@ -676,6 +701,22 @@ mod tests {
         ]);
 
         let expected = vec![Image::QemuKernel("path/to/my-qemu-kernel.bin".into())];
+        let result: Result<Vec<Image>, _> = serde_json::from_value(value);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected,);
+    }
+
+    #[test]
+    fn deserialize_test_ramdisk_with_arbitrary_name() {
+        let value = json!([
+            {
+                "type": "test-ramdisk",
+                "name": "my-test-ramdisk",
+                "path": "path/to/my-test-ramdisk.bin",
+            }
+        ]);
+
+        let expected = vec![Image::TestRamdisk("path/to/my-test-ramdisk.bin".into())];
         let result: Result<Vec<Image>, _> = serde_json::from_value(value);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected,);
@@ -883,6 +924,11 @@ mod tests {
                     "name": "qemu-kernel",
                     "path": "path/to/qemu/kernel",
                 },
+                {
+                    "type": "test-ramdisk",
+                    "name": "test-ramdisk",
+                    "path": "path/to/test/ramdisk",
+                },
         ])
     }
 
@@ -931,6 +977,11 @@ mod tests {
                 "name": "qemu-kernel",
                 "path": "path/to/qemu/kernel",
             },
+            {
+                    "type": "test-ramdisk",
+                    "name": "test-ramdisk",
+                    "path": "path/to/test/ramdisk",
+                },
         ])
     }
 }

@@ -34,7 +34,7 @@ pub fn construct_zbi(
     // If this is a ramdisk, don't touch it. Pass it on through.
     if matches!(assembly_mode, AssemblyMode::TestRamdisk) {
         let zbi_path_relative = path_relative_from_current_dir(&product.kernel.path)?;
-        assembled_system.images.push(Image::ZBI { path: zbi_path_relative, signed: false });
+        assembled_system.images.push(Image::TestRamdisk(zbi_path_relative));
         return Ok(product.kernel.path.clone());
     }
 

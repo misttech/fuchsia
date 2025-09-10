@@ -510,7 +510,8 @@ fn write_assembled_system(
                 | Image::FVM(_)
                 | Image::FVMSparse(_)
                 | Image::FVMFastboot(_)
-                | Image::QemuKernel(_) => {
+                | Image::QemuKernel(_)
+                | Image::TestRamdisk(_) => {
                     images.push(image);
                 }
             }
