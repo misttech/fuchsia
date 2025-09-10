@@ -200,6 +200,7 @@ _flag_configs = struct(
         cflags = ["-Os"],
         ldflags = ["-Wl,-O2"],
     ),
+    # LINT.IfChange
     debuginfo = _make_flag_config(
         cflags = [
             "-g3",
@@ -215,6 +216,7 @@ _flag_configs = struct(
         ],
         combine_cflags_with_ldflags = False,
     ),
+    # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
     default_warnings = _make_flag_config(
         cflags = [
             "-Wall",

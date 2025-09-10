@@ -129,3 +129,10 @@ common --@rules_fuchsia//fuchsia/flags:fuchsia_release_repository="fuchsia"
 # Set the xattr written by the RBE remote wrapper, which can be read by bazel to reduce the time
 # spent calculating hashes of inputs.
 startup --unix_digest_hash_attribute_name="user.fuchsia.bazel.digest.sha256"
+
+# Ensure that linked binaries are never stripped. See //build/bazel/debug_symbols/README.md for context.
+# Also ensure that Go binaries always contain debug symbols, even in non-dbg compilation mode.
+# LINT.IfChange(debug_symbols)
+common --strip=never
+common --@io_bazel_rules_go//go/config:debug=True
+# LINT.ThenChange(//build/bazel/debug_symbols/README.md)
