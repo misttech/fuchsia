@@ -26,6 +26,7 @@ mod socket;
 mod test;
 
 pub mod fidl;
+pub mod fidl_next;
 
 use responder::Responder;
 
@@ -574,7 +575,7 @@ impl ClientInner {
 /// the raw connection to the remote FDomain. The `Client` wrapper then allows
 /// us to construct and use handles which behave similarly to their counterparts
 /// on a Fuchsia device.
-pub struct Client(Mutex<ClientInner>);
+pub struct Client(pub(crate) Mutex<ClientInner>);
 
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

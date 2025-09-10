@@ -184,7 +184,7 @@ impl Channel {
         &self,
         bytes: &[u8],
         handles: Vec<Handle>,
-    ) -> impl Future<Output = Result<(), Error>> + '_ {
+    ) -> impl Future<Output = Result<(), Error>> {
         if bytes.len() > zx_types::ZX_CHANNEL_MAX_MSG_BYTES as usize
             || handles.len() > zx_types::ZX_CHANNEL_MAX_MSG_HANDLES as usize
         {
@@ -299,7 +299,7 @@ impl Channel {
 }
 
 /// A write-only handle to a socket.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChannelWriter(Arc<Channel>);
 
 impl ChannelWriter {
@@ -315,7 +315,7 @@ impl ChannelWriter {
         &self,
         bytes: &[u8],
         handles: Vec<Handle>,
-    ) -> impl Future<Output = Result<(), Error>> + '_ {
+    ) -> impl Future<Output = Result<(), Error>> {
         self.0.fdomain_write(bytes, handles)
     }
 
@@ -344,7 +344,7 @@ impl ChannelMessageStream {
     ///
     /// # Panics
     /// If this stream and the writer passed didn't come from the same call to
-    /// `Channel::stream`.
+    /// `Channel::stream`, or if there is more than one writer.
     pub fn rejoin(mut self, writer: ChannelWriter) -> Channel {
         assert!(Arc::ptr_eq(&self.0, &writer.0), "Tried to join stream with wrong writer!");
         if let Some(client) = self.0.0.client.upgrade() {

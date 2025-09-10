@@ -61,6 +61,7 @@ rustc_library("fidl_next_protocol") {
   visibility = [
     "//:developer_universe_packages",
     "//sdk/lib/driver/*",
+    "//src/lib/fdomain/*",
     "//src/lib/fidl/rust_next/*",
     "//tools/fidl/fidlc/testdata/*",
     "//tools/fidl/fidlgen_rust_next/*",
