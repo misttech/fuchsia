@@ -6,6 +6,7 @@ use crate::error::{Error, Result};
 use addr::{TargetAddr, TargetIpAddr};
 use manual_targets::watcher::{ManualTargetEvent, ManualTargetState};
 use netext::IsLocalAddr;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{self, Display};
 use usb_fastboot_discovery::FastbootEvent;
@@ -15,7 +16,7 @@ use usb_fastboot_discovery::FastbootEvent;
 use fidl_fuchsia_developer_ffx as ffx;
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub enum FastbootConnectionState {
     Usb,
     Tcp(Vec<TargetIpAddr>),
@@ -34,7 +35,7 @@ impl Display for FastbootConnectionState {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct FastbootTargetState {
     pub serial_number: String,
     pub connection_state: FastbootConnectionState,
@@ -46,7 +47,7 @@ impl Display for FastbootTargetState {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub enum TargetState {
     Unknown,
     Product { addrs: Vec<TargetAddr>, serial: Option<String> },
@@ -73,7 +74,7 @@ impl Display for TargetState {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct TargetHandle {
     pub node_name: Option<String>,
     pub state: TargetState,
@@ -93,7 +94,6 @@ impl Display for TargetHandle {
     }
 }
 
-/// Target discovery events. See `wait_for_devices`.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum TargetEvent {
     /// Indicates a Target has been discovered.
@@ -108,16 +108,6 @@ impl TargetEvent {
         match self {
             Self::Added(h) | Self::Removed(h) => h,
         }
-    }
-
-    /// Returns true if this is a `Self::Added` enum.
-    pub fn is_added(&self) -> bool {
-        matches!(self, Self::Added(_))
-    }
-
-    /// Returns true if this is a `Self::Removed` enum.
-    pub fn is_removed(&self) -> bool {
-        matches!(self, Self::Removed(_))
     }
 }
 

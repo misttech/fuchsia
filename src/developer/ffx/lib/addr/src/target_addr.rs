@@ -8,6 +8,7 @@ use fidl_fuchsia_developer_ffx::{
 };
 use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address};
 use netext::{IsLocalAddr, scope_id_to_name};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::str::FromStr;
@@ -21,7 +22,7 @@ pub struct NotANetworkAddress;
 /// for SSH. This saves us some type conversions when passing these addresses
 /// around in parts of the code that are specifically supporting network
 /// operations or opening SSH connections.
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub struct TargetIpAddr(SocketAddr);
 
 impl TargetIpAddr {
@@ -230,7 +231,7 @@ impl std::fmt::Display for TargetIpAddr {
 }
 
 /// Represents an address associated with a target, network or otherwise.
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum TargetAddr {
     Net(SocketAddr),
     VSockCtx(u32),

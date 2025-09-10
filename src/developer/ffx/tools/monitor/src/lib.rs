@@ -157,6 +157,7 @@ async fn collect_target_status(
         !cmd.no_usb,
         !cmd.no_mdns,
         !cmd.no_probe,
+        true,
     )
     .await?;
     Ok(infos_to_statuses(infos))

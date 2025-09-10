@@ -19,6 +19,7 @@ use itertools::Itertools;
 use netext::{IsLocalAddr, ScopedSocketAddr};
 use std::cmp::Ordering;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 
@@ -29,6 +30,7 @@ use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
+const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
 
 #[cfg(test)]
 use {mockall::mock, mockall::predicate::*};
@@ -258,29 +260,49 @@ pub async fn resolve_target_query(
     DefaultTargetResolver::default().resolve_target_query(query, ctx).await
 }
 
-fn build_discovery(sources: DiscoverySources, ctx: EnvironmentContext) -> Discovery {
+fn build_discovery(
+    sources: DiscoverySources,
+    use_cache: bool,
+    ctx: EnvironmentContext,
+) -> Discovery {
     // Note that if there is an error getting these two config options, they
     // will simply be ignored. The alternative is to throw an error, which,
     // e.g. will cause ffx-strict to fail under certain circumstances if either
     // default config option is not overridden.
     let emu_instance_root = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).ok();
     let fastboot_file_path = ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
-    let builder = DiscoveryBuilder::default()
+    let mut builder = DiscoveryBuilder::default()
         .set_source(sources)
         .with_fastboot_devices_file_path(fastboot_file_path)
         .with_emulator_instance_root(emu_instance_root)
         .with_timeout_msecs(ctx.get(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).ok());
+    if use_cache {
+        builder = builder.with_cache_dir(get_discovery_cache_dir(&ctx));
+    }
     builder.build()
 }
+/// Directory containing the discovery cache file
+pub fn get_discovery_cache_dir(context: &EnvironmentContext) -> Option<PathBuf> {
+    let path_s: Option<String> = match context.get(DISCOVERY_CACHE_DIR_CONFIG) {
+        Ok(opath) => opath,
+        Err(e) => {
+            log::debug!("Could not get {DISCOVERY_CACHE_DIR_CONFIG}: {e}");
+            None
+        }
+    };
+    path_s.map(|s| s.into())
+}
+
 // Return a stream of TargetHandles that come from the specified sources, and
 // match the query. The discovery will return early if a result "perfectly"
 // matches the query (e.g. an mDNS response with the exact name requested).
 fn get_discovery_stream_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
+    use_cache: bool,
     ctx: EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
-    let discovery = build_discovery(sources, ctx);
+    let discovery = build_discovery(sources, use_cache, ctx);
     // Just get the new handles
     let stream = discovery.discovery_stream(query).map_err(anyhow::Error::from)?;
     Ok(stream.filter_map(|ev| async move {
@@ -296,7 +318,8 @@ async fn get_discovered_targets_with_sources(
     sources: DiscoverySources,
     ctx: EnvironmentContext,
 ) -> Result<Vec<TargetHandle>> {
-    let discovery = build_discovery(sources, ctx);
+    // Currently no callers of this function need to be able to ignore the cache, so we always pass in use_cache=true
+    let discovery = build_discovery(sources, true, ctx);
     discovery.discover_devices(query.clone()).await.map_err(|e| anyhow::anyhow!(e))
 }
 
@@ -466,6 +489,7 @@ pub fn get_discovery_stream(
     query: TargetInfoQuery,
     usb: bool,
     mdns: bool,
+    use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
     let mut sources =
@@ -476,7 +500,7 @@ pub fn get_discovery_stream(
     if mdns {
         sources = sources | DiscoverySources::MDNS;
     }
-    get_discovery_stream_with_sources(query, sources, ctx.clone())
+    get_discovery_stream_with_sources(query, sources, use_cache, ctx.clone())
 }
 
 /// Return a list of handles matching the query. If a target matches the query
@@ -742,6 +766,8 @@ impl TryFromEnvContext for Resolution {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ffx_config::ConfigMap;
+    use ffx_config::environment::ExecutableKind;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
     #[fuchsia::test]
@@ -955,8 +981,38 @@ mod test {
         assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("More than one device"));
     }
 
-    // XXX Creating a reasonable test for the rest of the behavior:
-    // * partial matching of names
-    // * timing out when no matching targets return
-    // * returning early when there is an exact name match
+    #[fuchsia::test]
+    async fn test_get_discovery_cache_dir() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let cache_dir = "/tmp/cache";
+        test_env
+            .context
+            .query(DISCOVERY_CACHE_DIR_CONFIG)
+            .level(Some(ffx_config::ConfigLevel::User))
+            .set(serde_json::Value::String(cache_dir.to_string()))
+            .unwrap();
+
+        let result = get_discovery_cache_dir(&test_env.context);
+        assert_eq!(result, Some(PathBuf::from(cache_dir)));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_discovery_cache_dir_strict() {
+        let context = EnvironmentContext::strict(ExecutableKind::Test, ConfigMap::new()).unwrap();
+        let result = get_discovery_cache_dir(&context);
+        assert!(result.is_none(), "Expected none, got {result:?}");
+    }
+
+    #[test]
+    fn test_get_discovery_cache_dir_strict_exists() {
+        let cache_dir = "/tmp/foo/bar";
+        let config_map =
+            [("target".to_owned(), serde_json::json!({"discovery_cache_dir": "/tmp/foo/bar"}))]
+                .into_iter()
+                .collect();
+        let context = EnvironmentContext::strict(ExecutableKind::Test, config_map).unwrap();
+
+        let result = get_discovery_cache_dir(&context);
+        assert_eq!(result, Some(PathBuf::from(cache_dir)));
+    }
 }

@@ -52,12 +52,14 @@ impl FfxMain for ListTool {
             || self.context.get_direct_connection_mode()
             || !ffx_target::is_discovery_enabled(&self.context).await
         {
+            let use_cache = !self.context.is_strict(); // Don't cache when in strict mode
             ffx_target::list_targets(
                 &self.context,
                 cmd.nodename.clone(),
                 !cmd.no_usb,
                 !cmd.no_mdns,
                 !cmd.no_probe,
+                use_cache,
             )
             .await?
         } else {
