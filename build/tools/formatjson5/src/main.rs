@@ -65,7 +65,7 @@ fn format_documents(
     let format = Json5Format::with_options(options)?;
     for (index, parsed_document) in parsed_documents.iter().enumerate() {
         let filename = parsed_document.filename().as_ref().unwrap();
-        let bytes = format.to_utf8(&parsed_document)?;
+        let bytes = format.to_utf8(parsed_document)?;
         if replace {
             Opt::write_to_file(filename, &bytes)?;
         } else {
@@ -86,7 +86,7 @@ fn format_documents(
 fn main() -> Result<()> {
     let args = Opt::args();
 
-    if args.files.len() == 0 {
+    if args.files.is_empty() {
         return Err(anyhow::anyhow!("No files to format"));
     }
 
@@ -142,8 +142,8 @@ impl Opt {
         Self::from_args()
     }
 
-    fn from_stdin(mut buf: &mut String) -> Result<usize, io::Error> {
-        io::stdin().read_to_string(&mut buf)
+    fn from_stdin(buf: &mut String) -> Result<usize, io::Error> {
+        io::stdin().read_to_string(buf)
     }
 
     fn write_to_file(filename: &str, bytes: &[u8]) -> Result<(), io::Error> {
@@ -152,7 +152,7 @@ impl Opt {
             .truncate(true)
             .write(true)
             .open(filename)?
-            .write_all(&bytes)
+            .write_all(bytes)
     }
 }
 
