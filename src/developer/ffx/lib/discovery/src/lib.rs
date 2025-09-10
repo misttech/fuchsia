@@ -10,6 +10,7 @@ pub use crate::events::{
 };
 use crate::fastboot_file_watcher::FastbootWatcher;
 use crate::query::TargetInfoQuery;
+use crate::usb_vsock_watcher::UsbVsockWatcher;
 use bitflags::bitflags;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::{FutureExt, Stream, StreamExt};
@@ -40,6 +41,7 @@ pub mod events;
 mod fastboot_file_watcher;
 mod merge;
 pub mod query;
+mod usb_vsock_watcher;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
 const CACHE_FILE_NAME: &str = "ffx-discovery.json";
@@ -52,6 +54,9 @@ pub struct TargetStream {
 
     /// Watches for FastbootUsb events
     fastboot_usb_watcher: Option<FastbootUsbWatcher>,
+
+    /// Watches for USB VSOCK events
+    usb_vsock_watcher: Option<UsbVsockWatcher>,
 
     /// Watches for ManualTarget events
     manual_targets_watcher: Option<ManualTargetWatcher>,
@@ -84,6 +89,9 @@ where
     /// Emulator watcher.
     pub emulator_watcher: Option<EmulatorWatcher>,
 
+    /// Watches for USB VSOCK events
+    pub usb_vsock_watcher: Option<UsbVsockWatcher>,
+
     /// Fastboot file watcher.
     pub fastboot_file_watcher: Option<FastbootWatcher>,
 }
@@ -101,6 +109,7 @@ where
             fastboot_event_handler: None,
             manual_targets_event_handler: None,
             emulator_watcher: None,
+            usb_vsock_watcher: None,
             fastboot_file_watcher: None,
         }
     }
@@ -119,6 +128,10 @@ where
 
     pub fn set_emulator_watcher(&mut self, e: EmulatorWatcher) {
         self.emulator_watcher = Some(e);
+    }
+
+    pub fn set_usb_vsock_watcher(&mut self, e: UsbVsockWatcher) {
+        self.usb_vsock_watcher = Some(e);
     }
 
     pub fn set_fastboot_file_watcher(&mut self, f: FastbootWatcher) {
@@ -145,6 +158,7 @@ impl TargetStream {
                 .manual_targets_event_handler
                 .map(|e| manual_recommended_watcher(e)),
             emulator_watcher: config.emulator_watcher,
+            usb_vsock_watcher: config.usb_vsock_watcher,
             fastboot_file_watcher: config.fastboot_file_watcher,
             queue,
         }
@@ -154,6 +168,7 @@ impl TargetStream {
 pub struct DiscoveryBuilder {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
+    usb_vsock_driver_socket_path: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
     cache_dir: Option<PathBuf>,
@@ -190,6 +205,17 @@ impl DiscoveryBuilder {
         self
     }
 
+    pub fn with_usb_vsock_driver_socket_path(
+        mut self,
+        usb_vsock_driver_socket_path: Option<PathBuf>,
+    ) -> Self {
+        if usb_vsock_driver_socket_path.is_some() {
+            self.usb_vsock_driver_socket_path = usb_vsock_driver_socket_path;
+            self.sources.insert(DiscoverySources::USB_VSOCK);
+        }
+        self
+    }
+
     /// Specify the timeout in milliseconds. (Specified as u64 instead of
     /// Duration because the value will normally come from config, so we'll do
     /// the conversion here rather then having every caller do it.)
@@ -212,6 +238,7 @@ impl DiscoveryBuilder {
         Discovery {
             emulator_instance_root: self.emulator_instance_root,
             fastboot_devices_file_path: self.fastboot_devices_file_path,
+            usb_vsock_driver_socket_path: self.usb_vsock_driver_socket_path,
             sources: self.sources,
             timeout: self.timeout,
             cache_file,
@@ -225,6 +252,7 @@ impl Default for DiscoveryBuilder {
         Self {
             emulator_instance_root: None,
             fastboot_devices_file_path: None,
+            usb_vsock_driver_socket_path: None,
             sources: DiscoverySources::default(),
             timeout: Some(DEFAULT_TIMEOUT),
             cache_dir: None,
@@ -235,6 +263,7 @@ impl Default for DiscoveryBuilder {
 pub struct Discovery {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
+    usb_vsock_driver_socket_path: Option<PathBuf>,
     sources: DiscoverySources,
     cache_file: Option<PathBuf>,
     timeout: Option<Duration>,
@@ -254,6 +283,7 @@ impl Discovery {
         let stream = wait_for_devices(
             self.emulator_instance_root.clone(),
             self.fastboot_devices_file_path.clone(),
+            self.usb_vsock_driver_socket_path.clone(),
             self.sources,
         )?;
         if let Some(timeout) = self.timeout {
@@ -284,6 +314,7 @@ impl Discovery {
                         manual_targets_watcher: None,
                         emulator_watcher: None,
                         fastboot_file_watcher: None,
+                        usb_vsock_watcher: None,
                     }));
                 }
                 Err(e) => {
@@ -376,6 +407,7 @@ bitflags! {
         const MANUAL = 1 << 2;
         const EMULATOR = 1 << 3;
         const FASTBOOT_FILE = 1 << 4;
+        const USB_VSOCK = 1 << 5;
     }
 }
 
@@ -388,6 +420,7 @@ impl Default for DiscoverySources {
 fn wait_for_devices(
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
+    usb_vsock_driver_socket_path: Option<PathBuf>,
     sources: DiscoverySources,
 ) -> Result<TargetStream> {
     let mut config = TargetStreamConfig::new();
@@ -412,6 +445,14 @@ fn wait_for_devices(
             let event = res.into();
             let _ = fastboot_sender.unbounded_send(event);
         })
+    }
+
+    // USB VSOCK watcher
+    if let Some(socket_path) = usb_vsock_driver_socket_path
+        && sources.contains(DiscoverySources::USB_VSOCK)
+    {
+        let usb_vsock_sender = sender.clone();
+        config.set_usb_vsock_watcher(UsbVsockWatcher::new(socket_path, usb_vsock_sender));
     }
 
     if sources.contains(DiscoverySources::MANUAL) {
@@ -528,6 +569,7 @@ pub mod test {
             mdns_watcher: None,
             fastboot_usb_watcher: None,
             manual_targets_watcher: None,
+            usb_vsock_watcher: None,
             emulator_watcher: None,
             fastboot_file_watcher: None,
             queue,
@@ -750,7 +792,8 @@ pub mod test {
 
         // Start watching the directory
         let mut stream =
-            wait_for_devices(Some(instance_dir.clone()), None, DiscoverySources::EMULATOR).unwrap();
+            wait_for_devices(Some(instance_dir.clone()), None, None, DiscoverySources::EMULATOR)
+                .unwrap();
 
         // Assert that the existing emulator is discovered
         let next =

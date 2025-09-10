@@ -27,6 +27,7 @@ ffx_subtool_fidl_allowlist = [
 
   # Used by ffx
   "//src/developer/ffx/fidl:fuchsia.developer.ffx",
+  "//src/developer/ffx/fidl/usb:fuchsia.ffx.usb",
 
   # Used by fuchsia-controller
   "//zircon/vdso:zx",

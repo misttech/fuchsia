@@ -109,6 +109,26 @@ impl TargetEvent {
             Self::Added(h) | Self::Removed(h) => h,
         }
     }
+
+    pub(crate) fn from_usb_event(
+        event: usb_driver_api::DeviceEvent,
+        node_name: Option<String>,
+    ) -> TargetEvent {
+        match event {
+            usb_driver_api::DeviceEvent::Added { cid, serial } => {
+                TargetEvent::Added(TargetHandle {
+                    node_name,
+                    state: TargetState::Product { addrs: vec![TargetAddr::UsbCtx(cid)], serial },
+                    manual: false,
+                })
+            }
+            usb_driver_api::DeviceEvent::Removed { cid } => TargetEvent::Removed(TargetHandle {
+                node_name,
+                state: TargetState::Product { addrs: vec![TargetAddr::UsbCtx(cid)], serial: None },
+                manual: false,
+            }),
+        }
+    }
 }
 
 impl TryFrom<ffx::MdnsEventType> for TargetEvent {
