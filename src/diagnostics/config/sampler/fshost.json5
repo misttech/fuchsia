@@ -624,6 +624,22 @@
             metric_type: "IntHistogram",
             selector: "bootstrap/fshost/fxfs:root/allocator:rebuild_strategy_triggers",
         },
+        {
+            event_codes: [
+                0,
+            ],
+            metric_id: 9008,
+            metric_type: "Integer",
+            selector: "bootstrap/fshost/blobfs:root/blob_layout_stats:compact_layout_blobs",
+        },
+        {
+            event_codes: [
+                1,
+            ],
+            metric_id: 9008,
+            metric_type: "Integer",
+            selector: "bootstrap/fshost/blobfs:root/blob_layout_stats:padded_layout_blobs",
+        },
     ],
     poll_rate_sec: 600,
     project_id: 3676913920,
