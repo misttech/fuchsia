@@ -419,6 +419,14 @@ class DebugSymbolExporter(object):
         # (Bazel labels always starts with @).
         self._build_ids_to_labels: dict[str, str] = {}
 
+        # The set of BuildID values for Fuchsia binaries only.
+        self._fuchsia_build_ids: set[str] = set()
+
+        # Filtered list of debug symbol entries (only for ELF binaries containing
+        # a proper GNU BuildID note). "debug" paths will be relative to the output
+        # directory.
+        self._debug_symbols: list[DebugSymbolEntryType] = []
+
     def parse_debug_symbols(
         self, debug_entries: list[DebugSymbolEntryType]
     ) -> None:
@@ -442,6 +450,8 @@ class DebugSymbolExporter(object):
                 continue
 
             self._build_ids_to_labels[build_id] = entry.get("label", "")
+            if entry["os"] == "fuchsia":
+                self._fuchsia_build_ids.add(build_id)
 
             # Record a .debug symlink in the symlink map.
             debug_dst_path = (
@@ -463,6 +473,12 @@ class DebugSymbolExporter(object):
                 )
             else:
                 self._breakpad_map[breakpad_dst_path] = entry
+
+            debug_symbol = entry.copy()
+            debug_symbol["debug"] = str(debug_dst_path)
+            debug_symbol["breakpad"] = str(breakpad_dst_path)
+            debug_symbol.pop("elf_build_id_file", None)
+            self._debug_symbols.append(debug_symbol)
 
     def copy_debug_symbols_to_build_id(self, build_id_dir: Path | str) -> None:
         """Copy debug symbols to an external .build-id/ directory.
@@ -550,6 +566,10 @@ class DebugSymbolExporter(object):
             - A build-ids.txt which lists all build-id values in the export directory,
               one hexadecimal string per line. Used by artifactory to upload
               the debug symbols to cloud storage.
+
+            - A debug_symbols.json manifest following the //:debug_symbols schema
+              detailing each debug binary, its build-id value, its optional Fuchsia
+              installation path, and its optional breakpad file.
         """
         log = self._log
         log_error = self._log_error
@@ -570,12 +590,13 @@ class DebugSymbolExporter(object):
             json.dump(self._build_ids_to_labels, f, sort_keys=True, indent=2)
 
         # Write the build-ids.txt file for artifactory.
+        # Artifactory expects that this only contains values for Fuchsia binaries.
         build_ids_txt = output_dir / "build-ids.txt"
         if log:
             log(f"Creating {build_ids_txt}")
 
         with build_ids_txt.open("wt") as f:
-            for build_id in sorted(self._build_ids_to_labels.keys()):
+            for build_id in sorted(self._fuchsia_build_ids):
                 f.write(f"{build_id}\n")
 
         if log:
@@ -584,11 +605,15 @@ class DebugSymbolExporter(object):
                 % (len(self._symlink_map), output_dir)
             )
 
-        # Populate all symlinks under
+        # Populate all symlinks under output_dir
         for dst_path, target_path in self._symlink_map.items():
             link_path = output_dir / dst_path
             link_path.parent.mkdir(parents=True, exist_ok=True)
             link_path.symlink_to(target_path.resolve())
+
+        # Write the debug_symbols.json manifest.
+        with (output_dir / "debug_symbols.json").open("wt") as f:
+            json.dump(self._debug_symbols, f, indent=2, sort_keys=True)
 
         if not self._dump_syms_tool:
             return True
@@ -611,7 +636,7 @@ class DebugSymbolExporter(object):
 
         cmd_ids_to_files: dict[int, T.TextIO] = {}
 
-        def cmd_runner(
+        def cmd_dumpsym_runner(
             cmd_id: int, entry: DebugSymbolEntryType
         ) -> subprocess.Popen[str]:
             """Start a command to generate the breakpad symbol file for a given entry.
@@ -660,7 +685,7 @@ class DebugSymbolExporter(object):
                 text=True,
             )
 
-        def cmd_result_processor(
+        def cmd_dumpsym_result_processor(
             cmd_id: int,
             entry: DebugSymbolEntryType,
             proc: subprocess.Popen[str],
@@ -683,13 +708,13 @@ class DebugSymbolExporter(object):
             return False
 
         for entry in self._breakpad_map.values():
-            command_pool.add_command(entry, cmd_runner)
+            command_pool.add_command(entry, cmd_dumpsym_runner)
 
         # Run all commands in parallel and change result to False if at
         # least one error is detected. Error messages are sent to log_error
         # by cmd_result_processor() directly.
         success = True
-        for cmd_success in command_pool.run(cmd_result_processor):
+        for cmd_success in command_pool.run(cmd_dumpsym_result_processor):
             if not cmd_success:
                 success = False
 

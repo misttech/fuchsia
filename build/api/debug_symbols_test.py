@@ -518,7 +518,7 @@ class DebugSymbolExporterTest(unittest.TestCase):
                     "debug": debug_symbol_filename,
                     "elf_build_id": build_id.hex(),
                     "label": f"//some:label_{n + 1}",
-                    "os": "fuchsia",
+                    "os": "fuchsia" if n not in (3, 4) else "linux",
                 }
             )
             (self._root / debug_symbol_filename).write_bytes(
@@ -609,8 +609,6 @@ print(args.debug_symbol_file)
 420000000000
 420000000001
 420000000002
-420000000003
-420000000004
 420000000005
 420000000006
 420000000007
@@ -729,8 +727,6 @@ print(args.debug_symbol_file)
 420000000000
 420000000001
 420000000002
-420000000003
-420000000004
 420000000005
 420000000006
 420000000007
