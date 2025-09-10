@@ -761,7 +761,8 @@ template("bazel_action") {
                     rebase_path(output.ninja_dir, root_build_dir),
                     "${output.copy_debug_symbols}",
                   ] + output.tracked_files
-          outputs += [ output.ninja_dir ]
+          assert(output.tracked_files != [],
+                 "Directory outputs require tracked files.")
           foreach(tracked_file, output.tracked_files) {
             outputs += [ "${output.ninja_dir}/${tracked_file}" ]
           }
