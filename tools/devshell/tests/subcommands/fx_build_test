@@ -418,18 +418,17 @@ EOF
     BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -C ${TEST_BUILD_DIR} -j4 obj/src/foo"
 
     source "${track_build_event}.mock_state"
-    BT_EXPECT_EQ "${#BT_MOCK_ARGS[@]}" "11"
+    BT_EXPECT_EQ "${#BT_MOCK_ARGS[@]}" "10"
     BT_EXPECT_EQ "${BT_MOCK_ARGS[0]}" "${track_build_event}"
     # [1] is start time (time-dependent)
     # [2] is end time (time-dependent)
     BT_EXPECT_EQ "${BT_MOCK_ARGS[3]}" "0"   # status
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[4]}" ""    # empty switches
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[5]}" "-j4"    # extra switches
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[6]}" "obj/src/foo"  # ninja targets
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[7]}" "${TEST_BUILD_DIR}"  # fuchsia build dir
-    # [8] is_no_op (timestamp-dependent)
-    # [9] is_clean_build (timestamp-dependent)
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[10]}" ""  # quiet
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[4]}" "-j4"    # extra switches
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[5]}" "obj/src/foo"  # ninja targets
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[6]}" "${TEST_BUILD_DIR}"  # fuchsia build dir
+    # [7] is_no_op (timestamp-dependent)
+    # [8] is_clean_build (timestamp-dependent)
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" ""  # quiet
 }
 
 BT_RUN_TESTS "$@"

@@ -20,7 +20,7 @@
 # depends on FUCHSIA_DIR being defined correctly.
 
 # Increase the metrics version by 1 when analytics is updated
-_METRICS_VERSION="4"
+_METRICS_VERSION="5"
 _METRICS_ALLOWS_CUSTOM_REPORTING=( "test" "g-review" )
 # If args match the below, then track capture group 1
 _METRICS_TRACK_REGEX=(
@@ -768,12 +768,11 @@ function track-build-event {
   local end_time="$2"
   local exit_status="$3"
   local ninja_switches="$4"
-  local switches="$5"
-  local fuchsia_targets="$6"
-  local build_dir="$7"
-  local is_no_op="$8"
-  local is_clean_build="$9"
-  local quiet="${10}"
+  local fuchsia_targets="$5"
+  local build_dir="$6"
+  local is_no_op="$7"
+  local is_clean_build="$8"
+  local quiet="$9"
 
   local args_gn=""
   local args_json=""
@@ -785,7 +784,6 @@ function track-build-event {
   fi
 
   if [[ "${METRICS_LEVEL}" -eq 2 ]]; then
-    switches="$(metrics-sanitize-string "${switches}")"
     ninja_switches="$(metrics-sanitize-string "${ninja_switches}")"
     fuchsia_targets="$(metrics-sanitize-string "${fuchsia_targets}")"
 
@@ -794,14 +792,12 @@ function track-build-event {
 
     args_json=$(fx-command-run jq -c '{ b: .build_info_board, p: .build_info_product, r: .rbe_mode, c: .compilation_mode, o: .optimize, sv: .select_variant, tc: .target_cpu, ri: .rust_incremental }' "${build_dir}"/args.json)
   else
-    switches=""
     ninja_switches=""
     fuchsia_targets=""
     args_gn=""
     args_json=""
   fi
 
-  switches="${switches:0:500}"
   ninja_switches="${ninja_switches:0:500}"
   fuchsia_targets="${fuchsia_targets:0:500}"
 
@@ -845,7 +841,6 @@ function track-build-event {
     --arg args_gn2 "${args_gn2}" \
     --arg args_json1 "${args_json1}" \
     --arg args_json2 "${args_json2}" \
-    --arg switches "${switches}" \
     --arg ninja_switches "${ninja_switches}" \
     --arg fuchsia_targets "${fuchsia_targets}" \
     --arg exit_status "${exit_status}" \
