@@ -10,7 +10,7 @@ use crate::inspect::repository::InspectRepository;
 use anyhow::Error;
 use fidl::endpoints::{ControlHandle, Responder};
 use futures::StreamExt;
-use log::warn;
+use log::{debug, warn};
 use std::sync::Arc;
 use {fidl_fuchsia_inspect as finspect, fuchsia_async as fasync};
 
@@ -96,10 +96,12 @@ impl InspectSinkServer {
                         finspect::InspectSinkFetchEscrowRequest { tree, token: Some(token), .. },
                 } => {
                     let vmo = repo.fetch_escrow(Arc::clone(&component), token, tree);
-                    let _ = responder.send(finspect::InspectSinkFetchEscrowResponse {
+                    if let Err(err) = responder.send(finspect::InspectSinkFetchEscrowResponse {
                         vmo,
                         ..Default::default()
-                    });
+                    }) {
+                        debug!("Failed sending FetchEscrowResponse: {err:?}");
+                    }
                 }
                 finspect::InspectSinkRequest::FetchEscrow {
                     responder,
@@ -151,14 +153,15 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_json_diff;
     use fidl::endpoints::{ClientEnd, create_proxy_and_stream};
+    use fidl_fuchsia_diagnostics as fdiagnostics;
     use fidl_fuchsia_inspect::{
         InspectSinkMarker, InspectSinkProxy, InspectSinkPublishRequest, TreeMarker,
     };
-    use fuchsia_inspect::Inspector;
     use fuchsia_inspect::reader::read;
+    use fuchsia_inspect::{Inspector, InspectorConfig};
     use futures::Future;
     use inspect_runtime::TreeServerSendPreference;
-    use inspect_runtime::service::spawn_tree_server;
+    use inspect_runtime::service::spawn_tree_server_with_stream;
     use selectors::VerboseError;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -234,9 +237,22 @@ mod tests {
             inspector: Inspector,
             settings: TreeServerSendPreference,
         ) -> ClientEnd<TreeMarker> {
+            let (tree, stream) = fidl::endpoints::create_request_stream::<TreeMarker>();
+            self.serve_stream(component, inspector, settings, stream);
+            tree
+        }
+
+        /// Start a TreeProxy server over the provided ServerEnd.
+        fn serve_stream(
+            &mut self,
+            component: &Arc<ComponentIdentity>,
+            inspector: Inspector,
+            settings: TreeServerSendPreference,
+            stream: finspect::TreeRequestStream,
+        ) {
             let component = self.components.get_mut(component).expect("unknown component");
             let scope = component.scope.as_ref().expect("already dropped tree server");
-            spawn_tree_server(inspector, settings, scope)
+            spawn_tree_server_with_stream(inspector, settings, stream, scope);
         }
 
         /// Drop the server(s) associated with `component`, as initialized by `serve`.
@@ -261,12 +277,29 @@ mod tests {
             F: FnOnce([Arc<InspectHandle>; N]) -> Fut,
             Fut: Future<Output = ()>,
         {
+            self.assert_on_selector(
+                identity,
+                koids,
+                assertions,
+                selectors::parse_selector::<VerboseError>(&format!("{identity}:root"))
+                    .expect("parse selector"),
+            )
+            .await
+        }
+
+        async fn assert_on_selector<const N: usize, F, Fut>(
+            &self,
+            identity: &Arc<ComponentIdentity>,
+            koids: [zx::Koid; N],
+            assertions: F,
+            selector: fdiagnostics::Selector,
+        ) where
+            F: FnOnce([Arc<InspectHandle>; N]) -> Fut,
+            Fut: Future<Output = ()>,
+        {
             self.repo.wait_for_artifact(identity).await;
             let containers = self.repo.fetch_inspect_data(
-                &Some(vec![
-                    selectors::parse_selector::<VerboseError>(&format!("{identity}:root"))
-                        .expect("parse selector"),
-                ]),
+                &Some(vec![selector]),
                 StaticHierarchyAllowlist::new_disabled(),
             );
             assert_eq!(containers.len(), 1);
@@ -467,5 +500,175 @@ mod tests {
         // this executing to completion means the identity is not there anymore; we know
         // it previously was present
         test.repo.wait_until_gone(&identity).await;
+    }
+
+    #[fuchsia::test]
+    async fn fetch_escrow() {
+        let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
+        let test = TestHarness::new(vec![Arc::clone(&identity)]);
+        let proxy = test.components.get(&identity).unwrap().proxy.as_ref().unwrap();
+
+        // Escrow a VMO.
+        let vmo = {
+            let inspector = Inspector::default();
+            inspector.root().record_int("val", 123);
+            inspector.frozen_vmo_copy().unwrap()
+        };
+        let (token0, token1) = zx::EventPair::create();
+
+        proxy
+            .escrow(finspect::InspectSinkEscrowRequest {
+                vmo: Some(vmo),
+                token: Some(finspect::EscrowToken { token: token0 }),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Fetch the escrowed VMO.
+        let vmo = assert_matches!(
+            proxy
+                .fetch_escrow(finspect::InspectSinkFetchEscrowRequest {
+                    token: Some(finspect::EscrowToken { token: token1 }),
+                    ..Default::default()
+                })
+                .await,
+            Ok(finspect::InspectSinkFetchEscrowResponse { vmo: Some(vmo), .. }) => vmo
+        );
+
+        // Verify the fetched VMO.
+        let inspector = Inspector::new(InspectorConfig::default().vmo(vmo));
+        let hierarchy = read(&inspector).await.unwrap();
+        assert_json_diff!(hierarchy, root: {
+            val: 123i64,
+        });
+    }
+
+    #[fuchsia::test]
+    async fn fetch_escrow_with_tree() {
+        let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
+        let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
+
+        // Escrow a VMO.
+        let vmo = {
+            let inspector = Inspector::default();
+            inspector.root().record_int("val", 123);
+            inspector.frozen_vmo_copy().unwrap()
+        };
+        let (token0, token1) = zx::EventPair::create();
+
+        let proxy = test.components.get(&identity).unwrap().proxy.as_ref().unwrap();
+        proxy
+            .escrow(finspect::InspectSinkEscrowRequest {
+                vmo: Some(vmo),
+                token: Some(finspect::EscrowToken { token: token0 }),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Fetch the escrowed VMO, provide tree to publish with the same name.
+        let (tree, stream) = fidl::endpoints::create_request_stream::<TreeMarker>();
+        let koid = tree.as_handle_ref().get_koid().unwrap();
+        let resp = proxy
+            .fetch_escrow(finspect::InspectSinkFetchEscrowRequest {
+                token: Some(finspect::EscrowToken { token: token1 }),
+                tree: Some(tree),
+                ..Default::default()
+            })
+            .await;
+
+        let vmo = assert_matches!(
+            resp, Ok(finspect::InspectSinkFetchEscrowResponse { vmo: Some(vmo), .. }) => vmo);
+
+        // Verify the fetched VMO.
+        let inspector = Inspector::new(InspectorConfig::default().vmo(vmo));
+        let hierarchy = read(&inspector).await.unwrap();
+        assert_json_diff!(hierarchy, root: {
+            val: 123i64,
+        });
+
+        // Serve the escrowed VMO.
+        test.serve_stream(&identity, inspector, TreeServerSendPreference::default(), stream);
+
+        // Verify the published tree serves the escrowed content.
+        test.assert(&identity, [koid], |handles| async move {
+            let tree = assert_matches!(
+                handles[0].as_ref(),
+                InspectHandle::Tree { proxy, .. } => proxy
+            );
+            let hierarchy = read(tree).await.unwrap();
+            assert_json_diff!(hierarchy, root: {
+                val: 123i64,
+            });
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn fetch_escrow_with_tree_and_name() {
+        const VMO_NAME: &str = "FetchEscrowWithTreeVmo";
+
+        let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
+        let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
+
+        // Escrow a VMO.
+        let vmo = {
+            let inspector = Inspector::default();
+            inspector.root().record_int("val", 123);
+            inspector.frozen_vmo_copy().unwrap()
+        };
+        let (token0, token1) = zx::EventPair::create();
+
+        let proxy = test.components.get(&identity).unwrap().proxy.as_ref().unwrap();
+        proxy
+            .escrow(finspect::InspectSinkEscrowRequest {
+                vmo: Some(vmo),
+                token: Some(finspect::EscrowToken { token: token0 }),
+                name: Some(VMO_NAME.to_string()),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Fetch the escrowed VMO, provide tree to publish with the same name.
+        let (tree, stream) = fidl::endpoints::create_request_stream::<TreeMarker>();
+        let koid = tree.as_handle_ref().get_koid().unwrap();
+        let resp = proxy
+            .fetch_escrow(finspect::InspectSinkFetchEscrowRequest {
+                token: Some(finspect::EscrowToken { token: token1 }),
+                tree: Some(tree),
+                ..Default::default()
+            })
+            .await;
+
+        let vmo = assert_matches!(
+            resp, Ok(finspect::InspectSinkFetchEscrowResponse { vmo: Some(vmo), .. }) => vmo);
+
+        // Verify the fetched VMO.
+        let inspector = Inspector::new(InspectorConfig::default().vmo(vmo));
+        let hierarchy = read(&inspector).await.unwrap();
+        assert_json_diff!(hierarchy, root: {
+            val: 123i64,
+        });
+
+        // Serve the escrowed VMO.
+        test.serve_stream(&identity, inspector, TreeServerSendPreference::default(), stream);
+
+        // Verify the published tree serves the escrowed content.
+        test.assert_on_selector(
+            &identity,
+            [koid],
+            |handles| async move {
+                let tree = assert_matches!(
+                    handles[0].as_ref(),
+                    InspectHandle::Tree { proxy, .. } => proxy
+                );
+                let hierarchy = read(tree).await.unwrap();
+                assert_json_diff!(hierarchy, root: {
+                    val: 123i64,
+                });
+            },
+            selectors::parse_selector::<VerboseError>(&format!("{identity}:[name={VMO_NAME}]root"))
+                .expect("parse selector"),
+        )
+        .await
     }
 }

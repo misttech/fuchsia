@@ -7,11 +7,12 @@ using zx;
 
 @available(added=HEAD)
 type EscrowToken = resource struct {
-    token zx.Handle:<EVENTPAIR, zx.Rights.WAIT | zx.Rights.INSPECT>;
+    token zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.WAIT | zx.Rights.INSPECT>;
 };
 
 @available(added=HEAD)
-alias EscrowedVmo = zx.Handle:<VMO, zx.Rights.DUPLICATE | zx.Rights.READ | zx.Rights.SET_PROPERTY>;
+alias EscrowedVmo
+        = zx.Handle:<VMO, zx.RIGHTS_BASIC | zx.RIGHTS_PROPERTY | zx.Rights.READ | zx.Rights.MAP>;
 
 @available(added=16)
 const MAX_NAME_LENGTH uint64 = 4096;
