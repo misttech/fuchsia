@@ -6,7 +6,7 @@ use crate::loader::{Library, LoaderService};
 use crate::utils::*;
 use fdf_component::Incoming;
 use std::collections::BTreeMap;
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::ptr::NonNull;
 use zx::Status;
 use {fidl_fuchsia_data as fdata, fidl_fuchsia_driver_framework as fidl_fdf};
@@ -116,13 +116,5 @@ impl ModulesAndSymbols {
                 ..Default::default()
             });
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[fuchsia::test]
-    async fn smoke_test() {
-        assert!(true);
     }
 }

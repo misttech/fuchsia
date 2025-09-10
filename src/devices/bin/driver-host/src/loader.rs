@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{ControlHandle, ServerEnd, SynchronousProxy};
 use fidl::HandleBased;
+use fidl::endpoints::{ControlHandle, ServerEnd, SynchronousProxy};
 use fidl_fuchsia_ldsvc as fldsvc;
 use futures::{TryFutureExt, TryStreamExt};
 use std::collections::BTreeMap;
@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::sync::LazyLock;
 use zx::Status;
 
-extern "C" {
+unsafe extern "C" {
     fn dl_set_loader_service(new_svc: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
     fn dlopen_vmo(handle: zx::sys::zx_handle_t, flag: c_int) -> *mut c_void;
 }
@@ -98,25 +98,23 @@ impl Loader {
     pub(crate) async fn try_load(&self, vmo: zx::Vmo) -> Result<Library, Status> {
         // This needs to be done on another thread because it makes sync calls back into the
         // loader service we just installed.
-        Ok(fuchsia_async::unblock(move || Library::try_load(vmo)).await?)
+        fuchsia_async::unblock(move || Library::try_load(vmo)).await
     }
 
     fn load_object(&self, object_name: &str) -> Result<zx::Vmo, Status> {
         if let Some(vmo) = self.overrides.get(object_name) {
             Ok(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?)
-        } else {
-            if let Some(old_loader) = &self.old_loader {
-                match old_loader.load_object(object_name, zx::MonotonicInstant::INFINITE) {
-                    Ok((status, vmo)) => {
-                        Status::ok(status)?;
-                        Ok(vmo.ok_or(Status::INTERNAL)?)
-                    }
-                    Err(fidl::Error::ClientCall(status)) => Err(status),
-                    Err(_) => Err(Status::INTERNAL),
+        } else if let Some(old_loader) = &self.old_loader {
+            match old_loader.load_object(object_name, zx::MonotonicInstant::INFINITE) {
+                Ok((status, vmo)) => {
+                    Status::ok(status)?;
+                    Ok(vmo.ok_or(Status::INTERNAL)?)
                 }
-            } else {
-                Err(Status::INTERNAL)
+                Err(fidl::Error::ClientCall(status)) => Err(status),
+                Err(_) => Err(Status::INTERNAL),
             }
+        } else {
+            Err(Status::INTERNAL)
         }
     }
 

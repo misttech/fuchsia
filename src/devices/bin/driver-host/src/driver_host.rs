@@ -177,7 +177,7 @@ impl DriverHost {
                             EXCEPTIONS_CLEANUP_DEADLINE_SECONDS,
                         ))
                     } else {
-                        s.exceptions.borrow()[0].deadline.clone()
+                        s.exceptions.borrow()[0].deadline
                     }
                 });
 
@@ -290,10 +290,10 @@ impl DriverHost {
                 };
 
                 // If this is the last driver instance running, we should exit.
-                if is_empty {
-                    if let Some(signaler) = this.no_more_drivers_signaler.borrow_mut().take() {
-                        signaler.send(()).unwrap();
-                    }
+                if is_empty
+                    && let Some(signaler) = this.no_more_drivers_signaler.borrow_mut().take()
+                {
+                    signaler.send(()).unwrap();
                 }
             }
         });
@@ -312,10 +312,10 @@ impl DriverHost {
         if let Some(driver_ref) = driver_on_thread_koid {
             let found = self.drivers.borrow().iter().find_map(|d| {
                 let locked_driver = d.0.upgrade();
-                if let Some(driver) = locked_driver {
-                    if *driver == driver_ref {
-                        return Some(driver);
-                    }
+                if let Some(driver) = locked_driver
+                    && *driver == driver_ref
+                {
+                    return Some(driver);
                 }
 
                 None
@@ -370,8 +370,10 @@ impl Drop for DriverHost {
     }
 }
 
-fn get_process_info()
--> Result<(u64, u64, u64, &'static [fdh::ThreadInfo], &'static [fdh::DispatcherInfo]), i32> {
+type ProcessInfo =
+    Result<(u64, u64, u64, &'static [fdh::ThreadInfo], &'static [fdh::DispatcherInfo]), i32>;
+
+fn get_process_info() -> ProcessInfo {
     let job_koid =
         fuchsia_runtime::job_default().get_koid().map_err(zx::Status::into_raw)?.raw_koid();
     let process_koid =
@@ -385,7 +387,7 @@ fn get_process_info()
     Ok((job_koid, process_koid, main_thread_koid, &THREAD_INFO, &DISPATCHER_INFO))
 }
 
-extern "C" {
+unsafe extern "C" {
     fn dl_set_loader_service(handle: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
 }
 

@@ -23,7 +23,7 @@ enum ExposedProtocols {
 #[fuchsia::main(logging = true, logging_tags = ["driver_host", "driver"])]
 async fn main() -> Result<(), anyhow::Error> {
     // Redirect standard out to debuglog.
-    if let Err(_) = stdout_to_debuglog::init().await {
+    if stdout_to_debuglog::init().await.is_err() {
         log::warn!(
             "Failed to redirect stdout to debuglog, assuming test environment and continuing"
         );
@@ -69,12 +69,4 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[fuchsia::test]
-    async fn smoke_test() {
-        assert!(true);
-    }
 }

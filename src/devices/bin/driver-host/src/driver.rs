@@ -7,10 +7,10 @@ use crate::modules::ModulesAndSymbols;
 use crate::utils::*;
 use fdf::{CurrentDispatcher, OnDispatcher};
 use fdf_component::Incoming;
-use fidl::client::decode_transaction_body;
-use fidl::encoding::{clear_tls_buf, DefaultFuchsiaResourceDialect, EmptyStruct, ResultType};
-use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl::AsHandleRef;
+use fidl::client::decode_transaction_body;
+use fidl::encoding::{DefaultFuchsiaResourceDialect, EmptyStruct, ResultType, clear_tls_buf};
+use fidl::endpoints::{RequestStream, ServerEnd};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::{FutureExt, TryStreamExt};
@@ -24,7 +24,7 @@ use {
     fidl_fuchsia_driver_host as fdh,
 };
 
-extern "C" {
+unsafe extern "C" {
     fn driver_host_find_symbol(
         passive_abi: u64,
         so_name: *const c_char,
@@ -234,19 +234,19 @@ impl Driver {
             .unwrap_or("")
             .to_string();
         let allowed_scheduler_roles =
-            get_program_strvec(program, "allowed_scheduler_roles")?.map(|roles| roles.clone());
+            get_program_strvec(program, "allowed_scheduler_roles")?.cloned();
 
         // Read binary from incoming namespace into vmo.
         let incoming = start_args.incoming.take().ok_or(Status::INVALID_ARGS)?;
         let incoming: Namespace = incoming.try_into().map_err(|_| Status::INVALID_ARGS)?;
         start_args.incoming = Some(incoming.clone().into());
-        let incoming: Incoming = incoming.try_into().map_err(|_| Status::INVALID_ARGS)?;
+        let incoming: Incoming = incoming.into();
         let vmo = get_file_vmo(&incoming, binary).await?;
         vmo.set_name(&zx::Name::new_lossy(basename(binary)))?;
 
         if binary != "driver/compat.so" {
             let symbols = driver_symbols::find_restricted_symbols(&vmo, &url)?;
-            if symbols.len() > 0 {
+            if !symbols.is_empty() {
                 log::error!("Driver '{binary}' referenced restricted symbols: {symbols:?}");
                 return Err(Status::NOT_SUPPORTED);
             }
@@ -352,11 +352,11 @@ impl Driver {
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
 
         if !scheduler_role.is_empty() {
-            driver_runtime_handle.add_allowed_scheduler_role(&scheduler_role);
+            driver_runtime_handle.add_allowed_scheduler_role(scheduler_role);
         }
         if let Some(roles) = allowed_scheduler_roles {
             for role in roles {
-                driver_runtime_handle.add_allowed_scheduler_role(&role);
+                driver_runtime_handle.add_allowed_scheduler_role(role.as_str());
             }
         }
 
@@ -374,7 +374,7 @@ impl Driver {
         let driver_clone = driver.clone();
         let dispatcher = fdf::DispatcherBuilder::new()
             .name(&format!("{dispatcher_name}-default-{driver:p}"))
-            .scheduler_role(&scheduler_role)
+            .scheduler_role(scheduler_role)
             .shutdown_observer(move |_| {
                 let _ = driver_clone;
             });
@@ -489,7 +489,7 @@ impl Driver {
                 .unwrap();
         });
 
-        let weak_self = Arc::downgrade(&self);
+        let weak_self = Arc::downgrade(self);
         self.inner
             .lock()
             .dispatcher
@@ -541,7 +541,7 @@ impl Driver {
     }
 
     pub fn get_url(&self) -> &str {
-        return self.url.as_str();
+        self.url.as_str()
     }
 
     pub fn duplicate_node_token(&self) -> Option<fidl::Event> {
@@ -583,13 +583,5 @@ impl Driver {
 impl PartialEq<fdf_env::UnownedDriver> for Driver {
     fn eq(&self, other: &fdf_env::UnownedDriver) -> bool {
         self.inner.lock().runtime_handle.as_ref().map(|h| h == other).unwrap_or(false)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[fuchsia::test]
-    async fn smoke_test() {
-        assert!(true);
     }
 }

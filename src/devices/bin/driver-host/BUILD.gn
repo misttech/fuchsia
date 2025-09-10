@@ -15,7 +15,7 @@ group("tests") {
 }
 
 _bin_common = {
-  edition = "2021"
+  edition = "2024"
 
   with_unit_tests = true
 
@@ -66,6 +66,7 @@ rustc_binary("bin") {
   forward_variables_from(_bin_common, "*")
   output_name = "driver-host"
   configs += [ "//build/config/rust:bootfs" ]
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
 rustc_binary("bin_with_heapdump") {
@@ -73,6 +74,7 @@ rustc_binary("bin_with_heapdump") {
   output_name = "driver-host-with-heapdump"
   deps += [ "//src/performance/memory/heapdump/instrumentation:autobind" ]
   configs += [ "//build/config/rust:bootfs" ]
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
 fuchsia_component("component") {

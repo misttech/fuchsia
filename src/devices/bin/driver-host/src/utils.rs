@@ -10,7 +10,7 @@ use {fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 pub(crate) fn basename(path: &str) -> &str {
     match path.rsplit_once('/') {
         Some((_, filename)) => filename,
-        None => &path,
+        None => path,
     }
 }
 
@@ -21,13 +21,13 @@ pub(crate) async fn get_file_vmo(
     let driver_library =
         open_file_async(incoming, &["/pkg/", relative_path].concat(), fio::RX_STAR_DIR)
             .map_err(|_| Status::INVALID_ARGS)?;
-    Ok(driver_library
+    driver_library
         .get_backing_memory(
             fio::VmoFlags::READ | fio::VmoFlags::EXECUTE | fio::VmoFlags::PRIVATE_CLONE,
         )
         .await
         .map_err(|_| Status::PEER_CLOSED)?
-        .map_err(Status::from_raw)?)
+        .map_err(Status::from_raw)
 }
 
 #[derive(Debug, PartialEq)]
@@ -56,7 +56,7 @@ fn get_value<'a>(dict: &'a fdata::Dictionary, key: &str) -> Option<&'a fdata::Di
         Some(entries) => {
             for entry in entries {
                 if entry.key == key {
-                    return entry.value.as_ref().map(|val| &**val);
+                    return entry.value.as_deref();
                 }
             }
             None
@@ -129,10 +129,10 @@ pub(crate) fn update_process_name(driver_url: &str, driver_count: usize) {
     let name = zx::Name::new_lossy(&name);
     let _ = fuchsia_runtime::process_self().set_name(&name);
     let _ = zx::Thread::raise_user_exception(
-                zx::RaiseExceptionOptions::TARGET_JOB_DEBUGGER,
-                zx::sys::ZX_EXCP_USER_CODE_PROCESS_NAME_CHANGED,
-                0,
-            );
+        zx::RaiseExceptionOptions::TARGET_JOB_DEBUGGER,
+        zx::sys::ZX_EXCP_USER_CODE_PROCESS_NAME_CHANGED,
+        0,
+    );
 }
 
 #[cfg(test)]
@@ -200,7 +200,7 @@ mod tests {
             entries: Some(vec![fdata::DictionaryEntry {
                 key: "default_dispatcher_opts".to_string(),
                 value: Some(Box::new(fdata::DictionaryValue::StrVec(vec![
-                    "allow_sync_calls".to_string()
+                    "allow_sync_calls".to_string(),
                 ]))),
             }]),
             ..Default::default()
