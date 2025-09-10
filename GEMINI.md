@@ -43,6 +43,12 @@ the in-tree documentation doesn't solve your problem.
 
 When generating new code, follow the existing coding style.
 
+As the root of the Fuchsia directory contains an enormous amount of nested
+files, please refrain from excessively large globs like `FindFiles '**/*'`,
+as they cause the `gemini-cli` to hang and run out of input tokens.
+If you must glob all source files, it is advised to exclude or separately glob
+the contents of `//out`.
+
 ## Code Authoring Workflow
 
 To ensure code quality and minimize errors, you must follow a strict
