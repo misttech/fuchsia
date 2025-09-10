@@ -12,7 +12,6 @@
     offer: [
         {
             protocol: [
-                "fuchsia.fshost.Recovery",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],
@@ -28,6 +27,13 @@
             service: "fuchsia.hardware.fastboot.Service",
             from: "parent",
             to: "#fastboot-usb",
+        },
+        {
+            protocol: [ "fuchsia.fshost.Recovery" ],
+            from: "parent",
+            to: [ "#fastboot-usb" ],
+            availability: "optional",
+            source_availability: "unknown",
         },
     ],
 }

@@ -17,7 +17,6 @@
         },
         {
             protocol: [
-                "fuchsia.fshost.Recovery",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],
@@ -33,6 +32,12 @@
             protocol: "fuchsia.buildinfo.Provider",
             from: "#build-info",
             to: "#fastboot-tcp",
+        },
+        {
+            protocol: [ "fuchsia.fshost.Recovery" ],
+            from: "parent",
+            to: [ "#fastboot-tcp" ],
+            availability: "optional",
         },
         {
             directory: "dev-class",

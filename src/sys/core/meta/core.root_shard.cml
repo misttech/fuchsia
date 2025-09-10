@@ -216,6 +216,7 @@
         },
         {
             protocol: [
+                "fuchsia.fshost.Recovery",
                 "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.fxfs.FileBackedVolumeProvider",
                 "fuchsia.virtualconsole.SessionManager",
