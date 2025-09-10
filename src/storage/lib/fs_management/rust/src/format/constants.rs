@@ -48,6 +48,9 @@ pub const FTL_PARTITION_LABEL: &str = "ftl";
 
 pub const SUPER_PARTITION_LABEL: &str = "super";
 
+// NB: This name is a hard-coded value from the GPT component implementation
+// (//src/storage/gpt/component).
+// TODO(https://fxbug.dev/443980711): This should come from configuration.
 pub const SUPER_AND_USERDATA_PARTITION_LABEL: &str = "super_and_userdata";
 
 pub const ALL_FVM_LABELS: [&str; 5] = [

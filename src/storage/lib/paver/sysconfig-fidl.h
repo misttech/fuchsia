@@ -9,6 +9,7 @@
 #include <lib/zx/channel.h>
 
 #include "src/storage/lib/paver/block-devices.h"
+#include "src/storage/lib/paver/config.h"
 #include "src/storage/lib/paver/partition-client.h"
 #include "src/storage/lib/paver/paver-context.h"
 
@@ -19,7 +20,7 @@ class Sysconfig : public fidl::WireServer<fuchsia_paver::Sysconfig> {
   explicit Sysconfig(std::unique_ptr<PartitionClient> client) : partitioner_(std::move(client)) {}
 
   static void Bind(async_dispatcher_t* dispatcher, const BlockDevices& devices,
-                   fidl::ClientEnd<fuchsia_io::Directory> svc_root,
+                   fidl::ClientEnd<fuchsia_io::Directory> svc_root, const PaverConfig& config,
                    std::shared_ptr<Context> context,
                    fidl::ServerEnd<fuchsia_paver::Sysconfig> server);
 

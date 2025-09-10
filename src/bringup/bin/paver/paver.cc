@@ -13,6 +13,7 @@
 #include <zircon/processargs.h>
 #include <zircon/status.h>
 
+#include "src/bringup/bin/paver/config.h"
 #include "src/storage/lib/paver/device-partitioner.h"
 #include "src/storage/lib/paver/pave-logging.h"
 #include "src/sys/lib/stdout-to-debuglog/cpp/stdout-to-debuglog.h"
@@ -78,7 +79,16 @@ int main(int argc, char** argv) {
   async_dispatcher_t* dispatcher = loop.dispatcher();
   component::OutgoingDirectory outgoing(dispatcher);
 
-  zx::result paver = paver::Paver::Create();
+  auto config = config::Config::TakeFromStartupHandle();
+  paver::PaverConfig paver_config;
+  if (config.merge_super_and_userdata()) {
+    // NB: This name is a hard-coded value from the GPT component implementation
+    // (//src/storage/gpt/component).
+    // TODO(https://fxbug.dev/443980711): This should come from configuration.
+    paver_config.system_partition_names.push_back("super_and_userdata");
+  }
+
+  zx::result paver = paver::Paver::Create(paver_config);
   if (paver.is_error()) {
     return paver.status_value();
   }

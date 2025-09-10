@@ -4,6 +4,15 @@
 
 import("//build/components.gni")
 
+fuchsia_component_manifest("manifest-for-config") {
+  component_name = "paver"
+  manifest = "meta/paver.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("config") {
+  cm_label = ":manifest-for-config"
+}
+
 _boards = [
   "astro",
   "luis",
@@ -19,6 +28,7 @@ foreach(board_name, _boards) {
     defines = [ "${board_name}" ]
     sources = [ "paver.cc" ]
     deps = [
+      ":config",
       "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
       "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
       "//sdk/lib/async-loop:async-loop-cpp",
@@ -47,6 +57,7 @@ executable("paver") {
   defines = [ "LEGACY_PAVER" ]
   sources = [ "paver.cc" ]
   deps = [
+    ":config",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

@@ -25,14 +25,14 @@ using uuid::Uuid;
 
 zx::result<std::unique_ptr<DevicePartitioner>> LuisPartitioner::Initialize(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
+    const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device) {
   auto status = IsBoard(svc_root, "luis");
   if (status.is_error()) {
     return status.take_error();
   }
 
   auto status_or_gpt =
-      GptDevicePartitioner::InitializeGpt(devices, svc_root, std::move(block_device));
+      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
   if (status_or_gpt.is_error()) {
     return status_or_gpt.take_error();
   }
@@ -176,9 +176,9 @@ zx::result<> LuisPartitioner::ValidatePayload(const PartitionSpec& spec,
 
 zx::result<std::unique_ptr<DevicePartitioner>> LuisPartitionerFactory::New(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    Arch arch, std::shared_ptr<Context> context,
+    const PaverConfig& config, std::shared_ptr<Context> context,
     fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return LuisPartitioner::Initialize(devices, svc_root, std::move(block_device));
+  return LuisPartitioner::Initialize(devices, svc_root, config, std::move(block_device));
 }
 
 zx::result<std::unique_ptr<abr::Client>> LuisPartitioner::CreateAbrClient() const {

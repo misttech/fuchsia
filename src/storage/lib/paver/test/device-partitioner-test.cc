@@ -493,7 +493,8 @@ class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
       return devices.take_error();
     }
     std::shared_ptr<paver::Context> context;
-    return paver::EfiDevicePartitioner::Initialize(*devices, std::move(svc_root), paver::Arch::kX64,
+    return paver::EfiDevicePartitioner::Initialize(*devices, std::move(svc_root),
+                                                   paver::PaverConfig{.arch = paver::Arch::kX64},
                                                    std::move(controller.value()), context);
   }
 
@@ -708,7 +709,8 @@ class EfiDevicePartitionerWithStorageHostTests : public EfiDevicePartitionerTest
     }
 
     std::shared_ptr<paver::Context> context;
-    return paver::EfiDevicePartitioner::Initialize(*devices, svc_root, paver::Arch::kX64,
+    return paver::EfiDevicePartitioner::Initialize(*devices, svc_root,
+                                                   paver::PaverConfig{.arch = paver::Arch::kX64},
                                                    std::move(controller.value()), context);
   }
 };
@@ -873,7 +875,7 @@ TEST_F(FixedDevicePartitionerTests, FindPartitionTest) {
   zx::result devices = paver::BlockDevices::CreateDevfs(devmgr_.devfs_root().duplicate());
   ASSERT_OK(devices);
   zx::result partitioner_result = paver::DevicePartitionerFactory::Create(
-      *devices, kInvalidSvcRoot, paver::Arch::kArm64, context);
+      *devices, kInvalidSvcRoot, paver::PaverConfig{.arch = paver::Arch::kArm64}, context);
   ASSERT_OK(partitioner_result);
   std::unique_ptr partitioner = std::move(partitioner_result.value());
 
@@ -927,6 +929,7 @@ class SherlockPartitionerTests : public GptDevicePartitionerTests {
     }
     zx::result devices = CreateBlockDevices();
     return paver::SherlockPartitioner::Initialize(*devices, svc_root,
+                                                  paver::PaverConfig{.arch = paver::Arch::kArm64},
                                                   std::move(controller.value()));
   }
 
@@ -1167,16 +1170,26 @@ class MoonflowerPartitionerTests : public GptDevicePartitionerTests {
  protected:
   MoonflowerPartitionerTests() : GptDevicePartitionerTests("sorrel") {}
 
+  IsolatedDevmgr::Args BaseDevmgrArgs() override {
+    IsolatedDevmgr::Args args;
+    args.disable_block_watcher = true;
+    args.enable_storage_host = true;
+    args.fshost_config.emplace_back(
+        component_testing::ConfigCapability{.name = "fuchsia.fshost.MergeSuperAndUserdata",
+                                            .value = component_testing::ConfigValue::Bool(true)});
+    return args;
+  }
+
   // Create a DevicePartition for a device.
-  zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(BlockDevice* gpt) {
+  zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner() {
     fidl::ClientEnd<fuchsia_io::Directory> svc_root = RealmExposedDir();
-    zx::result controller = ControllerFromBlock(gpt);
-    if (controller.is_error()) {
-      return controller.take_error();
-    }
     zx::result devices = CreateBlockDevices();
-    return paver::MoonflowerPartitioner::Initialize(*devices, svc_root,
-                                                    std::move(controller.value()));
+    return paver::MoonflowerPartitioner::Initialize(
+        paver::PaverConfig{
+            .arch = paver::Arch::kArm64,
+            .system_partition_names = {"super_and_userdata"},
+        },
+        *devices, svc_root, {});
   }
 };
 
@@ -1184,14 +1197,14 @@ TEST_F(MoonflowerPartitionerTests, InitializeWithoutGptFails) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(&gpt_dev));
 
-  ASSERT_NOT_OK(CreatePartitioner({}));
+  ASSERT_NOT_OK(CreatePartitioner());
 }
 
 TEST_F(MoonflowerPartitionerTests, InitializeWithoutFvmFails) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDiskWithGpt(&gpt_dev, 32 * kGibibyte));
 
-  ASSERT_NOT_OK(CreatePartitioner({}));
+  ASSERT_NOT_OK(CreatePartitioner());
 }
 
 TEST_F(MoonflowerPartitionerTests, FindPartition) {
@@ -1214,11 +1227,11 @@ TEST_F(MoonflowerPartitionerTests, FindPartition) {
                             {"reserved_c", Uuid(kVbMetaRType), 0xe0400, 0x10000},
                             {"cache", Uuid(kZirconRType), 0xf0400, 0x10000},
                             {"super", Uuid(kFvmType), 0x100400, 0x10000},
-                            {"vendor_boot_a", Uuid(kDummyType), 0x110400, 0x10000},
-                            {"vendor_boot_b", Uuid(kDummyType), 0x120400, 0x10000},
+                            {"userdata", Uuid(kDummyType), 0x110400, 0x10000},
+                            {"vendor_boot_a", Uuid(kDummyType), 0x120400, 0x10000},
+                            {"vendor_boot_b", Uuid(kDummyType), 0x130400, 0x10000},
                         }));
-
-  zx::result status = CreatePartitioner(gpt_dev.get());
+  zx::result status = CreatePartitioner();
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
@@ -1242,10 +1255,31 @@ TEST_F(MoonflowerPartitionerTests, FindPartition) {
 }
 
 TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
+  constexpr uint64_t kBlockCount = 0x748034;
   std::unique_ptr<BlockDevice> gpt_dev;
-  ASSERT_NO_FATAL_FAILURE(CreateDiskWithGpt(&gpt_dev, 64 * kMebibyte));
+  ASSERT_NO_FATAL_FAILURE(
+      CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
+                        {
+                            {GUID_ABR_META_NAME, Uuid(kAbrMetaType), 0x10400, 0x10000},
+                            {"dtbo_a", Uuid(kDummyType), 0x30400, 0x10000},
+                            {"dtbo_b", Uuid(kDummyType), 0x40400, 0x10000},
+                            {"boot_a", Uuid(kZirconAType), 0x50400, 0x10000},
+                            {"boot_b", Uuid(kZirconBType), 0x60400, 0x10000},
+                            {"system_a", Uuid(kDummyType), 0x70400, 0x10000},
+                            {"system_b", Uuid(kDummyType), 0x80400, 0x10000},
+                            {GPT_VBMETA_A_NAME, Uuid(kVbMetaAType), 0x90400, 0x10000},
+                            {GPT_VBMETA_B_NAME, Uuid(kVbMetaBType), 0xa0400, 0x10000},
+                            {"reserved_a", Uuid(kDummyType), 0xc0400, 0x10000},
+                            {"reserved_b", Uuid(kDummyType), 0xd0400, 0x10000},
+                            {"reserved_c", Uuid(kVbMetaRType), 0xe0400, 0x10000},
+                            {"cache", Uuid(kZirconRType), 0xf0400, 0x10000},
+                            {"super", Uuid(kFvmType), 0x100400, 0x10000},
+                            {"userdata", Uuid(kDummyType), 0x110400, 0x10000},
+                            {"vendor_boot_a", Uuid(kDummyType), 0x120400, 0x10000},
+                            {"vendor_boot_b", Uuid(kDummyType), 0x130400, 0x10000},
+                        }));
 
-  zx::result status = CreatePartitioner(gpt_dev.get());
+  zx::result status = CreatePartitioner();
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
@@ -1283,7 +1317,8 @@ class LuisPartitionerTests : public GptDevicePartitionerTests {
       fidl::ClientEnd<fuchsia_device::Controller> device) {
     fidl::ClientEnd<fuchsia_io::Directory> svc_root = RealmExposedDir();
     zx::result devices = CreateBlockDevices();
-    return paver::LuisPartitioner::Initialize(*devices, svc_root, std::move(device));
+    return paver::LuisPartitioner::Initialize(
+        *devices, svc_root, paver::PaverConfig{.arch = paver::Arch::kArm64}, std::move(device));
   }
 };
 
@@ -1365,8 +1400,8 @@ TEST_F(LuisPartitionerTests, CreateAbrClient) {
   std::shared_ptr<paver::Context> context;
   zx::result devices = CreateBlockDevices();
   ASSERT_OK(devices);
-  zx::result partitioner =
-      paver::LuisPartitionerFactory().New(*devices, svc_root, paver::Arch::kArm64, context, {});
+  zx::result partitioner = paver::LuisPartitionerFactory().New(
+      *devices, svc_root, paver::PaverConfig{.arch = paver::Arch::kArm64}, context, {});
   ASSERT_OK(partitioner);
   EXPECT_OK(partitioner->CreateAbrClient());
 }
@@ -1427,7 +1462,9 @@ class NelsonPartitionerTests : public GptDevicePartitionerTests {
     if (devices.is_error()) {
       return devices.take_error();
     }
-    return paver::NelsonPartitioner::Initialize(*devices, svc_root, std::move(controller.value()));
+    return paver::NelsonPartitioner::Initialize(*devices, svc_root,
+                                                paver::PaverConfig{.arch = paver::Arch::kArm64},
+                                                std::move(controller.value()));
   }
 
   static void CreateBootloaderPayload(zx::vmo* out) {
@@ -1616,8 +1653,8 @@ class NelsonPartitionerTests : public GptDevicePartitionerTests {
     std::shared_ptr<paver::Context> context;
     zx::result devices = CreateBlockDevices();
     ASSERT_OK(devices);
-    zx::result partitioner =
-        paver::NelsonPartitionerFactory().New(*devices, svc_root, paver::Arch::kArm64, context, {});
+    zx::result partitioner = paver::NelsonPartitionerFactory().New(
+        *devices, svc_root, paver::PaverConfig{.arch = paver::Arch::kArm64}, context, {});
     ASSERT_OK(partitioner);
     EXPECT_OK(partitioner->CreateAbrClient());
   }
@@ -1857,7 +1894,8 @@ class Vim3PartitionerTests : public GptDevicePartitionerTests {
     if (devices.is_error()) {
       return devices.take_error();
     }
-    return paver::Vim3Partitioner::Initialize(*devices, svc_root, std::move(controller.value()));
+    return paver::Vim3Partitioner::Initialize(*devices, svc_root, paver::PaverConfig(),
+                                              std::move(controller.value()));
   }
 
   void CreateBootloaderDevices(std::unique_ptr<BlockDevice>* boot0,
@@ -1989,8 +2027,9 @@ class AndroidPartitionerTests : public GptDevicePartitionerTests {
     if (devices.is_error()) {
       return devices.take_error();
     }
-    return paver::AndroidDevicePartitioner::Initialize(*devices, svc_root, paver::Arch::kX64,
-                                                       std::move(controller.value()), {});
+    return paver::AndroidDevicePartitioner::Initialize(
+        *devices, svc_root, paver::PaverConfig{.arch = paver::Arch::kX64},
+        std::move(controller.value()), {});
   }
 
   void InitializeWithoutGptFailsTest() {

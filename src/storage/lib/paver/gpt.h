@@ -18,15 +18,12 @@
 
 #include "src/lib/uuid/uuid.h"
 #include "src/storage/lib/paver/block-devices.h"
+#include "src/storage/lib/paver/config.h"
 #include "src/storage/lib/paver/device-partitioner.h"
 
 namespace paver {
 
 using gpt::GptDevice;
-
-// Android specific partition.
-// Paver would use it's presence to detect system that has Android configuration.
-constexpr std::string_view kGptSuperName = "super";
 
 // Used as a search key for `GptDevicePartitioner.FindPartition`.
 struct GptPartitionMetadata {
@@ -56,7 +53,7 @@ class GptDevicePartitioner {
   // `block_controller` instances.
   static zx::result<InitializeGptResult> InitializeGpt(
       const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      fidl::ClientEnd<fuchsia_device::Controller> block_controller);
+      const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_controller);
 
   zx::result<std::unique_ptr<GptDevice>> ConnectToGpt() const;
 
@@ -186,14 +183,7 @@ inline bool IsFvmPartition(const GptPartitionMetadata& part) {
          FilterByTypeAndName(part, GPT_FVM_TYPE_GUID, GPT_FVM_NAME);
 }
 
-inline bool IsAndroidPartition(const GptPartitionMetadata& part) {
-  // Check for Android specific partition 'super'.
-  return FilterByName(part, kGptSuperName);
-}
-
-inline bool IsFvmOrAndroidPartition(const GptPartitionMetadata& part) {
-  return IsFvmPartition(part) || IsAndroidPartition(part);
-}
+bool IsFuchsiaSystemPartition(const PaverConfig& config, const GptPartitionMetadata& part);
 
 // Returns true if the spec partition is Zircon A/B/R.
 inline bool IsZirconPartitionSpec(const PartitionSpec& spec) {

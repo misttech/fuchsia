@@ -78,6 +78,11 @@
             from: "#boot-drivers",
             to: "#paver",
         },
+        {
+            config: "fuchsia.fshost.MergeSuperAndUserdata",
+            from: "parent",
+            to: "#paver",
+        },
     ],
     expose: [
         {

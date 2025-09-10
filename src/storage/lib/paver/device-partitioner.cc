@@ -21,7 +21,9 @@
 #include <gpt/gpt.h>
 
 #include "src/lib/uuid/uuid.h"
+#include "src/storage/lib/paver/config.h"
 #include "src/storage/lib/paver/pave-logging.h"
+#include "src/storage/lib/paver/paver-context.h"
 #include "src/storage/lib/paver/utils.h"
 
 namespace paver {
@@ -164,7 +166,7 @@ DevicePartitionerFactory::registered_factory_list() {
 
 zx::result<std::unique_ptr<DevicePartitioner>> DevicePartitionerFactory::Create(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    Arch arch, std::shared_ptr<Context> context, BlockAndController block_device) {
+    const PaverConfig& config, std::shared_ptr<Context> context, BlockAndController block_device) {
   for (auto& factory : *registered_factory_list()) {
     fidl::ClientEnd<fuchsia_device::Controller> controller;
     if (block_device.controller) {
@@ -179,7 +181,7 @@ zx::result<std::unique_ptr<DevicePartitioner>> DevicePartitionerFactory::Create(
       controller = std::move(controller_client);
     }
     if (auto status =
-            factory->New(devices, svc_root, arch, std::move(context), std::move(controller));
+            factory->New(devices, svc_root, config, std::move(context), std::move(controller));
         status.is_ok()) {
       return zx::ok(std::move(status.value()));
     }
@@ -266,7 +268,7 @@ zx::result<> FixedDevicePartitioner::ValidatePayload(const PartitionSpec& spec,
 
 zx::result<std::unique_ptr<DevicePartitioner>> DefaultPartitionerFactory::New(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    Arch arch, std::shared_ptr<Context> context,
+    const PaverConfig& config, std::shared_ptr<Context> context,
     fidl::ClientEnd<fuchsia_device::Controller> block_device) {
   return FixedDevicePartitioner::Initialize(devices, component::MaybeClone(svc_root));
 }

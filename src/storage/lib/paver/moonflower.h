@@ -33,7 +33,8 @@ struct MoonflowerGptEntryAttributes {
 class MoonflowerPartitioner : public DevicePartitioner {
  public:
   static zx::result<std::unique_ptr<DevicePartitioner>> Initialize(
-      const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+      const PaverConfig& config, const BlockDevices& devices,
+      fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
       fidl::ClientEnd<fuchsia_device::Controller> block_device);
 
   zx::result<std::unique_ptr<abr::Client>> CreateAbrClient() const override;
@@ -76,11 +77,12 @@ class MoonflowerPartitioner : public DevicePartitioner {
   zx::result<std::unique_ptr<GptDevice>> ConnectToGpt() const { return gpt_->ConnectToGpt(); }
 
  private:
-  explicit MoonflowerPartitioner(std::unique_ptr<GptDevicePartitioner> gpt)
-      : gpt_(std::move(gpt)) {}
+  MoonflowerPartitioner(const PaverConfig& config, std::unique_ptr<GptDevicePartitioner> gpt)
+      : config_(config), gpt_(std::move(gpt)) {}
 
-  zx::result<std::string> PartitionNameForSpec(const PartitionSpec& spec) const;
+  zx::result<std::vector<std::string>> PartitionNamesForSpec(const PartitionSpec& spec) const;
 
+  const PaverConfig config_;
   std::unique_ptr<GptDevicePartitioner> gpt_;
 };
 
@@ -88,7 +90,7 @@ class MoonflowerPartitionerFactory : public DevicePartitionerFactory {
  public:
   zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      Arch arch, std::shared_ptr<Context> context,
+      const PaverConfig& config, std::shared_ptr<Context> context,
       fidl::ClientEnd<fuchsia_device::Controller> block_device) final;
 };
 

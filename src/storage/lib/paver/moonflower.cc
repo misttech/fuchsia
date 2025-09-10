@@ -19,27 +19,27 @@
 
 #include "src/lib/uuid/uuid.h"
 #include "src/storage/lib/paver/pave-logging.h"
-#include "src/storage/lib/paver/system_shutdown_state.h"
 #include "src/storage/lib/paver/utils.h"
 #include "src/storage/lib/paver/validation.h"
 
 namespace paver {
 namespace {
 
-using fuchsia_system_state::SystemPowerState;
 using uuid::Uuid;
 
 }  // namespace
 
 zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitioner::Initialize(
-    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+    const PaverConfig& config, const BlockDevices& devices,
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
     fidl::ClientEnd<fuchsia_device::Controller> block_device) {
   if (IsBoard(svc_root, "kola").is_error() && IsBoard(svc_root, "sorrel").is_error() &&
       IsBoard(svc_root, "lilac").is_error()) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  auto gpt = GptDevicePartitioner::InitializeGpt(devices, svc_root, std::move(block_device));
+  auto gpt =
+      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
   if (gpt.is_error()) {
     return gpt.take_error();
   }
@@ -49,7 +49,7 @@ zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitioner::Initialize
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
-  auto partitioner = WrapUnique(new MoonflowerPartitioner(std::move(gpt->gpt)));
+  auto partitioner = WrapUnique(new MoonflowerPartitioner(config, std::move(gpt->gpt)));
 
   LOG("Successfully initialized Moonflower Device Partitioner\n");
   return zx::ok(std::move(partitioner));
@@ -95,42 +95,44 @@ bool MoonflowerPartitioner::SupportsPartition(const PartitionSpec& spec) const {
                      [&](const PartitionSpec& supported) { return SpecMatches(spec, supported); });
 }
 
-zx::result<std::string> MoonflowerPartitioner::PartitionNameForSpec(
+zx::result<std::vector<std::string>> MoonflowerPartitioner::PartitionNamesForSpec(
     const PartitionSpec& spec) const {
   if (!SupportsPartition(spec)) {
     ERROR("Unsupported partition %s\n", spec.ToString().c_str());
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  std::string part_name;
+  std::vector<std::string> part_names;
   switch (spec.partition) {
     case Partition::kBootloaderA:
     case Partition::kBootloaderB:
       // Normally the `content_type` is the partition name, but we've also used "recovery_zbi" to
       // map to the "vendor_boot" partition so we support that as well.
       if (spec.content_type == "recovery_zbi") {
-        part_name = "vendor_boot";
+        part_names.emplace_back("vendor_boot");
       } else {
-        part_name = spec.content_type;
+        part_names.emplace_back(spec.content_type);
       }
       // Only support slotted A/B partitions here. OTA'ing a non-A/B partition is very risky since
       // any failure could result in a bricked device, we do not support it on moonflower.
-      part_name += spec.partition == Partition::kBootloaderA ? "_a" : "_b";
+      part_names.back() += spec.partition == Partition::kBootloaderA ? "_a" : "_b";
       break;
     case Partition::kZirconA:
-      part_name = "boot_a";
+      part_names.emplace_back("boot_a");
       break;
     case Partition::kZirconB:
-      part_name = "boot_b";
+      part_names.emplace_back("boot_b");
       break;
     case Partition::kFuchsiaVolumeManager:
-      part_name = "super";
+      for (const auto& name : config_.system_partition_names) {
+        part_names.emplace_back(name);
+      }
       break;
     default:
       ERROR("Moonflower partitioner cannot find unknown partition type\n");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-  return zx::ok(std::move(part_name));
+  return zx::ok(std::move(part_names));
 }
 
 zx::result<std::unique_ptr<PartitionClient>> MoonflowerPartitioner::FindPartition(
@@ -140,12 +142,18 @@ zx::result<std::unique_ptr<PartitionClient>> MoonflowerPartitioner::FindPartitio
 
 zx::result<std::unique_ptr<BlockPartitionClient>> MoonflowerPartitioner::FindGptPartition(
     const PartitionSpec& spec) const {
-  zx::result name = PartitionNameForSpec(spec);
-  if (name.is_error()) {
-    return name.take_error();
+  zx::result names = PartitionNamesForSpec(spec);
+  if (names.is_error()) {
+    return names.take_error();
   }
-  return gpt_->FindPartition(
-      [&](const GptPartitionMetadata& part) { return FilterByName(part, *name); });
+  return gpt_->FindPartition([&](const GptPartitionMetadata& part) {
+    for (const auto& name : *names) {
+      if (FilterByName(part, name)) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 zx::result<std::vector<std::unique_ptr<BlockPartitionClient>>>
@@ -155,15 +163,21 @@ MoonflowerPartitioner::FindAllPartitions(FilterCallback filter) const {
 
 zx::result<FindPartitionDetailsResult> MoonflowerPartitioner::FindPartitionDetails(
     const PartitionSpec& spec) const {
-  zx::result name = PartitionNameForSpec(spec);
-  if (name.is_error()) {
-    return name.take_error();
+  zx::result names = PartitionNamesForSpec(spec);
+  if (names.is_error()) {
+    return names.take_error();
   }
-  return gpt_->FindPartitionDetails(
-      [&](const GptPartitionMetadata& part) { return FilterByName(part, *name); });
+  return gpt_->FindPartitionDetails([&](const GptPartitionMetadata& part) {
+    for (const auto& name : *names) {
+      if (FilterByName(part, name)) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
-zx::result<> MoonflowerPartitioner::WipeFvm() const { return gpt_->WipeFvm(); }
+zx::result<> MoonflowerPartitioner::WipeFvm() const { return zx::error(ZX_ERR_NOT_SUPPORTED); }
 
 zx::result<> MoonflowerPartitioner::ResetPartitionTables() const {
   ERROR("Initialising partition tables is not supported for a Moonflower device\n");
@@ -187,9 +201,10 @@ zx::result<> MoonflowerPartitioner::ValidatePayload(const PartitionSpec& spec,
 }
 
 zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitionerFactory::New(
-    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root, Arch arch,
-    std::shared_ptr<Context> context, fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return MoonflowerPartitioner::Initialize(devices, svc_root, std::move(block_device));
+    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+    const PaverConfig& config, std::shared_ptr<Context> context,
+    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
+  return MoonflowerPartitioner::Initialize(config, devices, svc_root, std::move(block_device));
 }
 
 class MoonflowerAbrClient : public abr::Client {

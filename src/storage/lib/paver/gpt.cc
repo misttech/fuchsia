@@ -141,6 +141,18 @@ bool FilterByTypeAndName(const GptPartitionMetadata& part, const Uuid& type,
   return type == part.type_guid && FilterByName(part, name);
 }
 
+bool IsFuchsiaSystemPartition(const PaverConfig& config, const GptPartitionMetadata& part) {
+  if (IsFvmPartition(part)) {
+    return true;
+  }
+  for (const auto& name : config.system_partition_names) {
+    if (FilterByName(part, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 zx::result<std::vector<GptDevicePartitioner::GptClients>> GptDevicePartitioner::FindGptDevices(
     const fbl::unique_fd& devfs_root) {
   fbl::unique_fd block_fd;
@@ -292,7 +304,7 @@ zx::result<std::unique_ptr<GptDevicePartitioner>> GptDevicePartitioner::Initiali
 
 zx::result<GptDevicePartitioner::InitializeGptResult> GptDevicePartitioner::InitializeGpt(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    fidl::ClientEnd<fuchsia_device::Controller> block_controller) {
+    const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_controller) {
   zx::result admin = component::ConnectAt<fuchsia_fshost::Admin>(svc_root);
   if (admin.is_error()) {
     return admin.take_error();
@@ -398,7 +410,10 @@ zx::result<GptDevicePartitioner::InitializeGptResult> GptDevicePartitioner::Init
     // If there's only one GPT, but it's missing the necessary partitions, bubble that up so the
     // caller can decide whether to reset the partition tables.
     partitioner = std::move(std::get<0>(candidate_gpts[0]));
-    if (zx::result find = partitioner->FindPartition(IsFvmOrAndroidPartition); find.is_error()) {
+    if (zx::result find = partitioner->FindPartition([&config](const GptPartitionMetadata& part) {
+          return IsFuchsiaSystemPartition(config, part);
+        });
+        find.is_error()) {
       if (find.status_value() != ZX_ERR_NOT_FOUND) {
         ERROR("Failed to look up FVM partition in GPT: %s\n", find.status_string());
       }
@@ -412,7 +427,11 @@ zx::result<GptDevicePartitioner::InitializeGptResult> GptDevicePartitioner::Init
     }
   } else {
     for (auto& candidate : candidate_gpts) {
-      if (std::get<0>(candidate)->FindPartition(IsFvmOrAndroidPartition).is_ok()) {
+      if (std::get<0>(candidate)
+              ->FindPartition([&config](const GptPartitionMetadata& part) {
+                return IsFuchsiaSystemPartition(config, part);
+              })
+              .is_ok()) {
         if (partitioner) {
           ERROR("Found multiple block devices with valid GPTs. Unsuppported.\n");
           return zx::error(ZX_ERR_NOT_SUPPORTED);

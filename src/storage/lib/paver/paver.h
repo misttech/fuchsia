@@ -27,6 +27,8 @@
 
 namespace paver {
 
+#include "src/storage/lib/paver/config.h"
+
 class Paver : public fidl::WireServer<fuchsia_paver::Paver> {
  public:
   void FindDataSink(FindDataSinkRequestView request,
@@ -53,16 +55,19 @@ class Paver : public fidl::WireServer<fuchsia_paver::Paver> {
 
   const BlockDevices& devices() const { return devices_; }
 
-  Paver(BlockDevices devices, fidl::ClientEnd<fuchsia_io::Directory> svc_root)
-      : devices_(std::move(devices)),
+  Paver(PaverConfig config, BlockDevices devices, fidl::ClientEnd<fuchsia_io::Directory> svc_root)
+      : config_(config),
+        devices_(std::move(devices)),
         svc_root_(std::move(svc_root)),
         context_(std::make_shared<Context>()) {}
 
-  static zx::result<std::unique_ptr<Paver>> Create(fbl::unique_fd devfs_root = {});
+  static zx::result<std::unique_ptr<Paver>> Create(PaverConfig config = {},
+                                                   fbl::unique_fd devfs_root = {});
 
   void LifecycleStopCallback(fit::callback<void(zx_status_t status)> cb);
 
  private:
+  const PaverConfig config_;
   // Used for test injection.
   BlockDevices devices_;
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
@@ -126,7 +131,7 @@ class DataSink : public fidl::WireServer<fuchsia_paver::DataSink> {
   // Automatically finds block device to use.
   static void Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-                   fidl::ServerEnd<fuchsia_paver::DataSink> server,
+                   const PaverConfig& config, fidl::ServerEnd<fuchsia_paver::DataSink> server,
                    std::shared_ptr<Context> context);
 
   void ReadAsset(ReadAssetRequestView request, ReadAssetCompleter::Sync& completer) override;
@@ -183,6 +188,7 @@ class DynamicDataSink : public fidl::WireServer<fuchsia_paver::DynamicDataSink> 
 
   static void Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+                   const PaverConfig& config,
                    fidl::ServerEnd<fuchsia_paver::DynamicDataSink> server,
                    std::shared_ptr<Context> context, BlockAndController block = {});
 
@@ -244,7 +250,7 @@ class BootManager : public fidl::WireServer<fuchsia_paver::BootManager> {
       : partitioner_(std::move(partitioner)), abr_client_(std::move(abr_client)) {}
 
   static void Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
-                   fidl::ClientEnd<fuchsia_io::Directory> svc_root,
+                   fidl::ClientEnd<fuchsia_io::Directory> svc_root, const PaverConfig& config,
                    std::shared_ptr<Context> context,
                    fidl::ServerEnd<fuchsia_paver::BootManager> server);
 

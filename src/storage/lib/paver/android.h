@@ -15,7 +15,7 @@ class AndroidDevicePartitioner : public DevicePartitioner {
  public:
   static zx::result<std::unique_ptr<DevicePartitioner>> Initialize(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      Arch arch, fidl::ClientEnd<fuchsia_device::Controller> block_device,
+      const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device,
       std::shared_ptr<Context> context);
 
   zx::result<std::unique_ptr<abr::Client>> CreateAbrClient() const override;
@@ -43,11 +43,12 @@ class AndroidDevicePartitioner : public DevicePartitioner {
   zx::result<> OnStop() const override;
 
  private:
-  AndroidDevicePartitioner(std::unique_ptr<GptDevicePartitioner> gpt,
+  AndroidDevicePartitioner(std::unique_ptr<GptDevicePartitioner> gpt, const PaverConfig& config,
                            std::shared_ptr<Context> context)
-      : gpt_(std::move(gpt)), context_(std::move(context)) {}
+      : gpt_(std::move(gpt)), config_(config), context_(std::move(context)) {}
 
   std::unique_ptr<GptDevicePartitioner> gpt_;
+  const PaverConfig config_;
   std::shared_ptr<Context> context_;
 };
 
@@ -55,7 +56,7 @@ class AndroidPartitionerFactory : public DevicePartitionerFactory {
  public:
   zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      Arch arch, std::shared_ptr<Context> context,
+      const PaverConfig& config, std::shared_ptr<Context> context,
       fidl::ClientEnd<fuchsia_device::Controller> block_device) final;
 };
 

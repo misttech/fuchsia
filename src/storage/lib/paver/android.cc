@@ -34,13 +34,16 @@ using fuchsia_system_state::SystemPowerState;
 }  // namespace
 
 zx::result<std::unique_ptr<DevicePartitioner>> AndroidDevicePartitioner::Initialize(
-    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root, Arch arch,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device, std::shared_ptr<Context> context) {
+    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+    const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device,
+    std::shared_ptr<Context> context) {
+  Arch arch = config.arch;
   if (arch != Arch::kX64 && arch != Arch::kArm64) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  auto status = GptDevicePartitioner::InitializeGpt(devices, svc_root, std::move(block_device));
+  auto status =
+      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
   if (status.is_error()) {
     return status.take_error();
   }
@@ -51,7 +54,7 @@ zx::result<std::unique_ptr<DevicePartitioner>> AndroidDevicePartitioner::Initial
   }
 
   auto partitioner =
-      WrapUnique(new AndroidDevicePartitioner(std::move(status->gpt), std::move(context)));
+      WrapUnique(new AndroidDevicePartitioner(std::move(status->gpt), config, std::move(context)));
 
   LOG("Successfully initialized Android Device Partitioner\n");
   return zx::ok(std::move(partitioner));
@@ -90,40 +93,46 @@ zx::result<std::unique_ptr<PartitionClient>> AndroidDevicePartitioner::FindParti
   // 	vbmeta    -> vbmeta
   // 	abrmeta   -> misc
   // 	FVM       -> super
-  std::string_view part_name;
+  std::vector<std::string_view> part_names;
   switch (spec.partition) {
     case Partition::kBootloaderA:
-      part_name = "boot_a";
+      part_names.push_back("boot_a");
       break;
     case Partition::kBootloaderB:
-      part_name = "boot_b";
+      part_names.push_back("boot_b");
       break;
     case Partition::kZirconA:
-      part_name = "vendor_boot_a";
+      part_names.push_back("vendor_boot_a");
       break;
     case Partition::kZirconB:
-      part_name = "vendor_boot_b";
+      part_names.push_back("vendor_boot_b");
       break;
     case Partition::kVbMetaA:
-      part_name = "vbmeta_a";
+      part_names.push_back("vbmeta_a");
       break;
     case Partition::kVbMetaB:
-      part_name = "vbmeta_b";
+      part_names.push_back("vbmeta_b");
       break;
     case Partition::kAbrMeta:
-      part_name = "misc";
+      part_names.push_back("misc");
       break;
     case Partition::kFuchsiaVolumeManager:
-      part_name = "super";
+      for (const auto& name : config_.system_partition_names) {
+        part_names.push_back(name);
+      }
       break;
     default:
       ERROR("Android partitioner cannot find unknown partition type\n");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-  LOG("Looking for part %s\n", std::string(part_name).c_str());
 
   const auto filter = [&](const GptPartitionMetadata& part) {
-    return FilterByName(part, part_name);
+    for (const auto& name : part_names) {
+      if (FilterByName(part, name)) {
+        return true;
+      }
+    }
+    return false;
   };
   auto status = gpt_->FindPartition(filter);
   if (status.is_error()) {
@@ -132,7 +141,7 @@ zx::result<std::unique_ptr<PartitionClient>> AndroidDevicePartitioner::FindParti
   return zx::ok(std::move(*status));
 }
 
-zx::result<> AndroidDevicePartitioner::WipeFvm() const { return gpt_->WipeFvm(); }
+zx::result<> AndroidDevicePartitioner::WipeFvm() const { return zx::error(ZX_ERR_NOT_SUPPORTED); }
 
 zx::result<> AndroidDevicePartitioner::ResetPartitionTables() const {
   ERROR("Initialising partition tables is not supported for Android devices\n");
@@ -178,9 +187,10 @@ zx::result<> AndroidDevicePartitioner::OnStop() const {
 }
 
 zx::result<std::unique_ptr<DevicePartitioner>> AndroidPartitionerFactory::New(
-    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root, Arch arch,
-    std::shared_ptr<Context> context, fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return AndroidDevicePartitioner::Initialize(devices, svc_root, arch, std::move(block_device),
+    const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+    const PaverConfig& config, std::shared_ptr<Context> context,
+    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
+  return AndroidDevicePartitioner::Initialize(devices, svc_root, config, std::move(block_device),
                                               std::move(context));
 }
 

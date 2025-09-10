@@ -259,8 +259,10 @@ class PaverServiceTest : public PaverTest {
   }
 
  protected:
+  virtual paver::PaverConfig Config() { return {}; }
+
   void StartPaver(fbl::unique_fd devfs_root, fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
-    zx::result paver = paver::Paver::Create(std::move(devfs_root));
+    zx::result paver = paver::Paver::Create(Config(), std::move(devfs_root));
     ASSERT_OK(paver);
     paver_ = std::move(*paver);
     paver_->set_dispatcher(loop_.dispatcher());
@@ -338,7 +340,7 @@ void TestReadWriteAsset(BlockDevice& block_device,
                         fuchsia_paver::wire::Configuration configuration,
                         fuchsia_paver::wire::Asset asset, size_t partition_start_block) {
   // WriteAsset(Kernel) requires something that looks like a kernel.
-  fbl::Array<uint8_t> data = CreateZbiHeader(paver::GetCurrentArch(), 1000, nullptr);
+  fbl::Array<uint8_t> data = CreateZbiHeader(paver::PaverConfig().arch, 1000, nullptr);
 
   // Use WriteAsset() FIDL to write a payload to disk.
   fuchsia_mem::wire::Buffer buffer;
@@ -2683,12 +2685,20 @@ std::vector<uint8_t> TestData(size_t size) {
 
 class PaverServiceMoonflowerTest : public PaverServiceGptDeviceTest {
  public:
+  paver::PaverConfig Config() override {
+    return {.system_partition_names = {"super_and_userdata"}};
+  }
+
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args = PaverServiceGptDeviceTest::DevmgrArgs();
     args.board_name = "sorrel";  // Any moonflower board name is fine here
     auto boot_args = std::make_unique<FakeBootArgs>();
     boot_args->AddStringArgs("zvb.current_slot", "_a");
     args.fake_boot_args = std::move(boot_args);
+    args.enable_storage_host = true;
+    args.fshost_config.emplace_back(
+        component_testing::ConfigCapability{.name = "fuchsia.fshost.MergeSuperAndUserdata",
+                                            .value = component_testing::ConfigValue::Bool(true)});
     return args;
   }
 
@@ -2703,10 +2713,10 @@ class PaverServiceMoonflowerTest : public PaverServiceGptDeviceTest {
                                 {"vendor_boot_b", kTestGuid, 0x4000, 0x1000},
                                 {"vendor_kernel_boot_a", kTestGuid, 0x5000, 0x1000},
                                 {"vendor_kernel_boot_b", kTestGuid, 0x6000, 0x1000},
-                                {"super", kTestGuid, 0x7000, 0x1000},
-                                {"userdata", kTestGuid, 0x8000, 0x1000},
-                                {"dtbo_a", kTestGuid, 0x9000, 0x1000},
-                                {"dtbo_b", kTestGuid, 0x10000, 0x1000},
+                                {"super", kTestGuid, 0x7000, 0x1},
+                                {"userdata", kTestGuid, 0x7001, 0xfff},
+                                {"dtbo_a", kTestGuid, 0x8000, 0x1000},
+                                {"dtbo_b", kTestGuid, 0x9000, 0x1000},
                             }));
   }
 };
@@ -2761,6 +2771,30 @@ TEST_F(PaverServiceMoonflowerTest, WriteFirmwareWithNonSlottedPartitionFails) {
       WriteFirmware("userdata", fuchsia_paver::wire::Configuration::kA, test_data, &result));
   ASSERT_TRUE(result.is_status());
   ASSERT_NOT_OK(result.status());
+}
+
+TEST_F(PaverServiceMoonflowerTest, WriteOpaqueVolume) {
+  // TODO(b/217597389): Consider also adding an e2e test for this interface.
+  auto [local, remote] = fidl::Endpoints<fuchsia_paver::DynamicDataSink>::Create();
+  ASSERT_OK(client_->FindPartitionTableManager(std::move(remote)));
+  fidl::WireSyncClient data_sink{std::move(local)};
+
+  // Create a payload that is intentionally big enough to spill over super and into userdata
+  constexpr size_t kPayloadSize = 16384;
+  std::vector<uint8_t> payload(kPayloadSize, 0x4a);
+
+  fuchsia_mem::wire::Buffer payload_wire_buffer;
+  zx::vmo payload_vmo;
+  fzl::VmoMapper payload_vmo_mapper;
+  ASSERT_OK(payload_vmo_mapper.CreateAndMap(kPayloadSize, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE,
+                                            nullptr, &payload_vmo));
+  memcpy(payload_vmo_mapper.start(), payload.data(), kPayloadSize);
+  payload_wire_buffer.vmo = std::move(payload_vmo);
+  payload_wire_buffer.size = kPayloadSize;
+
+  // Write the payload as opaque volume
+  auto result = data_sink->WriteOpaqueVolume(std::move(payload_wire_buffer));
+  ASSERT_OK(result.status());
 }
 
 }  // namespace

@@ -439,7 +439,7 @@ WriteFirmwareResult CreateWriteFirmwareResult(std::variant<zx_status_t, bool>* v
 
 }  // namespace
 
-zx::result<std::unique_ptr<Paver>> Paver::Create(fbl::unique_fd devfs_root) {
+zx::result<std::unique_ptr<Paver>> Paver::Create(PaverConfig config, fbl::unique_fd devfs_root) {
   auto [svc, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
   if (zx_status_t status =
           fdio_open3("/svc", static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
@@ -468,24 +468,24 @@ zx::result<std::unique_ptr<Paver>> Paver::Create(fbl::unique_fd devfs_root) {
     ERROR("Failed to open device source: %s\n", devices.status_string());
     return devices.take_error();
   }
-  return zx::ok(std::make_unique<Paver>(std::move(*devices), std::move(svc)));
+  return zx::ok(std::make_unique<Paver>(config, std::move(*devices), std::move(svc)));
 }
 
 void Paver::FindDataSink(FindDataSinkRequestView request, FindDataSinkCompleter::Sync& _completer) {
-  DataSink::Bind(dispatcher_, devices_.Duplicate(), svc_root_.borrow(),
+  DataSink::Bind(dispatcher_, devices_.Duplicate(), svc_root_.borrow(), config_,
                  std::move(request->data_sink), context_);
 }
 
 void Paver::FindPartitionTableManager(FindPartitionTableManagerRequestView request,
                                       FindPartitionTableManagerCompleter::Sync& _completer) {
-  DynamicDataSink::Bind(dispatcher_, devices_.Duplicate(), svc_root_.borrow(),
+  DynamicDataSink::Bind(dispatcher_, devices_.Duplicate(), svc_root_.borrow(), config_,
                         std::move(request->data_sink), context_);
 }
 
 void Paver::FindBootManager(FindBootManagerRequestView request,
                             FindBootManagerCompleter::Sync& _completer) {
-  BootManager::Bind(dispatcher_, devices_.Duplicate(), component::MaybeClone(svc_root_), context_,
-                    std::move(request->boot_manager));
+  BootManager::Bind(dispatcher_, devices_.Duplicate(), component::MaybeClone(svc_root_), config_,
+                    context_, std::move(request->boot_manager));
 }
 
 void DataSink::ReadAsset(ReadAssetRequestView request, ReadAssetCompleter::Sync& completer) {
@@ -636,10 +636,10 @@ zx::result<> DataSinkImpl::WriteVolumes(
 
 void DataSink::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                     fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-                    fidl::ServerEnd<fuchsia_paver::DataSink> server,
+                    const PaverConfig& config, fidl::ServerEnd<fuchsia_paver::DataSink> server,
                     std::shared_ptr<Context> context) {
   zx::result partitioner =
-      DevicePartitionerFactory::Create(devices, svc_root, GetCurrentArch(), std::move(context));
+      DevicePartitionerFactory::Create(devices, svc_root, config, std::move(context));
   if (partitioner.is_error()) {
     ERROR("Unable to initialize a partitioner: %s.\n", partitioner.status_string());
     fidl_epitaph_write(server.channel().get(), ZX_ERR_BAD_STATE);
@@ -652,9 +652,10 @@ void DataSink::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
 
 void DynamicDataSink::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                            fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+                           const PaverConfig& config,
                            fidl::ServerEnd<fuchsia_paver::DynamicDataSink> server,
                            std::shared_ptr<Context> context, BlockAndController block) {
-  zx::result partitioner = DevicePartitionerFactory::Create(devices, svc_root, GetCurrentArch(),
+  zx::result partitioner = DevicePartitionerFactory::Create(devices, svc_root, config,
                                                             std::move(context), std::move(block));
   if (partitioner.is_error()) {
     ERROR("Unable to initialize a partitioner: %s.\n", partitioner.status_string());
@@ -702,7 +703,7 @@ void DynamicDataSink::ReadFirmware(ReadFirmwareRequestView request,
 }
 
 void BootManager::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
-                       fidl::ClientEnd<fuchsia_io::Directory> svc_root,
+                       fidl::ClientEnd<fuchsia_io::Directory> svc_root, const PaverConfig& config,
                        std::shared_ptr<Context> context,
                        fidl::ServerEnd<fuchsia_paver::BootManager> server) {
   zx::result supports_abr = abr::SupportsVerifiedBoot(devices, svc_root);
@@ -717,7 +718,7 @@ void BootManager::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
   }
 
   zx::result partitioner =
-      DevicePartitionerFactory::Create(devices, svc_root, GetCurrentArch(), std::move(context));
+      DevicePartitionerFactory::Create(devices, svc_root, config, std::move(context));
   if (partitioner.is_error()) {
     ERROR("Unable to initialize a partitioner: %s.\n", partitioner.status_string());
     fidl_epitaph_write(server.channel().get(), partitioner.error_value());
@@ -988,7 +989,7 @@ void Paver::FindSysconfig(FindSysconfigRequestView request,
 }
 
 void Paver::FindSysconfig(fidl::ServerEnd<fuchsia_paver::Sysconfig> sysconfig) {
-  Sysconfig::Bind(dispatcher_, devices_, component::MaybeClone(svc_root_), context_,
+  Sysconfig::Bind(dispatcher_, devices_, component::MaybeClone(svc_root_), config_, context_,
                   std::move(sysconfig));
 }
 
@@ -996,7 +997,7 @@ void Paver::LifecycleStopCallback(fit::callback<void(zx_status_t status)> cb) {
   LOG("Lifecycle stop request received.");
 
   zx::result partitioner =
-      DevicePartitionerFactory::Create(devices_, svc_root_.borrow(), GetCurrentArch(), context_);
+      DevicePartitionerFactory::Create(devices_, svc_root_.borrow(), config_, context_);
   if (partitioner.is_error()) {
     ERROR("Unable to initialize a partitioner: %s.\n", partitioner.status_string());
     cb(partitioner.status_value());

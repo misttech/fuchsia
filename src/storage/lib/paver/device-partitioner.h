@@ -25,6 +25,7 @@
 #include "src/lib/uuid/uuid.h"
 #include "src/storage/lib/paver/abr-client.h"
 #include "src/storage/lib/paver/block-devices.h"
+#include "src/storage/lib/paver/config.h"
 #include "src/storage/lib/paver/partition-client.h"
 #include "src/storage/lib/paver/paver-context.h"
 
@@ -51,12 +52,6 @@ enum class Partition {
 
 const char* PartitionName(Partition partition, PartitionScheme scheme);
 std::optional<uuid::Uuid> PartitionTypeGuid(Partition partition, PartitionScheme scheme);
-
-enum class Arch {
-  kX64,
-  kArm64,
-  kRiscv64,
-};
 
 constexpr char kOpaqueVolumeContentType[] = "opaque_volume";
 
@@ -163,7 +158,8 @@ class DevicePartitionerFactory {
   // against. It's only meaningful for EFI and CROS devices which may have multiple storage devices.
   static zx::result<std::unique_ptr<DevicePartitioner>> Create(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      Arch arch, std::shared_ptr<Context> context, BlockAndController block_device = {});
+      const PaverConfig& config, std::shared_ptr<Context> context,
+      BlockAndController block_device = {});
 
   static void Register(std::unique_ptr<DevicePartitionerFactory> factory);
 
@@ -174,7 +170,7 @@ class DevicePartitionerFactory {
   // of DevicePartitioners.
   virtual zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      Arch arch, std::shared_ptr<Context> context,
+      const PaverConfig& config, std::shared_ptr<Context> context,
       fidl::ClientEnd<fuchsia_device::Controller> block_device) = 0;
 
   static std::vector<std::unique_ptr<DevicePartitionerFactory>>* registered_factory_list();
@@ -229,22 +225,9 @@ class DefaultPartitionerFactory : public DevicePartitionerFactory {
  public:
   zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      Arch arch, std::shared_ptr<Context> context,
+      const PaverConfig& config, std::shared_ptr<Context> context,
       fidl::ClientEnd<fuchsia_device::Controller> block_device) final;
 };
-
-// Get the architecture of the currently running platform.
-inline constexpr Arch GetCurrentArch() {
-#if defined(__x86_64__)
-  return Arch::kX64;
-#elif defined(__aarch64__)
-  return Arch::kArm64;
-#elif defined(__riscv)
-  return Arch::kRiscv64;
-#else
-#error "Unknown arch"
-#endif
-}
 
 }  // namespace paver
 

@@ -283,6 +283,7 @@ impl Inner {
         userdata_partition: (u32, gpt::PartitionInfo),
     ) -> Result<(), Error> {
         let info = gpt::PartitionInfo {
+            // TODO(https://fxbug.dev/443980711): This should come from configuration.
             label: "super_and_userdata".to_string(),
             type_guid: super_partition.1.type_guid.clone(),
             instance_guid: super_partition.1.instance_guid.clone(),
