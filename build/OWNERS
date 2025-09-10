@@ -3,7 +3,6 @@ ddorwin@google.com
 digit@google.com
 fangism@google.com
 jayzhuang@google.com
-rudymathu@google.com
 
 per-file fuzz.gni = file://src/sys/fuzzing/OWNERS
 per-file security.gni = file://src/security/OWNERS
