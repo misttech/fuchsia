@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::intl_controller::{IntlController, Request};
+use super::intl_controller::{IntlController, IntlError, Request};
 use super::types::IntlInfo;
-use crate::handler::setting_handler::ControllerError;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
     Error as SettingsError, IntlRequest, IntlRequestStream, IntlSettings, IntlWatchResponder,
@@ -69,7 +68,7 @@ impl IntlFidlHandler {
 enum HandlerError {
     AlreadySubscribed,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(IntlError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -77,7 +76,7 @@ impl From<&HandlerError> for ResponseType {
         match error {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

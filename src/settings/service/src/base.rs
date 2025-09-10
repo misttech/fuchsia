@@ -20,7 +20,6 @@ use crate::do_not_disturb::types::DoNotDisturbInfo;
 use crate::factory_reset::types::FactoryResetInfo;
 use crate::ingress::fidl;
 use crate::input::types::InputInfo;
-use crate::intl::types::IntlInfo;
 #[cfg(test)]
 use serde::Deserialize;
 use serde::Serialize;
@@ -124,7 +123,6 @@ generate_inspect_with_info! {
         FactoryReset(FactoryResetInfo),
         DoNotDisturb(DoNotDisturbInfo),
         Input(InputInfo),
-        Intl(IntlInfo),
     }
 }
 
@@ -163,7 +161,6 @@ conversion_impls! {
     FactoryReset(FactoryResetInfo) => FactoryReset,
     DoNotDisturb(DoNotDisturbInfo) => DoNotDisturb,
     Input(InputInfo) => Input,
-    Intl(IntlInfo) => Intl,
 }
 
 impl From<&SettingInfo> for SettingType {
@@ -177,7 +174,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::DoNotDisturb(_) => SettingType::DoNotDisturb,
             SettingInfo::FactoryReset(_) => SettingType::FactoryReset,
             SettingInfo::Input(_) => SettingType::Input,
-            SettingInfo::Intl(_) => SettingType::Intl,
         }
     }
 }

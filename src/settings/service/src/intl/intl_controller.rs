@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use super::intl_fidl_handler::Publisher;
-use crate::base::{Merge, SettingInfo, SettingType};
-use crate::handler::setting_handler::ControllerError;
+use crate::base::Merge;
 use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
+use anyhow::Error;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
-use settings_common::inspect::event::SettingValuePublisher;
+use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::fidl_storage::FidlStorageConvertible;
@@ -50,20 +50,25 @@ impl Default for IntlInfo {
     }
 }
 
-impl From<IntlInfo> for SettingInfo {
-    fn from(info: IntlInfo) -> SettingInfo {
-        SettingInfo::Intl(info)
-    }
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum IntlError {
+    #[error("Invalid argument for intl: argument:{0:?} value:{1:?}")]
+    InvalidArgument(&'static str, String),
+    #[error("Write failed for Intl: {0:?}")]
+    WriteFailure(Error),
 }
 
-impl From<&IntlInfo> for SettingType {
-    fn from(_: &IntlInfo) -> SettingType {
-        SettingType::Intl
+impl From<&IntlError> for ResponseType {
+    fn from(error: &IntlError) -> Self {
+        match error {
+            IntlError::InvalidArgument(..) => ResponseType::InvalidArgument,
+            IntlError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
     }
 }
 
 pub(crate) enum Request {
-    Set(IntlInfo, Sender<Result<(), ControllerError>>),
+    Set(IntlInfo, Sender<Result<(), IntlError>>),
 }
 
 pub struct IntlController {
@@ -140,7 +145,7 @@ impl IntlController {
         time_zone_list.flatten().collect()
     }
 
-    async fn set(&self, info: IntlInfo) -> Result<Option<IntlInfo>, ControllerError> {
+    async fn set(&self, info: IntlInfo) -> Result<Option<IntlInfo>, IntlError> {
         self.validate_intl_info(&info)?;
 
         let current = self.store.get::<IntlInfo>().await;
@@ -149,23 +154,15 @@ impl IntlController {
             .write(&merged)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(merged))
-            .map_err(|e| {
-                log::error!("Failed to write intl info: {e:?}");
-                ControllerError::WriteFailure(SettingType::Intl)
-            })
+            .map_err(IntlError::WriteFailure)
     }
 
-    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
     /// Checks if the given IntlInfo is valid.
-    fn validate_intl_info(&self, info: &IntlInfo) -> Result<(), ControllerError> {
+    fn validate_intl_info(&self, info: &IntlInfo) -> Result<(), IntlError> {
         if let Some(time_zone_id) = &info.time_zone_id {
             // Make sure the given time zone ID is valid.
             if !self.time_zone_ids.contains(time_zone_id.as_str()) {
-                return Err(ControllerError::InvalidArgument(
-                    SettingType::Intl,
-                    "timezone id".into(),
-                    time_zone_id.clone().into(),
-                ));
+                return Err(IntlError::InvalidArgument("timezone id", time_zone_id.into()));
             }
         }
 
@@ -178,18 +175,16 @@ impl IntlController {
                     Ok(parsed) => {
                         if parsed.label().is_empty() {
                             log::error!("Locale is invalid: {:?}", locale.id);
-                            return Err(ControllerError::InvalidArgument(
-                                SettingType::Intl,
-                                "locale id".into(),
+                            return Err(IntlError::InvalidArgument(
+                                "locale id",
                                 locale.id.clone().into(),
                             ));
                         }
                     }
                     Err(err) => {
                         log::error!("Error loading locale: {:?}", err);
-                        return Err(ControllerError::InvalidArgument(
-                            SettingType::Intl,
-                            "locale id".into(),
+                        return Err(IntlError::InvalidArgument(
+                            "locale id",
                             locale.id.clone().into(),
                         ));
                     }
