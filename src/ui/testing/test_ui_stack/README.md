@@ -24,6 +24,9 @@ The Test UI Stack supports configuring the underlying UITestRealm instance
 using the following arguments via Structured Configuration:
 
 - **display_rotation**: The rotation of the display, counter-clockwise, in 90-degree increments.
+- **display_width_px**: Width of the display, in pixels.
+- **display_height_px**: Height of the display, in pixels.
+- **display_refresh_rate_millihertz**: Refresh rate of the display, in millihertz (1/1000 Hz).
 - **device_pixel_ratio**: The conversion factor between logical and physical coordinates.
 
 ## Example Usage

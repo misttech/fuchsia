@@ -56,6 +56,11 @@ int run_test_ui_stack(int argc, const char** argv) {
   config.display_rotation = test_ui_stack_config.display_rotation();
   config.device_pixel_ratio = std::stof(test_ui_stack_config.device_pixel_ratio());
   config.suspend_enabled = test_ui_stack_config.suspend_enabled();
+  config.display_config = {
+      .active_width_px = test_ui_stack_config.display_width_px(),
+      .active_height_px = test_ui_stack_config.display_height_px(),
+      .refresh_rate_millihertz = test_ui_stack_config.display_refresh_rate_millihertz(),
+  };
 
   // Build test realm.
   ui_testing::UITestRealm realm(config);

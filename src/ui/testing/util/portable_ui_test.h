@@ -136,7 +136,13 @@ class PortableUITest : public LoggingEventLoop, public ::testing::Test {
 
   // Methods to control the test-ui-stack parameters. Override as necessary.
   virtual float device_pixel_ratio() { return 1.f; }
-  virtual uint32_t display_rotation() { return 0.f; }
+
+  // `display_width_px()` and `display_height_px()` must be either both zero
+  // or both non-zero.
+  virtual uint32_t display_width_px() { return 0; }
+  virtual uint32_t display_height_px() { return 0; }
+  virtual uint32_t display_refresh_rate_millihertz() { return 0; }
+  virtual uint32_t display_rotation() { return 0; }
   virtual bool suspend_enabled() { return false; }
 
  private:

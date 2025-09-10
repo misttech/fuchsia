@@ -180,6 +180,16 @@
     config: {
         display_rotation: { type: "uint32" },
 
+        // If zero, uses component default configuration.
+        //
+        // `display_width_px` and `display_height_px` must be either both zero
+        // or both non-zero.
+        display_width_px: { type: "uint32" },
+        display_height_px: { type: "uint32" },
+
+        // If zero, uses component default configuration.
+        display_refresh_rate_millihertz: { type: "uint32" },
+
         // Structured configuration doesn't support floats.
         device_pixel_ratio: {
             type: "string",

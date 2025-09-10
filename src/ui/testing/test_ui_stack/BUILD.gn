@@ -63,6 +63,9 @@ fuchsia_structured_config_values("flatland_scene_manager_config") {
   cm_label = ":test_ui_stack_manifest"
   values = {
     display_rotation = 0
+    display_width_px = 0  # Use default config
+    display_height_px = 0  # Use default config
+    display_refresh_rate_millihertz = 0  # Use default config
     device_pixel_ratio = "1.0"
     suspend_enabled = false
   }

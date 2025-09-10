@@ -91,9 +91,19 @@ void PortableUITest::SetUpRealmBase() {
       .targets = {ParentRef{}}});
 
   // Configure test-ui-stack.
-  realm_builder_.InitMutableConfigToEmpty(kTestUIStack);
+  realm_builder_.InitMutableConfigFromPackage(kTestUIStack);
   realm_builder_.SetConfigValue(kTestUIStack, "display_rotation",
                                 ConfigValue::Uint32(display_rotation()));
+
+  FX_CHECK((display_width_px() == 0) == (display_height_px() == 0))
+      << "display_width_px() and display_height_px() must be either both zero or both non-zero.";
+  realm_builder_.SetConfigValue(kTestUIStack, "display_width_px",
+                                ConfigValue::Uint32(display_width_px()));
+  realm_builder_.SetConfigValue(kTestUIStack, "display_height_px",
+                                ConfigValue::Uint32(display_height_px()));
+  realm_builder_.SetConfigValue(kTestUIStack, "display_refresh_rate_millihertz",
+                                ConfigValue::Uint32(display_refresh_rate_millihertz()));
+
   realm_builder_.SetConfigValue(kTestUIStack, "device_pixel_ratio",
                                 ConfigValue(std::to_string(device_pixel_ratio())));
   realm_builder_.SetConfigValue(kTestUIStack, "suspend_enabled",
