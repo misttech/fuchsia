@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
+#include <fcntl.h>
 #include <lib/fit/defer.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
@@ -231,13 +232,111 @@ TEST(MProtectTest, ExecStackInSignal) {
   }));
 }
 
-class MProtectSuccessAndFailure : public testing::TestWithParam<std::pair<const char *, bool>> {};
+struct ExecmodTestParam {
+  // Whether the test is executed with the execmod permission.
+  bool has_execmod_perm = false;
+  // Whether the mapping is private or shared.
+  bool private_mapping = false;
+  // Whether the test should modify the mapped memory.
+  bool modify_mapping = false;
+  // Whether mprotect is expected to succeed or not.
+  bool expect_success = false;
+  std::string TestSuffixGenerator() const {
+    std::string suffix;
+    if (has_execmod_perm) {
+      suffix += "ExecmodYes_";
+    } else {
+      suffix += "ExecmodNo_";
+    }
+    if (private_mapping) {
+      suffix += "PrivateMapping_";
+    } else {
+      suffix += "SharedMapping_";
+    }
+    if (modify_mapping) {
+      suffix += "Modification_";
+    } else {
+      suffix += "NoModification_";
+    }
+    if (expect_success) {
+      suffix += "MprotectSuccess";
+    } else {
+      suffix += "MprotectFailure";
+    }
+    return suffix;
+  }
+};
+
+class MProtectExecmod : public testing::TestWithParam<ExecmodTestParam> {};
+
+// Checks that making executable a mapping of a file requires the
+// `execmod` permission if the mapping was private and was modified.
+TEST_P(MProtectExecmod, ExecMod) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  const auto param = MProtectExecmod::GetParam();
+  auto label = param.has_execmod_perm ? "test_u:test_r:mprotect_execmod_yes_test_t:s0"
+                                      : "test_u:test_r:mprotect_execmod_no_test_t:s0";
+  ASSERT_TRUE(RunSubprocessAs(label, [&] {
+    // Create a temporary file.
+    test_helper::ScopedTempDir temp_dir;
+    std::string file_path = temp_dir.path() + "/test_file";
+    ASSERT_TRUE(files::WriteFile(file_path, "hello"));
+    auto fd = fbl::unique_fd(open(file_path.c_str(), O_RDWR));
+    ASSERT_TRUE(fd.is_valid());
+
+    // Creates a mapping of the file, either private or shared.
+    long pagesize = sysconf(_SC_PAGESIZE);
+    auto flags = param.private_mapping ? MAP_PRIVATE : MAP_SHARED;
+    auto mapping = test_helper::ScopedMMap::MMap(nullptr, pagesize, PROT_READ | PROT_WRITE, flags,
+                                                 fd.get(), 0);
+    ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+
+    // Modify the mapping.
+    if (param.modify_mapping) {
+      static_cast<char *>(mapping->mapping())[0] = 'j';
+    }
+    // Try to make the mapping executable.
+    int result = mprotect(mapping->mapping(), pagesize, PROT_READ | PROT_EXEC);
+    if (param.expect_success) {
+      EXPECT_THAT(result, SyscallSucceeds());
+    } else {
+      EXPECT_THAT(result, SyscallFailsWithErrno(EACCES));
+    }
+  }));
+}
+
+const auto kExecmodSuccessFailureValues = ::testing::Values(
+    // `execmod` required if a private mapping is modified.
+    ExecmodTestParam{.has_execmod_perm = false,
+                     .private_mapping = true,
+                     .modify_mapping = true,
+                     .expect_success = false},
+    ExecmodTestParam{.has_execmod_perm = true,
+                     .private_mapping = true,
+                     .modify_mapping = true,
+                     .expect_success = true},
+    // `execmod` not required if the mapping is not private.
+    ExecmodTestParam{.has_execmod_perm = false,
+                     .private_mapping = false,
+                     .modify_mapping = true,
+                     .expect_success = true},
+    // `execmod` not required if the mapping is not modified.
+    ExecmodTestParam{.has_execmod_perm = false,
+                     .private_mapping = true,
+                     .modify_mapping = false,
+                     .expect_success = true});
+INSTANTIATE_TEST_SUITE_P(MProtectExecmod, MProtectExecmod, kExecmodSuccessFailureValues,
+                         [](const testing::TestParamInfo<ExecmodTestParam> &info) {
+                           return info.param.TestSuffixGenerator();
+                         });
+
+class MProtectExecstack : public testing::TestWithParam<std::pair<const char *, bool>> {};
 
 // Test making the stack of the initial thread executable from *another* thread.
 // This works with `execstack`, but does not work with `execmem`.
-TEST_P(MProtectSuccessAndFailure, MakeInitialStackExecFromOtherThread) {
+TEST_P(MProtectExecstack, MakeInitialStackExecFromOtherThread) {
   auto enforce = ScopedEnforcement::SetEnforcing();
-  const auto [label, expect_success] = MProtectSuccessAndFailure::GetParam();
+  const auto [label, expect_success] = MProtectExecstack::GetParam();
   ASSERT_TRUE(RunSubprocessAs(label, [&] {
     struct ThreadArgs {
       // Stores a pointer to the stack of the initial thread
@@ -265,8 +364,7 @@ TEST_P(MProtectSuccessAndFailure, MakeInitialStackExecFromOtherThread) {
   }));
 }
 
-const auto kSuccessFailureValues =
+const auto kExecstackSuccessFailureValues =
     ::testing::Values(std::make_pair("test_u:test_r:mprotect_execstack_test_t:s0", true),
                       std::make_pair("test_u:test_r:mprotect_execmem_test_t:s0", false));
-INSTANTIATE_TEST_SUITE_P(MProtectSuccessAndFailure, MProtectSuccessAndFailure,
-                         kSuccessFailureValues);
+INSTANTIATE_TEST_SUITE_P(MProtectExecstack, MProtectExecstack, kExecstackSuccessFailureValues);
