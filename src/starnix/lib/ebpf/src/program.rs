@@ -1102,7 +1102,7 @@ mod test {
 
         assert_eq!(
             verify_result.expect_err("validation should fail"),
-            EbpfError::ProgramVerifyError("R6 is not a packet at pc 2".to_string())
+            EbpfError::ProgramVerifyError("at PC 2: R6 is not a packet".to_string())
         );
     }
 

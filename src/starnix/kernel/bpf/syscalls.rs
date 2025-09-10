@@ -138,8 +138,8 @@ fn map_error_to_errno(e: MapError) -> Errno {
     }
 }
 
-fn read_map_name(attr: &bpf_attr__bindgen_ty_1) -> Result<&str, Errno> {
-    let name = std::ffi::CStr::from_bytes_until_nul(attr.map_name.as_bytes())
+fn validate_bpf_name(name: &[u8]) -> Result<&str, Errno> {
+    let name = std::ffi::CStr::from_bytes_until_nul(name)
         .map_err(|_| errno!(EINVAL))?
         .to_str()
         .map_err(|_| errno!(EINVAL))?;
@@ -196,7 +196,8 @@ pub fn sys_bpf(
                 flags,
             };
 
-            let map = Map::new(schema, read_map_name(&map_attr)?).map_err(map_error_to_errno)?;
+            let map = Map::new(schema, validate_bpf_name(map_attr.map_name.as_bytes())?)
+                .map_err(map_error_to_errno)?;
             let map = BpfMap::new(locked, current_task, map, security::bpf_map_alloc(current_task));
             install_bpf_fd(locked, current_task, map)
         }
@@ -343,6 +344,7 @@ pub fn sys_bpf(
             } else {
                 UserBuffersOutputBuffer::unified_new(current_task, smallvec![])?
             };
+            let name = validate_bpf_name(prog_attr.prog_name.as_bytes())?;
             let program = ProgramInfo::try_from(&prog_attr)
                 .and_then(|info| Program::new(locked, current_task, info, &mut log_buffer, code));
             let program_or_stub = match program {
@@ -353,7 +355,7 @@ pub fn sys_bpf(
                     }
                     // if bpf_v2 is not enabled, only log the error and return a stub. In the
                     // future, return the error unconditionally.
-                    log_error!("Unable to load bpf program: {e:?}");
+                    log_error!("Unable to load bpf program {name}: {e:?}");
                     BpfHandle::ProgramStub(prog_attr.prog_type)
                 }
             };

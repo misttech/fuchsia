@@ -230,7 +230,7 @@ impl MemoryParameterSize {
                 let size_type = context.reg(index + 1)?;
                 match size_type {
                     Type::ScalarValue(data) if data.is_known() => Ok(data.value),
-                    _ => Err(format!("cannot know buffer size at pc {}", context.pc)),
+                    _ => Err("cannot know buffer size".to_string()),
                 }
             }
         }
@@ -412,7 +412,7 @@ impl Type {
                 if context.resources.contains(id) {
                     Ok(&inner)
                 } else {
-                    Err(format!("Access to released resource at pc {}", context.pc))
+                    Err("Access to released resource".to_string())
                 }
             }
             _ => Ok(self),
@@ -616,7 +616,7 @@ impl Type {
                 let expected_size = size.size(context)?;
                 let size_left = ScalarValueData::from(*buffer_size) - offset;
                 if expected_size > size_left.min() {
-                    return Err(format!("out of bound read at pc {}", context.pc));
+                    return Err("out of bound read".to_string());
                 }
                 Ok(())
             }
@@ -625,7 +625,7 @@ impl Type {
                 let size = size.size(context)?;
                 let buffer_end = offset.add(size);
                 if !buffer_end.is_valid() {
-                    Err(format!("out of bound access at pc {}", context.pc))
+                    Err("out of bound access".to_string())
                 } else {
                     if *output {
                         next.stack.write_data_ptr(context.pc, *offset, size)?;
@@ -648,7 +648,7 @@ impl Type {
                 if next.resources.contains(id2) {
                     inner2.match_parameter_type(context, inner1, index, next)
                 } else {
-                    Err(format!("Resource already released for index {index} at pc {}", context.pc))
+                    Err(format!("Resource already released for index {index}"))
                 }
             }
             (Type::ReleaseParameter { id: id1 }, Type::Releasable { id: id2, .. })
@@ -657,17 +657,14 @@ impl Type {
                 if next.resources.remove(id2) {
                     Ok(())
                 } else {
-                    Err(format!(
-                        "{id2:?} Resource already released for index {index} at pc {}",
-                        context.pc
-                    ))
+                    Err(format!("{id2:?} Resource already released for index {index}"))
                 }
             }
             (_, Type::Releasable { inner, .. }) => {
                 inner.match_parameter_type(context, parameter_type, index, next)
             }
 
-            _ => Err(format!("incorrect parameter for index {index} at pc {}", context.pc)),
+            _ => Err(format!("incorrect parameter for index {index}")),
         }
     }
 
@@ -865,6 +862,7 @@ pub fn verify_program(
         let visit_result = context.visit(&mut verification_context, code[context.pc]);
         match visit_result {
             Err(message) => {
+                let message = format!("at PC {}: {}", context.pc, message);
                 return error_and_log(verification_context.logger, message);
             }
             _ => {}
@@ -918,10 +916,7 @@ impl<'a> VerificationContext<'a> {
             }
             std::collections::hash_map::Entry::Occupied(entry) => {
                 if *entry.get() != struct_access {
-                    return Err(format!(
-                        "Inconsistent struct field access at pc: {}",
-                        struct_access.pc
-                    ));
+                    return Err("Inconsistent struct field access".to_string());
                 }
             }
         }
@@ -1018,7 +1013,7 @@ impl Stack {
         bytes: u64,
     ) -> Result<(), String> {
         for i in 0..bytes {
-            self.store(pc, offset, Type::UNKNOWN_SCALAR, DataWidth::U8)?;
+            self.store(offset, Type::UNKNOWN_SCALAR, DataWidth::U8)?;
             offset = offset.add(1);
         }
         Ok(())
@@ -1043,10 +1038,10 @@ impl Stack {
                         if unwritten_bits == 0 {
                             Ok(())
                         } else {
-                            Err(format!("reading unwritten value from the stack at pc {}", pc))
+                            Err("reading unwritten value from the stack".to_string())
                         }
                     }
-                    _ => Err(format!("invalid read from the stack at pc {}", pc)),
+                    _ => Err("invalid read from the stack".to_string()),
                 }
             };
         if bytes == 0 {
@@ -1054,16 +1049,16 @@ impl Stack {
         }
 
         if bytes as usize > BPF_STACK_SIZE {
-            return Err(format!("stack overflow at pc {}", pc));
+            return Err("stack overflow".to_string());
         }
 
         if !offset.is_valid() {
-            return Err(format!("invalid stack offset at pc {}", pc));
+            return Err("invalid stack offset".to_string());
         }
 
         let end_offset = offset.add(bytes);
         if !end_offset.is_valid() {
-            return Err(format!("stack overflow at pc {}", pc))?;
+            return Err("stack overflow".to_string())?;
         }
 
         // Handle the case where all the data is contained in a single element excluding the last
@@ -1089,18 +1084,12 @@ impl Stack {
         Ok(())
     }
 
-    fn store(
-        &mut self,
-        pc: ProgramCounter,
-        offset: StackOffset,
-        value: Type,
-        width: DataWidth,
-    ) -> Result<(), String> {
+    fn store(&mut self, offset: StackOffset, value: Type, width: DataWidth) -> Result<(), String> {
         if !offset.is_valid() {
-            return Err(format!("out of bounds store at pc {}", pc));
+            return Err("out of bounds store".to_string());
         }
         if offset.sub_index() % width.bytes() != 0 {
-            return Err(format!("misaligned access at pc {}", pc));
+            return Err("misaligned access".to_string());
         }
 
         let index = offset.array_index();
@@ -1150,27 +1139,19 @@ impl Stack {
                     );
                 }
                 _ => {
-                    return Err(format!(
-                        "cannot store part of a non scalar value on the stack at pc {}",
-                        pc
-                    ));
+                    return Err("cannot store part of a non scalar value on the stack".to_string());
                 }
             }
         }
         Ok(())
     }
 
-    fn load(
-        &self,
-        pc: ProgramCounter,
-        offset: StackOffset,
-        width: DataWidth,
-    ) -> Result<Type, String> {
+    fn load(&self, offset: StackOffset, width: DataWidth) -> Result<Type, String> {
         if offset.array_index() >= STACK_MAX_INDEX {
-            return Err(format!("out of bounds load at pc {}", pc));
+            return Err("out of bounds load".to_string());
         }
         if offset.sub_index() % width.bytes() != 0 {
-            return Err(format!("misaligned access at pc {}", pc));
+            return Err("misaligned access".to_string());
         }
 
         let index = offset.array_index();
@@ -1200,7 +1181,7 @@ impl Stack {
                         urange,
                     )))
                 }
-                _ => Err(format!("incorrect load of {} bytes at pc {}", width.bytes(), pc)),
+                _ => Err(format!("incorrect load of {} bytes", width.bytes())),
             }
         }
     }
@@ -1307,7 +1288,7 @@ impl ComputationContext {
 
     fn reg(&self, index: Register) -> Result<Type, String> {
         if index >= REGISTER_COUNT {
-            return Err(format!("R{index} is invalid at pc {}", self.pc));
+            return Err(format!("R{index} is invalid"));
         }
         if index < GENERAL_REGISTER_COUNT {
             Ok(self.registers[index as usize].clone())
@@ -1318,7 +1299,7 @@ impl ComputationContext {
 
     fn set_reg(&mut self, index: Register, reg_type: Type) -> Result<(), String> {
         if index >= GENERAL_REGISTER_COUNT {
-            return Err(format!("R{index} is invalid at pc {}", self.pc));
+            return Err(format!("R{index} is invalid"));
         }
         self.registers[index as usize] = reg_type;
         Ok(())
@@ -1335,7 +1316,7 @@ impl ComputationContext {
     fn get_map_schema(&self, argument: u8) -> Result<MapSchema, String> {
         match self.reg(argument + 1)? {
             Type::ConstPtrToMap { schema, .. } => Ok(schema),
-            _ => Err(format!("No map found at argument {argument} at pc {}", self.pc)),
+            _ => Err(format!("No map found at argument {argument}")),
         }
     }
 
@@ -1351,7 +1332,7 @@ impl ComputationContext {
             .pc
             .checked_add_signed(offset.into())
             .and_then(|v| v.checked_add_signed(1))
-            .ok_or_else(|| format!("jump outside of program at pc {}", self.pc))?;
+            .ok_or_else(|| "jump outside of program".to_string())?;
         let result = Self {
             pc,
             registers: self.registers.clone(),
@@ -1373,7 +1354,7 @@ impl ComputationContext {
     ) -> Result<(), String> {
         let memory_range = dst_offset.urange + instruction_offset + U64Range::new(0, width as u64);
         if memory_range.max > dst_buffer_size {
-            return Err(format!("out of bound access at pc {}", self.pc));
+            return Err("out of bound access".to_string());
         }
         Ok(())
     }
@@ -1389,7 +1370,7 @@ impl ComputationContext {
         match *addr {
             Type::PtrToStack { offset } => {
                 let offset_sum = offset.add(field.offset);
-                return self.stack.store(self.pc, offset_sum, value, field.width);
+                return self.stack.store(offset_sum, value, field.width);
             }
             Type::PtrToMemory { offset, buffer_size, .. } => {
                 self.check_memory_access(offset, buffer_size, field.offset, field.width.bytes())?;
@@ -1397,10 +1378,10 @@ impl ComputationContext {
             Type::PtrToStruct { ref id, offset, ref descriptor, .. } => {
                 let field_desc = descriptor
                     .find_field(offset, field)
-                    .ok_or_else(|| format!("incorrect store at pc {}", self.pc))?;
+                    .ok_or_else(|| "incorrect store".to_string())?;
 
                 if !matches!(field_desc.field_type, FieldType::MutableScalar { .. }) {
-                    return Err(format!("store to a read-only field at pc {}", self.pc));
+                    return Err("store to a read-only field".to_string());
                 }
 
                 context.register_struct_access(StructAccess {
@@ -1418,13 +1399,13 @@ impl ComputationContext {
                     field.width.bytes(),
                 )?;
             }
-            _ => return Err(format!("incorrect store at pc {}", self.pc)),
+            _ => return Err("incorrect store".to_string()),
         }
 
         match value {
             Type::ScalarValue(data) if data.is_fully_initialized() => {}
             // Private data should not be leaked.
-            _ => return Err(format!("incorrect store at pc {}", self.pc)),
+            _ => return Err("incorrect store".to_string()),
         }
         Ok(())
     }
@@ -1439,7 +1420,7 @@ impl ComputationContext {
         match *addr {
             Type::PtrToStack { offset } => {
                 let offset_sum = offset.add(field.offset);
-                self.stack.load(self.pc, offset_sum, field.width)
+                self.stack.load(offset_sum, field.width)
             }
             Type::PtrToMemory { ref id, offset, buffer_size, .. } => {
                 self.check_memory_access(offset, buffer_size, field.offset, field.width.bytes())?;
@@ -1448,7 +1429,7 @@ impl ComputationContext {
             Type::PtrToStruct { ref id, offset, ref descriptor, .. } => {
                 let field_desc = descriptor
                     .find_field(offset, field)
-                    .ok_or_else(|| format!("incorrect load at pc {}", self.pc))?;
+                    .ok_or_else(|| "incorrect load".to_string())?;
 
                 let (return_type, is_32_bit_ptr_load) = match &field_desc.field_type {
                     FieldType::Scalar { .. } | FieldType::MutableScalar { .. } => {
@@ -1503,7 +1484,7 @@ impl ComputationContext {
                 )?;
                 Ok(Type::UNKNOWN_SCALAR)
             }
-            _ => Err(format!("incorrect load at pc {}", self.pc)),
+            _ => Err("incorrect load".to_string()),
         }
     }
 
@@ -1878,7 +1859,7 @@ impl ComputationContext {
 
             _ => Err(()),
         }
-        .map_err(|_| format!("non permitted comparison at pc {}", self.pc))
+        .map_err(|_| "non permitted comparison".to_string())
     }
 
     fn conditional_jump(
@@ -3169,7 +3150,7 @@ impl BpfVisitor for ComputationContext {
     ) -> Result<(), String> {
         bpf_log!(self, context, "call 0x{:x}", index);
         let Some(signature) = context.calling_context.helpers.get(&index).cloned() else {
-            return Err(format!("unknown external function {} at pc {}", index, self.pc));
+            return Err(format!("unknown external function {}", index));
         };
         debug_assert!(signature.args.len() <= 5);
         let mut next = self.next()?;
@@ -3194,13 +3175,10 @@ impl BpfVisitor for ComputationContext {
     fn exit<'a>(&mut self, context: &mut Self::Context<'a>) -> Result<(), String> {
         bpf_log!(self, context, "exit");
         if !self.reg(0)?.is_written_scalar() {
-            return Err(format!("register 0 is incorrect at exit time at pc {}", self.pc));
+            return Err("register 0 is incorrect at exit time".to_string());
         }
         if !self.resources.is_empty() {
-            return Err(format!(
-                "some resources have not been released at exit time at pc {}",
-                self.pc
-            ));
+            return Err("some resources have not been released at exit time".to_string());
         }
         let this = self.clone();
         this.terminate(context)?;
@@ -4142,13 +4120,13 @@ impl BpfVisitor for ComputationContext {
             None => false,
         };
         if !src_is_packet {
-            return Err(format!("R{} is not a packet at pc {}", src, self.pc));
+            return Err(format!("R{} is not a packet", src));
         }
 
         if let Some(reg) = register_offset {
             let reg = self.reg(reg)?;
             if !reg.is_written_scalar() {
-                return Err(format!("access to unwritten offset at pc {}", self.pc));
+                return Err("access to unwritten offset".to_string());
             }
         }
         // Handle the case where the load succeed.
@@ -4160,13 +4138,10 @@ impl BpfVisitor for ComputationContext {
         context.states.push(next);
         // Handle the case where the load fails.
         if !self.reg(0)?.is_written_scalar() {
-            return Err(format!("register 0 is incorrect at exit time at pc {}", self.pc));
+            return Err("register 0 is incorrect at exit time".to_string());
         }
         if !self.resources.is_empty() {
-            return Err(format!(
-                "some resources have not been released at exit time at pc {}",
-                self.pc
-            ));
+            return Err("some resources have not been released at exit time".to_string());
         }
         let this = self.clone();
         this.terminate(context)?;
@@ -4410,9 +4385,9 @@ mod tests {
 
         // Store data in the range [8, 26) and verify that `read_data_ptr()` fails for any
         // reads outside of that range.
-        assert!(s.store(1, StackOffset(8.into()), Type::UNKNOWN_SCALAR, DataWidth::U64).is_ok());
-        assert!(s.store(1, StackOffset(16.into()), Type::UNKNOWN_SCALAR, DataWidth::U64).is_ok());
-        assert!(s.store(1, StackOffset(24.into()), Type::UNKNOWN_SCALAR, DataWidth::U16).is_ok());
+        assert!(s.store(StackOffset(8.into()), Type::UNKNOWN_SCALAR, DataWidth::U64).is_ok());
+        assert!(s.store(StackOffset(16.into()), Type::UNKNOWN_SCALAR, DataWidth::U64).is_ok());
+        assert!(s.store(StackOffset(24.into()), Type::UNKNOWN_SCALAR, DataWidth::U16).is_ok());
 
         for offset in 0..32 {
             for end in (offset + 1)..32 {
