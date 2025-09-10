@@ -1,8 +1,8 @@
 adc
 archivist
 ?archivist-pipelines
-asix-88179
-asix-88772b
+?asix-88179
+?asix-88772b
 ?blobfs
 block-core
 ?boot-shell-commands
@@ -42,9 +42,9 @@ i2c
 ?memfs
 ?minfs
 nand-broker
-netdevice-migration
+?netdevice-migration
 ?netsvc
-network-device
+?network-device
 ?paver
 pkg-cache
 platform-bus
@@ -74,7 +74,7 @@ sysmem
 usb-bus
 ?usb-cdc-acm
 ?usb-cdc-ecm
-usb-cdc-function
+?usb-cdc-function
 ?usb-composite
 ?usb-harriet
 ?usb-hid

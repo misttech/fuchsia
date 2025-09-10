@@ -19,6 +19,19 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
         connectivity_config: &PlatformConnectivityConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
+        match (context.feature_set_level, context.build_type) {
+            (FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable, BuildType::User) => {}
+            (
+                FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable,
+                BuildType::UserDebug | BuildType::Eng,
+            ) => {
+                builder.platform_bundle("network_drivers_boot");
+            }
+            (FeatureSetLevel::Utility | FeatureSetLevel::Standard, _) => {
+                builder.platform_bundle("network_drivers_base");
+            }
+        }
+
         let publish_fuchsia_dev_wired_service = match (
             context.feature_set_level,
             context.build_type,

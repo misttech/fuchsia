@@ -1,8 +1,8 @@
 adc
 archivist
 ?archivist-pipelines
-asix-88179
-asix-88772b
+?asix-88179
+?asix-88772b
 ?blobfs
 block-core
 ?bootstrap
@@ -38,8 +38,6 @@ hid-input-report
 i2c
 ?memfs
 ?minfs
-netdevice-migration
-network-device
 ?paver
 pkg-cache
 platform-bus
@@ -66,7 +64,6 @@ sysmem
 usb-bus
 ?usb-cdc-acm
 ?usb-cdc-ecm
-usb-cdc-function
 ?usb-composite
 ?usb-harriet
 ?usb-hid

@@ -64,10 +64,12 @@ forensics
 ?netcfg-advanced
 ?netcfg-basic
 ?netcfg-config
+?netdevice-migration
 ?netstack
 ?netstack-migration
 ?netstack3
 ?network
+?network-device
 ?network-socket-proxy
 ?network-tun
 ?omaha-client
@@ -118,6 +120,7 @@ system-update-committer
 ?uart
 ?ui
 ?update-bin
+?usb-cdc-function
 ?usb-vsock
 ?virtual_keyboard_manager
 ?vmm_launcher

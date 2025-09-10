@@ -54,10 +54,12 @@ forensics
 ?netcfg-advanced
 ?netcfg-basic
 ?netcfg-config
+?netdevice-migration
 ?netstack
 ?netstack-migration
 ?netstack3
 ?network
+?network-device
 ?network-socket-proxy
 ?network-tun
 ?omaha-client
@@ -92,6 +94,7 @@ system-update-committer
 ?tzdata-provider
 ?uart
 ?ui
+?usb-cdc-function
 ?virtual_keyboard_manager
 ?vmm_launcher
 ?vsock_service

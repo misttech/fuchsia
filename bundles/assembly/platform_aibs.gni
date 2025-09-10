@@ -102,6 +102,9 @@ bootstrap_userdebug_platform_aib_names = [
 
   "clock_development_tools",
 
+  # Connectivity
+  "network_drivers_boot",
+
   # Kernel args
   "kernel_args_eng",
   "kernel_args_userdebug",
@@ -239,6 +242,9 @@ user_platform_aib_names =
       # Fonts
       "fonts",
       "fonts_hermetic",
+
+      # Connectivity
+      "network_drivers_base",
 
       # SWD (Software Delivery)
       "omaha_client",
