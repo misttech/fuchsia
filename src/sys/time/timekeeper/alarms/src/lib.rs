@@ -35,7 +35,7 @@ use fidl::HandleBased;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use fuchsia_inspect::{HistogramProperty, NumericProperty, Property};
+use fuchsia_inspect::{NumericProperty, Property};
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::{StreamExt, TryStreamExt};
@@ -996,7 +996,7 @@ async fn wake_timer_loop(
     let now_formatted_prop = inspect.create_string("now_formatted", "");
     let pending_timers_count_prop = inspect.create_uint("pending_timers_count", 0);
     let pending_timers_prop = inspect.create_string("pending_timers", "");
-    let deadline_histogram_prop = inspect.create_int_exponential_histogram(
+    let _deadline_histogram_prop = inspect.create_int_exponential_histogram(
         "requested_deadlines_ns",
         finspect::ExponentialHistogramParams {
             floor: 0,
@@ -1066,8 +1066,9 @@ async fn wake_timer_loop(
                 }
                 let deadline_boot = deadline.as_boot(&*utc_transform.borrow());
 
-                // Bookkeeping, record the incidence of deadline types.
-                deadline_histogram_prop.insert((deadline_boot - now).into_nanos());
+                // TODO: b/444236931: re-enable.
+                //// Bookkeeping, record the incidence of deadline types.
+                //deadline_histogram_prop.insert((deadline_boot - now).into_nanos());
                 match deadline {
                     timers::Deadline::Boot(_) => boot_deadlines_count_prop.add(1),
                     timers::Deadline::Utc(_) => utc_deadlines_count_prop.add(1),
@@ -1403,7 +1404,7 @@ async fn schedule_hrtimer(
     deadline: fasync::BootInstant,
     mut command_send: mpsc::Sender<Cmd>,
     timer_config: &TimerConfig,
-    schedule_delay_histogram: &finspect::IntExponentialHistogramProperty,
+    _schedule_delay_histogram: &finspect::IntExponentialHistogramProperty,
 ) -> TimerState {
     let timeout = std::cmp::max(zx::BootDuration::ZERO, deadline - now);
     trace::duration!(c"alarms", c"schedule_hrtimer", "timeout" => timeout.into_nanos());
@@ -1503,7 +1504,8 @@ async fn schedule_hrtimer(
             format_duration(duration_until_scheduled)
         );
     }
-    schedule_delay_histogram.insert(duration_until_scheduled.into_nanos());
+    // TODO: b/444236931: re-enable.
+    //schedule_delay_histogram.insert(duration_until_scheduled.into_nanos());
     debug!("schedule_hrtimer: hrtimer wake alarm has been scheduled.");
     TimerState { task: hrtimer_task, deadline }
 }
@@ -1521,7 +1523,7 @@ fn notify_all(
     timers: &mut timers::Heap,
     lease_prototype: &zx::EventPair,
     reference_instant: fasync::BootInstant,
-    unusual_slack_histogram: &finspect::IntExponentialHistogramProperty,
+    _unusual_slack_histogram: &finspect::IntExponentialHistogramProperty,
 ) -> Result<usize> {
     trace::duration!(c"alarms", c"notify_all");
     let now = fasync::BootInstant::now();
@@ -1545,7 +1547,8 @@ fn notify_all(
             );
         }
         if slack < zx::BootDuration::ZERO {
-            unusual_slack_histogram.insert(-slack.into_nanos());
+            // TODO: b/444236931: re-enable.
+            //unusual_slack_histogram.insert(-slack.into_nanos());
         }
         debug!(
             concat!(
