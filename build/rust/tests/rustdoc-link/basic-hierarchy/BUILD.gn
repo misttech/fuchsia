@@ -95,10 +95,13 @@ if (is_host) {
     hermetic_deps = false
 
     script = "//tools/devshell/contrib/lib/rust/rustdoc-link.py"
+    inputs = [ "${rustc_prefix}/bin/rustdoc" ]
     outputs = [ _rustdoc_link_output ]
     args = [
       "--quiet",
       "--no-build",
+      "--rustdoc-executable",
+      "${rebased_rustc_prefix}/bin/rustdoc",
       "--destination",
       rebase_path("$target_gen_dir/doc", root_build_dir),
       "--zip-to",

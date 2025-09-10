@@ -337,7 +337,7 @@ template("rust_auxiliary") {
       if (!defined(inputs)) {
         inputs = []
       }
-      inputs += [ "${default_rustc_prefix}/bin/rustdoc" ]
+      inputs += [ "${rustc_prefix}/bin/rustdoc" ]
 
       if (defined(invoker.non_rust_deps)) {
         deps += invoker.non_rust_deps
