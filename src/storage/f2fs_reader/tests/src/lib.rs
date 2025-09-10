@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context, Error, bail, ensure};
-use f2fs_reader::{BLOCK_SIZE, F2fsReader, FileType, Flags, InlineFlags, Inode};
+use f2fs_reader::{BLOCK_SIZE, F2fsReader, FileType, Flags, InlineFlags, Inode, XattrIndex};
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::{ObjectHandle, ObjectProperties};
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
-use fxfs::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
+use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
     AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, Directory, EncryptionKey, ExtentValue, FSCRYPT_KEY_ID,
@@ -47,6 +47,51 @@ fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttri
         access_time: Timestamp { secs: inode.header.atime, nanos: inode.header.atime_nanos },
         change_time: Timestamp { secs: inode.header.ctime, nanos: inode.header.ctime_nanos },
     }
+}
+
+/// Helper to move xattr from `inode` to object with `object_id`, handling special cases.
+fn migrate_xattr(
+    inode: &Inode,
+    object_id: u64,
+    store: &ObjectStore,
+    transaction: &mut Transaction<'_>,
+) -> Result<(), Error> {
+    for xattr in &inode.xattr {
+        match xattr.index {
+            XattrIndex::User => {
+                ensure!(
+                    &*xattr.name != b"security.selinux",
+                    "illegal user-provided selinux context"
+                );
+                transaction.add(
+                    store.store_object_id(),
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(object_id, xattr.name.to_vec()),
+                        ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
+                    ),
+                );
+            }
+            XattrIndex::Encryption => {
+                // This is interpreted via inode.context. We can ignore this xattr.
+                ensure!(&*xattr.name == b"c", "unexpected encryption xattr {:?}", xattr.name);
+            }
+            XattrIndex::Security => {
+                ensure!(&*xattr.name == b"s", "unexpected security xattr {:?}", xattr.name);
+                // Starnix uses a hard coded (and reserved) "security.selinux" xattr.
+                transaction.add(
+                    store.store_object_id(),
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(object_id, b"security.selinux".to_vec()),
+                        ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
+                    ),
+                );
+            }
+            _ => {
+                panic!("Unexpected xattr {xattr:?}");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Helper to set the appropriate key type based on fscrypt context.
@@ -187,19 +232,7 @@ async fn migrate(
             }
 
             // Both directories and files can have xattr.
-            for xattr in &inode.xattr {
-                // In f2fs, each xattr has an index byte that acts as a sort of namespace.
-                // We will capture these verbatim and wire them into starnix.
-                let mut name = vec![xattr.index as u8];
-                name.extend_from_slice(&xattr.name);
-                transaction.add(
-                    dir.store().store_object_id(),
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::extended_attribute(object_id, name),
-                        ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
-                    ),
-                );
-            }
+            migrate_xattr(&inode, object_id, dir.store(), &mut transaction)?;
 
             match entry.file_type {
                 FileType::Directory => {
@@ -460,11 +493,23 @@ async fn verify(
                     );
 
                     for xattr in &inode.xattr {
-                        let mut name = vec![xattr.index as u8];
-                        name.extend_from_slice(&xattr.name);
-                        let fxfs_xattr_value =
-                            dir.get_extended_attribute(name).await.context("xattr read")?;
-                        assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                        match xattr.index {
+                            XattrIndex::User => {
+                                let fxfs_xattr_value = dir
+                                    .get_extended_attribute(xattr.name.to_vec())
+                                    .await
+                                    .context("xattr read")?;
+                                assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                            }
+                            XattrIndex::Security => {
+                                let fxfs_xattr_value = dir
+                                    .get_extended_attribute("security.selinux".into())
+                                    .await
+                                    .context("xattr read")?;
+                                assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                            }
+                            _ => {}
+                        }
                     }
 
                     let fxfs_properties = dir.get_properties().await.context("get_properties")?;
@@ -501,11 +546,23 @@ async fn verify(
                     .context("open object")?;
 
                     for xattr in &inode.xattr {
-                        let mut name = vec![xattr.index as u8];
-                        name.extend_from_slice(&xattr.name);
-                        let fxfs_xattr_value =
-                            handle.get_extended_attribute(name).await.context("xattr read")?;
-                        assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                        match xattr.index {
+                            XattrIndex::User => {
+                                let fxfs_xattr_value = handle
+                                    .get_extended_attribute(xattr.name.to_vec())
+                                    .await
+                                    .context("xattr read")?;
+                                assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                            }
+                            XattrIndex::Security => {
+                                let fxfs_xattr_value = dir
+                                    .get_extended_attribute("security.selinux".into())
+                                    .await
+                                    .context("xattr read")?;
+                                assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                            }
+                            _ => {}
+                        }
                     }
 
                     let fxfs_properties =
