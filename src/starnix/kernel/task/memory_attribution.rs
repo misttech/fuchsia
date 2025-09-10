@@ -145,11 +145,7 @@ impl MemoryAttributionManager {
 
         loop {
             // There may be multiple pending notifications in the receiving channel. We would like
-            // to process them all at once. For that, we first wait up to the timeout for any event,
-            // then we try to pull as many events as available from the channel, until it is empty.
-            // We keep track whether we hit a timeout to do a full scan; if the full scan finds some
-            // updates to send, it means we have uninstrumented sources of changes that need to be
-            // fixed.
+            // to process them all at once.
             let events = match pid_receiver.recv() {
                 Ok(v) => itertools::chain(std::iter::once(v), pid_receiver.try_iter()),
                 Err(_) => {
@@ -265,10 +261,16 @@ impl MemoryAttributionManager {
                     }
                     MemoryAttributionLifecycleEventType::Destruction => {
                         if !processes.remove(&pid) {
-                            log_error!(
-                                "{} is unknown, memory attribution is likely incorrect",
-                                pid
-                            );
+                            // It can happen that a threadgroup is created and then destroyed due to
+                            // container shutdown before its first task, and its associated memory
+                            // manager, is added. In that case, we would receive a destruction event
+                            // without a creation event, and it is ok.
+                            if !kernel.is_shutting_down() {
+                                log_error!(
+                                    "{} is unknown, memory attribution is likely incorrect",
+                                    pid
+                                );
+                            }
                         }
                         updates.push(fattribution::AttributionUpdate::Remove(pid as u64));
                     }
@@ -374,7 +376,7 @@ fn updated_principal(thread_group: &ThreadGroup) -> Option<fattribution::Attribu
 
 /// Get the memory manager shared by tasks in the thread group.
 ///
-/// If all tasks in the thread group has been killed, returns `None`.
+/// If all tasks in the thread group have been killed, returns `None`.
 fn get_mm(thread_group: &ThreadGroup) -> Option<Arc<MemoryManager>> {
     thread_group.read().tasks().find_map(|task| task.mm().ok())
 }
