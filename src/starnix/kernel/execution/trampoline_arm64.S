@@ -49,9 +49,16 @@ FUNCTION(restricted_enter_loop)
   ldr x0, [sp, #32]
 
   // Load address of restricted exit vector callback.
-  // TODO: Examine cpsr in the restricted mode state and if we are entering aarch32 restricted mode
-  // specify an aarch32-specific return callback.
-  adr x1, restricted_return_loop
+  // The restricted state CPSR register's bit 0x10 selects between aarch32 and aarch64 mode
+  // If it's asserted, we are entering 32 bit mode and want to use our aarch32 exit callback.
+  adr  x8, restricted_return_loop
+  adr  x9, restricted_return_loop_aarch32
+  // Restore restricted state mapping
+  ldr  x10, [sp, #0]
+  // Load CPSR word - offset is after 32 registers, PC, and TIPDR_EL0
+  ldrb w11, [x10, #34 * 8]
+  tst  w11, #0x10
+  csel x1, x8, x9, eq
 
   // Save stack pointer as context parameter for syscall
   mov x2, sp
@@ -177,3 +184,103 @@ FUNCTION(restricted_return_loop)
   b .restricted_enter_loop_top
   // Never reached.
 END_FUNCTION(restricted_return_loop)
+
+// The restricted return entry point is not really a function but we treat it like one. It has the following
+// parameters:
+// fn restricted_return_loop_aarch32(
+//    x0   context: usize,
+//    x1   reason_code: u64
+// )
+FUNCTION(restricted_return_loop_aarch32)
+  // The "caller" is actually interrupted restricted mode state.  This means the
+  // "return address" will be treated as the precise PC of the "caller", rather
+  // than as its return address that's one instruction after the call site.
+  .cfi_signal_frame
+
+  // x0 holds the context, which is the stack pointer.
+  mov sp, x0
+
+  // Save the reason code in a callee-saved register
+  mov x19, x1
+
+  // Restore shadow call stack
+  ldr x18, [sp, #40]
+
+  // Save extended processor state
+  // TODO(https://fxbug.dev/407084069): Use aarch32 specific routine here.
+  ldr x0, [sp, #8]
+  bl save_extended_pstate
+
+  // Load the address of the mapped restricted mode register state to x27
+  ldr x27, [sp]
+
+  // Load frame pointer from restricted state to connect Starnix stack to Linux's.
+  // This offset matches the offset of x29 in the `zx_restricted_state_t` struct.
+  ldr x29, [x27, 0xE8]
+
+  // Emit CFI directives referring to the restricted mode register state
+  .cfi_remember_state
+  .cfi_def_cfa x27, 0
+  .cfi_offset x0, 0
+  .cfi_offset x1, 0x08
+  .cfi_offset x2, 0x10
+  .cfi_offset x3, 0x18
+  .cfi_offset x4, 0x20
+  .cfi_offset x5, 0x28
+  .cfi_offset x6, 0x30
+  .cfi_offset x7, 0x38
+  .cfi_offset x8, 0x40
+  .cfi_offset x9, 0x48
+  .cfi_offset x10, 0x50
+  .cfi_offset x11, 0x58
+  .cfi_offset x12, 0x60
+  .cfi_offset x13, 0x68
+  .cfi_offset x14, 0x70
+  .cfi_offset x15, 0x78
+  .cfi_offset x16, 0x80
+  .cfi_offset x17, 0x88
+  .cfi_offset x18, 0x90
+  .cfi_offset x19, 0x98
+  .cfi_offset x20, 0xA0
+  .cfi_offset x21, 0xA8
+  .cfi_offset x22, 0xB0
+  .cfi_offset x23, 0xB8
+  .cfi_offset x24, 0xC0
+  .cfi_offset x25, 0xC8
+  .cfi_offset x26, 0xD0
+  .cfi_offset x27, 0xD8
+  .cfi_offset x28, 0xE0
+  .cfi_offset x29, 0xE8
+  .cfi_offset lr, 0xF0   // x30
+  .cfi_offset sp, 0xF8   // x31
+  .cfi_offset pc, 0x100  // x32
+
+  // Invoke callback with context and reason_code:
+  //       fn restricted_exit_callback_c(
+  // x0      context: usize,
+  // x1      reason_code: zx::sys::zx_restricted_reason_t,
+  // x0    ) -> bool
+
+  // Load callback context and function pointers stack
+  ldp x2, x0, [sp, #16]
+
+  // Restore reason code that we saved in x19 earlier.
+  mov x1, x19
+  blr x2
+
+  // Restore CFI state after callback
+  .cfi_restore_state
+
+  // Did the callback tell us to exit?
+  cbz x0, .restricted_enter_loop_ret
+
+  // Restore extended processor state
+  // TODO(https://fxbug.dev/407084069): Use aarch32 specific restoration here.
+  ldr x0, [sp, #8]
+  bl restore_extended_pstate
+
+  // Go back to the loop
+  b .restricted_enter_loop_top
+  // Never reached.
+END_FUNCTION(restricted_return_loop_aarch32)
+
