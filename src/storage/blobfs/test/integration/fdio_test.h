@@ -22,7 +22,6 @@
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mount.h"
-#include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
 namespace blobfs {
@@ -73,7 +72,6 @@ class FdioTest : public testing::Test {
   fbl::unique_fd outgoing_dir_fd_;
   fbl::unique_fd root_fd_;
   std::unique_ptr<ComponentRunner> runner_;
-  std::unique_ptr<LocalDecompressorCreator> decompressor_creator_;
 
   std::unique_ptr<async::Loop> loop_;  // Must be destroyed after the runner.
 };

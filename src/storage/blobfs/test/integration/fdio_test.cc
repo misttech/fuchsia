@@ -36,7 +36,6 @@
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/mount.h"
-#include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/fs_management/cpp/admin.h"
 
@@ -58,11 +57,6 @@ void FdioTest::SetUp() {
 
   auto [outgoing_dir_client, outgoing_dir_server] =
       fidl::Endpoints<fuchsia_io::Directory>::Create();
-
-  // FdioTest already creates a local threaded version of blobfs instead of the component, so don't
-  // require an external decompressor component either.
-  decompressor_creator_ = LocalDecompressorCreator::Create().value();
-  mount_options_.decompression_connector = &decompressor_creator_->GetDecompressorConnector();
 
   runner_ = std::make_unique<ComponentRunner>(
       *loop_, ComponentOptions{.pager_threads = mount_options_.paging_threads});
@@ -117,42 +111,31 @@ void FdioTest::TakeSnapshot(inspect::Hierarchy* output) {
   std::mutex m;
   bool done = false;
   {
-    constexpr char kTestComponentMoniker[2] = ".";
-    diagnostics::reader::ArchiveReader reader(dispatcher, {});
-    executor.schedule_task(reader.SnapshotInspectUntilPresent({kTestComponentMoniker})
-                               .and_then([&](std::vector<diagnostics::reader::InspectData>& data) {
-                                 {
-                                   std::unique_lock<std::mutex> lock(m);
-                                   diagnostics::reader::InspectData* inspect_data = nullptr;
-                                   for (auto& i : data) {
-                                     if (i.moniker() == kTestComponentMoniker) {
-                                       // Check for duplicates.
-                                       ASSERT_EQ(inspect_data, nullptr)
-                                           << "Duplicate test entry found.";
-                                       inspect_data = &i;
-                                     }
-                                   }
-                                   ASSERT_NE(inspect_data, nullptr)
-                                       << "Failed to find test moniker";
-                                   if (!inspect_data->payload().has_value()) {
-                                     FX_LOGS(INFO) << "inspect_data had nullopt payload";
-                                   }
-                                   if (inspect_data->payload().has_value() &&
-                                       inspect_data->payload().value() == nullptr) {
-                                     FX_LOGS(INFO) << "inspect_data had nullptr for payload";
-                                   }
-                                   if (inspect_data->metadata().errors.has_value()) {
-                                     for (const auto& e : inspect_data->metadata().errors.value()) {
-                                       FX_LOGS(INFO) << e.message;
-                                     }
-                                   }
+    diagnostics::reader::ArchiveReader reader(dispatcher, {"test:root"});
+    executor.schedule_task(reader.SnapshotInspectUntilPresent({"test"}).and_then(
+        [&](std::vector<diagnostics::reader::InspectData>& data) {
+          {
+            std::unique_lock<std::mutex> lock(m);
+            ASSERT_EQ(1ul, data.size());
+            auto& inspect_data = data[0];
+            if (!inspect_data.payload().has_value()) {
+              FX_LOGS(INFO) << "inspect_data had nullopt payload";
+            }
+            if (inspect_data.payload().has_value() && inspect_data.payload().value() == nullptr) {
+              FX_LOGS(INFO) << "inspect_data had nullptr for payload";
+            }
+            if (inspect_data.metadata().errors.has_value()) {
+              for (const auto& e : inspect_data.metadata().errors.value()) {
+                FX_LOGS(INFO) << e.message;
+              }
+            }
 
-                                   ASSERT_TRUE(inspect_data->payload().has_value());
-                                   *output = inspect_data->TakePayload();
-                                   done = true;
-                                 }
-                                 cv.notify_all();
-                               }));
+            ASSERT_TRUE(inspect_data.payload().has_value());
+            *output = inspect_data.TakePayload();
+            done = true;
+          }
+          cv.notify_all();
+        }));
 
     std::unique_lock<std::mutex> lock(m);
     cv.wait(lock, [&] { return done; });
