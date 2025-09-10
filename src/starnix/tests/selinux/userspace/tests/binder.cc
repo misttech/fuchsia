@@ -24,9 +24,14 @@ namespace starnix_binder {
 
 namespace {
 
-// Makes the current process register itself as a binder context manager,
-// and reads in an infinite loop the messages.
-void ContextManagerLoop(std::string_view dir) {
+/* The smallest possible value for which this test passes; otherwise arbitrary. */
+constexpr size_t kReadBufferSize = 80;
+
+// Makes the current process register itself as a Binder context manager,
+// then reads in an infinite loop any messages and transactions that arrive.
+// Incoming transactions are given empty replies but if future tests need more
+// sophisticated behavior that will be fine too.
+void ContextManagerLoop(std::string_view dir, fit::closure ready) {
   auto fd_and_mapping = OpenBinderAndMap(dir);
 
   // Register itself as the context manager
@@ -46,14 +51,64 @@ void ContextManagerLoop(std::string_view dir) {
                 SyscallSucceeds());
   }
 
+  ready();
+
   while (true) {
-    std::array<int32_t, 32> read_buffer = {};
+    std::array<uint8_t, kReadBufferSize> read_buffer = {};
     struct binder_write_read write_read = {
         .read_size = sizeof(read_buffer),
         .read_consumed = 0,
         .read_buffer = (binder_uintptr_t)read_buffer.data(),
     };
     ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &write_read), SyscallSucceeds());
+
+    binder_uintptr_t cursor = (binder_uintptr_t)read_buffer.data();
+    binder_uintptr_t limit = cursor + write_read.read_consumed;
+    while (cursor < limit) {
+      binder_driver_return_protocol returned = *(binder_driver_return_protocol*)(cursor);
+      cursor += sizeof(binder_driver_return_protocol);
+
+      switch (returned) {
+        case BR_NOOP:
+        case BR_TRANSACTION_COMPLETE:
+          break;
+        case BR_INCREFS:
+        case BR_ACQUIRE:
+        case BR_RELEASE:
+        case BR_DECREFS:
+          cursor += sizeof(struct binder_ptr_cookie);
+          break;
+        case BR_TRANSACTION: {
+          struct binder_transaction_data& transaction_data =
+              *(struct binder_transaction_data*)cursor;
+
+          ReplyWriteBuffer reply_write_buffer = {.command = BC_REPLY,
+                                                 .data = {
+                                                     .target = {.ptr = 0},
+                                                     .cookie = transaction_data.cookie,
+                                                     .code = transaction_data.code,
+                                                 }};
+          struct binder_write_read reply_write_read = {
+              .write_size = sizeof(reply_write_buffer),
+              .write_consumed = 0,
+              .write_buffer = (binder_uintptr_t)&reply_write_buffer,
+          };
+
+          ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &reply_write_read),
+                      SyscallSucceeds());
+
+          cursor += sizeof(transaction_data);
+          break;
+        }
+        case BR_REPLY:
+        case BR_DEAD_BINDER:
+        case BR_FAILED_REPLY:
+        case BR_DEAD_REPLY:
+        case BR_ERROR:
+        default:
+          FAIL() << "Unexpected \"returned\" value " << returned << "!";
+      }
+    }
   }
 }
 
@@ -63,7 +118,7 @@ auto ScopedContextManagerProcess(std::string_view dir) {
   auto fork_helper = std::make_unique<test_helper::ForkHelper>();
   pid_t pid =
       RunInForkedProcessWithLabel(*fork_helper, "test_u:test_r:binder_context_manager_test_t:s0",
-                                  [dir] { ContextManagerLoop(dir); });
+                                  [dir] { ContextManagerLoop(dir, [] {}); });
   auto cleanup = fit::defer([pid, fork_helper = std::move(fork_helper)]() {
     ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
     fork_helper->ExpectSignal(SIGKILL);
@@ -79,7 +134,10 @@ class BinderTest : public ::testing::Test {
     ASSERT_THAT(mount(nullptr, temp_dir_.path().c_str(), "binder", 0, nullptr), SyscallSucceeds());
   }
 
-  void TearDown() override { ASSERT_THAT(umount(temp_dir_.path().c_str()), SyscallSucceeds()); }
+  void TearDown() override {
+    // TODO: https://fxbug.dev/443944960 - `ASSERT_THAT` this `umount` `SyscallSucceeds()`.
+    umount(temp_dir_.path().c_str());
+  }
 
   test_helper::ScopedTempDir temp_dir_;
 };
@@ -158,7 +216,7 @@ TEST_P(CallPermission, DoCall) {
     payload.write_buffer = (binder_uintptr_t)&transaction_payload;
     payload.write_size = sizeof(TransactionWriteBuffer);
 
-    std::array<int32_t, 32> read_buffer = {};
+    std::array<uint8_t, kReadBufferSize> read_buffer = {};
     payload.read_size = sizeof(read_buffer);
     payload.read_buffer = (binder_uintptr_t)read_buffer.data();
     payload.read_consumed = 0;
@@ -178,6 +236,147 @@ const auto kCallPermissionValues =
     ::testing::Values(std::make_pair("test_u:test_r:binder_ioctl_call_test_t:s0", true),
                       std::make_pair("test_u:test_r:binder_ioctl_no_call_test_t:s0", false));
 INSTANTIATE_TEST_SUITE_P(CallPermission, CallPermission, kCallPermissionValues);
+
+class ImpersonatePermission : public BinderTest,
+                              public testing::WithParamInterface<std::pair<const char*, bool>> {};
+
+TEST_P(ImpersonatePermission, DoImpersonate) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  const auto [label, expect_success] = ImpersonatePermission::GetParam();
+
+  test_helper::Rendezvous context_manager_ready = test_helper::MakeRendezvous();
+
+  std::unique_ptr<test_helper::ForkHelper> context_manager_fork_helper =
+      std::make_unique<test_helper::ForkHelper>();
+  context_manager_fork_helper->OnlyWaitForForkedChildren();
+  pid_t context_manager_pid = RunInForkedProcessWithLabel(
+      *context_manager_fork_helper, "test_u:test_r:binder_context_manager_t:s0",
+      [&, ready = std::move(context_manager_ready.poker)]() mutable {
+        ContextManagerLoop(temp_dir_.path(),
+                           [ready = std::move(ready)]() mutable { ready.poke(); });
+      });
+  auto context_manager =
+      fit::defer([context_manager_pid, fork_helper = std::move(context_manager_fork_helper)]() {
+        ASSERT_THAT(kill(context_manager_pid, SIGKILL), SyscallSucceeds());
+        fork_helper->ExpectSignal(SIGKILL);
+        ASSERT_TRUE(fork_helper->WaitForChildren());
+      });
+
+  context_manager_ready.holder.hold();
+
+  std::unique_ptr<test_helper::ForkHelper> transactor_fork_helper =
+      std::make_unique<test_helper::ForkHelper>();
+
+  RunInForkedProcessWithLabel(
+      *transactor_fork_helper, "test_u:test_r:binder_impersonate_transactor_t:s0", [&]() {
+        auto fd_and_mapping = OpenBinderAndMap(temp_dir_.path());
+
+        auto transition_result = WriteTaskAttr("current", label);
+        ASSERT_TRUE(transition_result.is_ok())
+            << "Failed to transition to \"" << label << "\" with error "
+            << transition_result.error_value();
+
+        std::string_view hello = "Hello!";
+        TransactionWriteBuffer hello_write_buffer = {
+            .command = BC_TRANSACTION,
+            .data =
+                {
+                    .target =
+                        {
+                            .handle = kServiceManagerHandle,
+                        },
+                    .cookie = 0,
+                    .code = 0,
+                    .flags = 0,
+                    .data_size = hello.size(),
+                    .offsets_size = 0,
+                    .data =
+                        {
+                            .ptr =
+                                {
+                                    .buffer = (binder_uintptr_t)hello.data(),
+                                    .offsets = (binder_uintptr_t) nullptr,
+                                },
+                        },
+                },
+        };
+        struct binder_write_read hello_write_read = {
+            .write_size = sizeof(hello_write_buffer),
+            .write_consumed = 0,
+            .write_buffer = (binder_uintptr_t)&hello_write_buffer,
+        };
+
+        ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &hello_write_read),
+                    SyscallSucceeds());
+
+        bool br_reply_observed = false;
+        bool br_transaction_complete_observed = false;
+        bool br_failed_reply_observed = false;
+        auto transaction_succeeded = [&] {
+          return br_reply_observed &&
+                 // TODO: https://fxbug.dev/443721582 - why doesn't this process observe a
+                 // BR_TRANSACTION_COMPLETE when run with Starnix? It seems to see one when run with
+                 // Linux?
+                 (br_transaction_complete_observed || test_helper::IsStarnix());
+        };
+        auto transaction_failed = [&] { return br_failed_reply_observed; };
+
+        while (!transaction_failed() && !transaction_succeeded()) {
+          std::array<uint8_t, kReadBufferSize> read_buffer = {};
+          struct binder_write_read drain_write_read = {
+              .read_size = sizeof(read_buffer),
+              .read_consumed = 0,
+              .read_buffer = (binder_uintptr_t)read_buffer.data(),
+          };
+          ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &drain_write_read),
+                      SyscallSucceeds());
+
+          binder_uintptr_t cursor = (binder_uintptr_t)read_buffer.data();
+          binder_uintptr_t limit = cursor + drain_write_read.read_consumed;
+          while (cursor < limit) {
+            binder_driver_return_protocol returned = *(binder_driver_return_protocol*)(cursor);
+            cursor += sizeof(binder_driver_return_protocol);
+
+            switch (returned) {
+              case BR_NOOP:
+                break;
+              case BR_TRANSACTION_COMPLETE:
+                br_transaction_complete_observed = true;
+                break;
+              case BR_INCREFS:
+              case BR_ACQUIRE:
+              case BR_RELEASE:
+              case BR_DECREFS:
+                cursor += sizeof(struct binder_ptr_cookie);
+                break;
+              case BR_TRANSACTION:
+                cursor += sizeof(struct binder_transaction_data);
+                break;
+              case BR_REPLY:
+                br_reply_observed = true;
+                cursor += sizeof(struct binder_transaction_data);
+                break;
+              case BR_FAILED_REPLY:
+                br_failed_reply_observed = true;
+                break;
+              case BR_DEAD_BINDER:
+              case BR_DEAD_REPLY:
+              case BR_ERROR:
+              default:
+                FAIL() << "Unexpected \"returned\" value " << returned << "!";
+            }
+          }
+        }
+        ASSERT_TRUE(expect_success ? br_reply_observed : br_failed_reply_observed);
+      });
+  transactor_fork_helper->OnlyWaitForForkedChildren();
+}
+
+const auto kImpersonatePermissionValues = ::testing::Values(
+    std::make_pair("test_u:test_r:binder_allow_impersonate_transactor_t:s0", true),
+    std::make_pair("test_u:test_r:binder_deny_impersonate_transactor_t:s0", false));
+INSTANTIATE_TEST_SUITE_P(ImpersonatePermission, ImpersonatePermission,
+                         kImpersonatePermissionValues);
 
 }  // namespace
 
