@@ -63,7 +63,7 @@ def info(str):
     print(BLUE + "INFO: " + str + END)
 
 
-class BootTest(object):
+class BootTest:
     # The state of the associated product bundle.
     class ProductBundle(Enum):
         # The product bundle name given in the test metadata is not recognized.
@@ -89,7 +89,7 @@ class BootTest(object):
         if test_json["product_bundle"] in product_bundles:
             self._product_bundle = product_bundles[test_json["product_bundle"]]
             if os.path.exists(
-                os.path.join(build_dir, self._product_bundle["json"])
+                os.path.join(build_dir, self._product_bundle["json"]),
             ):
                 self._state = self.ProductBundle.BUILT
                 self._set_images_if_built()
@@ -108,7 +108,7 @@ class BootTest(object):
     def _set_images_if_built(self):
         assert self._state == self.ProductBundle.BUILT
         with open(
-            os.path.join(self.build_dir, self._product_bundle["json"])
+            os.path.join(self.build_dir, self._product_bundle["json"]),
         ) as f:
             manifest = json.load(f)
 
@@ -123,7 +123,8 @@ class BootTest(object):
             and bootloader_partitions[0]["type"] == "efi-shell"
         ):
             self.efi_disk = os.path.join(
-                product_bundle_dir, bootloader_partitions[0]["image"]
+                product_bundle_dir,
+                bootloader_partitions[0]["image"],
             )
             return
 
@@ -169,7 +170,14 @@ class BootTest(object):
             return self._state == self.ProductBundle.BUILT
         build_command = ["fx", "build", self.label]
         info("Rebuilding: " + " ".join(build_command))
-        if subprocess.run(build_command, cwd=self.build_dir).returncode == 0:
+        if (
+            subprocess.run(
+                build_command,
+                check=False,
+                cwd=self.build_dir,
+            ).returncode
+            == 0
+        ):
             self._state = self.ProductBundle.BUILT
             self._set_images_if_built()
             return True
@@ -235,14 +243,22 @@ def main():
         return 1
 
     parser = argparse.ArgumentParser(
-        prog="fx run-boot-test", description="Run a boot test.", epilog=EPILOG
+        prog="fx run-boot-test",
+        description="Run a boot test.",
+        epilog=EPILOG,
     )
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument(
-        "--boot", "-b", action="store_true", help="Run via bootserver"
+        "--boot",
+        "-b",
+        action="store_true",
+        help="Run via bootserver",
     )
     modes.add_argument(
-        "--fastboot", "-f", action="store_true", help="Run via fastboot boot"
+        "--fastboot",
+        "-f",
+        action="store_true",
+        help="Run via fastboot boot",
     )
     parser.add_argument(
         "--args",
@@ -341,7 +357,7 @@ def main():
         if args.kernel_shell_script:
             error(
                 "--kernel-unittest overrides --kernel-shell-script;"
-                "they cannot be used together"
+                "they cannot be used together",
             )
             return 1
         args.kernel_shell_script = [
@@ -355,7 +371,7 @@ def main():
             "kernel.shell.script="
             + ";".join(
                 "+".join(line.split()) for line in args.kernel_shell_script
-            )
+            ),
         )
 
     # Construct a map of product bundles by name. Boot test metadata points to
@@ -378,7 +394,7 @@ def main():
 
     if not boot_tests:
         warning(
-            "no boot tests found. Is //bundles/boot_tests in your GN graph?"
+            "no boot tests found. Is //bundles/boot_tests in your GN graph?",
         )
         return 0
 
@@ -397,10 +413,10 @@ def main():
         return 1
     # The returned matches will be ordered by similarlity; if we have an exact
     # match, always go with that.
-    elif len(matches) > 1 and matches[0].name != args.name:
+    if len(matches) > 1 and matches[0].name != args.name:
         error(
             "no boot tests closely matching a name of '%s' found. Closest matches:"
-            % args.name
+            % args.name,
         )
         for test in matches:
             test.print()
@@ -423,7 +439,7 @@ def main():
     elif args.crosvm:
         if not test.qemu_kernel:
             print(
-                error("cannot use --crosvm with no-kernel test %s" % test.name)
+                error("cannot use --crosvm with no-kernel test %s" % test.name),
             )
             return 1
         cmd = [args.crosvm_path] + args.crosvm_args + ["run"] + args.args
@@ -460,16 +476,20 @@ def main():
     test.print(command=cmd)
     if not args.symbolize:
         # Just run the emulator synchronously.
-        return subprocess.run(cmd, cwd=build_dir).returncode
+        return subprocess.run(cmd, check=False, cwd=build_dir).returncode
 
     # Start the emulator running asynchronously.
     emulator = subprocess.Popen(
-        cmd, cwd=build_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        cmd,
+        cwd=build_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
     # Run the symbolizer synchronously.  When the emulator finishes,
     # the symbolizer will see EOF on its stdin and exit too.
     symbolizer_status = subprocess.run(
         ["fx", "ffx", "debug", "symbolize", "--no-prettify"],
+        check=False,
         cwd=build_dir,
         stdin=emulator.stdout,
     ).returncode
