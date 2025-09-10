@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
-use crate::ingress::fidl::Interface;
-use crate::tests::test_failure_utils::create_test_env_with_failures;
+use crate::tests::test_failure_utils::create_empty_test_env;
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::*;
@@ -17,7 +15,7 @@ const ENV_NAME: &str = "settings_service_intl_test_environment";
 async fn create_intl_test_env_with_failures(
     storage_factory: Rc<InMemoryStorageFactory>,
 ) -> IntlProxy {
-    create_test_env_with_failures(storage_factory, ENV_NAME, Interface::Intl, SettingType::Intl)
+    create_empty_test_env(storage_factory, ENV_NAME)
         .await
         .connect_to_protocol::<IntlMarker>()
         .unwrap()
@@ -28,5 +26,5 @@ async fn test_channel_failure_watch() {
     let intl_service =
         create_intl_test_env_with_failures(Rc::new(InMemoryStorageFactory::new())).await;
     let result = intl_service.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
+    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }
