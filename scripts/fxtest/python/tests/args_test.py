@@ -96,6 +96,14 @@ class TestArgs(unittest.TestCase):
                 "--break-on-failure and --breakpoint flags are not supported with host tests.",
                 ["--breakpoint", "test.cc:123", "--host"],
             ),
+            (
+                "--breakpoint does not support --use-existing-debugger.",
+                ["--breakpoint", "test.cc:123", "--use-existing-debugger"],
+            ),
+            (
+                "--break-on-failure must be set when passing --use-existing-debugger.",
+                ["--use-existing-debugger"],
+            ),
         ]
     )
     @mock.patch("args.termout.is_valid", return_value=False)
@@ -230,3 +238,35 @@ class TestArgs(unittest.TestCase):
         )
         flags = args.parse_args(arguments, config_file.default_flags)
         self.assertEqual(flags.output, expected_value)
+
+    @parameterized.expand(
+        [
+            ("<no arguments>", [], False, False),
+            ("--break-on-failure", ["--break-on-failure"], True, True),
+            ("--breakpoint", ["--breakpoint", "test.cc:123"], True, True),
+            (
+                "--break-on-failure --use-existing-debugger",
+                ["--break-on-failure", "--use-existing-debugger"],
+                True,
+                False,
+            ),
+            (
+                "--breakpoint --break-on-failure",
+                ["--break-on-failure", "--breakpoint", "test.cc:123"],
+                True,
+                True,
+            ),
+        ]
+    )
+    def test_should_start_debugger(
+        self,
+        _unused_name: str,
+        arguments: list[str],
+        debugger_will_attach: bool,
+        debugger_should_spawn: bool,
+    ) -> None:
+        """Passing --break-on-failure or --breakpoint does not set debugger_should_spawn()."""
+        flags = args.parse_args(arguments)
+        flags.validate()
+        self.assertEqual(flags.debugger_will_attach(), debugger_will_attach)
+        self.assertEqual(flags.debugger_should_spawn(), debugger_should_spawn)

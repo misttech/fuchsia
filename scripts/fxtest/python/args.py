@@ -96,6 +96,7 @@ class Flags:
     show_full_moniker_in_logs: bool
     break_on_failure: bool
     breakpoints: typing.List[str]
+    use_existing_debugger: bool
     use_test_pilot: bool
     extra_args: typing.List[str]
     env: typing.List[str]
@@ -145,9 +146,17 @@ class Flags:
             raise FlagError("--parallel must be non-negative")
         if self.parallel_cases < 0:
             raise FlagError("--parallel-cases must be non-negative")
-        if self.has_debugger() and self.host:
+        if self.debugger_will_attach() and self.host:
             raise FlagError(
                 "--break-on-failure and --breakpoint flags are not supported with host tests."
+            )
+        if self.use_existing_debugger and self.breakpoints:
+            raise FlagError(
+                "--breakpoint does not support --use-existing-debugger."
+            )
+        if self.use_existing_debugger and not self.break_on_failure:
+            raise FlagError(
+                "--break-on-failure must be set when passing --use-existing-debugger."
             )
         if self.replay_speed <= 0:
             raise FlagError("--replay-speed must be a positive number")
@@ -197,13 +206,29 @@ class Flags:
                 self.artifact_output_directory,
             )
 
-    def has_debugger(self) -> bool:
-        """Determine if this set of flags enables debugging.
+    def debugger_will_attach(self) -> bool:
+        """Determine if this set of flags enables debugging features.
+
+        This is distinct from `Flags.debugger_should_spawn`, which indicates that debugger should be
+        spawned.
 
         Returns:
-            bool: True if a debugger needs to be attached, False otherwise.
+            bool: True if a debugger will be attached, False otherwise.
         """
         return bool(self.break_on_failure or self.breakpoints)
+
+    def debugger_should_spawn(self) -> bool:
+        """Determine if this set of flags warrants the launch of a debugger.
+
+        This is distinct from `Flags.debugger_will_attach`, which indicates that a debugger will be
+        attached to the test upon execution.
+
+        Returns:
+            bool: True if a debugger needs to be spawned, False otherwise.
+        """
+        return bool(
+            self.debugger_will_attach() and not self.use_existing_debugger
+        )
 
     def is_replay(self) -> bool:
         """Determine if these flags specify that replay mode is active.
@@ -517,8 +542,9 @@ def parse_args(
     execution.add_argument(
         "--break-on-failure",
         action="store_true",
-        help="""If set, any test case failures will stop test execution and launch zxdb attached
-        to the failed test case, if the test runner supports this feature.""",
+        help="""If set and supported by the test runner, any test case failures will stop test
+        execution. zxdb is automatically launched and attached to the failed test case unless
+        `--use-existing-debugger` is set.""",
         default=False,
     )
     execution.add_argument(
@@ -530,6 +556,13 @@ def parse_args(
         `--breakpoint my_source_file.cc:37` will insert a breakpoint at line 37 of any file
         named my_source_file.cc. May be specified multiple times to add multiple breakpoints.""",
         default=[],
+    )
+    execution.add_argument(
+        "--use-existing-debugger",
+        action="store_true",
+        help="""If set, suppresses the automatic launch and attach of zxdb when `--break-on-failure`
+        is set. Incompatible with `--breakpoint`.""",
+        default=False,
     )
     execution.add_argument(
         "--allow-temporary-package-server",

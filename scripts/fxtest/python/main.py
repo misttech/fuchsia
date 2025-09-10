@@ -747,7 +747,7 @@ class AsyncMain:
 
         # Finally, run all selected tests.
         if not await self._run_all_tests(selections):
-            if not flags.has_debugger() and not flags.host:
+            if not flags.debugger_will_attach() and not flags.host:
                 # Note: it is important that we put --break-on-failure before the rest of the command
                 # line arguments so that it is ensured that this fx test argument comes before any extra
                 # arguments are passed through to the test executable (e.g. after "--").
@@ -1378,7 +1378,7 @@ class AsyncMain:
         # those are allowed. The existence of host tests among device tests is not a problem for the
         # debugger integration, but users may be confused if they try to debug host tests with
         # automatic selection.
-        if not tests.has_device_test() and flags.has_debugger():
+        if not tests.has_device_test() and flags.debugger_will_attach():
             recorder.emit_warning_message(
                 "\n--break-on-failure and --breakpoint flags are not supported with host tests."
             )
@@ -1475,7 +1475,7 @@ class AsyncMain:
         maybe_debugger: subprocess.Popen[bytes] | None = None
         debugger_ready: asyncio.Condition = asyncio.Condition()
 
-        if flags.has_debugger():
+        if flags.debugger_should_spawn():
 
             async def on_debugger_ready() -> None:
                 # TODO(b/329317913): Emit a debugger event here.
