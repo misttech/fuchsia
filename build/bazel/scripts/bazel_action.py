@@ -438,14 +438,52 @@ def copy_directory_if_changed(
         return
 
     if os.path.lexists(dst_dir):
-        shutil.rmtree(dst_dir)
-    shutil.copytree(src_dir, dst_dir, copy_function=copy_writable)
-    # Make directories writable so their contents can be removed and
-    # repopulated in incremental builds.
-    make_writable(dst_dir)
-    for root, dirs, _ in os.walk(dst_dir):
-        for d in dirs:
-            make_writable(os.path.join(root, d))
+        rmtree_threaded(dst_dir)
+
+    copy_directory_threaded(src_dir, dst_dir)
+
+
+def rmtree_threaded(dirname: str) -> None:
+    """Uses a threadpool to delete all the files in a directory tree faster than shutil.rmtree().
+
+    This is about 2x faster than using shutil.rmtree() on its own.
+    """
+
+    # Find all the files in the tree, from the bottom up so that the directories are emptied from
+    # the bottom-up (the order they'll be deleted in.)
+    files: list[str] = []
+    for root, _, filenames in os.walk(dirname, topdown=False):
+        files.extend([os.path.join(root, filename) for filename in filenames])
+
+    # Delete all the files in one big threadpool
+    thread_pool_helpers.map_threaded(os.remove, files)
+
+    # Now delete all the (empty) direcctories
+    shutil.rmtree(dirname)
+
+
+def copy_directory_threaded(src_dir: str, dst_dir: str) -> None:
+    directories: list[str] = []
+    files: list[tuple[str, str]] = []
+    for root, dirnames, filenames in os.walk(src_dir):
+        relroot = os.path.relpath(root, src_dir)
+        if relroot != ".":
+            directories.append(os.path.join(dst_dir, relroot))
+        files.extend(
+            [
+                (
+                    os.path.join(src_dir, relroot, filename),
+                    os.path.join(dst_dir, relroot, filename),
+                )
+                for filename in filenames
+            ]
+        )
+
+    # Benchmarking confirmed that it's faster to create all the directories that are
+    # needed, first, and then perform a multi-threaded copying of files, than it is
+    # to use a thread pool copy per directory.
+    thread_pool_helpers.map_threaded(os.makedirs, directories)
+    thread_pool_helpers.starmap_threaded(copy_writable, files)
 
 
 # filecmp uses a tiny buffer for comparisons, forcing it to a larger size will
@@ -1729,6 +1767,8 @@ track all input files that the repository rule may access when it is run.
                 f.write("")
 
     time_profile.stop()
+    if _DEBUG:
+        time_profile.print(0.001)
 
     if args.timings_file:
         os.makedirs(os.path.dirname(args.timings_file), exist_ok=True)
