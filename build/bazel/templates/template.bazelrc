@@ -104,7 +104,8 @@ build:host --platforms=//build/bazel/platforms:host
 # See https://bazelbuild.github.io/rules_rust/rust_clippy.html.
 build --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
 build --output_groups=+clippy_checks
-build --@rules_rust//rust/settings:clippy_flag=-Wclippy::all
+# Fail on warnings to match the current implementation in the GN build.
+build --@rules_rust//rust/settings:clippy_flag=-Dwarnings
 
 common --enable_bzlmod=true
 common --incompatible_use_plus_in_repo_names

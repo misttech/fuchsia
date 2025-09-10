@@ -1,0 +1,51 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_rust//rust:defs.bzl", "rust_lint_config")
+
+package(default_visibility = ["//visibility:public"])
+
+_CLIPPY_WARN_DEFAULT = {
+    # Allow everything by default, except for the ones explicitly configured.
+    # LINT.IfChange(clippy_warn_default)
+    "all": "allow",
+    "correctness": "warn",
+    "expect_fun_call": "warn",
+    "fn_to_numeric_cast_with_truncation": "warn",
+    "large_enum_variant": "warn",
+    "large_futures": "warn",
+    "missing_safety_doc": "warn",
+    "unnecessary_mut_passed": "warn",
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:clippy_warn_default)
+}
+
+_CLIPPY_WARN_PRODUCTION = _CLIPPY_WARN_DEFAULT | {
+    # LINT.IfChange(clippy_warn_production)
+    "clear_with_drain": "warn",
+    "collection_is_never_read": "warn",
+    "needless_collect": "warn",
+    "or_fun_call": "warn",
+    "perf": "warn",
+    "redundant_clone": "warn",
+    "set_contains_or_insert": "warn",
+    "unnecessary_lazy_evaluations": "warn",
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:clippy_warn_production)
+}
+
+rust_lint_config(
+    name = "clippy_warn_default",
+    clippy = _CLIPPY_WARN_DEFAULT,
+)
+
+rust_lint_config(
+    name = "clippy_warn_production",
+    clippy = _CLIPPY_WARN_PRODUCTION,
+)
+
+rust_lint_config(
+    name = "clippy_warn_all",
+    clippy = {
+        "all": "warn",
+    },
+)

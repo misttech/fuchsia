@@ -9,6 +9,10 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 # Besides being a shorthand, this is mainly used to allow easier syncing between
 # Bazel and GN targets. See details in http://fxbug.dev/407441714.
 def rustc_binary(name, with_unit_tests = False, test_deps = [], **kwargs):
+    kwargs["lint_config"] = kwargs.get(
+        "lint_config",
+        "//build/config/rust/lints:clippy_warn_production",
+    )
     rust_binary(
         name = name,
         **kwargs

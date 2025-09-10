@@ -2,15 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
 
-rust_binary(
+rustc_binary(
     name = "json_validator_valico",
     srcs = ["src/main.rs"],
     edition = "2021",
     rustc_flags = [
         "-Cpanic=abort",
     ],
+    target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
     deps = [
         "//third_party/rust_crates/vendor:argh",

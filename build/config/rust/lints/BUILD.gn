@@ -6,6 +6,7 @@
 config("clippy_warn_default") {
   # Use -W instead of -D to treat as a warning while iterating.
   rustflags = [
+    # LINT.IfChange(clippy_warn_default)
     # go/keep-sorted start
 
     "-Wclippy::correctness",
@@ -17,6 +18,7 @@ config("clippy_warn_default") {
     "-Wclippy::unnecessary_mut_passed",
 
     # go/keep-sorted end
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:clippy_warn_default)
   ]
 }
 
@@ -24,6 +26,7 @@ config("clippy_warn_default") {
 config("clippy_warn_production") {
   # Use -W instead of -D to treat as a warning while iterating.
   rustflags = [
+    # LINT.IfChange(clippy_warn_production)
     # go/keep-sorted start
 
     "-Wclippy::clear_with_drain",
@@ -36,6 +39,7 @@ config("clippy_warn_production") {
     "-Wclippy::unnecessary_lazy_evaluations",
 
     # go/keep-sorted end
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:clippy_warn_production)
   ]
 }
 
