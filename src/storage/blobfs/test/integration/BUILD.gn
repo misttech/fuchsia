@@ -103,7 +103,6 @@ test("blobfs_integration") {
     "//sdk/lib/fdio",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/predicates",
     "//src/storage/blobfs",
     "//src/storage/fs_test",
     "//src/storage/fvm",

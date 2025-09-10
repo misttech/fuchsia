@@ -306,7 +306,7 @@ zx::result<BlobWriterWrapper> BlobCreatorWrapper::Create(const Digest& digest,
   fidl::Array<uint8_t, 32> hash;
   digest.CopyTo(hash.data_);
   auto result = creator_->Create(hash, allow_existing);
-  ZX_ASSERT_MSG(result.ok(), "%s", result.status_string());
+  ZX_ASSERT(result.ok());
   if (result->is_error()) {
     switch (result->error_value()) {
       case fuchsia_fxfs::CreateBlobError::kAlreadyExists:

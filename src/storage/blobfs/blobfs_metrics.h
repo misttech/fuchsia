@@ -9,6 +9,7 @@
 
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/inspect/cpp/vmo/types.h>
+#include <lib/zx/time.h>
 #include <zircon/compiler.h>
 
 #include <cstdint>
@@ -17,7 +18,6 @@
 
 #include <fbl/string.h>
 
-#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/metrics/read_metrics.h"
 #include "src/storage/blobfs/metrics/verification_metrics.h"
 #include "src/storage/lib/vfs/cpp/ticker.h"
@@ -58,12 +58,6 @@ class BlobfsMetrics final {
   // has been set in the BUILD.gn
   void IncrementPageIn(const fbl::String& merkle_hash, uint64_t offset, uint64_t length);
 
-  // Add 1 blob for the given layout. Call on blob write completion.
-  void IncrementBlobLayoutCount(BlobLayoutFormat layout);
-
-  // Subtract 1 blob for the given layout. Call on blob removal.
-  void DecrementBlobLayoutCount(BlobLayoutFormat layout);
-
   // Accessors for ReadMetrics. The metrics objects returned are NOT thread-safe. The metrics
   // objects are to be used by exactly one thread (main or pager). Used to increment relevant
   // metrics from the blobfs main thread and the user pager thread.
@@ -83,6 +77,26 @@ class BlobfsMetrics final {
   inspect::Inspector inspector_;
   inspect::Node& root_ = inspector_.GetRoot();
 
+  // ALLOCATION STATS
+  // Created with external-facing "Create".
+  uint64_t blobs_created_ = 0;
+  // Measured by space allocated with "Truncate".
+  uint64_t blobs_created_total_size_ = 0;
+  zx::ticks total_allocation_time_ticks_;
+
+  // WRITEBACK STATS
+  // Measurements, from the client's perspective, of writing and enqueuing
+  // data that will later be written to disk.
+  uint64_t data_bytes_written_ = 0;
+  uint64_t merkle_bytes_written_ = 0;
+  zx::ticks total_write_enqueue_time_ticks_;
+  zx::ticks total_merkle_generation_time_ticks_;
+
+  // LOOKUP STATS
+  // Opened via "LookupBlob".
+  uint64_t blobs_opened_ = 0;
+  uint64_t blobs_opened_total_size_ = 0;
+
   // INSPECT NODES AND PROPERTIES
   inspect::Node allocation_stats_ = root_.CreateChild("allocation_stats");
   inspect::Node writeback_stats_ = root_.CreateChild("writeback_stats");
@@ -90,38 +104,34 @@ class BlobfsMetrics final {
   inspect::Node paged_read_stats_ = root_.CreateChild("paged_read_stats");
   inspect::Node unpaged_read_stats_ = root_.CreateChild("unpaged_read_stats");
   inspect::Node page_in_frequency_stats_ = root_.CreateChild("page_in_frequency_stats");
-  inspect::Node blob_layout_stats_ = root_.CreateChild("blob_layout_stats");
 
   // Allocation properties
-  inspect::UintProperty blobs_created_property_ = allocation_stats_.CreateUint("blobs_created", 0);
+  inspect::UintProperty blobs_created_property_ =
+      allocation_stats_.CreateUint("blobs_created", blobs_created_);
   inspect::UintProperty blobs_created_total_size_property_ =
-      allocation_stats_.CreateUint("blobs_created_total_size", 0);
-  inspect::IntProperty total_allocation_time_ticks_property_ =
-      allocation_stats_.CreateInt("total_allocation_time_ticks", 0);
+      allocation_stats_.CreateUint("blobs_created_total_size", blobs_created_total_size_);
+  inspect::IntProperty total_allocation_time_ticks_property_ = allocation_stats_.CreateInt(
+      "total_allocation_time_ticks", total_allocation_time_ticks_.get());
 
   // Writeback properties
   inspect::UintProperty data_bytes_written_property_ =
-      writeback_stats_.CreateUint("data_bytes_written", 0);
+      writeback_stats_.CreateUint("data_bytes_written", data_bytes_written_);
   inspect::UintProperty merkle_bytes_written_property_ =
-      writeback_stats_.CreateUint("merkle_bytes_written", 0);
-  inspect::IntProperty total_write_enqueue_time_ticks_property_ =
-      writeback_stats_.CreateInt("total_write_enqueue_time_ticks", 0);
-  inspect::IntProperty total_merkle_generation_time_ticks_property_ =
-      writeback_stats_.CreateInt("total_merkle_generation_time_ticks", 0);
+      writeback_stats_.CreateUint("merkle_bytes_written", merkle_bytes_written_);
+  inspect::IntProperty total_write_enqueue_time_ticks_property_ = writeback_stats_.CreateInt(
+      "total_write_enqueue_time_ticks", total_write_enqueue_time_ticks_.get());
+  inspect::IntProperty total_merkle_generation_time_ticks_property_ = writeback_stats_.CreateInt(
+      "total_merkle_generation_time_ticks", total_merkle_generation_time_ticks_.get());
 
   // Lookup properties
-  inspect::UintProperty blobs_opened_property_ = lookup_stats_.CreateUint("blobs_opened", 0);
+  inspect::UintProperty blobs_opened_property_ =
+      lookup_stats_.CreateUint("blobs_opened", blobs_opened_);
   inspect::UintProperty blobs_opened_total_size_property_ =
-      lookup_stats_.CreateUint("blobs_opened_total_size", 0);
+      lookup_stats_.CreateUint("blobs_opened_total_size", blobs_opened_total_size_);
 
   // READ STATS
   ReadMetrics paged_read_metrics_{&paged_read_stats_};
   ReadMetrics unpaged_read_metrics_{&unpaged_read_stats_};
-
-  inspect::UintProperty padded_layout_blobs_ =
-      blob_layout_stats_.CreateUint("padded_layout_blobs", 0);
-  inspect::UintProperty compact_layout_blobs_ =
-      blob_layout_stats_.CreateUint("compact_layout_blobs", 0);
 
   // PAGE-IN FREQUENCY STATS
   const bool should_record_page_in_ = false;

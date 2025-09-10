@@ -580,7 +580,6 @@ zx::result<> Blob::Writer::Commit(Blob& blob) {
 
   blobfs().GetMetrics()->UpdateClientWrite(block_count * block_size_, merkle_size, ticker.End(),
                                            generation_time);
-  blobfs().GetMetrics()->IncrementBlobLayoutCount(blob_layout_->Format());
   return zx::ok();
 }
 

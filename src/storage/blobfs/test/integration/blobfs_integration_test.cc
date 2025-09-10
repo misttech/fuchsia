@@ -6,12 +6,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.fs/cpp/common_types.h>
-#include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.update.verify/cpp/common_types.h>
 #include <fidl/fuchsia.update.verify/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/diagnostics/reader/cpp/inspect.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/wire_messaging_declarations.h>
@@ -19,7 +17,6 @@
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/zx/result.h>
-#include <lib/zx/vmo.h>
 #include <poll.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -37,7 +34,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -50,7 +46,6 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/digest/digest.h"
-#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
@@ -1299,116 +1294,6 @@ class BlobfsMetricIntegrationTest : public FdioTest {
     }
   }
 };
-
-TEST(BlobfsComponentMetricsTest, BlobLayoutMetrics) {
-  fs_test::TestFilesystemOptions options = BlobfsWithPaddedLayoutTestParam();
-  zx::vmo vmo;
-  EXPECT_OK(zx::vmo::create(options.device_block_count * options.device_block_size, 0, &vmo));
-  options.vmo = vmo.borrow();
-  auto fs_or = fs_test::TestFilesystem::Create(options);
-  EXPECT_OK(fs_or.status_value());
-  fs_test::TestFilesystem fs = std::move(fs_or.value());
-
-  // Start empty.
-  int64_t padded_blobs;
-  int64_t compact_blobs;
-  {
-    std::optional<diagnostics::reader::InspectData> snapshot;
-    fs.TakeSnapshot(&snapshot);
-    auto node = snapshot.value().payload().value()->GetByPath({"blob_layout_stats"});
-    padded_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("padded_layout_blobs")->value();
-    compact_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("compact_layout_blobs")->value();
-  }
-  ASSERT_EQ(padded_blobs, 0l);
-  ASSERT_EQ(compact_blobs, 0l);
-
-  // Add one blob in compressed format.
-  auto blob = TestDeliveryBlob::CreateCompressed(kBlobfsBlockSize * 4);
-  {
-    std::unique_ptr<BlobCreatorWrapper> creator;
-    auto creator_channel = component::ConnectAt<fuchsia_fxfs::BlobCreator>(fs.ServiceDirectory());
-    ASSERT_OK(creator_channel.status_value());
-    creator = std::make_unique<BlobCreatorWrapper>(
-        fidl::WireSyncClient<fuchsia_fxfs::BlobCreator>(std::move(*creator_channel)));
-    EXPECT_OK(creator->CreateAndWriteBlob(blob).status_value());
-  }
-  EXPECT_EQ(syncfs(fs.GetRootFd().get()), 0);
-  {
-    std::optional<diagnostics::reader::InspectData> snapshot;
-    fs.TakeSnapshot(&snapshot);
-    auto node = snapshot.value().payload().value()->GetByPath({"blob_layout_stats"});
-    padded_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("padded_layout_blobs")->value();
-    compact_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("compact_layout_blobs")->value();
-  }
-  ASSERT_EQ(padded_blobs, 1l);
-  ASSERT_EQ(compact_blobs, 0l);
-
-  // Remount while changing the write format.
-  EXPECT_OK(fs.Unmount().status_value());
-  {
-    Superblock superblock;
-    EXPECT_OK(vmo.read(&superblock, 0, sizeof(Superblock)));
-    superblock.flags &= ~kBlobWriteLegacyMerkle;
-    EXPECT_OK(vmo.write(&superblock, 0, sizeof(Superblock)));
-  }
-  EXPECT_OK(fs.Mount());
-
-  // Count the blobs at mount.
-  {
-    std::optional<diagnostics::reader::InspectData> snapshot;
-    fs.TakeSnapshot(&snapshot);
-    auto node = snapshot.value().payload().value()->GetByPath({"blob_layout_stats"});
-    padded_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("padded_layout_blobs")->value();
-    compact_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("compact_layout_blobs")->value();
-  }
-  ASSERT_EQ(padded_blobs, 1l);
-  ASSERT_EQ(compact_blobs, 0l);
-
-  // Rewrite as compact.
-  {
-    std::unique_ptr<BlobCreatorWrapper> creator;
-    auto creator_channel = component::ConnectAt<fuchsia_fxfs::BlobCreator>(fs.ServiceDirectory());
-    ASSERT_OK(creator_channel.status_value());
-    creator = std::make_unique<BlobCreatorWrapper>(
-        fidl::WireSyncClient<fuchsia_fxfs::BlobCreator>(std::move(*creator_channel)));
-    auto writer = creator->CreateExisting(blob.digest);
-    EXPECT_OK(writer.status_value());
-    EXPECT_OK(writer->WriteBlob(blob).status_value());
-  }
-  EXPECT_EQ(syncfs(fs.GetRootFd().get()), 0);
-  {
-    std::optional<diagnostics::reader::InspectData> snapshot;
-    fs.TakeSnapshot(&snapshot);
-    auto node = snapshot.value().payload().value()->GetByPath({"blob_layout_stats"});
-    padded_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("padded_layout_blobs")->value();
-    compact_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("compact_layout_blobs")->value();
-  }
-  ASSERT_EQ(padded_blobs, 0l);
-  ASSERT_EQ(compact_blobs, 1l);
-
-  // Remove the blob.
-  ASSERT_EQ(unlinkat(fs.GetRootFd().get(), blob.digest.ToString().c_str(), 0), 0);
-
-  {
-    std::optional<diagnostics::reader::InspectData> snapshot;
-    fs.TakeSnapshot(&snapshot);
-    auto node = snapshot.value().payload().value()->GetByPath({"blob_layout_stats"});
-    padded_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("padded_layout_blobs")->value();
-    compact_blobs =
-        node->node().get_property<inspect::IntPropertyValue>("compact_layout_blobs")->value();
-  }
-  ASSERT_EQ(padded_blobs, 0l);
-  ASSERT_EQ(compact_blobs, 0l);
-}
 
 TEST_F(BlobfsMetricIntegrationTest, CreateAndRead) {
   uint64_t blobs_created;
