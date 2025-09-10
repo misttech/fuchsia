@@ -230,6 +230,7 @@ group("archivist-for-embedding-bundle") {
   visibility = [
     "//src/diagnostics/*",
     "//src/lib/diagnostics/*",
+    "//src/lib/syslog/go:*",
     "//src/sys/component_manager/tests/*",
     "//src/sys/test_manager:*",
   ]

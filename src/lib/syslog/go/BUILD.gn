@@ -27,13 +27,25 @@ go_library("go") {
 
 go_test("syslog_test") {
   library = ":go"
-  deps = [ "//src/lib/component($go_toolchain)" ]
+  deps = [
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_go($go_toolchain)",
+    "//src/lib/component($go_toolchain)",
+  ]
 }
 
 fuchsia_unittest_package("syslog-gotests") {
   manifest = "meta/syslog_test.cml"
-  deps = [ ":syslog_test" ]
+  deps = [
+    ":syslog_test",
+    "//src/diagnostics/archivist:archivist-for-embedding-bundle",
+  ]
   test_specs = {
+    # We need to use Archivist so we can verify logs have been written, but if we run
+    # tests in parallel, there will only be one Archivist component and the tests can
+    # interfere with each other. We could fix this by building a realm within each test,
+    # but it isn't worth the effort.
+    parallel = 1
+
     environments = [ emu_env ]
   }
 }

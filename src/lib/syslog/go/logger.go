@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"syscall/zx"
 	"unicode/utf8"
+	"unsafe"
 
 	"fidl/fuchsia/diagnostics/types"
 	"fidl/fuchsia/logger"
@@ -145,7 +146,7 @@ type LogInitOptions struct {
 }
 
 type Logger struct {
-	socket zx.Socket
+	iob    zx.Handle
 	cancel context.CancelFunc
 
 	droppedLogs uint32
@@ -178,15 +179,21 @@ func NewLogger(options LogInitOptions) (*Logger, error) {
 			}
 		}
 
-		localS, peerS, err := zx.NewSocket(zx.SocketDatagram)
+		event, err := logSink.ExpectOnInit(ctx)
 		if err != nil {
 			_ = l.Close()
 			return nil, err
 		}
-		l.socket = localS
-		if err := logSink.ConnectStructured(context.Background(), peerS); err != nil {
+		if !event.HasBuffer() {
 			_ = l.Close()
-			return nil, err
+			return nil, errors.New("did not receive a buffer")
+		}
+		l.iob = event.GetBuffer()
+		if event.HasInterest() {
+			interest := event.GetInterest()
+			if interest.HasMinSeverity() {
+				l.SetSeverity(interest.GetMinSeverity())
+			}
 		}
 
 		initLevel := options.LogLevel
@@ -238,7 +245,7 @@ func NewLoggerWithDefaults(tags ...string) (*Logger, error) {
 
 func (l *Logger) Close() error {
 	l.cancel()
-	return l.socket.Close()
+	return l.iob.Close()
 }
 
 func (l *Logger) logToWriter(writer io.Writer, time zx.Time, logLevel LogLevel, tag, msg string) error {
@@ -292,10 +299,12 @@ func PutStringArg(buffer []byte, name string, value ...string) int {
 	return wordCount * 8
 }
 
-func (l *Logger) logToSocket(time zx.Time, logLevel LogLevel, tag, msg string) error {
+func (l *Logger) logToIOB(time zx.Time, logLevel LogLevel, tag, msg string) error {
 	const golangThreadID = 0
 
-	var buffer [logger.MaxDatagramLenBytes]byte
+	// We are actually limited by the size we can store in the header, so we can't use logger.MaxDatagramLenBytes
+	const maxWords = 4095
+	var buffer [maxWords * 8]byte
 
 	binary.LittleEndian.PutUint64(buffer[8:], uint64(time))
 
@@ -328,8 +337,10 @@ func (l *Logger) logToSocket(time zx.Time, logLevel LogLevel, tag, msg string) e
 	// The message argument uses a two word header
 	const messageArgHeaderLen = 16
 
-	if len(payload)+messageArgHeaderLen > len(buffer)-pos {
-		payload = payload[:len(buffer)-pos-messageArgHeaderLen-len(ellipsis)]
+	maxArgLen := min(len(buffer)-pos, maxWords*8)
+
+	if len(payload)+messageArgHeaderLen > maxArgLen {
+		payload = payload[:maxArgLen-messageArgHeaderLen-len(ellipsis)]
 
 		// Remove the last byte until the result is valid UTF-8.
 		for {
@@ -347,9 +358,12 @@ func (l *Logger) logToSocket(time zx.Time, logLevel LogLevel, tag, msg string) e
 	// Write the header
 	binary.LittleEndian.PutUint64(buffer[0:], 9|uint64(pos/8)<<4|uint64(logLevel)<<56)
 
-	if _, err := l.socket.Write(buffer[:pos], 0); err != nil {
+	if status := zx.Sys_iob_writev(l.iob, 0, 0, &zx.Iovec{
+		Buffer:   unsafe.Pointer(&buffer[0]),
+		Capacity: uint64(pos),
+	}, 1); status != zx.ErrOk {
 		atomic.AddUint32(&l.droppedLogs, 1)
-		return err
+		return &zx.Error{Status: status, Text: "iob_writev"}
 	}
 
 	if payload != msg {
@@ -387,12 +401,13 @@ func (l *Logger) logf(callDepth int, logLevel LogLevel, tag string, format strin
 	if logLevel == FatalLevel {
 		defer os.Exit(1)
 	}
-	if atomic.LoadUint32((*uint32)(&l.socket)) != uint32(zx.HandleInvalid) {
-		switch err := l.logToSocket(time, logLevel, tag, msg).(type) {
+	if l.iob.IsValid() {
+		switch err := l.logToIOB(time, logLevel, tag, msg).(type) {
 		case *zx.Error:
 			switch err.Status {
 			case zx.ErrPeerClosed, zx.ErrBadState:
-				atomic.StoreUint32((*uint32)(&l.socket), uint32(zx.HandleInvalid))
+				l.iob.Close()
+				l.iob = zx.HandleInvalid
 			default:
 				return err
 			}
@@ -401,6 +416,10 @@ func (l *Logger) logf(callDepth int, logLevel LogLevel, tag string, format strin
 		}
 	}
 	return l.logToWriter(l.options.Writer, time, logLevel, tag, msg)
+}
+
+func (l *Logger) GetSeverity() types.Severity {
+	return types.Severity(atomic.LoadInt32(&l.level))
 }
 
 func (l *Logger) SetSeverity(severity types.Severity) {
