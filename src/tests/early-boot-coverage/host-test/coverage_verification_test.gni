@@ -61,15 +61,10 @@ template("coverage_verification_test") {
   zbi_file = "${system_image_path}/fuchsia.zbi"
 
   # Block image.
-  if (fxfs_blob) {
-    block_image = "${system_image_name}.fxfs"
-    block_file = "${system_image_path}/fxfs.blk"
-  } else {
-    block_image = "${system_image_name}.fvm"
-    block_file = "${system_image_path}/fvm.blk"
-  }
+  block_image = "${system_image_name}.fxfs"
+  block_file = "${system_image_path}/fxfs.blk"
 
-  # Host test data for both the ZBI and the FVM/FXFS image.
+  # Host test data for both the ZBI and the FXFS image.
   system_image_label = "${target_name}.system-images"
   host_test_data(system_image_label) {
     sources = [
@@ -102,8 +97,6 @@ template("coverage_verification_test") {
     sources = expectation_sources_path
   }
 
-  fvm_host_tool = "$host_out_dir/fvm"
-
   # Configuration to be parsed by |coverage_verifier_test.go|.
   test_config = {
     # Binaries used for the test.
@@ -112,7 +105,6 @@ template("coverage_verification_test") {
           rebase_path("${clang_prefix}/llvm-profdata", root_build_dir)
       llvm_cov = rebase_path("${clang_prefix}/llvm-cov", root_build_dir)
       llvm_cxxfilt = rebase_path("${clang_prefix}/llvm-cxxfilt", root_build_dir)
-      fvm = rebase_path(fvm_host_tool, root_build_dir)
       ffx = rebase_path("${host_tools_dir}/ffx", root_build_dir)
       zbi_host_tool = rebase_path("${host_out_dir}/zbi", root_build_dir)
     }
@@ -161,7 +153,6 @@ template("coverage_verification_test") {
                     "//src/developer/ffx:test_data",
                     "//src/developer/ffx/plugins/test:ffx_test_tool_test_data",
                     "//src/tests/early-boot-coverage/host-test:coverage_tools",
-                    "//src/tests/early-boot-coverage/host-test:fvm",
                     "//src/tests/early-boot-coverage/host-test:zbi",
                   ] + extra_deps
     args = [

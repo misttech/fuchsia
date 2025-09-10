@@ -68,23 +68,6 @@ template("_cuckoo_product_bundle") {
       development_support = {
         enable_userboot_next_component_manager = true
       }
-      if (!fxfs_blob) {
-        storage = {
-          filesystems = {
-            volume = {
-              fvm = {
-                data = {
-                  if (data_filesystem_format != "fxfs") {
-                    data_filesystem_format = "minfs"
-                  }
-                }
-                blob = {
-                }
-              }
-            }
-          }
-        }
-      }
     }
     product = {
     }
@@ -110,14 +93,7 @@ template("_cuckoo_product_bundle") {
 
     product_assembly_config_label = ":${main_target}.product_config"
 
-    if (fxfs_blob) {
-      generate_fxfs = true
-    } else {
-      generate_fvm = true
-      generate_fvm_fastboot = generate_fvm && assembly_generate_fvm_fastboot
-      generate_fvm_nand = generate_fvm && assembly_generate_fvm_nand
-    }
-
+    generate_fxfs = true
     generate_vbmeta = use_vbmeta
   }
 
