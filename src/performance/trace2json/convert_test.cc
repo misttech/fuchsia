@@ -92,6 +92,15 @@ TEST(ConvertTest, ExampleBenchmark) {
   ConvertAndCompare(settings, test_data_path + "example_benchmark_expected.json");
 }
 
+TEST(ConvertTest, DotStarPatternFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "simple_trace.fxt";
+  settings.output_file_name = test_data_path + "simple_trace_multi_filtered_actual.json";
+  settings.patterns.push_back(".*");
+  ConvertAndCompare(settings, test_data_path + "simple_trace_expected.json");
+}
+
 TEST(ConvertTest, PatternFiltering) {
   std::string test_data_path = GetTestDataPath();
   ConvertSettings settings;
