@@ -1,4 +1,5 @@
 ## require optimize=none
+# TODO(http://fxbug.dev/444205069): Reenable this test after the toolchain roll is complete.
 
 [zxdb] b pretty_types.cc:33
 Created Breakpoint 1 @ pretty_types.cc:33
