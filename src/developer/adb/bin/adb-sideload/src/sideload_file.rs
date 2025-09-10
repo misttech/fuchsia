@@ -4,8 +4,8 @@
 
 use fuchsia_async as fasync;
 use fuchsia_fs::file::{AsyncGetSize, AsyncReadAt};
-use futures::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use futures::FutureExt as _;
+use futures::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

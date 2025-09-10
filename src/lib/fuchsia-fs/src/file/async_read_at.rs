@@ -5,13 +5,15 @@
 use fidl::client::QueryResponseFut;
 use flex_client::Dialect;
 use flex_fuchsia_io as fio;
+use futures::FutureExt as _;
 use futures::future::Future;
 use futures::io::{AsyncRead, AsyncSeek, SeekFrom};
-use futures::FutureExt;
+use futures::lock::Mutex;
 use std::cmp::min;
 use std::convert::TryInto as _;
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 /// Trait for reading at a given offset asynchronously.
@@ -34,6 +36,28 @@ pub trait AsyncReadAt {
 pub trait AsyncGetSize {
     /// Attempt to get the size of the file, on success returns the file size.
     fn poll_get_size(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>>;
+}
+
+impl<T: AsyncReadAt + Unpin> AsyncReadAt for Arc<Mutex<T>> {
+    fn poll_read_at(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        let mut guard = futures::ready!(self.lock().poll_unpin(cx));
+        Pin::new(&mut *guard).poll_read_at(cx, offset, buf)
+    }
+}
+
+impl<T: AsyncGetSize + Unpin> AsyncGetSize for Arc<Mutex<T>> {
+    fn poll_get_size(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<u64, std::io::Error>> {
+        let mut guard = futures::ready!(self.lock().poll_unpin(cx));
+        Pin::new(&mut *guard).poll_get_size(cx)
+    }
 }
 
 /// An extension trait which adds utility methods to AsyncGetSize.

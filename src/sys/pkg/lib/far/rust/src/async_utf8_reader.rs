@@ -4,6 +4,8 @@
 
 use crate::error::Error;
 use fuchsia_fs::file::{AsyncGetSize, AsyncReadAt};
+use futures::lock::Mutex;
+use std::sync::Arc;
 
 /// A struct to open and read a FAR-formatted archive asynchronously.
 /// Requires that all paths are valid UTF-8.
@@ -56,6 +58,25 @@ where
 
     pub fn into_source(self) -> T {
         self.reader.into_source()
+    }
+}
+
+impl<T> AsyncUtf8Reader<Arc<Mutex<T>>>
+where
+    T: AsyncReadAt + AsyncGetSize + Unpin + Send,
+{
+    /// Read the contents of the entry with the specified path as a stream.
+    /// Each Vec in the stream will have a maximum size of `buffer_size`.
+    /// O(log(# directory entries))
+    pub fn read_file_stream(
+        &self,
+        path: &str,
+        buffer_size: usize,
+    ) -> Result<
+        (u64, impl futures::stream::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send),
+        Error,
+    > {
+        self.reader.read_file_stream(path.as_bytes(), buffer_size)
     }
 }
 

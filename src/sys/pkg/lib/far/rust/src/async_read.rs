@@ -7,7 +7,9 @@ use crate::{
     INDEX_ENTRY_LEN, INDEX_LEN, Index, IndexEntry, MAGIC_INDEX_VALUE,
 };
 use fuchsia_fs::file::{AsyncGetSize, AsyncGetSizeExt, AsyncReadAt, AsyncReadAtExt};
+use futures::lock::Mutex;
 use std::convert::TryInto as _;
+use std::sync::Arc;
 use zerocopy::IntoBytes as _;
 
 /// A struct to open and read a FAR-formatted archive asynchronously.
@@ -41,7 +43,7 @@ where
                 DirectoryEntry::default();
                 (dir_index.length.get() / DIRECTORY_ENTRY_LEN)
                     .try_into()
-                    .map_err(|_| { Error::InvalidDirectoryChunkLen(dir_index.length.get()) })?
+                    .map_err(|_| Error::InvalidDirectoryChunkLen(dir_index.length.get()))?
             ];
         source
             .read_at_exact(dir_index.offset.get(), directory_entries.as_mut_bytes())
@@ -182,7 +184,7 @@ where
 
     /// Get the size in bytes of the entry with the specified path.
     /// O(log(# directory entries))
-    pub fn get_size(&mut self, path: &[u8]) -> Result<u64, Error> {
+    pub fn get_size(&self, path: &[u8]) -> Result<u64, Error> {
         Ok(crate::find_directory_entry(&self.directory_entries, &self.path_data, path)?
             .data_length
             .get())
@@ -190,6 +192,56 @@ where
 
     pub fn into_source(self) -> T {
         self.source
+    }
+}
+
+impl<T> AsyncReader<Arc<Mutex<T>>>
+where
+    T: AsyncReadAt + AsyncGetSize + Unpin + Send,
+{
+    /// Read the contents of the entry with the specified path as a stream.
+    /// Each Vec in the stream will have a maximum size of `buffer_size`.
+    /// O(log(# directory entries))
+    pub fn read_file_stream(
+        &self,
+        path: &[u8],
+        buffer_size: usize,
+    ) -> Result<
+        (u64, impl futures::stream::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send),
+        Error,
+    > {
+        let entry = crate::find_directory_entry(&self.directory_entries, &self.path_data, path)?;
+        let offset = entry.data_offset.get();
+        let bytes_remaining = entry.data_length.get();
+        let source = Arc::clone(&self.source);
+
+        let stream = futures::stream::unfold(
+            (source, offset, bytes_remaining),
+            move |(source, offset, bytes_remaining)| async move {
+                if bytes_remaining == 0 {
+                    return None;
+                }
+                let mut buf = vec![0; buffer_size];
+                let bytes_to_read = std::cmp::min(bytes_remaining, buf.len() as u64);
+                let res =
+                    source.lock().await.read_at(offset, &mut buf[..bytes_to_read as usize]).await;
+                Some(match res {
+                    Ok(bytes_read) => {
+                        buf.truncate(bytes_read);
+                        (
+                            Ok(buf),
+                            (
+                                source,
+                                offset + bytes_read as u64,
+                                bytes_remaining - bytes_read as u64,
+                            ),
+                        )
+                    }
+                    Err(e) => (Err(e), (source, offset, bytes_remaining)),
+                })
+            },
+        );
+        Ok((bytes_remaining, stream))
     }
 }
 
@@ -201,6 +253,7 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_fs::file::Adapter;
     use futures::io::Cursor;
+    use futures::stream::TryStreamExt as _;
 
     #[fasync::run_singlethreaded(test)]
     async fn list() {
@@ -220,10 +273,27 @@ mod tests {
     async fn read_file() {
         let example = example_archive();
         let mut reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();
-        for one_name in ["a", "b", "dir/c"].iter().map(|s| s.as_bytes()) {
-            let content = reader.read_file(one_name).await.unwrap();
+        for one_name in ["a", "b", "dir/c"] {
+            let content = reader.read_file(one_name.as_bytes()).await.unwrap();
             let content_str = std::str::from_utf8(&content).unwrap();
-            let expected = format!("{}\n", std::str::from_utf8(one_name).unwrap());
+            let expected = format!("{one_name}\n");
+            assert_eq!(content_str, &expected);
+        }
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn read_file_stream() {
+        let example = example_archive();
+        let reader = AsyncReader::new(Arc::new(Mutex::new(Adapter::new(Cursor::new(&example)))))
+            .await
+            .unwrap();
+        for one_name in ["a", "b", "dir/c"] {
+            let (size, stream) = reader.read_file_stream(one_name.as_bytes(), 4).unwrap();
+            let expected = format!("{one_name}\n");
+            assert_eq!(size, expected.len() as u64);
+            let content: Vec<u8> =
+                stream.try_collect::<Vec<Vec<u8>>>().await.unwrap().into_iter().flatten().collect();
+            let content_str = std::str::from_utf8(&content).unwrap();
             assert_eq!(content_str, &expected);
         }
     }
@@ -231,7 +301,7 @@ mod tests {
     #[fasync::run_singlethreaded(test)]
     async fn get_size() {
         let example = example_archive();
-        let mut reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();
+        let reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();
         for one_name in ["a", "b", "dir/c"].iter().map(|s| s.as_bytes()) {
             let returned_size = reader.get_size(one_name).unwrap();
             let expected_size = one_name.len() + 1;

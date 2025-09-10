@@ -7,7 +7,7 @@ use fuchsia_archive::AsyncUtf8Reader;
 use fuchsia_async as fasync;
 use fuchsia_fs::file::{AsyncGetSize, AsyncReadAt};
 use futures::lock::Mutex;
-use futures::{Future, FutureExt as _, TryStreamExt as _};
+use futures::{Future, TryStreamExt as _};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
 use std::convert::Infallible;
@@ -16,37 +16,38 @@ use std::sync::Arc;
 
 async fn serve_file<T: AsyncReadAt + AsyncGetSize + Unpin + Send + 'static>(
     req: Request<Body>,
-    far_reader: Arc<Mutex<AsyncUtf8Reader<T>>>,
-) -> Response<Body> {
+    far_reader: Arc<AsyncUtf8Reader<Arc<Mutex<T>>>>,
+    block_size: usize,
+) -> Result<Response<Body>, hyper::http::Error> {
     let path = req.uri().path();
     let file_name = path.strip_prefix('/').unwrap_or(path);
-    // TODO(https://fxbug.dev/439655098): Support streaming files.
-    match far_reader.lock().await.read_file(file_name).await {
-        Ok(file) => Response::new(Body::from(file)),
+
+    match far_reader.read_file_stream(file_name, block_size) {
+        Ok((length, stream)) => Response::builder()
+            .header(hyper::header::CONTENT_LENGTH, length)
+            .body(Body::wrap_stream(stream)),
         Err(fuchsia_archive::Error::PathNotPresent(_)) => {
-            Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap()
+            Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty())
         }
         Err(e) => {
             log::error!("Failed to read file: {:#}", anyhow::anyhow!(e));
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()
+            Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())
         }
     }
 }
 
 pub fn start_server<T: AsyncReadAt + AsyncGetSize + Unpin + Send + 'static>(
-    far_reader: AsyncUtf8Reader<T>,
+    far_reader: AsyncUtf8Reader<Arc<Mutex<T>>>,
+    block_size: usize,
 ) -> Result<
     (
         impl Future<Output = Result<(), hyper::Error>> + 'static,
-        impl FnOnce() -> Arc<Mutex<AsyncUtf8Reader<T>>>,
+        impl FnOnce() -> Arc<AsyncUtf8Reader<Arc<Mutex<T>>>>,
         SocketAddr,
     ),
     Error,
 > {
-    let far_reader = Arc::new(Mutex::new(far_reader));
+    let far_reader = Arc::new(far_reader);
     let (close_sender, close_receiver) = futures::channel::oneshot::channel();
     let addr = SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), 0);
     let listener = fasync::net::TcpListener::bind(&addr)?;
@@ -63,7 +64,7 @@ pub fn start_server<T: AsyncReadAt + AsyncGetSize + Unpin + Send + 'static>(
             let far_reader = Arc::clone(&far_reader);
             async move {
                 Ok::<_, Infallible>(service_fn(move |req| {
-                    serve_file(req, Arc::clone(&far_reader)).map(Ok::<_, Infallible>)
+                    serve_file(req, Arc::clone(&far_reader), block_size)
                 }))
             }
         }));
@@ -82,9 +83,13 @@ pub fn start_server<T: AsyncReadAt + AsyncGetSize + Unpin + Send + 'static>(
 mod tests {
     use super::*;
     use fuchsia_fs::file::Adapter;
+    use futures::channel::mpsc;
     use futures::io::Cursor;
+    use futures::{SinkExt as _, StreamExt as _};
     use std::collections::BTreeMap;
     use std::io::Read;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
 
     #[fuchsia::test]
     async fn test_server() {
@@ -97,15 +102,19 @@ mod tests {
         fuchsia_archive::write(&mut far_data, files).unwrap();
 
         let reader = Adapter::new(Cursor::new(far_data));
-        let far_reader = AsyncUtf8Reader::new(reader).await.unwrap();
+        let far_reader = AsyncUtf8Reader::new(Arc::new(Mutex::new(reader))).await.unwrap();
 
-        let (server_fut, close_fn, addr) = start_server(far_reader).unwrap();
+        let (server_fut, close_fn, addr) = start_server(far_reader, 1024).unwrap();
         let server_task = fasync::Task::spawn(server_fut);
 
         let client = fuchsia_hyper::new_client();
         let uri = format!("http://{addr}/file1.txt");
         let response = client.get(uri.parse().unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(hyper::header::CONTENT_LENGTH).unwrap(),
+            file_content.len().to_string().as_bytes()
+        );
         let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
         assert_eq!(body.as_ref(), file_content.as_bytes());
 
@@ -115,6 +124,93 @@ mod tests {
 
         let far_reader = close_fn();
         server_task.await.unwrap();
-        let _far_reader = Arc::into_inner(far_reader).unwrap().into_inner();
+        let far_reader = Arc::into_inner(far_reader).unwrap();
+        let _reader: Adapter<_> = Arc::into_inner(far_reader.into_source()).unwrap().into_inner();
+    }
+
+    struct BlockingReader<R> {
+        reader: R,
+        receiver: Option<mpsc::Receiver<()>>,
+    }
+
+    impl<R: AsyncGetSize + Unpin> AsyncGetSize for BlockingReader<R> {
+        fn poll_get_size(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<u64>> {
+            Pin::new(&mut self.reader).poll_get_size(cx)
+        }
+    }
+
+    impl<R: AsyncReadAt + Unpin> AsyncReadAt for BlockingReader<R> {
+        fn poll_read_at(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            offset: u64,
+            buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            match &mut self.receiver {
+                Some(receiver) => match receiver.poll_next_unpin(cx) {
+                    Poll::Ready(Some(())) => {
+                        Pin::new(&mut self.reader).poll_read_at(cx, offset, buf)
+                    }
+                    Poll::Ready(None) => Poll::Ready(Ok(0)),
+                    Poll::Pending => Poll::Pending,
+                },
+                None => Pin::new(&mut self.reader).poll_read_at(cx, offset, buf),
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_server_large_file_streaming() {
+        let mut far_data = Vec::new();
+        let file_content = vec![0; 200 * 1024];
+        let files = BTreeMap::from([(
+            "large_file",
+            (file_content.len() as u64, Box::new(file_content.as_slice()) as Box<dyn Read>),
+        )]);
+        fuchsia_archive::write(&mut far_data, files).unwrap();
+
+        let blocking_reader =
+            BlockingReader { reader: Adapter::new(Cursor::new(far_data)), receiver: None };
+        let blocking_reader = Arc::new(Mutex::new(blocking_reader));
+        let far_reader = AsyncUtf8Reader::new(Arc::clone(&blocking_reader)).await.unwrap();
+
+        let (mut sender, receiver) = mpsc::channel(1);
+        blocking_reader.lock().await.receiver = Some(receiver);
+        drop(blocking_reader);
+
+        let (server_fut, close_fn, addr) = start_server(far_reader, 10 * 1024).unwrap();
+        let server_task = fasync::Task::spawn(server_fut);
+
+        let client = fuchsia_hyper::new_client();
+        let uri = format!("http://{addr}/large_file");
+        let response = client.get(uri.parse().unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(hyper::header::CONTENT_LENGTH).unwrap(),
+            file_content.len().to_string().as_bytes()
+        );
+        let mut body = response.into_body();
+        let mut received = Vec::new();
+
+        // Unblock the first read.
+        sender.send(()).await.unwrap();
+        let mut chunk_count = 0;
+        while let Some(chunk) = body.next().await {
+            chunk_count += 1;
+            received.extend_from_slice(&chunk.unwrap());
+            sender.send(()).await.unwrap();
+        }
+        assert_eq!(received, file_content);
+        // Based on the block size limit, there should be at least 20 chunks.
+        assert!(chunk_count >= 20);
+
+        let far_reader = close_fn();
+        server_task.await.unwrap();
+        let far_reader = Arc::into_inner(far_reader).unwrap();
+        let _reader: BlockingReader<_> =
+            Arc::into_inner(far_reader.into_source()).unwrap().into_inner();
     }
 }

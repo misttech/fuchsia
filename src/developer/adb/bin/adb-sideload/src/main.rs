@@ -9,6 +9,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_fs::file::{AsyncReadAt, AsyncReadAtExt as _};
+use futures::lock::Mutex;
 use futures::{StreamExt as _, TryFutureExt as _};
 use std::sync::Arc;
 
@@ -51,11 +52,11 @@ impl SideloadServer {
                 );
                 let far_offset = find_far_offset(&mut sideload_file, file_size).await?;
                 let far_file = sideload_file.into_sub_file(far_offset, file_size - far_offset);
-                let archive = fuchsia_archive::AsyncUtf8Reader::new(far_file)
+                let archive = fuchsia_archive::AsyncUtf8Reader::new(Arc::new(Mutex::new(far_file)))
                     .await
                     .context("Failed to parse far")?;
-                let (server_fut, close_fn, addr) =
-                    http_server::start_server(archive).context("Failed to start http server")?;
+                let (server_fut, close_fn, addr) = http_server::start_server(archive, block_size)
+                    .context("Failed to start http server")?;
                 let server_task = fasync::Task::spawn(server_fut);
                 log::info!("http server listening on port {}", addr.port());
                 let updater = connect_to_protocol::<UpdaterMarker>()
@@ -64,11 +65,14 @@ impl SideloadServer {
                     .update(&format!("http://localhost:{}/ota_manifest.json", addr.port()))
                     .await?;
                 log::info!("Shutting down http server");
-                let far = close_fn();
+                let far_reader = close_fn();
                 let () = server_task.await.context("server task")?;
-                let far =
-                    Arc::into_inner(far).ok_or_else(|| anyhow::anyhow!("Failed to unwrap Arc"))?;
-                let far_file = far.into_inner().into_source();
+                let far_reader = Arc::into_inner(far_reader)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to unwrap Arc"))?;
+                let far_file = far_reader.into_source();
+                let far_file = Arc::into_inner(far_file)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to unwrap Arc"))?
+                    .into_inner();
                 let () = far_file.close().await.context("Failed to close sideload file")?;
                 Ok(())
             }
