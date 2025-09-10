@@ -4318,7 +4318,7 @@ mod tests {
 
         let node = current_task.lookup_path_from_root(locked, "/".into()).unwrap();
         let new_mm = mm.exec(node, ArchWidth::Arch64).expect("failed to exec memory manager");
-        *current_task.mm.lock() = Some(new_mm);
+        *current_task.mm.as_ref().unwrap().lock() = new_mm;
 
         assert!(!has(brk_addr));
         assert!(!has(mapped_addr));

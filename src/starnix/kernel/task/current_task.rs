@@ -1106,7 +1106,7 @@ impl CurrentTask {
             let new_mm = mm
                 .exec(resolved_elf.file.name.to_passive(), resolved_elf.arch_width)
                 .map_err(|status| from_status_like_fdio!(status))?;
-            *self.mm.lock() = Some(new_mm.clone());
+            *self.mm.as_ref().unwrap().lock() = new_mm.clone();
             new_mm
         };
 

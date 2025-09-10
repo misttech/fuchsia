@@ -990,7 +990,7 @@ pub struct Task {
     pub files: FdTable,
 
     /// The memory manager for this task.  This is `None` only for system tasks.
-    pub mm: Mutex<Option<Arc<MemoryManager>>>,
+    pub mm: Option<Mutex<Arc<MemoryManager>>>,
 
     /// The file system for this task.
     fs: Option<RwLock<Arc<FsContext>>>,
@@ -1181,7 +1181,7 @@ impl Task {
                 thread_group,
                 thread: RwLock::new(thread.map(Arc::new)),
                 files,
-                mm: Mutex::new(mm),
+                mm: mm.map(Mutex::new),
                 fs: Some(RwLock::new(fs)),
                 abstract_socket_namespace,
                 abstract_vsock_namespace,
@@ -1279,7 +1279,7 @@ impl Task {
 
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
-        self.mm.lock().clone().ok_or_else(|| errno!(EINVAL))
+        Ok(self.mm.as_ref().ok_or_else(|| errno!(EINVAL))?.lock().clone())
     }
 
     pub fn unshare_fs(&self) {
@@ -1575,7 +1575,7 @@ impl Releasable for Task {
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
         self.fs = None;
-        *self.mm.get_mut() = None;
+        self.mm = None;
 
         // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
         let current_task = CurrentTask::new(OwnedRef::new(self), thread_state);
