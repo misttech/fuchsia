@@ -111,10 +111,11 @@ async fn migrate(
     fxfs: &mut OpenFxFilesystem,
     ino: u32,
     dir: Directory<ObjectStore>,
-    existing_inodes: &mut HashSet<u32>,
     files_to_copy: &mut HashSet<u64>,
     f2fs_metadata_blocks: &mut Vec<u32>,
 ) -> Result<(), Error> {
+    let mut existing_inodes = HashSet::new();
+
     let mut stack = vec![(ino, dir)];
     while let Some((ino, dir)) = stack.pop() {
         // Any dentry blocks for this directory are f2fs metadata.
@@ -678,7 +679,6 @@ async fn migrate_device(
         .expect("Failed to create fxfs filesystem builder");
 
     {
-
         let f2fs = Box::new(F2fsReader::open_device(fxfs.device()).await.expect("f2fs open ok"));
 
         fxfs.journal().set_filesystem_uuid(&f2fs.superblock.uuid).expect("set uuid");
@@ -694,7 +694,6 @@ async fn migrate_device(
 
         // Copy everything from f2fs to userdata, reusing existing extents.
         let ino = f2fs.root_ino();
-        let mut existing_inodes = HashSet::new();
         let mut files_to_copy = HashSet::new();
         let mut f2fs_metadata_blocks = Vec::new();
         migrate(
@@ -702,7 +701,6 @@ async fn migrate_device(
             &mut fxfs,
             ino,
             root_directory,
-            &mut existing_inodes,
             &mut files_to_copy,
             &mut f2fs_metadata_blocks,
         )

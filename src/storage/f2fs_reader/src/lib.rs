@@ -15,4 +15,4 @@ pub use dir::{DirEntry, FileType};
 pub use inode::{AdviseFlags, Flags, InlineFlags, Inode, Mode};
 pub use reader::F2fsReader;
 pub use superblock::BLOCK_SIZE;
-pub use xattr::XattrEntry;
+pub use xattr::{Index as XattrIndex, XattrEntry};
