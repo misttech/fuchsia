@@ -159,13 +159,13 @@ TEST_F(BinderTest, OpenBinderWithTestDomain) {
 }
 
 class ContextManagerPermission : public BinderTest,
-                                 public testing::WithParamInterface<std::pair<const char*, bool>> {
-};
+                                 public testing::WithParamInterface<std::string_view> {};
 
 // Test becoming the service manager with and without the `set_context_mgr` permission.
 TEST_P(ContextManagerPermission, BecomeServiceManager) {
   auto enforce = ScopedEnforcement::SetEnforcing();
-  const auto [label, expect_success] = ContextManagerPermission::GetParam();
+  const auto label = ContextManagerPermission::GetParam();
+  bool expect_success = label.find("_no_") == std::string::npos;
   ASSERT_TRUE(RunSubprocessAs(label, [&] {
     fbl::unique_fd binder = OpenBinder(temp_dir_.path());
     EXPECT_TRUE(binder) << strerror(errno);
@@ -178,18 +178,17 @@ TEST_P(ContextManagerPermission, BecomeServiceManager) {
 }
 
 const auto kContextManagerPermissionValues =
-    ::testing::Values(std::make_pair("test_u:test_r:binder_context_manager_test_t:s0", true),
-                      std::make_pair("test_u:test_r:binder_no_context_manager_test_t:s0", false));
-INSTANTIATE_TEST_SUITE_P(ContextManagerPermission, ContextManagerPermission,
-                         kContextManagerPermissionValues);
+    ::testing::Values("test_u:test_r:binder_context_manager_test_t:s0",
+                      "test_u:test_r:binder_no_context_manager_test_t:s0");
+INSTANTIATE_TEST_SUITE_P(BinderTest, ContextManagerPermission, kContextManagerPermissionValues);
 
-class CallPermission : public BinderTest,
-                       public testing::WithParamInterface<std::pair<const char*, bool>> {};
+class CallPermission : public BinderTest, public testing::WithParamInterface<std::string_view> {};
 
 // Test doing a binder call with and without the `call` permission.
 TEST_P(CallPermission, DoCall) {
   auto enforce = ScopedEnforcement::SetEnforcing();
-  const auto [label, expect_success] = CallPermission::GetParam();
+  std::string_view label = CallPermission::GetParam();
+  bool expect_success = label.find("_no_") == std::string::npos;
 
   auto context_manager = ScopedContextManagerProcess(temp_dir_.path());
 
@@ -232,17 +231,17 @@ TEST_P(CallPermission, DoCall) {
   }));
 }
 
-const auto kCallPermissionValues =
-    ::testing::Values(std::make_pair("test_u:test_r:binder_ioctl_call_test_t:s0", true),
-                      std::make_pair("test_u:test_r:binder_ioctl_no_call_test_t:s0", false));
-INSTANTIATE_TEST_SUITE_P(CallPermission, CallPermission, kCallPermissionValues);
+const auto kCallPermissionValues = ::testing::Values(
+    "test_u:test_r:binder_ioctl_call_test_t:s0", "test_u:test_r:binder_ioctl_no_call_test_t:s0");
+INSTANTIATE_TEST_SUITE_P(BinderTest, CallPermission, kCallPermissionValues);
 
 class ImpersonatePermission : public BinderTest,
-                              public testing::WithParamInterface<std::pair<const char*, bool>> {};
+                              public testing::WithParamInterface<std::string_view> {};
 
 TEST_P(ImpersonatePermission, DoImpersonate) {
   auto enforce = ScopedEnforcement::SetEnforcing();
-  const auto [label, expect_success] = ImpersonatePermission::GetParam();
+  std::string_view label = ImpersonatePermission::GetParam();
+  bool expect_success = label.find("_deny_") == std::string::npos;
 
   test_helper::Rendezvous context_manager_ready = test_helper::MakeRendezvous();
 
@@ -372,11 +371,10 @@ TEST_P(ImpersonatePermission, DoImpersonate) {
   transactor_fork_helper->OnlyWaitForForkedChildren();
 }
 
-const auto kImpersonatePermissionValues = ::testing::Values(
-    std::make_pair("test_u:test_r:binder_allow_impersonate_transactor_t:s0", true),
-    std::make_pair("test_u:test_r:binder_deny_impersonate_transactor_t:s0", false));
-INSTANTIATE_TEST_SUITE_P(ImpersonatePermission, ImpersonatePermission,
-                         kImpersonatePermissionValues);
+const auto kImpersonatePermissionValues =
+    ::testing::Values("test_u:test_r:binder_allow_impersonate_transactor_t:s0",
+                      "test_u:test_r:binder_deny_impersonate_transactor_t:s0");
+INSTANTIATE_TEST_SUITE_P(BinderTest, ImpersonatePermission, kImpersonatePermissionValues);
 
 }  // namespace
 
@@ -406,6 +404,6 @@ class WithSEStarnix : public WithOrWithoutSEStarnix {
   ScopedEnforcement enforcing_ = ScopedEnforcement::SetEnforcing();
 };
 
-INSTANTIATE_TYPED_TEST_SUITE_P(BinderWithSEStarnix, ManagerProviderClientTest, WithSEStarnix);
+INSTANTIATE_TYPED_TEST_SUITE_P(BinderTest, ManagerProviderClientTest, WithSEStarnix);
 
 }  // namespace starnix_binder

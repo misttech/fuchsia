@@ -16,10 +16,14 @@
                 // regarding opening binder.
                 "BinderTest.OpenBinderNoTestDomain",
                 "BinderTest.OpenBinderWithTestDomain",
-                "ContextManagerPermission/ContextManagerPermission.BecomeServiceManager/0",
-                "ContextManagerPermission/ContextManagerPermission.BecomeServiceManager/1",
-                "CallPermission/CallPermission.DoCall/0",
-                "CallPermission/CallPermission.DoCall/1",
+                "BinderTest/CallPermission.DoCall/0",
+                "BinderTest/CallPermission.DoCall/1",
+                "BinderTest/ContextManagerPermission.BecomeServiceManager/0",
+                "BinderTest/ContextManagerPermission.BecomeServiceManager/1",
+
+                // TODO(https://fxbug.dev/398654361)
+                "BinderTest/ImpersonatePermission.DoImpersonate/0",
+                "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
                 // TODO: https://fxbug.dev/322843830 - Make (SE)Starnix match the (SE)Linux behavior
                 // demonstrated in this test.
@@ -38,10 +42,6 @@
                 // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API validation of fields.
                 "SeLinuxFsAccess.ClassIdMayHaveTrailingNonNumericData",
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
-
-                // TODO(https://fxbug.dev/398654361)
-                "BinderWithSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
-                "ImpersonatePermission/ImpersonatePermission.DoImpersonate/0",
             ],
         },
     ],
