@@ -2,7 +2,4 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![recursion_limit = "256"]
-
-mod device;
-mod execution;
+pub mod crash_reporter;

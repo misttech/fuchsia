@@ -17,10 +17,14 @@ rustc_test("starnix_core_unit_tests_bin") {
   sources = [
     "src/device/mod.rs",
     "src/device/remote_block_device.rs",
+    "src/execution/crash_reporter.rs",
+    "src/execution/mod.rs",
     "src/lib.rs",
   ]
 
   deps = [
+    "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia",
     "//src/starnix/kernel:starnix_core",
     "//src/starnix/lib/starnix_uapi",

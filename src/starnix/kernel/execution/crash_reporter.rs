@@ -22,7 +22,7 @@ use zx::{self as zx, AsHandleRef};
 /// The maximum number of crashes we allow to happen for a process within the last
 /// CrashReporter.crash_loop_age_out before we consider it to be crash looping. 8 within 8 minutes
 /// was chosen as a balance between "definitely a crash loop" and "still saves system resources."
-const CRASH_LOOP_LIMIT: usize = 8;
+pub const CRASH_LOOP_LIMIT: usize = 8;
 
 /// While throttled, we should still occasionally file a report with a higher "weight" that can
 /// represent the rest of the crashes.
@@ -361,8 +361,6 @@ fn truncate_with_ellipsis(s: &mut String, max_len: usize) {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::spawn_kernel_and_run;
-
     use super::*;
 
     const CRASH_LOOP_AGE_OUT: zx::MonotonicDuration = zx::Duration::from_minutes(8);
@@ -463,26 +461,6 @@ mod tests {
                 )
                 .is_some()
         );
-    }
-
-    #[fuchsia::test]
-    async fn begin_crash_report_throttling_ends() {
-        spawn_kernel_and_run(|_, current_task| {
-            let crash_reporter = CrashReporter::new(
-                &fuchsia_inspect::Node::default(),
-                /*proxy=*/ None,
-                zx::Duration::from_millis(200),
-                /*enable_throttling=*/ true,
-            );
-
-            for _ in 0..CRASH_LOOP_LIMIT {
-                assert!(crash_reporter.begin_crash_report(current_task).is_some());
-            }
-            assert!(crash_reporter.begin_crash_report(current_task).is_none());
-
-            std::thread::sleep(std::time::Duration::from_millis(250));
-            assert!(crash_reporter.begin_crash_report(current_task).is_some());
-        });
     }
 
     #[test]
