@@ -135,6 +135,11 @@ class ConsoleContext : public ProcessObserver,
   // the client layer manage this object.
   const fxl::RefPtr<PrettyStackManager>& pretty_stack_manager() { return pretty_stack_manager_; }
 
+  /// Returns the TestFailureStackMatcher for this session.
+  const fxl::RefPtr<TestFailureStackMatcher>& test_failure_stack_matcher() {
+    return test_failure_stack_matcher_;
+  }
+
   void InitConsoleMode();
   std::string GetConsoleMode();
   std::string GetEmbeddedModeContextOrDefault(std::optional<debug_ipc::ExceptionType> type);
@@ -277,8 +282,6 @@ class ConsoleContext : public ProcessObserver,
   int active_filter_id_ = 0;
   int active_symbol_server_id_ = 0;
 
-  TestFailureStackMatcher test_failure_stack_matcher_;
-
   // A separate thread that handles the console UI while symbols are being loaded and indexed. A new
   // thread is spawned that will take more than a few seconds to process. Once
   // |OnAllModuleSymbolsLoaded| is called from the Process object, the thread is cleaned up and
@@ -287,6 +290,8 @@ class ConsoleContext : public ProcessObserver,
   std::timed_mutex lock_timer_;
 
   fxl::RefPtr<PrettyStackManager> pretty_stack_manager_;
+
+  fxl::RefPtr<TestFailureStackMatcher> test_failure_stack_matcher_;
 };
 
 }  // namespace zxdb

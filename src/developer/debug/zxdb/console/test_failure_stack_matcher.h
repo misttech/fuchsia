@@ -14,15 +14,20 @@ namespace zxdb {
 // test code, rather than deep in the test failure code that actually produced the stop. With that
 // in mind, this class provides a simple wrapper around a PrettyStackManager that will match against
 // frames corresponding to test failures in supported test frameworks.
-class TestFailureStackMatcher {
+class TestFailureStackMatcher : public fxl::RefCountedThreadSafe<TestFailureStackMatcher> {
  public:
-  TestFailureStackMatcher();
+  // Construct with fxl::MakeRefCounted().
 
   // Analyze |stack| for test failure frames. If one is found, the index of the next frame will be
-  // returned, this is the frame that contains the user's code.
+  // returned, this is the frame that contains the user's code. Otherwise, `0u` is returned.
   size_t Match(const Stack& stack) const;
 
  private:
+  FRIEND_REF_COUNTED_THREAD_SAFE(TestFailureStackMatcher);
+  FRIEND_MAKE_REF_COUNTED(TestFailureStackMatcher);
+
+  TestFailureStackMatcher();
+
   fxl::RefPtr<PrettyStackManager> pretty_stack_manager_;
 };
 

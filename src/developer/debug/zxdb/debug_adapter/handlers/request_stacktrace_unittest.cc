@@ -432,6 +432,18 @@ TEST_F(RequestStackTraceTest, ElideFrames) {
 
   std::vector<std::unique_ptr<Frame>> frames;
 
+  // Insert mock frames that will be grouped by the TestFailureStackMatcher.
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10160, 0x2100,
+                                               "fpromise::future_impl::operator()",
+                                               FileLine("fit/promise.h", 1174)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10140, 0x20E0,
+                                               "core::panicking::assert_failed<f64, f64>",
+                                               FileLine("panicking.rs", 394)));
+
+  // This frame should not be elided.
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100D0, 0x2080,
+                                               "foo::tests::foo_test", FileLine("foo.rs", 10)));
+
   // Insert mock frames that will be grouped by different matchers.
   frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10120, 0x20C0,
                                                "fpromise::future_impl::operator()",
@@ -442,7 +454,7 @@ TEST_F(RequestStackTraceTest, ElideFrames) {
 
   // This frame should not be elided.
   frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100D0, 0x2080,
-                                               "foo::tests::foo_test", FileLine("foo.rs", 10)));
+                                               "bar::tests::bar_test", FileLine("bar.rs", 10)));
 
   // Insert mock frames that will be grouped by the "Rust test startup" matcher.
   frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100A0, 0x2060,
@@ -476,34 +488,59 @@ TEST_F(RequestStackTraceTest, ElideFrames) {
   RunClient();
   auto got = response.get();
   ASSERT_FALSE(got.error);
-  ASSERT_EQ(got.response.totalFrames.value(), 7);
+  ASSERT_EQ(got.response.totalFrames.value(), 10);
 
-  // `fpromise::promise code` and `fit::function code` frames are elided separately.
+  // Frame 0: Test assertion impl (elided)
   EXPECT_EQ(got.response.stackFrames[0].name, "fpromise::future_impl::operator()");
   EXPECT_EQ(got.response.stackFrames[0].presentationHint.value(), "subtle");
-  EXPECT_EQ(got.response.stackFrames[0].source.value().origin.value(), "fpromise::promise code");
-  EXPECT_EQ(got.response.stackFrames[1].name, "fit::callback_impl::operator()");
-  EXPECT_EQ(got.response.stackFrames[1].presentationHint.value(), "subtle");
-  EXPECT_EQ(got.response.stackFrames[1].source.value().origin.value(), "fit::function code");
+  EXPECT_EQ(got.response.stackFrames[0].source.value().origin.value(),
+            "Test assertion implementation");
 
-  // `foo_test` frame is not elided.
+  // Frame 1: Test assertion impl (elided)
+  EXPECT_EQ(got.response.stackFrames[1].name, "core::panicking::assert_failed<f64, f64>");
+  EXPECT_EQ(got.response.stackFrames[1].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[1].source.value().origin.value(),
+            "Test assertion implementation");
+
+  // Frame 2: foo_test
   EXPECT_EQ(got.response.stackFrames[2].name, "foo::tests::foo_test");
   EXPECT_FALSE(got.response.stackFrames[2].presentationHint.has_value());
   EXPECT_FALSE(got.response.stackFrames[2].source.value().origin.has_value());
 
-  // `Rust test startup` frames are elided together.
-  EXPECT_EQ(got.response.stackFrames[3].name, "test::__rust_begin_short_backtrace<FOO_BAR_BAZ>");
+  // Frame 3: fpromise::promise code (elided)
+  EXPECT_EQ(got.response.stackFrames[3].name, "fpromise::future_impl::operator()");
   EXPECT_EQ(got.response.stackFrames[3].presentationHint.value(), "subtle");
-  EXPECT_EQ(got.response.stackFrames[3].source.value().origin.value(), "Rust test startup");
-  EXPECT_EQ(got.response.stackFrames[4].name, "arbitrary::glob_elided::function");
+  EXPECT_EQ(got.response.stackFrames[3].source.value().origin.value(), "fpromise::promise code");
+
+  // Frame 4: fit::function code (elided)
+  EXPECT_EQ(got.response.stackFrames[4].name, "fit::callback_impl::operator()");
   EXPECT_EQ(got.response.stackFrames[4].presentationHint.value(), "subtle");
-  EXPECT_EQ(got.response.stackFrames[4].source.value().origin.value(), "Rust test startup");
-  EXPECT_EQ(got.response.stackFrames[5].name, "__libc_start_main");
-  EXPECT_EQ(got.response.stackFrames[5].presentationHint.value(), "subtle");
-  EXPECT_EQ(got.response.stackFrames[5].source.value().origin.value(), "Rust test startup");
-  EXPECT_EQ(got.response.stackFrames[6].name, "_start");
+  EXPECT_EQ(got.response.stackFrames[4].source.value().origin.value(), "fit::function code");
+
+  // Frame 5: bar_test
+  EXPECT_EQ(got.response.stackFrames[5].name, "bar::tests::bar_test");
+  EXPECT_FALSE(got.response.stackFrames[5].presentationHint.has_value());
+  EXPECT_FALSE(got.response.stackFrames[5].source.value().origin.has_value());
+
+  // Frame 6: Rust test startup (elided)
+  EXPECT_EQ(got.response.stackFrames[6].name, "test::__rust_begin_short_backtrace<FOO_BAR_BAZ>");
   EXPECT_EQ(got.response.stackFrames[6].presentationHint.value(), "subtle");
   EXPECT_EQ(got.response.stackFrames[6].source.value().origin.value(), "Rust test startup");
+
+  // Frame 7: Rust test startup (elided)
+  EXPECT_EQ(got.response.stackFrames[7].name, "arbitrary::glob_elided::function");
+  EXPECT_EQ(got.response.stackFrames[7].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[7].source.value().origin.value(), "Rust test startup");
+
+  // Frame 8: Rust test startup (elided)
+  EXPECT_EQ(got.response.stackFrames[8].name, "__libc_start_main");
+  EXPECT_EQ(got.response.stackFrames[8].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[8].source.value().origin.value(), "Rust test startup");
+
+  // Frame 9: Rust test startup (elided)
+  EXPECT_EQ(got.response.stackFrames[9].name, "_start");
+  EXPECT_EQ(got.response.stackFrames[9].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[9].source.value().origin.value(), "Rust test startup");
 }
 
 }  // namespace zxdb

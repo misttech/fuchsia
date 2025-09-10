@@ -392,10 +392,21 @@ Err DebugAdapterContext::CheckStoppedThread(Thread* thread) {
 
 std::vector<PrettyStackManager::Match> DebugAdapterContext::GetElidedFrames(const Stack& stack) {
   std::vector<PrettyStackManager::Match> result(stack.size());
+
+  // Elide against PrettyStackManager's default matchers first.
   for (const auto& frame : console()->context().pretty_stack_manager()->ProcessStack(stack)) {
     for (uint64_t i = 0; i < frame.frames.size(); i++) {
       result.at(frame.begin_index + i) = frame.match;
     }
+  }
+
+  // Next, elide against TestFailureStackMatcher's matchers. This runs second so the more relevant
+  // "Test assertion implementation" grouping can override any generic matches near the top of the
+  // stack during a test failure.
+  auto test_impl_skipped_frames = console()->context().test_failure_stack_matcher()->Match(stack);
+  for (uint64_t i = 0; i < test_impl_skipped_frames; i++) {
+    result.at(i) =
+        PrettyStackManager::Match(test_impl_skipped_frames, "Test assertion implementation");
   }
   return result;
 }

@@ -82,6 +82,7 @@ ConsoleContext::ConsoleContext(Session* session) : session_(session) {
   for (SymbolServer* symbol_server : session->system().GetSymbolServers())
     DidCreateSymbolServer(symbol_server);
 
+  test_failure_stack_matcher_ = fxl::MakeRefCounted<TestFailureStackMatcher>();
   pretty_stack_manager_ = fxl::MakeRefCounted<PrettyStackManager>();
   // TODO(bug 43549) this should be loaded from a configuration file somehow associated with the
   // user's build instead of being hardcoded. This call can then be deleted.
@@ -900,7 +901,7 @@ void ConsoleContext::OnThreadStopped(Thread* thread, const StopInfo& info) {
 
     // Check to see if we can find a test failure frame. If we find a match, set that frame as
     // "active".
-    size_t best_frame_index = test_failure_stack_matcher_.Match(thread->GetStack());
+    size_t best_frame_index = test_failure_stack_matcher_->Match(thread->GetStack());
     if (best_frame_index > 0) {
       // If we found a matching frame, then we don't need to show the exception information in the
       // stop output.

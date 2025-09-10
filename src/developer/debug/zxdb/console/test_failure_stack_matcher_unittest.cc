@@ -11,11 +11,6 @@
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/mock_stack_delegate.h"
 #include "src/developer/debug/zxdb/client/session.h"
-#include "src/developer/debug/zxdb/expr/expr_parser.h"
-#include "src/developer/debug/zxdb/symbols/compile_unit.h"
-#include "src/developer/debug/zxdb/symbols/function.h"
-#include "src/developer/debug/zxdb/symbols/namespace.h"
-#include "src/developer/debug/zxdb/symbols/symbol_test_parent_setter.h"
 
 namespace zxdb {
 
@@ -127,9 +122,9 @@ TEST(TestFailureStackMatcher, MatchGtest) {
 
   stack.SetFramesForTest(GetGtestFrames(), true);
 
-  TestFailureStackMatcher matcher;
+  auto matcher = fxl::MakeRefCounted<TestFailureStackMatcher>();
 
-  ASSERT_EQ(matcher.Match(stack), 2u);
+  ASSERT_EQ(matcher->Match(stack), 2u);
 }
 
 TEST(TestFailureStackMatcher, MatchRustAssertEq) {
@@ -140,9 +135,9 @@ TEST(TestFailureStackMatcher, MatchRustAssertEq) {
 
   stack.SetFramesForTest(GetRustAssertEqFrames(), true);
 
-  TestFailureStackMatcher matcher;
+  auto matcher = fxl::MakeRefCounted<TestFailureStackMatcher>();
 
-  ASSERT_EQ(matcher.Match(stack), 11u);
+  ASSERT_EQ(matcher->Match(stack), 11u);
 }
 
 TEST(TestFailureStackMatcher, MatchRustAssert) {
@@ -153,9 +148,9 @@ TEST(TestFailureStackMatcher, MatchRustAssert) {
 
   stack.SetFramesForTest(GetRustAssertFrames(), true);
 
-  TestFailureStackMatcher matcher;
+  auto matcher = fxl::MakeRefCounted<TestFailureStackMatcher>();
 
-  ASSERT_EQ(matcher.Match(stack), 7u);
+  ASSERT_EQ(matcher->Match(stack), 7u);
 }
 
 TEST(TestFailureStackMatcher, NoMatch) {
@@ -174,8 +169,8 @@ TEST(TestFailureStackMatcher, NoMatch) {
 
   stack.SetFramesForTest(std::move(frames), true);
 
-  TestFailureStackMatcher matcher;
-  ASSERT_EQ(matcher.Match(stack), 0u);
+  auto matcher = fxl::MakeRefCounted<TestFailureStackMatcher>();
+  ASSERT_EQ(matcher->Match(stack), 0u);
 }
 
 }  // namespace zxdb
