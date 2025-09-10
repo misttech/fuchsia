@@ -648,6 +648,7 @@ template("test_spec") {
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")
       }
+      tests_barrier = []
       tests = [ test_spec ]
     }
     deps = target_name_deps
