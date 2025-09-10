@@ -26,6 +26,8 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 
+use crate::args::StartCommand;
+
 // Default value of these can be found in //src/developer/ffx/data/config.json
 const CONFIG_PID_FILE: &str = "monitor.pid_file";
 const CONFIG_PORT: &str = "monitor.port";
@@ -75,18 +77,19 @@ impl Serialize for TargetStatus {
 
 type Cache = Arc<Mutex<HashMap<String, serde_json::Value>>>;
 
-async fn start_server(addr: SocketAddr) -> anyhow::Result<()> {
+async fn start_server(addr: SocketAddr, cmd: StartCommand) -> anyhow::Result<()> {
     let cache = Arc::new(Mutex::new(HashMap::new()));
 
     let cache_for_task = cache.clone();
     tokio::spawn(async move {
         loop {
+            let cmd_clone = cmd.clone();
             let res = spawn_blocking(|| {
                 let context = ffx_config::global_env_context()
                     .context("loading global environment context")
                     .unwrap();
                 fuchsia_async::LocalExecutor::new()
-                    .run_singlethreaded(collect_target_status(&context))
+                    .run_singlethreaded(collect_target_status(&context, cmd_clone))
             })
             .await;
 
@@ -144,8 +147,18 @@ fn infos_to_statuses(infos: Vec<TargetInfo>) -> Vec<TargetStatus> {
         .collect()
 }
 
-async fn collect_target_status(context: &EnvironmentContext) -> Result<Vec<TargetStatus>> {
-    let infos = ffx_target::list_targets(context, None, true, true, true).await?;
+async fn collect_target_status(
+    context: &EnvironmentContext,
+    cmd: StartCommand,
+) -> Result<Vec<TargetStatus>> {
+    let infos = ffx_target::list_targets(
+        context,
+        cmd.nodename.clone(),
+        !cmd.no_usb,
+        !cmd.no_mdns,
+        !cmd.no_probe,
+    )
+    .await?;
     Ok(infos_to_statuses(infos))
 }
 
@@ -190,7 +203,7 @@ impl FfxMain for MonitorTool {
             .get(CONFIG_PORT)
             .map_err(|e| fho::Error::from(anyhow::anyhow!("Failed to get port: {}", e)))?;
         match self.cmd.subcommand {
-            SubCommand::Start(_) => {
+            SubCommand::Start(cmd) => {
                 let pid = std::process::id();
                 if let Some(parent) = Path::new(&pid_file_path).parent() {
                     fs::create_dir_all(parent).context("creating pid file directory")?;
@@ -201,7 +214,7 @@ impl FfxMain for MonitorTool {
                 writeln!(writer, "Starting server on http://{} with pid {}", addr, pid)
                     .context("writing start message")?;
 
-                start_server(addr).await.map_err(fho::Error::from)
+                start_server(addr, cmd).await.map_err(fho::Error::from)
             }
             SubCommand::Stop(_) => {
                 let pid_str = fs::read_to_string(&pid_file_path).context("reading pid file")?;

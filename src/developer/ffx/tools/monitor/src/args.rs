@@ -24,9 +24,22 @@ pub enum SubCommand {
     Status(StatusCommand),
 }
 
-#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(subcommand, name = "start", description = "Start the monitor server")]
-pub struct StartCommand {}
+pub struct StartCommand {
+    #[argh(option)]
+    /// specify the device nodename ffx going to monitor
+    pub nodename: Option<String>,
+
+    #[argh(switch, description = "do not connect to targets (local discovery only)")]
+    pub no_probe: bool,
+
+    #[argh(switch, description = "do not do mDNS discovery (local discovery only)")]
+    pub no_mdns: bool,
+
+    #[argh(switch, description = "do not do USB discovery (local discovery only)")]
+    pub no_usb: bool,
+}
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "stop", description = "Stop the monitor server")]
