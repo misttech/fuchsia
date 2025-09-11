@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <cinttypes>
 #include <cstddef>
 #include <cstring>
 
