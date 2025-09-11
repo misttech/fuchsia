@@ -36,7 +36,7 @@ fbl::WAVLTreeNodeState<VmMapping*>& VmObject::MappingTreeTraits::node_state(VmMa
 
 VmObject::GlobalList VmObject::all_vmos_ = {};
 
-VmObject::VmObject(VMOType type) : type_(type) { LTRACEF("%p\n", this); }
+VmObject::VmObject(uint32_t options) : options_(options) { LTRACEF("%p\n", this); }
 
 VmObject::~VmObject() {
   canary_.Assert();

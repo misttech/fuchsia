@@ -266,7 +266,7 @@ class VmObject : public fbl::ContainableBaseClasses<
 
   // Returns true if the object is backed by RAM and this object can be cast to a VmObjectPaged, if
   // false this is a VmObjectPhysical.
-  bool is_paged() const { return type_ == VMOType::Paged; }
+  bool is_paged() const { return options_ & kPaged; }
   // Returns true if the object is backed by a contiguous range of physical
   // memory.
   virtual bool is_contiguous() const { return false; }
@@ -721,11 +721,7 @@ class VmObject : public fbl::ContainableBaseClasses<
                                     VmMappingSubtreeState::Observer<VmMapping>>;
 
  protected:
-  enum class VMOType : bool {
-    Paged = true,
-    Physical = false,
-  };
-  explicit VmObject(VMOType type);
+  explicit VmObject(uint32_t options);
 
   // private destructor, only called from refptr
   virtual ~VmObject();
@@ -745,8 +741,9 @@ class VmObject : public fbl::ContainableBaseClasses<
   // magic value
   fbl::Canary<fbl::magic("VMO_")> canary_;
 
-  // whether this is a VmObjectPaged or a VmObjectPhysical.
-  const VMOType type_;
+  // Options is extensible by any derived classes. VmObject only defines one bit:
+  static constexpr uint32_t kPaged = (1u << 0);
+  const uint32_t options_;
 
   // Cache policy to use for mappings.
   uint32_t cache_policy_ TA_GUARDED(lock()) = ARCH_MMU_FLAG_CACHED;

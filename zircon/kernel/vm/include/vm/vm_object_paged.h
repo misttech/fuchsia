@@ -33,9 +33,9 @@
 // the main VM object type, based on a copy-on-write set of pages.
 class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPaged> {
  public:
-  // |options_| is a bitmask of:
-  static constexpr uint32_t kResizable = (1u << 0);
-  static constexpr uint32_t kContiguous = (1u << 1);
+  // |VmObject::options_| bitmask is extended with:
+  static constexpr uint32_t kResizable = (1u << 1);
+  static constexpr uint32_t kContiguous = (1u << 2);
   static constexpr uint32_t kSlice = (1u << 3);
   static constexpr uint32_t kDiscardable = (1u << 4);
   static constexpr uint32_t kAlwaysPinned = (1u << 5);
@@ -470,9 +470,6 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   // acts as the union of user pager backed VMOs, as well as VMOs that might wait on internal kernel
   // page sources.
   bool can_block_on_page_requests() const { return options_ & kCanBlockOnPageRequests; }
-
-  // members
-  const uint32_t options_;
 
   using ReferenceListNodeState = fbl::DoublyLinkedListNodeState<VmObjectPaged*>;
   struct ReferenceListTraits {

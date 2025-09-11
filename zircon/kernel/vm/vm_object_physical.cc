@@ -29,11 +29,7 @@
 
 VmObjectPhysical::VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice,
                                    uint64_t parent_user_id)
-    : VmObject(VMOType::Physical),
-      size_(size),
-      base_(base),
-      is_slice_(is_slice),
-      parent_user_id_(parent_user_id) {
+    : VmObject(0), size_(size), base_(base), is_slice_(is_slice), parent_user_id_(parent_user_id) {
   LTRACEF("%p, size %#" PRIx64 "\n", this, size_);
 
   DEBUG_ASSERT(IS_PAGE_ROUNDED(size_));

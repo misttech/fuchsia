@@ -45,10 +45,7 @@ KCOUNTER(vmo_attribution_queries, "vm.attributed_memory.object.queries")
 }  // namespace
 
 VmObjectPaged::VmObjectPaged(uint32_t options, fbl::RefPtr<VmCowPages> cow_pages, VmCowRange range)
-    : VmObject(VMOType::Paged),
-      options_(options),
-      cow_pages_(ktl::move(cow_pages)),
-      cow_range_(range) {
+    : VmObject(options | kPaged), cow_pages_(ktl::move(cow_pages)), cow_range_(range) {
   LTRACEF("%p\n", this);
 }
 
