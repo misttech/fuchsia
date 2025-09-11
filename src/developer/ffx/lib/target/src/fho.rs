@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub use crate::fho::connector::DirectConnector;
 use ffx_command_error::{Result, return_bug};
 use ffx_core::Injector;
 use fho::TryFromEnv;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-pub mod connector;
+use crate::Resolution;
 
 #[derive(Clone)]
 pub enum FhoConnectionBehavior {
     DaemonConnector(Arc<dyn Injector>),
-    DirectConnector(Arc<dyn DirectConnector>),
+    DirectConnector(Arc<Resolution>),
 }
 
 // Manually implement Debug here so we can skip implementing
@@ -47,8 +46,10 @@ impl FhoTargetEnvironment {
     /// to be used outside of the scope of an ffx subtool (outside of the `main` function).
     fn maybe_wrap_connection_errors(&self, err: fho::Error) -> fho::Error {
         if let Some(behavior) = self.behavior() {
-            if let FhoConnectionBehavior::DirectConnector(ref dc) = behavior {
-                return dc.wrap_connection_errors(err);
+            if let FhoConnectionBehavior::DirectConnector(dc) = &behavior
+                && let Some(conn) = &dc.get_connection_if_already_established()
+            {
+                return fho::Error::User(conn.wrap_connection_errors(err.into()));
             }
         }
         err
@@ -123,10 +124,10 @@ mod tests {
     #[test]
     fn set_behavior_fails_when_called_twice() {
         let beh1 =
-            FhoConnectionBehavior::DirectConnector(Arc::new(connector::MockDirectConnector::new()));
+            FhoConnectionBehavior::DirectConnector(Arc::new(Resolution::mock(|| unreachable!())));
         let fho_env = FhoTargetEnvironment::new_for_test(beh1);
         let beh2 =
-            FhoConnectionBehavior::DirectConnector(Arc::new(connector::MockDirectConnector::new()));
+            FhoConnectionBehavior::DirectConnector(Arc::new(Resolution::mock(|| unreachable!())));
         let res = fho_env.set_behavior(beh2);
         assert!(matches!(res, Err(fho::Error::Unexpected(_))));
     }

@@ -76,7 +76,7 @@ impl TryFromEnv for HostAddrHolder {
                 Ok(HostAddrHolder::from(id.ssh_host_address))
             }
             FhoConnectionBehavior::DirectConnector(direct) => {
-                let conn = direct.connection().await?;
+                let conn = direct.get_connection(env.environment_context()).await?;
                 let host_addr_info = conn.host_ssh_address();
                 Ok(HostAddrHolder::from(host_addr_info))
             }

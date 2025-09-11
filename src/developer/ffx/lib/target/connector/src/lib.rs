@@ -5,9 +5,8 @@
 use async_trait::async_trait;
 use errors::FfxError;
 use ffx_command_error::{Error, Result, return_bug};
-use ffx_target::fho::{
-    DirectConnector, FhoConnectionBehavior, FhoTargetEnvironment, target_interface,
-};
+use ffx_target::Resolution;
+use ffx_target::fho::{FhoConnectionBehavior, FhoTargetEnvironment, target_interface};
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx_fidl;
@@ -36,7 +35,7 @@ impl<T: TryFromEnv> Connector<T> {
         mut log_target_wait: impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
     ) -> Result<T> {
         if let Some(behavior) = self.target_env.behavior() {
-            match behavior {
+            match &behavior {
                 FhoConnectionBehavior::DaemonConnector(_) => {
                     daemon_try_connect(
                         &self.env,
@@ -46,7 +45,7 @@ impl<T: TryFromEnv> Connector<T> {
                     )
                     .await
                 }
-                FhoConnectionBehavior::DirectConnector(ref dc) => {
+                FhoConnectionBehavior::DirectConnector(dc) => {
                     direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
                 }
             }
@@ -156,158 +155,22 @@ async fn daemon_try_connect<T: TryFromEnv>(
 
 async fn direct_connector_try_connect<T: TryFromEnv>(
     env: &FhoEnvironment,
-    dc: &Arc<dyn DirectConnector>,
+    dc: &Arc<Resolution>,
     log_target_wait: &mut impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
 ) -> Result<T> {
     loop {
-        match dc.connect().await {
-            Ok(()) => {}
-            Err(err) => {
-                let e = err.downcast_non_fatal()?;
-                log::debug!("error when attempting to connect with connector: {e}");
-                log_target_wait(&dc.target_spec(), &Some(Error::User(e)))?;
-                // This is just a small wait to prevent busy-looping. The delay is arbitrary.
-                fuchsia_async::Timer::new(Duration::from_millis(50)).await;
-                continue;
-            }
-        }
+        let target_spec = {
+            dc.ensure_connected(env.environment_context()).await?;
+            dc.target_spec()
+        };
         return match T::try_from_env(env).await {
             Err(conn_error) => {
                 let e = conn_error.downcast_non_fatal()?;
                 log::debug!("error when trying to connect using TryFromEnv: {e}");
-                log_target_wait(&dc.target_spec(), &Some(Error::User(e)))?;
+                log_target_wait(&Some(target_spec), &Some(Error::User(e)))?;
                 continue;
             }
             Ok(res) => Ok(res),
         };
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::marker::PhantomData;
-
-    use super::*;
-    use ffx_command_error::{NonFatalError, bug};
-    use ffx_config::{EnvironmentContext, TryFromEnvContext};
-    use ffx_target::connection::testing::FakeOvernet;
-    use ffx_target::fho::connector::MockDirectConnector;
-    use ffx_target::{TargetConnection, TargetConnectionError, TargetConnector};
-    use futures::future::LocalBoxFuture;
-    use target_holders::RemoteControlProxyHolder;
-
-    #[fuchsia::test]
-    async fn test_connector_try_connect_fail_after_critical_connection_error() {
-        let config_env = ffx_config::test_init().await.unwrap();
-        let mut mock_connector = MockDirectConnector::new();
-        mock_connector.expect_connect().times(1).returning(|| {
-            Box::pin(async { Err(Error::Unexpected(anyhow::anyhow!("we're doomed!").into())) })
-        });
-
-        let fho_env =
-            FhoEnvironment::new_with_args(&config_env.context, &["some", "connector", "test"]);
-        let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior(FhoConnectionBehavior::DirectConnector(Arc::new(mock_connector)))
-            .unwrap();
-
-        let connector =
-            Connector::<RemoteControlProxyHolder>::try_from_env(&fho_env).await.unwrap();
-        let res = connector.try_connect(|_, _| Ok(())).await;
-        assert!(res.is_err(), "Expected failure: {:?}", res);
-    }
-
-    #[fuchsia::test]
-    async fn test_connector_try_connect_fail_reconnect_and_rcs_eventual_success() {
-        let config_env = ffx_config::test_init().await.unwrap();
-
-        let mut mock_connector = MockDirectConnector::new();
-        mock_connector.expect_device_address().returning(|| Box::pin(async { None }));
-        mock_connector.expect_target_spec().returning(|| None);
-        let mut seq = mockall::Sequence::new();
-        mock_connector.expect_connect().times(3).in_sequence(&mut seq).returning(|| {
-            Box::pin(async {
-                Err(Error::User(NonFatalError(anyhow::anyhow!("we just need to try again")).into()))
-            })
-        });
-        mock_connector.expect_connect().returning(|| Box::pin(async { Ok(()) }));
-
-        let fho_env =
-            FhoEnvironment::new_with_args(&config_env.context, &["some", "connector", "test"]);
-        let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior(FhoConnectionBehavior::DirectConnector(Arc::new(mock_connector)))
-            .unwrap();
-
-        let connector = Connector::<PhantomData<String>>::try_from_env(&fho_env).await.unwrap();
-        let res = connector.try_connect(|_, _| Ok(())).await;
-        assert!(res.is_ok(), "Expected success: {:?}", res);
-    }
-
-    #[fuchsia::test]
-    async fn test_connector_try_connect_fail_after_successful_connection() {
-        let config_env = ffx_config::test_init().await.unwrap();
-        let mut mock_connector = MockDirectConnector::new();
-        mock_connector.expect_device_address().returning(|| Box::pin(async { None }));
-        mock_connector.expect_target_spec().returning(|| None);
-        let mut seq = mockall::Sequence::new();
-        mock_connector
-            .expect_connect()
-            .times(1)
-            .in_sequence(&mut seq)
-            .returning(|| Box::pin(async { Ok(()) }));
-        mock_connector.expect_connection().times(1).returning(|| {
-            Box::pin({
-                let device_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 22);
-                let fidl_pipe = ffx_target::FidlPipe::fake(Some(device_address));
-                let conn = Arc::new(ffx_target::Connection::fake(fidl_pipe));
-                async { Ok(conn) }
-            })
-        });
-
-        let fho_env =
-            FhoEnvironment::new_with_args(&config_env.context, &["some", "connector", "test"]);
-        let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior(FhoConnectionBehavior::DirectConnector(Arc::new(mock_connector)))
-            .unwrap();
-
-        let connector =
-            Connector::<RemoteControlProxyHolder>::try_from_env(&fho_env).await.unwrap();
-        let res = connector.try_connect(|_, _| Ok(())).await;
-        assert!(res.is_err(), "Expected failure: {:?}", res);
-    }
-
-    #[fuchsia::test]
-    async fn test_connection_fails_when_overnet_connector_cannot_be_allocated() {
-        let test_env = ffx_config::test_init().await.unwrap();
-        let env = &test_env.context;
-        let connector = target_network_connector::NetworkConnector::<FromContextFailer>::new(env)
-            .await
-            .unwrap();
-        assert!(connector.connect().await.is_err());
-        assert!(connector.connect().await.is_err());
-        let err = bug!("foo");
-        assert_eq!(err.to_string(), connector.wrap_connection_errors(err).to_string());
-    }
-
-    #[derive(Debug)]
-    struct FromContextFailer(FakeOvernet);
-
-    impl TargetConnector for FromContextFailer {
-        const CONNECTION_TYPE: &'static str = "fake";
-        async fn connect(&mut self) -> Result<TargetConnection, TargetConnectionError> {
-            self.0.connect().await
-        }
-    }
-
-    impl TryFromEnvContext for FromContextFailer {
-        fn try_from_env_context<'a>(
-            _env: &'a EnvironmentContext,
-        ) -> LocalBoxFuture<'_, Result<Self>> {
-            Box::pin(async {
-                Err(crate::Error::Unexpected(anyhow::anyhow!("Oh no it broke!")).into())
-            })
-        }
     }
 }

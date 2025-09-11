@@ -10,7 +10,8 @@ use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
 use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy};
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
-use ffx_target::fho::{DirectConnector, FhoConnectionBehavior};
+use ffx_target::Resolution;
+use ffx_target::fho::FhoConnectionBehavior;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
@@ -66,14 +67,15 @@ impl ShowTool {
         // To add more show information, add a `gather_*_show(*) call to this
         // list, as well as the labels in the Ok() and vec![] just below.
         // Returns Some(dc) only if we have a direct connection
-        let connector = match ffx_target::fho::target_interface(&self.fho_env).behavior() {
+        let resolution = match ffx_target::fho::target_interface(&self.fho_env).behavior() {
             Some(FhoConnectionBehavior::DirectConnector(ref direct)) => Some(direct.clone()),
             _ => None,
         };
         let show = match futures::try_join!(
             gather_target_show(
                 self.rcs_proxy,
-                connector,
+                &self.fho_env,
+                resolution,
                 self.target_proxy,
                 self.last_reboot_info_proxy
             ),
@@ -98,7 +100,7 @@ impl ShowTool {
 }
 
 async fn gather_target_info_direct(
-    connection: Arc<ffx_target::Connection>,
+    connection: &ffx_target::Connection,
 ) -> Result<(AddressData, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
     // If we've gotten a connection, we must have an address we connected to
     let addr = connection.device_address().expect("No address in connection?");
@@ -134,7 +136,8 @@ async fn gather_target_info_from_daemon(
 /// Determine target information.
 async fn gather_target_show(
     rcs_proxy: RemoteControlProxyHolder,
-    connector: Option<Arc<dyn DirectConnector>>,
+    fho_env: &FhoEnvironment,
+    resolution: Option<Arc<Resolution>>,
     target_proxy: Deferred<TargetProxyHolder>,
     last_reboot_info_proxy: LastRebootInfoProviderProxy,
 ) -> Result<TargetData> {
@@ -143,8 +146,9 @@ async fn gather_target_show(
         .await?
         .map_err(|e| anyhow!("Failed to identify host: {:?}", e))?;
     let name = host.nodename;
-    let (ssh_address, compat) = if let Some(dc) = connector {
-        gather_target_info_direct(dc.connection().await?).await?
+    let (ssh_address, compat) = if let Some(resolution) = resolution {
+        gather_target_info_direct(&*resolution.get_connection(fho_env.environment_context()).await?)
+            .await?
     } else {
         gather_target_info_from_daemon(target_proxy.await?).await?
     };
@@ -612,15 +616,16 @@ mod tests {
         };
     }
 
-    fn setup_fake_direct_connector() -> Arc<dyn DirectConnector> {
-        let mut dc = ffx_target::fho::connector::MockDirectConnector::new();
-        dc.expect_connection().return_once(|| {
-            let device_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 22);
-            let fidl_pipe = FidlPipe::fake(Some(device_address));
-            let conn = ffx_target::Connection::fake(fidl_pipe);
-            Box::pin(async { Ok(Arc::new(conn)) })
-        });
-        Arc::new(dc)
+    fn setup_fake_direct_connector() -> Arc<Resolution> {
+        let device_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 22);
+        let target_addr = TargetIpAddr::from(device_address.clone());
+        let target_info =
+            TargetInfo { addresses: Some(vec![target_addr.into()]), ..Default::default() };
+        let mut ret = Resolution::from_target_handle(target_info.try_into().unwrap()).unwrap();
+        let fidl_pipe = FidlPipe::fake(Some(device_address));
+        let conn = ffx_target::Connection::fake(fidl_pipe);
+        ret.set_connection_for_test(Some(conn));
+        Arc::new(ret)
     }
 
     #[fuchsia::test]

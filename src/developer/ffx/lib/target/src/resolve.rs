@@ -17,8 +17,10 @@ use futures::future::{LocalBoxFuture, join_all};
 use futures::{FutureExt, Stream, StreamExt, pin_mut};
 use netext::{IsLocalAddr, ScopedSocketAddr};
 use std::cmp::Ordering;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use target_errors::FfxTargetError;
 
@@ -166,7 +168,7 @@ pub trait TargetResolver: Default {
         let mut discovered: Option<Vec<TargetHandle>> = None;
 
         // If the query is not specified, we won't even bother with trying to resolve a manual target.
-        if let TargetInfoQuery::NodenameOrSerial(ref s) = target_spec {
+        if let TargetInfoQuery::NodenameOrSerial(s) = &target_spec {
             // We want to query both the manual targets and the discoverable handles concurrently.
             let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
             pin_mut!(manual_target_fut);
@@ -603,12 +605,24 @@ impl TargetResolver for DefaultTargetResolver {
 // particularly important for the rcs_proxy, which we may need when resolving
 // a manual target -- we don't want make an RCS connection just to resolve the
 // name, drop it, then re-establish it later.)
-#[derive(Debug)]
 enum ResolutionTarget {
     Addr(SocketAddr),
     Serial(String),
     Usb(u32),
     Vsock(u32),
+    TestMock(Box<dyn Fn() -> Result<Connection>>),
+}
+
+impl Debug for ResolutionTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Addr(arg0) => f.debug_tuple("Addr").field(arg0).finish(),
+            Self::Serial(arg0) => f.debug_tuple("Serial").field(arg0).finish(),
+            Self::Usb(arg0) => f.debug_tuple("Usb").field(arg0).finish(),
+            Self::Vsock(arg0) => f.debug_tuple("Vsock").field(arg0).finish(),
+            Self::TestMock(_) => f.debug_tuple("TestMock").field(&"..").finish(),
+        }
+    }
 }
 
 fn sort_socket_addrs(a1: &SocketAddr, a2: &SocketAddr) -> Ordering {
@@ -714,6 +728,9 @@ impl ResolutionTarget {
             ResolutionTarget::Vsock(cid) => {
                 format!("vsock:cid:{cid}")
             }
+            ResolutionTarget::TestMock(_) => {
+                format!("mock_target")
+            }
         }
     }
 }
@@ -722,7 +739,7 @@ impl ResolutionTarget {
 pub struct Resolution {
     target: ResolutionTarget,
     discovered: Option<TargetHandle>,
-    pub connection: Option<Connection>,
+    connection: Mutex<Option<Arc<Connection>>>,
     rcs_proxy: Option<RemoteControlProxy>,
     identify_host_response: Option<IdentifyHostResponse>,
 }
@@ -732,7 +749,7 @@ impl Resolution {
         Self {
             target,
             discovered: None,
-            connection: None,
+            connection: Mutex::new(None),
             rcs_proxy: None,
             identify_host_response: None,
         }
@@ -760,6 +777,14 @@ impl Resolution {
         }
     }
 
+    pub fn mock(f: impl Fn() -> Result<Connection> + 'static) -> Self {
+        Self::from_target(ResolutionTarget::TestMock(Box::new(f)))
+    }
+
+    pub fn set_connection_for_test(&mut self, connection: Option<Connection>) {
+        *self.connection.lock().unwrap() = connection.map(Arc::new);
+    }
+
     pub fn usb_cid(&self) -> Option<u32> {
         if let ResolutionTarget::Usb(cid) = &self.target { Some(*cid) } else { None }
     }
@@ -768,8 +793,26 @@ impl Resolution {
         if let ResolutionTarget::Vsock(cid) = &self.target { Some(*cid) } else { None }
     }
 
-    pub async fn get_connection(&mut self, context: &EnvironmentContext) -> Result<&Connection> {
-        if self.connection.is_none() {
+    pub fn target_spec(&self) -> String {
+        self.target.to_spec()
+    }
+
+    pub async fn ensure_connected(&self, context: &EnvironmentContext) -> Result<()> {
+        {
+            let mut conn = self.connection.lock().unwrap();
+            if conn.as_ref().map(|x| x.is_terminated()).unwrap_or(true) {
+                *conn = None;
+            }
+        }
+
+        let _conn = self.get_connection(context).await?;
+        Ok(())
+    }
+
+    pub async fn get_connection(&self, context: &EnvironmentContext) -> Result<Arc<Connection>> {
+        if let Some(conn) = self.connection.lock().unwrap().clone() {
+            Ok(conn)
+        } else {
             let conn = match &self.target {
                 ResolutionTarget::Addr(socket_addr) => {
                     let connector = SshConnector::new(
@@ -789,12 +832,24 @@ impl Resolution {
                         .await
                         .map_err(|e| crate::KnockError::CriticalError(e.into()))?
                 }
+                ResolutionTarget::TestMock(f) => f()?,
                 ResolutionTarget::Vsock(_) => bail!("VSOCK not yet supported"),
                 ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
             };
-            self.connection = Some(conn);
+            let mut conn_slot = self.connection.lock().unwrap();
+            if let Some(conn) = conn_slot.clone() {
+                log::debug!("Discarding connection due to race");
+                return Ok(conn);
+            }
+
+            let conn = Arc::new(conn);
+            *conn_slot = Some(Arc::clone(&conn));
+            Ok(conn)
         }
-        Ok(self.connection.as_ref().unwrap())
+    }
+
+    pub fn get_connection_if_already_established(&self) -> Option<Arc<Connection>> {
+        self.connection.lock().unwrap().clone()
     }
 
     pub async fn get_rcs_proxy(

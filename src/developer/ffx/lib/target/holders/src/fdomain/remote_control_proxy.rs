@@ -46,7 +46,7 @@ impl TryFromEnv for RemoteControlProxyHolder {
         };
         match behavior {
             FhoConnectionBehavior::DirectConnector(dc) => {
-                let conn = dc.connection().await?;
+                let conn = dc.get_connection(env.environment_context()).await?;
                 return conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into);
             }
             FhoConnectionBehavior::DaemonConnector(dc) => match dc.remote_factory_fdomain().await {

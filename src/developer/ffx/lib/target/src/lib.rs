@@ -20,6 +20,7 @@ use futures::future::{Either, pending};
 use futures::{Future, FutureExt, TryStreamExt, select};
 use log::{debug, info};
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 use thiserror::Error;
@@ -456,7 +457,7 @@ pub async fn knock_target_daemonless(
                 _ => KnockError::CriticalError(e.into()),
             })?;
         log::debug!("daemonless knock connecting to address {}", res.addr()?);
-        let conn = match res.connection {
+        let conn = match res.get_connection_if_already_established() {
             Some(c) => c,
             None => {
                 let conn = connection::Connection::new(ssh_connector::SshConnector::new(
@@ -470,7 +471,7 @@ pub async fn knock_target_daemonless(
                     .rcs_proxy_fdomain()
                     .await
                     .map_err(|e| KnockError::NonCriticalError(e.into()))?;
-                conn
+                Arc::new(conn)
             }
         };
         Ok(conn.compatibility_info())

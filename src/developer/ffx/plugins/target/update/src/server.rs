@@ -140,7 +140,7 @@ pub(crate) async fn wait_for_device_task(
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
 ) -> Result<()> {
     // Once the server task is running, wait until the registration appears on the device.
-    let registered = timeout::<_, fho::Result<()>>(Duration::from_secs(30), async {
+    let registered = Box::pin(timeout::<_, fho::Result<()>>(Duration::from_secs(30), async {
         loop {
             fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
             if is_server_registered(
@@ -153,7 +153,7 @@ pub(crate) async fn wait_for_device_task(
                 return Ok(());
             }
         }
-    })
+    }))
     .await
     .map_err(|e| bug!("{e:?}"))?;
 
@@ -662,14 +662,14 @@ mod tests {
 
         let product_bundle = PathBuf::from("/path/to/product_bundle");
 
-        let result = package_server_task(
+        let result = Box::pin(package_server_task(
             fake_env.target_spec,
             fake_env.rcs_proxy_connector,
             fake_env.host_address,
             fake_env.context,
             product_bundle,
             0,
-        )
+        ))
         .await;
         assert!(result.is_ok(), "got {:?}", result.err());
     }
@@ -680,7 +680,7 @@ mod tests {
 
         let repo_name = "registered_test_repo".into();
 
-        let result = wait_for_device_task(repo_name, fake_env.rcs_proxy_connector).await;
+        let result = Box::pin(wait_for_device_task(repo_name, fake_env.rcs_proxy_connector)).await;
         assert!(result.is_ok(), "got {:?}", result.err());
     }
     #[fuchsia::test]
@@ -689,7 +689,8 @@ mod tests {
         let fake_env = FakeTestEnv::new(&test_env).await;
 
         let result =
-            unregister_pb_repo_server("repo_name_prefix", fake_env.rcs_proxy_connector).await;
+            Box::pin(unregister_pb_repo_server("repo_name_prefix", fake_env.rcs_proxy_connector))
+                .await;
         assert!(result.is_ok(), "got {:?}", result.err());
     }
     #[fuchsia::test]

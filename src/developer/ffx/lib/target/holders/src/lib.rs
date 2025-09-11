@@ -7,12 +7,12 @@ use std::time::Duration;
 
 use daemon_proxy::Injection;
 use ffx_command_error::Result;
-use ffx_config::EnvironmentContext;
+use ffx_config::{EnvironmentContext, TryFromEnvContext};
+use ffx_target::Resolution;
 use ffx_target::fho::FhoConnectionBehavior;
 use fho::{FhoEnvironment, TryFromEnv as _};
 use fidl::encoding::DefaultFuchsiaResourceDialect;
 use fidl::endpoints::Proxy;
-use target_network_connector::NetworkConnector;
 
 mod daemon_proxy;
 mod fake_injector;
@@ -42,19 +42,15 @@ pub async fn init_direct_connection_behavior(
     context: &EnvironmentContext,
 ) -> Result<FhoConnectionBehavior> {
     log::info!("Initializing FhoConnectionBehavior::DirectConnector");
-    let connector =
-        NetworkConnector::<ffx_target::ssh_connector::SshConnector>::new(context).await?;
-    Ok(FhoConnectionBehavior::DirectConnector(Arc::new(connector)))
+    let resolution = Resolution::try_from_env_context(context).await?;
+    Ok(FhoConnectionBehavior::DirectConnector(Arc::new(resolution)))
 }
 
 pub async fn init_connection_behavior(
     context: &EnvironmentContext,
 ) -> Result<FhoConnectionBehavior> {
     if context.is_strict() || context.get_direct_connection_mode() {
-        log::info!("Initializing FhoConnectionBehavior::DirectConnector");
-        let connector =
-            NetworkConnector::<ffx_target::ssh_connector::SshConnector>::new(context).await?;
-        Ok(FhoConnectionBehavior::DirectConnector(Arc::new(connector)))
+        init_direct_connection_behavior(context).await
     } else {
         let build_info = context.build_info();
         let overnet_injector =
@@ -121,29 +117,29 @@ pub(crate) async fn connect_to_rcs(env: &FhoEnvironment) -> Result<RemoteControl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ffx_config::ConfigMap;
     use ffx_config::environment::ExecutableKind;
+    use ffx_config::{ConfigMap, test_env};
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_strict() {
-        let ctx = EnvironmentContext::strict(ExecutableKind::Test, ConfigMap::new()).unwrap();
+        let runtime_args =
+            serde_json::json!({"target": {"default" : "127.0.0.1"}}).as_object().unwrap().clone();
+        let ctx = EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
         let behavior = init_connection_behavior(&ctx).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DirectConnector(_)));
     }
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_non_strict() {
-        let ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true);
-        let behavior = init_connection_behavior(&ctx).await.unwrap();
+        let env = test_env().build().await.unwrap();
+        let behavior = init_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DaemonConnector(_)));
     }
 
     #[fuchsia::test]
     async fn test_daemon_connection_behavior() {
-        let ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true);
-        let behavior = init_daemon_connection_behavior(&ctx).await.unwrap();
+        let env = test_env().build().await.unwrap();
+        let behavior = init_daemon_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DaemonConnector(_)));
     }
 
@@ -155,10 +151,13 @@ mod tests {
     }
     #[fuchsia::test]
     async fn test_direct_connection_behavior() {
-        let runtime_args =
-            serde_json::json!({"connectivity": { "direct": true}}).as_object().unwrap().clone();
-        let ctx = EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true);
-        let behavior = init_connection_behavior(&ctx).await.unwrap();
+        let env = test_env()
+            .runtime_config("connectivity.direct", true)
+            .runtime_config("target.default", "127.0.0.1")
+            .build()
+            .await
+            .unwrap();
+        let behavior = init_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DirectConnector(_)));
     }
 }

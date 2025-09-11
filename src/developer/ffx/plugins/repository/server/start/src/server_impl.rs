@@ -527,7 +527,7 @@ pub async fn serve_impl(
         let host_address = host_address.map(|t| t.0);
         let knocker = LocalRcsKnockerImpl {};
         let target_spec = target_spec.await?;
-        let r = target::main_connect_loop(
+        let r = Box::pin(target::main_connect_loop(
             &context,
             &cmd,
             &repo_path,
@@ -542,7 +542,7 @@ pub async fn serve_impl(
             host_address,
             tunnel_addr,
             connection_sink,
-        )
+        ))
         .await;
         if r.is_err() {
             let _ = server_stop_tx.send(()).await;

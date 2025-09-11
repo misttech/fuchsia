@@ -91,14 +91,14 @@ impl UpdateTool {
             let product_path =
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
             let repo_port: u16 = cmd.product_bundle_port()?.try_into().unwrap();
-            server::package_server_task(
+            Box::pin(server::package_server_task(
                 self.target_spec,
                 self.rcs_proxy_connector.clone(),
                 self.host_address,
                 self.context.clone(),
                 product_path,
                 repo_port,
-            )
+            ))
             .await?
         } else if cmd.product_bundle_path.is_some() {
             return_user_error!(
@@ -114,10 +114,10 @@ impl UpdateTool {
 
             // wait for the server to be registered before running the check.
             let check = async {
-                server::wait_for_device_task(
+                Box::pin(server::wait_for_device_task(
                     server_task.repo_name.clone(),
                     self.rcs_proxy_connector.clone(),
-                )
+                ))
                 .await?;
                 Self::check_for_update(self.update_manager_proxy.clone(), &cmd, writer).await
             };
@@ -138,7 +138,7 @@ impl UpdateTool {
                     }
                 }
                 update_task_result =  check_task => {
-                      server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone()).await?;
+                   Box::pin(server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone())).await?;
                    return update_task_result}
             );
         } else {
@@ -202,14 +202,14 @@ impl UpdateTool {
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
 
             let repo_port: u16 = cmd.product_bundle_port()?.try_into().unwrap();
-            server::package_server_task(
+            Box::pin(server::package_server_task(
                 self.target_spec,
                 self.rcs_proxy_connector.clone(),
                 self.host_address,
                 self.context.clone(),
                 product_path,
                 repo_port,
-            )
+            ))
             .await?
         } else if cmd.product_bundle_path.is_some() {
             return_user_error!(
@@ -229,10 +229,10 @@ impl UpdateTool {
 
             // wait for the server to be registered before running the check.
             let install = async {
-                server::wait_for_device_task(
+                Box::pin(server::wait_for_device_task(
                     server_task.repo_name.clone(),
                     self.rcs_proxy_connector.clone(),
-                )
+                ))
                 .await?;
                 Self::force_install(update_url, cmd.reboot, installer_proxy, writer).await
             };
@@ -256,7 +256,7 @@ impl UpdateTool {
                     if cmd.reboot {
                         Timer::new(Duration::from_secs(15)).await;
                     }
-                      server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone()).await?;
+                    Box::pin(server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone())).await?;
                     return update_task_result}
             );
         } else {
