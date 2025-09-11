@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 mod codec;
+mod has_executor;
 mod wire_handle;
 mod wire_types;
 

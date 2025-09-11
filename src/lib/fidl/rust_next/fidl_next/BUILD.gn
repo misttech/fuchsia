@@ -24,6 +24,7 @@ rustc_library("fidl_next") {
     "//examples/*",
     "//sdk/fidl/*",
     "//sdk/lib/driver/*",
+    "//src/lib/fdomain/*",
     "//src/lib/fidl/rust_next/*",
     "//src/lib/fuchsia-component/*",
     "//src/tests/fidl/conformance_suite:*",
