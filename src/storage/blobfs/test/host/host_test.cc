@@ -6,28 +6,19 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <lib/fpromise/result.h>
-#include <lib/zx/result.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
-#include <zircon/types.h>
 
-#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <span>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <vector>
 
-#include <fbl/string.h>
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
@@ -38,6 +29,7 @@
 #include "src/storage/blobfs/blobfs_checker.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
+#include "src/storage/blobfs/node_finder.h"
 
 namespace blobfs {
 namespace {
@@ -86,7 +78,7 @@ std::unique_ptr<Blobfs> CreateBlobfs(
   fbl::unique_fd fs_fd(dup(fs_file.fd()));
   std::unique_ptr<Blobfs> blobfs;
   zx_status_t status;
-  if (status = blobfs_create(&blobfs, std::move(fs_fd)); status != ZX_OK) {
+  if ((status = blobfs_create(&blobfs, std::move(fs_fd))) != ZX_OK) {
     ADD_FAILURE() << "blobfs_created returned: " << status;
     return nullptr;
   }
@@ -145,11 +137,11 @@ zx::result<BlobInfo> CreateCompressedBlob(int fd, BlobLayoutFormat blob_layout_f
 }
 
 // Adds an uncompressed blob of size |data_size| to |blobfs| and returns the created blob's Inode.
-Inode AddUncompressedBlob(uint64_t data_size, Blobfs& blobfs, BlobLayoutFormat blob_layout_format,
-                          unsigned int* seed = nullptr) {
-  unsigned int local_seed = testing::UnitTest::GetInstance()->random_seed();
-  auto file = CreateFileWithRandomContent(data_size, seed ? seed : &local_seed);
-  auto blob_info = BlobInfo::CreateUncompressed(file->fd(), blob_layout_format, kSrcFilePath);
+Inode AddUncompressedBlob(uint64_t data_size, Blobfs& blobfs) {
+  unsigned int seed = testing::UnitTest::GetInstance()->random_seed();
+  auto file = CreateFileWithRandomContent(data_size, &seed);
+  auto blob_info =
+      BlobInfo::CreateUncompressed(file->fd(), GetBlobLayoutFormat(blobfs.Info()), kSrcFilePath);
   ZX_ASSERT(blob_info.is_ok());
   EXPECT_FALSE(blob_info->IsCompressed());
 
@@ -160,9 +152,9 @@ Inode AddUncompressedBlob(uint64_t data_size, Blobfs& blobfs, BlobLayoutFormat b
 
 // Adds a compressed blob with an uncompressed size of |data_size| to |blobfs| and returns the
 // created blob's Inode.  The blobs data will be all zeros which will be significantly compressed.
-Inode AddCompressedBlob(uint64_t data_size, Blobfs& blobfs, BlobLayoutFormat blob_layout_format) {
+Inode AddCompressedBlob(uint64_t data_size, Blobfs& blobfs) {
   auto file = CreateEmptyFile(data_size);
-  auto blob_info = CreateCompressedBlob(file->fd(), blob_layout_format);
+  auto blob_info = CreateCompressedBlob(file->fd(), GetBlobLayoutFormat(blobfs.Info()));
   ZX_ASSERT(blob_info.is_ok());
   // Make sure that the blob was compressed.
   EXPECT_TRUE(blob_info->IsCompressed());
@@ -240,31 +232,15 @@ TEST(BlobfsHostTest, WriteBlobWithPaddedFormatIsCorrect) {
   auto blobfs =
       CreateBlobfs(/*block_count=*/500,
                    CreateFilesystemOptions(BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart));
-  ASSERT_TRUE(blobfs);
-  ASSERT_EQ(GetDefaultBlobLayoutFormat(blobfs->Info()),
-            BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
-  unsigned int seed = testing::UnitTest::GetInstance()->random_seed();
+  ASSERT_TRUE(blobfs != nullptr);
 
-  {
-    // In the padded format the Merkle tree can't share a block with the data.
-    Inode inode =
-        AddUncompressedBlob(blobfs->GetBlockSize() * UINT64_C(2) - digest::kSha256Length * 2,
-                            *blobfs, BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart, &seed);
-    EXPECT_FALSE(inode.IsCompressed());
-    EXPECT_EQ(inode.block_count, 3u);
-  }
+  // In the padded format the Merkle tree can't share a block with the data.
+  Inode inode = AddUncompressedBlob(
+      blobfs->GetBlockSize() * UINT64_C(2) - digest::kSha256Length * 2, *blobfs);
+  EXPECT_FALSE(inode.IsCompressed());
+  EXPECT_EQ(inode.block_count, 3u);
 
-  {
-    // In the compact format the Merkle tree will fit perfectly into the end of the data.
-    ASSERT_EQ(blobfs->GetBlockSize(), digest::kDefaultNodeSize);
-    Inode inode =
-        AddUncompressedBlob(blobfs->GetBlockSize() * UINT64_C(2) - digest::kSha256Length * 2,
-                            *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd, &seed);
-    EXPECT_FALSE(inode.IsCompressed());
-    EXPECT_EQ(inode.block_count, 2u);
-  }
-
-  // Check that the blobs can be read back and verified.
+  // Check that the blob can be read back and verified.
   BlobfsChecker checker(blobfs.get(), {.repair = false});
   EXPECT_TRUE(checker.Check());
 }
@@ -272,30 +248,16 @@ TEST(BlobfsHostTest, WriteBlobWithPaddedFormatIsCorrect) {
 TEST(BlobfsHostTest, WriteBlobWithCompactFormatAndSharedBlockIsCorrect) {
   auto blobfs = CreateBlobfs(/*block_count=*/500,
                              CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
-  ASSERT_TRUE(blobfs);
-  ASSERT_EQ(GetDefaultBlobLayoutFormat(blobfs->Info()), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
-  unsigned int seed = testing::UnitTest::GetInstance()->random_seed();
+  ASSERT_TRUE(blobfs != nullptr);
 
-  {
-    // In the padded format the Merkle tree can't share a block with the data.
-    Inode inode =
-        AddUncompressedBlob(blobfs->GetBlockSize() * UINT64_C(2) - digest::kSha256Length * 2,
-                            *blobfs, BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart, &seed);
-    EXPECT_FALSE(inode.IsCompressed());
-    EXPECT_EQ(inode.block_count, 3u);
-  }
+  // In the compact format the Merkle tree will fit perfectly into the end of the data.
+  ASSERT_EQ(blobfs->GetBlockSize(), digest::kDefaultNodeSize);
+  Inode inode = AddUncompressedBlob(
+      blobfs->GetBlockSize() * UINT64_C(2) - digest::kSha256Length * 2, *blobfs);
+  EXPECT_FALSE(inode.IsCompressed());
+  EXPECT_EQ(inode.block_count, 2u);
 
-  {
-    // In the compact format the Merkle tree will fit perfectly into the end of the data.
-    ASSERT_EQ(blobfs->GetBlockSize(), digest::kDefaultNodeSize);
-    Inode inode =
-        AddUncompressedBlob(blobfs->GetBlockSize() * UINT64_C(2) - digest::kSha256Length * 2,
-                            *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd, &seed);
-    EXPECT_FALSE(inode.IsCompressed());
-    EXPECT_EQ(inode.block_count, 2u);
-  }
-
-  // Check that the blobs can be read back and verified.
+  // Check that the blob can be read back and verified.
   BlobfsChecker checker(blobfs.get(), {.repair = false});
   EXPECT_TRUE(checker.Check());
 }
@@ -303,12 +265,11 @@ TEST(BlobfsHostTest, WriteBlobWithCompactFormatAndSharedBlockIsCorrect) {
 TEST(BlobfsHostTest, WriteBlobWithCompactFormatAndBlockIsNotSharedIsCorrect) {
   auto blobfs = CreateBlobfs(/*block_count=*/500,
                              CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
-  ASSERT_TRUE(blobfs);
+  ASSERT_TRUE(blobfs != nullptr);
 
   // The Merkle tree doesn't fit in with the data.
   ASSERT_EQ(blobfs->GetBlockSize(), digest::kDefaultNodeSize);
-  Inode inode = AddUncompressedBlob(blobfs->GetBlockSize() * 2 - 10, *blobfs,
-                                    BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  Inode inode = AddUncompressedBlob(blobfs->GetBlockSize() * 2 - 10, *blobfs);
   EXPECT_FALSE(inode.IsCompressed());
   EXPECT_EQ(inode.block_count, 3u);
 
@@ -318,12 +279,12 @@ TEST(BlobfsHostTest, WriteBlobWithCompactFormatAndBlockIsNotSharedIsCorrect) {
 }
 
 TEST(BlobfsHostTest, WriteCompressedBlobWithCompactFormatAndSharedBlockIsCorrect) {
-  auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  auto blobfs = CreateBlobfs(/*block_count=*/500,
+                             CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
+  ASSERT_TRUE(blobfs != nullptr);
 
   // The blob is compressed to well under 1 block which leaves plenty of room for the Merkle tree.
-  Inode inode = AddCompressedBlob(blobfs->GetBlockSize() * UINT64_C(2), *blobfs,
-                                  BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  Inode inode = AddCompressedBlob(blobfs->GetBlockSize() * UINT64_C(2), *blobfs);
   EXPECT_TRUE(inode.IsCompressed());
   EXPECT_EQ(inode.block_count, 1u);
 
@@ -333,12 +294,13 @@ TEST(BlobfsHostTest, WriteCompressedBlobWithCompactFormatAndSharedBlockIsCorrect
 }
 
 TEST(BlobfsHostTest, WriteCompressedBlobWithPaddedFormatIsCorrect) {
-  auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  auto blobfs =
+      CreateBlobfs(/*block_count=*/500,
+                   CreateFilesystemOptions(BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart));
+  ASSERT_TRUE(blobfs != nullptr);
 
   // The Merkle tree requires 1 block and the blob is compressed to under 1 block.
-  Inode inode = AddCompressedBlob(blobfs->GetBlockSize() * UINT64_C(2), *blobfs,
-                                  BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
+  Inode inode = AddCompressedBlob(blobfs->GetBlockSize() * UINT64_C(2), *blobfs);
   EXPECT_TRUE(inode.IsCompressed());
   EXPECT_EQ(inode.block_count, 2u);
 
@@ -348,11 +310,11 @@ TEST(BlobfsHostTest, WriteCompressedBlobWithPaddedFormatIsCorrect) {
 }
 
 TEST(BlobfsHostTest, WriteEmptyBlobWithCompactFormatIsCorrect) {
-  auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  auto blobfs = CreateBlobfs(/*block_count=*/500,
+                             CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
+  ASSERT_TRUE(blobfs != nullptr);
 
-  Inode inode =
-      AddUncompressedBlob(/*data_size=*/0, *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  Inode inode = AddUncompressedBlob(/*data_size=*/0, *blobfs);
   EXPECT_EQ(inode.block_count, 0u);
 
   // Check that the blob can be read back and verified.
@@ -379,8 +341,9 @@ void CheckBlobContents(File& blob, std::span<const uint8_t> contents) {
 }
 
 TEST(BlobfsHostTest, VisitBlobsVisitsAllBlobsAndProvidesTheCorrectContents) {
-  auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  auto blobfs = CreateBlobfs(/*block_count=*/500,
+                             CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
+  ASSERT_TRUE(blobfs != nullptr);
 
   unsigned int seed = testing::UnitTest::GetInstance()->random_seed();
   int blob_count = 32;
@@ -392,10 +355,7 @@ TEST(BlobfsHostTest, VisitBlobsVisitsAllBlobsAndProvidesTheCorrectContents) {
     size_t data_size = (i % 3 + 1) * kBlobfsBlockSize + (rand_r(&seed) % kBlobfsBlockSize);
     blobs.push_back(CreateFileWithRandomContent(data_size, &seed));
     auto blob_info = BlobInfo::CreateUncompressed(
-        blobs.back()->fd(),
-        (i % 2 == 0) ? BlobLayoutFormat::kCompactMerkleTreeAtEnd
-                     : BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart,
-        kSrcFilePath);
+        blobs.back()->fd(), GetBlobLayoutFormat(blobfs->Info()), kSrcFilePath);
     ASSERT_TRUE(blob_info.is_ok());
     blob_infos.push_back(std::move(blob_info).value());
     ASSERT_TRUE(blobfs->AddBlob(blob_infos.back()).is_ok());
@@ -433,11 +393,12 @@ TEST(BlobfsHostTest, VisitBlobsVisitsAllBlobsAndProvidesTheCorrectContents) {
 }
 
 TEST(BlobfsHostTest, VisitBlobsForwardsVisitorErrors) {
-  auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  auto blobfs = CreateBlobfs(/*block_count=*/500,
+                             CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
+  ASSERT_TRUE(blobfs != nullptr);
 
   // One blob to visit at least.
-  AddUncompressedBlob(/*data_size=*/0, *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  AddUncompressedBlob(/*data_size=*/0, *blobfs);
 
   auto res = blobfs->VisitBlobs([](auto view) { return fpromise::error("1234"); });
 
@@ -462,8 +423,9 @@ std::vector<uint8_t> ReadFileContents(int fd) {
 }
 
 TEST(BlobfsHostTest, ExportBlobsCreatesBlobsWithTheCorrectContentAndName) {
-  auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  auto blobfs = CreateBlobfs(/*block_count=*/500,
+                             CreateFilesystemOptions(BlobLayoutFormat::kCompactMerkleTreeAtEnd));
+  ASSERT_TRUE(blobfs != nullptr);
 
   unsigned int seed = testing::UnitTest::GetInstance()->random_seed();
   int blob_count = 20;
@@ -486,10 +448,7 @@ TEST(BlobfsHostTest, ExportBlobsCreatesBlobsWithTheCorrectContentAndName) {
     size_t data_size = (i % 3 + 1) * kBlobfsBlockSize + (rand_r(&seed) % kBlobfsBlockSize);
     blobs.push_back(CreateFileWithRandomContent(data_size, &seed));
     auto blob_info = BlobInfo::CreateUncompressed(
-        blobs.back()->fd(),
-        (i % 2 == 0) ? BlobLayoutFormat::kCompactMerkleTreeAtEnd
-                     : BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart,
-        kSrcFilePath);
+        blobs.back()->fd(), GetBlobLayoutFormat(blobfs->Info()), kSrcFilePath);
     ASSERT_TRUE(blob_info.is_ok());
     blob_infos.push_back(std::move(blob_info).value());
     ASSERT_TRUE(blobfs->AddBlob(blob_infos.back()).is_ok());
@@ -527,7 +486,7 @@ TEST(BlobfsHostTest, ExportBlobsCreatesBlobsWithTheCorrectContentAndName) {
 
 TEST(BlobfsHostTest, GetNodeWithAnInvalidNodeIndexIsAnError) {
   auto blobfs = CreateBlobfs(/*block_count=*/500);
-  ASSERT_TRUE(blobfs);
+  ASSERT_TRUE(blobfs != nullptr);
   uint32_t invalid_node_index = kMaxNodeId - 1;
   auto node = blobfs->GetNode(invalid_node_index);
   EXPECT_EQ(node.status_value(), ZX_ERR_INVALID_ARGS);
@@ -536,7 +495,7 @@ TEST(BlobfsHostTest, GetNodeWithAnInvalidNodeIndexIsAnError) {
 TEST(BlobfsHostTest, CreateBlobfsWithNullBlobPassesFsck) {
   std::unique_ptr<Blobfs> blobfs = CreateBlobfs(/*block_count=*/500);
   ASSERT_TRUE(blobfs);
-  AddUncompressedBlob(/*data_size=*/0, *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  AddUncompressedBlob(/*data_size=*/0, *blobfs);
   BlobfsChecker checker(blobfs.get());
   EXPECT_TRUE(checker.Check());
 }
@@ -580,14 +539,14 @@ TEST(BlobfsHostTest, BlobInfoCreateCompressedWithSlightlyCompressibleFileWillCom
 TEST(BlobfsHostTest, WriteBlobThatRequiresMultipleExtentsIsCorrect) {
   constexpr uint64_t kDataBlockCount{kInlineMaxExtents * Extent::kBlockCountMax + 1};
   constexpr uint64_t kExtentCount{kInlineMaxExtents + 1};
+  BlobLayoutFormat blob_layout_format = BlobLayoutFormat::kCompactMerkleTreeAtEnd;
 
   std::unique_ptr<Blobfs> blobfs = CreateBlobfs(
-      /*block_count=*/500 + kDataBlockCount);
+      /*block_count=*/500 + kDataBlockCount, CreateFilesystemOptions(blob_layout_format));
 
   // Filling a 500MB file with random data takes a long time so use an empty file instead.
   auto file = CreateEmptyFile(kDataBlockCount * kBlobfsBlockSize);
-  auto blob_info = BlobInfo::CreateUncompressed(
-      file->fd(), BlobLayoutFormat::kCompactMerkleTreeAtEnd, kSrcFilePath);
+  auto blob_info = BlobInfo::CreateUncompressed(file->fd(), blob_layout_format, kSrcFilePath);
   ASSERT_TRUE(blob_info.is_ok());
   EXPECT_TRUE(blobfs->AddBlob(*blob_info).is_ok());
   Inode inode = FindInodeByMerkleDigest(*blobfs, blob_info->GetDigest()).value();

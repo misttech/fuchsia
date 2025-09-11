@@ -6,17 +6,15 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
-#include <cstddef>
-#include <cstdio>
-#include <memory>
-#include <utility>
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <thread>
 
-#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/storage/blobfs/test/blob_utils.h"
+#include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 
 namespace blobfs {
