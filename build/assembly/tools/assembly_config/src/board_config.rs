@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 pub fn new(args: &BoardArgs) -> Result<()> {
     let mut config = BoardConfig::from_config_path(&args.config)?;
-    let release_info_name = config.name.clone();
+    let release_info_name = config.release_info.info.name.clone();
 
     if let Some(partitions_config) = &args.partitions_config {
         config.partitions_config = Some(DirectoryPathBuf::new(partitions_config.clone()));

@@ -100,6 +100,10 @@ import("//build/zbi/zbi.gni")
 #    [string] Path to a file containing the release version for this config.
 #    Either this field or "version" must be set.
 #
+#  release_info_name (optional)
+#    [string] Name to use to reference this artifact in MOS.
+#    When this arg is absent, the name defaults to the board_name.
+#
 #  Outputs
 #    A directory structure and manifest
 #
@@ -218,6 +222,11 @@ template("board_configuration") {
     }
   }
 
+  release_info_name = board_name
+  if (defined(invoker.release_info_name)) {
+    release_info_name = invoker.release_info_name
+  }
+
   base_info_contents = {
     forward_variables_from(invoker,
                            [
@@ -253,9 +262,10 @@ template("board_configuration") {
                   get_label_info(invoker.devicetree, "name") + ".dtb",
               root_build_dir)
     }
+
     release_info = {
       info = {
-        name = board_name
+        name = release_info_name
         repository = "intermediate_repository"
         version = "intermediate_version"
       }

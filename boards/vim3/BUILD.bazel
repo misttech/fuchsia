@@ -203,5 +203,6 @@ fuchsia_board_configuration(
     partitions_configuration = "//boards/partitions/vim3",
     platform = _COMMON_PLATFORM,
     provided_features = _COMMON_PROVIDED_FEATURES,
+    release_info_name = "vim3_reduced_perf_variation",
     version = build_info_version,
 )
