@@ -35,12 +35,13 @@ var (
 const defaultNodename = "fuchsia-5254-0012-3456"
 
 type Binary struct {
-	Ffx          string `json:"ffx"`
-	LlvmCov      string `json:"llvm_cov"`
-	LlvmProfdata string `json:"llvm_profdata"`
-	LlvmCxxFilt  string `json:"llvm_cxxfilt"`
-	Fvm          string `json:"fvm"`
-	ZbiHostTool  string `json:"zbi_host_tool"`
+	Ffx              string `json:"ffx"`
+	LlvmCov          string `json:"llvm_cov"`
+	LlvmProfdata     string `json:"llvm_profdata"`
+	LlvmCxxFilt      string `json:"llvm_cxxfilt"`
+	Fvm              string `json:"fvm"`
+	ZbiHostTool      string `json:"zbi_host_tool"`
+	Simg2imgHostTool string `json:"simg2img_host_tool"`
 }
 
 type Function struct {
@@ -96,7 +97,7 @@ func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []stri
 	device := emulator.DefaultVirtualDevice(string(arch))
 
 	// Resize image to avoid problems due to trimmed FVM if FVM.
-	resizeImage := distro.ResizeRawImage(config.Test.BlockImage, config.Bin.Fvm)
+	resizeImage := distro.ResizeRawImage(config.Test.BlockImage, config.Bin.Simg2imgHostTool)
 	if len(resizeImage) == 0 {
 		t.Fatalf("Failed to resize image.")
 	}

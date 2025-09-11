@@ -400,22 +400,19 @@ func runZbi(args runZbiArgs) error {
 // ResizeRawImage finds a raw FVM image by name in the build's image manifest and generates a fresh
 // image with additional free space using that as a basis. It returns the path to that image file
 // on-disk.
+// The resize binary is different for fxfs and fvm images make sure to use the appropriate one.
 //
 // NB: Caller is responsible for cleaning up the image file.
 //
 // fshost fails to mount a disk with no free space, and so some raw images cannot be used in tests
 // that try to boot all the way to a running Fuchsia session. This creates and returns the on-disk
 // path to a fresh raw image that's twice the size as the original.
-func (d *Distribution) ResizeRawImage(imageName, hostPathFvmBinary string) (string, error) {
-	isFvm := true
+func (d *Distribution) ResizeRawImage(imageName, hostPathResizeBinary string) (string, error) {
 	blk, err := d.findImageByName(imageName, "blk")
 	if err != nil {
-		blk, err = d.findImageByName(imageName, "fxfs-blk")
-		if err != nil {
-			return "", err
-		}
-		isFvm = false
+		return "", err
 	}
+	isFvm := !strings.Contains(imageName, "fxfs")
 
 	resizedPath, err := func() (string, error) {
 		// Don't want a tempfile, just a safe name. Close the file object as soon as is safe.
@@ -427,34 +424,21 @@ func (d *Distribution) ResizeRawImage(imageName, hostPathFvmBinary string) (stri
 		resizedPath := f.Name()
 		{
 			if isFvm {
-				cmd := exec.Command(hostPathFvmBinary, resizedPath, "decompress", "--default", blk.Path)
+				cmd := exec.Command(hostPathResizeBinary, resizedPath, "decompress", "--default", blk.Path)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				if err := cmd.Run(); err != nil {
 					return resizedPath, fmt.Errorf("error running %q: %w", cmd, err)
 				}
-			} else { // Create copy at resized path for truncating in place.
-				if info, err := os.Stat(blk.Path); err != nil {
-					return resizedPath, err
-				} else if !info.Mode().IsRegular() {
-					return resizedPath, fmt.Errorf("image is not a regular file")
-				}
-
-				image, err := os.Open(blk.Path)
-				if err != nil {
-					return resizedPath, err
-				}
-
-				defer image.Close()
-
-				resizedImage, err := os.Create(resizedPath)
-				if err != nil {
-					return resizedPath, err
-				}
-				defer resizedImage.Close()
-
-				if _, err = io.Copy(resizedImage, image); err != nil {
-					return resizedPath, err
+			} else {
+				// Use simg2img to resize sparse images
+				cmd := exec.Command(hostPathResizeBinary, blk.Path, resizedPath)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					return resizedPath, fmt.Errorf("simg2img error running %q: %w", cmd, err)
+				} else {
+					fmt.Printf("Successfully converted sparse image %s to raw image %s\n", blk.Path, resizedPath)
 				}
 			}
 		}
@@ -466,7 +450,7 @@ func (d *Distribution) ResizeRawImage(imageName, hostPathFvmBinary string) (stri
 		size := fmt.Sprintf("%dK", (2*info.Size())/1024)
 		{
 			if isFvm {
-				cmd := exec.Command(hostPathFvmBinary, resizedPath, "extend", "--length", size, "--length-is-lowerbound")
+				cmd := exec.Command(hostPathResizeBinary, resizedPath, "extend", "--length", size, "--length-is-lowerbound")
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				if err := cmd.Run(); err != nil {

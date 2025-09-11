@@ -61,8 +61,8 @@ template("coverage_verification_test") {
   zbi_file = "${system_image_path}/fuchsia.zbi"
 
   # Block image.
-  block_image = "${system_image_name}.fxfs"
-  block_file = "${system_image_path}/fxfs.blk"
+  block_image = "${system_image_name}.fxfs_sparse"
+  block_file = "${system_image_path}/fxfs.sparse.blk"
 
   # Host test data for both the ZBI and the FXFS image.
   system_image_label = "${target_name}.system-images"
@@ -101,6 +101,9 @@ template("coverage_verification_test") {
   test_config = {
     # Binaries used for the test.
     bin = {
+      simg2img_host_tool =
+          rebase_path("${host_out_dir}/test_data/storage/sparse/simg2img",
+                      root_build_dir)
       llvm_profdata =
           rebase_path("${clang_prefix}/llvm-profdata", root_build_dir)
       llvm_cov = rebase_path("${clang_prefix}/llvm-cov", root_build_dir)

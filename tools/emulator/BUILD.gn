@@ -129,6 +129,7 @@ if (is_linux) {
     data_deps = [
       ":test_data(${toolchain_variant.base})",
       ":test_data_kernel($default_toolchain)",
+      "//src/storage/lib/sparse/rust:simg2img_sources",
     ]
   }
 
