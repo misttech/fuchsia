@@ -460,6 +460,14 @@ class DebugSymbolExporter(object):
             debug_src_path = self._build_dir / entry["debug"]
             self._symlink_map[debug_dst_path] = debug_src_path
 
+            # If a stripped file is provided, add a symlink to it as well.
+            if entry.get("stripped", "") != "":
+                stripped_src_path = self._build_dir / entry["stripped"]
+                stripped_dst_path = (
+                    Path(".build-id") / build_id[0:2] / f"{build_id[2:]}"
+                )
+                self._symlink_map[stripped_dst_path] = stripped_src_path
+
             # If a breakpad file path is provided by the entry, record a .sym symlink in the
             # map. Otherwise, add an entry in breakpad_map to ensure a breakpad symbol
             # file can be created later.
@@ -476,9 +484,61 @@ class DebugSymbolExporter(object):
 
             debug_symbol = entry.copy()
             debug_symbol["debug"] = str(debug_dst_path)
+            # The following lines remove "stripped" if it is an empty string or
+            # otherwise rewrite it.
+            debug_symbol.pop("stripped", None)
+            if entry.get("stripped", "") != "":
+                debug_symbol["stripped"] = ".build-id/{}/{}".format(
+                    build_id[0:2], build_id[2:]
+                )
             debug_symbol["breakpad"] = str(breakpad_dst_path)
             debug_symbol.pop("elf_build_id_file", None)
             self._debug_symbols.append(debug_symbol)
+
+    def get_debug_symbols_to_build_id_copies(
+        self, build_id_dir: Path | str
+    ) -> list[tuple[str, str]]:
+        """Get the list of files to copy to an external .build-id/ directory.
+
+        Collects the list of (src, dst) path pairs to copy debug binaries to their
+        location in an output .build-id directory. Useful if the caller wants to
+        perform the copy using parallel threads / tasks.
+
+        Consider using copy_debug_symbols_to_build_id() instead to do the copy.
+
+        Args:
+            build_id_dir: Path to the output .build-id directory. Its name must
+                be ".build-id".
+        Raises
+            AssertionError if build_id_dir.name is not ".build-id".
+        Returns:
+            A list of (src_path, dst_path) pairs describing which files to copy.
+        """
+        build_id_dir = Path(build_id_dir)
+        assert (
+            build_id_dir.name == ".build-id"
+        ), f"Invalid output directory name (.../.build-id expected): {build_id_dir}"
+
+        # dst_path values in the loop below already begin with .build-id/
+        build_id_root = build_id_dir.parent
+
+        result: list[tuple[str, str]] = []
+        for dst_path, target_path in self._symlink_map.items():
+            if not dst_path.name.endswith(".debug"):
+                continue  # Ignore breakpad, GSYM or stripped files.
+            output_path = build_id_root / dst_path
+            if output_path.exists():
+                # The {BUILD_DIR}/.build-id/ directory accumulates files over time,
+                # unless the next `fx clean`.
+                #
+                # It is assumed that BuildID values are unique and content-dependent.
+                # Thus if a file already exists in the destination directory, assume
+                # this is a duplicate and ignore it.
+                continue
+
+            result.append((str(target_path), str(output_path)))
+
+        return result
 
     def copy_debug_symbols_to_build_id(self, build_id_dir: Path | str) -> None:
         """Copy debug symbols to an external .build-id/ directory.
@@ -493,33 +553,18 @@ class DebugSymbolExporter(object):
         Args:
            build_id_dir: Path to the output .build-id directory. Its name must be ".build-id".
         """
-        build_id_dir = Path(build_id_dir)
-        assert (
-            build_id_dir.name == ".build-id"
-        ), f"Invalid output directory name (.../.build-id expected): {build_id_dir}"
-
-        # dst_path values in the loop below already begin with .build-id/
-        build_id_root = build_id_dir.parent
-
+        copies = self.get_debug_symbols_to_build_id_copies(build_id_dir)
         log = self._log
 
-        build_id_dir.parent.mkdir(parents=True, exist_ok=True)
-        for dst_path, target_path in self._symlink_map.items():
-            if not dst_path.name.endswith(".debug"):
-                continue  # Ignore breakpad, GSYM or stripped files.
-            output_path = build_id_root / dst_path
-            if output_path.exists():
-                # The {BUILD_DIR}/.build-id/ directory accumulates files over time,
-                # unless the next `fx clean`.
-                #
-                # It is assumed that BuildID values are unique and content-dependent.
-                # Thus if a file already exists in the destination directory, assume
-                # this is a duplicate and ignore it.
-                continue
+        for src, dst in copies:
+            src_path = Path(src)
+            dst_path = Path(dst)
+
             if log:
-                log(f"Copying {dst_path} FROM {target_path}")
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(target_path, output_path)
+                log(f"Copying {dst_path} FROM {src_path}")
+
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, dst_path)
 
     def export_debug_symbols(
         self,

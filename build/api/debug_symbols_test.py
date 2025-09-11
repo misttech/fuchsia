@@ -516,6 +516,7 @@ class DebugSymbolExporterTest(unittest.TestCase):
             self._manifest_entries.append(
                 {
                     "debug": debug_symbol_filename,
+                    "stripped": f"stripped_{n + 1}.so" if n in (1, 5) else "",
                     "elf_build_id": build_id.hex(),
                     "label": f"//some:label_{n + 1}",
                     "os": "fuchsia" if n not in (3, 4) else "linux",
@@ -597,8 +598,83 @@ print(args.debug_symbol_file)
             [
                 f"Creating {output_dir}/build-ids.json",
                 f"Creating {output_dir}/build-ids.txt",
-                f"Creating 16 symlinks in {output_dir}",
+                f"Creating 18 symlinks in {output_dir}",
             ],
+        )
+
+        exported_debug_symbols_path = output_dir / "debug_symbols.json"
+        self.assertTrue(exported_debug_symbols_path.is_file())
+        with exported_debug_symbols_path.open("rt") as f:
+            exported_debug_symbols = json.load(f)
+
+        self.assertEqual(len(exported_debug_symbols), 16)
+
+        self.assertDictEqual(
+            exported_debug_symbols[0],
+            {
+                "breakpad": ".build-id/42/0000000000.sym",
+                "debug": ".build-id/42/0000000000.debug",
+                "elf_build_id": "420000000000",
+                "label": "//some:label_1",
+                "os": "fuchsia",
+            },
+        )
+
+        self.assertDictEqual(
+            exported_debug_symbols[1],
+            {
+                "breakpad": ".build-id/42/0000000001.sym",
+                "debug": ".build-id/42/0000000001.debug",
+                "elf_build_id": "420000000001",
+                "label": "//some:label_2",
+                "os": "fuchsia",
+                "stripped": ".build-id/42/0000000001",
+            },
+        )
+
+        self.assertDictEqual(
+            exported_debug_symbols[2],
+            {
+                "breakpad": ".build-id/42/0000000002.sym",
+                "debug": ".build-id/42/0000000002.debug",
+                "elf_build_id": "420000000002",
+                "label": "//some:label_3",
+                "os": "fuchsia",
+            },
+        )
+
+        self.assertDictEqual(
+            exported_debug_symbols[3],
+            {
+                "breakpad": ".build-id/42/0000000003.sym",
+                "debug": ".build-id/42/0000000003.debug",
+                "elf_build_id": "420000000003",
+                "label": "//some:label_4",
+                "os": "linux",
+            },
+        )
+
+        self.assertDictEqual(
+            exported_debug_symbols[4],
+            {
+                "breakpad": ".build-id/42/0000000004.sym",
+                "debug": ".build-id/42/0000000004.debug",
+                "elf_build_id": "420000000004",
+                "label": "//some:label_5",
+                "os": "linux",
+            },
+        )
+
+        self.assertDictEqual(
+            exported_debug_symbols[5],
+            {
+                "breakpad": ".build-id/42/0000000005.sym",
+                "debug": ".build-id/42/0000000005.debug",
+                "elf_build_id": "420000000005",
+                "label": "//some:label_6",
+                "os": "fuchsia",
+                "stripped": ".build-id/42/0000000005",
+            },
         )
 
         build_ids_txt = output_dir / "build-ids.txt"
@@ -697,7 +773,7 @@ print(args.debug_symbol_file)
             [
                 f"Creating {output_dir}/build-ids.json",
                 f"Creating {output_dir}/build-ids.txt",
-                f"Creating 16 symlinks in {output_dir}",
+                f"Creating 18 symlinks in {output_dir}",
                 f"Generating 16 breakpad symbols in {output_dir}",
                 f"  - Creating .build-id/42/0000000000.sym FROM {rel_root}/debug_1.so",
                 f"  - Creating .build-id/42/0000000001.sym FROM {rel_root}/debug_2.so",
@@ -763,6 +839,109 @@ print(args.debug_symbol_file)
                 "42000000000e": "//some:label_15",
                 "42000000000f": "//some:label_16",
             },
+        )
+
+    def test_get_debug_symbols_to_build_id_copies(self) -> None:
+        log_lines: list[str] = []
+
+        def log(msg: str) -> None:
+            nonlocal log_lines
+            log_lines.append(msg)
+
+        err_lines: list[str] = []
+
+        def log_error(msg: str) -> None:
+            nonlocal err_lines
+            err_lines.append(msg)
+
+        exporter = DebugSymbolExporter(
+            build_dir=self._root,
+            dump_syms_tool=None,
+            log=log,
+            log_error=log_error,
+        )
+
+        exporter.parse_debug_symbols(self._manifest_entries)
+
+        output_dir = self._root / "out"
+        with self.assertRaises(AssertionError) as cm:
+            exporter.copy_debug_symbols_to_build_id(output_dir)
+        self.assertEqual(
+            str(cm.exception),
+            f"Invalid output directory name (.../.build-id expected): {output_dir}",
+        )
+
+        build_id_dir = output_dir / ".build-id"
+        copies = exporter.get_debug_symbols_to_build_id_copies(build_id_dir)
+
+        self.assertListEqual(
+            copies,
+            [
+                (
+                    f"{self._root}/debug_1.so",
+                    f"{build_id_dir}/42/0000000000.debug",
+                ),
+                (
+                    f"{self._root}/debug_2.so",
+                    f"{build_id_dir}/42/0000000001.debug",
+                ),
+                (
+                    f"{self._root}/debug_3.so",
+                    f"{build_id_dir}/42/0000000002.debug",
+                ),
+                (
+                    f"{self._root}/debug_4.so",
+                    f"{build_id_dir}/42/0000000003.debug",
+                ),
+                (
+                    f"{self._root}/debug_5.so",
+                    f"{build_id_dir}/42/0000000004.debug",
+                ),
+                (
+                    f"{self._root}/debug_6.so",
+                    f"{build_id_dir}/42/0000000005.debug",
+                ),
+                (
+                    f"{self._root}/debug_7.so",
+                    f"{build_id_dir}/42/0000000006.debug",
+                ),
+                (
+                    f"{self._root}/debug_8.so",
+                    f"{build_id_dir}/42/0000000007.debug",
+                ),
+                (
+                    f"{self._root}/debug_9.so",
+                    f"{build_id_dir}/42/0000000008.debug",
+                ),
+                (
+                    f"{self._root}/debug_10.so",
+                    f"{build_id_dir}/42/0000000009.debug",
+                ),
+                (
+                    f"{self._root}/debug_11.so",
+                    f"{build_id_dir}/42/000000000a.debug",
+                ),
+                (
+                    f"{self._root}/debug_12.so",
+                    f"{build_id_dir}/42/000000000b.debug",
+                ),
+                (
+                    f"{self._root}/debug_13.so",
+                    f"{build_id_dir}/42/000000000c.debug",
+                ),
+                (
+                    f"{self._root}/debug_14.so",
+                    f"{build_id_dir}/42/000000000d.debug",
+                ),
+                (
+                    f"{self._root}/debug_15.so",
+                    f"{build_id_dir}/42/000000000e.debug",
+                ),
+                (
+                    f"{self._root}/debug_16.so",
+                    f"{build_id_dir}/42/000000000f.debug",
+                ),
+            ],
         )
 
     def test_copy_debug_symbols_to_build_id(self) -> None:
