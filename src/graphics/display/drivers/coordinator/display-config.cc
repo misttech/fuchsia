@@ -46,19 +46,7 @@ void DisplayConfig::DiscardNonLayerDraftConfig() {
   draft_has_layer_list_change_ = false;
   draft_has_layer_list_change_property_.Set(false);
 
-  draft_ = {
-      .display_id = applied_.display_id,
-
-      // We preserve the draft display mode to work
-      // around a Scenic issue where it forgets to call SetDisplayMode() again after
-      // discarding a draft configuration with a load-bearing SetDisplayMode().
-      //
-      // TODO(https://fxbug.dev/402804098): Remove this workaround.
-      .mode_id = draft_.mode_id,
-
-      .color_conversion = applied_.color_conversion,
-      .layer_count = applied_.layer_count,
-  };
+  draft_ = applied_;
   has_draft_nonlayer_config_change_ = false;
 }
 
