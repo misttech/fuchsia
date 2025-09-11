@@ -49,6 +49,7 @@ if (is_host) {
     deps = [
       "//third_party/rust_crates:argh",
       "//third_party/rust_crates:askama",
+      "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
       "//tools/fidl/fidl_ir",
       "//tools/fidl/fidl_ir/fidl_ir_util",

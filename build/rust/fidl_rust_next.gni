@@ -110,6 +110,21 @@ template("fidl_rust_next") {
       if (defined(invoker.emit_compat) && invoker.emit_compat) {
         args += [ "--emit-compat" ]
       }
+      if (fdomain) {
+        inputs += [ "//tools/fidl/fidlgen_rust_next/configs/fdomain.json" ]
+        args += [
+          "--config",
+          rebase_path("//tools/fidl/fidlgen_rust_next/configs/fdomain.json",
+                      root_build_dir),
+        ]
+      } else {
+        inputs += [ "//tools/fidl/fidlgen_rust_next/configs/fuchsia.json" ]
+        args += [
+          "--config",
+          rebase_path("//tools/fidl/fidlgen_rust_next/configs/fuchsia.json",
+                      root_build_dir),
+        ]
+      }
 
       deps = [ fidl_ir_target ]
 
@@ -155,6 +170,9 @@ template("fidl_rust_next") {
       if (defined(invoker.emit_compat) && invoker.emit_compat) {
         deps += [ "//src/lib/fidl/rust/fidl" ]
       }
+      if (fdomain) {
+        deps += [ "//src/lib/fdomain/client" ]
+      }
 
       # TODO(https://fxbug.dev/42055130): Avoid this suppression. At the time of
       # writing it is needed because this target might depend on another FIDL
@@ -170,7 +188,7 @@ template("fidl_rust_next") {
           if (label == "//zircon/vdso/zx:zx") {
             deps += [ "//sdk/rust/zx-types" ]
           } else if (fdomain) {
-            deps += [ "${label}_rust_next" ]
+            deps += [ "${label}_rust_fdomain_next" ]
           } else {
             deps += [ "${label}_rust_next" ]
           }

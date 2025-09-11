@@ -32,7 +32,7 @@ use std::process::Command;
 use argh::FromArgs;
 use fidl_ir::Library;
 
-use self::config::{Config, ResourceBindings};
+use self::config::Config;
 use self::templates::render_library;
 
 /// Generate Rust bindings from FIDL IR
@@ -41,6 +41,9 @@ struct Fidlgen {
     /// source JSON IR file path
     #[argh(option)]
     json: PathBuf,
+    /// source config file path
+    #[argh(option)]
+    config: PathBuf,
     /// output file path
     #[argh(option)]
     output_filename: PathBuf,
@@ -62,13 +65,10 @@ fn main() {
     let library = serde_json::from_reader::<_, Library>(BufReader::new(file))
         .expect("failed to parse source JSON IR");
 
-    let config = Config {
-        emit_compat: args.emit_compat,
-        emit_debug_impls: true,
-        encode_trait_path: "::fidl_next::fuchsia::HandleEncoder".to_owned(),
-        decode_trait_path: "::fidl_next::fuchsia::HandleDecoder".to_owned(),
-        resource_bindings: ResourceBindings::default(),
-    };
+    let file = File::open(&args.config).expect("failed to open source JSON config file");
+    let mut config = serde_json::from_reader::<_, Config>(BufReader::new(file))
+        .expect("failed to parse source JSON IR");
+    config.emit_compat = args.emit_compat;
     let result = render_library(&library, &config).expect("failed to emit FIDL bindings");
 
     // Manually trim trailing whitespace; rustfmt ICEs on some long lines with trailing whitespace.

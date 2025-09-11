@@ -55,7 +55,7 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
             write!(f, "::fidl_next::fuchsia::zx::")?;
         } else {
             let escaped = lib.replace('.', "_");
-            write!(f, "::fidl_next_{escaped}::")?;
+            write!(f, "::{}_{escaped}::", self.context.crate_prefix())?;
         }
 
         // Type name

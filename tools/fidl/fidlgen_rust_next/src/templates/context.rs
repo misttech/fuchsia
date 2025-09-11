@@ -32,6 +32,10 @@ pub trait Contextual<'a> {
         self.context().library
     }
 
+    fn crate_prefix(&self) -> &'a String {
+        &self.context().config.crate_prefix
+    }
+
     fn resource_bindings(&self) -> &'a ResourceBindings {
         &self.context().config.resource_bindings
     }
