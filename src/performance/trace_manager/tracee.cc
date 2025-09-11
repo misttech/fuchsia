@@ -453,22 +453,19 @@ TransferStatus Tracee::TransferRecords() const {
   provider_stats_.set_non_durable_bytes_written(header->rolling_data_end(0) +
                                                 header->rolling_data_end(1));
 
-  // Print some stats to assist things like buffer size calculations.
-  // Don't print anything if nothing was written.
-  // TODO(dje): Revisit this once stats are fully reported back to the client.
   if ((header->buffering_mode() == TRACE_BUFFERING_MODE_ONESHOT &&
        header->rolling_data_end(0) > kInitRecordSizeBytes) ||
       ((header->buffering_mode() != TRACE_BUFFERING_MODE_ONESHOT) &&
        header->durable_data_end() > kInitRecordSizeBytes) ||
       header->buffering_mode() == TRACE_BUFFERING_MODE_STREAMING) {
-    FX_LOGS(INFO) << *bundle_ << " trace stats";
-    FX_LOGS(INFO) << "Wrapped count: " << header->wrapped_count();
-    FX_LOGS(INFO) << "# records dropped: " << header->num_records_dropped();
-    FX_LOGS(INFO) << "Durable buffer: 0x" << std::hex << header->durable_data_end() << ", size 0x"
-                  << std::hex << header->durable_buffer_size();
-    FX_LOGS(INFO) << "Non-durable buffer: 0x" << std::hex << header->rolling_data_end(0) << ",0x"
-                  << std::hex << header->rolling_data_end(1) << ", size 0x" << std::hex
-                  << header->rolling_buffer_size();
+    FX_LOGS(DEBUG) << *bundle_ << " trace stats";
+    FX_LOGS(DEBUG) << "Wrapped count: " << header->wrapped_count();
+    FX_LOGS(DEBUG) << "# records dropped: " << header->num_records_dropped();
+    FX_LOGS(DEBUG) << "Durable buffer: 0x" << std::hex << header->durable_data_end() << ", size 0x"
+                   << std::hex << header->durable_buffer_size();
+    FX_LOGS(DEBUG) << "Non-durable buffer: 0x" << std::hex << header->rolling_data_end(0) << ",0x"
+                   << std::hex << header->rolling_data_end(1) << ", size 0x" << std::hex
+                   << header->rolling_buffer_size();
   }
 
   return TransferStatus::kComplete;

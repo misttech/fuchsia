@@ -17,8 +17,6 @@
 
 #include <perftest/perftest.h>
 
-#include "zircon/system/public/zircon/syscalls.h"
-
 namespace {
 
 void Drain(const zx::unowned_socket& socket) {

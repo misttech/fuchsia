@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/syslog/cpp/macros.h>
+#include <lib/async/cpp/task.h>
 #include <lib/trace-provider/provider.h>
 #include <lib/trace/event.h>
 
-#include "lib/async/cpp/task.h"
+#include "src/performance/trace_bench/tracee_config.h"
 
-size_t data = 0;
+namespace {
 uint8_t blob[4096] = {0};
 
 void EmitSomeEvents(async_dispatcher_t* dispatcher) {
@@ -33,14 +33,20 @@ void EmitSomeEvents(async_dispatcher_t* dispatcher) {
     TRACE_BLOB_EVENT("benchmark", "blob", blob, sizeof(blob));
   }
 }
+}  // namespace
 
 int main() {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
   trace::TraceProviderWithFdio trace_provider(dispatcher, "tracee");
 
-  // Let's continuously emit some trace events
-  async::PostTask(dispatcher, [dispatcher] { EmitSomeEvents(dispatcher); });
+  // Retrieve configuration
+  auto c = tracee_config::Config::TakeFromStartupHandle();
+
+  if (c.emit_trace_data()) {
+    // Let's continuously emit some trace events
+    async::PostTask(dispatcher, [dispatcher] { EmitSomeEvents(dispatcher); });
+  }
 
   loop.Run();
   return 0;
