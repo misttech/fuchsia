@@ -22,7 +22,7 @@ declare_args() {
 libc_configs = [
   # These configs are needed for the expectations of the source code,
   # whether compiled into libc.so or into unit test code.
-  "$libc:internal.config",
+  "$libc:llvm-libc.config",
 ]
 
 # When compiled for unit tests, add only those.

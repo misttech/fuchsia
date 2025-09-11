@@ -19,6 +19,9 @@ struct LibcGwpAsanInfo {
 
 }  // namespace gwp_asan
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
+extern gwp_asan::LibcGwpAsanInfo __libc_gwp_asan_info;
+
 #endif
 
 #define GWP_ASAN_NOTE_TYPE 0x4153414e  // "ASAN"

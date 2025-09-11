@@ -253,7 +253,7 @@ template <class Elf>
 class TlsLayout;
 
 template <typename Addr>
-constexpr auto kAddrBits = std::numeric_limits<typename Addr::value_type>::digits;
+inline constexpr auto kAddrBits = std::numeric_limits<typename Addr::value_type>::digits;
 
 // The various ELF data structure layouts differ by class (32-bit vs 64-bit).
 // But many use the same layout with certain fields being either 32 or 64 bits.

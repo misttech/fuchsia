@@ -76,7 +76,8 @@ RELRO(SingleTlsOffset, gTlsOffsets);
 }  // namespace
 
 // TLS fields are initialized in StartupRelocate if there is a PT_TLS segment.
-extern "C" RELRO(Abi, mutable_ld_abi, __asm__("_ld_abi")) = {
+extern "C" RELRO(Abi, mutable_ld_abi, __asm__("_ld_abi"));
+constinit decltype(mutable_ld_abi) mutable_ld_abi = {
     .loaded_modules{&gSelfModule},
     .loaded_modules_count{2},
 };

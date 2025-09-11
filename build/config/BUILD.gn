@@ -886,6 +886,41 @@ config("test_exercising_sdk_headers") {
   configs = [ ":sdk_extra_warnings" ]
 }
 
+config("Wmissing-declarations") {
+  if (is_gcc) {
+    cflags = [ "-Wmissing-declarations" ]
+    cflags_c = [
+      "-Wmissing-prototypes",
+      "-Wmissing-variable-declarations",
+    ]
+  } else {
+    cflags = [
+      "-Wmissing-prototypes",
+      "-Wmissing-variable-declarations",
+    ]
+  }
+}
+
+config("Wno-missing-declarations") {
+  visibility = [
+    "//sdk/lib/c/*",
+    "//zircon/third_party/ulib/lz4",
+  ]
+
+  if (is_gcc) {
+    cflags = [ "-Wno-missing-declarations" ]
+    cflags_c = [
+      "-Wno-missing-prototypes",
+      "-Wno-missing-variable-declarations",
+    ]
+  } else {
+    cflags = [
+      "-Wno-missing-prototypes",
+      "-Wno-missing-variable-declarations",
+    ]
+  }
+}
+
 # TODO(https://fxbug.dev/42136088): clean up instances of this outside of third party code.
 config("Wno-unused-function") {
   cflags = [ "-Wno-unused-function" ]
@@ -1302,17 +1337,12 @@ config("Wno-defaulted-function-deleted") {
 }
 
 config("Wno-missing-prototypes") {
-  cflags_c = [ "-Wno-missing-prototypes" ]
   visibility = [
     "//third_party/tpm2-tss:tss2-mu",
     "//zircon/third_party/ulib/lz4",
   ]
-}
 
-config("Wno-missing-declarations") {
-  visibility = [ "//zircon/third_party/ulib/lz4" ]
-
-  cflags = [ "-Wno-missing-declarations" ]
+  cflags_c = [ "-Wno-missing-prototypes" ]
 }
 
 config("Wno-deprecated-anon-enum-enum-conversion") {

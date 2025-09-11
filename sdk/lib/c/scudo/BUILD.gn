@@ -120,6 +120,8 @@ libc_source_set("wrappers") {
     #"wrappers_cpp.cpp",
   ]
 
+  configs += [ "//build/config:Wno-missing-declarations" ]
+
   non_test_deps = [ ":libc" ]
 }
 
@@ -279,8 +281,9 @@ libc_test("unittests") {
     deps += [ ":wrapper-tests" ]
   }
 
-  # Suppress warnings from third party code
-  configs += [ "//build/config:Wno-extra-semi" ]
+  # scudo_unit_test_main.cpp needs to define __scudo_default_options() but
+  # can't use <sanitizer/scudo_interface.h> since it's not in the slice repo.
+  configs += [ "//build/config:Wno-missing-declarations" ]
 }
 
 # These tests use the public API, so they are testing what's actually in libc

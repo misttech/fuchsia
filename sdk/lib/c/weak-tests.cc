@@ -15,6 +15,8 @@ namespace LIBC_NAMESPACE_DECL {
 [[gnu::weak]] void NotDefined();
 [[gnu::weak]] void NotDefinedWithArgs(int, const char*, double);
 
+namespace {
+
 class LibcTests : public zxtest::Test {
  public:
   static inline bool gCalled = false;
@@ -40,8 +42,6 @@ void DefinedWithArgs(int i, const char* s, double d) {
   EXPECT_STREQ(s, "foo");
   EXPECT_EQ(d, 3.14);
 }
-
-namespace {
 
 void FakeLock() {
   ASSERT_FALSE(LibcTests::gFakeLock);

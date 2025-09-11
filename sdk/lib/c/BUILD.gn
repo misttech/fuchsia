@@ -91,14 +91,6 @@ group("unittests") {
 
 # libc.gni uses these configs.
 
-# This is used for all libc-related sources, because some of the local code
-# still ties into the old musl implementation.  When the interactions with musl
-# internals are fully replaced, only llvm-libc.config will be needed.
-config("internal.config") {
-  visibility = [ "./*" ]
-  configs = [ ":llvm-libc.config" ]
-}
-
 # This is needed for the expectations of the llvm-libc source code, whether
 # compiled into libc or just into unit test code.
 config("llvm-libc.config") {
@@ -119,6 +111,8 @@ config("llvm-libc.config") {
     # because the typedef includes attributes.
     cflags = [ "-Wno-ignored-attributes" ]
   }
+
+  configs = [ "//build/config:Wmissing-declarations" ]
 }
 
 # This is needed when compiling libc-related code for use in unit tests.
@@ -142,7 +136,7 @@ config("testonly.config") {
 # libc proper, such as the separate printf_core integrations; and to libc.so
 # itself, which uses llvm-libc-extra.config, below.
 config("llvm-libc-public.config") {
-  configs = [ ":llvm-libc.config" ]
+  visibility = [ "./*" ]
 
   defines = [
     # This namespace is invisible to anything outside libc.so, though in an
