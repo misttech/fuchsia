@@ -17,7 +17,6 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/mmio/mmio.h>
@@ -42,7 +41,6 @@
 #include "src/devices/usb/drivers/dwc3/dwc3-metrics.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-trb-fifo.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-types.h"
-#include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
 namespace dwc3 {
 
@@ -56,23 +54,16 @@ class PlatformExtension {
   virtual zx::result<> Resume() = 0;
 };
 
-class Dwc3 : public fdf::DriverBase,
-             public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
-             public fdf_power::Suspendable<Dwc3> {
+class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
   using fdf::DriverBase::incoming;
 
   Dwc3(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)},
-        config_(take_config<dwc3_config::Config>()) {}
+      : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)} {}
   ~Dwc3() { fdf::debug("~Dwc3()"); }
 
   zx::result<> Start() override;
   void Stop() override;
-
-  void Suspend(fdf_power::SuspendCompleter cb) override;
-  void Resume(fdf_power::ResumeCompleter cb) override;
-  bool SuspendEnabled() override;
 
   // fuchsia_hardware_usb_dci::UsbDci protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
@@ -361,7 +352,6 @@ class Dwc3 : public fdf::DriverBase,
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>
       serial_number_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_usb_phy::Metadata> usb_phy_metadata_server_;
-  dwc3_config::Config config_;
 
   // Inspect and metrics data.
   // The basic model here is:
