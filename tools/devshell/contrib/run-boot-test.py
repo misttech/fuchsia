@@ -131,7 +131,9 @@ class BootTest:
         # Normal QEMU Kernel handling a ZBI.
         for image in manifest["system_a"]:
             path = os.path.join(product_bundle_dir, image["path"])
-            if image["type"] == "zbi":
+            # A test ramdisk may or may not be a ZBI, strictly speaking, but convenient
+            # enough to present it as such, especially as we must do so to the tooling.
+            if image["type"] in ["zbi", "test-ramdisk"]:
                 self.zbi = path
             elif image["type"] == "kernel":
                 self.qemu_kernel = path
@@ -447,7 +449,13 @@ def main():
             cmd += ["--initrd", test.zbi]
         cmd.append(test.qemu_kernel)
     else:
-        cmd = ["fx", "qemu", "--arch", args.arch] + args.args
+        cmd = [
+            "fx",
+            "qemu",
+            "--arch",
+            args.arch,
+            "--no-authorized-keys",
+        ] + args.args
 
         if test.is_uefi_boot():
             cmd += ["--uefi"]
