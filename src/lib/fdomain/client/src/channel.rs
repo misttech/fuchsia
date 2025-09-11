@@ -134,7 +134,7 @@ pub enum HandleOp<'h> {
 
 impl Channel {
     /// Reads a message from the channel.
-    pub fn recv_msg(&self) -> impl Future<Output = Result<MessageBuf, Error>> {
+    pub fn recv_msg(&self) -> impl Future<Output = Result<MessageBuf, Error>> + use<> {
         let client = self.0.client();
         let handle = self.0.proto();
 
@@ -184,7 +184,7 @@ impl Channel {
         &self,
         bytes: &[u8],
         handles: Vec<Handle>,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         if bytes.len() > zx_types::ZX_CHANNEL_MAX_MSG_BYTES as usize
             || handles.len() > zx_types::ZX_CHANNEL_MAX_MSG_HANDLES as usize
         {
@@ -218,7 +218,7 @@ impl Channel {
         &self,
         bytes: &[u8],
         handles: Vec<HandleOp<'b>>,
-    ) -> impl Future<Output = Result<(), Error>> + 'b {
+    ) -> impl Future<Output = Result<(), Error>> + use<'b> {
         let handles = handles
             .into_iter()
             .map(|handle| match handle {
@@ -269,7 +269,7 @@ impl Channel {
         &self,
         bytes: &[u8],
         handles: proto::Handles,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         let data = bytes.to_vec();
         let client = self.0.client();
         let handle = self.0.proto();

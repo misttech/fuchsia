@@ -75,7 +75,7 @@ impl HandleRef<'_> {
     pub fn duplicate(
         &self,
         rights: fidl::Rights,
-    ) -> impl Future<Output = Result<Handle, Error>> + 'static {
+    ) -> impl Future<Output = Result<Handle, Error>> + 'static + use<> {
         let client = self.0.client();
         let handle = self.0.proto();
         let new_handle = client.new_hid();
@@ -94,7 +94,7 @@ impl HandleRef<'_> {
         &self,
         set: fidl::Signals,
         clear: fidl::Signals,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         let handle = self.proto();
         let client = self.client();
 

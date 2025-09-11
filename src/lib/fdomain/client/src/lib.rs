@@ -783,12 +783,15 @@ impl Client {
     ///
     /// Calling this method queues the transaction synchronously. Awaiting is
     /// only necessary to wait for the response.
-    pub(crate) fn transaction<S: fidl_message::Body, R: 'static>(
+    pub(crate) fn transaction<S: fidl_message::Body, R: 'static, F>(
         self: &Arc<Self>,
         ordinal: u64,
         request: S,
-        f: impl Fn(OneshotSender<Result<R, Error>>) -> Responder,
-    ) -> impl Future<Output = Result<R, Error>> + 'static {
+        f: F,
+    ) -> impl Future<Output = Result<R, Error>> + 'static + use<S, R, F>
+    where
+        F: Fn(OneshotSender<Result<R, Error>>) -> Responder,
+    {
         let mut inner = self.0.lock().unwrap();
 
         let (sender, receiver) = futures::channel::oneshot::channel();
