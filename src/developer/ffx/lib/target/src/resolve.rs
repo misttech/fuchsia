@@ -28,6 +28,7 @@ use crate::ssh_connector::SshConnector;
 use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
+const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
@@ -276,9 +277,19 @@ fn build_discovery(
         .with_fastboot_devices_file_path(fastboot_file_path)
         .with_emulator_instance_root(emu_instance_root)
         .with_timeout_msecs(ctx.get(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).ok());
+
+    if sources.contains(DiscoverySources::USB_VSOCK) {
+        let usb_driver_socket = ctx
+            .get(usb_driver_api::CONFIG_USB_SOCKET_PATH)
+            .ok()
+            .or_else(|| usb_driver_api::default_usb_socket_path().ok());
+        builder = builder.with_usb_vsock_driver_socket_path(usb_driver_socket);
+    }
+
     if use_cache {
         builder = builder.with_cache_dir(get_discovery_cache_dir(&ctx));
     }
+
     builder.build()
 }
 /// Directory containing the discovery cache file
@@ -496,6 +507,10 @@ pub fn get_discovery_stream(
         DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
     if usb {
         sources = sources | DiscoverySources::USB_FASTBOOT;
+
+        if ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+            sources = sources | DiscoverySources::USB_VSOCK;
+        }
     }
     if mdns {
         sources = sources | DiscoverySources::MDNS;
@@ -518,6 +533,10 @@ pub async fn get_discovered_targets(
         DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
     if usb {
         sources = sources | DiscoverySources::USB_FASTBOOT;
+
+        if ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+            sources = sources | DiscoverySources::USB_VSOCK;
+        }
     }
     if mdns {
         sources = sources | DiscoverySources::MDNS;
@@ -532,7 +551,11 @@ impl TargetResolver for DefaultTargetResolver {
         query: TargetInfoQuery,
         ctx: EnvironmentContext,
     ) -> Result<Vec<TargetHandle>> {
-        get_discovered_targets_with_sources(query, DiscoverySources::all(), ctx).await
+        let mut sources = DiscoverySources::all();
+        if !ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+            sources.remove(DiscoverySources::USB_VSOCK);
+        }
+        get_discovered_targets_with_sources(query, sources, ctx).await
     }
 
     async fn resolve_target_query(
