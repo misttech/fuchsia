@@ -20,7 +20,7 @@
         {
             name: "full-drivers",
             environment: "#full-pkg-driver-env",
-            durability: "single_run",
+            durability: "transient",
             allowed_offers: "static_and_dynamic",
             allow_long_names: true,
         },

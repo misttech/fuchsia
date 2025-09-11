@@ -18,11 +18,12 @@ constexpr uint32_t kMaxTestDelayMs = 5;
 
 }  // namespace
 
-NodeShutdownCoordinator::NodeShutdownCoordinator(NodeShutdownBridge* bridge,
+NodeShutdownCoordinator::NodeShutdownCoordinator(std::string_view name, NodeShutdownBridge* bridge,
                                                  async_dispatcher_t* dispatcher,
                                                  bool enable_test_shutdown_delays,
                                                  std::weak_ptr<std::mt19937> rng_gen)
-    : bridge_(bridge),
+    : name_(name),
+      bridge_(bridge),
       enable_test_shutdown_delays_(enable_test_shutdown_delays),
       rng_gen_(rng_gen),
       distribution_(kMinTestDelayMs, kMaxTestDelayMs),
@@ -53,9 +54,10 @@ void NodeShutdownCoordinator::Remove(std::shared_ptr<Node> node, RemovalSet remo
 
     fdf_log::debug("Remove called on Node: {}", node->name());
     // Two cases where we will transition state and take action:
-    // Removing kAll, and state is Running or Prestop
+    // Removing kAll, and state is Running, Prestop, or Stop.
     // Removing kPkg, and state is Running
     if ((node_shutdown_coordinator.node_state() != NodeState::kPrestop &&
+         node_shutdown_coordinator.node_state() != NodeState::kStopped &&
          node_shutdown_coordinator.node_state() != NodeState::kRunning) ||
         (node_shutdown_coordinator.node_state() == NodeState::kPrestop &&
          removal_set == RemovalSet::kPackage)) {
@@ -85,6 +87,7 @@ void NodeShutdownCoordinator::Remove(std::shared_ptr<Node> node, RemovalSet remo
     for (auto& child : node->children()) {
       fdf_log::debug("Node: {} calling remove on child: {}", node->name(), child->name());
       nodes.emplace(child, removal_set);
+      child->SetShouldDestroy();
     }
     nodes_to_check_for_removal.push(std::move(node));
   }
@@ -96,7 +99,7 @@ void NodeShutdownCoordinator::Remove(std::shared_ptr<Node> node, RemovalSet remo
 }
 
 void NodeShutdownCoordinator::ResetShutdown() {
-  ZX_ASSERT_MSG(node_state_ == NodeState::kStopped,
+  ZX_ASSERT_MSG(node_state_ == NodeState::kDestroyed || node_state_ == NodeState::kStopped,
                 "NodeShutdownCoordinator::ResetShutdown called in invalid node state: %s",
                 NodeStateAsString());
   node_state_ = NodeState::kRunning;
@@ -111,7 +114,7 @@ void NodeShutdownCoordinator::CheckNodeState() {
   switch (node_state_) {
     case NodeState::kRunning:
     case NodeState::kPrestop:
-    case NodeState::kStopped:
+    case NodeState::kDestroyed:
       return;
     case NodeState::kWaitingOnDriverBind: {
       CheckWaitingOnDriverBind();
@@ -127,6 +130,14 @@ void NodeShutdownCoordinator::CheckNodeState() {
     }
     case NodeState::kWaitingOnDriverComponent: {
       CheckWaitingOnDriverComponent();
+      return;
+    }
+    case NodeState::kStopped: {
+      CheckStopped();
+      return;
+    }
+    case NodeState::kWaitingOnDestroy: {
+      CheckWaitingOnDestroy();
       return;
     }
   }
@@ -188,8 +199,42 @@ void NodeShutdownCoordinator::CheckWaitingOnDriverComponent() {
     return;
   }
 
+  PerformTransition([this]() mutable { UpdateAndNotifyState(NodeState::kStopped); });
+}
+
+void NodeShutdownCoordinator::CheckStopped() {
+  ZX_ASSERT(!is_transition_pending_);
+  ZX_ASSERT_MSG(node_state_ == NodeState::kStopped,
+                "NodeShutdownCoordinator::CheckStopped called in invalid node state: %s",
+                NodeStateAsString());
+
   PerformTransition([this]() mutable {
-    bridge_->FinishShutdown([this]() { UpdateAndNotifyState(NodeState::kStopped); });
+    if (bridge_->HasDriverComponentController()) {
+      // Remain on this state if the node did not need to destroy an active component controller.
+      bool destroy_started = bridge_->MaybeDestroyDriverComponent();
+      if (!destroy_started) {
+        fdf_log::debug("node {} HasDriverComponentController but not destroying", name_);
+        return;
+      }
+    }
+
+    UpdateAndNotifyState(NodeState::kWaitingOnDestroy);
+  });
+}
+
+void NodeShutdownCoordinator::CheckWaitingOnDestroy() {
+  ZX_ASSERT(!is_transition_pending_);
+  ZX_ASSERT_MSG(node_state_ == NodeState::kWaitingOnDestroy,
+                "NodeShutdownCoordinator::CheckStopped called in invalid node state: %s",
+                NodeStateAsString());
+
+  // Remain on this state if the node still has a driver component controller.
+  if (bridge_->HasDriverComponentController()) {
+    return;
+  }
+
+  PerformTransition([this]() mutable {
+    bridge_->FinishShutdown([this]() { UpdateAndNotifyState(NodeState::kDestroyed); });
   });
 }
 
@@ -243,6 +288,10 @@ const char* NodeShutdownCoordinator::NodeStateAsString(NodeState state) {
       return "kWaitingOnDriverComponent";
     case NodeState::kStopped:
       return "kStopped";
+    case NodeState::kWaitingOnDestroy:
+      return "kWaitingOnDestroy";
+    case NodeState::kDestroyed:
+      return "kDestroyed";
   }
 }
 

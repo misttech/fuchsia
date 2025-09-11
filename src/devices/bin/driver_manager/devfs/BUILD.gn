@@ -21,6 +21,7 @@ source_set("devfs") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
+    "//src/devices/bin/driver_manager:component_owner",
     "//src/lib/ddk",
     "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/fbl",

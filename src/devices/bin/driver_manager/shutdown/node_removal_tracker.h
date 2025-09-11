@@ -8,10 +8,10 @@
 #include <lib/async/cpp/task.h>
 #include <lib/fit/function.h>
 
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/node_types.h"
 
 namespace driver_manager {

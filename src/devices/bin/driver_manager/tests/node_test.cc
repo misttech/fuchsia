@@ -22,9 +22,38 @@ namespace fdf {
 using namespace fuchsia_driver_framework;
 }  // namespace fdf
 
+class FakeNodeManager;
+class TestController final : public fidl::testing::WireTestBase<fuchsia_component::Controller> {
+ public:
+  explicit TestController(FakeNodeManager* parent, std::string_view name,
+                          fidl::ServerEnd<fuchsia_component::Controller> controller,
+                          async_dispatcher_t* dispatcher)
+      : parent_(parent),
+        name_(name),
+        dispatcher_(dispatcher),
+        binding_(dispatcher_, std::move(controller), this, fidl::kIgnoreBindingClosure) {}
+
+  void Destroy(DestroyCompleter::Sync& completer) override;
+
+  void Start(StartRequestView request, StartCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_component::Controller> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    printf("Not implemented: TestController::%s\n", name.c_str());
+  }
+
+ private:
+  FakeNodeManager* parent_;
+  std::string name_;
+  async_dispatcher_t* dispatcher_;
+  fidl::ServerBinding<fuchsia_component::Controller> binding_;
+};
+
 class TestRealm final : public fidl::testing::WireTestBase<fuchsia_component::Realm> {
  public:
-  TestRealm(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+  explicit TestRealm(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   fidl::ClientEnd<fuchsia_component::Realm> Connect() {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_component::Realm>::Create();
@@ -46,6 +75,7 @@ class TestRealm final : public fidl::testing::WireTestBase<fuchsia_component::Re
   }
 
   async_dispatcher_t* dispatcher_;
+  std::unordered_map<std::string, TestController> controllers_;
 };
 
 class FakeDriverHost : public driver_manager::DriverHost {
@@ -88,25 +118,40 @@ class FakeDriverHost : public driver_manager::DriverHost {
   std::unordered_map<std::string, fidl::ClientEnd<fuchsia_driver_framework::Node>> clients_;
 };
 
+class StopListener final
+    : public fidl::WireAsyncEventHandler<fuchsia_component_runner::ComponentController> {
+ public:
+  explicit StopListener(async_dispatcher_t* dispatcher,
+                        fidl::ClientEnd<fuchsia_component_runner::ComponentController> client)
+      : client_(std::move(client), dispatcher, this) {}
+
+  bool is_stopped() const { return stopped_; }
+
+  fidl::WireClient<fuchsia_component_runner::ComponentController>& client() { return client_; }
+
+  void on_fidl_error(::fidl::UnbindInfo error) override { stopped_ = true; }
+
+  void OnStop(
+      fidl::WireEvent<fuchsia_component_runner::ComponentController::OnStop>* event) override {
+    stopped_ = true;
+    auto _ = client_.UnbindMaybeGetEndpoint();
+  }
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_component_runner::ComponentController> metadata) override {
+  }
+
+ private:
+  bool stopped_ = false;
+  fidl::WireClient<fuchsia_component_runner::ComponentController> client_;
+};
+
 class FakeNodeManager : public TestNodeManagerBase {
  public:
-  FakeNodeManager(fidl::WireClient<fuchsia_component::Realm> realm) : realm_(std::move(realm)) {}
+  FakeNodeManager(async_dispatcher_t* dispatcher, fidl::WireClient<fuchsia_component::Realm> realm)
+      : dispatcher_(dispatcher), realm_(std::move(realm)) {}
 
   zx::result<driver_manager::DriverHost*> CreateDriverHost(bool use_next_vdso) override {
     return zx::ok(&driver_host_);
-  }
-
-  void DestroyDriverComponent(
-      driver_manager::Node& node,
-      fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>
-          callback) override {
-    auto name = node.MakeComponentMoniker();
-    fuchsia_component_decl::wire::ChildRef child_ref{
-        .name = fidl::StringView::FromExternal(name),
-        .collection = "",
-    };
-    realm_->DestroyChild(child_ref).Then(std::move(callback));
-    clients_.erase(node.name());
   }
 
   void CloseDriverForNode(std::string node_name) { driver_host_.CloseDriver(node_name); }
@@ -115,15 +160,37 @@ class FakeNodeManager : public TestNodeManagerBase {
 
   void AddClient(const std::string& node_name,
                  fidl::ClientEnd<fuchsia_component_runner::ComponentController> client) {
-    clients_[node_name] = std::move(client);
+    stop_listeners_.emplace_back(dispatcher_, std::move(client));
   }
 
+  void StoreComponentHandle(const std::string& node_name,
+                            fidl::ServerEnd<fuchsia_component::Controller> controller) {
+    controllers_.emplace(
+        std::piecewise_construct, std::forward_as_tuple(node_name),
+        std::forward_as_tuple(this, node_name, std::move(controller), dispatcher_));
+  }
+
+  void RemoveController(const std::string& name) { controllers_.erase(name); }
+
  private:
+  async_dispatcher_t* dispatcher_;
   fidl::WireClient<fuchsia_component::Realm> realm_;
-  std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_runner::ComponentController>>
-      clients_;
+  std::list<StopListener> stop_listeners_;
+  std::unordered_map<std::string, TestController> controllers_;
   FakeDriverHost driver_host_;
 };
+
+void TestController::Destroy(DestroyCompleter::Sync& completer) {
+  completer.Reply(fit::ok());
+  // Post this as a task since the real component manager replies ok to indicate destroy has
+  // started, not that it has completed. This will allow driver manager to see the ok response
+  // before the controller closing.
+  async::PostTask(dispatcher_, [this]() { parent_->RemoveController(name_); });
+}
+
+void TestController::Start(StartRequestView request, StartCompleter::Sync& completer) {
+  completer.ReplySuccess();
+}
 
 class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
  public:
@@ -165,7 +232,7 @@ class Dfv2NodeTest : public DriverManagerTestBase {
 
     auto client = realm_->Connect();
     node_manager = std::make_unique<FakeNodeManager>(
-        fidl::WireClient<fuchsia_component::Realm>(std::move(client), dispatcher()));
+        dispatcher(), fidl::WireClient<fuchsia_component::Realm>(std::move(client), dispatcher()));
   }
 
   void StartTestDriver(std::shared_ptr<driver_manager::Node> node,
@@ -199,14 +266,17 @@ class Dfv2NodeTest : public DriverManagerTestBase {
         .outgoing_dir = std::move(server_end),
     }};
 
-    auto controller_endpoints =
+    auto component_controller_endpoints =
         fidl::Endpoints<fuchsia_component_runner::ComponentController>::Create();
+    node_manager->AddClient(node->name(), std::move(component_controller_endpoints.client));
 
-    node_manager->AddClient(node->name(), std::move(controller_endpoints.client));
+    auto controller_endpoints = fidl::Endpoints<fuchsia_component::Controller>::Create();
+    node_manager->StoreComponentHandle(node->name(), std::move(controller_endpoints.server));
+    node->SetController(std::move(controller_endpoints.client));
 
     fidl::Arena arena;
     node->StartDriver(fidl::ToWire(arena, std::move(start_info)),
-                      std::move(controller_endpoints.server),
+                      std::move(component_controller_endpoints.server),
                       [node](zx::result<> result) { node->CompleteBind(result); });
   }
 
@@ -302,7 +372,7 @@ TEST_F(Dfv2NodeTest, RemoveDuringFailedBind) {
   node->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
   RunLoopUntilIdle();
   ASSERT_FALSE(node->HasDriverComponent());
-  ASSERT_EQ(driver_manager::NodeState::kStopped, node->GetNodeState());
+  ASSERT_EQ(driver_manager::NodeState::kDestroyed, node->GetNodeState());
 }
 
 TEST_F(Dfv2NodeTest, TestEvaluateRematchFlags) {
@@ -359,7 +429,7 @@ TEST_F(Dfv2NodeTest, RemoveCompositeNodeForRebind) {
   RunLoopUntilIdle();
   ASSERT_TRUE(remove_callback_succeeded);
 
-  ASSERT_EQ(driver_manager::NodeState::kStopped, composite->GetNodeState());
+  ASSERT_EQ(driver_manager::NodeState::kDestroyed, composite->GetNodeState());
 }
 
 // Verify that we receives a callback for composite rebind if the node is deallocated

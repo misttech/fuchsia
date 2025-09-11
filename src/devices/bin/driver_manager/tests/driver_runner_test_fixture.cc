@@ -31,6 +31,18 @@ namespace frunner = fuchsia_component_runner;
 namespace fcomponent = fuchsia_component;
 namespace fdecl = fuchsia_component_decl;
 
+namespace {
+zx::result<zx_koid_t> GetKoid(const zx::unowned<zx::event>& handle) {
+  zx_info_handle_basic_t info{};
+  if (zx_status_t status =
+          handle->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok(info.koid);
+}
+}  // namespace
+
 void CheckNode(const inspect::Hierarchy& hierarchy, const NodeChecker& checker) {
   auto node = hierarchy.GetByPath(checker.node_name);
   ASSERT_NE(nullptr, node);
@@ -101,6 +113,41 @@ fidl::AnyTeardownObserver TeardownWatcher(size_t index, std::vector<size_t>& ind
   return fidl::ObserveTeardown([&indices = indices, index] { indices.emplace_back(index); });
 }
 
+TestController::TestController(TestRealm* parent, std::string_view name,
+                               std::string_view collection,
+                               fidl::ServerEnd<fcomponent::Controller> controller,
+                               async_dispatcher_t* dispatcher)
+    : parent_(parent),
+      name_(name),
+      collection_(collection),
+      dispatcher_(dispatcher),
+      binding_(dispatcher_, std::move(controller), this, fidl::kIgnoreBindingClosure) {}
+
+void TestController::Destroy(DestroyCompleter::Sync& completer) {
+  completer.Reply(fit::ok());
+
+  // Post this as a task since the real component manager replies ok to indicate destroy has
+  // started, not that it has completed. This will allow driver manager to see the ok response
+  // before the controller closing.
+  async::PostTask(dispatcher_, [this]() {
+    parent_->MarkChildDestroyed(name_, collection_);
+    parent_->RemoveController(name_);
+  });
+}
+
+void TestController::Start(StartRequest& request, StartCompleter::Sync& completer) {
+  if (request.args().numbered_handles()) {
+    parent_->SetHandles(std::move(request.args().numbered_handles().value()));
+  }
+
+  completer.Reply(fit::ok());
+}
+
+void TestRealm::MarkChildDestroyed(std::string_view name, std::string_view collection) {
+  destroyed_children_.push_back(
+      fuchsia_component_decl::ChildRef(std::string(name), {std::string(collection)}));
+}
+
 void TestRealm::AssertDestroyedChildren(const std::vector<fdecl::ChildRef>& expected) {
   auto destroyed_children = destroyed_children_;
   for (const auto& child : expected) {
@@ -114,30 +161,39 @@ void TestRealm::AssertDestroyedChildren(const std::vector<fdecl::ChildRef>& expe
   }
   ASSERT_EQ(destroyed_children.size(), 0ul);
 }
+
+void TestRealm::RemoveController(const std::string& name) { controllers_.erase(name); }
+
 void TestRealm::CreateChild(CreateChildRequest& request, CreateChildCompleter::Sync& completer) {
   handles_ = std::move(request.args().numbered_handles());
+
+  if (request.args().controller().has_value()) {
+    controllers_.emplace(
+        std::piecewise_construct, std::forward_as_tuple(request.decl().name().value()),
+        std::forward_as_tuple(this, request.decl().name().value(), request.collection().name(),
+                              std::move(request.args().controller().value()), dispatcher_));
+  }
+
   auto offers = request.args().dynamic_offers();
   create_child_handler_(
       std::move(request.collection()), std::move(request.decl()),
       offers.has_value() ? std::move(offers.value()) : std::vector<fdecl::Offer>{});
-  completer.Reply(fidl::Response<fuchsia_component::Realm::CreateChild>(fit::ok()));
+  completer.Reply(fidl::Response<fcomponent::Realm::CreateChild>(fit::ok()));
 }
-void TestRealm::DestroyChild(DestroyChildRequest& request, DestroyChildCompleter::Sync& completer) {
-  destroyed_children_.push_back(std::move(request.child()));
-  completer.Reply(fidl::Response<fuchsia_component::Realm::DestroyChild>(fit::ok()));
-}
+
 void TestRealm::OpenExposedDir(OpenExposedDirRequest& request,
                                OpenExposedDirCompleter::Sync& completer) {
   open_exposed_dir_handler_(std::move(request.child()), std::move(request.exposed_dir()));
-  completer.Reply(fidl::Response<fuchsia_component::Realm::OpenExposedDir>(fit::ok()));
+  completer.Reply(fidl::Response<fcomponent::Realm::OpenExposedDir>(fit::ok()));
 }
+
 class TestTransaction : public fidl::Transaction {
  public:
-  explicit TestTransaction(bool close) : close_(close) {}
+  explicit TestTransaction(std::string_view name, bool close) : name_(name), close_(close) {}
 
  private:
   std::unique_ptr<Transaction> TakeOwnership() override {
-    return std::make_unique<TestTransaction>(close_);
+    return std::make_unique<TestTransaction>(name_, close_);
   }
 
   zx_status_t Reply(fidl::OutgoingMessage* message, fidl::WriteOptions write_options) override {
@@ -146,9 +202,11 @@ class TestTransaction : public fidl::Transaction {
   }
 
   void Close(zx_status_t epitaph) override {
-    EXPECT_TRUE(close_) << "epitaph: " << zx_status_get_string(epitaph);
+    EXPECT_TRUE(close_) << "epitaph: " << zx_status_get_string(epitaph) << "\n"
+                        << "name: " << name_.c_str();
   }
 
+  std::string name_;
   bool close_;
 };
 
@@ -176,7 +234,7 @@ void DriverHostComponentStart(driver_runner::TestRealm& realm,
       .numbered_handles(realm.TakeHandles(arena));
 
   auto controller_endpoints = fidl::Endpoints<frunner::ComponentController>::Create();
-  TestTransaction transaction(false);
+  TestTransaction transaction("driver host", false);
   {
     fidl::WireServer<frunner::ComponentRunner>::StartCompleter::Sync completer(&transaction);
     fidl::WireRequest<frunner::ComponentRunner::Start> request{
@@ -186,11 +244,18 @@ void DriverHostComponentStart(driver_runner::TestRealm& realm,
   }
 }
 
-fidl::ClientEnd<fuchsia_component::Realm> DriverRunnerTestBase::ConnectToRealm() {
+fidl::ClientEnd<fcomponent::Realm> DriverRunnerTestBase::ConnectToRealm() {
   auto realm_endpoints = fidl::Endpoints<fcomponent::Realm>::Create();
   realm_bindings_.AddBinding(dispatcher(), std::move(realm_endpoints.server), &realm_,
                              fidl::kIgnoreBindingClosure);
   return std::move(realm_endpoints.client);
+}
+
+fidl::ClientEnd<fcomponent::Introspector> DriverRunnerTestBase::ConnectToIntrospector() {
+  auto introspector_endpoints = fidl::Endpoints<fcomponent::Introspector>::Create();
+  introspector_bindings_.AddBinding(dispatcher(), std::move(introspector_endpoints.server),
+                                    &introspector_, fidl::kIgnoreBindingClosure);
+  return std::move(introspector_endpoints.client);
 }
 
 fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore>
@@ -264,8 +329,8 @@ FakeDriverIndex DriverRunnerTestBase::CreateDriverIndex() {
 }
 void DriverRunnerTestBase::SetupDriverRunner(FakeDriverIndex driver_index) {
   driver_index_.emplace(std::move(driver_index));
-  driver_runner_.emplace(ConnectToRealm(), ConnectToCapabilityStore(), driver_index_->Connect(),
-                         inspector_, &LoaderFactory, dispatcher(), false,
+  driver_runner_.emplace(ConnectToRealm(), ConnectToIntrospector(), ConnectToCapabilityStore(),
+                         driver_index_->Connect(), inspector_, &LoaderFactory, dispatcher(), false,
                          driver_manager::OfferInjector{{
                              .power_inject_offer = false,
                              .power_suspend_enabled = false,
@@ -295,8 +360,8 @@ void DriverRunnerTestBase::SetupDriverRunnerWithDynamicLinker(
   dynamic_linker_ =
       driver_loader::Loader::Create(loader_dispatcher, std::move(load_driver_handler));
   driver_runner_.emplace(
-      ConnectToRealm(), ConnectToCapabilityStore(), driver_index_->Connect(), inspector_,
-      &LoaderFactory, dispatcher(), false,
+      ConnectToRealm(), ConnectToIntrospector(), ConnectToCapabilityStore(),
+      driver_index_->Connect(), inspector_, &LoaderFactory, dispatcher(), false,
       driver_manager::OfferInjector{{
           .power_inject_offer = false,
           .power_suspend_enabled = false,
@@ -382,15 +447,41 @@ void DriverRunnerTestBase::PrepareRealmForStartDriverHostDynamicLinker() {
   });
 }
 
+StopListener::StopListener(async_dispatcher_t* dispatcher,
+                           fidl::ClientEnd<frunner::ComponentController> client,
+                           fidl::AnyTeardownObserver observer)
+    : client_(std::move(client), dispatcher, this), observer_(std::move(observer)) {}
+
+void StopListener::on_fidl_error(::fidl::UnbindInfo error) {
+  stopped_ = true;
+  std::move(observer_).Notify();
+}
+
+bool StopListener::is_stopped() const { return stopped_; }
+
+void StopListener::OnStop(fidl::WireEvent<frunner::ComponentController::OnStop>* event) {
+  stopped_ = true;
+  auto _ = client_.UnbindMaybeGetEndpoint();
+  std::move(observer_).Notify();
+}
+
+StopListener& DriverRunnerTestBase::ServeStopListener(
+    fidl::ClientEnd<frunner::ComponentController> component, fidl::AnyTeardownObserver observer) {
+  return stop_listeners_.emplace_back(dispatcher(), std::move(component), std::move(observer));
+}
+
 void DriverRunnerTestBase::StopDriverComponent(
     fidl::ClientEnd<frunner::ComponentController> component) {
-  fidl::WireClient client(std::move(component), dispatcher());
-  auto stop_result = client->Stop();
+  StopListener listener(dispatcher(), std::move(component), fidl::AnyTeardownObserver::Noop());
+  auto stop_result = listener.client()->Stop();
   ASSERT_EQ(ZX_OK, stop_result.status());
-  EXPECT_TRUE(RunLoopUntilIdle());
+
+  while (!listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
 }
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
-    Driver driver, std::optional<StartDriverHandler> start_handler,
+    std::string_view moniker, Driver driver, std::optional<StartDriverHandler> start_handler,
     fidl::ClientEnd<fuchsia_io::Directory> ns_pkg,
     fidl::ClientEnd<fuchsia_io::Directory> driver_host_pkg) {
   std::unique_ptr<TestDriver> started_driver;
@@ -465,10 +556,11 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
       .program(program_builder.Build())
       .outgoing_dir(std::move(outgoing_endpoints->server))
       .ns(ns_entries)
-      .numbered_handles(realm().TakeHandles(arena));
+      .numbered_handles(realm().TakeHandles(arena))
+      .component_instance(introspector_.GetTokenForName(moniker));
 
   auto controller_endpoints = fidl::Endpoints<frunner::ComponentController>::Create();
-  TestTransaction transaction(driver.close);
+  TestTransaction transaction(moniker, driver.close);
   {
     fidl::WireServer<frunner::ComponentRunner>::StartCompleter::Sync completer(&transaction);
     fidl::WireRequest<frunner::ComponentRunner::Start> request{
@@ -494,7 +586,7 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
 }
 
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriverWithConfig(
-    Driver driver, std::optional<StartDriverHandler> start_handler,
+    std::string_view moniker, Driver driver, std::optional<StartDriverHandler> start_handler,
     test_utils::TestPkg::Config driver_config, test_utils::TestPkg::Config driver_host_config) {
   fidl::Endpoints<fuchsia_io::Directory> child_pkg_endpoints;
   std::unique_ptr<test_utils::TestPkg> child_test_pkg;
@@ -510,7 +602,8 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriverWithCon
     driver_host_test_pkg = std::make_unique<test_utils::TestPkg>(
         std::move(driver_host_pkg_endpoints.server), driver_host_config);
   }
-  return StartDriver(driver, std::move(start_handler), std::move(child_pkg_endpoints.client),
+  return StartDriver(moniker, driver, std::move(start_handler),
+                     std::move(child_pkg_endpoints.client),
                      std::move(driver_host_pkg_endpoints.client));
 }
 
@@ -530,12 +623,12 @@ zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartR
   StartDriverHandler start_handler = [](TestDriver* driver, fdfw::DriverStartArgs start_args) {
     ValidateProgram(start_args.program(), root_driver_binary, "false", "false", "false");
   };
-  return zx::ok(StartDriver(
-      {
-          .url = root_driver_url,
-          .binary = root_driver_binary,
-      },
-      std::move(start_handler)));
+  return zx::ok(StartDriver("dev",
+                            {
+                                .url = root_driver_url,
+                                .binary = root_driver_binary,
+                            },
+                            std::move(start_handler)));
 }
 
 zx::result<DriverRunnerTestBase::StartDriverResult>
@@ -563,19 +656,26 @@ DriverRunnerTestBase::StartRootDriverDynamicLinking(test_utils::TestPkg::Config 
   test_utils::TestPkg driver_host_test_pkg(std::move(driver_host_pkg_endpoints.server),
                                            driver_host_config);
 
-  return zx::ok(StartDriver(
-      {
-          .url = driver_runner::root_driver_url,
-          .binary = std::string(driver_config.main_module.open_path),
-          .use_dynamic_linker = true,
-      },
-      std::move(start_handler), std::move(pkg_endpoints.client),
-      std::move(driver_host_pkg_endpoints.client)));
+  return zx::ok(StartDriver("dev",
+                            {
+                                .url = driver_runner::root_driver_url,
+                                .binary = std::string(driver_config.main_module.open_path),
+                                .use_dynamic_linker = true,
+                            },
+                            std::move(start_handler), std::move(pkg_endpoints.client),
+                            std::move(driver_host_pkg_endpoints.client)));
 }
 
 void DriverRunnerTestBase::Unbind() {
   driver_host_bindings_.CloseAll(ZX_OK);
   EXPECT_TRUE(RunLoopUntilIdle());
+  for (auto& listener : stop_listeners_) {
+    if (!listener.is_stopped()) {
+      auto _ = listener.client()->Stop();
+    }
+  }
+
+  RunLoopUntilIdle();
 }
 
 void DriverRunnerTestBase::ValidateProgram(std::optional<::fuchsia_data::Dictionary>& program,
@@ -631,7 +731,8 @@ void DriverRunnerTestBase::SetupDevfs() {
   driver_runner().root_node()->SetupDevfsForRootNode(devfs_);
 }
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartSecondDriver(
-    bool colocate, bool host_restart_on_crash, bool use_next_vdso, bool use_dynamic_linker) {
+    std::string_view moniker, bool colocate, bool host_restart_on_crash, bool use_next_vdso,
+    bool use_dynamic_linker) {
   auto second_driver_config = kDefaultSecondDriverPkgConfig;
   std::string binary = std::string(second_driver_config.main_module.open_path);
   StartDriverHandler start_handler = [colocate, host_restart_on_crash, use_next_vdso, binary,
@@ -645,17 +746,41 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartSecondDriver(
                     host_restart_on_crash ? "true" : "false", use_next_vdso ? "true" : "false",
                     use_dynamic_linker ? "true" : "false");
   };
-  return StartDriverWithConfig(
-      {
-          .url = second_driver_url,
-          .binary = binary,
-          .colocate = colocate,
-          .host_restart_on_crash = host_restart_on_crash,
-          .use_next_vdso = use_next_vdso,
-          .use_dynamic_linker = use_dynamic_linker,
-      },
-      std::move(start_handler), second_driver_config);
+  return StartDriverWithConfig(moniker,
+                               {
+                                   .url = second_driver_url,
+                                   .binary = binary,
+                                   .colocate = colocate,
+                                   .host_restart_on_crash = host_restart_on_crash,
+                                   .use_next_vdso = use_next_vdso,
+                                   .use_dynamic_linker = use_dynamic_linker,
+                               },
+                               std::move(start_handler), second_driver_config);
 }
+
+zx::event TestIntrospector::GetTokenForName(std::string_view name) {
+  zx::event evnt;
+  EXPECT_EQ(ZX_OK, zx::event::create(0, &evnt));
+  zx_koid_t koid = GetKoid(evnt.borrow()).value();
+  entries_[koid] = name;
+  return evnt;
+}
+
+void TestIntrospector::GetMoniker(GetMonikerRequest& request,
+                                  GetMonikerCompleter::Sync& completer) {
+  if (!enabled_) {
+    ZX_ASSERT_MSG(false, " GetMoniker shouldn't get called for this test.");
+  }
+
+  auto it = entries_.find(GetKoid(request.component_instance().borrow()).value());
+  if (it == entries_.end()) {
+    completer.Reply(fit::error(fcomponent::Error::kInstanceNotFound));
+    return;
+  }
+
+  completer.Reply(fit::ok(it->second));
+}
+
 void TestDirectory::Bind(fidl::ServerEnd<fio::Directory> request) {
   bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
 }
@@ -749,6 +874,11 @@ std::shared_ptr<CreatedChild> TestDriver::AddChild(fdfw::NodeAddArgs child_args,
 
   return child;
 }
+
+void TestRealm::SetHandles(std::vector<fprocess::HandleInfo> handles) {
+  handles_ = std::move(handles);
+}
+
 fidl::VectorView<fprocess::wire::HandleInfo> TestRealm::TakeHandles(fidl::AnyArena& arena) {
   if (handles_.has_value()) {
     return fidl::ToWire(arena, std::move(handles_));
@@ -756,6 +886,7 @@ fidl::VectorView<fprocess::wire::HandleInfo> TestRealm::TakeHandles(fidl::AnyAre
 
   return fidl::VectorView<fprocess::wire::HandleInfo>(arena, 0);
 }
+
 fidl::WireClient<fuchsia_device::Controller> DriverRunnerTestBase::ConnectToDeviceController(
     std::string_view child_name) {
   fs::SynchronousVfs vfs(dispatcher());

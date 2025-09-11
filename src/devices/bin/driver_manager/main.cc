@@ -89,6 +89,11 @@ int main(int argc, char** argv) {
     return realm_result.error_value();
   }
 
+  auto introspector_result = component::Connect<fuchsia_component::Introspector>();
+  if (introspector_result.is_error()) {
+    return introspector_result.error_value();
+  }
+
   auto capability_store_result = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
   if (capability_store_result.is_error()) {
     return capability_store_result.error_value();
@@ -115,8 +120,8 @@ int main(int argc, char** argv) {
   auto loader_service =
       driver_manager::DriverHostLoaderService::Create(loader_loop.dispatcher(), std::move(lib_fd));
   driver_manager::DriverRunner driver_runner(
-      std::move(realm_result.value()), std::move(capability_store_result.value()),
-      std::move(driver_index_result.value()), inspector,
+      std::move(realm_result.value()), std::move(introspector_result.value()),
+      std::move(capability_store_result.value()), std::move(driver_index_result.value()), inspector,
       [loader_service]() -> zx::result<fidl::ClientEnd<fuchsia_ldsvc::Loader>> {
         zx::result client = loader_service->Connect();
         if (client.is_error()) {
@@ -142,10 +147,10 @@ int main(int argc, char** argv) {
       }});
 
   // Setup devfs.
-  std::optional<driver_manager::Devfs> devfs;
+  std::shared_ptr<driver_manager::Devfs> devfs;
   driver_runner.root_node()->SetupDevfsForRootNode(devfs);
   driver_runner.PublishComponentRunner(outgoing);
-  driver_runner.StartDevfsDriver(*devfs);
+  driver_runner.StartDevfsDriver(devfs);
 
   // Find and load v2 Drivers.
   fdf_log::info("Starting DriverRunner with root driver URL: {}", config.root_driver());
@@ -165,7 +170,7 @@ int main(int argc, char** argv) {
 
   // Add the devfs folder to the tree:
   {
-    zx::result devfs_client = devfs.value().Connect(vfs);
+    zx::result devfs_client = devfs->Connect(vfs);
     ZX_ASSERT_MSG(devfs_client.is_ok(), "%s", devfs_client.status_string());
     const zx::result result = outgoing.AddDirectory(std::move(devfs_client.value()), "dev");
     ZX_ASSERT(result.is_ok());

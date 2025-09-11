@@ -65,6 +65,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   // |Dynamic_linker_args| should be set if dynamic linking is available.
   DriverRunner(fidl::ClientEnd<fuchsia_component::Realm> realm,
+               fidl::ClientEnd<fuchsia_component::Introspector> introspector,
                fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore> capability_store,
                fidl::ClientEnd<fuchsia_driver_index::DriverIndex> driver_index,
                inspect::ComponentInspector& inspect, LoaderServiceFactory loader_service_factory,
@@ -143,7 +144,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   // ComponentController.
   // This function should only be called once when the driver manager is starting, and will no
   // longer be needed when devfs migration is complete.
-  void StartDevfsDriver(driver_manager::Devfs& devfs);
+  void StartDevfsDriver(std::shared_ptr<driver_manager::Devfs>& devfs);
 
   // Goes through the orphan list and attempts the bind them again. Sends nodes that are still
   // orphaned back to the orphan list. Tracks the result of the bindings and then when finished
@@ -193,7 +194,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void Bind(Node& node, std::shared_ptr<BindResultTracker> result_tracker) override;
   void BindToUrl(Node& node, std::string_view driver_url_suffix,
                  std::shared_ptr<BindResultTracker> result_tracker) override;
-  void DestroyDriverComponent(Node& node, DestroyDriverComponentCallback callback) override;
   zx::result<DriverHost*> CreateDriverHost(bool use_next_vdso) override;
   // Creates the driver host component, loads the driver host using dynamic linking,
   // and calls |cb| on completion. |cb| will only be called if the return value is zx::ok.

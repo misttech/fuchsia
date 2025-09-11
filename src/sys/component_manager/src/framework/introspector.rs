@@ -117,6 +117,8 @@ impl FrameworkCapability for IntrospectorFrameworkCapability {
     ) -> Box<dyn CapabilityProvider> {
         static MEMORY_MONITOR: LazyLock<Moniker> =
             LazyLock::new(|| Moniker::parse_str("/core/memory_monitor2").unwrap());
+        static DRIVER_MANAGER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/bootstrap/driver_manager").unwrap());
         /// Moniker for integration tests.
         static RECEIVER: LazyLock<Moniker> =
             LazyLock::new(|| Moniker::parse_str("/receiver").unwrap());
@@ -138,6 +140,8 @@ impl FrameworkCapability for IntrospectorFrameworkCapability {
             LazyLock::new(|| Moniker::parse_str("/core/testing/zxtest_runner").unwrap());
         static TEST_REALMS: LazyLock<Moniker> =
             LazyLock::new(|| Moniker::parse_str("/core/testing").unwrap());
+        static TEST_MANAGER_REALMS: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/test_manager").unwrap());
         static STARNIX_TESTS: LazyLock<Name> = LazyLock::new(|| "starnix-tests".parse().unwrap());
         // TODO(https://fxbug.dev/318904493): Temporary workaround to prevent other components from
         // using `Introspector` while improvements to framework capability allowlists are under way.
@@ -151,13 +155,25 @@ impl FrameworkCapability for IntrospectorFrameworkCapability {
         // `/core/testing/starnix-tests`, then used by some realm inside
         // `/core/testing/starnix-tests`.
         //
+        // In driver test realm tests, the capability is minted at some realm inside
+        // a test realm, then used by the driver manager in the same test realm.
+        //
         // All other cases are disallowed.
         let is_starnix_test_realm = |moniker: &Moniker| {
             moniker.path().len() > TEST_REALMS.path().len()
                 && moniker.has_prefix(&TEST_REALMS)
                 && moniker.path()[TEST_REALMS.path().len()].collection() == Some(&*STARNIX_TESTS)
         };
+        let is_test_realm = |moniker: &Moniker| {
+            (moniker.path().len() > TEST_REALMS.path().len()
+                && moniker.has_prefix(&TEST_REALMS)
+                && moniker.path()[TEST_REALMS.path().len()].collection().is_some())
+                || (moniker.path().len() > TEST_MANAGER_REALMS.path().len()
+                    && moniker.has_prefix(&TEST_MANAGER_REALMS)
+                    && moniker.path()[TEST_MANAGER_REALMS.path().len()].collection().is_some())
+        };
         if target.moniker != *MEMORY_MONITOR
+            && target.moniker != *DRIVER_MANAGER
             && target.moniker != *RECEIVER
             && target.moniker != *ELF_TEST_RUNNER
             && target.moniker != *FUZZ_TEST_RUNNER
@@ -169,6 +185,11 @@ impl FrameworkCapability for IntrospectorFrameworkCapability {
             && target.moniker != *ZXTEST_TEST_RUNNER
             && !target.moniker.is_root()
             && !(is_starnix_test_realm(&target.moniker) && is_starnix_test_realm(&scope.moniker))
+            && !(is_test_realm(&target.moniker)
+                && is_test_realm(&scope.moniker)
+                && target.moniker.has_prefix(&scope.moniker)
+                && target.moniker.leaf().and_then(|l| Some(l.name().into()))
+                    == Some("driver_manager"))
         {
             return Box::new(AccessDeniedCapabilityProvider {
                 target,

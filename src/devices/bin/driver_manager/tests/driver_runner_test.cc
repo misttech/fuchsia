@@ -59,10 +59,11 @@ class DriverRunnerTest : public DriverRunnerTestBase, public ::testing::WithPara
     }
   }
 
-  StartDriverResult StartSecondDriver(bool colocate = false, bool host_restart_on_crash = false,
+  StartDriverResult StartSecondDriver(std::string_view moniker, bool colocate = false,
+                                      bool host_restart_on_crash = false,
                                       bool use_next_vdso = false) {
-    return DriverRunnerTestBase::StartSecondDriver(colocate, host_restart_on_crash, use_next_vdso,
-                                                   use_dynamic_linker());
+    return DriverRunnerTestBase::StartSecondDriver(moniker, colocate, host_restart_on_crash,
+                                                   use_next_vdso, use_dynamic_linker());
   }
 
   // If |use_dynamic_linker| is not provided, it will be generated from the test configuration.
@@ -103,8 +104,7 @@ TEST_P(DriverRunnerTest, StartRootDriver_DriverStopBeforeComponentExit) {
 
   auto root_driver = StartRootDriver();
   ASSERT_EQ(ZX_OK, root_driver.status_value());
-  fidl::WireSharedClient<frunner::ComponentController> root_client(
-      std::move(root_driver->controller), dispatcher(), TeardownWatcher(1, event_order));
+  ServeStopListener(std::move(root_driver->controller), TeardownWatcher(1, event_order));
 
   root_driver->driver->SetStopHandler([&event_order]() { event_order.push_back(0); });
   root_driver->driver->DropNode();
@@ -391,8 +391,9 @@ TEST_P(DriverRunnerTest, StartSecondDriver_NewDriverHost) {
                       result.error_value().FormatDescription().c_str());
       });
 
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
   EXPECT_TRUE(did_bind);
+  ServeStopListener(std::move(controller));
 
   driver->CloseBinding();
   driver->DropNode();
@@ -463,14 +464,15 @@ TEST_P(DriverRunnerTest, StartSecondDriver_SameDriverHost) {
     EXPECT_EQ(0xfeedu, symbols[0].address());
     ValidateProgram(start_args.program(), binary, "true", "false", "false");
   };
-  auto [driver, controller] = StartDriverWithConfig(
-      {
-          .url = second_driver_url,
-          .binary = binary,
-          .colocate = true,
-          .use_dynamic_linker = use_dynamic_linker(),
-      },
-      std::move(start_handler), second_driver_config);
+  auto [driver, controller] = StartDriverWithConfig("dev.second",
+                                                    {
+                                                        .url = second_driver_url,
+                                                        .binary = binary,
+                                                        .colocate = true,
+                                                        .use_dynamic_linker = use_dynamic_linker(),
+                                                    },
+                                                    std::move(start_handler), second_driver_config);
+  ServeStopListener(std::move(controller));
 
   driver->CloseBinding();
   driver->DropNode();
@@ -515,7 +517,8 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UseProperties) {
       root_driver->driver->AddChild(std::move(args), false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  auto [driver, controller] = StartSecondDriver(true);
+  auto [driver, controller] = StartSecondDriver("dev.second", true);
+  ServeStopListener(std::move(controller));
 
   driver->CloseBinding();
   driver->DropNode();
@@ -557,7 +560,8 @@ TEST_P(DriverRunnerTest, CheckOnBindNode) {
                       result.error_value().FormatDescription().c_str());
       });
 
-  auto [driver, controller] = StartSecondDriver(true);
+  auto [driver, controller] = StartSecondDriver("dev.second", true);
+  ServeStopListener(std::move(controller));
 
   ASSERT_TRUE(node_token.has_value());
   zx_info_handle_basic_t info;
@@ -639,7 +643,8 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  StopListener& stop_listener = ServeStopListener(std::move(controller));
 
   EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
 
@@ -650,11 +655,9 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
   EXPECT_EQ(1u, count.value());
 
   // Our driver should get closed.
-  EXPECT_TRUE(RunLoopUntilIdle());
-  zx_signals_t signals = 0;
-  ASSERT_EQ(ZX_OK,
-            controller.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  while (!stop_listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
 
   // Since we disabled the driver url, the rematch should have not gotten a match, and therefore
   // the node should haver become orphaned.
@@ -668,7 +671,8 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
   driver_runner().TryBindAllAvailable();
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  auto [driver_2, controller_2] = StartSecondDriver();
+  auto [driver_2, controller_2] = StartSecondDriver("dev.second");
+  ServeStopListener(std::move(controller_2));
 
   // This list should be empty now that it got bound again.
   EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
@@ -693,7 +697,8 @@ TEST_P(DriverRunnerTest, StartSecondDriverHostRestartOnCrash) {
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  auto [driver_1, controller_1] = StartSecondDriver(false, true);
+  auto [driver_1, controller_1] = StartSecondDriver("dev.second", false, true);
+  StopListener& stop_listener_1 = ServeStopListener(std::move(controller_1));
 
   EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
 
@@ -701,27 +706,21 @@ TEST_P(DriverRunnerTest, StartSecondDriverHostRestartOnCrash) {
   PrepareRealmForSecondDriverComponentStart();
   driver_1->CloseBinding();
   EXPECT_TRUE(RunLoopUntilIdle());
-
-  zx_signals_t signals = 0;
-  ASSERT_EQ(ZX_OK, controller_1.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(),
-                                                   &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  EXPECT_TRUE(stop_listener_1.is_stopped());
 
   // The driver host and driver should be started again by the node.
-  auto [driver_2, controller_2] = StartSecondDriver(false, true);
+  auto [driver_2, controller_2] = StartSecondDriver("dev.second", false, true);
+  StopListener& stop_listener_2 = ServeStopListener(std::move(controller_2));
 
   // Drop the node client binding.
   PrepareRealmForSecondDriverComponentStart();
   driver_2->DropNode();
   EXPECT_TRUE(RunLoopUntilIdle());
-
-  signals = 0;
-  ASSERT_EQ(ZX_OK, controller_2.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(),
-                                                   &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  EXPECT_TRUE(stop_listener_2.is_stopped());
 
   // The driver host and driver should be started again by the node.
-  auto [driver_3, controller_3] = StartSecondDriver(false, true);
+  auto [driver_3, controller_3] = StartSecondDriver("dev.second", false, true);
+  StopListener& stop_listener_3 = ServeStopListener(std::move(controller_3));
 
   // Now try to drop the node and close the binding at the same time. They should not break each
   // other.
@@ -730,14 +729,11 @@ TEST_P(DriverRunnerTest, StartSecondDriverHostRestartOnCrash) {
   EXPECT_TRUE(RunLoopUntilIdle());
   driver_3->DropNode();
   EXPECT_FALSE(RunLoopUntilIdle());
-
-  signals = 0;
-  ASSERT_EQ(ZX_OK, controller_3.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(),
-                                                   &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  EXPECT_TRUE(stop_listener_3.is_stopped());
 
   // The driver host and driver should be started again by the node.
-  auto [driver_4, controller_4] = StartSecondDriver(false, true);
+  auto [driver_4, controller_4] = StartSecondDriver("dev.second", false, true);
+  StopListener& stop_listener_4 = ServeStopListener(std::move(controller_4));
 
   // Again try to drop the node and close the binding at the same time but in opposite order.
   PrepareRealmForSecondDriverComponentStart();
@@ -745,28 +741,22 @@ TEST_P(DriverRunnerTest, StartSecondDriverHostRestartOnCrash) {
   EXPECT_TRUE(RunLoopUntilIdle());
   driver_4->CloseBinding();
   EXPECT_FALSE(RunLoopUntilIdle());
-
-  signals = 0;
-  ASSERT_EQ(ZX_OK, controller_4.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(),
-                                                   &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  EXPECT_TRUE(stop_listener_4.is_stopped());
 
   // The driver host and driver should be started again by the node.
-  auto [driver_5, controller_5] = StartSecondDriver(false, true);
+  auto [driver_5, controller_5] = StartSecondDriver("dev.second", false, true);
+  StopListener& stop_listener_5 = ServeStopListener(std::move(controller_5));
 
   // Finally don't RunLoopUntilIdle in between the two.
   PrepareRealmForSecondDriverComponentStart();
   driver_5->CloseBinding();
   driver_5->DropNode();
   EXPECT_TRUE(RunLoopUntilIdle());
-
-  signals = 0;
-  ASSERT_EQ(ZX_OK, controller_5.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(),
-                                                   &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  EXPECT_TRUE(stop_listener_5.is_stopped());
 
   // The driver host and driver should be started again by the node.
-  auto [driver_6, controller_6] = StartSecondDriver(false, true);
+  auto [driver_6, controller_6] = StartSecondDriver("dev.second", false, true);
+  ServeStopListener(std::move(controller_6));
 
   StopDriverComponent(std::move(root_driver->controller));
 
@@ -788,7 +778,8 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UseNextVdso) {
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  auto [driver_1, controller_1] = StartSecondDriver(true, false, true);
+  auto [driver_1, controller_1] = StartSecondDriver("dev.second", true, false, true);
+  ServeStopListener(std::move(controller_1));
 
   EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
 
@@ -819,11 +810,17 @@ TEST_P(DriverRunnerTest, BindThroughRequest) {
   AssertNodeControllerBound(child);
   child->node_controller.value()
       ->RequestBind(fdfw::NodeControllerRequestBindRequest())
-      .Then([](auto result) {});
+      .Then([](fidl::Result<fdfw::NodeController::RequestBind>& result) {
+        if (result.is_error()) {
+          fdf_log::error("RequestBind error: {}", result.error_value().FormatDescription());
+        }
+        EXPECT_TRUE(result.is_ok());
+      });
   EXPECT_TRUE(RunLoopUntilIdle());
   ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
 
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.child");
+  ServeStopListener(std::move(controller));
 
   driver->CloseBinding();
   driver->DropNode();
@@ -863,12 +860,18 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
   auto bind_request = fdfw::NodeControllerRequestBindRequest();
   child->node_controller.value()
       ->RequestBind(fdfw::NodeControllerRequestBindRequest())
-      .Then([](auto result) {});
+      .Then([](fidl::Result<fdfw::NodeController::RequestBind>& result) {
+        if (result.is_error()) {
+          fdf_log::error("RequestBind error: {}", result.error_value().FormatDescription());
+        }
+        EXPECT_TRUE(result.is_ok());
+      });
   EXPECT_TRUE(RunLoopUntilIdle());
   ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
 
   // Get the second-driver running.
-  auto [driver_1, controller_1] = StartSecondDriver();
+  auto [driver_1, controller_1] = StartSecondDriver("dev.child");
+  ServeStopListener(std::move(controller_1));
 
   // Prepare realm for the second-driver CreateChild again.
   PrepareRealmForDriverComponentStart("dev.child", second_driver_url);
@@ -878,11 +881,17 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
       ->RequestBind(fdfw::NodeControllerRequestBindRequest({
           .force_rebind = true,
       }))
-      .Then([](auto result) {});
+      .Then([](fidl::Result<fdfw::NodeController::RequestBind>& result) {
+        if (result.is_error()) {
+          fdf_log::error("RequestBind error: {}", result.error_value().FormatDescription());
+        }
+        EXPECT_TRUE(result.is_ok());
+      });
   EXPECT_TRUE(RunLoopUntilIdle());
 
   // Get the second-driver running again.
-  auto [driver_2, controller_2] = StartSecondDriver();
+  auto [driver_2, controller_2] = StartSecondDriver("dev.child");
+  ServeStopListener(std::move(controller_2));
 
   // Prepare realm for the third-driver CreateChild.
   PrepareRealmForDriverComponentStart("dev.child", "fuchsia-boot:///#meta/third-driver.cm");
@@ -893,7 +902,12 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
           .force_rebind = true,
           .driver_url_suffix = "third",
       }))
-      .Then([](auto result) {});
+      .Then([](fidl::Result<fdfw::NodeController::RequestBind>& result) {
+        if (result.is_error()) {
+          fdf_log::error("RequestBind error: {}", result.error_value().FormatDescription());
+        }
+        EXPECT_TRUE(result.is_ok());
+      });
   EXPECT_TRUE(RunLoopUntilIdle());
 
   // Get the third-driver running.
@@ -903,13 +917,14 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
     EXPECT_FALSE(start_args.symbols().has_value());
     ValidateProgram(start_args.program(), binary, "false", "false", "false");
   };
-  auto third_driver = StartDriverWithConfig(
-      {
-          .url = "fuchsia-boot:///#meta/third-driver.cm",
-          .binary = binary,
-          .use_dynamic_linker = use_dynamic_linker(),
-      },
-      std::move(start_handler), third_driver_config);
+  auto third_driver = StartDriverWithConfig("dev.child",
+                                            {
+                                                .url = "fuchsia-boot:///#meta/third-driver.cm",
+                                                .binary = binary,
+                                                .use_dynamic_linker = use_dynamic_linker(),
+                                            },
+                                            std::move(start_handler), third_driver_config);
+  ServeStopListener(std::move(third_driver.controller));
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren({
@@ -925,13 +940,16 @@ TEST_P(DriverRunnerTest, BindAndRestartThroughRequest) {
 TEST_P(DriverRunnerTest, StartSecondDriver_UnknownNode) {
   SetupDriverRunner();
 
+  // Unknown driver request in this test requires enabling the introspector's GetMoniker.
+  EnableIntrospector();
+
   auto root_driver = StartRootDriver();
   ASSERT_EQ(ZX_OK, root_driver.status_value());
 
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("unknown-node", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  StartDriver({.close = true, .use_dynamic_linker = use_dynamic_linker()});
+  StartDriver("dev", {.close = true, .use_dynamic_linker = use_dynamic_linker()});
   ASSERT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
 
   StopDriverComponent(std::move(root_driver->controller));
@@ -991,7 +1009,8 @@ TEST_P(DriverRunnerTest, StartSecondDriver_BindOrphanToBaseDriver) {
   ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
 
   StopDriverComponent(std::move(root_driver->controller));
-  realm().AssertDestroyedChildren({CreateChildRef("dev", "boot-drivers")});
+  realm().AssertDestroyedChildren(
+      {CreateChildRef("dev", "boot-drivers"), CreateChildRef("dev.second", "boot-drivers")});
 }
 
 // Start the second driver, and then unbind its associated node.
@@ -1004,15 +1023,14 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UnbindSecondNode) {
   PrepareRealmForSecondDriverComponentStart();
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  StopListener& stop_listener = ServeStopListener(std::move(controller));
 
   // Unbinding the second node stops the driver bound to it.
   driver->DropNode();
-  EXPECT_TRUE(RunLoopUntilIdle());
-  zx_signals_t signals = 0;
-  ASSERT_EQ(ZX_OK,
-            controller.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  while (!stop_listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren(
@@ -1030,16 +1048,15 @@ TEST_P(DriverRunnerTest, StartSecondDriver_CloseSecondDriver) {
   PrepareRealmForSecondDriverComponentStart();
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  StopListener& stop_listener = ServeStopListener(std::move(controller));
 
   // Closing the Driver protocol channel of the second driver causes the driver
   // to be stopped.
   driver->CloseBinding();
-  EXPECT_TRUE(RunLoopUntilIdle());
-  zx_signals_t signals = 0;
-  ASSERT_EQ(ZX_OK,
-            controller.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &signals));
-  ASSERT_TRUE(signals & ZX_CHANNEL_PEER_CLOSED);
+  while (!stop_listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren(
@@ -1087,6 +1104,7 @@ TEST_P(DriverRunnerTest, StartDriverChain_UnbindSecondNode) {
       ValidateProgram(start_args.program(), binary, "false", "false", "false");
     };
     drivers.emplace_back(StartDriverWithConfig(
+        component_moniker,
         {
             .url = "fuchsia-boot:///#meta/node-" + std::to_string(i) + "-driver.cm",
             .binary = binary,
@@ -1098,12 +1116,12 @@ TEST_P(DriverRunnerTest, StartDriverChain_UnbindSecondNode) {
   // Unbinding the second node stops all drivers bound in the sub-tree, in a
   // depth-first order.
   std::vector<size_t> indices;
-  std::vector<fidl::WireSharedClient<frunner::ComponentController>> clients;
+  size_t listeners = 0;
 
   // Start at 1 since 0 is the root driver.
   for (size_t i = 1; i < drivers.size(); i++) {
-    clients.emplace_back(std::move(drivers[i].controller), dispatcher(),
-                         TeardownWatcher(clients.size() + 1, indices));
+    ServeStopListener(std::move(drivers[i].controller), TeardownWatcher(listeners + 1, indices));
+    listeners++;
   }
 
   drivers[1].driver->DropNode();
@@ -1131,22 +1149,27 @@ TEST_P(DriverRunnerTest, StartDriverChain_UnbindSecondNode) {
 TEST_P(DriverRunnerTest, StartSecondDriver_UnbindRootNode) {
   SetupDriverRunner();
 
+  std::vector<size_t> indices;
+
   auto root_driver = StartRootDriver();
   ASSERT_EQ(ZX_OK, root_driver.status_value());
+  StopListener& stop_listener_root =
+      ServeStopListener(std::move(root_driver->controller), TeardownWatcher(0, indices));
 
   PrepareRealmForSecondDriverComponentStart();
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  StopListener& stop_listener_second =
+      ServeStopListener(std::move(controller), TeardownWatcher(1, indices));
 
   // Unbinding the root node stops all drivers.
-  std::vector<size_t> indices;
-  fidl::WireSharedClient<frunner::ComponentController> root_client(
-      std::move(root_driver->controller), dispatcher(), TeardownWatcher(0, indices));
-  fidl::WireSharedClient<frunner::ComponentController> second_client(
-      std::move(controller), dispatcher(), TeardownWatcher(1, indices));
   root_driver->driver->DropNode();
-  EXPECT_TRUE(RunLoopUntilIdle());
+
+  while (!stop_listener_second.is_stopped() || !stop_listener_root.is_stopped()) {
+    RunLoopUntilIdle();
+  }
+
   EXPECT_THAT(indices, ElementsAre(1, 0));
 }
 
@@ -1156,9 +1179,13 @@ TEST_P(DriverRunnerTest, StartSecondDriver_StopRootNode) {
 
   // These represent the order that Driver::Stop is called
   std::vector<size_t> driver_stop_indices;
+  // These represent the order that the component stop happens.
+  std::vector<size_t> indices;
 
   auto root_driver = StartRootDriver();
   ASSERT_EQ(ZX_OK, root_driver.status_value());
+  StopListener& stop_listener_root =
+      ServeStopListener(std::move(root_driver->controller), TeardownWatcher(0, indices));
 
   root_driver->driver->SetStopHandler(
       [&driver_stop_indices]() { driver_stop_indices.push_back(0); });
@@ -1166,47 +1193,23 @@ TEST_P(DriverRunnerTest, StartSecondDriver_StopRootNode) {
   PrepareRealmForSecondDriverComponentStart();
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  StopListener& stop_listener_second =
+      ServeStopListener(std::move(controller), TeardownWatcher(1, indices));
 
   driver->SetStopHandler([&driver_stop_indices]() { driver_stop_indices.push_back(1); });
 
-  std::vector<size_t> indices;
-  fidl::WireSharedClient<frunner::ComponentController> root_client(
-      std::move(root_driver->controller), dispatcher(), TeardownWatcher(0, indices));
-  fidl::WireSharedClient<frunner::ComponentController> second_client(
-      std::move(controller), dispatcher(), TeardownWatcher(1, indices));
-
   // Simulate the Component Framework calling Stop on the root driver.
-  [[maybe_unused]] auto result = root_client->Stop();
+  [[maybe_unused]] auto result = stop_listener_root.client()->Stop();
 
-  EXPECT_TRUE(RunLoopUntilIdle());
+  while (!stop_listener_second.is_stopped() || !stop_listener_root.is_stopped()) {
+    RunLoopUntilIdle();
+  }
+
   // Check that the driver components were shut down in order.
   EXPECT_THAT(indices, ElementsAre(1, 0));
   // Check that Driver::Stop was called in order.
   EXPECT_THAT(driver_stop_indices, ElementsAre(1, 0));
-}
-
-// Start the second driver, and then stop the root driver.
-TEST_P(DriverRunnerTest, StartSecondDriver_StopRootDriver) {
-  SetupDriverRunner();
-
-  auto root_driver = StartRootDriver();
-  ASSERT_EQ(ZX_OK, root_driver.status_value());
-
-  PrepareRealmForSecondDriverComponentStart();
-  std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
-  EXPECT_TRUE(RunLoopUntilIdle());
-  auto [driver, controller] = StartSecondDriver();
-
-  // Stopping the root driver stops all drivers.
-  std::vector<size_t> indices;
-  fidl::WireSharedClient<frunner::ComponentController> root_client(
-      std::move(root_driver->controller), dispatcher(), TeardownWatcher(0, indices));
-  fidl::WireSharedClient<frunner::ComponentController> second_client(
-      std::move(controller), dispatcher(), TeardownWatcher(1, indices));
-  [[maybe_unused]] auto result = root_client->Stop();
-  EXPECT_TRUE(RunLoopUntilIdle());
-  EXPECT_THAT(indices, ElementsAre(1, 0));
 }
 
 // Start the second driver, stop the root driver, and block while waiting on the
@@ -1214,13 +1217,19 @@ TEST_P(DriverRunnerTest, StartSecondDriver_StopRootDriver) {
 TEST_P(DriverRunnerTest, StartSecondDriver_BlockOnSecondDriver) {
   SetupDriverRunner();
 
+  std::vector<size_t> indices;
+
   auto root_driver = StartRootDriver();
   ASSERT_EQ(ZX_OK, root_driver.status_value());
+  StopListener& stop_listener_root =
+      ServeStopListener(std::move(root_driver->controller), TeardownWatcher(0, indices));
 
   PrepareRealmForSecondDriverComponentStart();
   std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
   EXPECT_TRUE(RunLoopUntilIdle());
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  StopListener& stop_listener_second =
+      ServeStopListener(std::move(controller), TeardownWatcher(1, indices));
 
   // When the second driver gets asked to stop, don't drop the binding,
   // which means DriverRunner will wait for the binding to drop.
@@ -1228,12 +1237,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_BlockOnSecondDriver) {
 
   // Stopping the root driver stops all drivers, but is blocked waiting on the
   // second driver to stop.
-  std::vector<size_t> indices;
-  fidl::WireSharedClient<frunner::ComponentController> root_client(
-      std::move(root_driver->controller), dispatcher(), TeardownWatcher(0, indices));
-  fidl::WireSharedClient<frunner::ComponentController> second_client(
-      std::move(controller), dispatcher(), TeardownWatcher(1, indices));
-  [[maybe_unused]] auto result = root_client->Stop();
+  [[maybe_unused]] auto result = stop_listener_root.client()->Stop();
   EXPECT_TRUE(RunLoopUntilIdle());
   // Nothing has shut down yet, since we are waiting.
   EXPECT_THAT(indices, ElementsAre());
@@ -1245,7 +1249,11 @@ TEST_P(DriverRunnerTest, StartSecondDriver_BlockOnSecondDriver) {
   // Unbind the second node, indicating the second driver has stopped, thereby
   // continuing the stop sequence.
   driver->CloseBinding();
-  EXPECT_TRUE(RunLoopUntilIdle());
+
+  while (!stop_listener_second.is_stopped() || !stop_listener_root.is_stopped()) {
+    RunLoopUntilIdle();
+  }
+
   EXPECT_THAT(indices, ElementsAre(1, 0));
 }
 
@@ -1313,14 +1321,16 @@ TEST_P(DriverRunnerTest, CreateAndBindCompositeNodeSpec) {
                                                     fdfw::DriverStartArgs start_args) {
     ValidateProgram(start_args.program(), binary, "true", "false", "false");
   };
-  auto composite_driver = StartDriverWithConfig(
-      {
-          .url = "fuchsia-boot:///#meta/composite-driver.cm",
-          .binary = binary,
-          .colocate = true,
-          .use_dynamic_linker = use_dynamic_linker(),
-      },
-      std::move(start_handler), composite_driver_config);
+  auto composite_driver =
+      StartDriverWithConfig("dev.dev-group-1.test-group",
+                            {
+                                .url = "fuchsia-boot:///#meta/composite-driver.cm",
+                                .binary = binary,
+                                .colocate = true,
+                                .use_dynamic_linker = use_dynamic_linker(),
+                            },
+                            std::move(start_handler), composite_driver_config);
+  ServeStopListener(std::move(composite_driver.controller));
 
   auto hierarchy = Inspect();
   ASSERT_NO_FATAL_FAILURE(CheckNode(hierarchy, {
@@ -1436,7 +1446,8 @@ TEST_P(DriverRunnerTest, StartAndInspect) {
                                                }));
 
   StopDriverComponent(std::move(root_driver->controller));
-  realm().AssertDestroyedChildren({CreateChildRef("dev", "boot-drivers")});
+  realm().AssertDestroyedChildren(
+      {CreateChildRef("dev", "boot-drivers"), CreateChildRef("dev.second", "boot-drivers")});
 }
 
 TEST_P(DriverRunnerTest, TestTearDownNodeTreeWithManyChildren) {
@@ -1640,7 +1651,9 @@ TEST_P(DriverRunnerTest, DeviceControllerBind) {
 
   // Verify the driver was bound.
   ASSERT_EQ(0u, driver_runner().bind_manager().NumOrphanedNodes());
-  auto [driver, controller] = StartSecondDriver();
+  auto [driver, controller] = StartSecondDriver("dev.child");
+  ServeStopListener(std::move(controller));
+
   driver->CloseBinding();
   driver->DropNode();
   StopDriverComponent(std::move(root_driver->controller));

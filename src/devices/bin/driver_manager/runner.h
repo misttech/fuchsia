@@ -12,6 +12,7 @@
 #include <fidl/fuchsia.process/cpp/wire.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 
+#include "src/devices/bin/driver_manager/bootup_tracker.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/offer_injection.h"
 
@@ -21,25 +22,29 @@ namespace driver_manager {
 // to allow driver components to be created in the current realm.
 class Runner : public fidl::WireServer<fuchsia_component_runner::ComponentRunner> {
  public:
-  // The started component from the perspective of the Component Framework.
-  struct StartedComponent {
-    fuchsia_component_runner::ComponentStartInfo info;
-    fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller;
-  };
-  using StartCallback = fit::callback<void(zx::result<StartedComponent>)>;
-
   Runner(async_dispatcher_t* dispatcher, fidl::WireClient<fuchsia_component::Realm> realm,
+         fidl::WireClient<fuchsia_component::Introspector> introspector,
          OfferInjector offer_injector)
-      : dispatcher_(dispatcher), realm_(std::move(realm)), offer_injector_(offer_injector) {}
+      : dispatcher_(dispatcher),
+        realm_(std::move(realm)),
+        introspector_(std::move(introspector)),
+        offer_injector_(offer_injector) {}
 
   zx::result<> Publish(component::OutgoingDirectory& outgoing);
 
-  void StartDriverComponent(std::string_view moniker, std::string_view url,
-                            std::string_view collection_name, const std::vector<NodeOffer>& offers,
-                            std::optional<fuchsia_component_sandbox::DictionaryRef> dictionary_ref,
-                            StartCallback callback);
+  void CreateDriverComponent(
+      const std::shared_ptr<ComponentOwner>& owner,
+      fidl::ServerEnd<fuchsia_component::Controller> controller_request, std::string_view moniker,
+      std::string_view url, std::string_view collection_name, const std::vector<NodeOffer>& offers,
+      std::optional<fuchsia_component_sandbox::DictionaryRef> dictionary_ref);
+
+  void StartDriverComponent(const std::string& moniker);
 
   const fidl::WireClient<fuchsia_component::Realm>& realm() const { return realm_; }
+
+  void SetBootupTracker(const std::weak_ptr<BootupTracker>& bootup_tracker) {
+    bootup_tracker_ = bootup_tracker;
+  }
 
  private:
   // fidl::WireServer<fuchsia_component_runner::ComponentRunner>
@@ -48,13 +53,16 @@ class Runner : public fidl::WireServer<fuchsia_component_runner::ComponentRunner
       fidl::UnknownMethodMetadata<fuchsia_component_runner::ComponentRunner> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  zx::result<> CallCallback(zx_koid_t koid, zx::result<StartedComponent> component);
+  zx::result<> CallCallback(const std::string& moniker, zx::result<StartedComponent> component);
 
-  std::unordered_map<zx_koid_t, StartCallback> start_requests_;
+  std::unordered_map<std::string, std::weak_ptr<ComponentOwner>> moniker_to_owner_;
+  std::unordered_map<zx_koid_t, std::string> start_requests_;
   async_dispatcher_t* dispatcher_;
   fidl::WireClient<fuchsia_component::Realm> realm_;
+  fidl::WireClient<fuchsia_component::Introspector> introspector_;
   OfferInjector offer_injector_;
   fidl::ServerBindingGroup<fuchsia_component_runner::ComponentRunner> bindings_;
+  std::weak_ptr<BootupTracker> bootup_tracker_;
 };
 }  // namespace driver_manager
 

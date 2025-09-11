@@ -20,6 +20,7 @@
 #include <variant>
 
 #include "src/devices/bin/driver_manager/bind/bind_result_tracker.h"
+#include "src/devices/bin/driver_manager/component_owner.h"
 #include "src/devices/bin/driver_manager/controller_allowlist_passthrough.h"
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
@@ -52,12 +53,34 @@ NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_
 class Node;
 struct NodeInfo;
 class NodeRemovalTracker;
+class BootupTracker;
+
+class DriverHostConnection : public fidl::WireAsyncEventHandler<fuchsia_driver_host::Driver> {
+ public:
+  explicit DriverHostConnection(Node* node) : node_(node) {}
+
+  void on_fidl_error(fidl::UnbindInfo info) override;
+
+ private:
+  Node* node_;
+};
+
+class ComponentControllerConnection
+    : public fidl::WireAsyncEventHandler<fuchsia_component::Controller> {
+ public:
+  explicit ComponentControllerConnection(Node* node) : node_(node) {}
+
+  void on_fidl_error(fidl::UnbindInfo info) override;
+
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_component::Controller> metadata) override {}
+
+ private:
+  Node* node_;
+};
 
 using AddNodeResultCallback =
     fit::callback<void(fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<Node>>)>;
-
-using DestroyDriverComponentCallback =
-    fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>;
 
 using OnBindWaitCompleter =
     fit::callback<void(zx::result<fuchsia_driver_framework::wire::DriverResult>)>;
@@ -97,10 +120,6 @@ class NodeManager {
   // object is still alive and in the linked list. Otherwise returns false.
   virtual bool IsDriverHostValid(DriverHost* driver_host) const { return true; }
 
-  // Destroys the dynamic child component that runs the driver associated with
-  // `node`.
-  virtual void DestroyDriverComponent(Node& node, DestroyDriverComponentCallback callback) = 0;
-
   virtual void RebindComposite(std::string spec, std::optional<std::string> driver_url,
                                fit::callback<void(zx::result<>)> callback) {}
 
@@ -116,9 +135,12 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
              public fidl::WireServer<fuchsia_driver_framework::Node>,
              public fidl::WireServer<fuchsia_component_runner::ComponentController>,
              public fidl::WireServer<fuchsia_device::Controller>,
-             public fidl::WireAsyncEventHandler<fuchsia_driver_host::Driver>,
              public std::enable_shared_from_this<Node>,
-             public NodeShutdownBridge {
+             public NodeShutdownBridge,
+             public ComponentOwner {
+  friend DriverHostConnection;
+  friend ComponentControllerConnection;
+
  public:
   Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
        async_dispatcher_t* dispatcher);
@@ -147,6 +169,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void OnBind();
   void OnMatchError(zx_status_t status);
   void OnStartError(zx_status_t status);
+
+  bool HasDriverComponentController() const override { return component_controller_.is_valid(); }
 
   bool is_bound() const { return std::holds_alternative<DriverComponent>(state_); }
 
@@ -193,9 +217,19 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                               fit::callback<void(zx::result<>)> completer);
   void RestartNodeWithRematch();
 
-  void StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_info,
-                   fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
-                   fit::callback<void(zx::result<>)> cb);
+  void StartDriver(
+      fuchsia_component_runner::wire::ComponentStartInfo start_info,
+      fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
+      fit::callback<void(zx::result<>)> cb);
+
+  // ComponentOwner
+  void SetController(fidl::ClientEnd<fuchsia_component::Controller> component_controller) override;
+  void OnComponentStarted(const std::weak_ptr<BootupTracker>& bootup_tracker,
+                          const std::string& moniker,
+                          zx::result<StartedComponent> component) override;
+  void RequestStartComponent(fuchsia_process::wire::HandleInfo startup_handle,
+                             const std::string& moniker,
+                             const std::weak_ptr<BootupTracker>& bootup_tracker) override;
 
   bool IsComposite() const { return std::holds_alternative<Composite>(type_); }
 
@@ -237,14 +271,16 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   }
 
   // This should be used on the root node. Install the root node at the top of the devfs filesystem.
-  void SetupDevfsForRootNode(std::optional<Devfs>& devfs) {
-    devfs.emplace(devfs_device_.topological_node(), dispatcher_);
+  void SetupDevfsForRootNode(std::shared_ptr<Devfs>& devfs) {
+    devfs = std::make_shared<Devfs>(devfs_device_.topological_node(), dispatcher_);
   }
 
   // This is exposed for testing. Setup this node's devfs nodes.
   void AddToDevfsForTesting(Devnode& parent) {
     parent.add_child(name_, std::nullopt, Devnode::Target(), devfs_device_);
   }
+
+  void SetShouldDestroy();
 
   // Invoked when a bind sequence has been completed. It allows us to reply to outstanding bind
   // requests that may have originated from the node.
@@ -346,16 +382,17 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
  private:
   struct DriverComponent {
-    DriverComponent(Node& node, std::string url,
-                    fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
-                    fidl::ServerEnd<fuchsia_driver_framework::Node> node_server,
-                    fidl::ClientEnd<fuchsia_driver_host::Driver> driver,
-                    zx::event component_instance);
+    DriverComponent(
+        Node& node, std::string url,
+        fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
+        fidl::ServerEnd<fuchsia_driver_framework::Node> node_server,
+        fidl::ClientEnd<fuchsia_driver_host::Driver> driver, zx::event component_instance);
 
-    // This represents the Driver Component within the Component Framework.
-    // When this is closed with an epitaph it signals to the Component Framework
-    // that this driver component has stopped.
-    fidl::ServerBinding<fuchsia_component_runner::ComponentController> component_controller_ref;
+    // This represents the Driver Component instance within the Component Framework.
+    // When we send the OnStop event through it, that signals to the Component Framework
+    // that this driver component instance has stopped.
+    fidl::ServerBinding<fuchsia_component_runner::ComponentController>
+        runner_component_controller_ref;
     fidl::ServerBinding<fuchsia_driver_framework::Node> node_ref_;
     fidl::WireClient<fuchsia_driver_host::Driver> driver;
     std::string driver_url;
@@ -391,8 +428,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void ScheduleUnbind(ScheduleUnbindCompleter::Sync& completer) override;
   void GetTopologicalPath(GetTopologicalPathCompleter::Sync& completer) override;
 
-  // This is called when fuchsia_driver_host::Driver is closed.
-  void on_fidl_error(fidl::UnbindInfo info) override;
+  void OnDriverHostFidlError(fidl::UnbindInfo info);
+  void OnComponentControllerFidlError(fidl::UnbindInfo info);
 
   // fidl::WireServer<fuchsia_component_runner::ComponentController>
   void handle_unknown_method(
@@ -419,6 +456,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   NodeInfo GetRemovalTrackerInfo() override;
   void StopDriver() override;
   void StopDriverComponent() override;
+  bool MaybeDestroyDriverComponent() override;
   void FinishShutdown(fit::callback<void()> shutdown_callback) override;
   bool HasChildren() const override { return !children_.empty(); }
   bool HasDriver() const override {
@@ -488,7 +526,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void StartDriverWithDynamicLinker(
       DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
       std::string_view url,
-      fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
+      fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
       fit::callback<void(zx::result<>)> cb);
 
   zx::result<zx::event> DuplicateNodeToken();
@@ -544,6 +582,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Invoked when the node has been fully removed.
   fit::callback<void()> remove_complete_callback_;
+  bool should_destroy_ = false;
+  fidl::WireClient<fuchsia_component::Controller> component_controller_;
 
   struct Unbound {};
   struct Starting {
@@ -585,6 +625,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Completers that are waiting for the node to unbind all of its children.
   std::vector<UnbindChildrenCompleter::Async> unbinding_children_completers_;
+
+  // Handlers for FIDL connections.
+  DriverHostConnection driver_host_handler_;
+  ComponentControllerConnection component_controller_handler_;
 };
 
 }  // namespace driver_manager

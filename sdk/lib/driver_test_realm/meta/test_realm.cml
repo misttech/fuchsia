@@ -35,21 +35,21 @@
         {
             name: "boot-drivers",
             environment: "#driver-env",
-            durability: "single_run",
+            durability: "transient",
             allowed_offers: "static_and_dynamic",
             allow_long_names: true,
         },
         {
             name: "base-drivers",
             environment: "#driver-env",
-            durability: "single_run",
+            durability: "transient",
             allowed_offers: "static_and_dynamic",
             allow_long_names: true,
         },
         {
             name: "full-drivers",
             environment: "#driver-env",
-            durability: "single_run",
+            durability: "transient",
             allowed_offers: "static_and_dynamic",
             allow_long_names: true,
         },
@@ -136,6 +136,11 @@
         },
         {
             protocol: "fuchsia.component.Realm",
+            from: "framework",
+            to: "#driver_manager",
+        },
+        {
+            protocol: "fuchsia.component.Introspector",
             from: "framework",
             to: "#driver_manager",
         },

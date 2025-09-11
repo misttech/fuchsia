@@ -42,7 +42,7 @@
         {
             name: "boot-drivers",
             environment: "#boot-driver-env",
-            durability: "single_run",
+            durability: "transient",
             allowed_offers: "static_and_dynamic",
             allow_long_names: true,
         },
@@ -182,7 +182,10 @@
             to: "#driver_manager",
         },
         {
-            protocol: "fuchsia.component.Realm",
+            protocol: [
+                "fuchsia.component.Introspector",
+                "fuchsia.component.Realm",
+            ],
             from: "framework",
             to: "#driver_manager",
         },

@@ -34,6 +34,9 @@ namespace frunner = fuchsia_component_runner;
 int64_t WaitForProcessExit(const zx::process& process);
 
 class DriverHostRunnerTest : public gtest::TestLoopFixture {
+ public:
+  DriverHostRunnerTest() : realm_(dispatcher()) {}
+
   void SetUp() {
     dynamic_linker_ = driver_loader::Loader::Create(dispatcher());
     driver_host_runner_ =
@@ -242,16 +245,18 @@ TEST_F(DynamicLinkingTest, StartCompatDriver) {
     ValidateProgram(start_args.program(), binary, "true" /* colocate */, "false", "false",
                     "true" /* use_dynamic_linker */, v1_binary);
   };
-  auto [driver, controller] = StartDriverWithConfig(
-      {
-          .url = "fuchsia-boot:///#meta/compat-driver.cm",
-          .binary = binary,
-          .colocate = true,
-          .use_dynamic_linker = true,
-          .compat = v1_binary,
-      },
-      std::move(start_handler), compat_driver_config);
+  auto [driver, controller] =
+      StartDriverWithConfig("dev.compat",
+                            {
+                                .url = "fuchsia-boot:///#meta/compat-driver.cm",
+                                .binary = binary,
+                                .colocate = true,
+                                .use_dynamic_linker = true,
+                                .compat = v1_binary,
+                            },
+                            std::move(start_handler), compat_driver_config);
   EXPECT_TRUE(did_bind);
+  ServeStopListener(std::move(controller));
 
   // Check the driver host process exited with the expected value.
   std::unordered_set<const driver_manager::DriverHostRunner::DriverHost*> driver_hosts =
@@ -301,8 +306,8 @@ TEST_F(DynamicLinkingTest, StartColocatedSecondDriverNoDynamicLinking) {
         ZX_ASSERT_MSG(false, " WaitForDriver did not get expected error");
       });
 
-  auto [driver, controller] =
-      StartSecondDriver(true /* colocate */, false, false, false /* use_dynamic_linker */);
+  auto [driver, controller] = StartSecondDriver("dev.second", true /* colocate */, false, false,
+                                                false /* use_dynamic_linker */);
   // Starting the driver should fail, as the driver host is configured to use dynamic linking.
   EXPECT_EQ(nullptr, driver);
 
@@ -311,8 +316,10 @@ TEST_F(DynamicLinkingTest, StartColocatedSecondDriverNoDynamicLinking) {
   RunLoopUntilIdle();
   EXPECT_TRUE(bind_failed);
 
+  ServeStopListener(std::move(controller));
   StopDriverComponent(std::move(root_driver->controller));
-  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("dev", "boot-drivers")});
+  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("dev", "boot-drivers"),
+                                   driver_runner::CreateChildRef("dev.second", "boot-drivers")});
 }
 
 }  // namespace

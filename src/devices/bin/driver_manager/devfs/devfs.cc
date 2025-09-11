@@ -4,6 +4,7 @@
 
 #include "devfs.h"
 
+#include <fidl/fuchsia.component/cpp/common_types_format.h>
 #include <fidl/fuchsia.device.fs/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async/cpp/wait.h>
@@ -176,6 +177,16 @@ std::optional<std::reference_wrapper<fs::Vnode>> Devfs::Lookup(PseudoDir& parent
   return {};
 }
 
+void Devfs::CloseComponent() {
+  if (binding_.has_value()) {
+    auto result = fidl::WireSendEvent(binding_.value())
+                      ->OnStop(fuchsia_component_runner::wire::ComponentStopInfo{});
+    if (!result.ok()) {
+      fdf_log::warn("Devfs::CloseComponent failed to send OnStop event.");
+    }
+  }
+}
+
 Devnode::~Devnode() {
   for (auto [key, child] : children().unpublished) {
     child.get().parent_ = nullptr;
@@ -254,6 +265,49 @@ zx::result<std::string> Devfs::MakeInstanceName(std::string_view class_name) {
   }
   std::uniform_int_distribution<uint32_t> distrib(0, 0xffffffff);
   return zx::ok(std::format("{}", distrib(device_number_generator_)));
+}
+
+void Devfs::SetController(fidl::ClientEnd<fuchsia_component::Controller> component_controller) {
+  component_controller_.Bind(std::move(component_controller), dispatcher(), this);
+}
+
+void Devfs::OnComponentStarted(const std::weak_ptr<BootupTracker>& bootup_tracker,
+                               const std::string& moniker, zx::result<StartedComponent> component) {
+  if (component.is_error()) {
+    fdf_log::error("Starting the devfs component failed {}", component.status_string());
+    return;
+  }
+  AttachComponent(std::move(component->info), std::move(component->component_controller));
+}
+
+void Devfs::RequestStartComponent(fuchsia_process::wire::HandleInfo startup_handle,
+                                  const std::string& moniker,
+                                  const std::weak_ptr<BootupTracker>& bootup_tracker) {
+  fidl::Arena arena;
+  fidl::VectorView<fuchsia_process::wire::HandleInfo> handles(arena, 1);
+  handles[0] = std::move(startup_handle);
+
+  auto [client, server] = fidl::Endpoints<fuchsia_component::ExecutionController>::Create();
+
+  component_controller_
+      ->Start(
+          fuchsia_component::wire::StartChildArgs::Builder(arena).numbered_handles(handles).Build(),
+          std::move(server))
+      .Then([this, moniker, bootup_tracker](
+                fidl::WireUnownedResult<fuchsia_component::Controller::Start>& result) {
+        bool is_error = false;
+        if (!result.ok()) {
+          fdf_log::error("Devfs failed to send StartComponent. {}", result.status_string());
+          is_error = true;
+        } else if (result->is_error()) {
+          fdf_log::error("Devfs failed to StartComponent. {}", result->error_value());
+          is_error = true;
+        }
+
+        if (is_error) {
+          OnComponentStarted(bootup_tracker, moniker, zx::error(ZX_ERR_INTERNAL));
+        }
+      });
 }
 
 zx_status_t Devnode::TryAddService(std::string_view class_name, Target target,
@@ -339,8 +393,20 @@ void Devfs::AttachComponent(
     fdf_log::warn("Failed to serve the devfs outgoing directory {}", result.status_string());
     return;
   }
-  binding_.emplace(dispatcher_, std::move(controller), this, fidl::kIgnoreBindingClosure);
+  binding_.emplace(
+      dispatcher_, std::move(controller), this, [](Devfs* devfs, fidl::UnbindInfo info) {
+        devfs->binding_.reset();
+        devfs->component_controller_->Destroy().Then(
+            [devfs](fidl::WireUnownedResult<fuchsia_component::Controller::Destroy>& result) {
+              if (!result.ok() || result->is_error()) {
+                devfs->component_controller_ = {};
+              }
+            });
+      });
 }
+
+// Called when the component_controller_ is closed after destruction is complete.
+void Devfs::on_fidl_error(fidl::UnbindInfo info) { component_controller_ = {}; }
 
 zx::result<fidl::ClientEnd<fio::Directory>> Devfs::Connect(fs::FuchsiaVfs& vfs) {
   auto [client, server] = fidl::Endpoints<fio::Directory>::Create();

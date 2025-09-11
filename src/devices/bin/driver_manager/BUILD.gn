@@ -51,6 +51,12 @@ source_set("driver_host_loader_service") {
   ]
 }
 
+source_set("component_owner") {
+  sources = [ "component_owner.h" ]
+  public_deps =
+      [ "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_cpp" ]
+}
+
 source_set("driver_runner") {
   sources = [
     "bind/bind_manager.cc",
@@ -90,6 +96,7 @@ source_set("driver_runner") {
   ]
 
   deps = [
+    ":component_owner",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",

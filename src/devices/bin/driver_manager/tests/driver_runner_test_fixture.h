@@ -112,8 +112,36 @@ struct CreatedChild {
 
 void CheckNode(const inspect::Hierarchy& hierarchy, const NodeChecker& checker);
 
+class TestRealm;
+class TestController final : public fidl::testing::TestBase<fuchsia_component::Controller> {
+ public:
+  explicit TestController(TestRealm* parent, std::string_view name, std::string_view collection,
+                          fidl::ServerEnd<fuchsia_component::Controller> controller,
+                          async_dispatcher_t* dispatcher);
+
+  void Destroy(DestroyCompleter::Sync& completer) override;
+
+  void Start(StartRequest& request, StartCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_component::Controller> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    printf("Not implemented: TestController::%s\n", name.c_str());
+  }
+
+ private:
+  TestRealm* parent_;
+  std::string name_;
+  std::string collection_;
+  async_dispatcher_t* dispatcher_;
+  fidl::ServerBinding<fuchsia_component::Controller> binding_;
+};
+
 class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
  public:
+  explicit TestRealm(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+
   using CreateChildHandler = fit::function<void(fdecl::CollectionRef collection, fdecl::Child decl,
                                                 std::vector<fdecl::Offer> offers)>;
   using OpenExposedDirHandler =
@@ -127,14 +155,18 @@ class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
     open_exposed_dir_handler_ = std::move(open_exposed_dir_handler);
   }
 
+  void SetHandles(std::vector<fprocess::HandleInfo> handles);
+
   fidl::VectorView<fprocess::wire::HandleInfo> TakeHandles(fidl::AnyArena& arena);
+
+  void MarkChildDestroyed(std::string_view name, std::string_view collection);
 
   void AssertDestroyedChildren(const std::vector<fdecl::ChildRef>& expected);
 
+  void RemoveController(const std::string& name);
+
  private:
   void CreateChild(CreateChildRequest& request, CreateChildCompleter::Sync& completer) override;
-
-  void DestroyChild(DestroyChildRequest& request, DestroyChildCompleter::Sync& completer) override;
 
   void OpenExposedDir(OpenExposedDirRequest& request,
                       OpenExposedDirCompleter::Sync& completer) override;
@@ -143,10 +175,54 @@ class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
     printf("Not implemented: Realm::%s\n", name.c_str());
   }
 
+  async_dispatcher_t* dispatcher_;
   CreateChildHandler create_child_handler_;
   OpenExposedDirHandler open_exposed_dir_handler_;
   std::optional<std::vector<fprocess::HandleInfo>> handles_;
+  std::unordered_map<std::string, TestController> controllers_;
   std::vector<fdecl::ChildRef> destroyed_children_;
+};
+
+class StopListener final
+    : public fidl::WireAsyncEventHandler<fuchsia_component_runner::ComponentController> {
+ public:
+  explicit StopListener(async_dispatcher_t* dispatcher,
+                        fidl::ClientEnd<fuchsia_component_runner::ComponentController> client,
+                        fidl::AnyTeardownObserver observer);
+
+  bool is_stopped() const;
+
+  fidl::WireClient<fuchsia_component_runner::ComponentController>& client() { return client_; }
+
+  void on_fidl_error(::fidl::UnbindInfo error) override;
+
+  void OnStop(
+      fidl::WireEvent<fuchsia_component_runner::ComponentController::OnStop>* event) override;
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_component_runner::ComponentController> metadata) override {
+  }
+
+ private:
+  bool stopped_ = false;
+  fidl::WireClient<fuchsia_component_runner::ComponentController> client_;
+  fidl::AnyTeardownObserver observer_;
+};
+
+class TestIntrospector : public fidl::testing::TestBase<fuchsia_component::Introspector> {
+ public:
+  void Enable() { enabled_ = true; }
+  zx::event GetTokenForName(std::string_view name);
+  void GetMoniker(GetMonikerRequest& request, GetMonikerCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_component::Introspector> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: Instrospector::%s\n", name.c_str());
+  }
+
+ private:
+  std::unordered_map<zx_koid_t, std::string> entries_;
+  bool enabled_ = false;
 };
 
 class TestCapStore : public fidl::testing::TestBase<fuchsia_component_sandbox::CapabilityStore> {
@@ -278,10 +354,12 @@ struct Driver;
 
 class DriverRunnerTestBase : public gtest::TestLoopFixture {
  public:
+  DriverRunnerTestBase() : realm_(dispatcher()) {}
   void TearDown() override { Unbind(); }
 
  protected:
   TestRealm& realm() { return realm_; }
+  TestIntrospector& introspector() { return introspector_; }
   TestDirectory& driver_dir() { return driver_dir_; }
   TestDriverHost& driver_host() { return driver_host_; }
 
@@ -289,7 +367,10 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
       std::string_view child_name);
 
   fidl::ClientEnd<fuchsia_component::Realm> ConnectToRealm();
+  fidl::ClientEnd<fuchsia_component::Introspector> ConnectToIntrospector();
   fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore> ConnectToCapabilityStore();
+
+  void EnableIntrospector() { introspector_.Enable(); }
 
   FakeDriverIndex CreateDriverIndex();
 
@@ -319,6 +400,10 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
 
   void PrepareRealmForStartDriverHostDynamicLinker();
 
+  StopListener& ServeStopListener(
+      fidl::ClientEnd<fuchsia_component_runner::ComponentController> component,
+      fidl::AnyTeardownObserver observer = fidl::AnyTeardownObserver::Noop());
+
   void StopDriverComponent(
       fidl::ClientEnd<fuchsia_component_runner::ComponentController> component);
 
@@ -335,7 +420,8 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
   // and dynamic linking is enabled, |driver_host_pkg| will be provided as the /pkg directory in the
   // driver host component's namespace.
   StartDriverResult StartDriver(
-      Driver driver, std::optional<StartDriverHandler> start_handler = std::nullopt,
+      std::string_view moniker, Driver driver,
+      std::optional<StartDriverHandler> start_handler = std::nullopt,
       fidl::ClientEnd<fuchsia_io::Directory> ns_pkg = fidl::ClientEnd<fuchsia_io::Directory>(),
       fidl::ClientEnd<fuchsia_io::Directory> driver_host_pkg =
           fidl::ClientEnd<fuchsia_io::Directory>());
@@ -344,7 +430,8 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
   // If the driver has opted into dynamic linking, the fake /pkg directory will be provided to
   // the driver component's namespace.
   StartDriverResult StartDriverWithConfig(
-      Driver driver, std::optional<StartDriverHandler> start_handler = std::nullopt,
+      std::string_view moniker, Driver driver,
+      std::optional<StartDriverHandler> start_handler = std::nullopt,
       test_utils::TestPkg::Config driver_config = kDefaultRootDriverPkgConfig,
       test_utils::TestPkg::Config driver_host_config = kDefaultDriverHostPkgConfig);
 
@@ -353,7 +440,8 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
       test_utils::TestPkg::Config driver_host_config = kDefaultDriverHostPkgConfig,
       test_utils::TestPkg::Config driver_config = kDefaultRootDriverPkgConfig);
 
-  StartDriverResult StartSecondDriver(bool colocate = false, bool host_restart_on_crash = false,
+  StartDriverResult StartSecondDriver(std::string_view moniker, bool colocate = false,
+                                      bool host_restart_on_crash = false,
                                       bool use_next_vdso = false, bool use_dynamic_linker = false);
 
   void Unbind();
@@ -378,8 +466,8 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
   void SetupDevfs();
 
   Devfs& devfs() {
-    ZX_ASSERT(devfs_.has_value());
-    return devfs_.value();
+    ZX_ASSERT(devfs_);
+    return *devfs_;
   }
 
   DriverRunner& driver_runner() { return driver_runner_.value(); }
@@ -388,19 +476,23 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
 
  private:
   TestRealm realm_;
+  TestIntrospector introspector_;
   TestCapStore cap_store_;
   TestDirectory driver_host_dir_{dispatcher()};
   TestDirectory driver_dir_{dispatcher()};
   TestDriverHost driver_host_;
   fidl::ServerBindingGroup<fuchsia_component::Realm> realm_bindings_;
+  fidl::ServerBindingGroup<fuchsia_component::Introspector> introspector_bindings_;
   fidl::ServerBindingGroup<fuchsia_component_sandbox::CapabilityStore> capstore_bindings_;
   fidl::ServerBindingGroup<fdh::DriverHost> driver_host_bindings_;
 
-  std::optional<Devfs> devfs_;
+  std::shared_ptr<Devfs> devfs_;
   inspect::ComponentInspector inspector_{dispatcher(), {}};
   std::optional<FakeDriverIndex> driver_index_;
   std::optional<DriverRunner> driver_runner_;
   std::unique_ptr<driver_loader::Loader> dynamic_linker_;
+
+  std::list<StopListener> stop_listeners_;
 };
 
 }  // namespace driver_runner

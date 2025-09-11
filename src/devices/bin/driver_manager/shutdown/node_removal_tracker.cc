@@ -28,8 +28,12 @@ const char* GetNodeStateDescription(NodeState state) {
     case NodeState::kWaitingOnDriver:
       return "waiting for driver's Stop() function and destructor finish running";
     case NodeState::kWaitingOnDriverComponent:
-      return "waiting for the driver component to shutdown";
+      return "waiting for the driver component to stop";
     case NodeState::kStopped:
+      return "node component instance stop is completed";
+    case NodeState::kWaitingOnDestroy:
+      return "waiting for the component to be destroyed.";
+    case NodeState::kDestroyed:
       return "node shutdown is completed";
   }
 }
@@ -37,7 +41,7 @@ const char* GetNodeStateDescription(NodeState state) {
 }  // namespace
 
 NodeId NodeRemovalTracker::RegisterNode(NodeInfo info) {
-  if (info.state == NodeState::kStopped) {
+  if (info.state == NodeState::kDestroyed) {
     return next_node_id_;
   }
 
@@ -63,7 +67,7 @@ void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
     handle_timeout_task_.PostDelayed(dispatcher_, kRemovalTimeoutDuration);
   }
 
-  if (state != NodeState::kStopped) {
+  if (state != NodeState::kDestroyed) {
     return;
   }
 
@@ -79,7 +83,7 @@ void NodeRemovalTracker::OnRemovalTimeout() {
   fdf_log::info("Removal hanging, nodes remaining: {} pkg, {} pkg+boot", remaining_pkg_node_count(),
                 remaining_node_count());
   for (auto& [id, node] : nodes_) {
-    if (node.state == NodeState::kStopped || node.state == NodeState::kPrestop) {
+    if (node.state == NodeState::kDestroyed || node.state == NodeState::kPrestop) {
       continue;
     }
     fdf_log::info("  '{}' ('{}'): {}", node.name, node.driver_url,

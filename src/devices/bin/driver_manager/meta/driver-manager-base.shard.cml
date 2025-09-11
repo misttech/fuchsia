@@ -66,6 +66,10 @@
             protocol: "fuchsia.component.Realm",
         },
         {
+            // The Introspector protocol is required to identify moniker of started drivers.
+            protocol: "fuchsia.component.Introspector",
+        },
+        {
             protocol: "fuchsia.diagnostics.LogFlusher",
             availability: "optional",
         },

@@ -57,6 +57,10 @@ class NodeShutdownBridge {
   // kWaitingOnDriverComponent.
   virtual void StopDriverComponent() = 0;
 
+  // Sends a component destroy request to CF in certain conditions. We don't always want
+  // to destroy the component so this will return false if we are keeping the component around.
+  virtual bool MaybeDestroyDriverComponent() = 0;
+
   // Clean up work before shutdown is complete. Invoked when transitioning to kStopped.
   // The implementation is expected to invoke the callback once the node finished shutdown.
   // Once the callback is invoked, the node state changes to to kStopped and the node removal
@@ -70,13 +74,15 @@ class NodeShutdownBridge {
   virtual bool HasDriver() const = 0;
 
   virtual bool HasDriverComponent() const = 0;
+
+  virtual bool HasDriverComponentController() const = 0;
 };
 
 // Coordinates and keeps track of the node's shutdown process.
 class NodeShutdownCoordinator {
  public:
-  explicit NodeShutdownCoordinator(NodeShutdownBridge* bridge, async_dispatcher_t* dispatcher,
-                                   bool enable_test_shutdown_delays,
+  explicit NodeShutdownCoordinator(std::string_view name, NodeShutdownBridge* bridge,
+                                   async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays,
                                    std::weak_ptr<std::mt19937> rng_gen);
 
   ~NodeShutdownCoordinator() = default;
@@ -105,6 +111,8 @@ class NodeShutdownCoordinator {
   void CheckWaitingOnChildren();
   void CheckWaitingOnDriver();
   void CheckWaitingOnDriverComponent();
+  void CheckStopped();
+  void CheckWaitingOnDestroy();
 
   // Invokes |action|, which is the actions for transitioning to the next
   // another state. If |kEnableShutdownDelay| is true and generates a randomized
@@ -133,6 +141,8 @@ class NodeShutdownCoordinator {
   // Generates a random test delay in milliseconds. Returns std::nullopt if
   // |enable_test_shutdown_delays_| is false.
   std::optional<uint32_t> GenerateTestDelayMs();
+
+  std::string name_;
 
   std::optional<NodeId> removal_id_;
 

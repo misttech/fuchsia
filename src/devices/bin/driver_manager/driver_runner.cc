@@ -226,42 +226,16 @@ void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moni
                              std::string_view url,
                              std::optional<fuchsia_component_sandbox::DictionaryRef> ref,
                              const std::shared_ptr<BootupTracker>& bootup_tracker) {
-  runner.StartDriverComponent(
-      moniker, url, CollectionName(node.collection()).get(), node.offers(), std::move(ref),
-      [node_weak = node.weak_from_this(), moniker,
-       bootup_tracker = std::weak_ptr<BootupTracker>(bootup_tracker)](
-          zx::result<driver_manager::Runner::StartedComponent> component) {
-        std::shared_ptr node = node_weak.lock();
-        if (!node) {
-          return;
-        }
-
-        if (component.is_error()) {
-          node->OnStartError(component.error_value());
-          node->CompleteBind(component.take_error());
-          if (auto tracker_ptr = bootup_tracker.lock(); tracker_ptr) {
-            tracker_ptr->NotifyStartComplete(moniker);
-          }
-          return;
-        }
-
-        fidl::Arena arena;
-        node->StartDriver(fidl::ToWire(arena, std::move(component->info)),
-                          std::move(component->controller),
-                          [node_weak, moniker, bootup_tracker](zx::result<> result) {
-                            if (std::shared_ptr node = node_weak.lock(); node) {
-                              if (result.is_error()) {
-                                node->OnStartError(result.status_value());
-                              }
-
-                              node->CompleteBind(result);
-                            }
-
-                            if (auto tracker_ptr = bootup_tracker.lock(); tracker_ptr) {
-                              tracker_ptr->NotifyStartComplete(moniker);
-                            }
-                          });
-      });
+  if (!node.HasDriverComponentController()) {
+    auto [controller_client, controller_request] =
+        fidl::Endpoints<fcomponent::Controller>::Create();
+    node.SetController(std::move(controller_client));
+    runner.CreateDriverComponent(node.shared_from_this(), std::move(controller_request), moniker,
+                                 url, CollectionName(node.collection()).get(), node.offers(),
+                                 std::move(ref));
+  } else {
+    runner.StartDriverComponent(moniker);
+  }
 }
 
 // Helper class to make sending out concurrent async requests and making a callback when they have
@@ -293,6 +267,7 @@ Collection ToCollection(const Node& node, fdf::DriverPackageType package_type) {
 
 DriverRunner::DriverRunner(
     fidl::ClientEnd<fcomponent::Realm> realm,
+    fidl::ClientEnd<fcomponent::Introspector> introspector,
     fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore> capability_store,
     fidl::ClientEnd<fdi::DriverIndex> driver_index, inspect::ComponentInspector& inspect,
     LoaderServiceFactory loader_service_factory, async_dispatcher_t* dispatcher,
@@ -305,7 +280,8 @@ DriverRunner::DriverRunner(
       root_node_(std::make_shared<Node>(kRootDeviceName, std::weak_ptr<Node>{}, this, dispatcher)),
       composite_node_spec_manager_(this),
       bind_manager_(this, this, dispatcher),
-      runner_(dispatcher, fidl::WireClient(std::move(realm), dispatcher), offer_injector),
+      runner_(dispatcher, fidl::WireClient(std::move(realm), dispatcher),
+              fidl::WireClient(std::move(introspector), dispatcher), offer_injector),
       removal_tracker_(dispatcher),
       enable_test_shutdown_delays_(enable_test_shutdown_delays),
       dynamic_linker_args_(std::move(dynamic_linker_args)) {
@@ -326,6 +302,7 @@ DriverRunner::DriverRunner(
   next_driver_host_id_ = distrib(gen);
 
   bootup_tracker_ = std::make_shared<BootupTracker>(&bind_manager_, dispatcher);
+  runner_.SetBootupTracker(bootup_tracker_);
 
   // Setup the driver notifier.
   auto [notifier_client, notifier_server] =
@@ -600,18 +577,14 @@ zx::result<> DriverRunner::StartRootDriver(std::string_view url) {
   return StartDriver(*root_node_, url, package);
 }
 
-void DriverRunner::StartDevfsDriver(driver_manager::Devfs& devfs) {
+void DriverRunner::StartDevfsDriver(std::shared_ptr<driver_manager::Devfs>& devfs) {
+  auto [controller_client, controller_request] = fidl::Endpoints<fcomponent::Controller>::Create();
+  devfs->SetController(std::move(controller_client));
+
   std::vector<NodeOffer> offers;
-  runner_.StartDriverComponent(
-      "devfs_driver", "fuchsia-boot:///devfs-driver#meta/devfs-driver.cm",
-      CollectionName(Collection::kBoot).get(), offers, std::nullopt,
-      [&devfs](zx::result<driver_manager::Runner::StartedComponent> component) {
-        if (component.is_error()) {
-          fdf_log::error("Starting the devfs component failed {}", component);
-          return;
-        }
-        devfs.AttachComponent(std::move(component->info), std::move(component->controller));
-      });
+  runner_.CreateDriverComponent(devfs, std::move(controller_request), "devfs_driver",
+                                "fuchsia-boot:///devfs-driver#meta/devfs-driver.cm",
+                                CollectionName(Collection::kBoot).get(), offers, std::nullopt);
 }
 
 void DriverRunner::NewDriverAvailable(NewDriverAvailableCompleter::Sync& completer) {
@@ -723,16 +696,6 @@ void DriverRunner::RebindCompositesWithDriver(const std::string& url,
     RebindComposite(name, std::nullopt,
                     [sharder](zx::result<>) mutable { sharder->CompleteShard(); });
   }
-}
-
-void DriverRunner::DestroyDriverComponent(driver_manager::Node& node,
-                                          DestroyDriverComponentCallback callback) {
-  auto name = node.MakeComponentMoniker();
-  fdecl::wire::ChildRef child_ref{
-      .name = fidl::StringView::FromExternal(name),
-      .collection = CollectionName(node.collection()),
-  };
-  runner_.realm()->DestroyChild(child_ref).Then(std::move(callback));
 }
 
 zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {

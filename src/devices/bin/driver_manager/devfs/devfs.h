@@ -18,6 +18,7 @@
 #include <fbl/ref_ptr.h>
 #include <fbl/string.h>
 
+#include "src/devices/bin/driver_manager/component_owner.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
 
@@ -209,7 +210,9 @@ class DevfsDevice {
 // Also acts a a proxy driver.
 // Mounts as a boot driver and adversises services that are registered under
 // a recognized class name.  See class_names.h for more info.
-class Devfs : public fidl::Server<fuchsia_component_runner::ComponentController> {
+class Devfs : public fidl::Server<fuchsia_component_runner::ComponentController>,
+              public fidl::WireAsyncEventHandler<fuchsia_component::Controller>,
+              public ComponentOwner {
  public:
   // `root` must outlive `this`.
   explicit Devfs(std::optional<Devnode>& root, async_dispatcher_t* dispatcher);
@@ -217,6 +220,15 @@ class Devfs : public fidl::Server<fuchsia_component_runner::ComponentController>
   zx::result<fidl::ClientEnd<fuchsia_io::Directory>> Connect(fs::FuchsiaVfs& vfs);
 
   zx::result<std::string> MakeInstanceName(std::string_view class_name);
+
+  // ComponentOwner
+  void SetController(fidl::ClientEnd<fuchsia_component::Controller> component_controller) override;
+  void OnComponentStarted(const std::weak_ptr<BootupTracker>& bootup_tracker,
+                          const std::string& moniker,
+                          zx::result<StartedComponent> component) override;
+  void RequestStartComponent(fuchsia_process::wire::HandleInfo startup_handle,
+                             const std::string& moniker,
+                             const std::weak_ptr<BootupTracker>& bootup_tracker) override;
 
   fbl::RefPtr<PseudoDir> get_class_entry(std::string_view class_name) {
     ZX_ASSERT(class_entries_.contains(std::string(class_name)));
@@ -238,6 +250,11 @@ class Devfs : public fidl::Server<fuchsia_component_runner::ComponentController>
       fidl::UnknownMethodMetadata<fuchsia_component_runner::ComponentController> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
+  // fidl::WireAsyncEventHandler<fuchsia_component::Controller>
+  void on_fidl_error(fidl::UnbindInfo info) override;
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_component::Controller> metadata) override {}
+
  private:
   friend class Devnode;
 
@@ -245,16 +262,13 @@ class Devfs : public fidl::Server<fuchsia_component_runner::ComponentController>
                                                                  std::string_view name);
 
   // close the fake driver component
-  void CloseComponent() {
-    if (binding_.has_value()) {
-      binding_->Close(ZX_OK);
-      binding_.reset();
-    }
-  }
+  void CloseComponent();
+
   Devnode& root_;
   component::OutgoingDirectory outgoing_;
   async_dispatcher_t* dispatcher_;
   std::optional<fidl::ServerBinding<fuchsia_component_runner::ComponentController>> binding_;
+  fidl::WireClient<fuchsia_component::Controller> component_controller_;
   std::default_random_engine device_number_generator_;
 
   fbl::RefPtr<PseudoDir> class_ = fbl::MakeRefCounted<PseudoDir>();

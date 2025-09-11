@@ -7,9 +7,12 @@
 
 #include <lib/async/cpp/task.h>
 
-#include "src/devices/bin/driver_manager/bind/bind_manager.h"
+#include <string>
+#include <vector>
 
 namespace driver_manager {
+
+class BindManager;
 
 class BootupTracker {
  public:

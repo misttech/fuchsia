@@ -13,11 +13,6 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
   void Bind(driver_manager::Node& node,
             std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {}
 
-  void DestroyDriverComponent(
-      driver_manager::Node& node,
-      fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>
-          callback) override {}
-
   zx::result<driver_manager::DriverHost*> CreateDriverHost(bool use_next_vdso) override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }

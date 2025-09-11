@@ -10,36 +10,58 @@
 
 using namespace driver_manager;
 
-class TestRealm final : public fidl::testing::WireTestBase<fuchsia_component::Realm> {
+class TestController final : public fidl::testing::WireTestBase<fuchsia_component::Controller> {
  public:
-  TestRealm(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+  explicit TestController(std::string_view name,
+                          fidl::ServerEnd<fuchsia_component::Controller> controller,
+                          async_dispatcher_t* dispatcher)
+      : name_(name),
+        dispatcher_(dispatcher),
+        binding_(dispatcher_, std::move(controller), this, fidl::kIgnoreBindingClosure) {}
 
-  fidl::ClientEnd<fuchsia_component::Realm> Connect() {
-    auto [client_end, server_end] = fidl::Endpoints<fuchsia_component::Realm>::Create();
-    fidl::BindServer(dispatcher_, std::move(server_end), this);
-    return std::move(client_end);
+  void Destroy(DestroyCompleter::Sync& completer) override { completer.Reply(fit::ok()); }
+
+  void Start(StartRequestView request, StartCompleter::Sync& completer) override {
+    completer.ReplySuccess();
   }
 
-  void DestroyChild(DestroyChildRequestView request,
-                    DestroyChildCompleter::Sync& completer) override {
-    destroy_completers_[std::string(request->child.name.data(), request->child.name.size())] =
-        completer.ToAsync();
-  }
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_component::Controller> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void ReplyDestroyChildRequest(std::string child_moniker) {
-    ASSERT_TRUE(destroy_completers_[child_moniker].has_value());
-    destroy_completers_[child_moniker]->ReplySuccess();
-    destroy_completers_[child_moniker].reset();
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    printf("Not implemented: TestController::%s\n", name.c_str());
   }
 
  private:
-  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
-    ZX_PANIC("Unimplemented %s", name.c_str());
+  std::string name_;
+  async_dispatcher_t* dispatcher_;
+  fidl::ServerBinding<fuchsia_component::Controller> binding_;
+};
+
+class StopListener final
+    : public fidl::WireAsyncEventHandler<fuchsia_component_runner::ComponentController> {
+ public:
+  explicit StopListener(async_dispatcher_t* dispatcher,
+                        fidl::ClientEnd<fuchsia_component_runner::ComponentController> client)
+      : client_(std::move(client), dispatcher, this) {}
+
+  bool is_stopped() const { return stopped_; }
+
+  fidl::WireClient<fuchsia_component_runner::ComponentController>& client() { return client_; }
+
+  void on_fidl_error(::fidl::UnbindInfo error) override { stopped_ = true; }
+
+  void OnStop(
+      fidl::WireEvent<fuchsia_component_runner::ComponentController::OnStop>* event) override {
+    stopped_ = true;
+  }
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_component_runner::ComponentController> metadata) override {
   }
 
-  async_dispatcher_t* dispatcher_;
-
-  std::unordered_map<std::string, std::optional<DestroyChildCompleter::Async>> destroy_completers_;
+ private:
+  bool stopped_ = false;
+  fidl::WireClient<fuchsia_component_runner::ComponentController> client_;
 };
 
 class FakeDriverHost : public DriverHost {
@@ -91,49 +113,56 @@ class FakeDriverHost : public DriverHost {
 
 class FakeNodeManager : public TestNodeManagerBase {
  public:
-  FakeNodeManager(fidl::WireClient<fuchsia_component::Realm> realm) : realm_(std::move(realm)) {}
+  explicit FakeNodeManager(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   zx::result<DriverHost*> CreateDriverHost(bool use_next_vdso) override {
     return zx::ok(&driver_host_);
-  }
-
-  void DestroyDriverComponent(
-      Node& node,
-      fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>
-          callback) override {
-    auto name = node.MakeComponentMoniker();
-    fuchsia_component_decl::wire::ChildRef child_ref{
-        .name = fidl::StringView::FromExternal(name),
-        .collection = "",
-    };
-    realm_->DestroyChild(child_ref).Then(std::move(callback));
-    clients_.erase(node.name());
   }
 
   void CloseDriverForNode(std::string node_name) { driver_host_.CloseDriver(node_name); }
 
   void AddClient(const std::string& node_name,
                  fidl::ClientEnd<fuchsia_component_runner::ComponentController> client) {
-    clients_[node_name] = std::move(client);
+    stop_listeners_.emplace(std::piecewise_construct, std::forward_as_tuple(node_name),
+                            std::forward_as_tuple(dispatcher_, std::move(client)));
   }
+
+  void StoreComponentHandle(const std::string& node_name,
+                            fidl::ServerEnd<fuchsia_component::Controller> controller) {
+    controllers_.emplace(std::piecewise_construct, std::forward_as_tuple(node_name),
+                         std::forward_as_tuple(node_name, std::move(controller), dispatcher_));
+  }
+
+  bool TryRemoveRunnerController(const std::string& name) {
+    auto it = stop_listeners_.find(name);
+    if (it != stop_listeners_.end()) {
+      if (!it->second.is_stopped()) {
+        return false;
+      }
+
+      stop_listeners_.erase(it);
+    }
+
+    return true;
+  }
+
+  void RemoveController(const std::string& name) { controllers_.erase(name); }
 
   FakeDriverHost& driver_host() { return driver_host_; }
 
  private:
-  fidl::WireClient<fuchsia_component::Realm> realm_;
-  std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_runner::ComponentController>>
-      clients_;
+  async_dispatcher_t* dispatcher_;
+  std::unordered_map<std::string, fidl::ServerEnd<fuchsia_component::Controller>> handles_;
   FakeDriverHost driver_host_;
+  std::unordered_map<std::string, StopListener> stop_listeners_;
+  std::unordered_map<std::string, TestController> controllers_;
 };
 
 class NodeShutdownTest : public DriverManagerTestBase {
  public:
   void SetUp() override {
     DriverManagerTestBase::SetUp();
-    realm_ = std::make_unique<TestRealm>(dispatcher());
-
-    node_manager = std::make_unique<FakeNodeManager>(
-        fidl::WireClient<fuchsia_component::Realm>(realm_->Connect(), dispatcher()));
+    node_manager = std::make_unique<FakeNodeManager>(dispatcher());
 
     removal_tracker_ = std::make_unique<NodeRemovalTracker>(dispatcher());
     removal_tracker_->set_all_callback([this]() { remove_all_callback_invoked_ = true; });
@@ -166,17 +195,21 @@ class NodeShutdownTest : public DriverManagerTestBase {
         .outgoing_dir = std::move(server_end),
     }};
 
-    auto controller_endpoints =
+    auto component_controller_endpoints =
         fidl::Endpoints<fuchsia_component_runner::ComponentController>::Create();
 
     auto node = nodes_[node_name].lock();
     ASSERT_TRUE(node);
 
-    node_manager->AddClient(node->name(), std::move(controller_endpoints.client));
+    node_manager->AddClient(node->name(), std::move(component_controller_endpoints.client));
+
+    auto controller_endpoints = fidl::Endpoints<fuchsia_component::Controller>::Create();
+    node_manager->StoreComponentHandle(node->name(), std::move(controller_endpoints.server));
+    node->SetController(std::move(controller_endpoints.client));
 
     fidl::Arena arena;
     node->StartDriver(fidl::ToWire(arena, std::move(start_info)),
-                      std::move(controller_endpoints.server),
+                      std::move(component_controller_endpoints.server),
                       [node](zx::result<> result) { node->CompleteBind(result); });
     RunLoopUntilIdle();
   }
@@ -239,10 +272,20 @@ class NodeShutdownTest : public DriverManagerTestBase {
     StartDriver(child);
   }
 
-  void InvokeDestroyChildResponse(std::string node_name) {
+  void CloseRunnerController(std::string node_name) {
     auto node = nodes_[node_name].lock();
     ASSERT_TRUE(node);
-    realm_->ReplyDestroyChildRequest(node->MakeComponentMoniker());
+    bool removed_runner;
+    do {
+      removed_runner = node_manager->TryRemoveRunnerController(node_name);
+      RunLoopUntilIdle();
+    } while (!removed_runner);
+  }
+
+  void CloseComponentController(std::string node_name) {
+    auto node = nodes_[node_name].lock();
+    ASSERT_TRUE(node);
+    node_manager->RemoveController(node_name);
     RunLoopUntilIdle();
   }
 
@@ -256,6 +299,7 @@ class NodeShutdownTest : public DriverManagerTestBase {
   void InvokeRemoveNode(std::string node_name, RemovalSet set) {
     auto node = nodes_[node_name].lock();
     ASSERT_TRUE(node);
+    node->SetShouldDestroy();
     node->Remove(set, removal_tracker_.get());
     removal_tracker_->FinishEnumeration();
     RunLoopUntilIdle();
@@ -299,8 +343,6 @@ class NodeShutdownTest : public DriverManagerTestBase {
  protected:
   NodeManager* GetNodeManager() override { return node_manager.get(); }
 
-  TestRealm* realm() { return realm_.get(); }
-
   std::unique_ptr<FakeNodeManager> node_manager;
 
  private:
@@ -311,8 +353,6 @@ class NodeShutdownTest : public DriverManagerTestBase {
   bool remove_pkg_callback_invoked_ = false;
 
   std::unordered_map<std::string, std::weak_ptr<Node>> nodes_;
-
-  std::unique_ptr<TestRealm> realm_;
 };
 
 TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
@@ -333,8 +373,14 @@ TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
                 {"node_a_b", NodeState::kWaitingOnChildren},
                 {"node_a_b_a", NodeState::kWaitingOnDriver}});
 
+  CloseRunnerController("node_a_a");
+  VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
+                {"node_a_a", NodeState::kWaitingOnDestroy},
+                {"node_a_b", NodeState::kWaitingOnChildren},
+                {"node_a_b_a", NodeState::kWaitingOnDriver}});
+
   // Close node_a_a's driver component. The node completes shutdown and should be removed.
-  InvokeDestroyChildResponse("node_a_a");
+  CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnChildren},
@@ -346,7 +392,12 @@ TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
                 {"node_a_b_a", NodeState::kWaitingOnDriverComponent}});
 
   // Close node_a_b_a's driver component. The node should complete shutdown and be removed.
-  InvokeDestroyChildResponse("node_a_b_a");
+  CloseRunnerController("node_a_b_a");
+  VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
+                {"node_a_b", NodeState::kWaitingOnChildren},
+                {"node_a_b_a", NodeState::kWaitingOnDestroy}});
+
+  CloseComponentController("node_a_b_a");
   VerifyNodeRemovedFromParent("node_a_b_a", "node_a_b");
   VerifyStates(
       {{"node_a", NodeState::kWaitingOnChildren}, {"node_a_b", NodeState::kWaitingOnDriver}});
@@ -355,13 +406,19 @@ TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnDriverComponent}});
 
-  InvokeDestroyChildResponse("node_a_b");
+  CloseRunnerController("node_a_b");
+  VerifyStates(
+      {{"node_a", NodeState::kWaitingOnChildren}, {"node_a_b", NodeState::kWaitingOnDestroy}});
+
+  CloseComponentController("node_a_b");
   VerifyNodeRemovedFromParent("node_a_b", "node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriver);
 
   CloseDriverForNode("node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  VerifyState("node_a", NodeState::kWaitingOnDestroy);
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
   VerifyRemovalTrackerPkgCallbackInvoked();
@@ -390,7 +447,8 @@ TEST_F(NodeShutdownTest, RemoveCompositeNode) {
                 {"node_a_c", NodeState::kWaitingOnChildren},
                 {"composite_abc", NodeState::kWaitingOnDriverComponent}});
 
-  InvokeDestroyChildResponse("composite_abc");
+  CloseRunnerController("composite_abc");
+  CloseComponentController("composite_abc");
   VerifyNodeRemovedFromParent("composite_abc", "node_a_a");
   VerifyNodeRemovedFromParent("composite_abc", "node_a_b");
   VerifyNodeRemovedFromParent("composite_abc", "node_a_c");
@@ -402,13 +460,15 @@ TEST_F(NodeShutdownTest, RemoveCompositeNode) {
   auto remove_nodes = {"node_a_a", "node_a_b", "node_a_c"};
   for (auto node : remove_nodes) {
     CloseDriverForNode(node);
-    InvokeDestroyChildResponse(node);
+    CloseRunnerController(node);
+    CloseComponentController(node);
     VerifyNodeRemovedFromParent(node, "node_a");
   }
 
   VerifyState("node_a", NodeState::kWaitingOnDriver);
   CloseDriverForNode("node_a");
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
 
   VerifyRemovalTrackerAllCallbackInvoked();
@@ -426,7 +486,8 @@ TEST_F(NodeShutdownTest, RemoveLeafNode) {
   CloseDriverForNode("node_a_a");
   VerifyState("node_a_a", NodeState::kWaitingOnDriverComponent);
 
-  InvokeDestroyChildResponse("node_a_a");
+  CloseRunnerController("node_a_a");
+  CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -439,7 +500,8 @@ TEST_F(NodeShutdownTest, RemoveNodeWithNoChildren) {
   CloseDriverForNode("node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriverComponent);
 
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -471,11 +533,13 @@ TEST_F(NodeShutdownTest, DriverShutdownWhileWaitingOnChildren) {
 
   // Destroy node_a_a's driver component. Since node_a's driver was already
   // closed, it should go straight to destroying the driver component.
-  InvokeDestroyChildResponse("node_a_a");
+  CloseRunnerController("node_a_a");
+  CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriverComponent);
 
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -484,6 +548,7 @@ TEST_F(NodeShutdownTest, RemoveAfterBindFailure) {
   AddNodeAndStartDriver("node_a");
   GetNode("node_a")->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
   CloseDriverForNode("node_a");
+  CloseComponentController("node_a");
   VerifyState("node_a", NodeState::kRunning);
   InvokeRemoveNode("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
@@ -514,15 +579,18 @@ TEST_F(NodeShutdownTest, WaitBindBeforeShutdown) {
                 {"node_a_b_a", NodeState::kWaitingOnDriver}});
 
   CloseDriverForNode("node_a_b_a");
-  InvokeDestroyChildResponse("node_a_b_a");
+  CloseRunnerController("node_a_b_a");
+  CloseComponentController("node_a_b_a");
   VerifyNodeRemovedFromParent("node_a_b_a", "node_a_b");
 
   CloseDriverForNode("node_a_b");
-  InvokeDestroyChildResponse("node_a_b");
+  CloseRunnerController("node_a_b");
+  CloseComponentController("node_a_b");
   VerifyNodeRemovedFromParent("node_a_b", "node_a");
 
   CloseDriverForNode("node_a");
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
 
   VerifyRemovalTrackerAllCallbackInvoked();
@@ -548,14 +616,16 @@ TEST_F(NodeShutdownTest, WaitBindBeforeShutdownForPkgNode) {
                 {node_pkg2, NodeState::kWaitingOnDriverBind}});
 
   CloseDriverForNode(node_pkg1);
-  InvokeDestroyChildResponse(node_pkg1);
+  CloseRunnerController(node_pkg1);
+  CloseComponentController(node_pkg1);
   VerifyNodeRemovedFromParent(node_pkg1, node_boot);
 
   node_manager->driver_host().InvokeStartCallback(node_pkg2, zx::ok());
   VerifyStates({{node_boot, NodeState::kPrestop}, {node_pkg2, NodeState::kWaitingOnDriver}});
 
   CloseDriverForNode(node_pkg2);
-  InvokeDestroyChildResponse(node_pkg2);
+  CloseRunnerController(node_pkg2);
+  CloseComponentController(node_pkg2);
   VerifyNodeRemovedFromParent(node_pkg2, node_boot);
 
   VerifyState(node_boot, NodeState::kPrestop);
@@ -570,6 +640,8 @@ TEST_F(NodeShutdownTest, BindFailureDuringRemove) {
   VerifyState("node_a", NodeState::kWaitingOnDriver);
 
   GetNode("node_a")->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -579,6 +651,7 @@ TEST_F(NodeShutdownTest, DriverHostFailure) {
   AddNodeAndStartDriver("node_a");
   node_manager->driver_host().InvokeStartCallback("node_a", zx::error(ZX_ERR_INTERNAL));
   CloseDriverForNode("node_a");
+  CloseComponentController("node_a");
   VerifyState("node_a", NodeState::kRunning);
   InvokeRemoveNode("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
@@ -592,6 +665,8 @@ TEST_F(NodeShutdownTest, RemoveDuringDriverHostStartWithFailure) {
   VerifyState("node_a", NodeState::kWaitingOnDriverBind);
   node_manager->driver_host().InvokeStartCallback("node_a", zx::error(ZX_ERR_INTERNAL));
 
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -621,7 +696,8 @@ TEST_F(NodeShutdownTest, OverlappingRemoveCalls) {
                 {"node_a_b_a", NodeState::kWaitingOnDriver}});
 
   // Close node_a_a's driver component. The node completes shutdown and should be removed.
-  InvokeDestroyChildResponse("node_a_a");
+  CloseRunnerController("node_a_a");
+  CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnChildren},
@@ -633,7 +709,8 @@ TEST_F(NodeShutdownTest, OverlappingRemoveCalls) {
                 {"node_a_b_a", NodeState::kWaitingOnDriverComponent}});
 
   // Close node_a_b_a's driver component. The node should complete shutdown and be removed.
-  InvokeDestroyChildResponse("node_a_b_a");
+  CloseRunnerController("node_a_b_a");
+  CloseComponentController("node_a_b_a");
   VerifyNodeRemovedFromParent("node_a_b_a", "node_a_b");
   VerifyStates(
       {{"node_a", NodeState::kWaitingOnChildren}, {"node_a_b", NodeState::kWaitingOnDriver}});
@@ -642,13 +719,15 @@ TEST_F(NodeShutdownTest, OverlappingRemoveCalls) {
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnDriverComponent}});
 
-  InvokeDestroyChildResponse("node_a_b");
+  CloseRunnerController("node_a_b");
+  CloseComponentController("node_a_b");
   VerifyNodeRemovedFromParent("node_a_b", "node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriver);
 
   CloseDriverForNode("node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -672,7 +751,8 @@ TEST_F(NodeShutdownTest, OverlappingRemoveCalls_DifferentNodes) {
                 {"node_a_b_a", NodeState::kWaitingOnDriver}});
 
   // Close node_a_a's driver component. The node completes shutdown and should be removed.
-  InvokeDestroyChildResponse("node_a_a");
+  CloseRunnerController("node_a_a");
+  CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnChildren},
@@ -689,7 +769,8 @@ TEST_F(NodeShutdownTest, OverlappingRemoveCalls_DifferentNodes) {
                 {"node_a_b_a", NodeState::kWaitingOnDriverComponent}});
 
   // Close node_a_b_a's driver component. The node should complete shutdown and be removed.
-  InvokeDestroyChildResponse("node_a_b_a");
+  CloseRunnerController("node_a_b_a");
+  CloseComponentController("node_a_b_a");
   VerifyNodeRemovedFromParent("node_a_b_a", "node_a_b");
   VerifyStates(
       {{"node_a", NodeState::kWaitingOnChildren}, {"node_a_b", NodeState::kWaitingOnDriver}});
@@ -698,13 +779,15 @@ TEST_F(NodeShutdownTest, OverlappingRemoveCalls_DifferentNodes) {
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnDriverComponent}});
 
-  InvokeDestroyChildResponse("node_a_b");
+  CloseRunnerController("node_a_b");
+  CloseComponentController("node_a_b");
   VerifyNodeRemovedFromParent("node_a_b", "node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriver);
 
   CloseDriverForNode("node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
   VerifyRemovalTrackerAllCallbackInvoked();
 }
@@ -745,9 +828,11 @@ TEST_F(NodeShutdownTest, NodesInDifferentCollections) {
 
   // Stop the drivers and components backing the package driver nodes.
   CloseDriverForNode(node_pkg1);
-  InvokeDestroyChildResponse(node_pkg1);
+  CloseRunnerController(node_pkg1);
+  CloseComponentController(node_pkg1);
   CloseDriverForNode(node_pkg2);
-  InvokeDestroyChildResponse(node_pkg2);
+  CloseRunnerController(node_pkg2);
+  CloseComponentController(node_pkg2);
 
   // Check these children are gone
   VerifyNodeRemovedFromParent(node_pkg1, root_name);
@@ -771,7 +856,8 @@ TEST_F(NodeShutdownTest, NodesInDifferentCollections) {
   // Take the child of the test root through its stages.
   CloseDriverForNode(node_boot);
   VerifyState(node_boot, NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse(node_boot);
+  CloseRunnerController(node_boot);
+  CloseComponentController(node_boot);
 
   // Check the child was removed from the parent.
   VerifyNodeRemovedFromParent(node_boot, root_name);
@@ -781,7 +867,8 @@ TEST_F(NodeShutdownTest, NodesInDifferentCollections) {
   VerifyState(root_name, NodeState::kWaitingOnDriver);
   CloseDriverForNode(root_name);
   VerifyState(root_name, NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse(root_name);
+  CloseRunnerController(root_name);
+  CloseComponentController(root_name);
 
   // Check the test root was removed from the realm root.
   VerifyNodeRemovedFromParent(root_name, "root");
@@ -822,9 +909,11 @@ TEST_F(NodeShutdownTest, RemoveAllRemovesEverything) {
 
   // Stop the drivers and components backing the package driver nodes.
   CloseDriverForNode(node_pkg1);
-  InvokeDestroyChildResponse(node_pkg1);
+  CloseRunnerController(node_pkg1);
+  CloseComponentController(node_pkg1);
   CloseDriverForNode(node_pkg2);
-  InvokeDestroyChildResponse(node_pkg2);
+  CloseRunnerController(node_pkg2);
+  CloseComponentController(node_pkg2);
 
   // Check these children are gone.
   VerifyNodeRemovedFromParent(node_pkg1, root_name);
@@ -835,7 +924,8 @@ TEST_F(NodeShutdownTest, RemoveAllRemovesEverything) {
   // Take the child of the test root through its stages.
   CloseDriverForNode(node_boot);
   VerifyState(node_boot, NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse(node_boot);
+  CloseRunnerController(node_boot);
+  CloseComponentController(node_boot);
 
   // Check the child was removed from the parent.
   VerifyNodeRemovedFromParent(node_boot, root_name);
@@ -845,7 +935,8 @@ TEST_F(NodeShutdownTest, RemoveAllRemovesEverything) {
   VerifyState(root_name, NodeState::kWaitingOnDriver);
   CloseDriverForNode(root_name);
   VerifyState(root_name, NodeState::kWaitingOnDriverComponent);
-  InvokeDestroyChildResponse(root_name);
+  CloseRunnerController(root_name);
+  CloseComponentController(root_name);
 
   // Check the test root was removed from the realm root.
   VerifyNodeRemovedFromParent(root_name, "root");

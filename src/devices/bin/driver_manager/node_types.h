@@ -5,6 +5,8 @@
 #ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_NODE_TYPES_H_
 #define SRC_DEVICES_BIN_DRIVER_MANAGER_NODE_TYPES_H_
 
+#include <cstdint>
+
 namespace driver_manager {
 
 enum class Collection : uint8_t {
@@ -36,8 +38,10 @@ enum class NodeState : uint8_t {
   kWaitingOnChildren,    // Received Remove, and waiting for children to be removed.
 
   kWaitingOnDriver,           // Waiting for driver to respond from Stop() command.
-  kWaitingOnDriverComponent,  // Waiting driver component to be destroyed.
-  kStopped,                   // Node finished shutdown.
+  kWaitingOnDriverComponent,  // Waiting for driver component to be stopped.
+  kStopped,                   // Node finished stopping.
+  kWaitingOnDestroy,          // Waiting for the component to be destroyed.
+  kDestroyed,                 // Node finished destroying component.
 };
 
 }  // namespace driver_manager

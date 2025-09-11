@@ -8,6 +8,8 @@
 
 #include <src/devices/lib/log/log.h>
 
+#include "src/devices/bin/driver_manager/bind/bind_manager.h"
+
 namespace driver_manager {
 
 namespace {
@@ -40,7 +42,7 @@ void BootupTracker::NotifyStartComplete(std::string node_moniker) {
       itr != outstanding_start_requests_.end()) {
     outstanding_start_requests_.erase(itr);
   } else {
-    fdf_log::error("Bootup tracker notified for an unknown start request for {}", node_moniker);
+    fdf_log::info("Bootup tracker notified for an unknown start request for {}", node_moniker);
   }
   UpdateTrackerAndResetTimer();
 }

@@ -11,7 +11,7 @@
 struct NodeBank {
   NodeBank(driver_manager::NodeRemovalTracker *tracker) : tracker_(tracker) {}
   void AddNode(driver_manager::Collection collection, driver_manager::NodeState state) {
-    if (state == driver_manager::NodeState::kStopped) {
+    if (state == driver_manager::NodeState::kDestroyed) {
       return;
     }
     ids_.insert(tracker_->RegisterNode(driver_manager::NodeInfo{
@@ -24,7 +24,7 @@ struct NodeBank {
 
   void NotifyRemovalComplete() {
     for (driver_manager::NodeId id : ids_) {
-      tracker_->Notify(id, driver_manager::NodeState::kStopped);
+      tracker_->Notify(id, driver_manager::NodeState::kDestroyed);
     }
   }
 
@@ -47,16 +47,16 @@ TEST_F(NodeRemovalTrackerTest, RegisterOneNode) {
   tracker.set_pkg_callback([&package_callbacks]() { package_callbacks++; });
   tracker.set_all_callback([&all_callbacks]() { all_callbacks++; });
   tracker.FinishEnumeration();
-  tracker.Notify(id, driver_manager::NodeState::kStopped);
+  tracker.Notify(id, driver_manager::NodeState::kDestroyed);
 
   EXPECT_EQ(package_callbacks, 1);
   EXPECT_EQ(all_callbacks, 1);
 }
 
-TEST_F(NodeRemovalTrackerTest, DoNotRegisterStoppedNode) {
+TEST_F(NodeRemovalTrackerTest, DoNotRegisterDestroyedNode) {
   driver_manager::NodeRemovalTracker tracker(dispatcher());
   NodeBank node_bank(&tracker);
-  node_bank.AddNode(driver_manager::Collection::kBoot, driver_manager::NodeState::kStopped);
+  node_bank.AddNode(driver_manager::Collection::kBoot, driver_manager::NodeState::kDestroyed);
   int package_callbacks = 0;
   int all_callbacks = 0;
   tracker.set_pkg_callback([&package_callbacks]() { package_callbacks++; });
@@ -141,7 +141,7 @@ TEST_F(NodeRemovalTrackerTest, CallbackDeadlock) {
     tracker.set_all_callback([&all_callbacks]() { all_callbacks++; });
   });
   tracker.FinishEnumeration();
-  tracker.Notify(id, driver_manager::NodeState::kStopped);
+  tracker.Notify(id, driver_manager::NodeState::kDestroyed);
 
   EXPECT_EQ(package_callbacks, 1);
   EXPECT_EQ(all_callbacks, 1);
