@@ -19,4 +19,5 @@ fidl("fuchsia.examples") {
   ]
   public_deps = [ "//zircon/vdso/zx" ]
   enable_hlcpp = true
+  enable_rust_next = true
 }

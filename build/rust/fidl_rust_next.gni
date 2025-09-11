@@ -52,6 +52,8 @@ template("fidl_rust_next") {
   assert(defined(invoker.fidl_ir_target),
          "fidl_rust_next(\"$target_name\") must define `fidl_ir_target`")
 
+  fdomain = defined(invoker.fdomain) && invoker.fdomain
+
   generation_target = "${target_name}_generate"
 
   forward_variables_from(invoker,
@@ -59,7 +61,13 @@ template("fidl_rust_next") {
                            "fidl_gen_dir",
                            "library_name",
                          ])
-  _crate_name = "fidl_next_" + string_replace(library_name, ".", "_")
+  _prefix = "fidl"
+
+  if (fdomain) {
+    _prefix = "fdomain"
+  }
+
+  _crate_name = "${_prefix}_next_" + string_replace(library_name, ".", "_")
   file_stem = "${fidl_gen_dir}/${_crate_name}"
 
   if (is_fidl_toolchain) {
@@ -161,6 +169,8 @@ template("fidl_rust_next") {
           label = get_label_info(dep, "label_no_toolchain")
           if (label == "//zircon/vdso/zx:zx") {
             deps += [ "//sdk/rust/zx-types" ]
+          } else if (fdomain) {
+            deps += [ "${label}_rust_next" ]
           } else {
             deps += [ "${label}_rust_next" ]
           }

@@ -9,9 +9,11 @@ rustc_test("fdomain-example-bin") {
   edition = "2021"
 
   deps = [
-    "//examples/fidl/fuchsia.examples:fuchsia.examples_fdomain",
     "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_fdomain",
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain",
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain_next",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_next",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/container",
     "//src/lib/fidl/rust/fidl",
