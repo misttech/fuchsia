@@ -696,6 +696,21 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.CMMG_FEATURES_NOT_SUPPORTED",
+        "value": "119"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.DENIED_ALLOCATION",
+        "value": "118"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.DENIED_CHANNEL_SPLITTING",
+        "value": "117"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.DENIED_DUE_TO_SPECTRUM_MANAGEMENT",
         "value": "103"
     },
@@ -708,6 +723,16 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.DENIED_LISTEN_INTERVAL_TOO_LARGE",
         "value": "51"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.DENIED_LOCAL_MAC_ADDRESS_POLICY_VIOLATION",
+        "value": "125"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.DENIED_NOTIFICATION_PERIOD_ALLOCATION",
+        "value": "116"
     },
     {
         "kind": "enum/member",
@@ -776,13 +801,33 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.ENERGY_LIMITED_OPERATION_NOT_SUPPORTED",
+        "value": "108"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.ESTABLISH_RSNA_FAILURE",
         "value": "259"
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.FILS_AUTHENTICATION_FAILURE",
+        "value": "112"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.FLOW_CONTROL_OPERATION_SUPPORTED",
+        "value": "111"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.GAS_ADVERTISEMENT_PROTOCOL_NOT_SUPPORTED",
         "value": "59"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.GAS_FRAGMENT_NOT_AVAILABLE",
+        "value": "120"
     },
     {
         "kind": "enum/member",
@@ -798,6 +843,11 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.GAS_RESPONSE_NOT_RECEIVED_FROM_SERVER",
         "value": "61"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.GLK_NOT_AUTHORIZED",
+        "value": "122"
     },
     {
         "kind": "enum/member",
@@ -951,6 +1001,16 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.REJECTED_MAX_AWAY_DURATION_UNACCEPTABLE",
+        "value": "110"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.REJECTED_NDP_BLOCK_ACK_SUGGESTED",
+        "value": "109"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.REJECTED_SEQUENCE_TIMEOUT",
         "value": "16"
     },
@@ -1013,6 +1073,11 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.ROBUST_MANAGEMENT_POLICY_VIOLATION",
         "value": "31"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.SAE_HASH_TO_ELEMENT",
+        "value": "126"
     },
     {
         "kind": "enum/member",
@@ -1081,6 +1146,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.SUCCESS_CAG_VERSIONS_MATCH",
+        "value": "121"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.SUCCESS_POWER_SAVE_MODE",
         "value": "85"
     },
@@ -1088,6 +1158,16 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.TCLAS_PROCESSING_TERMINATED",
         "value": "97"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.TCLAS_PROCESSING_TERMINATED_INSUFFICIENT_QOS",
+        "value": "128"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.TCLAS_PROCESSING_TERMINATED_POLICY_CONFLICT",
+        "value": "129"
     },
     {
         "kind": "enum/member",
@@ -1128,6 +1208,16 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.UNACCEPTABLE_LIFETIME",
         "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.UNKNOWN_AUTHENTICATION_SERVER",
+        "value": "113"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.UNKNOWN_PASSWORD_IDENTIFIER",
+        "value": "123"
     },
     {
         "kind": "enum/member",
