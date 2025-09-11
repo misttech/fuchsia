@@ -9,7 +9,6 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/syslog/global.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>

@@ -4,7 +4,6 @@
 
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/syslog/global.h>
 
 #include "src/camera/bin/factory/factory_server.h"
 

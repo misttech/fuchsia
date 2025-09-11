@@ -26,7 +26,6 @@ source_set("lib") {
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
     "//src/lib/files",
-    "//zircon/system/ulib/syslog",
   ]
 
   public_deps = [
@@ -51,10 +50,7 @@ executable("camera_factory_bin") {
   defines = [ camera_debug_define ]
   sources = [ "main.cc" ]
 
-  deps = [
-    ":lib",
-    "//zircon/system/ulib/syslog",
-  ]
+  deps = [ ":lib" ]
 }
 
 fidl("fuchsia.factory.camera") {
