@@ -27,7 +27,7 @@ where
         ___E: ::fidl_next::Encoder,
     {% endif %}
     {% if union_.is_resource %}
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        ___E: {{ self.encode_trait_path() }},
     {% endif %}
 {
     #[inline]
@@ -318,7 +318,7 @@ where
         ___D: ::fidl_next::Decoder,
     {% endif %}
     {% if union_.is_resource %}
-        ___D: ::fidl_next::fuchsia::HandleDecoder,
+        ___D: {{ self.decode_trait_path() }},
     {% endif %}
 {
     fn decode(
@@ -443,7 +443,7 @@ where
         ___D: ::fidl_next::Decoder,
     {% endif %}
     {% if union_.is_resource %}
-        ___D: ::fidl_next::fuchsia::HandleDecoder,
+        ___D: {{ self.decode_trait_path() }},
     {% endif %}
 {
     fn decode(

@@ -31,7 +31,7 @@ unsafe impl<___E> ::fidl_next::Encode<___E> for {{ name }}
 where
     ___E: ::fidl_next::Encoder + ?Sized,
     {% if table.is_resource %}
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        ___E: {{ self.encode_trait_path() }},
     {% endif %}
 {
     #[inline]
@@ -192,7 +192,7 @@ unsafe impl<___D> ::fidl_next::Decode<___D> for {{ wire_name }}<'static>
 where
     ___D: ::fidl_next::Decoder + ?Sized,
     {% if table.is_resource %}
-        ___D: ::fidl_next::fuchsia::HandleDecoder,
+        ___D: {{ self.decode_trait_path() }},
     {% endif %}
 {
     fn decode(

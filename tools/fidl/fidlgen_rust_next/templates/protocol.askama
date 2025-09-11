@@ -143,7 +143,7 @@ pub mod {{ module_name }} {
                         ___E: ::fidl_next::Encoder,
                     {% endif %}
                     {% if args.is_resource %}
-                        ___E: ::fidl_next::fuchsia::HandleEncoder,
+                        ___E: {{ self.encode_trait_path() }},
                     {% endif %}
                     {% for (i, member) in args.members.iter().enumerate() %}
                         T{{ i }}: ::fidl_next::Encode<___E, Encoded = {{ self.static_wire_type(member.ty) }}>,
@@ -217,7 +217,7 @@ pub mod {{ module_name }} {
                                     <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
                                 {% endif %}
                                 {% if args.is_resource %}
-                                    <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
+                                    <___T as ::fidl_next::Transport>::SendBuffer: {{ self.encode_trait_path() }},
                                 {% endif %}
                             {
                                 self.{{ method_name }}_with({{ method_type_name }} {
@@ -273,7 +273,7 @@ pub mod {{ module_name }} {
                                     <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
                                 {% endif %}
                                 {% if args.is_resource %}
-                                    <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
+                                    <___T as ::fidl_next::Transport>::SendBuffer: {{ self.encode_trait_path() }},
                                 {% endif %}
                             {
                                 self.{{ method_name }}_with({{ method_type_name }} {
@@ -348,7 +348,7 @@ pub mod {{ module_name }} {
                                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
                             {% endif %}
                             {% if args.is_resource %}
-                                <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
+                                <___T as ::fidl_next::Transport>::SendBuffer: {{ self.encode_trait_path() }},
                             {% endif %}
                         {
                             self.{{ method_name }}_with({{ method_type_name }} {

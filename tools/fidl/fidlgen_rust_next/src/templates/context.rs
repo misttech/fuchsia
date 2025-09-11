@@ -36,6 +36,14 @@ pub trait Contextual<'a> {
         &self.context().config.resource_bindings
     }
 
+    fn encode_trait_path(&self) -> &'a String {
+        &self.context().config.encode_trait_path
+    }
+
+    fn decode_trait_path(&self) -> &'a String {
+        &self.context().config.decode_trait_path
+    }
+
     fn doc_string(&self, attributes: &'a Attributes) -> DocStringTemplate<'a> {
         DocStringTemplate::new(attributes)
     }

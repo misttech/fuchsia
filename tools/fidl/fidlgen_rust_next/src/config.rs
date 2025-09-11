@@ -9,6 +9,8 @@ use fidl_ir::HandleSubtype;
 pub struct Config {
     pub emit_compat: bool,
     pub emit_debug_impls: bool,
+    pub encode_trait_path: String,
+    pub decode_trait_path: String,
     pub resource_bindings: ResourceBindings,
 }
 

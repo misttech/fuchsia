@@ -65,6 +65,8 @@ fn main() {
     let config = Config {
         emit_compat: args.emit_compat,
         emit_debug_impls: true,
+        encode_trait_path: "::fidl_next::fuchsia::HandleEncoder".to_owned(),
+        decode_trait_path: "::fidl_next::fuchsia::HandleDecoder".to_owned(),
         resource_bindings: ResourceBindings::default(),
     };
     let result = render_library(&library, &config).expect("failed to emit FIDL bindings");
