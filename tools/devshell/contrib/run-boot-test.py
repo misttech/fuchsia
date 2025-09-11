@@ -2,6 +2,7 @@
 # Copyright 2020 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+from __future__ import annotations
 
 import argparse
 import difflib
@@ -11,6 +12,7 @@ import platform
 import shlex
 import subprocess
 import sys
+from dataclasses import dataclass
 from enum import Enum
 
 SCRIPT_DIR = os.path.dirname(__file__)
@@ -213,6 +215,38 @@ class BootTest:
             print("    command: %s" % " ".join(map(shlex.quote, command)))
 
 
+# Basic options for running the test under emulation, as gleaned from test
+# metadata.
+@dataclass
+class EmulatorProfile:
+    # Base kernel arguments that must be passed.
+    kernel_args: list[str]
+
+    # Whether to enable hardware acceleration.
+    accel: bool
+
+    # Constructs the default profile, used when there is no explicit mention in
+    # the test metadata.
+    @classmethod
+    def default(cls) -> EmulatorProfile:
+        return cls(kernel_args=[], accel=True)
+
+    # Attempts to construct an EmulatorProfile from a tests.json entry,
+    # returning EmulatorProfile.default() if there was no indication.
+    @classmethod
+    def from_test_json(cls, test_json: dict) -> EmulatorProfile:
+        envs = test_json["environments"]
+        for env in envs:
+            emulator_spec = env.get("emulator")
+            if not emulator_spec:
+                continue
+            return cls(
+                kernel_args=emulator_spec.get("kernel_args", []),
+                accel=emulator_spec.get("accel", True),
+            )
+        return EmulatorProfile.default()
+
+
 def find_bootserver(build_dir):
     with open(os.path.join(build_dir, "tool_paths.json")) as file:
         tool_paths = json.load(file)
@@ -388,11 +422,23 @@ def main():
     # difference that `BootTest()` normalizes away.
     with open(os.path.join(build_dir, "tests.json")) as file:
         boot_tests = {}
+        emulator_profiles = {}
         for test in json.load(file):
-            if BootTest.is_boot_test(test):
-                boot_test = BootTest(product_bundles, test, build_dir)
-                if boot_test.arch() == args.arch:
-                    boot_tests[boot_test.name] = boot_test
+            if not BootTest.is_boot_test(test):
+                continue
+            boot_test = BootTest(product_bundles, test, build_dir)
+            if boot_test.arch() != args.arch:
+                continue
+            boot_tests[boot_test.name] = boot_test
+
+            # All explicitly specified emulator metadata should coincide, so we
+            # freely overwrite the profile for a given boot test in that case.
+            emulator_profile = EmulatorProfile.from_test_json(test)
+            if (
+                boot_test.name not in emulator_profiles
+                or emulator_profile != EmulatorProfile.default()
+            ):
+                emulator_profiles[boot_test.name] = emulator_profile
 
     if not boot_tests:
         warning(
@@ -428,6 +474,8 @@ def main():
     assert test.ensure_product_bundle(args.build), (
         "unable to build product bundle %s" % test.product_bundle_name()
     )
+    emulator_profile = emulator_profiles[test.name]
+
     if args.boot:
         if test.qemu_kernel:
             print(error("cannot use --boot with QEMU-only test %s" % test.name))
@@ -444,10 +492,19 @@ def main():
                 error("cannot use --crosvm with no-kernel test %s" % test.name),
             )
             return 1
+        if not emulator_profile.accel:
+            print(
+                error(
+                    "cannot use --crosvm with unaccelerated test %s"
+                    % test.name,
+                ),
+            )
+            return 1
         cmd = [args.crosvm_path] + args.crosvm_args + ["run"] + args.args
         if test.zbi:
             cmd += ["--initrd", test.zbi]
         cmd.append(test.qemu_kernel)
+        args.cmdline.extend(emulator_profile.kernel_args)
     else:
         cmd = [
             "fx",
@@ -457,6 +514,8 @@ def main():
             "--no-authorized-keys",
         ] + args.args
 
+        if not emulator_profile.accel:
+            cmd += ["--no-kvm"]
         if test.is_uefi_boot():
             cmd += ["--uefi"]
         if test.qemu_kernel:
@@ -465,6 +524,7 @@ def main():
             cmd += ["-z", test.zbi]
         if test.efi_disk:
             cmd += ["-D", test.efi_disk]
+        args.cmdline.extend(emulator_profile.kernel_args)
 
     for arg in (
         args.cmdline
