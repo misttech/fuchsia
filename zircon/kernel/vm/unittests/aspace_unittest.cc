@@ -2558,11 +2558,11 @@ class EnumeratorTestHelper {
     }
     return ZX_OK;
   }
-  using RegionEnumerator = VmAddressRegionEnumerator<Type>;
+  using RegionEnumerator = VmAddressRegionEnumerator<Type, VmAddressRegion>;
   RegionEnumerator Enumerator(size_t page_offset_begin, size_t page_offset_end) TA_REQ(lock()) {
     const vaddr_t min_addr = test_vmar_->base() + page_offset_begin * PAGE_SIZE;
     const vaddr_t max_addr = test_vmar_->base() + page_offset_end * PAGE_SIZE;
-    return VmAddressRegionEnumerator<Type>(*test_vmar_, min_addr, max_addr);
+    return VmAddressRegionEnumerator<Type, VmAddressRegion>(*test_vmar_, min_addr, max_addr);
   }
 
   void Resume(RegionEnumerator& enumerator) TA_REQ(lock()) {

@@ -434,17 +434,17 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t 
   return fbl::RefPtr(subregions_.FindRegion(addr));
 }
 
-VmObject::AttributionCounts VmAddressRegion::GetAttributedMemoryLocked() {
+VmObject::AttributionCounts VmAddressRegion::GetAttributedMemoryLocked() const {
   canary_.Assert();
 
   AttributionCounts page_counts;
 
   // Enumerate all of the subregions below us & count allocated pages.
-  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly> enumerator(*this, 0,
-                                                                                    UINT64_MAX);
+  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly, const VmAddressRegion>
+      enumerator(*this, 0, UINT64_MAX);
   AssertHeld(enumerator.lock_ref());
   while (auto next = enumerator.next()) {
-    if (VmMapping* map = next->region_or_mapping->as_vm_mapping_ptr(); map) {
+    if (const VmMapping* map = next->region_or_mapping->as_vm_mapping_ptr(); map) {
       AssertHeld(map->lock_ref());
       page_counts += map->GetAttributedMemoryLocked();
     }
@@ -468,8 +468,8 @@ VmMapping* VmAddressRegion::FindMappingLocked(vaddr_t va) {
   return nullptr;
 }
 
-ktl::optional<vaddr_t> VmAddressRegion::CheckGapLocked(VmAddressRegionOrMapping* prev,
-                                                       VmAddressRegionOrMapping* next,
+ktl::optional<vaddr_t> VmAddressRegion::CheckGapLocked(const VmAddressRegionOrMapping* prev,
+                                                       const VmAddressRegionOrMapping* next,
                                                        vaddr_t search_base, vaddr_t align,
                                                        size_t region_size, size_t min_gap,
                                                        uint arch_mmu_flags) {
@@ -546,8 +546,8 @@ zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
     }
     return status;
   }
-  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings> enumerator(*this, 0,
-                                                                                        UINT64_MAX);
+  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings, VmAddressRegion>
+      enumerator(*this, 0, UINT64_MAX);
   AssertHeld(enumerator.lock_ref());
   while (auto result = enumerator.next()) {
     enumerator.pause();
@@ -657,8 +657,8 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
     return s;
   }
 
-  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly> enumerator(*this, base,
-                                                                                    last_addr);
+  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly, VmAddressRegion>
+      enumerator(*this, base, last_addr);
   AssertHeld(enumerator.lock_ref());
   vaddr_t expected = base;
   while (auto map = enumerator.next()) {
@@ -1000,8 +1000,8 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
   // Check part of the range is not mapped, or the new permissions are invalid for some mapping in
   // the range.
   {
-    VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly> enumerator(
-        *this, base, end_addr_byte);
+    VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly, VmAddressRegion>
+        enumerator(*this, base, end_addr_byte);
     AssertHeld(enumerator.lock_ref());
     vaddr_t expected = base;
     while (auto entry = enumerator.next()) {
@@ -1049,8 +1049,8 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
     }
   }
 
-  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly> enumerator(*this, base,
-                                                                                    end_addr_byte);
+  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly, VmAddressRegion>
+      enumerator(*this, base, end_addr_byte);
   AssertHeld(enumerator.lock_ref());
   while (auto entry = enumerator.next()) {
     VmMapping* mapping = entry->region_or_mapping->as_vm_mapping_ptr();
@@ -1136,11 +1136,11 @@ zx_status_t VmAddressRegion::AllocSpotLocked(size_t size, uint8_t align_pow2, ui
   }
 
   ASSERT(before_iter == subregions_.end() || before_iter.IsValid());
-  VmAddressRegionOrMapping* before = nullptr;
+  const VmAddressRegionOrMapping* before = nullptr;
   if (before_iter.IsValid()) {
     before = &(*before_iter);
   }
-  VmAddressRegionOrMapping* after = nullptr;
+  const VmAddressRegionOrMapping* after = nullptr;
   if (after_iter.IsValid()) {
     after = &(*after_iter);
   }
@@ -1256,8 +1256,8 @@ zx_status_t VmAddressRegion::SetMemoryPriorityLocked(MemoryPriority priority) {
   set_region_priority(this);
 
   // Enumerate all of the subregions below us.
-  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings> enumerator(*this, 0,
-                                                                                        UINT64_MAX);
+  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings, VmAddressRegion>
+      enumerator(*this, 0, UINT64_MAX);
   AssertHeld(enumerator.lock_ref());
   while (auto next = enumerator.next()) {
     if (VmMapping* map = next->region_or_mapping->as_vm_mapping_ptr(); map) {
@@ -1290,8 +1290,8 @@ void VmAddressRegion::CommitHighMemoryPriority() {
     return;
   }
 
-  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings> enumerator(*this, 0,
-                                                                                        UINT64_MAX);
+  VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings, VmAddressRegion>
+      enumerator(*this, 0, UINT64_MAX);
   AssertHeld(enumerator.lock_ref());
   while (auto map = enumerator.next()) {
     // Presently we hold the lock, so we know that region_or_mapping is valid, but we want to use

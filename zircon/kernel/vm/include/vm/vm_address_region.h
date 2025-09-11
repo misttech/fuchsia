@@ -77,7 +77,7 @@ class VmAddressRegion;
 class VmMapping;
 class VmEnumerator;
 enum class VmAddressRegionEnumeratorType : bool;
-template <VmAddressRegionEnumeratorType>
+template <VmAddressRegionEnumeratorType, typename>
 class VmAddressRegionEnumerator;
 
 class MultiPageRequest;
@@ -122,7 +122,9 @@ class VmAddressRegionOrMapping
   fbl::RefPtr<VmAddressRegion> as_vm_address_region();
   fbl::RefPtr<VmMapping> as_vm_mapping();
   VmAddressRegion* as_vm_address_region_ptr();
+  const VmAddressRegion* as_vm_address_region_ptr() const;
   VmMapping* as_vm_mapping_ptr();
+  const VmMapping* as_vm_mapping_ptr() const;
   static fbl::RefPtr<VmAddressRegion> downcast_as_vm_address_region(
       fbl::RefPtr<VmAddressRegionOrMapping>* region_or_map);
   static fbl::RefPtr<VmMapping> downcast_as_vm_mapping(
@@ -168,7 +170,7 @@ class VmAddressRegionOrMapping
  protected:
   // friend VmAddressRegion so it can access DestroyLocked
   friend VmAddressRegion;
-  template <VmAddressRegionEnumeratorType>
+  template <VmAddressRegionEnumeratorType, typename>
   friend class VmAddressRegionEnumerator;
 
   // destructor, should only be invoked from RefPtr
@@ -222,7 +224,7 @@ class VmAddressRegionOrMapping
 
   virtual zx_status_t DestroyLocked() TA_REQ(lock()) = 0;
 
-  virtual AttributionCounts GetAttributedMemoryLocked() TA_REQ(lock()) = 0;
+  virtual AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) = 0;
 
   // Applies the given memory priority to this VMAR, which may or may not result in a change. Up to
   // the derived type to know how to apply and update the |memory_priority_| field.
@@ -299,8 +301,8 @@ class RegionList final {
 
   // Use a static template to allow for returning a const and non-const pointer depending on the
   // constness of self.
-  template <typename S, typename R>
-  static R* FindRegion(S self, vaddr_t addr) {
+  template <typename S>
+  static ktl::conditional_t<ktl::is_const_v<S>, const T, T>* FindRegion(S* self, vaddr_t addr) {
     // Find the first region with a base greater than *addr*.  If a region
     // exists for *addr*, it will be immediately before it.
     auto itr = --self->regions_.upper_bound(addr);
@@ -321,20 +323,19 @@ class RegionList final {
   }
 
   // Find the region that covers addr, returns nullptr if not found.
-  const T* FindRegion(vaddr_t addr) const {
-    return FindRegion<const RegionList<T>*, T>(this, addr);
-  }
-  T* FindRegion(vaddr_t addr) { return FindRegion<RegionList<T>*, T>(this, addr); }
+  const T* FindRegion(vaddr_t addr) const { return FindRegion(this, addr); }
+  T* FindRegion(vaddr_t addr) { return FindRegion(this, addr); }
 
-  // Find the region that contains |base|, or if that doesn't exist, the first region that contains
-  // an address greater than |base|.
-  typename ChildList::iterator IncludeOrHigher(vaddr_t base) {
+  template <typename S>
+  static ktl::conditional_t<ktl::is_const_v<S>, typename ChildList::const_iterator,
+                            typename ChildList::iterator>
+  IncludeOrHigher(S* self, vaddr_t base) {
     // Find the first region with a base greater than *base*.  If a region
     // exists for *base*, it will be immediately before it.
-    auto itr = regions_.upper_bound(base);
+    auto itr = self->regions_.upper_bound(base);
     itr--;
     if (!itr.IsValid()) {
-      itr = regions_.begin();
+      itr = self->regions_.begin();
     } else {
       if (base >= itr->base() && base - itr->base() >= itr->size()) {
         // If *base* isn't in this region, ignore it.
@@ -344,7 +345,17 @@ class RegionList final {
     return itr;
   }
 
+  // Find the region that contains |base|, or if that doesn't exist, the first region that contains
+  // an address greater than |base|.
+  typename ChildList::iterator IncludeOrHigher(vaddr_t base) { return IncludeOrHigher(this, base); }
+  typename ChildList::const_iterator IncludeOrHigher(vaddr_t base) const {
+    return IncludeOrHigher(this, base);
+  }
+
   typename ChildList::iterator UpperBound(vaddr_t base) { return regions_.upper_bound(base); }
+  typename ChildList::const_iterator UpperBound(vaddr_t base) const {
+    return regions_.upper_bound(base);
+  }
 
   // Check whether it would be valid to create a child in the range [base, base+size).
   bool IsRangeAvailable(vaddr_t base, size_t size) const {
@@ -717,13 +728,13 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // constructor for use in creating the kernel aspace singleton
   explicit VmAddressRegion(VmAspace& kernel_aspace);
   // Count the allocated pages, caller must be holding the aspace lock
-  AttributionCounts GetAttributedMemoryLocked() TA_REQ(lock()) override;
+  AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) override;
 
   zx_status_t SetMemoryPriorityLocked(MemoryPriority priority) override TA_REQ(lock());
   void CommitHighMemoryPriority() override TA_EXCL(lock());
 
   friend class VmMapping;
-  template <VmAddressRegionEnumeratorType>
+  template <VmAddressRegionEnumeratorType, typename>
   friend class VmAddressRegionEnumerator;
 
  private:
@@ -763,8 +774,8 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
 
   // If the allocation between the given children can be met this returns a virtual address of the
   // base address of that allocation, otherwise a nullopt is returned.
-  ktl::optional<vaddr_t> CheckGapLocked(VmAddressRegionOrMapping* prev,
-                                        VmAddressRegionOrMapping* next, vaddr_t search_base,
+  ktl::optional<vaddr_t> CheckGapLocked(const VmAddressRegionOrMapping* prev,
+                                        const VmAddressRegionOrMapping* next, vaddr_t search_base,
                                         vaddr_t align, size_t region_size, size_t min_gap,
                                         uint arch_mmu_flags) TA_REQ(lock());
 
@@ -1194,7 +1205,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   static zx_status_t ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr_t base, size_t size,
                                     uint new_arch_mmu_flags);
 
-  AttributionCounts GetAttributedMemoryLocked() TA_REQ(lock()) override;
+  AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) override;
 
   zx_status_t SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) override
       TA_REQ(lock());
@@ -1328,6 +1339,14 @@ inline VmAddressRegion* VmAddressRegionOrMapping::as_vm_address_region_ptr() {
   return static_cast<VmAddressRegion*>(this);
 }
 
+inline const VmAddressRegion* VmAddressRegionOrMapping::as_vm_address_region_ptr() const {
+  canary_.Assert();
+  if (unlikely(is_mapping())) {
+    return nullptr;
+  }
+  return static_cast<const VmAddressRegion*>(this);
+}
+
 inline fbl::RefPtr<VmAddressRegion> VmAddressRegionOrMapping::downcast_as_vm_address_region(
     fbl::RefPtr<VmAddressRegionOrMapping>* region_or_map) {
   DEBUG_ASSERT(region_or_map);
@@ -1351,6 +1370,14 @@ inline VmMapping* VmAddressRegionOrMapping::as_vm_mapping_ptr() {
     return nullptr;
   }
   return static_cast<VmMapping*>(this);
+}
+
+inline const VmMapping* VmAddressRegionOrMapping::as_vm_mapping_ptr() const {
+  canary_.Assert();
+  if (unlikely(!is_mapping())) {
+    return nullptr;
+  }
+  return static_cast<const VmMapping*>(this);
 }
 
 inline fbl::RefPtr<VmMapping> VmAddressRegionOrMapping::downcast_as_vm_mapping(

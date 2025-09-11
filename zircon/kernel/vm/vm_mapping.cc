@@ -131,7 +131,7 @@ fbl::RefPtr<VmObject> VmMapping::vmo() const {
   return vmo_locked();
 }
 
-VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked() {
+VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked() const {
   canary_.Assert();
 
   if (state_ != LifeCycleState::ALIVE) {

@@ -36,13 +36,17 @@ enum class VmAddressRegionEnumeratorType : bool {
 //
 // Except between calls to |pause| and |resume|, the vmar should be considered immutable, and
 // sub-vmars and mappings should not be modified.
-template <VmAddressRegionEnumeratorType Type>
+template <VmAddressRegionEnumeratorType Type, typename VMAR>
 class VmAddressRegionEnumerator {
+  static_assert(ktl::is_same_v<ktl::remove_const_t<VMAR>, VmAddressRegion>);
+  // Helper to apply any constness of VMAR to the provided type T.
+  template <typename T>
+  using maybe_const = ktl::conditional_t<ktl::is_const_v<VMAR>, const T, T>;
+
  public:
   // This requires the vmar lock to be held over the lifetime of the object, except where explicitly
   // stated otherwise.
-  VmAddressRegionEnumerator(VmAddressRegion& vmar, vaddr_t min_addr, vaddr_t max_addr)
-      TA_REQ(vmar.lock())
+  VmAddressRegionEnumerator(VMAR& vmar, vaddr_t min_addr, vaddr_t max_addr) TA_REQ(vmar.lock())
       : min_addr_(min_addr),
         max_addr_(max_addr),
         vmar_(vmar),
@@ -62,7 +66,7 @@ class VmAddressRegionEnumerator {
   }
 
   struct NextResult {
-    VmAddressRegionOrMapping* region_or_mapping;
+    maybe_const<VmAddressRegionOrMapping>* region_or_mapping;
     uint depth;
   };
 
@@ -81,9 +85,9 @@ class VmAddressRegionEnumerator {
       auto curr = itr_++;
       AssertHeld(curr->lock_ref());
       DEBUG_ASSERT(curr->IsAliveLocked());
-      VmAddressRegion* up = curr->parent_;
+      maybe_const<VmAddressRegion>* up = curr->parent_;
 
-      if (VmMapping* mapping = curr->as_vm_mapping_ptr(); mapping) {
+      if (auto* mapping = curr->as_vm_mapping_ptr(); mapping) {
         DEBUG_ASSERT(mapping != nullptr);
         AssertHeld(mapping->lock_ref());
         // If the mapping is entirely before |min_addr| or entirely after |max_addr| do not run
@@ -95,7 +99,7 @@ class VmAddressRegionEnumerator {
         }
         ret = NextResult{mapping, depth_};
       } else {
-        VmAddressRegion* vmar = curr->as_vm_address_region_ptr();
+        auto* vmar = curr->as_vm_address_region_ptr();
         DEBUG_ASSERT(vmar != nullptr);
         AssertHeld(vmar->lock_ref());
         // Yield the vmar if its base is greater than or equal to our min. As we only yield vmars if
@@ -202,10 +206,13 @@ class VmAddressRegionEnumerator {
   static constexpr uint kStartDepth = 1;
   uint depth_ = kStartDepth;
   // Root vmar being enumerated.
-  VmAddressRegion& vmar_;
+  VMAR& vmar_;
   // This iterator represents the object at which |next| should use to find the next item to return.
   // An invalid itr_ therefore represents no next object, and means enumeration has finished.
-  RegionList<VmAddressRegionOrMapping>::ChildList::iterator itr_;
+  ktl::conditional_t<ktl::is_const_v<VMAR>,
+                     RegionList<VmAddressRegionOrMapping>::ChildList::const_iterator,
+                     RegionList<VmAddressRegionOrMapping>::ChildList::iterator>
+      itr_;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_ADDRESS_REGION_ENUMERATOR_H_
