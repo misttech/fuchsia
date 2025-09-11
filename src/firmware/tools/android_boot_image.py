@@ -205,6 +205,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--split",
+        action="store_true",
+        help="Split the image into separate boot images",
+    )
+
+    parser.add_argument(
         "--dump_ramdisk",
         type=pathlib.Path,
         help="Dump the ramdisk to this path",
@@ -249,9 +255,18 @@ def main(argv: list[str] | None = None) -> None:
     """
     args = _parse_args(argv)
 
-    images = load_images(args.file.read_bytes())
+    contents = args.file.read_bytes()
+    images = load_images(contents)
     _print_images_info(images)
 
+    if args.split:
+        # Output name is the same as input name with an additional index suffix.
+        print(f"Splitting {len(images)} images to {args.file}.*")
+        offset = 0
+        for i, image in enumerate(images):
+            out_path = args.file.with_suffix(args.file.suffix + f".{i}")
+            out_path.write_bytes(contents[offset : offset + image.total_size])
+            offset += image.total_size
     # Dump first so that if we also replace the ramdisk, we dump the old one.
     if args.dump_ramdisk:
         _, image = _select_image(args.select_image, images)

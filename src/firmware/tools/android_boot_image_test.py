@@ -100,6 +100,33 @@ class BootImageTests(unittest.TestCase):
         self.assertEqual(images[1].get_chunk_data(ChunkType.RECOVERY_DTBO), b"")
         self.assertEqual(images[1].get_chunk_data(ChunkType.DTB), b"dtb2")
 
+    def test_commandline_split(self) -> None:
+        """Tests the "--split" commandline flag."""
+        with tempfile.TemporaryDirectory() as temp_dir_str:
+            temp_dir = pathlib.Path(temp_dir_str)
+
+            images = [
+                create_boot_image(
+                    {ChunkType.KERNEL: b"kernel1", ChunkType.SECOND: b"second1"}
+                ),
+                create_boot_image(
+                    {ChunkType.KERNEL: b"kernel2", ChunkType.DTB: b"dtb2"}
+                ),
+            ]
+            combined_contents = images[0].image + images[1].image
+
+            input_path = temp_dir / "boot.img"
+            input_path.write_bytes(combined_contents)
+
+            android_boot_image.main([str(input_path), "--split"])
+
+            self.assertEqual(
+                (temp_dir / "boot.img.0").read_bytes(), images[0].image
+            )
+            self.assertEqual(
+                (temp_dir / "boot.img.1").read_bytes(), images[1].image
+            )
+
     def test_commandline_dump_ramdisk(self) -> None:
         """Tests the "dump ramdisk" commandline option."""
         with tempfile.TemporaryDirectory() as temp_dir_str:
