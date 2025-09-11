@@ -1513,6 +1513,10 @@ void Device::RetrieveRingBufferFormatSets() {
           });
     }
   }
+  if (remaining_ring_buffer_ids->empty()) {
+    ring_buffer_format_sets_retrieved_ = true;
+    OnInitializationResponse();
+  }
 }
 
 void Device::AddRingBufferFormatSet(
