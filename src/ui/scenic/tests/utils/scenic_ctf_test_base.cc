@@ -18,6 +18,12 @@ void ScenicCtfTest::SetUp() {
     req.set_display_rotation(DisplayRotation());
     req.set_renderer(Renderer());
     req.set_display_composition(DisplayComposition());
+    if (DisplayDimensions().height != 0 && DisplayDimensions().width != 0) {
+      req.set_display_dimensions(DisplayDimensions());
+    }
+    if (DisplayRefreshRateMillihertz() != 0) {
+      req.set_display_refresh_rate_millihertz(DisplayRefreshRateMillihertz());
+    }
 
     ASSERT_EQ(realm_factory_->CreateRealm(std::move(req), &res), ZX_OK);
   }
@@ -32,6 +38,10 @@ uint64_t ScenicCtfTest::DisplayRotation() const { return 0; }
 fuchsia::ui::test::context::RendererType ScenicCtfTest::Renderer() const {
   return fuchsia::ui::test::context::RendererType::VULKAN;
 }
+
+fuchsia::math::SizeU ScenicCtfTest::DisplayDimensions() const { return {.width = 0, .height = 0}; }
+
+uint32_t ScenicCtfTest::DisplayRefreshRateMillihertz() const { return 0; }
 
 bool ScenicCtfTest::DisplayComposition() const { return true; }
 

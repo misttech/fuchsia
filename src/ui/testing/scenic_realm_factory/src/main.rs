@@ -62,6 +62,8 @@ async fn run_realm_factory_server(stream: ui_test_context::ScenicRealmFactoryReq
                         payload.renderer,
                         payload.display_rotation,
                         payload.display_composition,
+                        payload.display_dimensions,
+                        payload.display_refresh_rate_millihertz,
                     )
                     .await;
 
@@ -95,10 +97,15 @@ const SCENIC_REALM_URL: &str = "#meta/scenic_no_config.cm";
 const CONFIG: &str = "config";
 const CONFIG_URL: &str = "#meta/config.cm";
 
+// Must match the child name specified in `scenic.shard.cml`.
+const FAKE_DISPLAY_STACK_HOST: &str = "fake-display-stack-host";
+
 async fn assemble_realm(
     renderer: Option<ui_test_context::RendererType>,
     display_rotation: Option<u64>,
     display_composition: Option<bool>,
+    display_dimensions: Option<fidl_fuchsia_math::SizeU>,
+    display_refresh_rate_millihertz: Option<u32>,
 ) -> RealmInstance {
     let builder =
         RealmBuilder::with_params(RealmBuilderParams::new().from_relative_url(SCENIC_REALM_URL))
@@ -243,6 +250,32 @@ async fn assemble_realm(
         )
         .await
         .expect("Failed to route capabilities.");
+
+    // Set up fake-display-stack-host's config.
+    builder
+        .init_mutable_config_from_package(FAKE_DISPLAY_STACK_HOST)
+        .await
+        .expect("failed to init mutable config for fake display stack host");
+    if let Some(dimensions) = display_dimensions {
+        builder
+            .set_config_value(FAKE_DISPLAY_STACK_HOST, "active_width_px", dimensions.width.into())
+            .await
+            .expect("failed to set width");
+        builder
+            .set_config_value(FAKE_DISPLAY_STACK_HOST, "active_height_px", dimensions.height.into())
+            .await
+            .expect("failed to set height");
+    }
+    if let Some(refresh_rate_millihertz) = display_refresh_rate_millihertz {
+        builder
+            .set_config_value(
+                FAKE_DISPLAY_STACK_HOST,
+                "refresh_rate_millihertz",
+                refresh_rate_millihertz.into(),
+            )
+            .await
+            .expect("failed to set refresh rate");
+    }
 
     // Create the test realm.
     builder.build().await.expect("Failed to create test realm.")

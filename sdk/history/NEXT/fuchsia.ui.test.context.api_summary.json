@@ -23,6 +23,18 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.ui.test.context/RealmFactoryCreateRealmRequest.display_dimensions",
+        "ordinal": "4",
+        "type": "fuchsia.math/SizeU"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.context/RealmFactoryCreateRealmRequest.display_refresh_rate_millihertz",
+        "ordinal": "5",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.ui.test.context/RealmFactoryCreateRealmRequest.display_rotation",
         "ordinal": "2",
         "type": "uint32"
@@ -80,6 +92,18 @@
         "name": "fuchsia.ui.test.context/ScenicRealmFactoryCreateRealmRequest.display_composition",
         "ordinal": "4",
         "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.context/ScenicRealmFactoryCreateRealmRequest.display_dimensions",
+        "ordinal": "5",
+        "type": "fuchsia.math/SizeU"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.context/ScenicRealmFactoryCreateRealmRequest.display_refresh_rate_millihertz",
+        "ordinal": "6",
+        "type": "uint32"
     },
     {
         "kind": "table/member",

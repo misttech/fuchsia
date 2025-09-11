@@ -13,6 +13,8 @@
 
 namespace integration_tests {
 
+namespace {
+
 using fuc_FlatlandDisplay = fuchsia::ui::composition::FlatlandDisplay;
 using fuds_Metrics = fuchsia::ui::display::singleton::Metrics;
 using fuds_Info = fuchsia::ui::display::singleton::Info;
@@ -20,9 +22,15 @@ using fuds_InfoSyncPtr = fuchsia::ui::display::singleton::InfoSyncPtr;
 
 // Max timeout in failure cases.
 // Set this as low as you can that still works across all test platforms.
-static constexpr zx::duration kTimeout = zx::min(5);
+constexpr zx::duration kTimeout = zx::min(5);
 
-class SingletonDisplayIntegrationTest : public ScenicCtfTest {
+struct DisplayConfig {
+  fuchsia::math::SizeU dimensions;
+  uint32_t refresh_rate_millihertz;
+};
+
+class SingletonDisplayIntegrationTest : public ScenicCtfTest,
+                                        public zxtest::WithParamInterface<DisplayConfig> {
  public:
   SingletonDisplayIntegrationTest() = default;
 
@@ -38,31 +46,34 @@ class SingletonDisplayIntegrationTest : public ScenicCtfTest {
     singleton_display_ = ConnectSyncIntoRealm<fuds_Info>();
   }
 
+  // `ScenicCtfTest`:
+  fuchsia::math::SizeU DisplayDimensions() const override { return GetParam().dimensions; }
+  uint32_t DisplayRefreshRateMillihertz() const override {
+    return GetParam().refresh_rate_millihertz;
+  }
+
  protected:
   fuds_InfoSyncPtr singleton_display_;
 };
 
-TEST_F(SingletonDisplayIntegrationTest, GetMetrics) {
+TEST_P(SingletonDisplayIntegrationTest, GetMetrics) {
   fuds_Metrics metrics;
   ASSERT_EQ(ZX_OK, singleton_display_->GetMetrics(&metrics));
-
-  // All of the expected values below are hard-coded within the "Fake HDCP component", except for
-  // the recommended_device_pixel_ratio, which is computed heuristically based on the other values.
 
   ASSERT_TRUE(metrics.has_extent_in_px());
   ASSERT_TRUE(metrics.has_extent_in_mm());
   ASSERT_TRUE(metrics.has_recommended_device_pixel_ratio());
 
-  EXPECT_EQ(1280, metrics.extent_in_px().width);
-  EXPECT_EQ(800, metrics.extent_in_px().height);
+  EXPECT_EQ(DisplayDimensions().width, metrics.extent_in_px().width);
+  EXPECT_EQ(DisplayDimensions().height, metrics.extent_in_px().height);
   EXPECT_EQ(160, metrics.extent_in_mm().width);
   EXPECT_EQ(90, metrics.extent_in_mm().height);
   EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio().x);
   EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio().y);
-  EXPECT_EQ(60000, metrics.maximum_refresh_rate_in_millihertz());
+  EXPECT_EQ(DisplayRefreshRateMillihertz(), metrics.maximum_refresh_rate_in_millihertz());
 }
 
-TEST_F(SingletonDisplayIntegrationTest, DevicePixelRatioChange) {
+TEST_P(SingletonDisplayIntegrationTest, DevicePixelRatioChange) {
   auto flatland_display = ConnectSyncIntoRealm<fuc_FlatlandDisplay>();
   const float kDPRx = 1.25f;
   const float kDPRy = 1.25f;
@@ -78,5 +89,24 @@ TEST_F(SingletonDisplayIntegrationTest, DevicePixelRatioChange) {
            kDPRy == metrics.recommended_device_pixel_ratio().y;
   });
 }
+
+constexpr DisplayConfig kSherlockDisplayConfig = {
+    .dimensions = {.width = 1280, .height = 800},
+    .refresh_rate_millihertz = 60000,
+};
+constexpr DisplayConfig kAstroDisplayConfig = {
+    .dimensions = {.width = 1024, .height = 600},
+    .refresh_rate_millihertz = 60000,
+};
+constexpr DisplayConfig kAstroLowRefreshRateDisplayConfig = {
+    .dimensions = {.width = 1024, .height = 600},
+    .refresh_rate_millihertz = 30000,
+};
+
+INSTANTIATE_TEST_SUITE_P(Panel, SingletonDisplayIntegrationTest,
+                         zxtest::Values(kAstroDisplayConfig, kSherlockDisplayConfig,
+                                        kAstroLowRefreshRateDisplayConfig));
+
+}  // namespace
 
 }  // namespace integration_tests

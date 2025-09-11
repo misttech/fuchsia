@@ -12,6 +12,7 @@ rustc_binary("bin") {
   testonly = true
 
   deps = [
+    "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
     "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_rust",

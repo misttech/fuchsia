@@ -55,6 +55,17 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
   /// "vulkan".
   virtual fuchsia::ui::test::context::RendererType Renderer() const;
 
+  /// Overrides DisplayDimensions() to provide `active_width_px` and `active_height_px` to
+  /// fake-display-stack-host in the test realm. If {0, 0}, the default value will be used.
+  /// By default, it returns {0, 0};
+  ///
+  /// `width` and `height` must be both non-zero or both zero.
+  virtual fuchsia::math::SizeU DisplayDimensions() const;
+
+  /// Overrides DisplayRefreshRateMillihertz() to provide `refresh_rate_millihertz` to
+  /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
+  virtual uint32_t DisplayRefreshRateMillihertz() const;
+
   /// Override DisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm. True
   /// by default.
   virtual bool DisplayComposition() const;
