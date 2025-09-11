@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
@@ -59,22 +60,35 @@ func readNinjaBuildTrace(tracePath string) (traces []chrometrace.Trace, err erro
 	// Augment trace.Category with categories computed from the build
 	// command itself. This takes care of ignoring Fuchsia wrapper scripts
 	// (that are used for remoting with RBE, tracing or hermeticity checks).
+
+	// Limit number of goroutines to number of CPUs to minimize context switching.
+	limit := runtime.GOMAXPROCS(0)
+	sems := make(chan struct{}, limit)
 	for i := 0; i < len(traces); i++ {
-		if traces[i].Args == nil {
-			// Workflow events do not have any arguments.
-			continue
-		}
-		command, ok := traces[i].Args["command"].(string)
-		if !ok { // this event doesn't have any command'
-			continue
-		}
-		categories := ninjacommand.ComputeCommandCategories(command)
-		if categories == "" {
-			continue
-		}
-		traces[i].Category = traces[i].Category + "," + categories
+		sems <- struct{}{}
+		go func(i int) {
+			defer func() { <-sems }()
+
+			if traces[i].Args == nil {
+				// Workflow events do not have any arguments.
+				return
+			}
+			command, ok := traces[i].Args["command"].(string)
+			if !ok { // this event doesn't have any command'
+				return
+			}
+			categories := ninjacommand.ComputeCommandCategories(command)
+			if categories == "" {
+				return
+			}
+			traces[i].Category = traces[i].Category + "," + categories
+		}(i)
 	}
-	return
+	// Wait for in-flight Goroutines to finish.
+	for i := 0; i < limit; i++ {
+		sems <- struct{}{}
+	}
+	return traces, nil
 }
 
 func createAndWriteTrace(path string, traces []chrometrace.Trace) (err error) {
