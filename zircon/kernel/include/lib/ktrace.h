@@ -947,6 +947,19 @@ class KTrace {
   // Returns the timestamp that should be used to annotate ktrace records.
   static zx_instant_boot_ticks_t Timestamp() { return current_boot_ticks(); }
 
+  // Returns a callable that will return the current ktrace timestamp on the
+  // first call and repeat the same value on subsequent calls. This is useful
+  // for emitting multiple trace events with the same timestamp while keeping
+  // sampling of the timestamp within the trace predicates.
+  static auto LatchedTimestamp() {
+    return [latched_timestamp = ZX_TIME_INFINITE_PAST]() mutable {
+      if (latched_timestamp != ZX_TIME_INFINITE_PAST) {
+        return latched_timestamp;
+      }
+      return latched_timestamp = Timestamp();
+    };
+  }
+
   static bool CategoryEnabled(const fxt::InternedCategory& category) {
     return GetInstance().IsCategoryEnabled(category);
   }
