@@ -111,6 +111,24 @@ impl Deref for DiskImage {
     }
 }
 
+/// The ramdisk to provide to the emulator.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Ramdisk {
+    pub path: PathBuf,
+    pub kind: RamdiskKind,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RamdiskKind {
+    /// Corresponds to an arbitrary ZBI to be booted in the normal workflow.
+    #[default]
+    Zbi,
+
+    /// Indicates an opaque ramdisk intended for testing, not to be modified.
+    Test,
+}
+
 /// Image files and other information specific to the guest OS.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct GuestConfig {
@@ -123,9 +141,10 @@ pub struct GuestConfig {
     /// require a kernel.
     pub kernel_image: Option<PathBuf>,
 
-    /// Zircon Boot image, this is Fuchsia's initial ram disk used in the boot process.
-    /// Note: This is not used if the kernel image is an efi image.
-    pub zbi: Option<PathBuf>,
+    /// The ramdisk to be booted with the provided kernel.
+    /// Note: This may be absent (e.g., when booting a boot shim test or a EFI
+    /// disk image).
+    pub ramdisk: Option<Ramdisk>,
 
     /// Hash of zbi or kernel if the kernel is efi. Used to detect changes when reusing
     /// an emulator instance.
@@ -184,15 +203,10 @@ impl GuestConfig {
     pub fn get_image_hashes(&self) -> Result<(u64, u64)> {
         // If there is an efi kernel, and no zbi, use the kernel to calculate the hash.
 
-        let zbi_hash = match &self.zbi {
-            Some(zbi_path) => get_file_hash(zbi_path).context("could not calculate zbi hash")?,
-            None => {
-                if let Some(file_path) = &self.kernel_image {
-                    get_file_hash(file_path).context("could not calculate efi hash")?
-                } else {
-                    0
-                }
-            }
+        let zbi_hash = if let Some(Ramdisk { path, kind: RamdiskKind::Zbi }) = &self.ramdisk {
+            get_file_hash(path).context("could not calculate ramdisk hash")?
+        } else {
+            0
         };
 
         let disk_hash = if let Some(disk) = &self.disk_image {
@@ -213,7 +227,7 @@ impl GuestConfig {
 
     pub fn check_required_files(&self) -> Result<()> {
         let kernel_path: &_ = &self.kernel_image;
-        let zbi_path = &self.zbi;
+        let ramdisk = &self.ramdisk;
         let disk_image_path = &self.disk_image;
 
         // If no kernel is provided, a FAT diskimage or a full GPT disk containing the bootloader
@@ -241,9 +255,9 @@ impl GuestConfig {
             },
         };
 
-        if let Some(file_path) = zbi_path.as_ref() {
-            if !file_path.exists() {
-                bail!("zbi file {:?} does not exist.", zbi_path);
+        if let Some(ramdisk) = ramdisk {
+            if !ramdisk.path.exists() {
+                bail!("ramdisk {:?} does not exist.", ramdisk.path);
             }
         }
 

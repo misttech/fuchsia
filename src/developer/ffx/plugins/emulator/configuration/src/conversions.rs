@@ -9,7 +9,8 @@
 use anyhow::{Result, anyhow};
 use assembled_system::Image;
 use emulator_instance::{
-    DeviceConfig, DiskImage, EmulatorConfiguration, GuestConfig, PortMapping, VirtualCpu,
+    DeviceConfig, DiskImage, EmulatorConfiguration, GuestConfig, PortMapping, Ramdisk, RamdiskKind,
+    VirtualCpu,
 };
 
 use product_bundle::{ProductBundle, ProductBundleV2};
@@ -92,13 +93,17 @@ fn convert_v2_bundle_to_configs(
     });
 
     // Some kernels do not have separate zbi images.
-    let zbi: Option<PathBuf> = system.iter().find_map(|i| match i {
-        Image::ZBI { path, .. } => Some(path.clone().into()),
-        _ => None,
+    let ramdisk: Option<Ramdisk> = system.iter().find_map(|i| {
+        let (path, kind) = match i {
+            Image::ZBI { path, .. } => (path, RamdiskKind::Zbi),
+            Image::TestRamdisk(path) => (path, RamdiskKind::Test),
+            _ => return None,
+        };
+        Some(Ramdisk { path: path.clone().into(), kind })
     });
 
     emulator_configuration.guest =
-        GuestConfig { disk_image, kernel_image, zbi, ..Default::default() };
+        GuestConfig { disk_image, kernel_image, ramdisk, ..Default::default() };
 
     Ok(emulator_configuration)
 }
@@ -183,7 +188,10 @@ mod tests {
             DiskImage::Fvm(expected_disk_image_path.into())
         );
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
-        assert_eq!(config.guest.zbi, Some(expected_zbi.into_std_path_buf()));
+        assert_eq!(
+            config.guest.ramdisk,
+            Some(Ramdisk { path: expected_zbi.into_std_path_buf(), kind: RamdiskKind::Zbi })
+        );
 
         assert_eq!(config.host.port_map.len(), 0);
 
@@ -241,7 +249,10 @@ mod tests {
             DiskImage::Fxfs(expected_disk_image_path.into())
         );
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
-        assert_eq!(config.guest.zbi, Some(expected_zbi.into_std_path_buf()));
+        assert_eq!(
+            config.guest.ramdisk,
+            Some(Ramdisk { path: expected_zbi.into_std_path_buf(), kind: RamdiskKind::Zbi })
+        );
 
         assert_eq!(config.host.port_map.len(), 2);
         assert!(config.host.port_map.contains_key("ssh"));
@@ -334,7 +345,10 @@ mod tests {
             DiskImage::Gpt(expected_disk_image_path.into())
         );
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
-        assert_eq!(config.guest.zbi, Some(expected_zbi.into_std_path_buf()));
+        assert_eq!(
+            config.guest.ramdisk,
+            Some(Ramdisk { path: expected_zbi.into_std_path_buf(), kind: RamdiskKind::Zbi })
+        );
 
         assert_eq!(config.host.port_map.len(), 2);
         assert!(config.host.port_map.contains_key("ssh"));
@@ -399,7 +413,7 @@ mod tests {
         assert_eq!(config.device.vsock, Some(device.hardware.vsock));
 
         assert!(config.guest.disk_image.is_none());
-        assert!(config.guest.zbi.is_none());
+        assert!(config.guest.ramdisk.is_none());
 
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
 
@@ -461,10 +475,64 @@ mod tests {
             config.guest.disk_image,
             Some(DiskImage::Fat("partitions/bootloaders/some-efi-shell.fat".into()))
         );
-        assert!(config.guest.zbi.is_none());
+        assert!(config.guest.ramdisk.is_none());
 
         assert!(config.guest.kernel_image.is_none());
 
         assert_eq!(config.host.port_map.len(), 0);
+    }
+
+    #[test]
+    fn test_test_ramdisk_product_bundle() {
+        let temp_dir = tempfile::TempDir::new().expect("creating sdk_root temp dir");
+        let sdk_root = temp_dir.path();
+
+        // Set up some test data to pass into the conversion routine.
+        let expected_kernel = Utf8PathBuf::from_path_buf(sdk_root.join("kernel"))
+            .expect("couldn't convert kernel to utf8");
+        let expected_test_ramdisk = Utf8PathBuf::from_path_buf(sdk_root.join("test-ramdisk"))
+            .expect("couldn't convert kernel to utf8");
+
+        let pb = ProductBundleV2 {
+            product_name: String::default(),
+            product_version: String::default(),
+            partitions: PartitionsConfig::default(),
+            sdk_version: String::default(),
+            system_a: Some(vec![
+                Image::QemuKernel(expected_kernel.clone()),
+                Image::TestRamdisk(expected_test_ramdisk.clone()),
+            ]),
+            system_b: None,
+            system_r: None,
+            repositories: vec![],
+            update_package_hash: None,
+            virtual_devices_path: None,
+            release_info: None,
+        };
+        let device = VirtualDeviceV1 {
+            name: "FakeDevice".to_string(),
+            description: Some("A fake virtual device".to_string()),
+            kind: ElementType::VirtualDevice,
+            hardware: Hardware {
+                cpu: Cpu { arch: CpuArchitecture::X64, count: 4 },
+                audio: AudioDevice { model: AudioModel::Hda },
+                storage: DataAmount { quantity: 512, units: DataUnits::Megabytes },
+                inputs: InputDevice { pointing_device: PointingDevice::Mouse },
+                memory: DataAmount { quantity: 4, units: DataUnits::Gigabytes },
+                window_size: Screen { height: 480, width: 640, units: ScreenUnits::Pixels },
+                vsock: VsockDevice { enabled: false, cid: 0 },
+            },
+            ports: None,
+        };
+
+        // Run the conversion, then assert everything in the config matches the manifest data.
+        let config = convert_v2_bundle_to_configs(&pb, &device, false)
+            .expect("convert_v2_bundle_to_configs");
+
+        assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
+        assert_eq!(
+            config.guest.ramdisk,
+            Some(Ramdisk { path: expected_test_ramdisk.into(), kind: RamdiskKind::Test })
+        );
     }
 }

@@ -509,8 +509,8 @@ impl<T: EngineOperations> EmuStartTool<T> {
         mut engine: Box<dyn EmulatorEngine>,
     ) -> Result<(bool, Box<dyn EmulatorEngine>)> {
         log::debug!(
-            "New config image files kernel: {kernel:?} zbi:{zbi:?} disk:{fvm:?}",
-            zbi = new_config.guest.zbi,
+            "New config image files kernel: {kernel:?} ramdisk:{ramdisk:?} disk:{fvm:?}",
+            ramdisk = new_config.guest.ramdisk.as_ref().map(|ramdisk| ramdisk.path.clone()),
             fvm = new_config.guest.disk_image,
             kernel = new_config.guest.kernel_image
         );

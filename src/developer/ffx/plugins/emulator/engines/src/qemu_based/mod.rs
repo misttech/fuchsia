@@ -11,7 +11,7 @@ use crate::show_output;
 use async_trait::async_trait;
 use emulator_instance::{
     AccelerationMode, ConsoleType, DiskImage, EmulatorConfiguration, EngineState, GuestConfig,
-    NetworkingMode,
+    NetworkingMode, Ramdisk, RamdiskKind,
 };
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
@@ -154,64 +154,80 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         }
 
         // If the kernel is an efi image, or has no zbi, skip the zbi processing.
-        let (zbi_path, vbmeta_path) = if let Some(input_zbi_path) = &emu_config.guest.zbi {
+        let (ramdisk, vbmeta_path) = if let Some(ramdisk) = &emu_config.guest.ramdisk {
+            let input_path = &ramdisk.path;
+            let output_path = instance_root
+                .join(input_path.file_name().ok_or_else(|| bug!("cannot read ramdisk file name"))?);
             let mut vbmeta_path = None;
-            let zbi_path = instance_root
-                .join(input_zbi_path.file_name().ok_or_else(|| bug!("cannot read zbi file name"))?);
-
-            if zbi_path.exists() && reuse {
-                log::debug!("Using existing file for {:?}", zbi_path.file_name().unwrap());
-                // TODO(https://fxbug.dev/42063890): Make a decision to reuse zbi with no modifications or not.
-                // There is the potential that the ssh keys have changed, or the ip address
-                // of the host interface has changed, which will cause the connection
-                // to the emulator instance to fail.
-            } else {
-                // Add the authorized public keys to the zbi image to enable SSH access to
-                // the guest. Also, in the GPT case, bake in the kernel command line parameters.
-                let kernel_cmdline = if emu_config.guest.is_gpt {
-                    let c = emu_config.flags.kernel_args.join("\n");
-                    log::debug!("Using kernel parameters in the ZBI: {}", c);
-                    Some(c)
-                } else {
-                    None
-                };
-                Self::embed_boot_data(&env, &input_zbi_path, &zbi_path, kernel_cmdline)
-                    .await
-                    .map_err(|e| bug!("cannot embed boot data: {e}"))?;
-                log::debug!(
-                    "Staging {:?} into {:?} and embedding SSH keys",
-                    input_zbi_path,
-                    zbi_path
-                );
-                match (
-                    &emu_config.guest.vbmeta_key_file,
-                    &emu_config.guest.vbmeta_key_metadata_file,
-                    &emu_config.guest.disk_image,
-                ) {
-                    (Some(zbi_key_file), Some(zbi_key_metadata_file), Some(DiskImage::Gpt(_))) => {
-                        let vbmeta_out_path = instance_root.join("zircon.vbmeta");
-                        Self::generate_vbmeta(
-                            &zbi_key_file,
-                            &zbi_key_metadata_file,
-                            &zbi_path,
-                            &vbmeta_out_path,
-                        )
-                        .await?;
-                        vbmeta_path = Some(vbmeta_out_path);
-                    }
-                    (zbi_key_file, zbi_key_metadata_file, Some(DiskImage::Gpt(_))) => {
-                        return_user_error!(
-                            "Both PEM key (provided: {:?}) and the corresponding metadata file (provided: {:?}) are required.",
-                            zbi_key_file,
-                            zbi_key_metadata_file
+            match ramdisk.kind {
+                RamdiskKind::Test => {
+                    // Test ramdisks remain unmodified.
+                    log::debug!("Staging test ramdisk {input_path:?} into {output_path:?}");
+                    fs::copy(input_path, &output_path).unwrap();
+                }
+                RamdiskKind::Zbi => {
+                    if output_path.exists() && reuse {
+                        log::debug!(
+                            "Using existing file for {:?}",
+                            output_path.file_name().unwrap()
                         );
+                        // TODO(https://fxbug.dev/42063890): Make a decision to reuse zbi with no modifications or not.
+                        // There is the potential that the ssh keys have changed, or the ip address
+                        // of the host interface has changed, which will cause the connection
+                        // to the emulator instance to fail.
+                    } else {
+                        // Add the authorized public keys to the zbi image to enable SSH access to
+                        // the guest. Also, in the GPT case, bake in the kernel command line parameters.
+                        let kernel_cmdline = if emu_config.guest.is_gpt {
+                            let c = emu_config.flags.kernel_args.join("\n");
+                            log::debug!("Using kernel parameters in the ZBI: {}", c);
+                            Some(c)
+                        } else {
+                            None
+                        };
+                        Self::embed_boot_data(&env, input_path, &output_path, kernel_cmdline)
+                            .await
+                            .map_err(|e| bug!("cannot embed boot data: {e}"))?;
+                        log::debug!(
+                            "Staging {input_path:?} into {output_path:?} and embedding SSH keys",
+                        );
+                        match (
+                            &emu_config.guest.vbmeta_key_file,
+                            &emu_config.guest.vbmeta_key_metadata_file,
+                            &emu_config.guest.disk_image,
+                        ) {
+                            (
+                                Some(zbi_key_file),
+                                Some(zbi_key_metadata_file),
+                                Some(DiskImage::Gpt(_)),
+                            ) => {
+                                let vbmeta_out_path = instance_root.join("zircon.vbmeta");
+                                Self::generate_vbmeta(
+                                    &zbi_key_file,
+                                    &zbi_key_metadata_file,
+                                    &output_path,
+                                    &vbmeta_out_path,
+                                )
+                                .await?;
+                                vbmeta_path = Some(vbmeta_out_path);
+                            }
+                            (zbi_key_file, zbi_key_metadata_file, Some(DiskImage::Gpt(_))) => {
+                                return_user_error!(
+                                    "Both PEM key (provided: {:?}) and the corresponding metadata file (provided: {:?}) are required.",
+                                    zbi_key_file,
+                                    zbi_key_metadata_file
+                                );
+                            }
+                            (_, _, _) => {
+                                log::debug!(
+                                    "Generation of new vbmeta for the modified ZBI not required."
+                                );
+                            }
+                        };
                     }
-                    (_, _, _) => {
-                        log::debug!("Generation of new vbmeta for the modified ZBI not required.");
-                    }
-                };
+                }
             }
-            (Some(zbi_path), vbmeta_path)
+            (Some(Ramdisk { path: output_path, kind: ramdisk.kind }), vbmeta_path)
         } else {
             log::debug!("Skipping zbi staging; no zbi file in product bundle.");
             (None, None)
@@ -306,7 +322,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             updated_guest.disk_image = None;
         }
 
-        updated_guest.zbi = zbi_path;
+        updated_guest.ramdisk = ramdisk;
         if emu_config.guest.is_efi() || emu_config.guest.is_gpt {
             let dest = instance_root.join("OVMF_VARS.fd");
             if !dest.exists() {
@@ -354,14 +370,14 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     .resize(gpt::DEFAULT_IMAGE_SIZE)
                     .use_fxfs(true)
                     .vbmeta(vbmeta_path)
-                    .zbi(updated_guest.zbi);
+                    .zbi(updated_guest.ramdisk.map(|ramdisk| ramdisk.path));
                 log::debug!("Building image with {image:#?}");
                 image.build(&env).await?;
             }
             // Since the one multi-partition GPT image is passed to qemu, no kernel and zbi images
             // are required to boot the emulator.
             updated_guest.kernel_image = None;
-            updated_guest.zbi = None;
+            updated_guest.ramdisk = None;
             updated_guest.is_gpt = true;
         }
 
@@ -1230,7 +1246,7 @@ mod tests {
             .set(json!(root.display().to_string()))?;
 
         guest.kernel_image = Some(kernel_path);
-        guest.zbi = Some(zbi_path);
+        guest.ramdisk = Some(Ramdisk { path: zbi_path, kind: RamdiskKind::Zbi });
         guest.ovmf_vars = ovmf_path;
         guest.disk_image = Some(disk_image_path);
 
@@ -1325,7 +1341,10 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi: Some(root.join(instance_name).join("zbi")),
+                ramdisk: Some(Ramdisk {
+                    path: root.join(instance_name).join("zbi"),
+                    kind: RamdiskKind::Zbi,
+                }),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1364,7 +1383,10 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi: Some(root.join(instance_name).join("zbi")),
+                ramdisk: Some(Ramdisk {
+                    path: root.join(instance_name).join("zbi"),
+                    kind: RamdiskKind::Zbi,
+                }),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1494,7 +1516,10 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi: Some(root.join(instance_name).join("zbi")),
+                ramdisk: Some(Ramdisk {
+                    path: root.join(instance_name).join("zbi"),
+                    kind: RamdiskKind::Zbi,
+                }),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1534,7 +1559,10 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi: Some(root.join(instance_name).join("zbi")),
+                ramdisk: Some(Ramdisk {
+                    path: root.join(instance_name).join("zbi"),
+                    kind: RamdiskKind::Zbi,
+                }),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1635,7 +1663,10 @@ mod tests {
 
         let expected = GuestConfig {
             kernel_image: Some(root.join(instance_name).join("kernel")),
-            zbi: Some(root.join(instance_name).join("zbi")),
+            ramdisk: Some(Ramdisk {
+                path: root.join(instance_name).join("zbi"),
+                kind: RamdiskKind::Zbi,
+            }),
             disk_image: Some(DiskImage::Fxfs(root.join(instance_name).join("disk"))),
             ovmf_vars: root.join("OVMF_VARS.fd"),
             ..Default::default()
@@ -1665,7 +1696,9 @@ mod tests {
 
         let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
-        let src = emu_config.guest.zbi.expect("zbi image path");
+        let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
+            panic!("No ZBI path");
+        };
         let dest = root.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::embed_boot_data(&env.context, &src, &dest, None).await?;
@@ -1682,7 +1715,9 @@ mod tests {
 
         let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
-        let src = emu_config.guest.zbi.expect("zbi image path");
+        let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
+            panic!("No ZBI path");
+        };
         let dest = root.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::embed_boot_data(
@@ -1711,7 +1746,9 @@ mod tests {
         std::fs::write(&key_path, VBMETA_TEST_KEY).expect("write test key file");
         std::fs::write(&metadata_path, VBMETA_TEST_KEY_METADATA).expect("write test key metadata");
 
-        let zbi = emu_config.guest.zbi.expect("zbi image path");
+        let Some(Ramdisk { path: zbi, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
+            panic!("No ZBI path");
+        };
         let dest = root.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::generate_vbmeta(&key_path, &metadata_path, &zbi, &dest)

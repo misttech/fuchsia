@@ -18,9 +18,9 @@
     "args": [
         "-kernel",
         "{{guest.kernel_image}}",
-    {{#if guest.zbi }}
+    {{#if guest.ramdisk }}
         "-initrd",
-        "{{guest.zbi}}",
+        "{{guest.ramdisk.path}}",
     {{/if}}
         "-m",
         "{{device.memory.quantity}}{{ua device.memory.units}}",
