@@ -44,7 +44,7 @@ bindgen.include_dirs = [
     "sdk/lib/zxio/include",
     "zircon/third_party/ulib/musl/include",
     "zircon/system/public",
-    "zircon/system/ulib/c/include/llvm-libc-golden",
+    "third_party/llvm-libc/src/include/",
 ]
 
 bindgen.enable_stdlib_include_dirs = False
@@ -88,13 +88,18 @@ bindgen.set_auto_derive_traits(
                 "KnownLayout",
             ],
         ),
-        (r"in6_addr", ["IntoBytes, FromBytes", "Immutable", "KnownLayout"]),
-        (r"in6_pktinfo", ["IntoBytes, FromBytes", "Immutable", "KnownLayout"]),
-        # "sockaddr_in6" includes a union type preventing auto deriving Eq/PartialEq, so it
-        # must appear before "sockaddr_in" in this list.
-        (r"sockaddr_in6", []),
         (
-            r"sockaddr_in",
+            r"in6_addr",
+            [
+                "IntoBytes",
+                "FromBytes",
+                "Immutable",
+                "KnownLayout",
+            ],
+        ),
+        (r"in6_pktinfo", ["IntoBytes, FromBytes", "Immutable", "KnownLayout"]),
+        (
+            r"sockaddr_in$",
             [
                 "PartialEq",
                 "Eq",
@@ -104,6 +109,7 @@ bindgen.set_auto_derive_traits(
                 "KnownLayout",
             ],
         ),
+        (r"sockaddr_in6", []),
         (r"timespec", ["IntoBytes, FromBytes", "Immutable", "KnownLayout"]),
         (r"timeval", ["IntoBytes, FromBytes", "Immutable", "KnownLayout"]),
         (
