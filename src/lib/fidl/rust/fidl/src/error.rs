@@ -103,9 +103,7 @@ pub enum Error {
     )]
     UnknownOrdinal { ordinal: u64, protocol_name: &'static str },
 
-    #[error(
-        "Server for the FIDL protocol {protocol_name} did not recognize method {method_name}."
-    )]
+    #[error("Server for the FIDL protocol {protocol_name} did not recognize method {method_name}.")]
     UnsupportedMethod { method_name: &'static str, protocol_name: &'static str },
 
     #[error("Invalid bits value for a strict bits type.")]

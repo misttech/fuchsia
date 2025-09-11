@@ -4,12 +4,12 @@
 
 //! An implementation of a client for a fidl interface.
 
-use crate::encoding::{
-    decode_transaction_header, Decode, Decoder, DefaultFuchsiaResourceDialect, DynamicFlags,
-    Encode, Encoder, EpitaphBody, MessageBufFor, ProxyChannelBox, ProxyChannelFor, ResourceDialect,
-    TransactionHeader, TransactionMessage, TransactionMessageType, TypeMarker,
-};
 use crate::Error;
+use crate::encoding::{
+    Decode, Decoder, DefaultFuchsiaResourceDialect, DynamicFlags, Encode, Encoder, EpitaphBody,
+    MessageBufFor, ProxyChannelBox, ProxyChannelFor, ResourceDialect, TransactionHeader,
+    TransactionMessage, TransactionMessageType, TypeMarker, decode_transaction_header,
+};
 use fuchsia_sync::Mutex;
 use futures::future::{self, FusedFuture, Future, FutureExt, Map, MaybeDone};
 use futures::ready;
@@ -554,7 +554,7 @@ impl<D: ResourceDialect> Interests<D> {
         let interest = self.messages.get_mut(raw_id).expect("Polled unregistered interest");
         match interest {
             MessageInterest::Received(_) => {
-                return Some(self.messages.remove(raw_id).unwrap_received())
+                return Some(self.messages.remove(raw_id).unwrap_received());
             }
             MessageInterest::Discard => panic!("Polled a discarded MessageReceiver?!"),
             MessageInterest::WillPoll => self.waker_count += 1,
@@ -1058,8 +1058,8 @@ mod tests {
     use fuchsia_async::{Channel as AsyncChannel, DurationExt, TimeoutExt};
     use futures::channel::oneshot;
     use futures::stream::FuturesUnordered;
-    use futures::task::{noop_waker, waker, ArcWake};
-    use futures::{join, StreamExt, TryFutureExt};
+    use futures::task::{ArcWake, noop_waker, waker};
+    use futures::{StreamExt, TryFutureExt, join};
     use futures_test::task::new_count_waker;
     use std::future::pending;
     use std::thread;
@@ -2141,11 +2141,13 @@ mod tests {
         // on a multi-threaded executor will always work (which isn't easy to test directly).
         impl ArcWake for Sender {
             fn wake_by_ref(arc_self: &Arc<Self>) {
-                assert!(arc_self
-                    .future
-                    .lock()
-                    .poll_unpin(&mut Context::from_waker(&noop_waker()))
-                    .is_ready());
+                assert!(
+                    arc_self
+                        .future
+                        .lock()
+                        .poll_unpin(&mut Context::from_waker(&noop_waker()))
+                        .is_ready()
+                );
             }
         }
 

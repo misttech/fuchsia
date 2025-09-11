@@ -268,7 +268,7 @@ pub unsafe trait Encode<T: TypeMarker, D: ResourceDialect>: Sized {
     /// Callers must ensure `offset` is a multiple of `T::inline_align` and
     /// `encoder.buf` has room for writing `T::inline_size` bytes at `offset`.
     unsafe fn encode(self, encoder: &mut Encoder<'_, D>, offset: usize, depth: Depth)
-        -> Result<()>;
+    -> Result<()>;
 }
 
 /// A Rust type that can be decoded from the FIDL type `T`.
@@ -3648,7 +3648,7 @@ mod test {
     #![allow(dead_code)]
 
     use super::*;
-    use crate::handle::{convert_handle_dispositions_to_infos, AsHandleRef};
+    use crate::handle::{AsHandleRef, convert_handle_dispositions_to_infos};
     use crate::time::{BootInstant, BootTicks, MonotonicInstant, MonotonicTicks};
     use assert_matches::assert_matches;
     use std::fmt;

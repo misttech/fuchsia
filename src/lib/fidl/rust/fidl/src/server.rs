@@ -9,7 +9,7 @@ use crate::encoding::{
     FlexibleType, FrameworkErr, HandleFor, ProxyChannelBox, ProxyChannelFor, ResourceDialect,
     TransactionHeader, TransactionMessage, TransactionMessageType, TypeMarker,
 };
-use crate::{epitaph, Error};
+use crate::{Error, epitaph};
 use futures::task::{AtomicWaker, Context};
 use std::sync::atomic::{self, AtomicBool};
 use zx_status;

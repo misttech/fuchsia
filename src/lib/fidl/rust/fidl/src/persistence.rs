@@ -6,8 +6,8 @@
 
 use crate::encoding::{
     AtRestFlags, Context, Decode, Decoder, Depth, Encode, Encoder, GenericMessage,
-    GenericMessageType, HandleFor, NoHandleResourceDialect, ProxyChannelFor, ResourceDialect,
-    ResourceTypeMarker, TypeMarker, ValueTypeMarker, WireFormatVersion, MAGIC_NUMBER_INITIAL,
+    GenericMessageType, HandleFor, MAGIC_NUMBER_INITIAL, NoHandleResourceDialect, ProxyChannelFor,
+    ResourceDialect, ResourceTypeMarker, TypeMarker, ValueTypeMarker, WireFormatVersion,
 };
 use crate::{Error, Result};
 
