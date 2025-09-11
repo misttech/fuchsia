@@ -35,16 +35,11 @@ struct Yakling {
     age: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum Horse {
+    #[default]
     Arabian,
     Icelandic,
-}
-
-impl Default for Horse {
-    fn default() -> Self {
-        Self::Arabian
-    }
 }
 
 #[derive(Unit, Default)]
