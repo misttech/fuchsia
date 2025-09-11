@@ -933,7 +933,10 @@ class MappingProtectionRanges {
     // The mapping flags (read/write/user/etc) for this region.
     uint arch_mmu_flags = 0;
   };
-  using RegionList = fbl::WAVLTree<vaddr_t, ktl::unique_ptr<ProtectNode>>;
+  using KeyTraits = fbl::DefaultKeyedObjectTraits<
+      vaddr_t, typename fbl::internal::ContainerPtrTraits<ktl::unique_ptr<ProtectNode>>::ValueType>;
+  using RegionList = fbl::WAVLTree<vaddr_t, ktl::unique_ptr<ProtectNode>, KeyTraits,
+                                   fbl::DefaultObjectTag, fbl::SizeOrder::N>;
 
   // Internal helper that returns the flags for the region before the given node. Templated to work
   // on both iterator and const_iterator.
