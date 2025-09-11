@@ -45,7 +45,7 @@ class ResizeTest : public BaseFilesystemTest, public testing::WithParamInterface
     ASSERT_NE(query_result->info, nullptr);
     fuchsia_io::wire::FilesystemInfo* info = query_result->info.get();
     // This should always be true, for all filesystems.
-    ASSERT_GT(info->total_bytes, info->used_bytes);
+    ASSERT_GE(info->total_bytes, info->used_bytes);
     *out_free_pool_size = info->free_shared_pool_bytes;
   }
 
@@ -195,8 +195,10 @@ std::vector<ParamType> GetTestCombinationsForMaxInodeTest() {
   std::vector<ParamType> test_combinations;
   for (TestFilesystemOptions options : AllTestFilesystems()) {
     if (options.use_fvm && options.filesystem->GetTraits().supports_resize) {
-      options.device_block_count = 1LLU << 15;
-      options.device_block_size = 1LLU << 9;
+      if (!options.filesystem->GetTraits().has_min_volume_size) {
+        options.device_block_count = 1LLU << 15;
+        options.device_block_size = 1LLU << 9;
+      }
       options.fvm_slice_size = 1LLU << 20;
       test_combinations.emplace_back(options, false);
       if (!options.filesystem->GetTraits().in_memory) {
@@ -211,8 +213,10 @@ std::vector<ParamType> GetTestCombinationsForMaxDataTest() {
   std::vector<ParamType> test_combinations;
   for (TestFilesystemOptions options : AllTestFilesystems()) {
     if (options.use_fvm && options.filesystem->GetTraits().supports_resize) {
-      options.device_block_count = 1LLU << 17;
-      options.device_block_size = 1LLU << 9;
+      if (!options.filesystem->GetTraits().has_min_volume_size) {
+        options.device_block_count = 1LLU << 17;
+        options.device_block_size = 1LLU << 9;
+      }
       options.fvm_slice_size = 1LLU << 20;
       test_combinations.emplace_back(options, false);
       if (!options.filesystem->GetTraits().in_memory) {

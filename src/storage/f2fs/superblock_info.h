@@ -195,6 +195,10 @@ class SuperblockInfo {
     alloc_block_count_ += count;
     return ZX_OK;
   }
+  size_t GetFreeBlockCount() __TA_EXCLUDES(mutex_) {
+    fs::SharedLock lock(mutex_);
+    return total_block_count_ - valid_block_count_;
+  }
 
   uint32_t Utilization() __TA_EXCLUDES(mutex_) {
     fs::SharedLock lock(mutex_);

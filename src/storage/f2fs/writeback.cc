@@ -83,7 +83,8 @@ std::vector<storage::BufferedOperation> Writer::BuildBufferedOperation(OwnedStor
       // If |page| has an invalid addr, notify waiters.
       if (page->IsUptodate()) {
         FX_LOGS(ERROR) << "(" << page->GetKey() << ": " << page->GetVnode().GetKey()
-                       << ") page has an invalid addr: " << page->GetBlockAddr();
+                       << ") page has an invalid addr: " << page->GetBlockAddr() << " "
+                       << operation.status_string();
       }
       notifier.ReserveNotify(std::move(page));
       continue;

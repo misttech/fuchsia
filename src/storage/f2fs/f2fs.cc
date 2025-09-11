@@ -116,7 +116,6 @@ void F2fs::Sync(SyncCallback closure) {
 
 zx::result<fs::FilesystemInfo> F2fs::GetFilesystemInfo() {
   fs::FilesystemInfo info;
-
   info.block_size = kBlockSize;
   info.max_filename_size = kMaxNameLen;
   info.fs_type = fuchsia_fs::VfsType::kF2Fs;
@@ -128,8 +127,9 @@ zx::result<fs::FilesystemInfo> F2fs::GetFilesystemInfo() {
   info.used_nodes = superblock_info_->GetValidInodeCount();
   info.SetFsId(fs_id_);
   info.name = "f2fs";
-
-  // TODO(unknown): Fill free_shared_pool_bytes using fvm info
+  info.free_shared_pool_bytes = fbl::round_down(
+      std::min(bc_->GetFreeSpaceSize(), superblock_info_->GetFreeBlockCount() * kBlockSize),
+      bc_->GetSliceSize());
 
   return zx::ok(info);
 }

@@ -155,7 +155,7 @@ fuchsia_unittest_component("f2fs-compatibility-test") {
 fs_test_config("f2fs") {
   timestamp_granularity = 1
   supports_hard_links = true
-  supports_resize = false
+  supports_resize = true
   max_file_size = 4329690886144
   max_block_size = 4096
   supports_fsck_after_every_transaction = false

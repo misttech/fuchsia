@@ -46,47 +46,38 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
     fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
     bool use_fvm = device->VolumeGetInfo(&manager_info, &volume_info) == ZX_OK;
     if (use_fvm) {
+      if (allocate) {
+        if (zx_status_t status = fvm::ResetAllSlices(device.get()); status != ZX_OK) {
+          FX_LOGS(ERROR) << "failed to reset FVM slices: " << zx_status_get_string(status);
+          return zx::error(status);
+        }
+        device->VolumeGetInfo(&manager_info, &volume_info);
+      }
       size_t slice_size = manager_info.slice_size;
-      size_t slices_per_segment = kDefaultSegmentSize <= manager_info.slice_size
-                                      ? 1
-                                      : kDefaultSegmentSize / manager_info.slice_size;
       size_t slice_count = volume_info.partition_slice_count;
       ZX_ASSERT_MSG(kDefaultSegmentSize % manager_info.slice_size == 0 ||
                         manager_info.slice_size % kDefaultSegmentSize == 0,
                     " slice_size is not aligned with segment boundaries %lu",
                     manager_info.slice_size);
 
-      if (allocate) {
-        slice_count = fbl::round_down(slice_count, slices_per_segment);
-        if (zx_status_t status = fvm::ResetAllSlices(device.get()); status != ZX_OK) {
-          FX_LOGS(ERROR) << "failed to reset FVM slices: " << zx_status_get_string(status);
-          return zx::error(status);
-        }
-        device->VolumeGetInfo(&manager_info, &volume_info);
+      size_t free = manager_info.slice_count - manager_info.assigned_slice_count;
+      size_t max_allowable =
+          std::min(free + volume_info.partition_slice_count, manager_info.maximum_slice_count);
+      if (volume_info.slice_limit) {
+        max_allowable = std::min(volume_info.slice_limit, max_allowable);
+      }
+      slice_count = max_allowable;
 
-        size_t free = manager_info.slice_count - manager_info.assigned_slice_count;
-        size_t max_allowable =
-            std::min(free + volume_info.partition_slice_count, manager_info.maximum_slice_count);
-        if (volume_info.slice_limit) {
-          max_allowable = std::min(volume_info.slice_limit, max_allowable);
-        }
-        max_allowable = fbl::round_down(max_allowable, slices_per_segment);
-
-        if (slice_count > max_allowable || slice_count < kMinVolumeSize / slice_size) {
-          FX_LOGS(WARNING) << "reset slice_count to " << max_allowable << " from " << slice_count;
-          slice_count = max_allowable;
-        }
-
-        size_t offset = volume_info.partition_slice_count;
-        size_t length = slice_count - volume_info.partition_slice_count;
-
-        if (zx_status_t status = device->VolumeExtend(offset, length); status != ZX_OK) {
-          FX_LOGS(ERROR) << "failed to extend volume to (" << offset << ", " << length << ") "
+      size_t offset = volume_info.partition_slice_count;
+      size_t end = CheckedDivRoundUp<size_t>(kMinVolumeSize, slice_size);
+      if (allocate && offset < end) {
+        if (zx_status_t status = device->VolumeExtend(offset, end - offset); status != ZX_OK) {
+          FX_LOGS(ERROR) << "failed to extend volume from " << offset << " to " << end << ": "
                          << zx_status_get_string(status);
           return zx::error(status);
         }
       }
-      FX_LOGS(INFO) << "slice_size: " << slice_size << ", slice_count: " << slice_count;
+      FX_LOGS(INFO) << "Total slice count: " << slice_count << "(" << slice_size << "B)";
       block_count = slice_size * slice_count / kBlockSize;
     }
 
@@ -136,7 +127,24 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
 
 Bcache::Bcache(std::unique_ptr<block_client::BlockDevice> device, uint64_t max_blocks,
                block_t block_size)
-    : max_blocks_(max_blocks), block_size_(block_size), device_(std::move(device)) {}
+    : max_blocks_(max_blocks), block_size_(block_size), device_(std::move(device)) {
+  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
+  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+  use_fvm_ = device_->VolumeGetInfo(&manager_info, &volume_info) == ZX_OK;
+  if (use_fvm_) {
+    size_t free = manager_info.slice_count - manager_info.assigned_slice_count;
+    max_slice_count_ =
+        std::min(free + volume_info.partition_slice_count, manager_info.maximum_slice_count);
+    if (volume_info.slice_limit) {
+      max_slice_count_ = std::min(volume_info.slice_limit, max_slice_count_);
+    }
+    slice_size_ = manager_info.slice_size;
+    current_slice_count_ = volume_info.partition_slice_count;
+    FX_LOGS(INFO) << "bcache has been created: " << max_blocks_ << " blocks(" << block_size_
+                  << "B), " << current_slice_count_ << "/" << max_slice_count_ << " slices("
+                  << slice_size_ << "B)";
+  }
+}
 
 zx_status_t Bcache::BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out) {
   return GetDevice()->BlockAttachVmo(vmo, out);
@@ -154,6 +162,54 @@ zx::result<std::unique_ptr<Bcache>> Bcache::Create(
     return zx::error(status);
   }
   return zx::ok(std::move(bcache));
+}
+
+zx_status_t Bcache::RunRequests(
+    const std::vector<storage::BufferedOperation>& buffered_operations) {
+  if (use_fvm_) {
+    std::vector<storage::BufferedOperation> fvm_buffered_operations;
+    size_t required_count = 0;
+    for (const auto& buffered_operation : buffered_operations) {
+      fvm_buffered_operations.emplace_back(buffered_operation);
+      auto& operation = fvm_buffered_operations.back().op;
+
+      const bool is_read = operation.type == storage::OperationType::kRead;
+      const bool is_write = operation.type == storage::OperationType::kWrite;
+      const bool is_trim = operation.type == storage::OperationType::kTrim;
+      if (!(is_read | is_write | is_trim)) {
+        continue;
+      }
+      const size_t last_slice =
+          (operation.dev_offset + operation.length - 1) * block_size_ / slice_size_;
+      if (last_slice < current_slice_count_) {
+        continue;
+      }
+      if (is_write || is_read) {
+        required_count = std::max(required_count, last_slice + 1 - current_slice_count_);
+      } else if (is_trim) {
+        const size_t start_slice = operation.dev_offset * block_size_ / slice_size_;
+        // Skip purging for unallocated regions.
+        if (start_slice >= current_slice_count_) {
+          fvm_buffered_operations.pop_back();
+          continue;
+        }
+        operation.length =
+            (current_slice_count_ * slice_size_ / block_size_) - operation.dev_offset;
+      }
+    }
+    if (required_count) {
+      if (zx_status_t status = device_->VolumeExtend(current_slice_count_, required_count);
+          status != ZX_OK) {
+        FX_LOGS(ERROR) << "failed to extend volume to (" << current_slice_count_ << ", "
+                       << required_count - current_slice_count_ << ") "
+                       << zx_status_get_string(status);
+        return status;
+      }
+      current_slice_count_ += required_count;
+    }
+    return DeviceTransactionHandler::RunRequests(fvm_buffered_operations);
+  }
+  return DeviceTransactionHandler::RunRequests(buffered_operations);
 }
 
 zx_status_t BcacheMapper::Readblk(block_t bno, void* data) {
@@ -189,7 +245,7 @@ zx_status_t BcacheMapper::Writeblk(block_t bno, const void* data) {
                                                         .length = 1}}});
 }
 
-zx_status_t BcacheMapper::Trim(block_t start, block_t num) {
+zx_status_t BcacheMapper::Trim(size_t start, size_t num) {
   if (!(info_.flags & fuchsia_hardware_block::wire::Flag::kTrimSupport)) {
     return ZX_ERR_NOT_SUPPORTED;
   }

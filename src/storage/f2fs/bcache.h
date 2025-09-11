@@ -39,10 +39,8 @@ class Bcache : public fs::DeviceTransactionHandler, public storage::VmoidRegistr
   uint64_t Maxblk() const { return max_blocks_; }
   block_t BlockSize() const { return block_size_; }
 
-  zx_status_t RunRequests(const std::vector<storage::BufferedOperation>& operations) override {
-    return DeviceTransactionHandler::RunRequests(operations);
-  }
-
+  zx_status_t RunRequests(
+      const std::vector<storage::BufferedOperation>& buffered_operations) override;
   static zx::result<std::unique_ptr<Bcache>> Create(
       std::unique_ptr<block_client::BlockDevice> device, uint64_t max_blocks, block_t block_size);
 
@@ -54,6 +52,10 @@ class Bcache : public fs::DeviceTransactionHandler, public storage::VmoidRegistr
   uint64_t BlockNumberToDevice(uint64_t block_num) const final {
     return block_num * BlockSize() / info_.block_size;
   }
+  size_t GetFreeSpaceSize() const {
+    return use_fvm_ ? (max_slice_count_ - current_slice_count_) * slice_size_ : 0;
+  }
+  size_t GetSliceSize() const { return slice_size_; }
 
   block_client::BlockDevice* GetDevice() final { return device_.get(); }
 
@@ -61,6 +63,10 @@ class Bcache : public fs::DeviceTransactionHandler, public storage::VmoidRegistr
   Bcache(std::unique_ptr<block_client::BlockDevice> device, uint64_t max_blocks,
          block_t block_size);
 
+  size_t slice_size_ = 0;
+  bool use_fvm_ = false;
+  size_t current_slice_count_ = 0;
+  size_t max_slice_count_ = 0;
   const uint64_t max_blocks_;
   const block_t block_size_;
   fuchsia_hardware_block::wire::BlockInfo info_ = {};
@@ -81,7 +87,7 @@ class BcacheMapper : public storage::VmoidRegistry {
   zx_status_t Readblk(block_t bno, void* data) __TA_EXCLUDES(buffer_mutex_);
   zx_status_t Writeblk(block_t bno, const void* data) __TA_EXCLUDES(buffer_mutex_);
 
-  zx_status_t Trim(block_t start, block_t num);
+  zx_status_t Trim(size_t start, size_t num);
   uint64_t Maxblk() const { return max_blocks_; }
   block_t BlockSize() const { return block_size_; }
   zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const;
@@ -93,6 +99,20 @@ class BcacheMapper : public storage::VmoidRegistry {
   zx_status_t BlockDetachVmo(storage::Vmoid vmoid) override;
 
   bool IsWritable() const { return !read_only_; }
+  size_t GetFreeSpaceSize() const {
+    size_t free = 0;
+    for (auto& bcache : bcaches_) {
+      free += bcache->GetFreeSpaceSize();
+    }
+    return free;
+  }
+  size_t GetSliceSize() const {
+    size_t slice_size = 0;
+    for (auto& bcache : bcaches_) {
+      slice_size = std::max(slice_size, bcache->GetSliceSize());
+    }
+    return slice_size;
+  }
   // This function is only used for test and InspectTree purposes.
   void ForEachBcache(fit::function<void(Bcache*)> func) {
     for (auto& bcache : bcaches_) {

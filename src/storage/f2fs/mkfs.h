@@ -93,8 +93,6 @@ class MkfsWorker {
   zx_status_t AddDefaultDentryRoot();
   zx_status_t CreateRootDir();
   zx_status_t PurgeNodeChain();
-
-  zx_status_t TrimDevice();
 };
 
 zx_status_t ParseOptions(const MkfsOptions& options);

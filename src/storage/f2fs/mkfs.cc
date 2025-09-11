@@ -43,7 +43,7 @@ void MkfsWorker::InitGlobalParameters() {
   params_.op_ratio = mkfs_options_.overprovision_ratio;
   params_.segs_per_sec = mkfs_options_.segs_per_sec;
   params_.secs_per_zone = mkfs_options_.secs_per_zone;
-  params_.heap = (mkfs_options_.heap_based_allocation ? 1 : 0);
+  params_.heap = mkfs_options_.heap_based_allocation ? 1 : 0;
   if (mkfs_options_.label.length() != 0) {
     ZX_ASSERT(mkfs_options_.label.length() + 1 <= kVolumeLabelLength);
     memcpy(params_.vol_label, mkfs_options_.label.c_str(), mkfs_options_.label.length() + 1);
@@ -757,19 +757,13 @@ zx_status_t MkfsWorker::CreateRootDir() {
   return ZX_OK;
 }
 
-zx_status_t MkfsWorker::TrimDevice() { return bc_->Trim(0, static_cast<block_t>(bc_->Maxblk())); }
-
 zx_status_t MkfsWorker::FormatDevice() {
   if (zx_status_t err = PrepareSuperblock(); err != ZX_OK) {
     return err;
   }
 
-  if (zx_status_t err = TrimDevice(); err != ZX_OK) {
-    if (err == ZX_ERR_NOT_SUPPORTED) {
-      FX_LOGS(INFO) << "this device doesn't support TRIM";
-    } else {
-      return err;
-    }
+  if (zx_status_t err = bc_->Trim(0, bc_->Maxblk()); err != ZX_OK && err != ZX_ERR_NOT_SUPPORTED) {
+    return err;
   }
 
   if (zx_status_t err = InitSitArea(); err != ZX_OK) {
