@@ -52,6 +52,9 @@ impl DoubleExponentialHistogramProperty {
         while value >= current_floor && index < self.slots - 1 {
             current_floor = self.floor + offset;
             offset *= self.step_multiplier;
+            if offset.is_nan() || offset.is_infinite() {
+                return self.slots - 1;
+            }
             index += 1;
         }
         index
@@ -126,6 +129,39 @@ mod tests {
         }
         node.get_block::<_, inspect_format::Node>(|node_block| {
             assert_eq!(node_block.child_count(), 0);
+        });
+    }
+
+    #[fuchsia::test]
+    fn overflow_underflow() {
+        let inspector = Inspector::default();
+        let root = inspector.root();
+        let hist = root.create_double_exponential_histogram(
+            "test",
+            ExponentialHistogramParams {
+                floor: 1.0,
+                initial_step: f64::MAX / 2.0,
+                step_multiplier: 2.0,
+                buckets: 4,
+            },
+        );
+
+        // this will get multiplied by initial step and overflow
+        hist.insert((f64::MAX / 2.0) + 1.0);
+
+        hist.insert(0.0);
+
+        hist.array.get_block::<_, Array<Double>>(|block| {
+            assert_eq!(block.get(0).unwrap(), 1.0);
+            assert_eq!(block.get(1).unwrap(), f64::MAX / 2.0);
+            assert_eq!(block.get(2).unwrap(), 2.0);
+
+            assert_eq!(block.get(3).unwrap(), 1.0);
+            assert_eq!(block.get(4).unwrap(), 0.0);
+            assert_eq!(block.get(5).unwrap(), 0.0);
+            assert_eq!(block.get(6).unwrap(), 0.0);
+            assert_eq!(block.get(7).unwrap(), 0.0);
+            assert_eq!(block.get(8).unwrap(), 1.0);
         });
     }
 }
