@@ -147,8 +147,8 @@ CompareConfig GetCompareConfigForBoard(std::string_view board_name, int display_
 
   if (board_name == "sherlock") {
     return CompareConfig{
-        // Ignore the first row. It sometimes contains junk (hardware bug).
-        .start_row = 1,
+        // Ignore the first two rows. They sometimes contain junk (hardware bug).
+        .start_row = 2,
         .start_column = 0,
 
         // TODO(https://fxbug.dev/42076618): The last 5 rows of the captured image on
@@ -189,9 +189,9 @@ CompareConfig GetCompareConfigForBoard(std::string_view board_name, int display_
     // rows.
     const int end_row = (display_width == 1920) ? (display_height - 2) : display_height;
     return CompareConfig{
-        // On VIM3 the first row may contain incorrect pixels, possibly due to
-        // display engine hardware bug, so we ignore the first row.
-        .start_row = 1,
+        // On VIM3 the first two rows may contain incorrect pixels, possibly due to
+        // display engine hardware bug, so we ignore them.
+        .start_row = 2,
         .start_column = 0,
 
         .end_row = end_row,
