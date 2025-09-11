@@ -32,6 +32,7 @@ pub mod connection;
 pub mod fho;
 pub mod list;
 pub mod ssh_connector;
+pub mod usb_connector;
 
 mod fdomain_transport;
 mod fidl_pipe;

@@ -1,7 +1,7 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use addr::TargetIpAddr;
+use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Context, Result, anyhow, bail};
 use discovery::query::TargetInfoQuery;
 use discovery::{
@@ -15,7 +15,6 @@ use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlPr
 use fuchsia_async::TimeoutExt;
 use futures::future::{LocalBoxFuture, join_all};
 use futures::{FutureExt, Stream, StreamExt, pin_mut};
-use itertools::Itertools;
 use netext::{IsLocalAddr, ScopedSocketAddr};
 use std::cmp::Ordering;
 use std::net::SocketAddr;
@@ -25,6 +24,7 @@ use target_errors::FfxTargetError;
 
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
+use crate::usb_connector::UsbConnector;
 use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
@@ -607,6 +607,8 @@ impl TargetResolver for DefaultTargetResolver {
 enum ResolutionTarget {
     Addr(SocketAddr),
     Serial(String),
+    Usb(u32),
+    Vsock(u32),
 }
 
 fn sort_socket_addrs(a1: &SocketAddr, a2: &SocketAddr) -> Ordering {
@@ -624,12 +626,39 @@ fn choose_socketaddr_from_addresses(
     if addresses.is_empty() {
         bail!("Target discovered but does not contain addresses: {target:?}");
     }
-    let mut addrs_sorted =
-        addresses.into_iter().map(Into::into).sorted_by(sort_socket_addrs).collect::<Vec<_>>();
-    let sock: SocketAddr = addrs_sorted.pop().ok_or_else(|| {
-        anyhow!("Choosing a socketaddr from a list of addresses, must contain at least one address")
-    })?;
+    let sock = addresses.into_iter().map(Into::into).min_by(sort_socket_addrs);
+    let Some(sock) = sock else {
+        return Err(anyhow!(
+            "Choosing a socketaddr from a list of addresses, must contain at least one address"
+        ));
+    };
     Ok(sock)
+}
+
+fn sort_addrs(&a1: &TargetAddr, a2: &TargetAddr) -> Ordering {
+    match (a1, a2) {
+        (TargetAddr::VSockCtx(_), TargetAddr::VSockCtx(_)) => Ordering::Equal,
+        (TargetAddr::UsbCtx(_), TargetAddr::UsbCtx(_)) => Ordering::Equal,
+        (TargetAddr::VSockCtx(_), _) => Ordering::Less,
+        (_, TargetAddr::VSockCtx(_)) => Ordering::Greater,
+        (TargetAddr::UsbCtx(_), _) => Ordering::Less,
+        (_, TargetAddr::UsbCtx(_)) => Ordering::Greater,
+        (TargetAddr::Net(a), TargetAddr::Net(b)) => sort_socket_addrs(&a, &b),
+    }
+}
+
+fn choose_address_from_addresses(
+    target: &TargetHandle,
+    addresses: &Vec<TargetAddr>,
+) -> Result<TargetAddr> {
+    if addresses.is_empty() {
+        bail!("Target discovered but does not contain addresses: {target:?}");
+    }
+    Ok(addresses
+        .into_iter()
+        .cloned()
+        .min_by(sort_addrs)
+        .expect("Address list mysteriously became empty!"))
 }
 
 impl ResolutionTarget {
@@ -638,12 +667,16 @@ impl ResolutionTarget {
     fn from_target_handle(target: &TargetHandle) -> Result<ResolutionTarget> {
         match &target.state {
             TargetState::Product { addrs: addresses, .. } => {
-                let sock = choose_socketaddr_from_addresses(
-                    &target,
-                    &addresses.into_iter().filter_map(|x| x.try_into().ok()).collect(),
-                )?;
-                let addr: SocketAddr = replace_default_port(sock);
-                Ok(ResolutionTarget::Addr(addr))
+                let addr = choose_address_from_addresses(&target, addresses)?;
+
+                match addr {
+                    TargetAddr::Net(sock) => {
+                        let addr: SocketAddr = replace_default_port(sock);
+                        Ok(ResolutionTarget::Addr(addr))
+                    }
+                    TargetAddr::VSockCtx(cid) => Ok(ResolutionTarget::Vsock(cid)),
+                    TargetAddr::UsbCtx(cid) => Ok(ResolutionTarget::Usb(cid)),
+                }
             }
             TargetState::Fastboot(fts) => match &fts.connection_state {
                 FastbootConnectionState::Usb => {
@@ -674,6 +707,12 @@ impl ResolutionTarget {
             }
             ResolutionTarget::Serial(serial) => {
                 format!("serial:{serial}")
+            }
+            ResolutionTarget::Usb(cid) => {
+                format!("usb:cid:{cid}")
+            }
+            ResolutionTarget::Vsock(cid) => {
+                format!("vsock:cid:{cid}")
             }
         }
     }
@@ -716,19 +755,43 @@ impl Resolution {
     pub fn addr(&self) -> Result<SocketAddr> {
         match self.target {
             ResolutionTarget::Addr(addr) => Ok(addr),
-            _ => bail!("target resolved to serial, not socket_addr"),
+            ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
+            _ => bail!("target does not connect via networking"),
         }
+    }
+
+    pub fn usb_cid(&self) -> Option<u32> {
+        if let ResolutionTarget::Usb(cid) = &self.target { Some(*cid) } else { None }
+    }
+
+    pub fn vsock_cid(&self) -> Option<u32> {
+        if let ResolutionTarget::Vsock(cid) = &self.target { Some(*cid) } else { None }
     }
 
     pub async fn get_connection(&mut self, context: &EnvironmentContext) -> Result<&Connection> {
         if self.connection.is_none() {
-            let connector = SshConnector::new(
-                netext::ScopedSocketAddr::from_socket_addr(self.addr()?)?,
-                context,
-            )?;
-            let conn = Connection::new(connector)
-                .await
-                .map_err(|e| crate::KnockError::CriticalError(e.into()))?;
+            let conn = match &self.target {
+                ResolutionTarget::Addr(socket_addr) => {
+                    let connector = SshConnector::new(
+                        netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
+                        context,
+                    )?;
+                    Connection::new(connector)
+                        .await
+                        .map_err(|e| crate::KnockError::CriticalError(e.into()))?
+                }
+                ResolutionTarget::Usb(cid) => {
+                    if !context.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+                        bail!("USB connections are disabled");
+                    }
+                    let connector = UsbConnector::new(*cid, context).await?;
+                    Connection::new(connector)
+                        .await
+                        .map_err(|e| crate::KnockError::CriticalError(e.into()))?
+                }
+                ResolutionTarget::Vsock(_) => bail!("VSOCK not yet supported"),
+                ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
+            };
             self.connection = Some(conn);
         }
         Ok(self.connection.as_ref().unwrap())
