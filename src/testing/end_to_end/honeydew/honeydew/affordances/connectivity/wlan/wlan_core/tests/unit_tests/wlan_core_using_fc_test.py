@@ -310,13 +310,15 @@ class WlanCoreFCTests(unittest.TestCase):
                 with self._mock_client_sme() as client_sme:
 
                     def connect(
-                        req: f_wlan_sme.ConnectRequest, txn: int
+                        req: f_wlan_sme.ConnectRequest,
+                        txn: int,
+                        current_auth: f_wlan_common_security.Authentication = auth,
                     ) -> None:
                         expect = f_wlan_sme.ConnectRequest(
                             ssid=_TEST_SSID_BYTES,
                             bss_description=_TEST_BSS_DESC_1,
                             multiple_bss_candidates=False,
-                            authentication=auth,
+                            authentication=current_auth,
                             deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
                         )
                         self.assertSequenceEqual(req.ssid, expect.ssid)

@@ -408,8 +408,8 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
         ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
-        for id in wlan_iface_ids:
-            result = await self._query_iface(id)
+        for ids in wlan_iface_ids:
+            result = await self._query_iface(ids)
             mac = MacAddress.from_bytes(bytes(result.sta_addr))
             match result.role:
                 case f_wlan_common.WlanMacRole.CLIENT:
@@ -444,6 +444,17 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
     async def _query_iface(
         self, iface_id: int
     ) -> f_wlan_device_service.QueryIfaceResponse:
+        """Retrieves interface info for wlan iface id.
+
+        Args:
+            iface_id: The wlan interface id to get info from.
+
+        Return:
+            QueryIfaceResponseWrapper from the SL4F server.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.QueryIface error
+        """
         try:
             return (
                 (
