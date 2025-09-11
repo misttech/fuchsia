@@ -12,10 +12,7 @@ use futures::join;
 use futures::prelude::*;
 use std::pin::pin;
 use std::sync::Arc;
-use {
-    fdomain_fuchsia_examples as echo, fdomain_fuchsia_io as fio,
-    fdomain_next_fuchsia_examples as _, fdomain_next_fuchsia_io as _,
-};
+use {fdomain_fuchsia_examples as echo, fdomain_fuchsia_io as fio};
 
 mod transport;
 

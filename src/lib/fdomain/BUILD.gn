@@ -13,5 +13,6 @@ group("tests") {
     "client:tests",
     "container:tests",
     "example:fdomain-example",
+    "example_next:fdomain-example-next",
   ]
 }

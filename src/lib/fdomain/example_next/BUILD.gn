@@ -5,16 +5,17 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
-rustc_test("fdomain-example-bin") {
+rustc_test("fdomain-example-next-bin") {
   edition = "2021"
 
   deps = [
-    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
-    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain_next",
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_next",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_next",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/container",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/storage/lib/vfs/rust:vfs",
@@ -29,12 +30,12 @@ rustc_test("fdomain-example-bin") {
   ]
 }
 
-fuchsia_test_component("fdomain-example-component") {
-  deps = [ ":fdomain-example-bin" ]
-  component_name = "fdomain-example"
-  manifest = "meta/fdomain-example.cml"
+fuchsia_test_component("fdomain-example-next-component") {
+  deps = [ ":fdomain-example-next-bin" ]
+  component_name = "fdomain-example-next"
+  manifest = "meta/fdomain-example-next.cml"
 }
 
-fuchsia_test_package("fdomain-example") {
-  test_components = [ ":fdomain-example-component" ]
+fuchsia_test_package("fdomain-example-next") {
+  test_components = [ ":fdomain-example-next-component" ]
 }
