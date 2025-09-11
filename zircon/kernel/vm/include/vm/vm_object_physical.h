@@ -81,8 +81,7 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  uint32_t GetMappingCachePolicyLocked() const override TA_REQ(lock());
-  zx_status_t SetMappingCachePolicy(const uint32_t cache_policy) override;
+  zx_status_t SetMappingCachePolicy(uint32_t cache_policy) override;
 
   void MaybeDeadTransition() {}
 
@@ -103,7 +102,6 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
   const paddr_t base_ = 0;
   const bool is_slice_ = false;
   const uint64_t parent_user_id_;
-  uint32_t mapping_cache_flags_ TA_GUARDED(lock()) = 0;
 
   // parent pointer (may be null)
   fbl::RefPtr<VmObjectPhysical> parent_ TA_GUARDED(ChildListLock::Get()) = nullptr;

@@ -51,6 +51,9 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   uint64_t lock_order() const { return cow_pages_->lock_order(); }
 
   VmObject* self_locked() TA_REQ(lock()) TA_ASSERT(self_locked()->lock()) { return this; }
+  const VmObject* self_locked() const TA_REQ(lock()) TA_ASSERT(self_locked()->lock()) {
+    return this;
+  }
 
   static zx_status_t Create(uint32_t pmm_alloc_flags, uint32_t options, uint64_t size,
                             fbl::RefPtr<VmObjectPaged>* vmo);
@@ -307,8 +310,10 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   zx_status_t CacheOp(uint64_t offset, uint64_t len, CacheOpType type) override;
 
-  uint32_t GetMappingCachePolicyLocked() const override TA_REQ(lock()) { return cache_policy_; }
-  zx_status_t SetMappingCachePolicy(const uint32_t cache_policy) override;
+  uint32_t GetMappingCachePolicyLocked() const TA_REQ(lock()) {
+    return self_locked()->GetMappingCachePolicyLocked();
+  }
+  zx_status_t SetMappingCachePolicy(uint32_t cache_policy) override;
 
   void DetachSource() override { cow_pages_->DetachSource(); }
 
@@ -468,7 +473,6 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   // members
   const uint32_t options_;
-  uint32_t cache_policy_ TA_GUARDED(lock()) = ARCH_MMU_FLAG_CACHED;
 
   using ReferenceListNodeState = fbl::DoublyLinkedListNodeState<VmObjectPaged*>;
   struct ReferenceListTraits {

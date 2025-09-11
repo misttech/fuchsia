@@ -547,14 +547,12 @@ class VmObject : public fbl::ContainableBaseClasses<
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  virtual uint32_t GetMappingCachePolicy() const {
+  uint32_t GetMappingCachePolicyLocked() const TA_REQ(lock()) { return cache_policy_; }
+  uint32_t GetMappingCachePolicy() const {
     Guard<CriticalMutex> guard{lock()};
     return GetMappingCachePolicyLocked();
   }
-  virtual uint32_t GetMappingCachePolicyLocked() const = 0;
-  virtual zx_status_t SetMappingCachePolicy(const uint32_t cache_policy) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
+  virtual zx_status_t SetMappingCachePolicy(uint32_t cache_policy) = 0;
 
   // create a copy-on-write clone vmo at the page-aligned offset and length
   // note: it's okay to start or extend past the size of the parent
@@ -749,6 +747,9 @@ class VmObject : public fbl::ContainableBaseClasses<
 
   // whether this is a VmObjectPaged or a VmObjectPhysical.
   const VMOType type_;
+
+  // Cache policy to use for mappings.
+  uint32_t cache_policy_ TA_GUARDED(lock()) = ARCH_MMU_FLAG_CACHED;
 
   // list of every mapping
   MappingTree mapping_list_;

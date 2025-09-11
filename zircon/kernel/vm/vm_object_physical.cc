@@ -138,7 +138,7 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
     Guard<CriticalMutex> guard{lock()};
 
     // Inherit the current cache policy
-    vmo->mapping_cache_flags_ = mapping_cache_flags_;
+    vmo->cache_policy_ = cache_policy_;
     // Initialize parent
     vmo->parent_ = fbl::RefPtr(this);
 
@@ -241,8 +241,6 @@ zx_status_t VmObjectPhysical::LookupContiguousLocked(uint64_t offset, uint64_t l
   return ZX_OK;
 }
 
-uint32_t VmObjectPhysical::GetMappingCachePolicyLocked() const { return mapping_cache_flags_; }
-
 zx_status_t VmObjectPhysical::SetMappingCachePolicy(const uint32_t cache_policy) {
   // Is it a valid cache flag?
   if (cache_policy & ~ZX_CACHE_POLICY_MASK) {
@@ -255,7 +253,7 @@ zx_status_t VmObjectPhysical::SetMappingCachePolicy(const uint32_t cache_policy)
   // the requested policy then this is a no-op. This is a common practice
   // in the serialio and magma drivers, but may change.
   // TODO: revisit this when we shake out more of the future DDK protocol.
-  if (cache_policy == mapping_cache_flags_) {
+  if (cache_policy == self_locked()->GetMappingCachePolicyLocked()) {
     return ZX_OK;
   }
 
@@ -268,6 +266,9 @@ zx_status_t VmObjectPhysical::SetMappingCachePolicy(const uint32_t cache_policy)
     return ZX_ERR_BAD_STATE;
   }
 
-  mapping_cache_flags_ = cache_policy;
+  // There's no way good way to convince the static analysis that the lock() that we hold is
+  // also the VmObject::lock() and so we disable analysis to set the cache_policy_;
+  [this, &cache_policy]() TA_REQ(lock())
+      TA_NO_THREAD_SAFETY_ANALYSIS { cache_policy_ = cache_policy; }();
   return ZX_OK;
 }

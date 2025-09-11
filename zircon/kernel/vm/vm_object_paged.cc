@@ -255,7 +255,8 @@ bool VmObjectPaged::CanDedupZeroPagesLocked() {
   canary_.Assert();
 
   // Skip uncached VMOs as we cannot efficiently scan them.
-  if ((cache_policy_ & ZX_CACHE_POLICY_MASK) != ZX_CACHE_POLICY_CACHED) {
+  if ((self_locked()->GetMappingCachePolicyLocked() & ZX_CACHE_POLICY_MASK) !=
+      ZX_CACHE_POLICY_CACHED) {
     return false;
   }
 
@@ -679,7 +680,7 @@ zx_status_t VmObjectPaged::CreateChildReferenceCommon(uint32_t options, VmCowRan
     Guard<CriticalMutex> guard{lock()};
 
     // We know that we are not contiguous so we should not be uncached either.
-    if (cache_policy_ != ARCH_MMU_FLAG_CACHED && !allow_uncached) {
+    if (self_locked()->GetMappingCachePolicyLocked() != ARCH_MMU_FLAG_CACHED && !allow_uncached) {
       return ZX_ERR_BAD_STATE;
     }
 
@@ -691,7 +692,10 @@ zx_status_t VmObjectPaged::CreateChildReferenceCommon(uint32_t options, VmCowRan
     }
     AssertHeld(vmo->lock_ref());
 
-    vmo->cache_policy_ = cache_policy_;
+    // There's no way good way to convince the static analysis that the vmo->lock() that we hold is
+    // also the VmObject::lock() in vmo and so we disable analysis to set the cache_policy_;
+    [&vmo, cache_policy = GetMappingCachePolicyLocked()]() TA_REQ(vmo->lock())
+        TA_NO_THREAD_SAFETY_ANALYSIS { vmo->cache_policy_ = cache_policy; }();
     {
       Guard<CriticalMutex> child_guard{ChildListLock::Get()};
       vmo->parent_ = this;
@@ -765,7 +769,7 @@ zx_status_t VmObjectPaged::CreateClone(Resizability resizable, SnapshotType type
     VmCowPages::DeferredOps deferred(cow_pages_.get());
     Guard<CriticalMutex> guard{lock()};
     // check that we're not uncached in some way
-    if (cache_policy_ != ARCH_MMU_FLAG_CACHED) {
+    if (self_locked()->GetMappingCachePolicyLocked() != ARCH_MMU_FLAG_CACHED) {
       return ZX_ERR_BAD_STATE;
     }
 
@@ -792,7 +796,7 @@ zx_status_t VmObjectPaged::CreateClone(Resizability resizable, SnapshotType type
       return ZX_ERR_NO_MEMORY;
     }
     Guard<CriticalMutex> child_guard{AdoptLock, vmo->lock(), ktl::move(child_lock)};
-    DEBUG_ASSERT(vmo->cache_policy_ == ARCH_MMU_FLAG_CACHED);
+    DEBUG_ASSERT(vmo->self_locked()->GetMappingCachePolicyLocked() == ARCH_MMU_FLAG_CACHED);
 
     // Now that everything has succeeded we can wire up cow pages references. VMO will be placed in
     // the global list later once lock has been dropped.
@@ -1200,7 +1204,7 @@ zx_status_t VmObjectPaged::ZeroRangeInternal(uint64_t offset, uint64_t len, bool
 
       // Zeroing a range behaves as if it were an efficient zx_vmo_write. As we cannot write to
       // uncached vmo, we also cannot zero an uncahced vmo.
-      if (cache_policy_ != ARCH_MMU_FLAG_CACHED) {
+      if (self_locked()->GetMappingCachePolicyLocked() != ARCH_MMU_FLAG_CACHED) {
         return ZX_ERR_BAD_STATE;
       }
 
@@ -1306,7 +1310,7 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::ReadWriteInternal(uint64_t offset,
     {
       __UNINITIALIZED VmCowPages::DeferredOps deferred(cow_pages_.get());
       Guard<CriticalMutex> guard{AssertOrderedLock, lock(), cow_pages_->lock_order()};
-      if (cache_policy_ != ARCH_MMU_FLAG_CACHED) {
+      if (self_locked()->GetMappingCachePolicyLocked() != ARCH_MMU_FLAG_CACHED) {
         return {ZX_ERR_BAD_STATE, src_offset - offset};
       }
       if (end_offset > size_locked()) {
@@ -1903,13 +1907,16 @@ zx_status_t VmObjectPaged::SetMappingCachePolicy(const uint32_t cache_policy) {
 
   // It does not make sense for a pager-backed or discardable VMO to be uncached.
   if (is_user_pager_backed() || is_discardable()) {
-    DEBUG_ASSERT(cache_policy_ == ARCH_MMU_FLAG_CACHED);
+    DEBUG_ASSERT(GetMappingCachePolicyLocked() == ARCH_MMU_FLAG_CACHED);
     return cache_policy == ARCH_MMU_FLAG_CACHED ? ZX_OK : ZX_ERR_BAD_STATE;
   }
 
   // Set the cache policy before informing the VmCowPages, as it may make decisions based on the
   // final cache policy.
-  cache_policy_ = cache_policy;
+  // There's no way good way to convince the static analysis that the lock() that we hold is
+  // also the VmObject::lock() and so we disable analysis to set the cache_policy_;
+  [this, &cache_policy]() TA_REQ(lock())
+      TA_NO_THREAD_SAFETY_ANALYSIS { cache_policy_ = cache_policy; }();
 
   // Asks the cow pages to perform any internal transitions and, most importantly, clean and
   // invalidate any committed pages. In the case of going from cached->uncached the clean+invalidate
