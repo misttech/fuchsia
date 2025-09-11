@@ -21,6 +21,28 @@
 #include <usb/request-fidl.h>
 #include <usb/usb-request.h>
 
+namespace {
+
+// TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
+// initializing.
+enum class InitState {
+  kWaitingForAllocInterface1 = 0,
+  kWaitingForAllocInterface2 = 1,
+  kWaitingForAllocEp1 = 2,
+  kWaitingForAllocEp2 = 3,
+  kWaitingForAllocEp3 = 4,
+  kWaitingForMacAddress = 5,
+  kWaitingForInit1 = 6,
+  kWaitingForAddRequests1 = 7,
+  kWaitingForInit2 = 8,
+  kWaitingForAddRequests2 = 9,
+  kWaitingForInit3 = 10,
+  kWaitingForAddRequests3 = 11,
+  kWaitingForSetInterface = 12
+};
+
+}  // namespace
+
 namespace usb_cdc_function {
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
@@ -530,12 +552,83 @@ void UsbCdcFunction::DiscardPendingTxInfos(zx_status_t status) {
 void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
   list_initialize(&tx_pending_infos_);
 
+  // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
+  // initializing.
+  std::atomic<InitState> state(InitState::kWaitingForAllocInterface1);
+
+  // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
+  // initializing.
+  sync_completion_t state_dispatcher_shutdown;
+
+  // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
+  // initializing.
+  auto state_dispatcher = fdf::SynchronizedDispatcher::Create(
+      {}, "init-state-checker",
+      [&](fdf_dispatcher_t*) { sync_completion_signal(&state_dispatcher_shutdown); });
+  if (state_dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create synchronized dispatcher: %s", state_dispatcher.status_string());
+    txn.Reply(state_dispatcher.error_value());
+    return;
+  }
+
+  async::PostDelayedTask(
+      state_dispatcher.value().async_dispatcher(),
+      [start = zx::clock::get_monotonic(), &state]() {
+        auto now = zx::clock::get_monotonic();
+        std::string reason = "Unknown";
+        switch (state) {
+          case InitState::kWaitingForAllocInterface1:
+            reason = "Waiting for AllocInterface(1)";
+            break;
+          case InitState::kWaitingForAllocInterface2:
+            reason = "Waiting for AllocInterface(2)";
+            break;
+          case InitState::kWaitingForAllocEp1:
+            reason = "Waiting for AllocEp1(1)";
+            break;
+          case InitState::kWaitingForAllocEp2:
+            reason = "Waiting for AllocEp1(2)";
+            break;
+          case InitState::kWaitingForAllocEp3:
+            reason = "Waiting for AllocEp1(3)";
+            break;
+          case InitState::kWaitingForMacAddress:
+            reason = "Waiting for mac address";
+            break;
+          case InitState::kWaitingForInit1:
+            reason = "Waiting for Init(1)";
+            break;
+          case InitState::kWaitingForAddRequests1:
+            reason = "Waiting for AddRequests(1)";
+            break;
+          case InitState::kWaitingForInit2:
+            reason = "Waiting for Init(2)";
+            break;
+          case InitState::kWaitingForAddRequests2:
+            reason = "Waiting for AddRequests(2)";
+            break;
+          case InitState::kWaitingForInit3:
+            reason = "Waiting for Init(3)";
+            break;
+          case InitState::kWaitingForAddRequests3:
+            reason = "Waiting for AddRequests(3)";
+            break;
+          case InitState::kWaitingForSetInterface:
+            reason = "Waiting for SetInterface()";
+            break;
+        }
+        zxlogf(WARNING, "Initialization still has not completed after %li seconds: %s",
+               (now - start).to_secs(), reason.c_str());
+      },
+      zx::sec(20));
+
   auto status = function_.AllocInterface(&descriptors_.comm_intf.b_interface_number);
   if (status != ZX_OK) {
     zxlogf(ERROR, "[bug] AllocInterface(comm_intf): %s", zx_status_get_string(status));
     txn.Reply(status);
     return;
   }
+  state = InitState::kWaitingForAllocInterface2;
   status = function_.AllocInterface(&descriptors_.cdc_intf_0.b_interface_number);
   if (status != ZX_OK) {
     zxlogf(ERROR, "[bug] AllocInterface(data_intf): %s", zx_status_get_string(status));
@@ -546,18 +639,21 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
   descriptors_.cdc_union.bControlInterface = descriptors_.comm_intf.b_interface_number;
   descriptors_.cdc_union.bSubordinateInterface = descriptors_.cdc_intf_0.b_interface_number;
 
+  state = InitState::kWaitingForAllocEp1;
   status = function_.AllocEp(USB_DIR_OUT, &bulk_out_addr_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "[bug] AllocEp(bulk_out): %s", zx_status_get_string(status));
     txn.Reply(status);
     return;
   }
+  state = InitState::kWaitingForAllocEp2;
   status = function_.AllocEp(USB_DIR_IN, &bulk_in_addr_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "[bug] AllocEp(bulk_in): %s", zx_status_get_string(status));
     txn.Reply(status);
     return;
   }
+  state = InitState::kWaitingForAllocEp3;
   status = function_.AllocEp(USB_DIR_IN, &intr_addr_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "[bug] AllocEp(intr): %s", zx_status_get_string(status));
@@ -569,6 +665,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
   descriptors_.bulk_in_ep.b_endpoint_address = bulk_in_addr_;
   descriptors_.intr_ep.b_endpoint_address = intr_addr_;
 
+  state = InitState::kWaitingForMacAddress;
   status = cdc_generate_mac_address();
   if (status != ZX_OK) {
     txn.Reply(status);
@@ -591,6 +688,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForInit1;
   // allocate bulk out usb requests
   status = bulk_out_ep_.Init(bulk_out_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
@@ -599,6 +697,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForAddRequests1;
   size_t actual =
       bulk_out_ep_.AddRequests(BULK_RX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != BULK_RX_COUNT) {
@@ -607,6 +706,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForInit2;
   // allocate bulk in usb requests
   status = bulk_in_ep_.Init(bulk_in_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
@@ -615,6 +715,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForAddRequests2;
   actual = bulk_in_ep_.AddRequests(BULK_TX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != BULK_TX_COUNT) {
     zxlogf(ERROR, "[bug] bulk_in_ep_.AddRequests(): want %d, got %zu", BULK_TX_COUNT, actual);
@@ -622,6 +723,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForInit3;
   // allocate interrupt requests
   status = intr_ep_.Init(intr_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
@@ -630,6 +732,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForAddRequests3;
   actual = intr_ep_.AddRequests(INTR_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != INTR_COUNT) {
     zxlogf(ERROR, "[bug] intr_ep_.AddRequests(): want %d, got %zu", INTR_COUNT, actual);
@@ -637,6 +740,7 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state = InitState::kWaitingForSetInterface;
   status = function_.SetInterface(this, &usb_function_interface_protocol_ops_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "[bug] function_.SetInterface(): %s", zx_status_get_string(status));
@@ -644,6 +748,8 @@ void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
     return;
   }
 
+  state_dispatcher.value().ShutdownAsync();
+  sync_completion_wait(&state_dispatcher_shutdown, ZX_TIME_INFINITE);
   txn.Reply(ZX_OK);
 }
 
