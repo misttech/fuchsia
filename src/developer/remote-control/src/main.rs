@@ -94,11 +94,12 @@ async fn exec_server(config: &Config) -> Result<(), Error> {
     });
 
     let weak_router_vsock = Arc::downgrade(&router);
+    let weak_service_vsock = Rc::downgrade(&service);
     std::mem::drop(router);
     let vsock_fut = async move {
         // TODO(https://fxbug.dev/296283299): Change this info! to error! Once
         // we can return normally if VSOCK support is disabled
-        if let Err(e) = vsock::run_vsocks(weak_router_vsock).await {
+        if let Err(e) = vsock::run_vsocks(weak_router_vsock, weak_service_vsock).await {
             info!("VSOCK serving failed with error {e:?}");
         }
     };

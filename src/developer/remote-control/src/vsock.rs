@@ -2,71 +2,96 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fdomain::serve_fdomain_connection;
 use anyhow::Result;
 use circuit::multi_stream::multi_stream_node_connection_to_async;
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use overnet_core::Router;
 use remote_control::RemoteControlService;
-use std::rc::Rc;
+use std::rc::{Rc, Weak as WeakRc};
 use std::sync::Weak;
 use {fidl_fuchsia_vsock as vsock, fuchsia_async as fasync};
 
+const FDOMAIN_VSOCK_PORT: u32 = 203;
 const OVERNET_VSOCK_PORT: u32 = 202;
 const IDENTIFY_VSOCK_PORT: u32 = 201;
 
-pub async fn run_vsocks(router: Weak<Router>) -> Result<()> {
+pub async fn run_vsocks(router: Weak<Router>, service: WeakRc<RemoteControlService>) -> Result<()> {
     let connector = fuchsia_component::client::connect_to_protocol::<vsock::ConnectorMarker>()?;
-    let (client, mut requests) = fidl::endpoints::create_request_stream();
+    let (client, overnet_requests) = fidl::endpoints::create_request_stream();
     connector.listen(OVERNET_VSOCK_PORT, client).await?.map_err(fidl::Status::from_raw)?;
+
+    let (client, fdomain_requests) = fidl::endpoints::create_request_stream();
+    connector.listen(FDOMAIN_VSOCK_PORT, client).await?.map_err(fidl::Status::from_raw)?;
+
+    let mut requests = futures::stream::select(overnet_requests, fdomain_requests);
 
     while let Some(request) = requests.next().await {
         let vsock::AcceptorRequest::Accept { addr, responder } = request?;
 
         log::info!(addr:? = addr; "Accepted VSOCK connection");
 
-        let (client, con) = fidl::endpoints::create_endpoints();
-        let (data, socket) = fidl::Socket::create_stream();
-        let socket = fuchsia_async::Socket::from_socket(socket);
-        let (mut reader, mut writer) = socket.split();
-        let (err_sender, mut err_receiver) = futures::channel::mpsc::unbounded();
+        if addr.local_port == OVERNET_VSOCK_PORT {
+            let (client, con) = fidl::endpoints::create_endpoints();
+            let (data, socket) = fidl::Socket::create_stream();
+            let socket = fuchsia_async::Socket::from_socket(socket);
+            let (mut reader, mut writer) = socket.split();
+            let (err_sender, mut err_receiver) = futures::channel::mpsc::unbounded();
 
-        let scope = fasync::Scope::new();
-        scope.spawn(async move {
-            while let Some(error) = err_receiver.next().await {
-                log::debug!(
-                    error:? = error;
-                    "Stream error for VSOCK link"
+            let scope = fasync::Scope::new();
+            scope.spawn(async move {
+                while let Some(error) = err_receiver.next().await {
+                    log::debug!(
+                        error:? = error;
+                        "Stream error for VSOCK link"
+                    )
+                }
+            });
+
+            let Some(router) = router.upgrade() else { return Ok(()) };
+
+            scope.spawn(async move {
+                let _client = client;
+
+                if let Err(error) = multi_stream_node_connection_to_async(
+                    router.circuit_node(),
+                    &mut reader,
+                    &mut writer,
+                    true,
+                    circuit::Quality::LOCAL_SOCKET,
+                    err_sender,
+                    format!("VSOCK {addr:?}"),
                 )
-            }
-        });
+                .await
+                {
+                    log::info!(
+                        addr:? = addr,
+                        error:? = error;
+                        "VSOCK link terminated",
+                    );
+                }
+            });
 
-        let Some(router) = router.upgrade() else { return Ok(()) };
+            scope.detach();
 
-        scope.spawn(async move {
-            let _client = client;
+            responder.send(Some(vsock::ConnectionTransport { data, con }))?;
+        } else {
+            debug_assert!(addr.local_port == FDOMAIN_VSOCK_PORT);
 
-            if let Err(error) = multi_stream_node_connection_to_async(
-                router.circuit_node(),
-                &mut reader,
-                &mut writer,
-                true,
-                circuit::Quality::LOCAL_SOCKET,
-                err_sender,
-                format!("VSOCK {addr:?}"),
-            )
-            .await
-            {
-                log::info!(
-                    addr:? = addr,
-                    error:? = error;
-                    "VSOCK link terminated",
-                );
-            }
-        });
+            let (client, con) = fidl::endpoints::create_endpoints();
+            let (data, socket) = fidl::Socket::create_stream();
+            let socket = fuchsia_async::Socket::from_socket(socket);
+            fasync::Task::local({
+                let service = service.clone();
+                async move {
+                    let _client = client;
 
-        scope.detach();
-
-        responder.send(Some(vsock::ConnectionTransport { data, con }))?;
+                    serve_fdomain_connection(service, socket).await;
+                }
+            })
+            .detach();
+            responder.send(Some(vsock::ConnectionTransport { data, con }))?;
+        }
     }
     Ok(())
 }
