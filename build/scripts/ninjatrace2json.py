@@ -7,19 +7,20 @@
 
 import argparse
 import dataclasses
+import gzip
 import json
 import os
 import subprocess
 from concurrent import futures
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 JsonTrace = dict[str, Any]
 
-NINJA_LOG_BASENAME = ".ninja_log"
+NINJA_BUILD_TRACE_BASENAME = "ninja_build_trace.json.gz"
 COMPDB_BASENAME = "compdb.json"
 GRAPH_BASENAME = "graph.dot"
-NINJATRACE_BASENAME = "ninjatrace.json"
+NINJATRACE_BASENAME = "ninjatrace.json.gz"
 NINJA_SUBBUILDS_JSON = "ninja_subbuilds.json"
 
 
@@ -29,6 +30,18 @@ def _subbuild_ninja_target(build_dir: Path) -> str:
     # LINT.IfChange
     return str(build_dir.name) + ".stamp"
     # LINT.ThenChange(//build/subbuild.gni)
+
+
+def load_compressed_trace(trace_path: Path) -> list[JsonTrace]:
+    with gzip.open(trace_path) as f:
+        return json.load(f)
+
+
+def write_compressed_trace(
+    trace_path: Path, trace_data: list[JsonTrace]
+) -> None:
+    with gzip.open(trace_path, "wt") as f:
+        json.dump(trace_data, f)
 
 
 @dataclasses.dataclass
@@ -44,74 +57,38 @@ class Tracer:
     def trace_build_dir(
         self,
         build_dir: Path,
-        extra_ninja_targets: list[str],
-    ) -> list[JsonTrace]:
+    ) -> Path:
         """Generate the Ninja trace for a single build directory (either the
         main build or a subbuild).
 
         The resulting trace will be written to `build_dir / ninjatrace.json`,
         but will also be parsed and returned."""
-        ninja_log = build_dir / NINJA_LOG_BASENAME
-        compdb = build_dir / COMPDB_BASENAME
-        graph = build_dir / GRAPH_BASENAME
+        ninja_build_trace = build_dir / NINJA_BUILD_TRACE_BASENAME
         trace = build_dir / NINJATRACE_BASENAME
 
-        try:
-            subprocess.run(
-                [self.ninja_path, "-C", build_dir, "-t", "compdb"],
-                stdout=compdb.open("w"),
-                check=True,
-            )
-            # Note: only when specifying `-t graph` do we need the extra ninja
-            # targets.
-            subprocess.run(
+        ninjatrace_args: list[str | os.PathLike[str]] = [
+            self.ninjatrace_path,
+            "-ninjabuildtrace",
+            ninja_build_trace,
+            "-trace-json",
+            trace,
+            "-critical-path",
+        ]
+
+        if self.rbe_rpl_path:
+            ninjatrace_args.extend(
                 [
-                    self.ninja_path,
-                    "-C",
-                    build_dir,
-                    "-t",
-                    "graph",
-                    *extra_ninja_targets,
-                ],
-                stdout=graph.open("w"),
-                check=True,
+                    "-rbe-rpl-path",
+                    self.rbe_rpl_path,
+                    "-rpl2trace-path",
+                    self.rpl2trace_path,
+                ]
             )
+        subprocess.run(ninjatrace_args, check=True)
 
-            ninjatrace_args: list[str | os.PathLike[str]] = [
-                self.ninjatrace_path,
-                "-ninjalog",
-                ninja_log,
-                "-compdb",
-                compdb,
-                "-graph",
-                graph,
-                "-trace-json",
-                trace,
-                "-critical-path",
-            ]
+        return trace
 
-            if self.rbe_rpl_path:
-                ninjatrace_args.extend(
-                    [
-                        "-rbe-rpl-path",
-                        self.rbe_rpl_path,
-                        "-rpl2trace-path",
-                        self.rpl2trace_path,
-                    ]
-                )
-            subprocess.run(ninjatrace_args, check=True)
-
-            # Load and return the resulting trace file.
-            with trace.open() as f:
-                return json.load(f)
-        finally:
-            if not self.save_temps:
-                compdb.unlink(missing_ok=True)
-                graph.unlink(missing_ok=True)
-
-    def find_and_merge_subbuilds(
-        self, main_build_dir: Path, main_build_traces: list[JsonTrace]
-    ) -> list[JsonTrace]:
+    def find_and_merge_subbuilds(self, main_build_dir: Path) -> None:
         """Given the main build dir and its trace, find any subbuilds referenced
         by that trace, build them, load them, and merge them into a single
         trace file."""
@@ -124,6 +101,16 @@ class Tracer:
                 Path(b["build_dir"]) for b in json.load(f)
             ]
 
+        # If there aren't any subbuilds possible, exit early so we don't spend the time
+        # to read in the main build trace and write it back out again.
+        if not possible_subbuild_dirs:
+            return
+
+        # Load the main build traces
+        main_build_traces = load_compressed_trace(
+            main_build_dir / NINJATRACE_BASENAME
+        )
+
         traces_by_name = {t["name"]: t for t in main_build_traces}
 
         # Filter out subbuild dirs that aren't referenced by the main trace
@@ -134,15 +121,23 @@ class Tracer:
             if _subbuild_ninja_target(b) in traces_by_name
         ]
 
+        # If there weren't any subbuilds in the last build, then exit early, leaving the
+        # existing trace file as-is:
+        if not filtered_subbuild_dirs:
+            return
+
         # Generate traces for the subbuild dirs in parallel
         pool = futures.ThreadPoolExecutor()
-        subbuild_dir_and_traces = pool.map(
+        subbuild_dir_and_traces: Iterable[
+            tuple[Path, list[JsonTrace]]
+        ] = pool.map(
             lambda subbuild_dir: (
                 subbuild_dir,
                 # Subbuilds don't need extra targets (as of this writing).
-                self.trace_build_dir(
-                    build_dir=main_build_dir / subbuild_dir,
-                    extra_ninja_targets=[],
+                load_compressed_trace(
+                    self.trace_build_dir(
+                        build_dir=main_build_dir / subbuild_dir
+                    )
                 ),
             ),
             filtered_subbuild_dirs,
@@ -157,7 +152,6 @@ class Tracer:
                 "We already filtered out subbuilds not mentioned in the top-level build: %s"
                 % subbuild_dir
             )
-
             for t in subbuild_traces:
                 merged_traces += [
                     {
@@ -170,7 +164,9 @@ class Tracer:
                     }
                 ]
 
-        return merged_traces
+        write_compressed_trace(
+            main_build_dir / NINJATRACE_BASENAME, merged_traces
+        )
 
 
 def main() -> None:
@@ -220,14 +216,6 @@ final ninjatrace.json, and can be large at O(100)s of MBs.""",
         help="Path to the prebuilt rpl2trace tool.",
     )
     parser.add_argument(
-        "--subbuilds-output-path",
-        type=Path,
-        help="""\
-If set, merge traces from subbuilds with traces from the main build and write
-the resulting trace file to this path. Must not be specified if
---subbuilds-in-place is set.""",
-    )
-    parser.add_argument(
         "--subbuilds-in-place",
         action="store_true",
         help="""\
@@ -247,24 +235,13 @@ specified if --subbuilds-output-path is set.""",
 
     fuchsia_build_dir = args.fuchsia_build_dir
 
-    main_build_traces = tracer.trace_build_dir(
-        fuchsia_build_dir, args.extra_ninja_targets or []
-    )
+    # Convert the trace for the main build
+    outpath = tracer.trace_build_dir(fuchsia_build_dir)
 
-    if args.subbuilds_output_path or args.subbuilds_in_place:
-        merged = tracer.find_and_merge_subbuilds(
-            fuchsia_build_dir, main_build_traces
-        )
+    if args.subbuilds_in_place:
+        tracer.find_and_merge_subbuilds(fuchsia_build_dir)
 
-        outpath = args.subbuilds_output_path or (
-            fuchsia_build_dir / NINJATRACE_BASENAME
-        )
-        with outpath.open("w") as f:
-            json.dump(merged, f)
-
-    print(
-        f"Now visit chrome://tracing and load {str(fuchsia_build_dir)}/ninjatrace.json"
-    )
+    print(f"Now visit chrome://tracing and load {str(outpath)}")
 
 
 if __name__ == "__main__":

@@ -366,6 +366,8 @@ def main() -> int:
 
         ninja_cmd = [
             *ninja_cmd_prefix,
+            "--chrome_trace",
+            "ninja_build_trace.json.gz",
             "-C",
             str(build_dir),
         ]
