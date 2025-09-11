@@ -169,7 +169,10 @@ impl ComponentInstanceForAnalyzer {
         let (program_output_dict, declared_dictionaries) = build_program_output_dictionary(
             &self_,
             &decl,
-            &ProgramOutputGenerator { dynamic_dictionaries },
+            &ProgramOutputGenerator {
+                dynamic_dictionaries,
+                executable: decl.get_runner().is_some(),
+            },
         );
         #[derive(Clone)]
         struct NullErrorReporter {}

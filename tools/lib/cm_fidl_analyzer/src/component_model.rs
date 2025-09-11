@@ -4,8 +4,8 @@
 
 use crate::component_instance::{ComponentInstanceForAnalyzer, TopInstanceForAnalyzer};
 use crate::route::{TargetDecl, VerifyRouteResult};
-use crate::{match_absolute_component_urls, PkgUrlMatch};
-use anyhow::{anyhow, Context, Result};
+use crate::{PkgUrlMatch, match_absolute_component_urls};
+use anyhow::{Context, Result, anyhow};
 use cm_config::RuntimeConfig;
 use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ComponentDecl, ExposeDecl, ExposeDeclCommon, OfferDecl,
@@ -18,7 +18,7 @@ use fidl::prelude::*;
 use fuchsia_url::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
-use router_error::Explain;
+use router_error::{Explain, RouterError};
 use routing::capability_source::{
     BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
     ComponentSource, InternalCapability,
@@ -26,12 +26,13 @@ use routing::capability_source::{
 use routing::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, TopInstanceInterface,
 };
-use routing::environment::{find_first_absolute_ancestor_url, RunnerRegistry};
+use routing::environment::{RunnerRegistry, find_first_absolute_ancestor_url};
 use routing::error::{ComponentInstanceError, RoutingError};
 use routing::legacy_router::RouteBundle;
 use routing::mapper::{RouteMapper, RouteSegment};
 use routing::policy::GlobalPolicyChecker;
-use routing::{route_capability, route_event_stream, RouteRequest, RouteSource};
+use routing::{RouteRequest, RouteSource, route_capability, route_event_stream};
+use sandbox::{Capability, RouterResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -75,9 +76,7 @@ pub enum AnalyzerModelError {
     #[error("the source instance `{0}` is not executable")]
     SourceInstanceNotExecutable(Moniker),
 
-    #[error(
-        "at component {0} the capability `{1}` is not a valid source for the capability `{2}`"
-    )]
+    #[error("at component {0} the capability `{1}` is not a valid source for the capability `{2}`")]
     InvalidSourceCapability(ExtendedMoniker, String, String),
 
     #[error("no resolver found in environment of component `{0}` for scheme `{1}`")]
@@ -800,6 +799,69 @@ impl ComponentModelForAnalyzer {
         results
     }
 
+    pub async fn check_used_path(
+        namespace_path: &cm_types::Path,
+        target: &Arc<ComponentInstanceForAnalyzer>,
+    ) -> Result<CapabilitySource, RouterError> {
+        let namespace = target.sandbox.program_input.namespace();
+        let path = namespace_path.split();
+        let mut current_capability = Capability::Dictionary(namespace);
+        for item in path {
+            let dictionary = match current_capability {
+                Capability::Dictionary(dictionary) => dictionary,
+                Capability::DictionaryRouter(router) => {
+                    let response = router
+                        .route(None, false)
+                        .await
+                        .expect("failed to route intermediate router");
+                    let RouterResponse::Capability(dictionary) = response else {
+                        panic!("unexpected router response");
+                    };
+                    dictionary
+                },
+                other_capability => panic!("unexpected capability in namespace: {other_capability:?}"),
+            };
+            current_capability = dictionary
+                        .get(item)
+                        .expect("missing path in namespace")
+                        .expect("missing path in namesapce");
+        }
+        let data = match current_capability {
+            Capability::ConnectorRouter(router) => {
+                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                    panic!("unexpected router response");
+                };
+                data
+            }
+            Capability::DictionaryRouter(router) => {
+                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                    panic!("unexpected router response");
+                };
+                data
+            }
+            Capability::DirEntryRouter(router) => {
+                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                    panic!("unexpected router response");
+                };
+                data
+            }
+            Capability::DirConnectorRouter(router) => {
+                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                    panic!("unexpected router response");
+                };
+                data
+            }
+            Capability::DataRouter(router) => {
+                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                    panic!("unexpected router response");
+                };
+                data
+            }
+            other_capability => panic!("unexpected capability in namespace: {other_capability:?}"),
+        };
+        Ok(data.try_into().unwrap())
+    }
+
     /// Given a `UseDecl` for a capability at an instance `target`, first routes the capability
     /// to its source and then validates the source.
     ///
@@ -1362,8 +1424,8 @@ pub struct Child {
 #[cfg(test)]
 mod tests {
     use super::ModelBuilderForAnalyzer;
-    use crate::environment::BOOT_SCHEME;
     use crate::ComponentModelForAnalyzer;
+    use crate::environment::BOOT_SCHEME;
     use anyhow::Result;
     use assert_matches::assert_matches;
     use cm_config::RuntimeConfig;
@@ -1379,12 +1441,12 @@ mod tests {
     use fidl_fuchsia_component_internal as component_internal;
     use maplit::hashmap;
     use moniker::{ChildName, Moniker};
+    use routing::RouteRequest;
     use routing::component_instance::{
         ComponentInstanceInterface, ExtendedInstanceInterface, WeakExtendedInstanceInterface,
     };
     use routing::environment::RunnerRegistry;
     use routing::error::ComponentInstanceError;
-    use routing::RouteRequest;
     use std::collections::HashMap;
     use std::sync::Arc;
 

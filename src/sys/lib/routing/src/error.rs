@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 pub enum ComponentInstanceError {
     #[error("could not find `{moniker}`")]
     InstanceNotFound { moniker: Moniker },
+    #[error("component is not executable `{moniker}`")]
+    InstanceNotExecutable { moniker: Moniker },
     #[error("component manager instance unavailable")]
     ComponentManagerInstanceUnavailable {},
     #[error("expected a component instance, but got component manager's instance")]
@@ -48,6 +50,7 @@ impl ComponentInstanceError {
             ComponentInstanceError::ResolveFailed { .. }
             | ComponentInstanceError::InstanceNotFound { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnavailable {}
+            | ComponentInstanceError::InstanceNotExecutable { .. }
             | ComponentInstanceError::NoAbsoluteUrl { .. } => zx::Status::NOT_FOUND,
             ComponentInstanceError::MalformedUrl { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnexpected { .. } => {
@@ -81,6 +84,7 @@ impl From<ComponentInstanceError> for ExtendedMoniker {
             ComponentInstanceError::InstanceNotFound { moniker }
             | ComponentInstanceError::MalformedUrl { moniker, .. }
             | ComponentInstanceError::NoAbsoluteUrl { moniker, .. }
+            | ComponentInstanceError::InstanceNotExecutable { moniker }
             | ComponentInstanceError::ResolveFailed { moniker, .. } => {
                 ExtendedMoniker::ComponentInstance(moniker)
             }

@@ -789,6 +789,7 @@ impl From<ComponentInstanceError> for ResolverError {
             ComponentManagerInstanceUnavailable {}
             | ComponentManagerInstanceUnexpected {}
             | InstanceNotFound { .. }
+            | InstanceNotExecutable { .. }
             | ResolveFailed { .. } => {
                 ResolverError::Internal(ClonableError::from(anyhow::format_err!("{:?}", err)))
             }

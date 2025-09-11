@@ -105,8 +105,8 @@ mod tests {
         ComponentResolverRequest, ComponentResolverResponse, ComponentResolversController,
     };
     use anyhow::Result;
-    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use base64::engine::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use cm_config::RuntimeConfig;
     use cm_fidl_analyzer::component_model::ModelBuilderForAnalyzer;
     use cm_rust::{
@@ -129,7 +129,7 @@ mod tests {
     use scrutiny_collection::v2_component_model::V2ComponentModel;
     use scrutiny_collection::zbi::Zbi;
     use scrutiny_collector::component_model::{
-        V2ComponentModelDataCollector, DEFAULT_CONFIG_PATH, DEFAULT_ROOT_URL,
+        DEFAULT_CONFIG_PATH, DEFAULT_ROOT_URL, V2ComponentModelDataCollector,
     };
     use scrutiny_testing::fake::*;
     use scrutiny_utils::bootfs::{BootfsFileIndex, BootfsPackageIndex};
@@ -594,6 +594,10 @@ mod tests {
             (
                 "fuchsia-boot:///root#meta/root.cm",
                 json!({
+                    "program": {
+                        "runner": "elf",
+                        "binary": "bin/root",
+                    },
                     "capabilities": [
                         {
                             "protocol": "protocol",
@@ -668,6 +672,10 @@ mod tests {
             (
                 "fuchsia-boot:///root#meta/root.cm",
                 json!({
+                    "program": {
+                        "runner": "elf",
+                        "binary": "bin/root",
+                    },
                     "capabilities": [
                         {
                             "protocol": "protocol",

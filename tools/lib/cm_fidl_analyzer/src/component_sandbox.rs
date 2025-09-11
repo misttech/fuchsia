@@ -19,7 +19,9 @@ use ::routing::component_instance::{
     WeakComponentInstanceInterface, WeakExtendedInstanceInterface,
 };
 use ::routing::environment::RunnerRegistry;
-use ::routing::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
+use ::routing::error::{
+    ComponentInstanceError, ErrorReporter, RouteRequestErrorInfo, RoutingError,
+};
 use ::routing::policy::GlobalPolicyChecker;
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
@@ -86,6 +88,7 @@ pub fn build_root_component_input(
             match capability_decl {
                 cm_rust::CapabilityDecl::Protocol(_)
                 | cm_rust::CapabilityDecl::Directory(_)
+                | cm_rust::CapabilityDecl::EventStream(_)
                 | cm_rust::CapabilityDecl::Runner(_) => Some((
                     capability_decl.name().clone(),
                     CapabilitySource::Builtin(BuiltinSource {
@@ -114,6 +117,23 @@ pub fn build_root_component_input(
         let router_capability: Capability = match capability_type {
             CapabilityTypeName::Protocol | CapabilityTypeName::Runner => {
                 let router = Router::<Connector>::new_debug(data)
+                    .with_policy_check::<ComponentInstanceForAnalyzer>(
+                        capability_source,
+                        policy.clone(),
+                    );
+                WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                    router,
+                    capability_type,
+                )
+                .availability(Availability::Required)
+                .target_above_root(top_instance)
+                .error_info(route_request_info)
+                .error_reporter(NullErrorReporter {})
+                .build()
+                .into()
+            }
+            CapabilityTypeName::EventStream => {
+                let router = Router::<Dict>::new_debug(data)
                     .with_policy_check::<ComponentInstanceForAnalyzer>(
                         capability_source,
                         policy.clone(),
@@ -281,6 +301,7 @@ pub fn build_capability_sourced_capabilities_dictionary(
 
 pub struct ProgramOutputGenerator {
     pub dynamic_dictionaries: Arc<DynamicDictionaryConfig>,
+    pub executable: bool,
 }
 
 impl ProgramOutputGenerator {
@@ -350,6 +371,11 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         _relative_path: Path,
         capability: ComponentCapability,
     ) -> Router<Dict> {
+        if !self.executable {
+            return Router::<Dict>::new_error(RoutingError::from(
+                ComponentInstanceError::InstanceNotExecutable { moniker: component.moniker },
+            ));
+        }
         let dynamic_dictionaries = self.dynamic_dictionaries.clone();
         Router::<Dict>::new(move |_request: Option<Request>, _debug: bool| {
             future::ready(Self::maybe_route_dynamic_dict(
@@ -367,6 +393,13 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         _decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
     ) -> Router<Connector> {
+        if !self.executable {
+            return Router::<Connector>::new_error(RoutingError::from(
+                ComponentInstanceError::InstanceNotExecutable {
+                    moniker: component.moniker().clone(),
+                },
+            ));
+        }
         new_debug_only_specific_router::<Connector>(CapabilitySource::Component(ComponentSource {
             capability: ComponentCapability::from(capability.clone()),
             moniker: component.moniker().clone(),
@@ -379,6 +412,13 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         _decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
     ) -> Router<sandbox::DirConnector> {
+        if !self.executable {
+            return Router::<DirConnector>::new_error(RoutingError::from(
+                ComponentInstanceError::InstanceNotExecutable {
+                    moniker: component.moniker().clone(),
+                },
+            ));
+        }
         let rights = match capability {
             cm_rust::CapabilityDecl::Directory(dir_decl) => dir_decl.rights,
             cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,

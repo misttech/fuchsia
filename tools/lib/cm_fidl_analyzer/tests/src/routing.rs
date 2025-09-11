@@ -22,6 +22,7 @@ use cm_types::Url;
 use fidl::prelude::*;
 use moniker::Moniker;
 use router_error::Explain;
+use routing::RegistrationDecl;
 use routing::capability_source::{
     BuiltinSource, CapabilitySource, ComponentCapability, ComponentSource, FrameworkSource,
     InternalCapability, NamespaceSource,
@@ -30,7 +31,6 @@ use routing::component_instance::ComponentInstanceInterface;
 use routing::environment::RunnerRegistry;
 use routing::error::RoutingError;
 use routing::mapper::RouteSegment;
-use routing::RegistrationDecl;
 use routing_test_helpers::{
     CheckUse, ComponentEventRoute, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     ServiceInstance,
@@ -339,6 +339,47 @@ impl RoutingTestForAnalyzer {
         }
     }
 
+    async fn check_storage_use(&self, check: CheckUse, target: Arc<ComponentInstanceForAnalyzer>) {
+        let (find_decl, expected) = self.find_matching_use(check, target.decl_for_testing());
+        // If `find_decl` is not OK, check that `expected` has a matching error.
+        // Otherwise, route the capability and compare the result to `expected`.
+        match &find_decl {
+            Err(err) => {
+                match expected {
+                    ExpectedResult::Ok => panic!("expected UseDecl was not found: {}", err),
+                    ExpectedResult::Err(status) => {
+                        assert_eq!(err.as_zx_status(), status);
+                    }
+                    ExpectedResult::ErrWithNoEpitaph => {}
+                };
+                return;
+            }
+            Ok(use_decl) => {
+                if let UseDecl::Storage(_) = &use_decl {
+                    for result in self.model.check_use_capability(use_decl, &target).await.iter() {
+                        match result.error {
+                            Some(ref err) => match expected {
+                                ExpectedResult::Ok => {
+                                    panic!("routing failed, expected success: {:?}", err)
+                                }
+                                ExpectedResult::Err(status) => {
+                                    assert_eq!(err.as_zx_status(), status);
+                                }
+                                ExpectedResult::ErrWithNoEpitaph => {}
+                            },
+                            None => match expected {
+                                ExpectedResult::Ok => {}
+                                _ => panic!("capability use succeeded, expected failure"),
+                            },
+                        }
+                    }
+                } else {
+                    panic!("unreachable");
+                }
+            }
+        }
+    }
+
     fn find_matching_expose(
         &self,
         check: CheckUse,
@@ -405,57 +446,69 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
 
     async fn check_use(&self, moniker: Moniker, check: CheckUse) {
         let target = self.model.get_instance(&moniker).expect("target instance not found");
-        let scope =
-            if let CheckUse::EventStream { path: _, ref scope, name: _, expected_res: _ } = check {
-                Some(scope.clone())
-            } else {
-                None
-            };
-
-        let (find_decl, expected) = self.find_matching_use(check, target.decl_for_testing());
-
-        // If `find_decl` is not OK, check that `expected` has a matching error.
-        // Otherwise, route the capability and compare the result to `expected`.
-        match &find_decl {
-            Err(err) => {
-                match expected {
-                    ExpectedResult::Ok => panic!("expected UseDecl was not found: {}", err),
-                    ExpectedResult::Err(status) => {
-                        assert_eq!(err.as_zx_status(), status);
-                    }
-                    ExpectedResult::ErrWithNoEpitaph => {}
-                };
-                return;
+        if let CheckUse::Storage { .. } = &check {
+            self.check_storage_use(check, target).await;
+            return;
+        }
+        let (path, expected) = match &check {
+            CheckUse::Protocol { path, expected_res, .. }
+            | CheckUse::Service { path, expected_res, .. }
+            | CheckUse::Directory { path, expected_res, .. }
+            | CheckUse::Storage { path, expected_res, .. }
+            | CheckUse::EventStream { path, expected_res, .. } => {
+                (path.clone(), expected_res.clone())
             }
-            Ok(use_decl) => {
-                for result in self.model.check_use_capability(use_decl, &target).await.iter() {
-                    match result.error {
-                        Some(ref err) => match expected {
-                            ExpectedResult::Ok => {
-                                panic!("routing failed, expected success: {:?}", err)
-                            }
-                            ExpectedResult::Err(status) => {
-                                assert_eq!(err.as_zx_status(), status);
-                            }
-                            ExpectedResult::ErrWithNoEpitaph => {}
-                        },
-                        None => match expected {
-                            ExpectedResult::Ok => {
-                                if let UseDecl::EventStream(use_decl) = use_decl {
-                                    self.assert_event_stream_scope(
-                                        use_decl,
-                                        scope
-                                            .as_ref()
-                                            .expect("scope should be non-null for event streams"),
-                                        &target,
-                                    );
-                                }
-                            }
-                            _ => panic!("capability use succeeded, expected failure"),
-                        },
+            CheckUse::StorageAdmin { expected_res, .. } => {
+                let maybe_use = target.decl_for_testing().uses.iter().find_map(|u| match u {
+                    UseDecl::Protocol(d)
+                        if d.source_name.to_string() == fsys::StorageAdminMarker::PROTOCOL_NAME
+                            || d.source_name.to_string()
+                                == fcomponent::StorageAdminMarker::PROTOCOL_NAME =>
+                    {
+                        Some(d.clone())
                     }
+                    _ => None,
+                });
+                match maybe_use {
+                    Some(use_) => (use_.target_path, expected_res.clone()),
+                    None if expected_res == &ExpectedResult::Err(zx_status::Status::NOT_FOUND) => {
+                        return;
+                    }
+                    None => panic!("missing use decl"),
                 }
             }
+        };
+
+        let result = ComponentModelForAnalyzer::check_used_path(&path, &target).await;
+        match (&result, expected) {
+            (Ok(CapabilitySource::Void(_)), ExpectedResult::Err(zx_status::Status::NOT_FOUND)) => {
+                // Void results are equivalent to NOT_FOUND
+            }
+            (Ok(_), ExpectedResult::Ok) => {}
+            (Err(e), ExpectedResult::Err(status)) => {
+                assert_eq!(e.as_zx_status(), status);
+            }
+            (Err(_), ExpectedResult::ErrWithNoEpitaph) => {}
+            (Ok(s), ExpectedResult::Err(_) | ExpectedResult::ErrWithNoEpitaph) => {
+                panic!("capability use succeeded, expected failure (source={s:?})");
+            }
+            (Err(e), ExpectedResult::Ok) => {
+                panic!("routing failed, expected success: {:?}", e)
+            }
+        }
+        if result.is_err() {
+            return;
+        }
+        match &check {
+            CheckUse::EventStream { scope, .. } => {
+                let scope = scope.clone();
+                let (find_decl, _) = self.find_matching_use(check, target.decl_for_testing());
+                let Ok(UseDecl::EventStream(use_decl)) = find_decl else {
+                    panic!("missing use decl for successfully routed event stream");
+                };
+                self.assert_event_stream_scope(&use_decl, &scope, &target);
+            }
+            _ => (),
         }
     }
 
@@ -564,7 +617,10 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
                 panic!("failed to route when we expected to succeed: {:?}", err);
             }
             (ExpectedResult::Err(_status), Ok(RouterResponse::Debug(debug_data))) => {
-                panic!("routing succeeded when we expected an error, the capability was provided by {:?}", CapabilitySource::try_from(debug_data));
+                panic!(
+                    "routing succeeded when we expected an error, the capability was provided by {:?}",
+                    CapabilitySource::try_from(debug_data)
+                );
             }
             (_, Ok(RouterResponse::Unavailable | RouterResponse::Capability(_))) => {
                 panic!("unexpected router response");
@@ -826,15 +882,16 @@ mod tests {
         let c_component =
             test.look_up_instance(&["b", "c"].try_into().unwrap()).await.expect("c instance");
 
-        assert!(test
-            .model
-            .check_program_runner(
-                c_component.decl_for_testing().program.as_ref().expect("missing program decl"),
-                &c_component
-            )
-            .expect("expected results of program runner check")
-            .error
-            .is_none());
+        assert!(
+            test.model
+                .check_program_runner(
+                    c_component.decl_for_testing().program.as_ref().expect("missing program decl"),
+                    &c_component
+                )
+                .expect("expected results of program runner check")
+                .error
+                .is_none()
+        );
     }
 
     ///   a
