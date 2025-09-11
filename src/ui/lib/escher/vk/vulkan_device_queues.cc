@@ -257,10 +257,14 @@ SuitablePhysicalDeviceAndQueueFamilies FindSuitablePhysicalDeviceAndQueueFamilie
                            params.desired_extension_names, instance->params().layer_names);
 
       if (maybe_extensions) {
-        extensions = std::move(maybe_extensions);
-        if (extensions->missing_optional.empty()) {
+        if (maybe_extensions->missing_optional.empty()) {
           // Hooray!  We found a device which supports all required and optional extensions.
+          extensions = std::move(maybe_extensions);
           break;
+        }
+        // We'll take the first device that has required extensions.
+        if (!extensions) {
+          extensions = std::move(maybe_extensions);
         }
       }
     }
