@@ -23,6 +23,27 @@ use tokio::net::UnixStream;
 /// Protocol version we expect to use to communicate with the driver.
 const CURRENT_VERSION: u32 = 0;
 
+/// Config element for the path of the socket we will use to communicate.
+pub const CONFIG_USB_SOCKET_PATH: &str = "connectivity.usb_socket_path";
+
+/// Default name for the control socket.
+const USB_SOCKET_NAME: &str = "ffx_usb.sock";
+
+#[derive(Debug, Error)]
+#[error("$XDG_RUNTIME_DIR is not set")]
+pub struct XdgRuntimeDirNotSet;
+
+/// Get the default USB socket path.
+pub fn default_usb_socket_path() -> Result<PathBuf, XdgRuntimeDirNotSet> {
+    let path = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|x| !x.is_empty())
+        .ok_or(XdgRuntimeDirNotSet)?;
+    let mut path = PathBuf::from(path);
+    path.push(USB_SOCKET_NAME);
+    Ok(path)
+}
+
 /// Errors that occur while establishing a USB VSOCK connection.
 #[derive(Debug, Error)]
 pub enum ConnectError {

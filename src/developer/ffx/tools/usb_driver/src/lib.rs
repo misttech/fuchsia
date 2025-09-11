@@ -10,12 +10,6 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex};
 
-/// Config element for the path of the socket we will use to communicate.
-const USB_SOCKET_PATH_CONFIG: &str = "connectivity.usb_socket_path";
-
-/// Default name for the control socket.
-const USB_SOCKET_NAME: &str = "ffx_usb.sock";
-
 // [START command_struct]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "usb-driver")]
@@ -167,29 +161,25 @@ async fn implementation(
     let (socket_path, found_config) = ffx_config::build()
         .context(Some(&ctx))
         .level(Some(ffx_config::ConfigLevel::Runtime))
-        .name(Some(USB_SOCKET_PATH_CONFIG))
+        .name(Some(usb_driver_api::CONFIG_USB_SOCKET_PATH))
         .get::<PathBuf>()
         .map(|x| (x, true))
         .or_else(|_| -> fho::Result<_> {
-            let runtime_dir =
-                std::env::var("XDG_RUNTIME_DIR").ok().filter(|x| !x.is_empty()).ok_or_else(
-                    || fho::Error::Unexpected(anyhow::anyhow!("$XDG_RUNTIME_DIR is not set")),
-                )?;
-
-            let mut ret = PathBuf::from(runtime_dir);
-            ret.push(USB_SOCKET_NAME);
-            Ok((ret, false))
+            usb_driver_api::default_usb_socket_path()
+                .map(|ret| (ret, false))
+                .map_err(|e| fho::Error::Unexpected(e.into()))
         })?;
 
     if !found_config
         && ffx_config::build()
             .context(Some(&ctx))
-            .name(Some(USB_SOCKET_PATH_CONFIG))
+            .name(Some(usb_driver_api::CONFIG_USB_SOCKET_PATH))
             .get::<String>()
             .is_ok()
     {
         return Err(fho::Error::User(anyhow::anyhow!(
-            "{USB_SOCKET_PATH_CONFIG} must only be set on the command line"
+            "{} must be set on the command line",
+            usb_driver_api::CONFIG_USB_SOCKET_PATH
         )));
     }
 
