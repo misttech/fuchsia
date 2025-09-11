@@ -245,6 +245,28 @@ impl DiscoveryBuilder {
             stream: Mutex::new(None),
         }
     }
+
+    /// Builds the discovery stream with a dependency-injected stream.
+    ///
+    /// Keep in mind that this means most of the fields in the builder _except for the timeout_ will
+    /// be ignored:
+    /// -- emulator_instance_root
+    /// -- fastboot_devices_file_path
+    /// -- sources
+    pub fn build_with_stream<S>(self, stream: S) -> Discovery
+    where
+        S: Stream<Item = TargetEvent> + Unpin + 'static,
+    {
+        let res = self.build();
+        let inner_stream: Box<dyn Stream<Item = TargetEvent> + Unpin> = if let Some(t) = res.timeout
+        {
+            Box::new(stream.take_until(fuchsia_async::Timer::new(t)))
+        } else {
+            Box::new(stream)
+        };
+        res.stream.lock().unwrap().replace(inner_stream);
+        res
+    }
 }
 
 impl Default for DiscoveryBuilder {
@@ -513,8 +535,7 @@ pub mod test {
         };
         let events = vec![TargetEvent::Added(handle1.clone()), TargetEvent::Added(handle2.clone())];
         let stream = Box::new(futures::stream::iter(events));
-        let discovery = DiscoveryBuilder::default().build();
-        *discovery.stream.lock().unwrap() = Some(stream);
+        let discovery = DiscoveryBuilder::default().build_with_stream(stream);
         (discovery, handle1, handle2)
     }
 
@@ -620,8 +641,7 @@ pub mod test {
         };
         let events = vec![TargetEvent::Added(handle.clone())];
         let stream = Box::new(futures::stream::iter(events));
-        let discovery = DiscoveryBuilder::default().build();
-        *discovery.stream.lock().unwrap() = Some(stream);
+        let discovery = DiscoveryBuilder::default().build_with_stream(stream);
         let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], handle);
@@ -668,9 +688,7 @@ pub mod test {
             .with_cache_dir(Some(cache_path.clone()))
             // Don't use any real discovery sources
             .set_source(DiscoverySources::empty())
-            .build();
-        *discovery.stream.lock().unwrap() = Some(stream);
-
+            .build_with_stream(stream);
         let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], handle);
@@ -700,9 +718,7 @@ pub mod test {
         let discovery = DiscoveryBuilder::default()
             .with_cache_dir(Some(cache_path.clone()))
             .set_source(DiscoverySources::empty())
-            .build();
-        *discovery.stream.lock().unwrap() = Some(stream);
-
+            .build_with_stream(stream);
         let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], discovered_handle);
@@ -726,9 +742,7 @@ pub mod test {
             .with_cache_dir(Some(dir.path().to_path_buf()))
             // Don't use any real discovery sources
             .set_source(DiscoverySources::empty())
-            .build();
-        // We still want to inject our test stream, though.
-        *discovery.stream.lock().unwrap() = Some(stream);
+            .build_with_stream(stream);
 
         discovery.create_cache().await.unwrap();
 
