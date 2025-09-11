@@ -456,6 +456,7 @@ pub fn new_memfd(
         FsNodeLinkBehavior::Disallowed,
     )?;
     fs_node.write_guard_state.lock().enable_sealing(seals);
+    security::fs_node_label_memfd(current_task, &fs_node);
 
     // memfd instances appear in /proc[pid]/fd as though they are O_TMPFILE files with names of
     // the form "memfd:[name]".

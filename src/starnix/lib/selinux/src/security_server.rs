@@ -5,6 +5,7 @@
 use crate::access_vector_cache::{AccessVectorCache, CacheStats, Query};
 use crate::exceptions_config::ExceptionsConfig;
 use crate::permission_check::PermissionCheck;
+use crate::policy::SecurityContext;
 use crate::policy::metadata::HandleUnknown;
 use crate::policy::parser::PolicyData;
 
@@ -465,6 +466,12 @@ impl SecurityServer {
     ) -> Result<SecurityId, anyhow::Error> {
         self.backend.compute_create_sid(source_sid, target_sid, target_class)
     }
+
+    /// Applies the memfd type override if specified in the exception config.
+    // TODO(https://fxbug.dev/412957798): Remove when not needed anymore.
+    pub fn transform_memfd_sid(&self, original_sid: SecurityId) -> Option<SecurityId> {
+        self.backend.transform_memfd_sid(original_sid)
+    }
 }
 
 impl SecurityServerBackend {
@@ -491,6 +498,23 @@ impl SecurityServerBackend {
             .security_context_to_sid(&security_context)
             .map_err(anyhow::Error::from)
             .context("computing new security context from policy")
+    }
+
+    // TODO(https://fxbug.dev/412957798): Remove when not needed anymore.
+    fn transform_memfd_sid(&self, original_sid: SecurityId) -> Option<SecurityId> {
+        let mut locked_state = self.state.write();
+        let active_policy = locked_state.active_policy.as_mut()?;
+        let new_type_id = active_policy.exceptions.memfd_type_override?;
+        let original_security_context =
+            active_policy.sid_table.sid_to_security_context(original_sid);
+        let new_security_context = SecurityContext::new(
+            original_security_context.user(),
+            original_security_context.role(),
+            new_type_id,
+            original_security_context.low_level().clone(),
+            original_security_context.high_level().cloned(),
+        );
+        active_policy.sid_table.security_context_to_sid(&new_security_context).ok()
     }
 }
 
@@ -1541,6 +1565,60 @@ mod tests {
                 todo_bug: Some(NonZeroU64::new(5).unwrap())
             }
         );
+    }
+
+    #[test]
+    fn memfd_not_relabeled_no_exception() {
+        const EXCEPTIONS_CONFIG: &[&str] = &[];
+        let exceptions_config = EXCEPTIONS_CONFIG.iter().map(|x| String::from(*x)).collect();
+        let security_server = SecurityServer::new(String::new(), exceptions_config);
+        security_server.set_enforcing(true);
+
+        const EXCEPTIONS_POLICY: &[u8] =
+            include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy.pp");
+        assert!(security_server.load_policy(EXCEPTIONS_POLICY.into()).is_ok());
+
+        let original_sid = security_server
+            .security_context_to_sid(b"test_exception_u:object_r:test_exception_target_t:s0".into())
+            .expect("creating SID from security context should succeed");
+        assert_eq!(security_server.transform_memfd_sid(original_sid), None);
+    }
+
+    #[test]
+    fn memfd_not_relabeled_undefined() {
+        const EXCEPTIONS_CONFIG: &[&str] = &["memfd_type_override test_undefined_t"];
+        let exceptions_config = EXCEPTIONS_CONFIG.iter().map(|x| String::from(*x)).collect();
+        let security_server = SecurityServer::new(String::new(), exceptions_config);
+        security_server.set_enforcing(true);
+
+        const EXCEPTIONS_POLICY: &[u8] =
+            include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy.pp");
+        assert!(security_server.load_policy(EXCEPTIONS_POLICY.into()).is_ok());
+
+        let original_sid = security_server
+            .security_context_to_sid(b"test_exception_u:object_r:test_exception_target_t:s0".into())
+            .expect("creating SID from security context should succeed");
+        assert_eq!(security_server.transform_memfd_sid(original_sid), None);
+    }
+
+    #[test]
+    fn memfd_relabeled() {
+        const EXCEPTIONS_CONFIG: &[&str] = &["memfd_type_override test_exception_other_t"];
+        let exceptions_config = EXCEPTIONS_CONFIG.iter().map(|x| String::from(*x)).collect();
+        let security_server = SecurityServer::new(String::new(), exceptions_config);
+        security_server.set_enforcing(true);
+
+        const EXCEPTIONS_POLICY: &[u8] =
+            include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy.pp");
+        assert!(security_server.load_policy(EXCEPTIONS_POLICY.into()).is_ok());
+
+        let original_sid = security_server
+            .security_context_to_sid(b"test_exception_u:object_r:test_exception_target_t:s0".into())
+            .expect("creating SID from security context should succeed");
+        let expected_sid = security_server
+            .security_context_to_sid(b"test_exception_u:object_r:test_exception_other_t:s0".into())
+            .expect("creating SID from security context should succeed");
+        assert_eq!(security_server.transform_memfd_sid(original_sid), Some(expected_sid));
     }
 
     #[test]

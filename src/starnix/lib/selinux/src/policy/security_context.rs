@@ -40,7 +40,7 @@ impl SecurityContext {
     /// Returns a new instance with the specified field values.
     /// Fields are not validated against the policy until explicitly via `validate()`,
     /// or implicitly via insertion into a [`SidTable`].
-    pub(super) fn new(
+    pub(crate) fn new(
         user: UserId,
         role: RoleId,
         type_: TypeId,
