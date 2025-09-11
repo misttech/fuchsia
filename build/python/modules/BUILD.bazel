@@ -27,3 +27,12 @@ py_library(
         ":serialization",
     ],
 )
+
+py_library(
+    name = "elf",
+    srcs = glob(["elf/*.py"]),
+    imports = ["."],
+    visibility = [
+        "//build/bazel/debug_symbols/tests:__pkg__",
+    ],
+)

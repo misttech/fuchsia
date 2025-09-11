@@ -578,6 +578,8 @@ build_api_module("binaries") {
 # them directly (e.g. C++ or Rust link actions), or from the runtime.json definitions
 # provided with the prebuilt Clang and Rust toolchains. Its schema is:
 #
+# LINT.IfChange(debug_symbols)
+#
 # Type: list(scope)
 #
 #   label
@@ -617,6 +619,8 @@ build_api_module("binaries") {
 #   breakpad
 #     Optional: Path to the breakpad symbol file for the debug binary,
 #     if available.
+#
+# LINT.ThenChange(//build/bazel/debug_symbols/aspects.bzl:debug_symbols)
 #
 # Note that it is possible for none of "elf_build_id" or "elf_build_id_file" to be defined.
 # This happens for Go executables for example. In that case, the value must be extracted by
