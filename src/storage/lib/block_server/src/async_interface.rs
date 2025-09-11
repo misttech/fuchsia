@@ -7,7 +7,7 @@ use super::{
     Operation, SessionHelper, TraceFlowId,
 };
 use anyhow::Error;
-use block_protocol::{BlockFifoRequest, BlockFifoResponse, WriteFlags, WriteOptions};
+use block_protocol::{BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags, WriteOptions};
 use futures::future::{Fuse, FusedFuture};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
@@ -69,6 +69,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         block_count: u32,
         vmo: &Arc<zx::Vmo>,
         vmo_offset: u64, // *bytes* not blocks
+        opts: ReadOptions,
         trace_flow_id: TraceFlowId,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
@@ -383,6 +384,7 @@ impl<I: Interface + ?Sized> Session<I> {
             _unused,
             mut options,
             vmo_offset: _,
+            ..
         } = &request.operation
         {
             if options.flags.contains(WriteFlags::PRE_BARRIER) {
@@ -407,13 +409,14 @@ impl<I: Interface + ?Sized> Session<I> {
         DecodedRequest { request_id, operation, vmo, trace_flow_id }: DecodedRequest,
     ) -> Option<BlockFifoResponse> {
         let result = match operation {
-            Operation::Read { device_block_offset, block_count, _unused, vmo_offset } => {
+            Operation::Read { device_block_offset, block_count, _unused, vmo_offset, options } => {
                 self.interface
                     .read(
                         device_block_offset,
                         block_count,
                         vmo.as_ref().unwrap(),
                         vmo_offset,
+                        options,
                         trace_flow_id,
                     )
                     .await

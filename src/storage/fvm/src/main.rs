@@ -1683,6 +1683,7 @@ impl Interface for PartitionInterface {
         block_count: u32,
         vmo: &Arc<zx::Vmo>,
         vmo_offset: u64,
+        _opts: ReadOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         debug!(

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::bin::Bin;
 use anyhow::{Error, anyhow};
-use block_protocol::{BlockFifoRequest, BlockFifoResponse};
+use block_protocol::{BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions};
 use fidl_fuchsia_hardware_block::MAX_TRANSFER_UNBOUNDED;
 use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
 use fuchsia_sync::Mutex;
@@ -653,9 +653,21 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             .vmo_offset
                             .checked_mul(self.block_size as u64)
                             .ok_or(zx::Status::OUT_OF_RANGE)?,
+                        options: ReadOptions {
+                            inline_crypto_options: InlineCryptoOptions {
+                                dun: request.dun,
+                                slot: request.slot,
+                            },
+                        },
                     },
                     BlockOpcode::Write => {
-                        let mut options = WriteOptions::default();
+                        let mut options = WriteOptions {
+                            inline_crypto_options: InlineCryptoOptions {
+                                dun: request.dun,
+                                slot: request.slot,
+                            },
+                            ..WriteOptions::default()
+                        };
                         if flags.contains(BlockIoFlag::FORCE_ACCESS) {
                             options.flags |= WriteFlags::FORCE_ACCESS;
                         }
@@ -666,7 +678,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             device_block_offset: request.dev_offset,
                             block_count: request.length,
                             _unused: 0,
-                            options: options,
+                            options,
                             vmo_offset: request
                                 .vmo_offset
                                 .checked_mul(self.block_size as u64)
@@ -865,6 +877,7 @@ struct DecodedRequest {
 /// cbindgen:no-export
 pub type WriteFlags = block_protocol::WriteFlags;
 pub type WriteOptions = block_protocol::WriteOptions;
+pub type ReadOptions = block_protocol::ReadOptions;
 
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -878,6 +891,7 @@ pub enum Operation {
         block_count: u32,
         _unused: u32,
         vmo_offset: u64,
+        options: ReadOptions,
     },
     Write {
         device_block_offset: u64,
@@ -964,11 +978,13 @@ impl Operation {
                         block_count: _,
                         vmo_offset,
                         _unused,
+                        options,
                     } => Operation::Read {
                         device_block_offset: orig_offset + max,
                         block_count: rem,
                         vmo_offset: *vmo_offset + max * block_size as u64,
                         _unused: *_unused,
+                        options: *options,
                     },
                     Operation::Write {
                         device_block_offset: _,
@@ -1029,7 +1045,8 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use block_protocol::{
-        BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, WriteFlags, WriteOptions,
+        BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags,
+        WriteOptions,
     };
     use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
     use fuchsia_sync::Mutex;
@@ -1078,6 +1095,7 @@ mod tests {
             block_count: u32,
             vmo: &Arc<zx::Vmo>,
             vmo_offset: u64,
+            _opts: ReadOptions,
             _trace_flow_id: TraceFlowId,
         ) -> Result<(), zx::Status> {
             if let Some(read_hook) = &self.read_hook {
@@ -1600,6 +1618,7 @@ mod tests {
             block_count: u32,
             _vmo: &Arc<zx::Vmo>,
             vmo_offset: u64,
+            _opts: ReadOptions,
             _trace_flow_id: TraceFlowId,
         ) -> Result<(), zx::Status> {
             if self.return_errors {
@@ -1623,7 +1642,7 @@ mod tests {
             block_count: u32,
             _vmo: &Arc<zx::Vmo>,
             vmo_offset: u64,
-            _opts: WriteOptions,
+            _write_opts: WriteOptions,
             _trace_flow_id: TraceFlowId,
         ) -> Result<(), zx::Status> {
             if self.return_errors {
@@ -2794,6 +2813,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
+                options: ReadOptions::default(),
             },
             None,
             None,
@@ -2802,6 +2822,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
+                options: ReadOptions::default(),
             }],
         );
 
@@ -2812,6 +2833,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
+                options: ReadOptions::default(),
             },
             None,
             NonZero::new(120),
@@ -2821,12 +2843,14 @@ mod tests {
                     block_count: 120,
                     _unused: 0,
                     vmo_offset: 0,
+                    options: ReadOptions::default(),
                 },
                 Operation::Read {
                     device_block_offset: 130,
                     block_count: 80,
                     _unused: 0,
                     vmo_offset: 120 * 512,
+                    options: ReadOptions::default(),
                 },
             ],
         );
@@ -2871,6 +2895,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
+                options: ReadOptions::default(),
             },
             Some(BlockOffsetMapping {
                 source_block_offset: 10,
@@ -2884,12 +2909,14 @@ mod tests {
                     block_count: 120,
                     _unused: 0,
                     vmo_offset: 0,
+                    options: ReadOptions::default(),
                 },
                 Operation::Read {
                     device_block_offset: 220,
                     block_count: 80,
                     _unused: 0,
                     vmo_offset: 120 * 512,
+                    options: ReadOptions::default(),
                 },
             ],
         );

@@ -1007,6 +1007,7 @@ mod tests {
         BlockClient, BlockFifoRequest, BlockFifoResponse, BufferSlice, MutableBufferSlice,
         RemoteBlockClient, RemoteBlockClientSync, WriteOptions,
     };
+    use block_protocol::ReadOptions;
     use block_server::{BlockServer, DeviceInfo, PartitionInfo};
     use fidl::endpoints::RequestStream as _;
     use futures::future::{AbortHandle, Abortable, TryFutureExt as _};
@@ -1356,6 +1357,7 @@ mod tests {
                 _block_count: u32,
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
+                _opts: ReadOptions,
                 _trace_flow_id: Option<NonZero<u64>>,
             ) -> Result<(), zx::Status> {
                 unreachable!();
@@ -1371,7 +1373,7 @@ mod tests {
                 _block_count: u32,
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
-                _write_opts: WriteOptions,
+                _opts: WriteOptions,
                 _trace_flow_id: Option<NonZero<u64>>,
             ) -> Result<(), zx::Status> {
                 unreachable!();

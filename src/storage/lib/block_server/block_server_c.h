@@ -67,6 +67,10 @@ struct InlineCryptoOptions {
   uint8_t slot;
 };
 
+struct ReadOptions {
+  InlineCryptoOptions inline_crypto_options;
+};
+
 struct WriteOptions {
   WriteFlags flags;
   InlineCryptoOptions inline_crypto_options;
@@ -87,6 +91,7 @@ struct Operation {
     uint32_t block_count;
     uint32_t _unused;
     uint64_t vmo_offset;
+    ReadOptions options;
   };
 
   struct Write_Body {

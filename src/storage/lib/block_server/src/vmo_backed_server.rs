@@ -4,7 +4,7 @@
 
 use anyhow::{Error, anyhow};
 use block_server::async_interface::{Interface, SessionManager};
-use block_server::{BlockInfo, BlockServer, DeviceInfo, WriteOptions};
+use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
 use std::borrow::Cow;
@@ -251,6 +251,7 @@ impl Interface for Data {
         block_count: u32,
         vmo: &Arc<zx::Vmo>,
         vmo_offset: u64,
+        _opts: ReadOptions,
         _trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         if let Some(observer) = self.observer.as_ref() {

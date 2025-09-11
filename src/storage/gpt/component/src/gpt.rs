@@ -139,7 +139,7 @@ impl GptPartition {
         block_count: u32,
         vmo_id: &VmoId,
         vmo_offset: u64, // *bytes* not blocks
-        write_opts: WriteOptions,
+        opts: WriteOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         let dev_offset = self
@@ -151,7 +151,7 @@ impl GptPartition {
             (block_count * self.block_size()) as u64,
         );
         self.block_client
-            .write_at_with_opts_traced(buffer, dev_offset, write_opts, trace_id(trace_flow_id))
+            .write_at_with_opts_traced(buffer, dev_offset, opts, trace_id(trace_flow_id))
             .await
     }
 
