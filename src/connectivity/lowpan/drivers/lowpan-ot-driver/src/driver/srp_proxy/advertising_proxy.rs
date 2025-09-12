@@ -359,6 +359,9 @@ impl AdvertisingProxyInner {
             );
 
             self.hosts.remove(srp_host.full_name_cstr());
+            if let Some(update_id) = update_id {
+                instance.srp_server_handle_service_update_result(update_id, Ok(()));
+            }
             return Ok(());
         }
 
@@ -410,6 +413,9 @@ impl AdvertisingProxyInner {
                 "No suitable addresses for host [PII]({:?}). Skipping advertising it for now.",
                 srp_host.full_name_cstr()
             );
+            if let Some(update_id) = update_id {
+                instance.srp_server_handle_service_update_result(update_id, Ok(()));
+            }
             return Ok(());
         }
 
@@ -836,6 +842,21 @@ impl AdvertisingProxyInner {
                             continue;
                         }
                     }
+                }
+            }
+        }
+
+        if let Some(update_id) = update_id {
+            if let Some(update) = self.outstanding_updates.get(&update_id) {
+                if update.callback_count == 0 {
+                    // This update only contained deletions or no-ops, so we can complete it now.
+                    let update = self.outstanding_updates.remove(&update_id).unwrap();
+                    debug!(
+                        tag = "srp_advertising_proxy";
+                        "Completing SRP update {:?} for host {:?} with result Ok (deletions/no-ops only)",
+                        update_id, update.host_name
+                    );
+                    instance.srp_server_handle_service_update_result(update_id, Ok(()));
                 }
             }
         }
