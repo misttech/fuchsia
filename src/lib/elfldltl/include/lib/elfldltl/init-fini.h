@@ -13,8 +13,10 @@
 
 namespace elfldltl {
 
-// A module initializer or finalizer function has type void().
-using InitFiniFunction = void();
+// A module initializer or finalizer function has type void().  The function
+// pointers emitted into the special section by the compiler don't usually get
+// wrapped by -fsanitize=cfi, so their signatures can't be checked.
+using InitFiniFunction = void() [[clang::cfi_unchecked_callee]];
 
 // This represents the information about either initializers or finalizers for
 // one ELF module.  Two separate InitFiniInfo objects are used for a module's
@@ -29,7 +31,8 @@ using InitFiniFunction = void();
 //
 // The CallInit and CallFini methods directly call each function in order, for
 // immediate in-process uses.
-template <class Elf, AbiPtrTraitsApi<const typename Elf::Addr, Elf> AbiTraits = LocalAbiTraits>
+template <class Elf = Elf<>,
+          AbiPtrTraitsApi<const typename Elf::Addr, Elf> AbiTraits = LocalAbiTraits>
 struct InitFiniInfo {
  public:
   using Addr = typename Elf::Addr;
@@ -125,9 +128,20 @@ struct InitFiniInfo {
     VisitInit(RelocatedCall(bias), relocated);
   }
 
+  // The load bias is moot when relocated and no legacy DT_INIT can be set.
+  void CallInit() {
+    assert(legacy_ == 0);
+    CallInit(0);
+  }
+
   // Call all the functions in finalization order.
   void CallFini(size_type bias, bool relocated = true) const {
     VisitFini(RelocatedCall(bias), relocated);
+  }
+
+  void CallFini() {
+    assert(legacy_ == 0);
+    CallFini(0);
   }
 
  private:

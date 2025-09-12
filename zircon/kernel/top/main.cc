@@ -18,6 +18,7 @@
 #include <lib/counters.h>
 #include <lib/cxxabi-dynamic-init/cxxabi-dynamic-init.h>
 #include <lib/debuglog.h>
+#include <lib/elfldltl/init-fini.h>
 #include <lib/heap.h>
 #include <lib/jtrace/jtrace.h>
 #include <lib/lockup_detector.h>
@@ -39,6 +40,8 @@
 #include <vm/init.h>
 #include <vm/vm.h>
 
+using InitFini = elfldltl::InitFiniInfo<>;
+
 extern "C" {
 
 // Samples taken at the first instruction in the kernel.
@@ -55,16 +58,14 @@ KCOUNTER(timeline_init, "boot.timeline.init")
 
 static bool lk_global_constructors_called_flag = false;
 
-extern void (*const __init_array_start[])();
-extern void (*const __init_array_end[])();
-
 bool lk_global_constructors_called() { return lk_global_constructors_called_flag; }
 
-static void call_constructors() {
-  for (void (*const* a)() = __init_array_start; a != __init_array_end; a++) {
-    (*a)();
-  }
+// These are defined by the linker script.
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
+extern const InitFini::Addr __init_array_start, __init_array_end;
 
+static void call_constructors() {
+  InitFini{ktl::span{&__init_array_start, &__init_array_end}}.CallInit();
   lk_global_constructors_called_flag = true;
 }
 
