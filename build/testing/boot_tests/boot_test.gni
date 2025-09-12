@@ -29,11 +29,10 @@ boot_test_success_string =
 # cuckoo tests.
 default_boot_test_timeout_secs = 600
 
-_all_emu_envs = [
-  qemu_env,
-  qemu_1cpu_env,
-  aemu_env,
-  crosvm_env,
+_emu_device_types = [
+  device_types.aemu,
+  device_types.crosvm,
+  device_types.qemu,
 ]
 
 # Helper template defining a boot test for a particular host architecture. This
@@ -373,8 +372,37 @@ template("boot_test") {
   #
   # TODO(mcgrathr): No riscv64 hosts are available yet.
   if (host_cpu != target_cpu && target_cpu != "riscv64") {
-    hw_envs = invoker.environments + _all_emu_envs - _all_emu_envs
-    emu_envs = invoker.environments - hw_envs
+    target_cpu_envs = []
+    foreach(env, invoker.environments) {
+      # Clear from any previous iteration.
+      dims = {
+      }
+      dims = env.dimensions
+
+      # Things get more complicated if we permit environment dimensions to
+      # specify their own architecture to run on. We don't have a use-case for
+      # that, so we bar it from happening for now.
+      assert(!defined(dims.cpu))
+
+      device_type = dims.device_type
+      if ([ device_type ] + _emu_device_types - _emu_device_types == []) {
+        accel = true
+        if (defined(env.emulator)) {
+          # Clear from any previous iteration.
+          emulator_spec = {
+          }
+          emulator_spec = env.emulator
+          accel = !defined(emulator_spec.accel) || emulator_spec.accel != "none"
+        }
+
+        # If hardware acceleration is explicitly disabled for an emulator
+        # environment, no point in running it on a target_cpu host.
+        if (accel) {
+          target_cpu_envs += [ env ]
+        }
+      }
+    }
+    host_cpu_envs = invoker.environments - target_cpu_envs
 
     common_params = {
       forward_variables_from(invoker,
@@ -390,15 +418,15 @@ template("boot_test") {
       deps = [ ":$product_bundle_target" ]
     }
 
-    _boot_test("$main_target.emu") {
+    _boot_test("$main_target.host-$target_cpu") {
       cpu_for_host = target_cpu
-      environments = emu_envs
+      environments = target_cpu_envs
       forward_variables_from(common_params, "*")
     }
 
-    _boot_test("$main_target.hw") {
+    _boot_test("$main_target.host-$host_cpu") {
       cpu_for_host = host_cpu
-      environments = hw_envs
+      environments = host_cpu_envs
       forward_variables_from(common_params, "*")
     }
 
@@ -410,8 +438,8 @@ template("boot_test") {
                              ])
       testonly = true
       deps = [
-        ":$main_target.emu",
-        ":$main_target.hw",
+        ":$main_target.host-$host_cpu",
+        ":$main_target.host-$target_cpu",
       ]
     }
   } else {
