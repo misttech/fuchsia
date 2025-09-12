@@ -101,10 +101,10 @@ the build directory, using its name with a ".lst" suffix.""",
         action="store_false",
     )
     parser.add_argument(
-        "-L",
-        "--llvm",
+        "-G",
+        "--gnu",
         action="store_true",
-        help="Use llvm-objdump rather than GNU objdump.",
+        help="Use GNU objdump rather than llvm-objdump.",
     )
     parser.add_argument(
         "-P",
@@ -125,12 +125,12 @@ the build directory, using its name with a ".lst" suffix.""",
 
     if args.objdump_path:
         objdump_path = Path(args.objdump_path)
-    elif args.llvm:
-        prebuilt_clang_dir = getenv("PREBUILT_CLANG_DIR")
-        objdump_path = Path(prebuilt_clang_dir) / "bin" / "llvm-objdump"
-    else:
+    elif args.gnu:
         prebuilt_binutils_dir = getenv("PREBUILT_BINUTILS_DIR")
         objdump_path = Path(prebuilt_binutils_dir) / "bin" / "objdump"
+    else:
+        prebuilt_clang_dir = getenv("PREBUILT_CLANG_DIR")
+        objdump_path = Path(prebuilt_clang_dir) / "bin" / "llvm-objdump"
 
     if not objdump_path.exists():
         fail(f"no objdump not found at {objdump_path}")

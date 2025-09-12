@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/../lib/vars.sh" || exit $?
 fx-config-read
 export EDITOR # Required if --edit is passed
 export FUCHSIA_BUILD_DIR
-export PREBUILT_BINUTILS_DIR
-export PREBUILT_CLANG_DIR # Required if --llvm is passed
+export PREBUILT_BINUTILS_DIR # Required if --binutils is passed
+export PREBUILT_CLANG_DIR
 
 "${PREBUILT_PYTHON3}" "$FUCHSIA_DIR"/zircon/kernel/scripts/dis.py "$@"
