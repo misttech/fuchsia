@@ -95,7 +95,19 @@ pub fn spawn_kernel_and_run<F>(callback: F)
 where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
 {
-    spawn_kernel_and_run_internal(callback, None)
+    spawn_kernel_and_run_internal(callback, None, TmpFs::new_fs)
+}
+
+/// Create a Kernel object and run the given callback in the init process for that kernel.
+/// The task is rooted in a `pkgfs` instance.
+///
+/// This function is useful if you want to test code that requires a CurrentTask because
+/// your callback is called with the init process as the CurrentTask.
+pub fn spawn_kernel_and_run_with_pkgfs<F>(callback: F)
+where
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
+{
+    spawn_kernel_and_run_internal(callback, None, create_pkgfs)
 }
 
 /// Variant of `spawn_kernel_and_run()` that configures the kernel with SELinux enabled.
@@ -121,14 +133,19 @@ where
             callback(unlocked, current_task, &security_server_for_callback)
         },
         Some(security_server),
+        TmpFs::new_fs,
     )
 }
 
 /// Create a Kernel object, with the optional caller-supplied `security_server`, and run the given
 /// callback in the init process for that kernel.
-fn spawn_kernel_and_run_internal<F>(callback: F, security_server: Option<Arc<SecurityServer>>)
-where
+fn spawn_kernel_and_run_internal<F, FS>(
+    callback: F,
+    security_server: Option<Arc<SecurityServer>>,
+    fs_factory: FS,
+) where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
+    FS: FnOnce(&mut Locked<Unlocked>, &Kernel) -> FileSystemHandle,
 {
     #[allow(
         clippy::undocumented_unsafe_blocks,
@@ -136,7 +153,7 @@ where
     )]
     let locked = unsafe { Unlocked::new() };
     let kernel = create_test_kernel(locked, security_server);
-    let fs = create_test_fs_context(locked, &kernel, TmpFs::new_fs);
+    let fs = create_test_fs_context(locked, &kernel, fs_factory);
     let init_task = create_test_init_task(locked, &kernel, fs);
     let (sender, receiver) = mpsc::channel();
     execute_task_with_prerun_result(

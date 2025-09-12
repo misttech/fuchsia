@@ -480,55 +480,66 @@ pub fn sys_vfork(
 mod tests {
     use super::*;
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
-    use crate::testing::*;
+    use crate::testing::{map_memory, spawn_kernel_and_run, spawn_kernel_and_run_with_pkgfs};
     use crate::vfs::FdFlags;
 
     #[::fuchsia::test]
     async fn test_sys_dup2() {
         // Most tests are handled by test_sys_dup3, only test the case where both fds are equals.
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
-        let fd = FdNumber::from_raw(42);
-        assert_eq!(sys_dup2(locked, &current_task, fd, fd), error!(EBADF));
-        let file_handle = current_task
-            .open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)
-            .expect("open_file");
-        let fd = current_task.add_file(locked, file_handle, FdFlags::empty()).expect("add");
-        assert_eq!(sys_dup2(locked, &current_task, fd, fd), Ok(fd));
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let fd = FdNumber::from_raw(42);
+            assert_eq!(sys_dup2(locked, current_task, fd, fd), error!(EBADF));
+            let file_handle = current_task
+                .open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)
+                .expect("open_file");
+            let fd = current_task.add_file(locked, file_handle, FdFlags::empty()).expect("add");
+            assert_eq!(sys_dup2(locked, current_task, fd, fd), Ok(fd));
+        });
     }
 
     #[::fuchsia::test]
-    async fn test_sys_creat() -> Result<(), Errno> {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let path_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let path = "newfile.txt";
-        current_task.write_memory(path_addr, path.as_bytes())?;
-        let fd = sys_creat(
-            locked,
-            &current_task,
-            UserCString::new(&current_task, path_addr),
-            FileMode::default(),
-        )?;
-        let _file_handle = current_task.open_file(locked, path.into(), OpenFlags::RDONLY)?;
-        assert!(!current_task.files.get_fd_flags_allowing_opath(fd)?.contains(FdFlags::CLOEXEC));
-        Ok(())
+    async fn test_sys_creat() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let path_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            let path = "newfile.txt";
+            current_task.write_memory(path_addr, path.as_bytes()).unwrap();
+            let fd = sys_creat(
+                locked,
+                current_task,
+                UserCString::new(current_task, path_addr),
+                FileMode::default(),
+            )
+            .unwrap();
+            let _file_handle =
+                current_task.open_file(locked, path.into(), OpenFlags::RDONLY).unwrap();
+            assert!(
+                !current_task
+                    .files
+                    .get_fd_flags_allowing_opath(fd)
+                    .unwrap()
+                    .contains(FdFlags::CLOEXEC)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_time() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let time1 = sys_time(locked, &current_task, Default::default()).expect("time");
-        assert!(time1 > 0);
-        let address = map_memory(
-            locked,
-            &current_task,
-            UserAddress::default(),
-            std::mem::size_of::<__kernel_time_t>() as u64,
-        );
-        zx::MonotonicDuration::from_seconds(2).sleep();
-        let time2 = sys_time(locked, &current_task, address.into()).expect("time");
-        assert!(time2 >= time1 + 2);
-        assert!(time2 < time1 + 10);
-        let time3: __kernel_time_t = current_task.read_object(address.into()).expect("read_object");
-        assert_eq!(time2, time3);
+        spawn_kernel_and_run(|locked, current_task| {
+            let time1 = sys_time(locked, &current_task, Default::default()).expect("time");
+            assert!(time1 > 0);
+            let address = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                std::mem::size_of::<__kernel_time_t>() as u64,
+            );
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let time2 = sys_time(locked, &current_task, address.into()).expect("time");
+            assert!(time2 >= time1 + 2);
+            assert!(time2 < time1 + 10);
+            let time3: __kernel_time_t =
+                current_task.read_object(address.into()).expect("read_object");
+            assert_eq!(time2, time3);
+        });
     }
 }
