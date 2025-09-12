@@ -673,13 +673,14 @@ template("bazel_action") {
     inputs = [
                "//build/bazel/toplevel.MODULE.bazel",
                "//build/bazel/templates/template.platform_mappings",
-               "//build/bazel/templates/template.bazel.sh",
+               "//build/bazel/templates/template.bazel.sh.config",
                "//build/bazel/templates/template.bazelrc",
 
                # Imported by bazel_action.py
                "//build/bazel/scripts/build_utils.py",
                "//build/bazel/scripts/thread_pool_helpers.py",
                "//build/bazel/scripts/workspace_utils.py",
+               "//build/bazel/wrapper.bazel.sh",
              ] + _bazel_build_files
 
     if (defined(invoker.inputs)) {

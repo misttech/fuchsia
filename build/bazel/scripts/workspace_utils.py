@@ -6,6 +6,7 @@
 
 import json
 import os
+import shlex
 import stat
 import sys
 import typing as T
@@ -463,21 +464,29 @@ def record_fuchsia_workspace(
 
     generated.record_file_content("workspace/.bazelrc", bazelrc_content)
 
+    # Copy the wrapper script to topdir/bazel, and generate the configuration
+    # file at topdir/bazel.sh.config that is required to run it.
     # Generate wrapper script in topdir/bazel that invokes Bazel with the right --output_base.
+
+    generated.record_symlink(
+        "bazel", os.path.join(fuchsia_dir, "build/bazel/wrapper.bazel.sh")
+    )
+
+    def config_path_value(p: str) -> str:
+        return shlex.quote(os.path.abspath(p))
 
     record_expanded_template(
         generated,
-        "bazel",
-        "template.bazel.sh",
-        executable=True,
-        ninja_output_dir=os.path.relpath(gn_output_dir, top_dir),
-        ninja_prebuilt=os.path.relpath(ninja_binary, top_dir),
-        workspace=os.path.relpath(workspace_dir, top_dir),
-        bazel_bin_path=os.path.relpath(bazel_bin, top_dir),
-        logs_dir=os.path.relpath(logs_dir, top_dir),
-        python_prebuilt_dir=os.path.relpath(python_prebuilt_dir, top_dir),
-        output_base=os.path.relpath(output_base_dir, top_dir),
-        output_user_root=os.path.relpath(output_user_root, top_dir),
+        "bazel.sh.config",
+        "template.bazel.sh.config",
+        bazel_bin=config_path_value(bazel_bin),
+        bazel_log_dir=config_path_value(logs_dir),
+        bazel_output_base=config_path_value(output_base_dir),
+        bazel_output_user_root=config_path_value(output_user_root),
+        bazel_workspace_dir=config_path_value(workspace_dir),
+        ninja_build_dir=config_path_value(gn_output_dir),
+        prebuilt_ninja=config_path_value(ninja_binary),
+        prebuilt_python_dir=config_path_value(python_prebuilt_dir),
     )
 
     generated.record_symlink(
