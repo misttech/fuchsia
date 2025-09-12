@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 
 #include "spi-child.h"
+#include "src/devices/spi/drivers/spi/spi_config.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace spi {
@@ -362,7 +363,12 @@ class SpiDeviceTest : public ::testing::Test {
     driver_test().RunInEnvironmentTypeContext([channel_count](TestEnvironment& environment) {
       ASSERT_TRUE(environment.SetSpiChannelCount(channel_count).is_ok());
     });
-    EXPECT_TRUE(driver_test().StartDriver().is_ok());
+    EXPECT_TRUE(driver_test()
+                    .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                      spi_config::Config config{{.enable_suspend = true}};
+                      args.config(config.ToVmo());
+                    })
+                    .is_ok());
 
     bool all_children_added =
         driver_test().RunInNodeContext<bool>([channel_count](fdf_testing::TestNode& node) {

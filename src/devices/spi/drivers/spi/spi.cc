@@ -4,6 +4,7 @@
 
 #include "spi.h"
 
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
@@ -16,6 +17,7 @@
 #include <fbl/alloc_checker.h>
 
 #include "spi-child.h"
+#include "src/devices/spi/drivers/spi/spi_config.h"
 
 namespace spi {
 
@@ -87,6 +89,8 @@ zx::result<> SpiDriver::Start() {
 zx::result<> SpiDriver::AddChildren(
     const fuchsia_hardware_spi_businfo::SpiBusMetadata& metadata,
     fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client) {
+  const auto config = take_config<spi_config::Config>();
+
   bool has_siblings = metadata.channels()->size() > 1;
   for (auto& channel : *metadata.channels()) {
     const auto cs = channel.cs().value_or(0);
@@ -102,6 +106,31 @@ zx::result<> SpiDriver::AddChildren(
     auto offers = std::vector{
         fdf::MakeOffer2<fuchsia_hardware_spi::Service>(arena, name),
     };
+
+    if (config.enable_suspend()) {
+      // Forward PowerTokenService to our parent if suspend is enabled.
+      fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
+          .token_provider =
+              [this](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
+                zx::result<> result =
+                    incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                        std::move(server));
+                if (result.is_error()) {
+                  FDF_LOG(WARNING, "Failed to connect to power token service: %s",
+                          result.status_string());
+                }
+              },
+      });
+
+      zx::result result = outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(
+          std::move(handler), name);
+      if (result.is_error()) {
+        FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+        return result.take_error();
+      }
+
+      offers.emplace_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(arena, name));
+    }
 
     auto [controller_client, controller_server] =
         fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
