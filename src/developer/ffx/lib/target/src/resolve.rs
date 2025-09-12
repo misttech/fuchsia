@@ -26,7 +26,7 @@ use target_errors::FfxTargetError;
 
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
-use crate::usb_connector::UsbConnector;
+use crate::usb_connector::{UsbConnector, try_daemon_autostart};
 use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
@@ -285,6 +285,9 @@ fn build_discovery(
             .get(usb_driver_api::CONFIG_USB_SOCKET_PATH)
             .ok()
             .or_else(|| usb_driver_api::default_usb_socket_path().ok());
+        if let Some(path) = &usb_driver_socket {
+            try_daemon_autostart(path, &ctx);
+        }
         builder = builder.with_usb_vsock_driver_socket_path(usb_driver_socket);
     }
 

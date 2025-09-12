@@ -21,6 +21,12 @@ When updating, please add the value in alphabetical order.
     |                                         | connect to virtual machine targets |
     |                                         | where supported. Defaults to       |
     |                                         | `false`.                           |
+    | `connectivity.usb_driver_autostart`     | Allow ffx to start a driver        |
+    |                                         | process in the background to       |
+    |                                         | enable USB connections. Defaults   |
+    |                                         | to `true`, but does not apply in   |
+    |                                         | strict mode, isolates, or when USB |
+    |                                         | connections are disabled.          |
     | `daemon.autostart`                      | Determines if the daemon should    |
     |                                         | start automatically when a subtool |
     |                                         | that requires the daemon is        |

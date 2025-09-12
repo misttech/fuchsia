@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use compat_info::{CompatibilityInfo, CompatibilityState};
 use ffx::{TargetIpAddrInfo, TargetIpPort};
+use ffx_config::EnvironmentContext;
 use ffx_daemon_core::events::{self, EventSynthesizer};
 use ffx_daemon_events::{TargetConnectionState, TargetEvent};
 use ffx_fastboot_connection_factory::{
@@ -365,7 +366,7 @@ impl Target {
         target
     }
 
-    pub async fn init_usb_driver() {
+    pub async fn init_usb_driver(context: &EnvironmentContext) {
         if ffx_config::get(CONFIG_ENABLE_USB).unwrap_or(false) {
             let socket_path =
                 ffx_config::get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
@@ -380,6 +381,8 @@ impl Target {
                     }
                 }
             };
+
+            ffx_target::usb_connector::try_daemon_autostart(&socket_path, context);
 
             let driver = match usb_driver_api::Driver::init(socket_path).await {
                 Ok(x) => x,

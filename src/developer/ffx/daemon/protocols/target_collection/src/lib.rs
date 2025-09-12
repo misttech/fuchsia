@@ -634,7 +634,7 @@ impl FidlProtocol for TargetCollectionProtocol {
             }
         });
 
-        Target::init_usb_driver().await;
+        Target::init_usb_driver(&self.context).await;
 
         if let Some(driver) = Target::get_usb_driver_connection()
             && let Ok(usb_events) = driver

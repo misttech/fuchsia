@@ -13,10 +13,13 @@ use ffx_config::{EnvironmentContext, TryFromEnvContext};
 use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
 use std::path::PathBuf;
+use std::process::Stdio;
 use tokio::io::BufReader;
 
 const OVERNET_VSOCK_PORT: u32 = 202;
 const FDOMAIN_VSOCK_PORT: u32 = 203;
+
+const CONFIG_START_DRIVER: &str = "connectivity.usb_driver_autostart";
 
 pub struct UsbConnector {
     driver: usb_driver_api::Driver,
@@ -43,6 +46,8 @@ impl UsbConnector {
         } else {
             usb_driver_api::default_usb_socket_path()?
         };
+
+        try_daemon_autostart(&socket_path, env_context);
 
         let driver = usb_driver_api::Driver::init(socket_path).await?;
         Ok(Self { driver, cid, env_context: env_context.clone() })
@@ -126,5 +131,59 @@ impl TargetConnector for UsbConnector {
         } else {
             overnet.map(TargetConnection::Overnet)
         }
+    }
+}
+
+/// Try to auto-start the daemon if it is appropriate to do so.
+pub fn try_daemon_autostart(path: &PathBuf, context: &EnvironmentContext) {
+    if context.is_strict() || context.is_isolated() {
+        return;
+    }
+
+    if !context.get(CONFIG_START_DRIVER).unwrap_or(true) {
+        return;
+    }
+
+    let cmd = context.rerun_prefix();
+    let mut cmd = match cmd {
+        Ok(cmd) => cmd,
+        Err(error) => {
+            log::warn!(error:?; "Could not get rerun prefix to spawn USB driver");
+            return;
+        }
+    };
+    let socket_path_config =
+        format!("{}={}", usb_driver_api::CONFIG_USB_SOCKET_PATH, path.to_string_lossy());
+    let child = cmd
+        .args(["-c", socket_path_config.as_str(), "usb-driver", "--background"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    let child = match child {
+        Ok(child) => child,
+        Err(error) => {
+            log::warn!(error:?; "Could not spawn USB driver process");
+            return;
+        }
+    };
+
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(error) => {
+            log::warn!(error:?; "Error waiting for USB driver to start");
+            return;
+        }
+    };
+
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        log::warn!(
+            exit_status:? = output.status,
+            stdout = stdout.as_str(),
+            stderr = stderr.as_str();
+            "USB driver exited with bad status");
     }
 }

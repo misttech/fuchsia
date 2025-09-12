@@ -109,6 +109,7 @@ async fn implementation(
             path.push("ffx_usb");
             path
         };
+        let _: Result<(), _> = std::fs::create_dir_all(&path);
         path.push(format!("ffx_usb.{log_id:x}.log"));
 
         let file = match OpenOptions::new().write(true).append(true).create(true).open(path) {
