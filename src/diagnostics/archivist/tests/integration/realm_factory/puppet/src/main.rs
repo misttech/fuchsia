@@ -14,16 +14,16 @@ use anyhow::{Context, Error, Result};
 use diagnostics_hierarchy::Property;
 use diagnostics_log::{OnInterestChanged, Publisher, PublisherOptions, TestRecord};
 use diagnostics_log_encoding::Argument;
-use fidl::endpoints::create_request_stream;
+use fidl::endpoints::{ClientEnd, create_request_stream};
 use fidl_table_validation::ValidFidlTable;
-use fuchsia_async::{TaskGroup, Timer};
+use fuchsia_async::{Scope, Timer};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{Inspector, component};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt, TryStreamExt};
-use inspect_runtime::EscrowOptions;
+use inspect_runtime::{EscrowOptions, EscrowToken, PublishedInspectController};
 use inspect_testing::ExampleInspectData;
 use log::{debug, error, info, trace, warn};
 use std::sync::Arc;
@@ -90,18 +90,18 @@ struct InterestChangedEvent {
 struct PuppetServer {
     // A stream of noifications about interest changed events.
     interest_changed: Mutex<UnboundedReceiver<InterestChangedEvent>>,
-    // Tasks waiting to be notified of interest changed events.
-    interest_waiters: Mutex<TaskGroup>,
-    // Published Inspectors
-    published_inspectors: Mutex<TaskGroup>,
+    // Scope for waiters on interest changed events.
+    waiter_scope: Scope,
+    // Scope for published Inspectors
+    inspectors_scope: Scope,
 }
 
 impl PuppetServer {
     fn new(receiver: UnboundedReceiver<InterestChangedEvent>) -> Self {
         Self {
             interest_changed: Mutex::new(receiver),
-            interest_waiters: Mutex::new(TaskGroup::new()),
-            published_inspectors: Mutex::new(TaskGroup::new()),
+            waiter_scope: Scope::new_with_name("waiters-for-interest-changed-events"),
+            inspectors_scope: Scope::new_with_name("published-inspectors"),
         }
     }
 }
@@ -148,21 +148,10 @@ async fn serve_inspect_puppet(
 }
 
 async fn handle_inspect_writer(
+    inspector: &Inspector,
+    inspect_controller: PublishedInspectController,
     mut stream: fpuppet::InspectWriterRequestStream,
-    name: Option<String>,
 ) -> Result<(), Error> {
-    let inspector = match name {
-        None => component::inspector().clone(),
-        Some(_) => Inspector::default(),
-    };
-
-    let opts = match name {
-        None => inspect_runtime::PublishOptions::default(),
-        Some(ref n) => inspect_runtime::PublishOptions::default().inspect_tree_name(n),
-    };
-
-    let controller = inspect_runtime::publish(&inspector, opts).unwrap();
-
     let mut example_inspect = ExampleInspectData::default();
 
     while let Ok(Some(request)) = stream.try_next().await {
@@ -180,10 +169,7 @@ async fn handle_inspect_writer(
                 responder.send().expect("response succeeds")
             }
             fpuppet::InspectWriterRequest::SetHealthOk { responder } => {
-                if name.is_none() {
-                    component::health().set_ok();
-                }
-
+                component::health().set_ok();
                 responder.send().expect("response succeeds")
             }
             fpuppet::InspectWriterRequest::EscrowAndExit {
@@ -194,7 +180,7 @@ async fn handle_inspect_writer(
                 if let Some(name) = name {
                     options = options.name(name);
                 }
-                let token = controller.escrow_frozen(options).await.unwrap();
+                let token = inspect_controller.escrow_frozen(options).await.unwrap();
                 responder
                     .send(fpuppet::InspectWriterEscrowAndExitResponse {
                         token: Some(token),
@@ -207,12 +193,70 @@ async fn handle_inspect_writer(
             fpuppet::InspectWriterRequest::RecordLazyValues { key, responder } => {
                 let (client, requests) = create_request_stream();
                 responder.send(client).expect("response succeeds");
-                record_lazy_values(key, requests, &inspector).await?;
+                record_lazy_values(key, requests, inspector).await?;
             }
             fpuppet::InspectWriterRequest::_UnknownMethod { .. } => unreachable!(),
         }
     }
     Ok(())
+}
+
+async fn handle_create_inspector(
+    server: Arc<PuppetServer>,
+    name: Option<String>,
+) -> ClientEnd<fpuppet::InspectWriterMarker> {
+    let (inspector, controller) = match name {
+        Some(ref name) => {
+            let inspector = Inspector::default();
+            let controller = inspect_runtime::publish(
+                &inspector,
+                inspect_runtime::PublishOptions::default().inspect_tree_name(name),
+            )
+            .unwrap();
+            (inspector, controller)
+        }
+        None => {
+            let inspector = component::inspector().clone();
+            let controller =
+                inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default())
+                    .unwrap();
+            (inspector, controller)
+        }
+    };
+
+    let (client_end, server_end) = fidl::endpoints::create_endpoints();
+    server.inspectors_scope.spawn(async move {
+        handle_inspect_writer(&inspector, controller, server_end.into_stream()).await.unwrap()
+    });
+    client_end
+}
+
+async fn handle_create_inspector_from_escrow(
+    server: Arc<PuppetServer>,
+    token: Option<EscrowToken>,
+) -> (ClientEnd<fpuppet::InspectWriterMarker>, zx::Vmo) {
+    let escrow_token = token.expect("Escrow token is required");
+    let inspect_runtime::FetchEscrowResult { vmo, server: tree } = inspect_runtime::fetch_escrow(
+        escrow_token,
+        inspect_runtime::FetchEscrowOptions::new().replace_with_tree(),
+    )
+    .await
+    .unwrap();
+
+    let controller = inspect_runtime::publish(
+        component::inspector(),
+        inspect_runtime::PublishOptions::default().on_tree_server(tree.unwrap()),
+    )
+    .unwrap();
+
+    let (client_end, server_end) = fidl::endpoints::create_endpoints();
+    server.inspectors_scope.spawn(async move {
+        handle_inspect_writer(component::inspector(), controller, server_end.into_stream())
+            .await
+            .unwrap()
+    });
+
+    (client_end, vmo)
 }
 
 async fn handle_inspect_puppet_request(
@@ -224,16 +268,18 @@ async fn handle_inspect_puppet_request(
             payload: fpuppet::InspectPuppetCreateInspectorRequest { name, .. },
             responder,
         } => {
-            let (client_end, server_end) = fidl::endpoints::create_endpoints();
-            server.published_inspectors.lock().await.spawn(async move {
-                handle_inspect_writer(server_end.into_stream(), name).await.unwrap()
-            });
-
-            responder.send(client_end).expect("response succeeds");
+            let inspect_writer = handle_create_inspector(server, name).await;
+            responder.send(inspect_writer).context("response succeeds")
+        }
+        fpuppet::InspectPuppetRequest::CreateInspectorFromEscrow {
+            payload: fpuppet::InspectPuppetCreateInspectorFromEscrowRequest { token, .. },
+            responder,
+        } => {
+            let (inspect_writer, vmo) = handle_create_inspector_from_escrow(server, token).await;
+            responder.send(inspect_writer, vmo).context("response succeeds")
         }
         fpuppet::InspectPuppetRequest::_UnknownMethod { .. } => unreachable!(),
     }
-    Ok(())
 }
 
 async fn handle_puppet_request(
@@ -246,12 +292,15 @@ async fn handle_puppet_request(
             payload: fpuppet::InspectPuppetCreateInspectorRequest { name, .. },
             responder,
         } => {
-            let (client_end, server_end) = fidl::endpoints::create_endpoints();
-            server.published_inspectors.lock().await.spawn(async move {
-                handle_inspect_writer(server_end.into_stream(), name).await.unwrap()
-            });
-
-            responder.send(client_end).expect("response succeeds");
+            let inspect_writer = handle_create_inspector(server, name).await;
+            responder.send(inspect_writer).context("response succeeds")
+        }
+        fpuppet::PuppetRequest::CreateInspectorFromEscrow {
+            payload: fpuppet::InspectPuppetCreateInspectorFromEscrowRequest { token, .. },
+            responder,
+        } => {
+            let (inspect_writer, vmo) = handle_create_inspector_from_escrow(server, token).await;
+            responder.send(inspect_writer, vmo).context("response succeeds")
         }
         fpuppet::PuppetRequest::Crash { message, .. } => {
             panic!("{message}");
@@ -259,15 +308,15 @@ async fn handle_puppet_request(
         fpuppet::PuppetRequest::RecordLazyValues { key, responder } => {
             let (client, requests) = create_request_stream();
             responder.send(client).expect("response succeeds");
-            record_lazy_values(key, requests, component::inspector()).await?;
+            record_lazy_values(key, requests, component::inspector()).await
         }
         fpuppet::PuppetRequest::Println { message, responder } => {
             println!("{message}");
-            responder.send().expect("response succeeds")
+            responder.send().context("response succeeds")
         }
         fpuppet::PuppetRequest::Eprintln { message, responder } => {
             eprintln!("{message}");
-            responder.send().expect("response succeeds")
+            responder.send().context("response succeeds")
         }
         fpuppet::PuppetRequest::Log { payload, responder, .. } => {
             let request = LogRequest::try_from(payload).context("Invalid log")?;
@@ -293,23 +342,22 @@ async fn handle_puppet_request(
                     logger.event_for_testing(record);
                 }
             }
-            responder.send().expect("response succeeds")
+            responder.send().context("response succeeds")
         }
         fpuppet::PuppetRequest::WaitForInterestChange { responder } => {
-            let mut task_group = server.interest_waiters.lock().await;
-            let server = server.clone();
-            task_group.spawn(async move {
-                let event = server.interest_changed.lock().await.next().await.unwrap();
+            let s = server.clone();
+            server.waiter_scope.spawn(async move {
+                let event = s.interest_changed.lock().await.next().await.unwrap();
                 let response = &fpuppet::LogPuppetWaitForInterestChangeResponse {
                     severity: Some(event.severity),
                     ..Default::default()
                 };
                 responder.send(response).expect("response succeeds");
             });
+            Ok(())
         }
         fpuppet::PuppetRequest::_UnknownMethod { .. } => unreachable!(),
     }
-    Ok(())
 }
 
 #[derive(Debug, Clone, ValidFidlTable)]

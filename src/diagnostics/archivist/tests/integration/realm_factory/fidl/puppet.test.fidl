@@ -133,6 +133,17 @@ open protocol InspectPuppet {
     }) -> (resource struct {
         writer client_end:InspectWriter;
     });
+
+    /// Create and serve an Inspector with the same name as a previous escrowed instance.
+    /// Also returns a VMO with the previously escrowed inspect data.
+    /// InspectWriters created this way are RAII.
+    @available(added=HEAD)
+    flexible CreateInspectorFromEscrow(resource table {
+        1: token fuchsia.inspect.EscrowToken;
+    }) -> (resource struct {
+        writer client_end:InspectWriter;
+        data fuchsia.inspect.EscrowedVmo;
+    });
 };
 
 /// Records values on a lazy inspect node.

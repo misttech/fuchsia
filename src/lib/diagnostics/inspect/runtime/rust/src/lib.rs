@@ -90,6 +90,9 @@ pub struct PublishOptions {
 
     /// Scope on which the server will be spawned.
     pub(crate) custom_scope: Option<fasync::ScopeHandle>,
+
+    /// If provided, `publish` will use this tree instead of creating a new one.
+    pub(crate) tree: Option<TreeServerHandle>,
 }
 
 impl PublishOptions {
@@ -125,6 +128,14 @@ impl PublishOptions {
         self.inspect_sink_client = Some(client);
         self
     }
+
+    /// Use the provided [`TreeServerHandle`] instead of creating a new one. Skips the
+    /// call to InspectSink.Publish, but still spawns a new Tree server to
+    /// handle incoming requests.
+    pub fn on_tree_server(mut self, tree: TreeServerHandle) -> Self {
+        self.tree = Some(tree);
+        self
+    }
 }
 
 /// Spawns a server handling `fuchsia.inspect.Tree` requests and a handle
@@ -141,10 +152,17 @@ pub fn publish(
     inspector: &Inspector,
     options: PublishOptions,
 ) -> Option<PublishedInspectController> {
-    let PublishOptions { vmo_preference, tree_name, inspect_sink_client, custom_scope } = options;
+    let PublishOptions { vmo_preference, tree_name, inspect_sink_client, custom_scope, tree } =
+        options;
     let scope = custom_scope
         .map(|handle| handle.new_child_with_name("inspect_runtime::publish"))
         .unwrap_or_else(|| fasync::Scope::new_with_name("inspect_runtime::publish"));
+
+    if let Some(TreeServerHandle { client_koid: client, stream }) = tree {
+        service::spawn_tree_server_with_stream(inspector.clone(), vmo_preference, stream, &scope);
+        return Some(PublishedInspectController::new(inspector.clone(), scope, client));
+    }
+
     let tree = service::spawn_tree_server(inspector.clone(), vmo_preference, &scope);
 
     let inspect_sink = inspect_sink_client.map(|client| client.into_proxy()).or_else(|| {
@@ -154,7 +172,7 @@ pub fn publish(
     })?;
 
     // unwrap: safe since we have a valid tree handle coming from the server we spawn.
-    let tree_koid = tree.basic_info().unwrap().koid;
+    let tree_koid = tree.get_koid().unwrap();
     if let Err(err) = inspect_sink.publish(finspect::InspectSinkPublishRequest {
         tree: Some(tree),
         name: tree_name,
@@ -165,6 +183,101 @@ pub fn publish(
     }
 
     Some(PublishedInspectController::new(inspector.clone(), scope, tree_koid))
+}
+
+/// Options for fetching a VMO that was previously escrowed.
+#[derive(Debug, Default)]
+pub struct FetchEscrowOptions {
+    /// Channel over which the InspectSink protocol will be used.
+    pub(crate) inspect_sink_client: Option<ClientEnd<finspect::InspectSinkMarker>>,
+
+    /// If true, the escrowed Inspect tree will be replaced with a new one, and a handle
+    /// to the new tree will be returned in [`FetchEscrowResult`].
+    pub(crate) should_replace_with_tree: bool,
+}
+
+impl FetchEscrowOptions {
+    /// Creates new default options for fetching an escrowed VMO.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// This allows the client to provide the InspectSink client channel.
+    pub fn on_inspect_sink_client(
+        mut self,
+        client: ClientEnd<finspect::InspectSinkMarker>,
+    ) -> Self {
+        self.inspect_sink_client = Some(client);
+        self
+    }
+
+    /// If true, the escrowed Inspect tree will be replaced with a new one, and a handle
+    /// to the new tree will be returned in [`FetchEscrowResult`].
+    pub fn replace_with_tree(mut self) -> Self {
+        self.should_replace_with_tree = true;
+        self
+    }
+}
+
+/// The result of fetching an escrowed VMO.
+pub struct FetchEscrowResult {
+    /// The VMO containing the escrowed Inspect data.
+    pub vmo: zx::Vmo,
+    /// A handle to the new Inspect Tree if one was requested.
+    pub server: Option<TreeServerHandle>,
+}
+
+/// A handle to a `fuchsia.inspect.Tree` server.
+pub struct TreeServerHandle {
+    client_koid: zx::Koid,
+    stream: finspect::TreeRequestStream,
+}
+
+/// Fetches a VMO that was previously escrowed.
+///
+/// This function connects to `fuchsia.inspect.InspectSink` and exchanges the provided
+/// `escrow_token` for the VMO it represents.
+///
+/// If `FetchEscrowOptions::replace_with_tree` is set, a new `fuchsia.inspect.Tree` server
+/// will be created to replace the one that was torn down when the VMO was originally escrowed.
+/// A handle to this new tree will be returned.
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+pub async fn fetch_escrow(
+    escrow_token: finspect::EscrowToken,
+    options: FetchEscrowOptions,
+) -> Result<FetchEscrowResult, anyhow::Error> {
+    use anyhow::{Context as _, anyhow};
+
+    let FetchEscrowOptions { inspect_sink_client, should_replace_with_tree } = options;
+
+    let (tree, handle) = if should_replace_with_tree {
+        let (client, stream) = fidl::endpoints::create_request_stream::<finspect::TreeMarker>();
+        // unwrap: safe since we have a valid tree handle coming from above.
+        let client_koid = client.get_koid().unwrap();
+        (Some(client), Some(TreeServerHandle { client_koid, stream }))
+    } else {
+        (None, None)
+    };
+
+    let inspect_sink = match inspect_sink_client {
+        Some(client) => client.into_proxy(),
+        None => connect_to_protocol::<finspect::InspectSinkMarker>()?,
+    };
+
+    let vmo = inspect_sink
+        .fetch_escrow(finspect::InspectSinkFetchEscrowRequest {
+            token: Some(escrow_token),
+            tree,
+            ..Default::default()
+        })
+        .await
+        .context("Failed to fetch escrow")?
+        .vmo
+        .ok_or_else(|| {
+            anyhow!("VMO missing from response; perhaps the provided escrow_token is invalid")
+        })?;
+
+    Ok(FetchEscrowResult { vmo, server: handle })
 }
 
 #[pin_project]
@@ -460,5 +573,36 @@ mod tests {
                 panic!("unexpected request: {other:?}");
             }
         };
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[fuchsia::test]
+    async fn fetch_escrow_works() {
+        let (client, mut request_stream) =
+            fidl::endpoints::create_request_stream::<finspect::InspectSinkMarker>();
+        let (_local_token, remote_token) = zx::EventPair::create();
+        let token = EscrowToken { token: remote_token };
+        let expected_koid = token.token.basic_info().unwrap().koid;
+
+        let publisher_fut =
+            fetch_escrow(token, FetchEscrowOptions::new().on_inspect_sink_client(client));
+
+        let server_fut = async {
+            let (payload, responder) = assert_matches!(
+                request_stream.next().await,
+                Some(Ok(InspectSinkRequest::FetchEscrow { payload, responder })) => (payload, responder)
+            );
+            let received_token = payload.token.unwrap();
+            assert_eq!(received_token.token.basic_info().unwrap().koid, expected_koid);
+            responder
+                .send(finspect::InspectSinkFetchEscrowResponse {
+                    vmo: Some(zx::Vmo::create(0).unwrap()),
+                    ..Default::default()
+                })
+                .unwrap();
+        };
+
+        let (result, _) = futures::join!(publisher_fut, server_fut);
+        assert!(result.is_ok());
     }
 }

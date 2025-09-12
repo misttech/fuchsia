@@ -68,7 +68,10 @@ rustc_test("bin") {
       current_build_target_api_level == "HEAD") {
     sources += [ "src/inspect/escrow.rs" ]
 
-    deps += [ "//src/lib/diagnostics/log/encoding/rust" ]
+    deps += [
+      "//src/lib/diagnostics/inspect/rust",
+      "//src/lib/diagnostics/log/encoding/rust",
+    ]
   }
 
   inputs = [
