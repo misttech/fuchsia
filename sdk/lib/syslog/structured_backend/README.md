@@ -8,9 +8,7 @@ https://fxbug.dev/42161952 tracks app development support.
 
 ## Usage
 
-Before using the API, you need to connect to Archivist using the LogSink
-protocol. After connecting, invoke ConnectStructured on the LogSink and pass in
-a socket. Use the other side of the socket to do any of the following:
+Use the Logger API (see cpp/logger.h) to make a connection to Archivist.
 
 ### Encoding a regular key-value-pair message
 

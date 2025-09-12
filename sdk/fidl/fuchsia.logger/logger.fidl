@@ -170,6 +170,7 @@ closed(removed=26) open(added=26) protocol LogSink {
     ///
     /// See [Encoding structured records](https://fuchsia.dev/fuchsia-src/reference/platform-spec/diagnostics/logs-encoding)
     /// for what is expected to be received over the socket.
+    @available(removed=NEXT)
     strict ConnectStructured(resource struct {
         socket zx.Handle:SOCKET;
     });

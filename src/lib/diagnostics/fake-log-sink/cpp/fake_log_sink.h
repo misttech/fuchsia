@@ -19,8 +19,6 @@ namespace internal {
 struct FakeLogSink;
 }  // namespace internal
 
-// NOTE: This will not safely handle clients which call `ConnectStructured` multiple times. Clients
-// that do this can cause deadlocks.
 class FakeLogSink {
  public:
   // If `server_end` is not provided, this will connect the global logger to this log sink.
