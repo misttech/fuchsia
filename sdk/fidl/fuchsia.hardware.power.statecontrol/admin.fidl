@@ -27,6 +27,7 @@ const MAX_REBOOT_WATCHER_RESPONSE_TIME_SECONDS uint32 = 5;
 @discoverable(server="platform")
 closed protocol Admin {
     /// Asks the device to enter a fully on state.
+    @available(deprecated=NEXT, note="not used or supported")
     strict PowerFullyOn() -> () error zx.Status;
 
     /// Asks the device to reboot.
