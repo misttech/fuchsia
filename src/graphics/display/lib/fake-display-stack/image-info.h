@@ -19,6 +19,7 @@
 
 #include "src/graphics/display/lib/api-types/cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
+#include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 
 namespace fake_display {
 
@@ -44,7 +45,7 @@ class DisplayImageInfo : public fbl::SinglyLinkedListable<std::unique_ptr<Displa
   using IdType = display::DriverImageId;
   using HashTable = fbl::HashTable<IdType, std::unique_ptr<DisplayImageInfo>>;
 
-  DisplayImageInfo(IdType id, SysmemBufferInfo buffer_info);
+  DisplayImageInfo(IdType id, display::ImageMetadata metadata, SysmemBufferInfo buffer_info);
   ~DisplayImageInfo() = default;
 
   // Disallow copy and move.
@@ -59,10 +60,12 @@ class DisplayImageInfo : public fbl::SinglyLinkedListable<std::unique_ptr<Displa
 
   IdType id() const { return id_; }
   const SysmemBufferInfo& sysmem_buffer_info() const { return sysmem_buffer_info_; }
+  const display::ImageMetadata& metadata() const { return metadata_; }
   const zx::vmo& vmo() const { return sysmem_buffer_info_.image_vmo; }
 
  private:
   IdType id_;
+  display::ImageMetadata metadata_;
   SysmemBufferInfo sysmem_buffer_info_;
 };
 
@@ -71,7 +74,7 @@ class CaptureImageInfo : public fbl::SinglyLinkedListable<std::unique_ptr<Captur
   using IdType = display::DriverCaptureImageId;
   using HashTable = fbl::HashTable<IdType, std::unique_ptr<CaptureImageInfo>>;
 
-  CaptureImageInfo(IdType id, SysmemBufferInfo buffer_info);
+  CaptureImageInfo(IdType id, display::ImageMetadata metadata, SysmemBufferInfo buffer_info);
   ~CaptureImageInfo() = default;
 
   // Disallow copy and move.
@@ -86,10 +89,12 @@ class CaptureImageInfo : public fbl::SinglyLinkedListable<std::unique_ptr<Captur
 
   IdType id() const { return id_; }
   const SysmemBufferInfo& sysmem_buffer_info() const { return sysmem_buffer_info_; }
+  const display::ImageMetadata& metadata() const { return metadata_; }
   const zx::vmo& vmo() const { return sysmem_buffer_info_.image_vmo; }
 
  private:
   IdType id_;
+  display::ImageMetadata metadata_;
   SysmemBufferInfo sysmem_buffer_info_;
 };
 

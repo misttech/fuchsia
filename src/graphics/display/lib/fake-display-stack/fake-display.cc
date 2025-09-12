@@ -153,31 +153,6 @@ display::EngineInfo FakeDisplay::CompleteCoordinatorConnection() {
   return device_config_.engine_info;
 }
 
-zx::result<display::DriverImageId> FakeDisplay::ImportVmoImageForTesting(zx::vmo vmo,
-                                                                         size_t vmo_offset) {
-  std::lock_guard lock(mutex_);
-
-  display::DriverImageId driver_image_id = next_imported_display_driver_image_id_++;
-
-  // Image metadata for testing only and may not reflect the actual image
-  // buffer format.
-  SysmemBufferInfo sysmem_buffer_info = {
-      .image_vmo = std::move(vmo),
-      .image_vmo_offset = vmo_offset,
-      .pixel_format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
-      .pixel_format_modifier = fuchsia_images2::wire::PixelFormatModifier::kLinear,
-      .minimum_size = fuchsia_math::wire::SizeU{.width = 0, .height = 0},
-      .minimum_bytes_per_row = 0,
-      .coherency_domain = fuchsia_sysmem2::wire::CoherencyDomain::kRam,
-  };
-
-  auto import_info =
-      std::make_unique<DisplayImageInfo>(driver_image_id, std::move(sysmem_buffer_info));
-
-  imported_images_.insert(std::move(import_info));
-  return zx::ok(driver_image_id);
-}
-
 namespace {
 
 bool IsAcceptableImageTilingType(display::ImageTilingType image_tiling_type) {
@@ -272,7 +247,7 @@ zx::result<display::DriverImageId> FakeDisplay::ImportImage(
   display::DriverImageId driver_image_id = next_imported_display_driver_image_id_++;
 
   auto display_image_info = std::make_unique<DisplayImageInfo>(
-      driver_image_id, std::move(sysmem_buffer_info_result).value());
+      driver_image_id, image_metadata, std::move(sysmem_buffer_info_result).value());
 
   imported_images_.insert(std::move(display_image_info));
   return zx::ok(driver_image_id);
@@ -531,13 +506,21 @@ zx::result<display::DriverCaptureImageId> FakeDisplay::ImportImageForCapture(
     // SysmemBufferInfo::GetSysmemMetadata() has already logged the error.
     return sysmem_buffer_info_result.take_error();
   }
+  SysmemBufferInfo sysmem_buffer_info = std::move(sysmem_buffer_info_result).value();
 
-  // TODO(https://fxbug.dev/42079320): Capture target images should not be of
-  // "inaccessible" coherency domain. We should add a check here.
+  if (sysmem_buffer_info.coherency_domain == fuchsia_sysmem2::CoherencyDomain::kInaccessible) {
+    fdf::error("the capture image cannot be on an inaccessible coherency domain");
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
+  display::ImageMetadata capture_image_metadata({
+      .width = static_cast<int32_t>(sysmem_buffer_info.minimum_size.width),
+      .height = static_cast<int32_t>(sysmem_buffer_info.minimum_size.height),
+      .tiling_type = display::ImageTilingType::kLinear,
+  });
   display::DriverCaptureImageId driver_capture_image_id = next_imported_driver_capture_image_id_++;
-
   auto capture_image_info = std::make_unique<CaptureImageInfo>(
-      driver_capture_image_id, std::move(sysmem_buffer_info_result).value());
+      driver_capture_image_id, capture_image_metadata, std::move(sysmem_buffer_info));
 
   imported_captures_.insert(std::move(capture_image_info));
   return zx::ok(driver_capture_image_id);

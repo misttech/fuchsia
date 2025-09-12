@@ -116,12 +116,6 @@ class FakeDisplay : public display::DisplayEngineInterface {
     return applied_config_stamp_;
   }
 
-  // Just for display core unittests.
-  //
-  // Can be called from any thread.
-  zx::result<display::DriverImageId> ImportVmoImageForTesting(zx::vmo vmo, size_t vmo_offset)
-      __TA_EXCLUDES(mutex_);
-
   // Can be called from any thread.
   uint8_t GetClampRgbValue() const __TA_EXCLUDES(mutex_) {
     std::lock_guard lock(mutex_);

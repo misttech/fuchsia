@@ -120,8 +120,9 @@ zx::result<SysmemBufferInfo> SysmemBufferInfo::GetSysmemMetadata(
   });
 }
 
-DisplayImageInfo::DisplayImageInfo(IdType id, SysmemBufferInfo sysmem_buffer_info)
-    : id_(id), sysmem_buffer_info_(std::move(sysmem_buffer_info)) {}
+DisplayImageInfo::DisplayImageInfo(IdType id, display::ImageMetadata metadata,
+                                   SysmemBufferInfo sysmem_buffer_info)
+    : id_(id), metadata_(metadata), sysmem_buffer_info_(std::move(sysmem_buffer_info)) {}
 
 DisplayImageInfo::HashTable::KeyType DisplayImageInfo::GetKey() const { return id_; }
 
@@ -130,8 +131,9 @@ size_t DisplayImageInfo::GetHash(HashTable::KeyType key) {
   return std::hash<HashTable::KeyType>()(key);
 }
 
-CaptureImageInfo::CaptureImageInfo(IdType id, SysmemBufferInfo sysmem_buffer_info)
-    : id_(id), sysmem_buffer_info_(std::move(sysmem_buffer_info)) {}
+CaptureImageInfo::CaptureImageInfo(IdType id, display::ImageMetadata metadata,
+                                   SysmemBufferInfo sysmem_buffer_info)
+    : id_(id), metadata_(metadata), sysmem_buffer_info_(std::move(sysmem_buffer_info)) {}
 
 CaptureImageInfo::HashTable::KeyType CaptureImageInfo::GetKey() const { return id_; }
 
