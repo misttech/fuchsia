@@ -12,29 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Redefine native symbols with a new name as a workaround for
-# exporting them in `//third_party/bazel_rules/rules_proto/proto:defs.bzl` with their original name.
-#
-# While we cannot force users to load these symbol due to the lack of a
-# allowlisting mechanism, we can still export them and tell users to
-# load it to make a future migration to pure Starlark easier.
-
-"""Lovely workaround to be able to expose native constants pretending to be Starlark."""
-
-# Unused with Bazel@HEAD, used by the compatibility layer for older Bazel versions
-
-# buildifier: disable=native-java
-native_java_common = java_common
-
-# buildifier: disable=native-java
-NativeJavaInfo = JavaInfo
-
-# buildifier: disable=native-java
-NativeJavaPluginInfo = JavaPluginInfo
+"""Redirects for private native APIs"""
 
 # Used for some private native APIs that we can't replicate just yet in Starlark
-# getattr() for loading this file with Bazel 6, where we won't use this
 def get_internal_java_common():
-    if hasattr(native_java_common, "internal_DO_NOT_USE"):
-        return native_java_common.internal_DO_NOT_USE()
-    return None
+    return java_common.internal_DO_NOT_USE()  # buildifier: disable=native-java-common

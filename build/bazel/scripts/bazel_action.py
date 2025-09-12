@@ -70,6 +70,7 @@ _BAZEL_BUILTIN_REPOSITORIES = (
     "rules_cc",
     "rules_license",
     "rules_license+",
+    "rules_python",
     "rules_python+",
     "pythons_hub",  # A sub-repo created by rule_python+
     "rules_rust",
@@ -110,6 +111,7 @@ _IGNORED_LABELS = {
 _BAZEL_NO_CONTENT_HASH_REPOSITORIES = (
     "fuchsia_build_config",
     "fuchsia_build_info",
+    "fuchsia_prebuilt_rust",
     "gn_targets",
 )
 

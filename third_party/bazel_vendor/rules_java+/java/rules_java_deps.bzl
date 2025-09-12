@@ -19,7 +19,7 @@ bzl_library(
         "@rules_java//java/bazel/rules",
         "@rules_java//java/common/rules:toolchain_rules",
         "@rules_java//java/private:internals",
-        "@rules_java//java:http_jar_bzl",
+        "@rules_java//java/bazel:http_jar_bzl",
     ],
     visibility = ["//visibility:public"]
 )
@@ -33,12 +33,14 @@ load("@rules_java//java/bazel/rules:bazel_java_import.bzl", _java_import = "java
 load("@rules_java//java/bazel/rules:bazel_java_library.bzl", _java_library = "java_library")
 load("@rules_java//java/bazel/rules:bazel_java_plugin.bzl", _java_plugin = "java_plugin")
 load("@rules_java//java/bazel/rules:bazel_java_test.bzl", _java_test = "java_test")
+load("@rules_java//java/bazel:http_jar.bzl", _http_jar = "http_jar")
 load("@rules_java//java/common/rules:java_package_configuration.bzl", _java_package_configuration = "java_package_configuration")
 load("@rules_java//java/common/rules:java_runtime.bzl", _java_runtime = "java_runtime")
 load("@rules_java//java/common/rules:java_toolchain.bzl", _java_toolchain = "java_toolchain")
 load("@rules_java//java/private:java_common.bzl", _java_common = "java_common")
-load("@rules_java//java/private:java_info.bzl", _JavaInfo = "JavaInfo", _JavaPluginInfo = "JavaPluginInfo")
-load("@rules_java//java:http_jar.bzl", _http_jar = "http_jar")
+load("@rules_java//java/private:java_common_internal.bzl", _java_common_internal_compile = "compile")
+load("@rules_java//java/private:java_info.bzl", _JavaInfo = "JavaInfo", _JavaPluginInfo = "JavaPluginInfo",
+  _java_info_internal_merge = "merge", _java_info_to_implicit_exportable = "to_implicit_exportable")
 
 java_binary = _java_binary
 java_import = _java_import
@@ -51,7 +53,9 @@ java_toolchain = _java_toolchain
 java_common = _java_common
 JavaInfo = _JavaInfo
 JavaPluginInfo = _JavaPluginInfo
-
+java_common_internal_compile = _java_common_internal_compile
+java_info_internal_merge = _java_info_internal_merge
+java_info_to_implicit_exportable = _java_info_to_implicit_exportable
 http_jar = _http_jar
             """,
         )
@@ -65,7 +69,7 @@ bzl_library(
     name = "proxy_bzl",
     srcs = ["proxy.bzl"],
     deps = [
-        "@rules_java//java/private:native_bzl",
+        "@rules_java//java/private:legacy_native_bzl",
         "@bazel_tools//tools:bzl_srcs",
     ],
     visibility = ["//visibility:public"]
@@ -76,7 +80,7 @@ bzl_library(
             "proxy.bzl",
             """
 load("@bazel_tools//tools/build_defs/repo:http.bzl", _http_jar = "http_jar")
-load("@rules_java//java/private:native.bzl", "native_java_common", "NativeJavaInfo", "NativeJavaPluginInfo")
+load("@rules_java//java/private:legacy_native.bzl", "native_java_common", "NativeJavaInfo", "NativeJavaPluginInfo")
 
 java_binary = native.java_binary
 java_import = native.java_import
@@ -91,6 +95,10 @@ java_toolchain = native.java_toolchain
 java_common = native_java_common
 JavaInfo = NativeJavaInfo
 JavaPluginInfo = NativeJavaPluginInfo
+java_common_internal_compile = None
+java_info_internal_merge = None
+# Not available before Bazel 7
+java_info_to_implicit_exportable = getattr(android_common, "enable_implicit_sourceless_deps_exports_compatibility", None)
 
 http_jar = _http_jar
             """,
@@ -105,8 +113,17 @@ _compatibility_proxy_repo_rule = repository_rule(
 def compatibility_proxy_repo():
     maybe(_compatibility_proxy_repo_rule, name = "compatibility_proxy")
 
-def _compat_proxy_impl(_unused):
+def _compat_proxy_impl(module_ctx):
     compatibility_proxy_repo()
+
+    # module_ctx.extension_metadata has the paramater `reproducible` as of Bazel 7.1.0. We can't
+    # test for it directly and would ideally use bazel_features to check for it, but don't want
+    # to add a dependency for as long as WORKSPACE is still around. Thus, test for it by
+    # checking the availability of another feature introduced in 7.1.0.
+    if hasattr(module_ctx, "watch"):
+        return module_ctx.extension_metadata(reproducible = True)
+    else:
+        return None
 
 compatibility_proxy = module_extension(_compat_proxy_impl)
 

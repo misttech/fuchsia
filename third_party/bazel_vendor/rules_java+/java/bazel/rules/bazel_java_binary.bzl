@@ -75,7 +75,8 @@ def bazel_base_binary_impl(ctx, is_test_rule_class):
     )
 
     if ctx.attr.use_testrunner:
-        if semantics.find_java_runtime_toolchain(ctx).version >= 17:
+        _java_runtime_version = semantics.find_java_runtime_toolchain(ctx).version
+        if _java_runtime_version >= 17 and _java_runtime_version < 24:
             jvm_flags.append("-Djava.security.manager=allow")
         test_class = ctx.attr.test_class if hasattr(ctx.attr, "test_class") else ""
         if test_class == "":
@@ -362,7 +363,7 @@ def make_java_binary(executable):
 </p>
 <p>
   The wrapper script accepts several unique flags. Refer to
-  <code>//src/main/java/com/google/devtools/build/lib/bazel/rules/java/java_stub_template.txt</code>
+  <code>java_stub_template.txt</code>
   for a list of configurable flags and environment variables accepted by the wrapper.
 </p>
 

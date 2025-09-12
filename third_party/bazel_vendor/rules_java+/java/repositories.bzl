@@ -22,34 +22,33 @@ load("//toolchains:remote_java_repository.bzl", "remote_java_repository")
 
 # visible for tests
 JAVA_TOOLS_CONFIG = {
-    "version": "v13.13",
+    "version": "v13.18",
     "release": "true",
     "artifacts": {
         "java_tools_linux": {
-            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.13/java_tools_linux-v13.13.zip",
-            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.13/java_tools_linux-v13.13.zip",
-            "sha": "60c10e91f5900801423f9c5b020cc0c7da16dbaeee9c22891b38e7017306a8e7",
+            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.18/java_tools_linux-v13.18.zip",
+            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.18/java_tools_linux-v13.18.zip",
+            "sha": "0da77fca085dd477a057581f26fe677d88e4b9f542c517d813e50553829f66a0",
         },
         "java_tools_windows": {
-            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.13/java_tools_windows-v13.13.zip",
-            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.13/java_tools_windows-v13.13.zip",
-            "sha": "f5de3f2afc49d1a457efa63926bcc0ca4cdb5fc4887160bf9163e49f059dd12c",
+            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.18/java_tools_windows-v13.18.zip",
+            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.18/java_tools_windows-v13.18.zip",
+            "sha": "e07c1604a492a5f316e8d8142446d2b297066d243d4ed3d54324aa89122ca862",
         },
         "java_tools_darwin_x86_64": {
-            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.13/java_tools_darwin_x86_64-v13.13.zip",
-            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.13/java_tools_darwin_x86_64-v13.13.zip",
-            "sha": "d002ff57bd5e36d6d69a1c282fa571841816a1ccc5d28060cf7fe4c7257e376a",
+            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.18/java_tools_darwin_x86_64-v13.18.zip",
+            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.18/java_tools_darwin_x86_64-v13.18.zip",
+            "sha": "ecc155c338ab106324dbd036364478b0fd85d4f12d11a95268b6c436b4bb41a2",
         },
         "java_tools_darwin_arm64": {
-            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.13/java_tools_darwin_arm64-v13.13.zip",
-            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.13/java_tools_darwin_arm64-v13.13.zip",
-            "sha": "6d4b4e3a12cc5fd9f600b383465d0860afd5c11ba7c7386867bb621a55fa8452",
+            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.18/java_tools_darwin_arm64-v13.18.zip",
+            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.18/java_tools_darwin_arm64-v13.18.zip",
+            "sha": "d11cdccc9e906f68137b882d75d485122f3c6a9b50374b6bb2e526384114f897",
         },
         "java_tools": {
-            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.13/java_tools-v13.13.zip",
-            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.13/java_tools-v13.13.zip",
-            "sha": "df895d5067f2dad4524109ebfddac442d2514d0e2f95f6abc098cfae98b9bbb5",
-            "build_file": "@rules_java//toolchains:BUILD.java_tools",
+            "mirror_url": "https://mirror.bazel.build/bazel_java_tools/releases/java/v13.18/java_tools-v13.18.zip",
+            "github_url": "https://github.com/bazelbuild/java_tools/releases/download/java_v13.18/java_tools-v13.18.zip",
+            "sha": "1945286e31ca21184b672290caa83cc3470dcdbd00ce0af34f02d24398974ebf",
         },
     },
 }
@@ -308,6 +307,14 @@ _REMOTE_JDK_CONFIGS_LIST = [
         sha256 = "c208cd0fb90560644a90f928667d2f53bfe408c957a5e36206585ad874427761",
         strip_prefix = "jdk-21.0.4+7",
         urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_ppc64le_linux_hotspot_21.0.4_7.tar.gz", "https://mirror.bazel.build/github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_ppc64le_linux_hotspot_21.0.4_7.tar.gz"],
+        version = "21",
+    ),
+    struct(
+        name = "remotejdk21_linux_riscv64",
+        target_compatible_with = ["@platforms//os:linux", "@platforms//cpu:riscv64"],
+        sha256 = "b04fd7f52d18268a935f1a7144dae802b25db600ec97156ddd46b3100cbd13da",
+        strip_prefix = "jdk-21.0.4+7",
+        urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_riscv64_linux_hotspot_21.0.4_7.tar.gz", "https://mirror.bazel.build/github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_riscv64_linux_hotspot_21.0.4_7.tar.gz"],
         version = "21",
     ),
     struct(

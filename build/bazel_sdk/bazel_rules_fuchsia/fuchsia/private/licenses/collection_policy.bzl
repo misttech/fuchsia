@@ -49,7 +49,7 @@ ignore_policy = struct(
         # through `Label()` as these repo names are not actually known to
         # `rules_fuchsia` (this module).
         "+_repo_rules+internal_sdk",  # TODO(https://fxbug.dev/42081016): sdk atoms should provide licenses.
-        "+_repo_rules+assembly_developer_overrides",  # Local development overrides don't provide licenses.
+        "+_repo_rules6+assembly_developer_overrides",  # Local development overrides don't provide licenses.
     ]),
 
     # Anything within these packages will be ignored:

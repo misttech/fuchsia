@@ -20,11 +20,18 @@ def rules_proto_dev_deps():
     """development only dependencies for rules_proto"""
     http_archive(
         name = "io_bazel_stardoc",
-        sha256 = "dfbc364aaec143df5e6c52faf1f1166775a5b4408243f445f44b661cfdc3134f",
+        sha256 = "fabb280f6c92a3b55eed89a918ca91e39fb733373c81e87a18ae9e33e75023ec",
         urls = [
-            "https://mirror.bazel.build/github.com/bazelbuild/stardoc/releases/download/0.5.6/stardoc-0.5.6.tar.gz",
-            "https://github.com/bazelbuild/stardoc/releases/download/0.5.6/stardoc-0.5.6.tar.gz",
+            "https://mirror.bazel.build/github.com/bazelbuild/stardoc/releases/download/0.7.1/stardoc-0.7.1.tar.gz",
+            "https://github.com/bazelbuild/stardoc/releases/download/0.7.1/stardoc-0.7.1.tar.gz",
         ],
+    )
+
+    http_archive(
+        name = "rules_shell",
+        sha256 = "410e8ff32e018b9efd2743507e7595c26e2628567c42224411ff533b57d27c28",
+        strip_prefix = "rules_shell-0.2.0",
+        url = "https://github.com/bazelbuild/rules_shell/releases/download/v0.2.0/rules_shell-v0.2.0.tar.gz",
     )
 
     http_archive(
@@ -44,18 +51,4 @@ def rules_proto_dev_deps():
         urls = [
             "https://github.com/bazelbuild/continuous-integration/releases/download/rules-1.0.0/bazelci_rules-1.0.0.tar.gz",
         ],
-    )
-
-    http_archive(
-        name = "com_google_protobuf",
-        sha256 = "dc167b7d23ec0d6e4a3d4eae1798de6c8d162e69fa136d39753aaeb7a6e1289d",
-        strip_prefix = "protobuf-23.1",
-        urls = [
-            "https://mirror.bazel.build/github.com/protocolbuffers/protobuf/archive/v23.1.tar.gz",
-            "https://github.com/protocolbuffers/protobuf/archive/v23.1.tar.gz",
-        ],
-        remote_patch_strip = 1,
-        remote_patches = {
-            "https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main/modules/protobuf/23.1/patches/0007-bazel-Get-rid-of-exec_tools.-13401.patch": "sha256-Thj5ZYqMpgaUrjZv8XyWqyD+I6XQNcZjo4jI14a7QxE=",
-        },
     )

@@ -1,10 +1,15 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_setting")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(
+    ":bootclasspath.bzl",
+    "bootclasspath",
+    "language_version_bootstrap_runtime",
+)
 load(
     ":default_java_toolchain.bzl",
     "DEFAULT_TOOLCHAIN_CONFIGURATION",
     "PREBUILT_TOOLCHAIN_CONFIGURATION",
-    "bootclasspath",
     "default_java_toolchain",
     "java_runtime_files",
 )
@@ -15,6 +20,7 @@ load(
     "java_runtime_version_alias",
     "java_toolchain_alias",
 )
+load(":utf8_environment.bzl", "utf8_environment")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -28,6 +34,15 @@ filegroup(
 filegroup(
     name = "bzl_srcs",
     srcs = glob(["*.bzl"]),
+)
+
+# If enabled, the bootclasspath for Java compilation will be extracted from a Java runtime matching
+# the version specified with `--java_language_version` rather than the runtime specified with
+# `--java_runtime_version`.
+bool_flag(
+    name = "incompatible_language_version_bootclasspath",
+    build_setting_default = False,
+    visibility = ["//visibility:private"],
 )
 
 # A single binary distribution of a JDK (e.g., OpenJDK 17 for Windows arm64) provides three
@@ -66,8 +81,8 @@ filegroup(
 #
 # Toolchains of this type are only consumed internally by the bootclasspath rule and should not be
 # accessed from Starlark.
-
-toolchain_type(name = "bootstrap_runtime_toolchain_type")
+# TODO: migrate away from using @bazel_tools//tools/jdk:bootstrap_runtime_toolchain_type ?
+# toolchain_type(name = "bootstrap_runtime_toolchain_type")
 
 # Points to toolchain[":runtime_toolchain_type"] (was :legacy_current_java_runtime)
 java_runtime_alias(name = "current_java_runtime")
@@ -282,10 +297,46 @@ alias(
     }),
 )
 
+string_setting(
+    name = "java_language_version",
+    build_setting_default = "",
+    visibility = ["//visibility:private"],
+)
+
+string_setting(
+    name = "java_runtime_version",
+    build_setting_default = "",
+    visibility = ["//visibility:private"],
+)
+
+language_version_bootstrap_runtime(
+    name = "language_version_bootstrap_runtime",
+    java_language_version = ":java_language_version",
+    java_runtime_version = ":java_runtime_version",
+    visibility = ["//visibility:private"],
+)
+
+utf8_environment(
+    name = "utf8_environment",
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "incompatible_language_version_bootclasspath_enabled",
+    flag_values = {
+        ":incompatible_language_version_bootclasspath": "True",
+    },
+    visibility = ["//visibility:private"],
+)
+
 bootclasspath(
     name = "platformclasspath",
     src = "DumpPlatformClassPath.java",
     java_runtime_alias = ":current_java_runtime",
+    language_version_bootstrap_runtime = select({
+        ":incompatible_language_version_bootclasspath_enabled": ":language_version_bootstrap_runtime",
+        "//conditions:default": None,
+    }),
 )
 
 default_java_toolchain(

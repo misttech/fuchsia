@@ -1,4 +1,4 @@
-# Copyright 2019 The Bazel Authors. All rights reserved.
+# Copyright 2022 The Bazel Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,16 +13,17 @@
 # limitations under the License.
 
 # Redefine native symbols with a new name as a workaround for
-# exporting them in `//proto:defs.bzl` with their original name.
-#
-# While we cannot force users to load these symbol due to the lack of a
-# allowlisting mechanism, we can still export them and tell users to
-# load it to make a future migration to pure Starlark easier.
+# exporting them in @compatibility_proxy//:proxy.bzl with their original name.
 
 """Lovely workaround to be able to expose native constants pretending to be Starlark."""
 
-# buildifier: disable=native-proto
-NativeProtoInfo = ProtoInfo
+# Unused with Bazel@HEAD, only used by the compatibility layer for older Bazel versions
 
-# buildifier: disable=native-proto
-native_proto_common = proto_common_do_not_use
+# buildifier: disable=native-java-common
+native_java_common = java_common
+
+# buildifier: disable=native-java-info
+NativeJavaInfo = JavaInfo
+
+# buildifier: disable=native-java-plugin-info
+NativeJavaPluginInfo = JavaPluginInfo

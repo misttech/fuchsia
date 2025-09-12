@@ -39,7 +39,14 @@ filegroup(
     testonly = 1,
     srcs = [
         "BUILD.bazel",
+        ":java_stub_template.txt",
         ":rules",
     ],
     visibility = ["//java:__pkg__"],
+)
+
+# TODO: remove this in the next major version (rules_java 9.x / Bazel 9.x)
+exports_files(
+    ["java_stub_template.txt"],
+    visibility = ["@bazel_tools//tools/java:__pkg__"],
 )

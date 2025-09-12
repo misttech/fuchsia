@@ -884,7 +884,7 @@ def main() -> int:
         # path, and if the file does not exist, the Bazel server will crash
         # *silently* with a Java exception, leaving no traces on the client
         # terminal :-(
-        f"--experimental_downloader_config={downloader_config_file}",
+        f"--downloader_config={downloader_config_file}",
         "--enable_bzlmod=true",
         "--incompatible_use_plus_in_repo_names",
         f"--vendor_dir={bazel_vendor_dir}",

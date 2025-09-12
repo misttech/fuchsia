@@ -58,7 +58,7 @@ def main() -> int:
             f"--vendor_dir={temp_dir}",
             # Overwrite local-only settings from bazelrc. Allow network access and
             # enable Bazel Central repository when updating vendor repositories.
-            "--experimental_downloader_config=/dev/null",
+            "--downloader_config=/dev/null",
             "--registry=https://bcr.bazel.build/",
         ]
         cmd += [f"--repo={repo}" for repo in args.repo]

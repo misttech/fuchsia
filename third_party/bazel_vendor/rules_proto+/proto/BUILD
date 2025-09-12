@@ -12,10 +12,11 @@ bzl_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":proto_common",
         ":proto_lang_toolchain",
         ":proto_toolchain",
-        "//proto/private:native",
         "//proto/private/rules:proto_descriptor_set",
+        "@com_google_protobuf//bazel:proto_library_bzl",
     ],
 )
 
@@ -31,7 +32,8 @@ bzl_library(
         "proto_lang_toolchain.bzl",
     ],
     deps = [
-        ":proto_common",
+        "@com_google_protobuf//bazel/common:proto_lang_toolchain_info_bzl",
+        "@com_google_protobuf//bazel/toolchains:proto_lang_toolchain_bzl",
     ],
 )
 
@@ -39,6 +41,9 @@ bzl_library(
     name = "proto_common",
     srcs = [
         "proto_common.bzl",
+    ],
+    deps = [
+        "@com_google_protobuf//bazel/common:proto_common_bzl",
     ],
 )
 
@@ -49,7 +54,7 @@ bzl_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//proto/private/rules:proto_toolchain_bzl",
+        "@com_google_protobuf//bazel/toolchains:proto_toolchain_bzl",
     ],
 )
 

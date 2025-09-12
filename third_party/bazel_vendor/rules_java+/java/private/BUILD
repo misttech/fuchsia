@@ -7,10 +7,15 @@ bzl_library(
     srcs = [
         "native.bzl",
     ],
-    visibility = [
-        "//java:__subpackages__",
-        "@compatibility_proxy//:__pkg__",
+    visibility = ["//java:__subpackages__"],
+)
+
+bzl_library(
+    name = "legacy_native_bzl",
+    srcs = [
+        "legacy_native.bzl",
     ],
+    visibility = ["@compatibility_proxy//:__pkg__"],
 )
 
 bzl_library(
@@ -44,6 +49,14 @@ bzl_library(
     deps = ["@compatibility_proxy//:proxy_bzl"],
 )
 
+# Exposed for use by the android rules.
+bzl_library(
+    name = "android_support",
+    srcs = ["android_support.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["@compatibility_proxy//:proxy_bzl"],
+)
+
 filegroup(
     name = "srcs",
     srcs = glob(["**"]),
@@ -55,6 +68,7 @@ filegroup(
     testonly = 1,
     srcs = [
         "BUILD",
+        ":android_support",
         ":internals",
         ":native_bzl",
         ":proto_support",

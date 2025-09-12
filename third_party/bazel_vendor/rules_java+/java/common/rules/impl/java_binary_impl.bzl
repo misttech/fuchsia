@@ -251,7 +251,10 @@ def basic_java_binary(
     ])
 
     if validation_outputs:
-        output_groups["_validation"] = output_groups.get("_validation", []) + validation_outputs
+        output_groups["_validation"] = depset(
+            validation_outputs,
+            transitive = [output_groups.get("_validation", depset([]))],
+        )
 
     _filter_validation_output_group(ctx, output_groups)
 
@@ -392,10 +395,13 @@ def _filter_validation_output_group(ctx, output_group):
                    "plugins",
                    "translations",
                    # special ignored attributes
+                   # LINT.IfChange(validation_ignored_attrs)
                    "compatible_with",
                    "restricted_to",
                    "exec_compatible_with",
+                   "exec_group_compatible_with",
                    "target_compatible_with",
+                   # LINT.ThenChange(//jtcg/devtools/build/lib/rules/java/AbstractJavaBinaryConfiguredTargetTest.java:validation_ignored_attrs)
                ]
         ])
         if not ctx.attr.create_executable:

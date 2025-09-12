@@ -24,9 +24,7 @@ load("//java/private:java_info.bzl", "JavaInfo", "JavaPluginInfo")
 load(":compile_action.bzl", "compile_action")
 load(":proguard_validation.bzl", "validate_proguard_specs")
 
-visibility([
-    "//java/...",
-])
+# copybara: default multiline visibility
 
 def _filter_srcs(srcs, ext):
     return [f for f in srcs if f.extension == ext]
@@ -128,23 +126,23 @@ def basic_java_library(
 
     java_info, compilation_info = compile_action(
         ctx,
-        ctx.outputs.classjar,
-        ctx.outputs.sourcejar,
-        source_files,
-        source_jars,
-        collect_deps(deps) + ([coverage_config.runner] if coverage_config and coverage_config.runner else []),
-        collect_deps(runtime_deps),
-        plugins_javaplugininfo,
-        collect_deps(exports),
-        _collect_plugins(exported_plugins),
-        resources,
-        resource_jars,
-        classpath_resources,
-        _collect_native_libraries(deps, runtime_deps, exports),
-        javacopts,
-        neverlink,
-        ctx.fragments.java.strict_java_deps,
-        enable_compile_jar_action,
+        output_class_jar = ctx.outputs.classjar,
+        output_source_jar = ctx.outputs.sourcejar,
+        source_files = source_files,
+        source_jars = source_jars,
+        deps = collect_deps(deps) + ([coverage_config.runner] if coverage_config and coverage_config.runner else []),
+        runtime_deps = collect_deps(runtime_deps),
+        plugins = plugins_javaplugininfo,
+        exports = collect_deps(exports),
+        exported_plugins = _collect_plugins(exported_plugins),
+        resources = resources,
+        resource_jars = resource_jars,
+        classpath_resources = classpath_resources,
+        native_libraries = _collect_native_libraries(deps, runtime_deps, exports),
+        javacopts = javacopts,
+        neverlink = neverlink,
+        strict_deps = ctx.fragments.java.strict_java_deps,
+        enable_compile_jar_action = enable_compile_jar_action,
         add_exports = add_exports,
         add_opens = add_opens,
         bootclasspath = bootclasspath[BootClassPathInfo] if bootclasspath else None,
@@ -158,6 +156,8 @@ def basic_java_library(
         _direct_source_jars = java_info.source_jars,
     )
 
+    validation_outputs = []
+
     if ctx.fragments.java.run_android_lint:
         generated_source_jars = [
             output.generated_source_jar
@@ -170,7 +170,13 @@ def basic_java_library(
             compilation_info,
         )
         if lint_output:
-            output_groups["_validation"] = [lint_output]
+            validation_outputs.append(depset([lint_output]))
+
+    if neverlink:
+        validation_outputs.append(java_info.compilation_info.runtime_classpath)
+
+    if validation_outputs:
+        output_groups["_validation"] = depset(transitive = validation_outputs)
 
     target["InstrumentedFilesInfo"] = coverage_common.instrumented_files_info(
         ctx,

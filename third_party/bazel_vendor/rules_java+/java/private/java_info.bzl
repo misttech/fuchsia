@@ -183,7 +183,7 @@ def merge(
                 transitive = [p.transitive_native_libraries for p in providers],
             ),
         )
-    return get_internal_java_common().wrap_java_info(_new_javainfo(**result))
+    return _new_javainfo(**result)
 
 def to_java_binary_info(java_info, compilation_info):
     """Get a copy of the given JavaInfo with minimal info returned by a java_binary
@@ -246,6 +246,33 @@ def to_java_binary_info(java_info, compilation_info):
 
     # so that translation into native JavaInfo does not add JavaCompilationArgsProvider
     result.update(_is_binary = True)
+    return _new_javainfo(**result)
+
+def to_implicit_exportable(java_info, neverlink = False):
+    result = {
+        "transitive_runtime_jars": depset() if neverlink else java_info.transitive_runtime_jars,
+        "transitive_compile_time_jars": java_info.transitive_compile_time_jars,
+        "compile_jars": java_info.compile_jars,
+        "full_compile_jars": java_info.full_compile_jars,
+        "_transitive_full_compile_time_jars": java_info._transitive_full_compile_time_jars,
+        "_compile_time_java_dependencies": java_info._compile_time_java_dependencies,
+        "_neverlink": neverlink,
+        # unset defaults
+        "source_jars": [],
+        "outputs": _JavaRuleOutputJarsInfo(jars = [], jdeps = None, native_headers = None),
+        "annotation_processing": None,
+        "runtime_output_jars": [],
+        "transitive_source_jars": depset(),
+        "transitive_native_libraries": depset(),
+        "cc_link_params_info": CcInfo(),
+        "module_flags_info": _EMPTY_MODULE_FLAGS_INFO,
+        "plugins": _EMPTY_PLUGIN_DATA,
+        "api_generating_plugins": _EMPTY_PLUGIN_DATA,
+        "java_outputs": [],
+        "compilation_info": None,
+        "_constraints": [],
+        "_is_binary": getattr(java_info, "_is_binary", False),
+    }
     return _new_javainfo(**result)
 
 def _to_mutable_dict(java_info):
@@ -491,7 +518,7 @@ def java_info_for_compilation(
             compilation_info = None,
             annotation_processing = None,
         )
-    return get_internal_java_common().wrap_java_info(_new_javainfo(**result))
+    return _new_javainfo(**result)
 
 def _validate_provider_list(provider_list, what, expected_provider_type):
     get_internal_java_common().check_provider_instances(provider_list, what, expected_provider_type)
@@ -905,7 +932,8 @@ def _merge_plugin_data(datas):
 
 def _javaplugininfo_init(
         runtime_deps,
-        processor_class,
+        processor_class = None,
+        processor_classes = [],
         data = [],
         generates_api = False):
     """ Constructs JavaPluginInfo
@@ -915,6 +943,8 @@ def _javaplugininfo_init(
              processor.
         processor_class: (String) The fully qualified class name that the Java
              compiler uses as an entry point to the annotation processor.
+        processor_classes: ([String]) Fully qualified class names that the
+            Java compiler uses as an entry point to the annotation processor.
         data: (depset[File]) The files needed by this annotation
              processor during execution.
         generates_api: (boolean) Set to true when this annotation processor
@@ -932,7 +962,7 @@ def _javaplugininfo_init(
     java_infos = merge(runtime_deps)
     processor_data = data if type(data) == "depset" else depset(data)
     plugins = _create_plugin_data_info(
-        processor_classes = depset([processor_class]) if processor_class else depset(),
+        processor_classes = depset([processor_class] + processor_classes) if processor_class else depset(processor_classes),
         processor_jars = java_infos.transitive_runtime_jars,
         processor_data = processor_data,
     )

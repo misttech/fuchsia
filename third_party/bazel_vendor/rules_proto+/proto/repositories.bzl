@@ -23,10 +23,20 @@ def rules_proto_dependencies():
     """
     maybe(
         http_archive,
-        name = "bazel_skylib",
-        sha256 = "74d544d96f4a5bb630d465ca8bbcfe231e3594e5aae57e1edbf17a6eb3ca2506",
+        name = "com_google_protobuf",
+        sha256 = "6fbe2e6f703bcd3a246529c2cab586ca12a98c4e641f5f71d51fde09eb48e9e7",
+        strip_prefix = "protobuf-27.1",
         urls = [
-            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.3.0/bazel-skylib-1.3.0.tar.gz",
+            "https://github.com/protocolbuffers/protobuf/archive/v27.1.tar.gz",
+        ],
+    )
+    maybe(
+        http_archive,
+        name = "bazel_skylib",
+        sha256 = "d00f1389ee20b60018e92644e0948e16e350a7707219e7a390fb0a99b6ec9262",
+        urls = [
+            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.7.0/bazel-skylib-1.7.0.tar.gz",
+            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.0/bazel-skylib-1.7.0.tar.gz",
         ],
     )
     maybe(
@@ -41,19 +51,25 @@ def rules_proto_dependencies():
 
     maybe(
         http_archive,
-        name = "bazel_features",
-        sha256 = "0f23d75c7623d6dba1fd30513a94860447de87c8824570521fcc966eda3151c2",
-        strip_prefix = "bazel_features-1.4.1",
-        url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.4.1/bazel_features-v1.4.1.tar.gz",
+        name = "rules_cc",
+        urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.0.15/rules_cc-0.0.15.tar.gz"],
+        sha256 = "f4aadd8387f381033a9ad0500443a52a0cea5f8ad1ede4369d3c614eb7b2682e",
+        strip_prefix = "rules_cc-0.0.15",
     )
 
     maybe(
         http_archive,
-        name = "rules_cc",
-        sha256 = "4aeb102efbcfad509857d7cb9c5456731e8ce566bfbf2960286a2ec236796cc3",
-        strip_prefix = "rules_cc-2f8c04c04462ab83c545ab14c0da68c3b4c96191",
+        name = "rules_python",
+        sha256 = "ca77768989a7f311186a29747e3e95c936a41dffac779aff6b443db22290d913",
+        strip_prefix = "rules_python-0.36.0",
+        url = "https://github.com/bazelbuild/rules_python/releases/download/0.36.0/rules_python-0.36.0.tar.gz",
+    )
+
+    maybe(
+        http_archive,
+        name = "rules_java",
         urls = [
-            "https://mirror.bazel.build/github.com/bazelbuild/rules_cc/archive/2f8c04c04462ab83c545ab14c0da68c3b4c96191.tar.gz",
-            "https://github.com/bazelbuild/rules_cc/archive/2f8c04c04462ab83c545ab14c0da68c3b4c96191.tar.gz",
+            "https://github.com/bazelbuild/rules_java/releases/download/8.3.0/rules_java-8.3.0.tar.gz",
         ],
+        sha256 = "c7bd858a132c7b8febe040a90fa138c2e3e7f0bce47122ac2ad43906036a276c",
     )
