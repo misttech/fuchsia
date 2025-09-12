@@ -297,7 +297,6 @@ impl AdvertisingProxyInner {
                 instance.srp_server_handle_service_update_result(update_id, ot_error);
             } else {
                 // Still waiting for more callbacks
-                update.callback_count -= 1;
                 debug!(
                     tag = "srp_advertising_proxy";
                     "Waiting for {} more mDNS operations for update {:?}",
