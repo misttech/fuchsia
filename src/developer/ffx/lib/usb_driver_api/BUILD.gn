@@ -9,7 +9,6 @@ assert(is_host, "The USB driver API should only be built for the host OS")
 rustc_library("lib") {
   name = "usb_driver_api"
   edition = "2024"
-  with_unit_tests = true
 
   deps = [
     "//src/developer/ffx/fidl/usb:fuchsia.ffx.usb_rust_common",
@@ -22,13 +21,16 @@ rustc_library("lib") {
     "//third_party/rust_crates:tokio",
   ]
 
-  test_deps = [
-    "//src/developer/ffx/lib/usb_vsock_host",
-    "//src/developer/ffx/tools/usb_driver/impl:lib",
-    "//src/developer/lib/usb_vsock",
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:tempfile",
-  ]
+  if (!is_mac) {
+    with_unit_tests = true
+    test_deps = [
+      "//src/developer/ffx/lib/usb_vsock_host",
+      "//src/developer/ffx/tools/usb_driver/impl:lib",
+      "//src/developer/lib/usb_vsock",
+      "//src/lib/fuchsia",
+      "//third_party/rust_crates:tempfile",
+    ]
+  }
   sources = [ "src/lib.rs" ]
 }
 

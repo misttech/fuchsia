@@ -5,7 +5,6 @@
 use crate::overnet::host_pipe::{
     HostPipeChildBuilder, HostPipeChildDefaultBuilder, LogBuffer, spawn,
 };
-#[cfg(not(target_os = "macos"))]
 use crate::overnet::usb::spawn_usb;
 use crate::overnet::vsock::spawn_vsock;
 use crate::{FASTBOOT_MAX_AGE, MDNS_MAX_AGE, ZEDBOOT_MAX_AGE};
@@ -54,7 +53,6 @@ pub use self::update::{TargetUpdate, TargetUpdateBuilder};
 const DEFAULT_SSH_PORT: u16 = 22;
 const CONFIG_HOST_PIPE_SSH_TIMEOUT: &str = "daemon.host_pipe_ssh_timeout";
 const CONFIG_ENABLE_VSOCK: &str = "connectivity.enable_vsock";
-#[cfg(not(target_os = "macos"))]
 const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
 const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 
@@ -286,7 +284,6 @@ impl HostPipeState {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 static USB_DRIVER_CONNECTION: Mutex<Option<Arc<usb_driver_api::Driver>>> = Mutex::new(None);
 
 pub struct Target {
@@ -1337,14 +1334,11 @@ impl Target {
                             None
                         }
                     } else if let TargetAddr::UsbCtx(cid) = addr {
-                        #[cfg(not(target_os = "macos"))]
                         let ret = if let Some(host) = Target::get_usb_driver_connection() {
                             Some((cid, Some(host)))
                         } else {
                             None
                         };
-                        #[cfg(target_os = "macos")]
-                        let (ret, _) = (Option::<(u32, Option<()>)>::None, cid);
                         ret
                     } else {
                         None
@@ -1379,7 +1373,6 @@ impl Target {
 
                 if let Some(host) = host {
                     let _ = &host;
-                    #[cfg(not(target_os = "macos"))]
                     Box::pin(spawn_usb(host, cid, node)).await;
                 } else {
                     spawn_vsock(cid, node).await;

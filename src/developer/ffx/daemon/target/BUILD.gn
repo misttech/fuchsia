@@ -25,6 +25,7 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/usb_driver_api:lib",
     "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
     "//src/lib/async-utils",
     "//src/lib/fuchsia-async",
@@ -43,10 +44,6 @@ rustc_library("lib") {
     "//third_party/rust_crates:tokio",
     "//third_party/rust_crates:zerocopy",
   ]
-
-  if (!is_mac) {
-    deps += [ "//src/developer/ffx/lib/usb_driver_api:lib" ]
-  }
 
   test_deps = [
     "//sdk/fidl/fuchsia.overnet.protocol:fuchsia.overnet.protocol_rust",
