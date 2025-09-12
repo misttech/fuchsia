@@ -13,12 +13,15 @@ use ffx_fastboot_connection_factory::{
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{
-    Connection, DefaultTargetResolver, TargetConnection, TargetConnectionError, TargetConnector,
-    TargetResolver,
+    Connection, TargetConnection, TargetConnectionError, TargetConnector, TargetResolver,
 };
 use std::path::PathBuf;
 use std::time::Duration;
 use termion::{color, style};
+
+mod discovery_stream;
+
+pub use discovery_stream::DiagnosticsResolver;
 
 pub async fn run_diagnostics_with_handle<N>(
     env_context: &EnvironmentContext,
@@ -187,7 +190,7 @@ fn format_query(query: &TargetInfoQuery) -> ReadableQuery {
     ReadableQuery { kind, value }
 }
 
-pub struct ResolveTarget<'a, N, R = DefaultTargetResolver> {
+pub struct ResolveTarget<'a, N, R = DiagnosticsResolver> {
     ctx: &'a EnvironmentContext,
     _resolver: std::marker::PhantomData<R>,
     _notifier: std::marker::PhantomData<N>,

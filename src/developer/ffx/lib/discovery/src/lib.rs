@@ -35,10 +35,10 @@ use fidl_fuchsia_developer_ffx as ffx;
 
 mod cache;
 pub mod desc;
-mod emulator_watcher;
+pub mod emulator_watcher;
 pub mod error;
 pub mod events;
-mod fastboot_file_watcher;
+pub mod fastboot_file_watcher;
 mod merge;
 pub mod query;
 mod usb_vsock_watcher;
