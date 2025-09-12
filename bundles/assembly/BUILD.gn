@@ -130,30 +130,10 @@ assembly_input_bundle("embeddable") {
     "//src/power/shutdown-shim:package",
   ]
 
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/sys/root/root.cml" ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [
-            "//src/diagnostics/archivist/meta/archivist.bootstrap_shard.cml",
-            "//src/sys/bootstrap/meta/bootstrap.cml",
-          ]
-        },
-      ]
-    },
+  root_shards = [ "//src/sys/root/root.cml" ]
+  bootstrap_shards = [
+    "//src/diagnostics/archivist/meta/archivist.bootstrap_shard.cml",
+    "//src/sys/bootstrap/meta/bootstrap.cml",
   ]
 
   boot_driver_packages = [
@@ -173,18 +153,7 @@ assembly_input_bundle("component_manager") {
 # be used in memory-constrained builds.
 assembly_input_bundle("component_manager_with_tracing") {
   bootfs_files_labels = [ "//src/sys/component_manager:bootfs_with_tracing" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/sys/component_manager/meta/component_manager_root_trace.root_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  root_shards = [ "//src/sys/component_manager/meta/component_manager_root_trace.root_shard.cml" ]
 }
 
 # This AIB contains Component Manager linked with with tracing and the Heapdump
@@ -213,28 +182,17 @@ assembly_input_bundle("bootstrap") {
     bootfs_packages += [ "//src/sys/instrumentation_data_processor:instrumentation_data_processor_pkg" ]
   }
 
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [
-            "//src/bringup/bin/paver/meta/paver.bootstrap_shard.cml",
-            "//src/bringup/bin/sysinfo/meta/sysinfo.shard.cml",
-            "//src/sysmem/server/meta/sysmem.bootstrap_shard.cml",
-            "//src/bringup/bin/device-name-provider/meta/device-name-provider.bootstrap_shard.cml",
-            "//src/zircon/bin/role_manager/meta/role_manager.bootstrap_shard.cml",
-          ]
-
-          if (is_profile) {
-            shards += [ "//src/sys/instrumentation_data_processor/meta/instrumentation_data_processor.bootstrap_shard.cml" ]
-          }
-        },
-      ]
-    },
+  bootstrap_shards = [
+    "//src/bringup/bin/paver/meta/paver.bootstrap_shard.cml",
+    "//src/bringup/bin/sysinfo/meta/sysinfo.shard.cml",
+    "//src/sysmem/server/meta/sysmem.bootstrap_shard.cml",
+    "//src/bringup/bin/device-name-provider/meta/device-name-provider.bootstrap_shard.cml",
+    "//src/zircon/bin/role_manager/meta/role_manager.bootstrap_shard.cml",
   ]
+
+  if (is_profile) {
+    bootstrap_shards += [ "//src/sys/instrumentation_data_processor/meta/instrumentation_data_processor.bootstrap_shard.cml" ]
+  }
 
   boot_driver_packages = [
     {
@@ -417,18 +375,7 @@ assembly_input_bundle("embeddable_userdebug") {
     # shell
     "//zircon/third_party/uapp/dash:bootfs",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "toolbox"
-      components = [
-        {
-          component_name = "toolbox"
-          shards = [ "//src/developer/toolbox/meta/toolbox.cml" ]
-        },
-      ]
-    },
-  ]
+  toolbox_shards = [ "//src/developer/toolbox/meta/toolbox.cml" ]
 }
 
 # The most minimal AIB that is included in userdebug and eng assembled systems
@@ -571,17 +518,7 @@ assembly_input_bundle("fake_battery_driver") {
 assembly_input_bundle("fake_power_sensor") {
   base_packages =
       [ "//src/power/testing/fake-powersensor:fake_power_sensor_package" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/power/testing/fake-powersensor/meta/fake-power-sensor.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/power/testing/fake-powersensor/meta/fake-power-sensor.core_shard.cml" ]
 }
 
 # AIB for the sdhci driver
@@ -621,18 +558,7 @@ assembly_input_bundle("trusted_execution_environment") {
     "//src/tee/binder-proxy",
     "//src/tee",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/tee/meta/tee.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/tee/meta/tee.bootstrap_shard.cml" ]
 }
 
 # The most minimal AIB that is included in eng assembled systems that are meant
@@ -694,33 +620,11 @@ assembly_input_bundle("ufsutil") {
 #
 assembly_input_bundle("kernel_debug_broker_userdebug") {
   bootfs_packages = [ "//src/bringup/bin/kernel_debug_broker:pkg" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/bringup/bin/kernel_debug_broker/meta/kernel_debug_broker_userdebug.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/bringup/bin/kernel_debug_broker/meta/kernel_debug_broker_userdebug.bootstrap_shard.cml" ]
 }
 
 assembly_input_bundle("kernel_debug_broker_user") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/bringup/bin/kernel_debug_broker/meta/kernel_debug_broker_user.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/bringup/bin/kernel_debug_broker/meta/kernel_debug_broker_user.bootstrap_shard.cml" ]
 }
 
 # Legacy AIB for migration purposes.
@@ -736,37 +640,15 @@ assembly_input_bundle("console") {
     "//src/bringup/bin/console:package",
     "//src/bringup/bin/console-launcher:package",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/bringup/bin/console/meta/console.shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/bringup/bin/console/meta/console.shard.cml" ]
 }
 
 # The ptysvc AIB is included by all eng and userdebug products.
 #
 assembly_input_bundle("ptysvc") {
   bootfs_packages = [ "//src/bringup/bin/ptysvc:package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards =
-              [ "//src/bringup/bin/ptysvc/meta/ptysvc.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards =
+      [ "//src/bringup/bin/ptysvc/meta/ptysvc.bootstrap_shard.cml" ]
 }
 
 # The virtcon AIB is included by all eng and userdebug products, and can be
@@ -787,37 +669,15 @@ assembly_input_bundle("virtcon") {
   ]
 
   bootfs_packages = [ "//src/bringup/bin/virtcon:package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards =
-              [ "//src/bringup/bin/virtcon/meta/virtual-console.shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards =
+      [ "//src/bringup/bin/virtcon/meta/virtual-console.shard.cml" ]
 }
 
 # The netsvc AIB is included by all eng products.
 #
 assembly_input_bundle("netsvc") {
   bootfs_packages = [ "//src/bringup/bin/netsvc:package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/bringup/bin/netsvc/meta/netsvc.shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/bringup/bin/netsvc/meta/netsvc.shard.cml" ]
 }
 
 # All eng build type products will include this Assembly Input Bundle.
@@ -911,17 +771,7 @@ assembly_input_bundle("sl4f") {
     },
   ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/testing/sl4f/meta/sl4f_assembly.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/testing/sl4f/meta/sl4f_assembly.core_shard.cml" ]
 }
 
 # Includes the bin/clock and clkctl developer tools
@@ -981,46 +831,24 @@ assembly_input_bundle("core_realm") {
     },
   ]
 
+  root_shards = [ "//src/sys/core/meta/core.root_shard.cml" ]
+  bootstrap_shards = [
+    "//src/devices/bin/driver_framework/meta/base_drivers.bootstrap_shard.cml",
+    "//src/sys/pkg/bin/pkg-cache/meta/pkg-cache.bootstrap_shard.cml",
+  ]
+  core_shards = [
+    "//src/sys/core/meta/core.cml",
+
+    # TODO:  These shards should be folded into the above
+    # `core.cml` file itself as they are never omitted from it.
+    "//src/developer/build_info/meta/build_info.core_shard.cml",
+    "//src/developer/forensics/forensics.core_shard.cml",
+    "//sdk/lib/inspect/offer.shard.cml",
+  ]
+
   compiled_packages = [
     {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/sys/core/meta/core.root_shard.cml" ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [
-            "//src/devices/bin/driver_framework/meta/base_drivers.bootstrap_shard.cml",
-            "//src/sys/pkg/bin/pkg-cache/meta/pkg-cache.bootstrap_shard.cml",
-          ]
-        },
-      ]
-    },
-    {
       name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/sys/core/meta/core.cml",
-
-            # TODO:  These shards should be folded into the above
-            # `core.cml` file itself as they are never omitted from it.
-            "//src/developer/build_info/meta/build_info.core_shard.cml",
-            "//src/developer/forensics/forensics.core_shard.cml",
-            "//sdk/lib/inspect/offer.shard.cml",
-          ]
-        },
-      ]
 
       # These are not included into the core.cml directly, but may be included
       # via other shards.
@@ -1074,27 +902,8 @@ assembly_input_bundle("core_realm") {
 # `/`.
 assembly_input_bundle("heapdump_global_collector") {
   base_packages = [ "//src/performance/memory/heapdump/collector" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/sys/core/meta/heapdump.root_shard.cml" ]
-        },
-      ]
-    },
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/sys/core/meta/heapdump.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  root_shards = [ "//src/sys/core/meta/heapdump.root_shard.cml" ]
+  core_shards = [ "//src/sys/core/meta/heapdump.core_shard.cml" ]
 }
 
 # core_realm_networking
@@ -1126,36 +935,14 @@ assembly_input_bundle("core_realm_networking") {
 # If config allows, timekeeper will be given some persistent storage to use.
 # Should only be allowed in eng builds.
 assembly_input_bundle("timekeeper_persistence") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/sys/time/timekeeper/timekeeper-persistence.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/sys/time/timekeeper/timekeeper-persistence.core_shard.cml" ]
 }
 
 # The bundle supporting wake alarms through Timekeeper.
 assembly_input_bundle("timekeeper_wake_alarms") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/sys/time/timekeeper/timekeeper-wake-alarms.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/sys/time/timekeeper/timekeeper-wake-alarms.core_shard.cml" ]
 }
 
 # Network realm definition.
@@ -1541,31 +1328,20 @@ assembly_input_bundle("core_realm_eng") {
     }
   }
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            # The process_resolver core shard (either the base-resolver or
-            # pkg-resolver variant) should only be present in
-            # the `core_realm_development_access` AIB, but it's required
-            # here to avoid a userdebug and eng variant of that AIB.
-            #
-            # eng uses the pkg-resolver, as opposed to the base-resolver,
-            # to support ephemeral resolution of shell packages.
-            "//src/sys/process-resolver/meta/process_resolver.pkg-resolver.core_shard.cml",
-
-            "//src/sys/core/meta/core-env-full-resolver.core_shard.cml",
-            "//src/sys/core/meta/lavapipe.core_shard.cml",
-            "//src/sys/core/meta/unrestricted-storage.core_shard.cml",
-            "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.core_shard.cml",
-            "//src/storage/fs_realm/meta/fs_realm.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    # The process_resolver core shard (either the base-resolver or
+    # pkg-resolver variant) should only be present in
+    # the `core_realm_development_access` AIB, but it's required
+    # here to avoid a userdebug and eng variant of that AIB.
+    #
+    # eng uses the pkg-resolver, as opposed to the base-resolver,
+    # to support ephemeral resolution of shell packages.
+    "//src/sys/process-resolver/meta/process_resolver.pkg-resolver.core_shard.cml",
+    "//src/sys/core/meta/core-env-full-resolver.core_shard.cml",
+    "//src/sys/core/meta/lavapipe.core_shard.cml",
+    "//src/sys/core/meta/unrestricted-storage.core_shard.cml",
+    "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.core_shard.cml",
+    "//src/storage/fs_realm/meta/fs_realm.core_shard.cml",
   ]
 }
 
@@ -1576,36 +1352,26 @@ assembly_input_bundle("core_realm_eng") {
 #
 assembly_input_bundle("core_realm_user_and_userdebug") {
   base_packages = [ "//src/sys/pkg/bin/pkg-resolver" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            # user and userdebug only have the base resolver, not the full
-            # resolver.
-            "//src/sys/core/meta/core-env-base-resolver.core_shard.cml",
+  core_shards = [
+    # user and userdebug only have the base resolver, not the full
+    # resolver.
+    "//src/sys/core/meta/core-env-base-resolver.core_shard.cml",
 
-            # The process_resolver core shard (either the base-resolver or
-            # pkg-resolver variant) should only be present in
-            # the `core_realm_development_access` AIB, but it's required
-            # here to avoid a userdebug and eng variant of that AIB.
-            #
-            # user and userdebug only have the base-resolver, not the
-            # pkg-resolver.
-            "//src/sys/process-resolver/meta/process_resolver.base-resolver.core_shard.cml",
+    # The process_resolver core shard (either the base-resolver or
+    # pkg-resolver variant) should only be present in
+    # the `core_realm_development_access` AIB, but it's required
+    # here to avoid a userdebug and eng variant of that AIB.
+    #
+    # user and userdebug only have the base-resolver, not the
+    # pkg-resolver.
+    "//src/sys/process-resolver/meta/process_resolver.base-resolver.core_shard.cml",
 
-            # Lavapipe is only enabled on eng builds.
-            "//src/sys/core/meta/lavapipe-disabled.core_shard.cml",
+    # Lavapipe is only enabled on eng builds.
+    "//src/sys/core/meta/lavapipe-disabled.core_shard.cml",
 
-            # user and userdebug restrict access to the Storage capability
-            # to registered component ids.
-            "//src/sys/core/meta/restricted-storage.core_shard.cml",
-          ]
-        },
-      ]
-    },
+    # user and userdebug restrict access to the Storage capability
+    # to registered component ids.
+    "//src/sys/core/meta/restricted-storage.core_shard.cml",
   ]
 }
 
@@ -1632,35 +1398,16 @@ assembly_input_bundle("core_realm_development_access") {
     # log_listener shell tool.
     "//src/diagnostics/log_listener:log_listener_shell_pkg",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/developer/debug/debug_agent/meta/debug_agent.core_shard.cml",
-            "//src/developer/remote-control/meta/laboratory.core_shard.cml",
-            "//src/developer/remote-control/meta/remote-control.core_shard.cml",
-            "//src/developer/sshd-host/meta/sshd-host.core_shard.cml",
-            "//src/developer/toolbox/meta/toolbox.core_shard.cml",
-          ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "toolbox"
-      components = [
-        {
-          component_name = "toolbox"
-          shards = [
-            "//src/developer/remote-control/meta/remote-control.toolbox_shard.cml",
-            "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher_from_core.toolbox_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/developer/debug/debug_agent/meta/debug_agent.core_shard.cml",
+    "//src/developer/remote-control/meta/laboratory.core_shard.cml",
+    "//src/developer/remote-control/meta/remote-control.core_shard.cml",
+    "//src/developer/sshd-host/meta/sshd-host.core_shard.cml",
+    "//src/developer/toolbox/meta/toolbox.core_shard.cml",
+  ]
+  toolbox_shards = [
+    "//src/developer/remote-control/meta/remote-control.toolbox_shard.cml",
+    "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher_from_core.toolbox_shard.cml",
   ]
   shell_commands = [
     {
@@ -1703,44 +1450,15 @@ assembly_input_bundle("bootstrap_realm_development_access") {
     "//src/sys/process-resolver",
     "//src/sys/tools/debug-dash-launcher",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [
-            "//src/sys/process-resolver/meta/process_resolver.bootstrap_shard.cml",
-            "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.bootstrap_shard.cml",
-          ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [
-            "//src/sys/process-resolver/meta/process_resolver.root_shard.cml",
-            "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.root_shard.cml",
-          ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "toolbox"
-      components = [
-        {
-          component_name = "toolbox"
-          shards = [ "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.toolbox_shard.cml" ]
-        },
-      ]
-    },
+  bootstrap_shards = [
+    "//src/sys/process-resolver/meta/process_resolver.bootstrap_shard.cml",
+    "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.bootstrap_shard.cml",
   ]
+  root_shards = [
+    "//src/sys/process-resolver/meta/process_resolver.root_shard.cml",
+    "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.root_shard.cml",
+  ]
+  toolbox_shards = [ "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.toolbox_shard.cml" ]
 }
 
 assembly_input_bundle("bootstrap_realm_vsock_development_access") {
@@ -1755,31 +1473,11 @@ assembly_input_bundle("bootstrap_realm_vsock_development_access") {
     # ffx's remote-control (remote access) components:
     "//src/developer/remote-control:remote-control-package",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [
-            "//src/developer/remote-control/meta/remote-control.bootstrap_shard.cml",
-            "//src/developer/vsock-sshd-host/meta/vsock-sshd-host.bootstrap_shard.cml",
-          ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "toolbox"
-      components = [
-        {
-          component_name = "toolbox"
-          shards = [ "//src/developer/remote-control/meta/remote-control.vsock_toolbox_shard.cml" ]
-        },
-      ]
-    },
+  bootstrap_shards = [
+    "//src/developer/remote-control/meta/remote-control.bootstrap_shard.cml",
+    "//src/developer/vsock-sshd-host/meta/vsock-sshd-host.bootstrap_shard.cml",
   ]
+  toolbox_shards = [ "//src/developer/remote-control/meta/remote-control.vsock_toolbox_shard.cml" ]
 }
 
 assembly_input_bundle("mdns") {
@@ -1828,33 +1526,13 @@ assembly_input_bundle("development_support_tools_connectivity_thread") {
 assembly_input_bundle("radar_proxy_with_injector") {
   base_packages =
       [ "//src/devices/radar/bin/radar-proxy:radar-proxy-with-injector" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/devices/radar/bin/radar-proxy/meta/radar-proxy-with-injector.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/devices/radar/bin/radar-proxy/meta/radar-proxy-with-injector.core_shard.cml" ]
 }
 
 assembly_input_bundle("radar_proxy_without_injector") {
   base_packages =
       [ "//src/devices/radar/bin/radar-proxy:radar-proxy-without-injector" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/devices/radar/bin/radar-proxy/meta/radar-proxy-without-injector.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/devices/radar/bin/radar-proxy/meta/radar-proxy-without-injector.core_shard.cml" ]
 }
 
 assembly_input_bundle("feedback_remote_device_id_provider") {
@@ -1892,17 +1570,7 @@ assembly_input_bundle("cobalt_default_config") {
 
 assembly_input_bundle("factory_reset_trigger") {
   base_packages = [ "//src/recovery/factory-reset-trigger" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/recovery/factory-reset-trigger/meta/factory-reset-trigger.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/recovery/factory-reset-trigger/meta/factory-reset-trigger.core_shard.cml" ]
 }
 
 ########
@@ -1999,24 +1667,17 @@ assembly_input_bundle("common_standard") {
     },
   ]
 
+  core_shards = [
+    "//src/diagnostics/realm/meta/diagnostics.core_shard.cml",
+    "//src/diagnostics/persistence/meta/diagnostics-persistence.core_shard.cml",
+    "//src/diagnostics/sampler/meta/sampler.core_shard.cml",
+    "//src/connectivity/network/meta/persistence.core_shard.cml",
+    "//src/intl/tzdata_provider/meta/tzdata_provider.core_shard.cml",
+    "//src/sys/pkg/bin/system-updater/meta/system_updater.core_shard.cml",
+    "//src/developer/memory/pressure_signaler/meta/memory_pressure_signaler.core_shard.cml",
+  ]
+
   compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/diagnostics/realm/meta/diagnostics.core_shard.cml",
-            "//src/diagnostics/persistence/meta/diagnostics-persistence.core_shard.cml",
-            "//src/diagnostics/sampler/meta/sampler.core_shard.cml",
-            "//src/connectivity/network/meta/persistence.core_shard.cml",
-            "//src/intl/tzdata_provider/meta/tzdata_provider.core_shard.cml",
-            "//src/sys/pkg/bin/system-updater/meta/system_updater.core_shard.cml",
-            "//src/developer/memory/pressure_signaler/meta/memory_pressure_signaler.core_shard.cml",
-          ]
-        },
-      ]
-    },
     {
       name = "diagnostics"
       components = [
@@ -2082,20 +1743,10 @@ assembly_input_bundle("standard_eng") {
     "//src/devices/bin/driver_playground:pkg",
     "//src/power/metrics-logger:metrics-logger-pkg",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/developer/process_explorer/meta/process_explorer.core_shard.cml",
-            "//src/devices/bin/driver_playground/meta/driver_playground.core_shard.cml",
-            "//src/power/metrics-logger/meta/metrics-logger.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/developer/process_explorer/meta/process_explorer.core_shard.cml",
+    "//src/devices/bin/driver_playground/meta/driver_playground.core_shard.cml",
+    "//src/power/metrics-logger/meta/metrics-logger.core_shard.cml",
   ]
 }
 
@@ -2118,6 +1769,9 @@ assembly_input_bundle("standard_userdebug_and_eng") {
       components = [ "update" ]
     },
   ]
+  root_shards =
+      [ "//src/diagnostics/detect/meta/detect_userdebug.root_shard.cml" ]
+  core_shards = [ "//src/diagnostics/detect/meta/detect.core_shard.cml" ]
   compiled_packages = [
     {
       name = "diagnostics"
@@ -2125,27 +1779,6 @@ assembly_input_bundle("standard_userdebug_and_eng") {
         {
           component_name = "diagnostics"
           shards = [ "//src/diagnostics/detect/meta/detect.realm_shard.cml" ]
-        },
-      ]
-    },
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/diagnostics/detect/meta/detect.core_shard.cml" ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [
-            "//src/diagnostics/detect/meta/detect_userdebug.root_shard.cml",
-          ]
         },
       ]
     },
@@ -2159,19 +1792,8 @@ assembly_input_bundle("memory_monitor") {
     "//src/developer/memory/monitor:monitor_without_memory_sampler",
   ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml" ]
 }
 
 # Assembly support for memory_monitor (v1) with memory profiling enabled.
@@ -2181,20 +1803,10 @@ assembly_input_bundle("memory_monitor_with_memory_sampler") {
     "//src/developer/memory/monitor:monitor_with_memory_sampler",
     "//src/performance/memory/sampler:memory_sampler",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml",
-            "//src/developer/memory/monitor/meta/memory_monitor_with_memory_sampler.core_shard.cml",
-            "//src/performance/memory/sampler/meta/memory_sampler.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml",
+    "//src/developer/memory/monitor/meta/memory_monitor_with_memory_sampler.core_shard.cml",
+    "//src/performance/memory/sampler/meta/memory_sampler.core_shard.cml",
   ]
 }
 
@@ -2216,33 +1828,11 @@ assembly_input_bundle("memory_monitor_critical_reports") {
 assembly_input_bundle("memory_monitor2") {
   base_packages = [ "//src/performance/memory/attribution/monitor:monitor" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/performance/memory/attribution/monitor/meta/memory_monitor2.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/performance/memory/attribution/monitor/meta/memory_monitor2.core_shard.cml" ]
 }
 
 assembly_input_bundle("detect_user") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards =
-              [ "//src/diagnostics/detect/meta/detect_user.root_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  root_shards = [ "//src/diagnostics/detect/meta/detect_user.root_shard.cml" ]
 }
 
 ########
@@ -2265,17 +1855,7 @@ assembly_input_bundle("detect_user") {
 assembly_input_bundle("bluetooth_a2dp") {
   flexible_packages =
       [ "//src/connectivity/bluetooth/profiles/bt-a2dp:without-config" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-eager.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-eager.core_shard.cml" ]
 }
 
 # For configurations without A2DP support to enable A2DP testing.
@@ -2284,19 +1864,9 @@ assembly_input_bundle("bluetooth_a2dp") {
 # build-types: eng
 #
 assembly_input_bundle("bluetooth_a2dp_with_consumer") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-eager-with-audio-consumer.core_shard.cml",
-            "//src/media/audio/consumer/meta/audio_consumer.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-eager-with-audio-consumer.core_shard.cml",
+    "//src/media/audio/consumer/meta/audio_consumer.core_shard.cml",
   ]
 }
 
@@ -2310,17 +1880,7 @@ assembly_input_bundle("bluetooth_avrcp") {
     "//src/connectivity/bluetooth/profiles/bt-avrcp",
     "//src/connectivity/bluetooth/profiles/bt-avrcp-target",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/profiles/bt-avrcp/meta/bt-avrcp.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/profiles/bt-avrcp/meta/bt-avrcp.core_shard.cml" ]
 }
 
 # Bluetooth core support
@@ -2334,16 +1894,8 @@ assembly_input_bundle("bluetooth_core") {
     "//src/connectivity/bluetooth/core/bt-init",
     "//src/connectivity/bluetooth/profiles/bt-rfcomm",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/core/bt-init/meta/bt-init.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/connectivity/bluetooth/core/bt-init/meta/bt-init.core_shard.cml",
   ]
 }
 
@@ -2355,17 +1907,7 @@ assembly_input_bundle("bluetooth_core") {
 assembly_input_bundle("bluetooth_device_id") {
   flexible_packages =
       [ "//src/connectivity/bluetooth/profiles/bt-device-id:without-config" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/profiles/bt-device-id/meta/bt-device-id.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/profiles/bt-device-id/meta/bt-device-id.core_shard.cml" ]
 }
 
 # Bluetooth profile support: HFP - Audio Gateway
@@ -2377,17 +1919,7 @@ assembly_input_bundle("bluetooth_hfp_ag") {
   flexible_packages = [
     "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:without-config",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway/meta/bt-hfp-audio-gateway.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway/meta/bt-hfp-audio-gateway.core_shard.cml" ]
 }
 
 # Bluetooth profile support: HFP - Hands Free
@@ -2400,17 +1932,7 @@ assembly_input_bundle("bluetooth_hfp_hf") {
   flexible_packages = [
     "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:without-config",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free/meta/bt-hfp-hands-free.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free/meta/bt-hfp-hands-free.core_shard.cml" ]
 }
 
 # Bluetooth profile support: MAP - MCE
@@ -2420,17 +1942,7 @@ assembly_input_bundle("bluetooth_hfp_hf") {
 #
 assembly_input_bundle("bluetooth_map_mce") {
   flexible_packages = [ "//src/connectivity/bluetooth/profiles/bt-map-mce" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/profiles/bt-map-mce/meta/bt-map-mce.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/profiles/bt-map-mce/meta/bt-map-mce.core_shard.cml" ]
 }
 
 # Bluetooth snoop support
@@ -2442,16 +1954,8 @@ assembly_input_bundle("bluetooth_map_mce") {
 #
 assembly_input_bundle("bluetooth_snoop_lazy") {
   base_packages = [ "//src/connectivity/bluetooth/tools/bt-snoop" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/tools/bt-snoop/meta/bt-snoop.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/connectivity/bluetooth/tools/bt-snoop/meta/bt-snoop.core_shard.cml",
   ]
 }
 
@@ -2464,17 +1968,7 @@ assembly_input_bundle("bluetooth_snoop_lazy") {
 #
 assembly_input_bundle("bluetooth_snoop_eager") {
   base_packages = [ "//src/connectivity/bluetooth/tools/bt-snoop" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/tools/bt-snoop/meta/bt-snoop-eager.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/tools/bt-snoop/meta/bt-snoop-eager.core_shard.cml" ]
 }
 
 # Basic Bluetooth workflows for automated testing and tooling.
@@ -2483,17 +1977,7 @@ assembly_input_bundle("bluetooth_snoop_eager") {
 # build-types: eng
 #
 assembly_input_bundle("bluetooth_affordances") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/bluetooth/testing/bt-affordances/meta/bt-affordances-server.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/bluetooth/testing/bt-affordances/meta/bt-affordances-server.core_shard.cml" ]
 }
 
 # Support for Pandora Bluetooth test interface server and virtual HCI with Rootcanal.
@@ -2502,19 +1986,9 @@ assembly_input_bundle("bluetooth_affordances") {
 # build-types: eng
 #
 assembly_input_bundle("bluetooth_pandora") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/connectivity/bluetooth/testing/pandora/bt-pandora-server/meta/bt-pandora-server.core_shard.cml",
-            "//src/connectivity/bluetooth/tools/bt-rootcanal/meta/bt-rootcanal.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/connectivity/bluetooth/testing/pandora/bt-pandora-server/meta/bt-pandora-server.core_shard.cml",
+    "//src/connectivity/bluetooth/tools/bt-rootcanal/meta/bt-rootcanal.core_shard.cml",
   ]
 }
 
@@ -2537,18 +2011,7 @@ assembly_input_bundle("driver_framework_common") {
     "//src/devices/bin/driver_manager/devfs:package",
     "//src/devices/bin/driver-index:package",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/devices/bin/driver_framework/meta/driver_framework.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/devices/bin/driver_framework/meta/driver_framework.bootstrap_shard.cml" ]
 }
 
 # Driver Framework Support
@@ -2574,18 +2037,8 @@ assembly_input_bundle("driver_framework_with_heapdump") {
     "//src/devices/bin/driver_manager:package_with_heapdump",
     "//src/devices/bin/driver-host:package_with_heapdump",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/devices/bin/driver_framework/meta/heapdump.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards =
+      [ "//src/devices/bin/driver_framework/meta/heapdump.bootstrap_shard.cml" ]
 }
 
 # Full Package Driver Support
@@ -2594,17 +2047,8 @@ assembly_input_bundle("driver_framework_with_heapdump") {
 # build-types: eng
 #
 assembly_input_bundle("full_drivers") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/devices/bin/driver_framework/meta/full_drivers.bootstrap_shard.cml" ]
-        },
-      ]
-    },
+  bootstrap_shards = [
+    "//src/devices/bin/driver_framework/meta/full_drivers.bootstrap_shard.cml",
   ]
 }
 
@@ -2616,27 +2060,8 @@ assembly_input_bundle("full_drivers") {
 #
 assembly_input_bundle("starnix_support") {
   flexible_packages = [ "//src/starnix/runner:starnix_package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/starnix/runner/meta/starnix_runner.root_shard.cml" ]
-        },
-      ]
-    },
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/starnix/runner/meta/starnix_runner.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  root_shards = [ "//src/starnix/runner/meta/starnix_runner.root_shard.cml" ]
+  core_shards = [ "//src/starnix/runner/meta/starnix_runner.core_shard.cml" ]
   bootfs_files_labels = [ "//src/starnix/config:bootfs" ]
 }
 
@@ -2663,18 +2088,8 @@ assembly_input_bundle("adb_support") {
 #
 assembly_input_bundle("fastbootd_usb_support") {
   base_packages = [ "//src/firmware/fastboot-usb:package" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/firmware/fastboot-usb/meta/fastboot_usb.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/firmware/fastboot-usb/meta/fastboot_usb.core_shard.cml" ]
   base_driver_packages = [
     {
       package_target = "//src/firmware/drivers/usb-fastboot-function:pkg"
@@ -2695,20 +2110,10 @@ assembly_input_bundle("nanohub_support") {
     "//src/starnix/modules/nanohub:google_nanohub",
     "//src/starnix/modules/nanohub:sockettunnel",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/starnix/modules/nanohub/meta/display.core_shard.cml",
-            "//src/starnix/modules/nanohub/meta/nanohub.core_shard.cml",
-            "//src/starnix/modules/nanohub/meta/sockettunnel.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/starnix/modules/nanohub/meta/display.core_shard.cml",
+    "//src/starnix/modules/nanohub/meta/nanohub.core_shard.cml",
+    "//src/starnix/modules/nanohub/meta/sockettunnel.core_shard.cml",
   ]
 }
 
@@ -2720,18 +2125,7 @@ assembly_input_bundle("nanohub_support") {
 #
 assembly_input_bundle("fastrpc_support") {
   base_packages = [ "//src/starnix/modules/fastrpc:google_fastrpc" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/starnix/modules/fastrpc/meta/fastrpc.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/starnix/modules/fastrpc/meta/fastrpc.core_shard.cml" ]
 }
 
 # hvdcp_opti support. Does not include driver. Driver should be included separately.
@@ -2742,19 +2136,8 @@ assembly_input_bundle("fastrpc_support") {
 #
 assembly_input_bundle("hvdcp_opti_support") {
   base_packages = [ "//src/starnix/modules/hvdcp_opti:hvdcp_opti" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/starnix/modules/hvdcp_opti/meta/hvdcp_opti.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/starnix/modules/hvdcp_opti/meta/hvdcp_opti.core_shard.cml" ]
 }
 
 # This AIB enables minimal testing support for bootstrap environments, and is meant to be used with
@@ -2772,20 +2155,9 @@ assembly_input_bundle("testing_support_bootstrap") {
     # are in the same package and loaded using relative urls.
     "//src/sys/test_manager:pkg_for_bootstrap",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [
-            "//src/sys/test_manager/meta/test_manager.bootstrap_shard.cml",
-            "//src/sys/testing/meta/test_realm.bootstrap_shard.cml",
-          ]
-        },
-      ]
-    },
+  bootstrap_shards = [
+    "//src/sys/test_manager/meta/test_manager.bootstrap_shard.cml",
+    "//src/sys/testing/meta/test_realm.bootstrap_shard.cml",
   ]
 
   shell_commands = [
@@ -2800,19 +2172,8 @@ assembly_input_bundle("testing_support_bootstrap") {
 # This AIB enables tracing support for userdebug configs
 assembly_input_bundle("tracing") {
   base_packages = [ "//src/performance/trace_manager" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/performance/trace_manager/meta/trace_manager.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/performance/trace_manager/meta/trace_manager.core_shard.cml" ]
 }
 
 # This AIB enables testing support, and is meant to be used with either the
@@ -2856,31 +2217,12 @@ assembly_input_bundle("testing_support") {
     # CPU profiler
     "//src/performance/experimental/profiler",
   ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/sys/testing/meta/test_realm.root_shard.cml" ]
-        },
-      ]
-    },
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/performance/experimental/profiler/meta/profiler.core_shard.cml",
-            "//src/sys/test_manager/meta/test_manager.core_shard.cml",
-            "//src/sys/fuzzing/meta/fuzzing.core-shard.cml",
-            "//src/sys/testing/meta/test_realm.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  root_shards = [ "//src/sys/testing/meta/test_realm.root_shard.cml" ]
+  core_shards = [
+    "//src/performance/experimental/profiler/meta/profiler.core_shard.cml",
+    "//src/sys/test_manager/meta/test_manager.core_shard.cml",
+    "//src/sys/fuzzing/meta/fuzzing.core-shard.cml",
+    "//src/sys/testing/meta/test_realm.core_shard.cml",
   ]
   shell_commands = [
     {
@@ -2901,33 +2243,13 @@ assembly_input_bundle("camera") {
     "//src/camera/bin/device:camera_device",
     "//src/camera/bin/device_watcher:camera_device_watcher",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/camera/meta/camera.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/camera/meta/camera.core_shard.cml" ]
   memory_buckets = [ "//src/developer/memory/buckets/camera_buckets.json5" ]
 }
 
 assembly_input_bundle("factory_data") {
   flexible_packages = [ "//src/factory/factory_store_providers" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/factory/factory_store_providers/meta/factory_store_providers.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/factory/factory_store_providers/meta/factory_store_providers.core_shard.cml" ]
 }
 
 # AIB containing bootfs resources needed by all fshost variants
@@ -2940,17 +2262,8 @@ assembly_input_bundle("factory_data") {
 # valid build-types: all
 #
 assembly_input_bundle("fshost_common") {
+  bootstrap_shards = [ "//src/storage/fshost/meta/fshost.bootstrap_shard.cml" ]
   compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/storage/fshost/meta/fshost.bootstrap_shard.cml" ]
-        },
-      ]
-    },
     {
       bootfs_package = true
       name = "fshost"
@@ -3527,33 +2840,14 @@ assembly_input_bundle("fshost_fvm_f2fs") {
 #
 assembly_input_bundle("storage_cache_manager") {
   base_packages = [ "//src/sys/cache_manager" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/sys/cache_manager/meta/cache_manager.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/sys/cache_manager/meta/cache_manager.core_shard.cml" ]
 }
 
 assembly_input_bundle("system_update_checker") {
   testonly = true
   base_packages = [ "//src/sys/pkg/bin/system-update-checker" ]
+  core_shards = [ "//src/sys/pkg/bin/system-update-checker/meta/system_update_checker.core_shard.cml" ]
   compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/sys/pkg/bin/system-update-checker/meta/system_update_checker.core_shard.cml" ]
-        },
-      ]
-    },
     {
       name = "system-update-realm"
       components = [
@@ -3568,16 +2862,10 @@ assembly_input_bundle("system_update_checker") {
 
 assembly_input_bundle("omaha_client") {
   base_packages = [ "//src/sys/pkg/bin/omaha-client:omaha-client-unconfigured" ]
+  core_shards = [
+    "//src/sys/pkg/bin/omaha-client/meta/omaha_client_service.core_shard.cml",
+  ]
   compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/sys/pkg/bin/omaha-client/meta/omaha_client_service.core_shard.cml" ]
-        },
-      ]
-    },
     {
       name = "system-update-realm"
       components = [
@@ -3647,18 +2935,9 @@ assembly_input_bundle("no_update_checker") {
 # Include the system-update-configurator component as part of the SWD subsystem.
 assembly_input_bundle("system_update_configurator") {
   base_packages = [ "//src/sys/pkg/bin/system-update-configurator" ]
+  core_shards =
+      [ "//src/sys/pkg/bin/system-update-configurator/meta/core-shard.cml" ]
   compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/sys/pkg/bin/system-update-configurator/meta/core-shard.cml",
-          ]
-        },
-      ]
-    },
     {
       name = "system-update-realm"
       components = [
@@ -3692,22 +2971,12 @@ assembly_input_bundle("virtualization_support") {
         components = [ "guest" ]
       },
     ]
-    compiled_packages = [
-      {
-        name = "core"
-        components = [
-          {
-            component_name = "core"
-            shards = [
-              "//src/connectivity/network/meta/virtualization.core_shard.cml",
-              "//src/virtualization/bin/vmm_launcher/meta/vmm_launcher.core_shard.cml",
-              "//src/virtualization/bin/guest_manager/meta/debian_guest_manager.core_shard.cml",
-              "//src/virtualization/bin/guest_manager/meta/termina_guest_manager.core_shard.cml",
-              "//src/virtualization/bin/guest_manager/meta/zircon_guest_manager.core_shard.cml",
-            ]
-          },
-        ]
-      },
+    core_shards = [
+      "//src/connectivity/network/meta/virtualization.core_shard.cml",
+      "//src/virtualization/bin/vmm_launcher/meta/vmm_launcher.core_shard.cml",
+      "//src/virtualization/bin/guest_manager/meta/debian_guest_manager.core_shard.cml",
+      "//src/virtualization/bin/guest_manager/meta/termina_guest_manager.core_shard.cml",
+      "//src/virtualization/bin/guest_manager/meta/zircon_guest_manager.core_shard.cml",
     ]
   }
 }
@@ -3720,34 +2989,14 @@ assembly_input_bundle("virtualization_support") {
 #
 assembly_input_bundle("vsock_service") {
   base_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/paravirtualization/vsock/meta/vsock_service.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/paravirtualization/vsock/meta/vsock_service.core_shard.cml" ]
 }
 
 assembly_input_bundle("vsock_service_bootstrap") {
   bootfs_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/paravirtualization/vsock/meta/vsock_service.bootstrap_shard.cml" ]
-        },
-      ]
-    },
+  bootstrap_shards = [
+    "//src/paravirtualization/vsock/meta/vsock_service.bootstrap_shard.cml",
   ]
 }
 
@@ -3876,6 +3125,8 @@ assembly_input_bundle("netstack_migration") {
   # The Go toolchain used for netstack2 does not support RISC-V and
   # netstack_migration contains netstack2.
   if (current_cpu != "riscv64") {
+    core_shards =
+        [ "//src/connectivity/network/meta/netstack-migration.core.shard.cml" ]
     compiled_packages = [
       {
         name = "network"
@@ -3885,15 +3136,6 @@ assembly_input_bundle("netstack_migration") {
             shards = [
               "//src/connectivity/network/meta/netstack-migration.shard.cml",
             ]
-          },
-        ]
-      },
-      {
-        name = "core"
-        components = [
-          {
-            component_name = "core"
-            shards = [ "//src/connectivity/network/meta/netstack-migration.core.shard.cml" ]
           },
         ]
       },
@@ -3924,17 +3166,7 @@ assembly_input_bundle("netstack_migration_packages_gub") {
 # Includes network-tun functionality.
 assembly_input_bundle("network_tun") {
   flexible_packages = [ "//src/connectivity/network/tun/network-tun" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/network/tun/network-tun/meta/network-tun.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/network/tun/network-tun/meta/network-tun.core_shard.cml" ]
 }
 
 # Includes thread LoWPAN functionality.
@@ -3943,19 +3175,9 @@ assembly_input_bundle("thread_lowpan") {
     "//src/connectivity/lowpan/drivers/lowpan-ot-driver",
     "//src/connectivity/lowpan/service:lowpanservice",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/connectivity/lowpan/service/meta/lowpanservice.core_shard.cml",
-            "//src/connectivity/lowpan/drivers/lowpan-ot-driver/meta/lowpan-ot-driver.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/connectivity/lowpan/service/meta/lowpanservice.core_shard.cml",
+    "//src/connectivity/lowpan/drivers/lowpan-ot-driver/meta/lowpan-ot-driver.core_shard.cml",
   ]
   memory_buckets =
       [ "//src/developer/memory/buckets/thread_lowpan_buckets.json5" ]
@@ -3973,18 +3195,8 @@ assembly_input_bundle("wlan_policy") {
     "//src/connectivity/wlan/wlancfg",
   ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/connectivity/wlan/wlancfg/meta/wlancfg.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/connectivity/wlan/wlancfg/meta/wlancfg.core_shard.cml" ]
 }
 
 # WLAN development support
@@ -4011,17 +3223,7 @@ assembly_input_bundle("wlan_development") {
 assembly_input_bundle("wlan_legacy_privacy_support") {
   base_packages = [ "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor-legacy-privacy" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/wlan/wlandevicemonitor/meta/wlandevicemonitor.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/wlan/wlandevicemonitor/meta/wlandevicemonitor.core_shard.cml" ]
 }
 
 # WLAN support for WPA2 and later
@@ -4034,17 +3236,7 @@ assembly_input_bundle("wlan_contemporary_privacy_only_support") {
   base_packages =
       [ "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/wlan/wlandevicemonitor/meta/wlandevicemonitor.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/wlan/wlandevicemonitor/meta/wlandevicemonitor.core_shard.cml" ]
 }
 
 # WLAN support for drivers that provide their own MAC
@@ -4082,18 +3274,7 @@ assembly_input_bundle("wlan_softmac_support") {
 #
 assembly_input_bundle("wlan_wlanix") {
   base_packages = [ "//src/connectivity/wlan/wlanix" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/connectivity/wlan/wlanix/meta/wlanix.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/connectivity/wlan/wlanix/meta/wlanix.core_shard.cml" ]
 }
 
 # Emergency Location provider
@@ -4102,17 +3283,8 @@ assembly_input_bundle("wlan_wlanix") {
 # build-types: all
 assembly_input_bundle("location_emergency") {
   flexible_packages = [ "//src/connectivity/location/emergency" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/connectivity/location/emergency/meta/emergency.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/connectivity/location/emergency/meta/emergency.core_shard.cml" ]
 }
 
 # Intel High-Definition Audio class driver
@@ -4166,16 +3338,8 @@ assembly_input_bundle("audio_development_support") {
 
   cache_packages = [ "//src/media/audio/services/ffxdaemon:audio_ffx_daemon" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/media/audio/services/ffxdaemon/meta/audio_ffx_daemon.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/media/audio/services/ffxdaemon/meta/audio_ffx_daemon.core_shard.cml",
   ]
 }
 
@@ -4269,43 +3433,13 @@ assembly_input_bundle("audio_full_stack_development_tools") {
 #
 assembly_input_bundle("audio_device_registry") {
   flexible_packages = [ "//src/media/audio/services/device_registry" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.core_shard.cml" ]
 }
 assembly_input_bundle("audio_device_registry_demand") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.demand.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.demand.core_shard.cml" ]
 }
 assembly_input_bundle("audio_device_registry_eager") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.eager.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.eager.core_shard.cml" ]
 }
 
 # Component that routes audio on Smart Displays
@@ -4318,32 +3452,12 @@ assembly_input_bundle("audio_core") {
 }
 
 assembly_input_bundle("audio_core_routing") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/media/audio/audio_core/meta/audio_core.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/media/audio/audio_core/meta/audio_core.core_shard.cml" ]
 }
 
 assembly_input_bundle("audio_core_use_adc_device") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/media/audio/audio_core/meta/audio_core.core_shard.use_adc_device.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/media/audio/audio_core/meta/audio_core.core_shard.use_adc_device.cml" ]
 }
 
 # Component that plays audio files using audio_core protocols.
@@ -4353,19 +3467,8 @@ assembly_input_bundle("audio_core_use_adc_device") {
 #
 assembly_input_bundle("soundplayer") {
   flexible_packages = [ "//src/media/sounds/soundplayer" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/media/sounds/soundplayer/meta/soundplayer.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/media/sounds/soundplayer/meta/soundplayer.core_shard.cml" ]
 }
 
 # Platform-provided video and audio decoders and encoders.
@@ -4377,18 +3480,8 @@ assembly_input_bundle("media_codecs") {
   if (current_cpu != "riscv64") {
     flexible_packages = [ "//src/media/codec:codec_factory" ]
   }
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/media/codec/factory/meta/codec_factory.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/media/codec/factory/meta/codec_factory.core_shard.cml" ]
 }
 
 assembly_input_bundle("video_development_support") {
@@ -4409,17 +3502,7 @@ assembly_input_bundle("video_development_support") {
 #
 assembly_input_bundle("media_sessions") {
   flexible_packages = [ "//src/media/sessions:mediasession" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/media/sessions/meta/mediasession.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/media/sessions/meta/mediasession.core_shard.cml" ]
 }
 
 # Session manager support
@@ -4428,16 +3511,8 @@ assembly_input_bundle("media_sessions") {
 # build-types: all
 assembly_input_bundle("session_manager") {
   base_packages = [ "//src/session/bin/session_manager" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/session/bin/session_manager/meta/session_manager.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/session/bin/session_manager/meta/session_manager.core_shard.cml",
   ]
 }
 
@@ -4455,17 +3530,7 @@ assembly_input_bundle("element_manager") {
 # build-types: all
 #
 assembly_input_bundle("ui") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/ui/meta/ui.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/ui/meta/ui.core_shard.cml" ]
 }
 
 # UI support for eng build types
@@ -4542,17 +3607,7 @@ assembly_input_bundle(
 #
 assembly_input_bundle("fan") {
   base_packages = [ "//src/devices/thermal/bin/fan-controller" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/devices/thermal/bin/fan-controller/meta/fan-controller.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/devices/thermal/bin/fan-controller/meta/fan-controller.core_shard.cml" ]
 }
 
 # Battery support
@@ -4562,19 +3617,8 @@ assembly_input_bundle("fan") {
 #
 assembly_input_bundle("battery_manager") {
   base_packages = [ "//src/power/battery-manager" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/power/battery-manager/meta/battery_manager.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/power/battery-manager/meta/battery_manager.core_shard.cml" ]
 }
 
 # TopologyTestDaemon support
@@ -4585,17 +3629,7 @@ assembly_input_bundle("battery_manager") {
 assembly_input_bundle("topology_test_daemon") {
   testonly = true
   base_packages = [ "//src/power/testing/topology-test-daemon:package" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/power/testing/topology-test-daemon/meta/topology-test-daemon.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/power/testing/topology-test-daemon/meta/topology-test-daemon.core_shard.cml" ]
 }
 
 # Power metrics recorder support
@@ -4604,16 +3638,8 @@ assembly_input_bundle("topology_test_daemon") {
 # build-types: all
 assembly_input_bundle("power_metrics_recorder") {
   base_packages = [ "//src/power/metrics-logger:metrics-logger-standalone-pkg" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/power/metrics-logger/meta/metrics-logger-standalone.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/power/metrics-logger/meta/metrics-logger-standalone.core_shard.cml",
   ]
 }
 
@@ -4624,17 +3650,7 @@ assembly_input_bundle("power_metrics_recorder") {
 #
 assembly_input_bundle("sensors_framework") {
   base_packages = [ "//src/sensors" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/sensors/meta/sensors.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/sensors/meta/sensors.core_shard.cml" ]
 }
 
 # Sensor playback support.
@@ -4645,17 +3661,7 @@ assembly_input_bundle("sensors_framework") {
 assembly_input_bundle("sensors_framework_eng") {
   base_packages = [ "//src/sensors:sensors_eng" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/sensors/meta/sensors_eng.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/sensors/meta/sensors_eng.core_shard.cml" ]
 }
 
 # Brightness Manager support
@@ -4666,16 +3672,8 @@ assembly_input_bundle("sensors_framework_eng") {
 assembly_input_bundle("brightness_manager") {
   flexible_packages =
       [ "//src/ui/bin/brightness_manager:brightness_manager_pkg" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/ui/bin/brightness_manager/meta/brightness_manager.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/ui/bin/brightness_manager/meta/brightness_manager.core_shard.cml",
   ]
 }
 
@@ -4686,18 +3684,7 @@ assembly_input_bundle("brightness_manager") {
 #
 assembly_input_bundle("legacy_power_framework") {
   bootfs_packages = [ "//src/power/power-manager:package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/power/meta/power-framework.shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/power/meta/power-framework.shard.cml" ]
 }
 
 # Power Framework CPU Manager.
@@ -4707,18 +3694,7 @@ assembly_input_bundle("legacy_power_framework") {
 #
 assembly_input_bundle("cpu_manager") {
   bootfs_packages = [ "//src/power/cpu-manager:package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/power/meta/cpu-manager.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/power/meta/cpu-manager.bootstrap_shard.cml" ]
 }
 
 # Power Framework System Activity Governor.
@@ -4728,18 +3704,7 @@ assembly_input_bundle("cpu_manager") {
 #
 assembly_input_bundle("power_framework_sag") {
   bootfs_packages = [ "//src/power/system-activity-governor:package" ]
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/power/meta/sag.shard.cml" ]
-        },
-      ]
-    },
-  ]
+  bootstrap_shards = [ "//src/power/meta/sag.shard.cml" ]
 }
 
 # Power Framework power broker.
@@ -4790,17 +3755,7 @@ assembly_input_bundle("power_framework_development_support") {
 
   # When the power framework becomes available on user builds by default,
   # these tools should be moved to core_realm_development_access
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/power/system-activity-governor-controller/meta/system-activity-governor-controller.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/power/system-activity-governor-controller/meta/system-activity-governor-controller.core_shard.cml" ]
 
   shell_commands = [
     {
@@ -4816,6 +3771,7 @@ assembly_input_bundle("power_framework_development_support") {
 #
 assembly_input_bundle("example_assembly_bundle") {
   testonly = true
+  core_shards = [ "//src/tests/assembly/assemble_image/compiled_package/meta/test.core_shard.cml" ]
   compiled_packages = [
     # Main definition for another package
     {
@@ -4866,18 +3822,6 @@ assembly_input_bundle("example_assembly_bundle") {
       # Test that bootfs packages work
       bootfs_package = true
     },
-
-    # Add a shard to the `core` package which should have a main definition
-    # in the legacy bundle
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/tests/assembly/assemble_image/compiled_package/meta/test.core_shard.cml" ]
-        },
-      ]
-    },
   ]
 }
 
@@ -4902,36 +3846,16 @@ assembly_input_bundle("emulator_support") {
 icu_assembly_input_bundle("intl_services") {
   icu_base_packages = [ "//src/intl/intl_services:pkg" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/intl/intl_services/meta/intl.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/intl/intl_services/meta/intl.core_shard.cml" ]
 }
 
 # Assembly may select at most one bundle with `intl_services` name prefix.
 icu_assembly_input_bundle("intl_services_small") {
   icu_base_packages = [ "//src/intl/intl_services:pkg_small" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/intl/intl_services/meta/intl_small_timezones.core_shard.cml",
-            "//src/intl/intl_services/meta/intl_small.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/intl/intl_services/meta/intl_small_timezones.core_shard.cml",
+    "//src/intl/intl_services/meta/intl_small.core_shard.cml",
   ]
 }
 
@@ -4942,54 +3866,24 @@ icu_assembly_input_bundle("intl_services_small_with_timezone") {
     "//src/intl/time_zone_info_service:pkg",
   ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/intl/intl_services/meta/intl_small.core_shard.cml",
-            "//src/intl/time_zone_info_service/meta/time-zone-info-service.core_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/intl/intl_services/meta/intl_small.core_shard.cml",
+    "//src/intl/time_zone_info_service/meta/time-zone-info-service.core_shard.cml",
   ]
 }
 
 icu_assembly_input_bundle("setui") {
   icu_base_packages = [ "//src/settings/service:setui_service" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards =
-              [ "//src/settings/service/meta/setui_service.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/settings/service/meta/setui_service.core_shard.cml" ]
   memory_buckets = [ "//src/developer/memory/buckets/setui_buckets.json5" ]
 }
 
 icu_assembly_input_bundle("setui_with_camera") {
   icu_base_packages = [ "//src/settings/service:setui_service" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/settings/service/meta/setui_service_with_camera.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/settings/service/meta/setui_service_with_camera.core_shard.cml" ]
   memory_buckets = [ "//src/developer/memory/buckets/setui_buckets.json5" ]
 }
 
@@ -5007,18 +3901,9 @@ assembly_input_bundle("fonts_hermetic") {
 }
 
 assembly_input_bundle("tee_manager") {
+  core_shards =
+      [ "//src/security/bin/tee_manager/meta/tee_manager.core_shard.cml" ]
   compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/security/bin/tee_manager/meta/tee_manager.core_shard.cml",
-          ]
-        },
-      ]
-    },
     {
       name = "tee_manager"
       packages = [ "//src/security/bin/tee_manager:pkg" ]
@@ -5189,19 +4074,8 @@ assembly_input_bundle("kernel_page_table_eviction_on_request") {
 assembly_input_bundle("zoneinfo") {
   base_packages = [ "//src/intl/tzdata_provider:zoneinfo_provider_pkg" ]
 
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/intl/tzdata_provider/meta/zoneinfo_provider.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/intl/tzdata_provider/meta/zoneinfo_provider.core_shard.cml" ]
 }
 
 # Assembly support for performing factory resets
@@ -5210,34 +4084,15 @@ assembly_input_bundle("zoneinfo") {
 # build types: all
 assembly_input_bundle("factory_reset") {
   base_packages = [ "//src/recovery/factory_reset:factory_reset_pkg" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/recovery/factory_reset/meta/factory_reset.core_shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/recovery/factory_reset/meta/factory_reset.core_shard.cml" ]
 }
 
 # Assembly support for recovery-fdr
 assembly_input_bundle("recovery_fdr") {
   base_packages = [ "//src/recovery/system:system_recovery_fdr" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/recovery/system/meta/core_shards/system_recovery_fdr.core_shard.cml" ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/recovery/system/meta/core_shards/system_recovery_fdr.core_shard.cml",
   ]
 }
 
@@ -5247,89 +4102,31 @@ assembly_input_bundle("recovery_android") {
     "//src/developer/adb/bin:adb",
     "//src/security/bin/root_ssl_certificates",
   ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/recovery/system/meta/core_shards/system_recovery_android.core_shard.cml",
-            "//src/developer/adb/bin/adb/meta/adb.core_shard.cml",
-            "//src/developer/adb/bin/adb-file-sync/meta/adb-file-sync.core_shard.cml",
-            "//src/developer/adb/bin/adb-reboot/meta/adb-reboot.core_shard.cml",
-            "//src/developer/adb/bin/adb-sideload/meta/adb-sideload.core_shard.cml",
-          ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "bootstrap"
-      components = [
-        {
-          component_name = "bootstrap"
-          shards = [ "//src/recovery/system/meta/system_recovery_android.bootstrap_shard.cml" ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [
-            "//src/recovery/system/meta/system_recovery_android.root_shard.cml",
-          ]
-        },
-      ]
-    },
+  core_shards = [
+    "//src/recovery/system/meta/core_shards/system_recovery_android.core_shard.cml",
+    "//src/developer/adb/bin/adb/meta/adb.core_shard.cml",
+    "//src/developer/adb/bin/adb-file-sync/meta/adb-file-sync.core_shard.cml",
+    "//src/developer/adb/bin/adb-reboot/meta/adb-reboot.core_shard.cml",
+    "//src/developer/adb/bin/adb-sideload/meta/adb-sideload.core_shard.cml",
   ]
+  bootstrap_shards = [
+    "//src/recovery/system/meta/system_recovery_android.bootstrap_shard.cml",
+  ]
+  root_shards =
+      [ "//src/recovery/system/meta/system_recovery_android.root_shard.cml" ]
 }
 
 assembly_input_bundle("session_manager_enable_pkg_cache") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/session/bin/session_manager/meta/session_manager_enable_pkg_cache.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/session/bin/session_manager/meta/session_manager_enable_pkg_cache.core_shard.cml" ]
 }
 
 assembly_input_bundle("session_manager_disable_pkg_cache") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/session/bin/session_manager/meta/session_manager_disable_pkg_cache.core_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  core_shards = [ "//src/session/bin/session_manager/meta/session_manager_disable_pkg_cache.core_shard.cml" ]
 }
 
 # Includes GNSS functionality.
 assembly_input_bundle("gnss") {
   base_packages = [ "//src/connectivity/location/gnss:gnss_service" ]
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [
-            "//src/connectivity/location/gnss/meta/gnss-service.core-shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
+  core_shards =
+      [ "//src/connectivity/location/gnss/meta/gnss-service.core-shard.cml" ]
 }

@@ -195,9 +195,28 @@ import("//build/python/python_action.gni")
 #       optional 'label' field is required when the file is created by the
 #       build, and is the label of the target that creates the file.
 #
+#  bootstrap_shards [optional]
+#    [list of file paths] A list of CML shard files to add to the "bootstrap"
+#    component of the "bootstrap" compiled package. This package is a bootfs
+#    package.
+#
+#  core_shards [optional]
+#    [list of file paths] A list of CML shard files to add to the "core"
+#    component of the "core" compiled package.
+#
+#  root_shards [optional]
+#    [list of file paths] A list of CML shard files to add to the "root"
+#    component of the "root" compiled package. This package is a bootfs package.
+#
+#  toolbox_shards [optional]
+#    [list of file paths] A list of CML shard files to add to the "toolbox"
+#    component of the "toolbox" compiled package. This package is a bootfs
+#    package.
+#
 #  memory_buckets (optional; default: [])
 #    [list of paths] Paths to memory bucket configs that should get merged and
 #    passed to memory monitor.
+#
 #
 #
 #  Outputs
@@ -600,9 +619,123 @@ template("assembly_input_bundle") {
     creation_deps += [ ":${labels.kernel_cmdline}" ]
   }
 
+  # Add the additional shards to the compiled packages list.
+  _all_compiled_packages = []
   if (defined(invoker.compiled_packages)) {
+    _all_compiled_packages = invoker.compiled_packages
+  }
+
+  _shard_types = [
+    {
+      name = "bootstrap"
+      arg = "bootstrap_shards"
+      bootfs = true
+    },
+    {
+      name = "core"
+      arg = "core_shards"
+      bootfs = false
+    },
+    {
+      name = "root"
+      arg = "root_shards"
+      bootfs = true
+    },
+    {
+      name = "toolbox"
+      arg = "toolbox_shards"
+      bootfs = true
+    },
+  ]
+
+  # Keep track of all the hardcoded shard types from above that we already
+  # merged in. This will ensure that we add any missing types after the merge.
+  _merged_shard_types = []
+
+  # Accumulate a list of all the compiled packages by merging
+  # _all_compiled_packages with the hardcoded shard lists above.
+  _merged_compiled_packages = []
+  foreach(package, _all_compiled_packages) {
+    # Search for a hardcoded shard type that matches this package.
+    _package_found = false
+    foreach(type, _shard_types) {
+      # Merge the compiled_package with the hardcoded shard type.
+      if (!_package_found && defined(invoker[type.arg]) &&
+          invoker[type.arg] != [] && type.name == package.name) {
+        _package_found = true
+
+        # Search for an existing component inside the package to merge the
+        # shards lists.
+        _component_found = false
+        if (defined(package.components)) {
+          foreach(component, package.components) {
+            if (!_component_found && type.name == component.component_name) {
+              _component_found = true
+
+              if (defined(component.shards)) {
+                component.shards += invoker[type.arg]
+              } else {
+                component.shards = invoker[type.arg]
+              }
+            }
+          }
+        } else {
+          package.components = []
+        }
+
+        # The component was not found in the package, so add it.
+        if (!_component_found) {
+          package.components += [
+            {
+              component_name = type.name
+              shards = invoker[type.arg]
+            },
+          ]
+        }
+
+        _merged_shard_types += [ type.name ]
+      }
+    }
+    _merged_compiled_packages += [ package ]
+  }
+
+  # If we walked _all_compiled_packages and didn't find one of the hardcoded
+  # shard types (such as 'core'), we need to add the missing hardcoded shard
+  # types to _merged_compiled_packages.
+  foreach(type, _shard_types) {
+    if (defined(invoker[type.arg]) && invoker[type.arg] != []) {
+      _missing = true
+      foreach(added_type, _merged_shard_types) {
+        if (type.name == added_type) {
+          _missing = false
+        }
+      }
+      if (_missing) {
+        _new_package = {
+        }
+        _new_package = {
+          name = type.name
+          components = [
+            {
+              component_name = type.name
+              shards = invoker[type.arg]
+            },
+          ]
+        }
+        if (type.bootfs) {
+          _new_package.bootfs_package = true
+        }
+        _merged_compiled_packages += [ _new_package ]
+      }
+    }
+  }
+  _all_compiled_packages = []
+  _all_compiled_packages = _merged_compiled_packages
+  not_needed(_merged_shard_types)
+
+  if (_all_compiled_packages != []) {
     _compiled_packages = []
-    foreach(package, invoker.compiled_packages) {
+    foreach(package, _all_compiled_packages) {
       _package = {
       }
       _package = {
