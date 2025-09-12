@@ -11,8 +11,12 @@ use std::path::PathBuf;
 pub(crate) fn file_check(value: Value) -> Option<Value> {
     match &value {
         Value::String(s) if PathBuf::from(s).exists() => Some(value),
-        Value::String(_) => None, // filter out strings that don't correspond to existing files.
-        _ => Some(value),         // but let any other type through.
+        Value::String(ne) => {
+            // filter out strings that don't correspond to existing files.
+            log::debug!("Filtering out config value for file \"{ne}\" as it does not exist");
+            None
+        }
+        _ => Some(value), // but let any other type through.
     }
 }
 
