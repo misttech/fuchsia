@@ -304,7 +304,7 @@ impl BrokerSvc {
                         let res = {
                             let mut broker = self.broker.borrow_mut();
                             broker.add_element(
-                                &element_name,
+                                &element_name.clone(),
                                 initial_current_level,
                                 valid_levels,
                                 level_dependencies,
@@ -317,7 +317,8 @@ impl BrokerSvc {
                                     .borrow_mut()
                                     .insert(element_id.clone(), ElementHandlers::new());
                                 if let Some(element_runner) = element_runner {
-                                    let mut runner = ElementRunnerHandler::new(element_id.clone());
+                                    let mut runner =
+                                        ElementRunnerHandler::new(element_id.clone(), element_name);
                                     runner.start(self.broker.clone(), element_runner.into_proxy());
                                     self.element_handlers
                                         .borrow_mut()
@@ -449,21 +450,24 @@ impl BrokerSvc {
 
 struct ElementRunnerHandler {
     element_id: ElementID,
+    element_name: String,
     shutdown: Event,
 }
 
 impl ElementRunnerHandler {
-    fn new(element_id: ElementID) -> Self {
-        Self { element_id, shutdown: Event::new() }
+    fn new(element_id: ElementID, element_name: String) -> Self {
+        Self { element_id, element_name, shutdown: Event::new() }
     }
 
     fn start(&mut self, broker: Rc<RefCell<Broker>>, element_runner: fpb::ElementRunnerProxy) {
         let element_id = self.element_id.clone();
+        let debug_info =
+            format!("ElementRunnerHandler<{}:{}>", &self.element_name, &self.element_id);
         // Use a shutdown event to ensure any in progress level transition handshakes are completed
         // before terminating the task.
         let mut shutdown = self.shutdown.wait_or_dropped();
         let mut receiver = broker.borrow_mut().watch_required_level(&element_id);
-        log::debug!("Starting new ElementRunnerHandler for {:?}", &self.element_id);
+        log::debug!("{debug_info} starting.");
         Task::local(async move {
             loop {
                 select! {
@@ -471,27 +475,27 @@ impl ElementRunnerHandler {
                         break;
                     }
                     required_level = receiver.next() => {
-                        log::debug!("ElementRunnerHandler received required_level: {:?}", required_level);
+                        log::debug!("{debug_info} received required_level: {:?}", required_level);
                         match required_level {
                             Some(Some(required_level)) => {
                                 if let Err(err) = element_runner.set_level(required_level.level).await {
-                                    log::warn!("ElementRunnerHandler: set_level error: {:?}", err);
+                                    log::warn!("{debug_info}: set_level error: {:?}", err);
                                 } else {
                                     broker.borrow_mut().update_current_level(&element_id, required_level);
                                 }
                             },
                             None => {
-                                log::debug!("ElementRunnerHandler receiver closed (element removed)");
+                                log::debug!("{debug_info} receiver closed (element removed)");
                                 break;
                             },
                             _ => {
-                                log::error!("ElementRunnerHandler: unexpected required_level: {:?}", required_level);
+                                log::error!("{debug_info}: unexpected required_level: {:?}", required_level);
                             }
                         }
                     }
                 }
             }
-            log::debug!("ElementRunnerHandler shutdown for {:?}.", &element_id);
+            log::debug!("{debug_info} shutdown.");
         }).detach();
     }
 }
