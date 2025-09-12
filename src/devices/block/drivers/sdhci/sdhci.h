@@ -139,10 +139,12 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
 
   // Override to inject dependency for unit testing.
   virtual zx_status_t InitMmio();
+  virtual zx_status_t InitCqhciMmio();
   virtual zx_status_t WaitForReset(SoftwareReset mask);
   async_dispatcher_t* irq_dispatcher() const { return irq_dispatcher_.async_dispatcher(); }
 
   std::optional<fdf::MmioBuffer> regs_mmio_buffer_;
+  std::optional<fdf::MmioBuffer> regs_cqhci_mmio_buffer_;
 
   // DMA descriptors, visible for testing
   std::unique_ptr<dma_buffer::ContiguousBuffer> iobuf_;

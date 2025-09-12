@@ -60,7 +60,15 @@ closed protocol Device {
     }) error zx.Status;
 
     /// Mmio size minus offset must be at least 512 bytes as per the SDHCI specification.
-    strict GetMmio() -> (resource struct {
+    strict GetSdhciMmio() -> (resource struct {
+        mmio zx.Handle:VMO;
+        offset zx.Off;
+    }) error zx.Status;
+
+    /// Mmio size minus offset must be at least 260 bytes as per the CQHCI specification.
+    /// Returns
+    /// - ZX_ERR_NOT_SUPPORTED if the device does not support CQHCI
+    strict GetCqhciMmio() -> (resource struct {
         mmio zx.Handle:VMO;
         offset zx.Off;
     }) error zx.Status;

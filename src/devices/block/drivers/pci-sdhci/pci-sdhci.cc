@@ -47,7 +47,7 @@ void PciSdhci::GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& comp
   completer.buffer(arena).ReplySuccess(std::move(interrupt));
 }
 
-void PciSdhci::GetMmio(fdf::Arena& arena, GetMmioCompleter::Sync& completer) {
+void PciSdhci::GetSdhciMmio(fdf::Arena& arena, GetSdhciMmioCompleter::Sync& completer) {
   if (!mmio_.has_value()) {
     zx_status_t status = pci_.MapMmio(0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &mmio_);
     if (status != ZX_OK) {
@@ -65,6 +65,10 @@ void PciSdhci::GetMmio(fdf::Arena& arena, GetMmioCompleter::Sync& completer) {
   }
 
   completer.buffer(arena).ReplySuccess(std::move(vmo), offset);
+}
+
+void PciSdhci::GetCqhciMmio(fdf::Arena& arena, GetCqhciMmioCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void PciSdhci::GetBti(GetBtiRequestView request, fdf::Arena& arena,

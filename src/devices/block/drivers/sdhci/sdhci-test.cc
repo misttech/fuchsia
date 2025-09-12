@@ -179,7 +179,11 @@ class FakeSdhci : public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
     completer.buffer(arena).ReplySuccess(std::move(dup));
   }
 
-  void GetMmio(fdf::Arena& arena, GetMmioCompleter::Sync& completer) override {
+  void GetSdhciMmio(fdf::Arena& arena, GetSdhciMmioCompleter::Sync& completer) override {
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void GetCqhciMmio(fdf::Arena& arena, GetCqhciMmioCompleter::Sync& completer) override {
     completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 

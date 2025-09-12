@@ -1422,13 +1422,13 @@ zx_status_t Sdhci::InitMmio() {
   zx::vmo vmo;
   zx_off_t vmo_offset;
   {
-    fdf::WireUnownedResult mmio = sdhci_.buffer(arena_)->GetMmio();
+    fdf::WireUnownedResult mmio = sdhci_.buffer(arena_)->GetSdhciMmio();
     if (!mmio.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetMmio request: %s", mmio.status_string());
+      FDF_LOG(ERROR, "Failed to send GetSdhciMmio request: %s", mmio.status_string());
       return mmio.status();
     }
     if (mmio->is_error()) {
-      FDF_LOG(ERROR, "Failed to get mmio: %s", zx_status_get_string(mmio->error_value()));
+      FDF_LOG(ERROR, "Failed to get sdhci mmio: %s", zx_status_get_string(mmio->error_value()));
       return mmio->error_value();
     }
     vmo = std::move(mmio.value()->mmio);
@@ -1446,6 +1446,41 @@ zx_status_t Sdhci::InitMmio() {
   return ZX_OK;
 }
 
+zx_status_t Sdhci::InitCqhciMmio() {
+  // Map the Device Command Queuing Registers so that we can support command queuing and related
+  // cryptographic operations.
+  zx::vmo vmo;
+  zx_off_t vmo_offset;
+  {
+    fdf::WireUnownedResult mmio = sdhci_.buffer(arena_)->GetCqhciMmio();
+    if (!mmio.ok()) {
+      FDF_LOG(ERROR, "Failed to send GetCqhciMmio request: %s", mmio.status_string());
+      return mmio.status();
+    }
+    if (mmio->is_error()) {
+      if (mmio->error_value() != ZX_ERR_NOT_SUPPORTED) {
+        FDF_LOG(ERROR, "Failed to get mmio in InitCqhciMmio: %s",
+                zx_status_get_string(mmio->error_value()));
+        return mmio->error_value();
+      } else {
+        return ZX_OK;
+      }
+    }
+    vmo = std::move(mmio.value()->mmio);
+    vmo_offset = mmio.value()->offset;
+  }
+
+  zx::result<fdf::MmioBuffer> regs_mmio_buffer = fdf::MmioBuffer::Create(
+      vmo_offset, kRegisterSetSize, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+  if (regs_mmio_buffer.is_error()) {
+    FDF_LOG(ERROR, "sdhci: error %s in mmio_buffer_init", regs_mmio_buffer.status_string());
+    return regs_mmio_buffer.status_value();
+  }
+  regs_cqhci_mmio_buffer_ = *std::move(regs_mmio_buffer);
+
+  return ZX_OK;
+}
+
 zx::result<> Sdhci::Start() {
   {
     zx::result sdhci = incoming()->Connect<fuchsia_hardware_sdhci::Service::Device>();
@@ -1457,6 +1492,11 @@ zx::result<> Sdhci::Start() {
   }
 
   zx_status_t status = InitMmio();
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  status = InitCqhciMmio();
   if (status != ZX_OK) {
     return zx::error(status);
   }

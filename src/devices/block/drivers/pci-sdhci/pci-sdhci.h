@@ -28,7 +28,8 @@ class PciSdhci final : public DeviceType, public fdf::WireServer<fuchsia_hardwar
 
   // fuchsia.hardware.sdhci/Device protocol implementation
   void GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& completer) override;
-  void GetMmio(fdf::Arena& arena, GetMmioCompleter::Sync& completer) override;
+  void GetSdhciMmio(fdf::Arena& arena, GetSdhciMmioCompleter::Sync& completer) override;
+  void GetCqhciMmio(fdf::Arena& arena, GetCqhciMmioCompleter::Sync& completer) override;
   void GetBti(GetBtiRequestView request, fdf::Arena& arena,
               GetBtiCompleter::Sync& completer) override;
   void GetBaseClock(fdf::Arena& arena, GetBaseClockCompleter::Sync& completer) override;
