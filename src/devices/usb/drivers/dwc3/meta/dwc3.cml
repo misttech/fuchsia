@@ -23,6 +23,13 @@
         { service: "fuchsia.hardware.usb.phy.Metadata" },
     ],
     use: [
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "enable_suspend",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: "fuchsia.hardware.clock.Service" },
         { service: "fuchsia.hardware.interconnect.PathService" },
         { service: "fuchsia.hardware.platform.device.Service" },

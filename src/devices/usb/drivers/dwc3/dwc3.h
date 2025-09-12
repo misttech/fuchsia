@@ -41,6 +41,7 @@
 #include "src/devices/usb/drivers/dwc3/dwc3-metrics.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-trb-fifo.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-types.h"
+#include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
 namespace dwc3 {
 
@@ -59,7 +60,8 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   using fdf::DriverBase::incoming;
 
   Dwc3(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)} {}
+      : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)},
+        config_{take_config<dwc3_config::Config>()} {}
   ~Dwc3() { fdf::debug("~Dwc3()"); }
 
   zx::result<> Start() override;
@@ -352,6 +354,8 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>
       serial_number_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_usb_phy::Metadata> usb_phy_metadata_server_;
+
+  dwc3_config::Config config_;
 
   // Inspect and metrics data.
   // The basic model here is:

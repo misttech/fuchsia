@@ -13,6 +13,7 @@
 #include "lib/driver/fake-platform-device/cpp/fake-pdev.h"
 #include "lib/driver/testing/cpp/driver_test.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
+#include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
 namespace dwc3 {
 
@@ -109,7 +110,12 @@ class TestFixture : public testing::Test {
     });
 
     if (manage_lifetime) {
-      EXPECT_EQ(ZX_OK, dut_.StartDriver().status_value());
+      ASSERT_TRUE(dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                        dwc3_config::Config cfg;
+                        cfg.enable_suspend() = false;
+                        args.config(cfg.ToVmo());
+                      })
+                      .is_ok());
     }
   }
 
@@ -165,7 +171,13 @@ TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
 
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
   stuck_reset_test_ = true;
-  EXPECT_EQ(ZX_ERR_TIMED_OUT, dut_.StartDriver().status_value());
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_error());
+  ASSERT_EQ(ZX_ERR_TIMED_OUT, start.error_value());
 
   dut_.RunInNodeContext(
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(0UL, node.children().size()); });
