@@ -9,6 +9,7 @@ use linux_uapi::{
     AUDIT_STATUS_BACKLOG_LIMIT, AUDIT_STATUS_ENABLED, AUDIT_STATUS_FAILURE, AUDIT_STATUS_LOST,
     AUDIT_STATUS_PID, AUDIT_USER,
 };
+use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::log_warn;
 use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
@@ -17,7 +18,9 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering};
+use std::time::SystemTime;
 use std::u32;
+use zx::MonotonicDuration;
 
 use crate::task::{ArgNameAndValue, Kernel};
 const DEFAULT_BACKLOG_LIMIT: u32 = 128;
@@ -99,6 +102,8 @@ pub struct AuditLogger {
     configuration: AuditConfig,
     /// The number of audit messages lost due to writing errors.
     lost_audit_messages: AtomicU32,
+    /// Monotonic counter for audit serial numbers
+    serial_counter: AtomicU64Counter,
     /// Audit message deque containing (audit type, audit string) up to `backlog_limit` messages.
     /// TODO: https://fxbug.dev/438677236 - confirm single queue behaviour is valid.
     audit_queue: Mutex<VecDeque<AuditMessage>>,
@@ -109,6 +114,7 @@ impl AuditLogger {
         Self {
             configuration: AuditConfig::new(kernel.cmdline_args_iter()),
             lost_audit_messages: Default::default(),
+            serial_counter: Default::default(),
             audit_queue: Default::default(),
         }
     }
@@ -120,13 +126,12 @@ impl AuditLogger {
         if !self.configuration.enabled.load(Ordering::Acquire) {
             return;
         }
-        let audit_message = audit_formatter();
-        let mut queue = self.audit_queue.lock();
+        let audit_message = self.prepend_audit_metadata(audit_formatter);
 
+        let mut queue = self.audit_queue.lock();
         // TODO: https://fxbug.dev/440090442 - implement backlog waiting.
         if !self.check_backlog(queue.len() as u32) {
-            queue
-                .push_back(AuditMessage { audit_type, message: format!("{audit_message}").into() });
+            queue.push_back(AuditMessage { audit_type, message: audit_message.clone().into() });
             self.configuration.audit_sink.load().upgrade().inspect(|sink| sink.notify()).or_else(
                 || {
                     log_warn!("{audit_message}");
@@ -227,6 +232,22 @@ impl AuditLogger {
             return true;
         }
         false
+    }
+
+    /// Function to prepend an audit message with a timestamp and serial number.
+    fn prepend_audit_metadata<M: Display, T: FnOnce() -> M>(&self, audit: T) -> String {
+        let epoch_time = MonotonicDuration::from(
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default(),
+        )
+        .into_millis();
+
+        format!(
+            "audit({}.{}:{}): {}",
+            epoch_time / 1000,
+            epoch_time % 1000,
+            self.serial_counter.next(),
+            audit()
+        )
     }
 }
 
