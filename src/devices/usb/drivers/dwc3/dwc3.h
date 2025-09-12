@@ -17,6 +17,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
+#include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/mmio/mmio.h>
@@ -55,7 +56,9 @@ class PlatformExtension {
   virtual zx::result<> Resume() = 0;
 };
 
-class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
+class Dwc3 : public fdf::DriverBase,
+             public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
+             public fdf_power::Suspendable<Dwc3> {
  public:
   using fdf::DriverBase::incoming;
 
@@ -66,6 +69,9 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
 
   zx::result<> Start() override;
   void Stop() override;
+  void Suspend(fdf_power::SuspendCompleter completer) override;
+  void Resume(fdf_power::ResumeCompleter completer) override;
+  bool SuspendEnabled() override;
 
   // fuchsia_hardware_usb_dci::UsbDci protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,

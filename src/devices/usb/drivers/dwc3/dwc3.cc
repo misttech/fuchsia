@@ -756,6 +756,18 @@ void Dwc3::Stop() {
   }
 }
 
+void Dwc3::Suspend(fdf_power::SuspendCompleter completer) {
+  // no-op.
+  completer();
+}
+
+void Dwc3::Resume(fdf_power::ResumeCompleter completer) {
+  // no-op.
+  completer();
+}
+
+bool Dwc3::SuspendEnabled() { return false; }
+
 void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
                              ConnectToEndpointCompleter::Sync& completer) {
   UserEndpoint* uep{get_user_endpoint(UsbAddressToEpNum(request.ep_addr()))};
