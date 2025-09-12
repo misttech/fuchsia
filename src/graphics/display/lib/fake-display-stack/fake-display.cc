@@ -85,10 +85,6 @@ FakeDisplay::FakeDisplay(display::DisplayEngineEventsInterface* engine_events,
     : engine_events_(*engine_events),
       device_config_(device_config),
       sysmem_client_(std::move(sysmem_client)),
-      applied_fallback_color_({
-          .format = display::PixelFormat::kB8G8R8A8,
-          .bytes = std::initializer_list<uint8_t>{0, 0, 0, 0, 0, 0, 0, 0},
-      }),
       inspector_(std::move(inspector)) {
   ZX_DEBUG_ASSERT(engine_events != nullptr);
   ZX_DEBUG_ASSERT(sysmem_client_.is_valid());
@@ -285,7 +281,10 @@ zx::result<display::DriverImageId> FakeDisplay::ImportImage(
 void FakeDisplay::ReleaseImage(display::DriverImageId image_id) {
   std::lock_guard lock(mutex_);
 
-  if (applied_image_id_ == image_id) {
+  auto layer_with_image_id_it = std::ranges::find_if(
+      applied_layers_,
+      [&](const display::DriverLayer& layer) { return layer.image_id() == image_id; });
+  if (layer_with_image_id_it != applied_layers_.end()) {
     fdf::fatal("Cannot safely release an image used in currently applied configuration");
     return;
   }
@@ -373,9 +372,7 @@ void FakeDisplay::ApplyConfiguration(display::DisplayId display_id, display::Mod
                         "Configuration contains invalid image ID: %" PRIu64,
                         layers[0].image_id().value());
   }
-  applied_image_id_ = layers[0].image_id();
-  applied_fallback_color_ = layers[0].fallback_color();
-
+  applied_layers_.assign(layers.begin(), layers.end());
   applied_config_stamp_ = config_stamp;
 }
 
@@ -621,17 +618,25 @@ zx::result<> FakeDisplay::ServiceAnyCaptureRequest() {
                 "Driver allowed releasing the target of an in-progress capture");
   CaptureImageInfo& capture_destination_info = *imported_captures_it;
 
-  if (applied_image_id_ == display::kInvalidDriverImageId) {
+  if (applied_layers_.empty()) {
+    return zx::ok();
+  }
+
+  // TODO(https://fxbug.dev/42075534): Support multiple layers.
+  ZX_DEBUG_ASSERT(applied_layers_.size() > 0);
+  const display::DriverLayer& applied_layer = applied_layers_[0];
+
+  if (applied_layer.image_id() == display::kInvalidDriverImageId) {
     // Solid color fill capture.
     zx::result<> color_fill_capture_result =
-        DoColorFillCapture(applied_fallback_color_, capture_destination_info);
+        DoColorFillCapture(applied_layer.fallback_color(), capture_destination_info);
     if (color_fill_capture_result.is_error()) {
       // DoColorFillCapture() has already logged the error.
       return color_fill_capture_result;
     }
   } else {
     // Image capture.
-    auto imported_images_it = imported_images_.find(applied_image_id_);
+    auto imported_images_it = imported_images_.find(applied_layer.image_id());
 
     ZX_ASSERT_MSG(imported_images_it.IsValid(),
                   "Driver allowed releasing an image used in the currently applied configuration");

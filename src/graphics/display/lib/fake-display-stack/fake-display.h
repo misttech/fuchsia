@@ -21,6 +21,7 @@
 #include <optional>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-interface.h"
@@ -205,19 +206,8 @@ class FakeDisplay : public display::DisplayEngineInterface {
   // Owns the display images imported into the driver.
   DisplayImageInfo::HashTable imported_images_ __TA_GUARDED(mutex_);
 
-  // ID of the image in the applied display configuration.
-  //
-  // Set to `kInvalidDriverImageId` when no image is being displayed. This could
-  // mean that the Display Coordinator has not applied a configuration yet,
-  // or that the currently applied configuration does not contain an image.
-  //
-  // This representation assumes that only single-layer display configurations
-  // are supported. The representation will be revised when we add multi-layer
-  // support.
-  display::DriverImageId applied_image_id_ __TA_GUARDED(mutex_) = display::kInvalidDriverImageId;
-
-  // The fallback color in the applied display configuration.
-  display::Color applied_fallback_color_ __TA_GUARDED(mutex_);
+  // Layers applied in the last `ApplyConfiguration()` call.
+  std::vector<display::DriverLayer> applied_layers_ __TA_GUARDED(mutex_);
 
   // Next image ID assigned to an imported image.
   //
