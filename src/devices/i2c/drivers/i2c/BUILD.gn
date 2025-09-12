@@ -15,6 +15,15 @@ driver_bind_rules("i2c_bind") {
       [ "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_bindlib" ]
 }
 
+fuchsia_component_manifest("i2c-manifest") {
+  component_name = "i2c"
+  manifest = "meta/i2c.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("i2c-config") {
+  cm_label = ":i2c-manifest"
+}
+
 source_set("common") {
   sources = [
     "i2c-child-server.cc",
@@ -25,6 +34,7 @@ source_set("common") {
   deps = [
     ":i2c_bind",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
+    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.i2c:fuchsia.i2c_cpp",
@@ -33,6 +43,7 @@ source_set("common") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
+    ":i2c-config",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
     "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_cpp",

@@ -16,15 +16,28 @@
     },
     capabilities: [
         { service: 'fuchsia.hardware.i2c.Service' },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
     ],
     use: [
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "enable_suspend",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: "fuchsia.hardware.i2c.businfo.I2CBusMetadata" },
         { service: "fuchsia.hardware.i2cimpl.Service" },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
     ],
     expose: [
         {
             service: 'fuchsia.hardware.i2c.Service',
             from: 'self',
+        },
+        {
+            service: "fuchsia.hardware.power.PowerTokenService",
+            from: "self",
         },
     ],
 }

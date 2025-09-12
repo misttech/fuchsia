@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/i2c/drivers/i2c/i2c-test-env.h"
+#include "src/devices/i2c/drivers/i2c/i2c_config.h"
 
 namespace i2c {
 
@@ -27,7 +28,12 @@ class I2cDriverTest : public ::testing::Test {
   void Init(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata) {
     test_runner.RunInEnvironmentTypeContext(
         [metadata](TestEnvironment& env) { env.AddMetadata(metadata); });
-    EXPECT_TRUE(test_runner.StartDriver().is_ok());
+    EXPECT_TRUE(test_runner
+                    .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                      i2c_config::Config config{{.enable_suspend = true}};
+                      args.config(config.ToVmo());
+                    })
+                    .is_ok());
   }
 
   void TearDown() override {
@@ -57,7 +63,14 @@ TEST_F(I2cDriverTest, OneChannel) {
   });
 }
 
-TEST_F(I2cDriverTest, NoMetadata) { EXPECT_TRUE(test_runner.StartDriver().is_error()); }
+TEST_F(I2cDriverTest, NoMetadata) {
+  EXPECT_TRUE(test_runner
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    i2c_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_error());
+}
 
 TEST_F(I2cDriverTest, MultipleChannels) {
   const fuchsia_hardware_i2c_businfo::I2CChannel kChannel1 = CreateChannel(5, 10, 2, 4, 6);

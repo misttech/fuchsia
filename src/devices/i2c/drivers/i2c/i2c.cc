@@ -68,13 +68,15 @@ zx::result<> I2cDriver::AddI2cChildren(
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
+  const auto config = take_config<i2c_config::Config>();
+
   FDF_LOG(DEBUG, "Number of i2c channels supplied: %zu", metadata.channels()->size());
   const uint32_t bus_id = metadata.bus_id().value_or(0);
   for (const auto& channel : metadata.channels().value()) {
     // Add an i2c child to the owned i2c node.
     auto i2c_child_server = I2cChildServer::CreateAndAddChild(
         fit::bind_member(this, &I2cDriver::Transact), i2c_node_, logger(), bus_id, channel,
-        incoming(), outgoing(), node_name());
+        incoming(), outgoing(), node_name(), config);
     if (i2c_child_server.is_error()) {
       FDF_LOG(ERROR, "Failed to create child server: %s",
               zx_status_get_string(i2c_child_server.error_value()));

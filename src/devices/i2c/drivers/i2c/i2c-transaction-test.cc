@@ -49,7 +49,12 @@ class I2cDriverTransactionTest : public ::testing::Test {
           env.AddMetadata(metadata);
           env.i2c_impl().set_on_transact(std::move(on_transact));
         });
-    EXPECT_TRUE(test_runner.StartDriver().is_ok());
+    EXPECT_TRUE(test_runner
+                    .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                      i2c_config::Config config{{.enable_suspend = true}};
+                      args.config(config.ToVmo());
+                    })
+                    .is_ok());
 
     zx::result result = test_runner.Connect<fuchsia_hardware_i2c::Service::Device>(kTestChildName);
     ASSERT_TRUE(result.is_ok());

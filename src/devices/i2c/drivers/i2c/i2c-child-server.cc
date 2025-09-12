@@ -4,6 +4,7 @@
 
 #include "src/devices/i2c/drivers/i2c/i2c-child-server.h"
 
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/node/cpp/add_child.h>
 
@@ -17,7 +18,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
     fdf::Logger& logger, uint32_t bus_id, const fuchsia_hardware_i2c_businfo::I2CChannel& channel,
     const std::shared_ptr<fdf::Namespace>& incoming,
     const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-    const std::optional<std::string>& parent_node_name) {
+    const std::optional<std::string>& parent_node_name, const i2c_config::Config& config) {
   const uint32_t i2c_class = channel.i2c_class().value_or(0);
   const uint32_t vid = channel.vid().value_or(0);
   const uint32_t pid = channel.pid().value_or(0);
@@ -64,7 +65,34 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
     properties.push_back(fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID, did));
   }
 
-  fuchsia_driver_framework::Offer offers[]{fdf::MakeOffer2<fidl_i2c::Service>(child_name)};
+  std::vector<fuchsia_driver_framework::Offer> offers{
+      fdf::MakeOffer2<fidl_i2c::Service>(child_name)};
+
+  if (config.enable_suspend()) {
+    // Forward PowerTokenService to our parent if suspend is enabled.
+    fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
+        .token_provider =
+            [incoming =
+                 incoming](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
+              zx::result<> result =
+                  incoming->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                      std::move(server));
+              if (result.is_error()) {
+                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
+                        result.status_string());
+              }
+            },
+    });
+
+    zx::result result = outgoing->AddService<fuchsia_hardware_power::PowerTokenService>(
+        std::move(handler), child_name);
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      return result.take_error();
+    }
+
+    offers.emplace_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(child_name));
+  }
 
   fuchsia_driver_framework::DevfsAddArgs devfs_args{
       {.connector = std::move(connector.value()), .class_name = "i2c"}};

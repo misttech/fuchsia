@@ -11,6 +11,8 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 
+#include "src/devices/i2c/drivers/i2c/i2c_config.h"
+
 namespace i2c {
 
 namespace fidl_i2c = fuchsia_hardware_i2c;
@@ -28,7 +30,7 @@ class I2cChildServer : public fidl::WireServer<fidl_i2c::Device> {
       fdf::Logger& logger, uint32_t bus_id, const fuchsia_hardware_i2c_businfo::I2CChannel& channel,
       const std::shared_ptr<fdf::Namespace>& incoming,
       const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-      const std::optional<std::string>& parent_node_name);
+      const std::optional<std::string>& parent_node_name, const i2c_config::Config& config);
 
   void Transfer(TransferRequestView request, TransferCompleter::Sync& completer) override;
   void GetName(GetNameCompleter::Sync& completer) override;
