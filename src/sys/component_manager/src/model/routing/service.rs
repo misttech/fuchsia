@@ -106,6 +106,24 @@ enum WatcherEntry {
     ReachedIdle,
 }
 
+impl WatcherEntry {
+    // Transition the watcher to the ReachedIdle state, notifying the
+    // idle_sender if it exists.
+    fn transition_to_idle(&mut self) {
+        match self {
+            WatcherEntry::WaitingForIdle(sender_option) => {
+                if let Some(sender) = sender_option.take() {
+                    // Ignore the send result since we still transition to
+                    // ReachedIdle.
+                    let _send_result = sender.send(());
+                }
+                *self = WatcherEntry::ReachedIdle;
+            }
+            WatcherEntry::ReachedIdle => {}
+        }
+    }
+}
+
 struct AnonymizedAggregateServiceDirInner {
     /// Directory that contains all aggregated service instances.
     pub dir: Arc<SimpleImmutableDir>,
@@ -423,27 +441,13 @@ impl AnonymizedAggregateServiceDir {
                                     return Err(StreamErrorType::Found);
                                 }
                                 fuchsia_fs::directory::WatchEvent::IDLE => {
-                                    let watcher_entry =
-                                        inner.watchers_spawned.get_mut(&instance).unwrap();
-
-                                    // Notifying the idle_sender if it exists but transition back
-                                    // to waiting for idle as we are still not in the inner instance
-                                    // watcher.
-                                    match watcher_entry {
-                                        WatcherEntry::WaitingForIdle(sender_option) => {
-                                            if let Some(sender) = sender_option.take() {
-                                                let _ = sender.send(());
-                                            }
-
-                                            *watcher_entry = WatcherEntry::WaitingForIdle(None);
-                                        }
-                                        WatcherEntry::ReachedIdle => {
-                                            // Inner watcher should not be running yet. That is
-                                            // where we set ReachedIdle.
-                                            unreachable!();
-                                        }
-                                    };
-
+                                    // We've hit an idle, so if anyone is waiting on us for routing
+                                    // unblock them.
+                                    inner
+                                        .watchers_spawned
+                                        .get_mut(&instance)
+                                        .unwrap()
+                                        .transition_to_idle();
                                     Ok(())
                                 }
                                 _ => Ok(()),
@@ -634,23 +638,7 @@ impl AnonymizedAggregateServiceDir {
                         Ok(())
                     }
                     fuchsia_fs::directory::WatchEvent::IDLE => {
-                        let watcher_entry = inner.watchers_spawned.get_mut(&instance).unwrap();
-
-                        // Transition the watcher to the ReachedIdle state, notifying the
-                        // idle_sender if it exists.
-                        match watcher_entry {
-                            WatcherEntry::WaitingForIdle(sender_option) => {
-                                if let Some(sender) = sender_option.take() {
-                                    // Ignore the send result since we still transition to
-                                    // ReachedIdle.
-                                    let _send_result = sender.send(());
-                                }
-
-                                *watcher_entry = WatcherEntry::ReachedIdle;
-                            }
-                            WatcherEntry::ReachedIdle => {}
-                        }
-
+                        inner.watchers_spawned.get_mut(&instance).unwrap().transition_to_idle();
                         Ok(())
                     }
                     fuchsia_fs::directory::WatchEvent::DELETED => unreachable!(),
