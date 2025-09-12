@@ -31,8 +31,8 @@ pub struct Description {
 impl From<&TargetHandle> for Description {
     fn from(value: &TargetHandle) -> Self {
         let (addresses, serial) = match &value.state {
-            TargetState::Product { addrs: target_addr, .. } => (target_addr.clone(), None),
-            TargetState::Fastboot(FastbootTargetState { serial_number: sn, connection_state }) => {
+            TargetState::Product { addrs, serial } => (addrs.clone(), serial.clone()),
+            TargetState::Fastboot(FastbootTargetState { serial_number, connection_state }) => {
                 let addresses = match connection_state {
                     FastbootConnectionState::Usb => Vec::<TargetAddr>::new(),
                     FastbootConnectionState::Tcp(addresses)
@@ -40,7 +40,7 @@ impl From<&TargetHandle> for Description {
                         addresses.iter().map(Into::into).collect()
                     }
                 };
-                (addresses, Some(sn.clone()))
+                (addresses, Some(serial_number.clone()))
             }
             _ => (vec![], None),
         };
@@ -72,7 +72,7 @@ mod tests {
 
         assert_eq!(desc.nodename, Some("test-node".to_string()));
         assert_eq!(desc.addresses, vec![addr]);
-        assert_eq!(desc.serial, None); // Serial is ignored for product state in this conversion
+        assert_eq!(desc.serial, Some("123".to_string()));
     }
 
     #[fuchsia::test]
