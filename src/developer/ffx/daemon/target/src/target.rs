@@ -39,14 +39,11 @@ use std::fmt;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use std::sync::Arc;
-#[cfg(not(target_os = "macos"))]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use usb_fastboot_discovery::{Interface, open_interface_with_serial};
-#[cfg(not(target_os = "macos"))]
-use usb_vsock_host::UsbVsockHost;
 
 mod identity;
 mod update;
@@ -288,7 +285,7 @@ impl HostPipeState {
 }
 
 #[cfg(not(target_os = "macos"))]
-static USB_VSOCK_HOST: Mutex<Option<Arc<UsbVsockHost<fuchsia_async::Socket>>>> = Mutex::new(None);
+static USB_DRIVER_CONNECTION: Mutex<Option<Arc<usb_driver_api::Driver>>> = Mutex::new(None);
 
 pub struct Target {
     pub events: events::Queue<TargetEvent>,
@@ -368,34 +365,38 @@ impl Target {
         target
     }
 
-    #[cfg(not(target_os = "macos"))]
-    pub fn init_usb_vsock_host()
-    -> Option<channel::mpsc::Receiver<usb_vsock_host::UsbVsockHostEvent>> {
+    pub async fn init_usb_driver() {
         if ffx_config::get(CONFIG_ENABLE_USB).unwrap_or(false) {
-            let (sender, receiver) = channel::mpsc::channel(1);
+            let socket_path =
+                ffx_config::get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
+            let socket_path = if let Some(socket_path) = socket_path {
+                socket_path
+            } else {
+                match usb_driver_api::default_usb_socket_path() {
+                    Ok(x) => x,
+                    Err(e) => {
+                        log::warn!("Could not get default USB socket path: {e}");
+                        return;
+                    }
+                }
+            };
 
-            if USB_VSOCK_HOST
-                .lock()
-                .unwrap()
-                .replace(UsbVsockHost::new(
-                    Vec::<std::path::PathBuf>::new(),
-                    true,
-                    sender,
-                    Vec::new(),
-                ))
-                .is_some()
-            {
-                log::warn!("Re-initializing USB VSock host");
+            let driver = match usb_driver_api::Driver::init(socket_path).await {
+                Ok(x) => x,
+                Err(e) => {
+                    log::warn!("Error connecting to USB driver: {e}");
+                    return;
+                }
+            };
+
+            if USB_DRIVER_CONNECTION.lock().unwrap().replace(Arc::new(driver)).is_some() {
+                log::warn!("Re-connecting to USB driver daemon");
             }
-            Some(receiver)
-        } else {
-            None
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
-    pub fn get_usb_vsock_host() -> Option<Arc<UsbVsockHost<fuchsia_async::Socket>>> {
-        (*USB_VSOCK_HOST.lock().unwrap()).clone()
+    pub fn get_usb_driver_connection() -> Option<Arc<usb_driver_api::Driver>> {
+        (*USB_DRIVER_CONNECTION.lock().unwrap()).clone()
     }
 
     pub fn new() -> Rc<Self> {
@@ -1333,7 +1334,7 @@ impl Target {
                         }
                     } else if let TargetAddr::UsbCtx(cid) = addr {
                         #[cfg(not(target_os = "macos"))]
-                        let ret = if let Some(host) = Target::get_usb_vsock_host() {
+                        let ret = if let Some(host) = Target::get_usb_driver_connection() {
                             Some((cid, Some(host)))
                         } else {
                             None

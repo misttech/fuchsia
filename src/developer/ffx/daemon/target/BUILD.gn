@@ -45,7 +45,7 @@ rustc_library("lib") {
   ]
 
   if (!is_mac) {
-    deps += [ "//src/developer/ffx/lib/usb_vsock_host:lib" ]
+    deps += [ "//src/developer/ffx/lib/usb_driver_api:lib" ]
   }
 
   test_deps = [

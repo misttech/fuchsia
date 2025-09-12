@@ -19,27 +19,19 @@ use ffx_stream_util::TryStreamUtilExt;
 use ffx_target::{FastbootInterface, TargetInfoQuery};
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_developer_ffx::{self as ffx, TargetAddrInfo};
-#[cfg(not(target_os = "macos"))]
-use fidl_fuchsia_developer_remotecontrol as fidl_rcs;
-use fidl_fuchsia_developer_remotecontrol::RemoteControlMarker;
-#[cfg(not(target_os = "macos"))]
+use fidl_fuchsia_developer_remotecontrol::{self as fidl_rcs, RemoteControlMarker};
 use fuchsia_async::{DurationExt, TimeoutExt};
-use futures::TryStreamExt;
 #[cfg(test)]
 use futures::channel::oneshot::Sender;
-#[cfg(not(target_os = "macos"))]
-use futures::{AsyncReadExt, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use protocols::prelude::*;
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-#[cfg(not(target_os = "macos"))]
 use std::time::Duration;
 use tasks::TaskManager;
-
-#[cfg(not(target_os = "macos"))]
-use usb_vsock_host::UsbVsockHostEvent;
+use tokio::io::AsyncReadExt;
 
 mod reboot;
 mod target_handle;
@@ -642,19 +634,30 @@ impl FidlProtocol for TargetCollectionProtocol {
             }
         });
 
-        #[cfg(not(target_os = "macos"))]
-        if let Some(mut usb_events) = Target::init_usb_vsock_host() {
+        Target::init_usb_driver().await;
+
+        if let Some(driver) = Target::get_usb_driver_connection()
+            && let Ok(usb_events) = driver
+                .listen_for_devices()
+                .await
+                .map_err(|error| log::warn!(error:?; "Could not listen for devices"))
+        {
             let tc = cx.get_target_collection().await?;
             self.tasks.spawn(async move {
+                let mut usb_events = std::pin::pin!(usb_events);
                 while let Some(event) = usb_events.next().await {
                     match event {
-                        UsbVsockHostEvent::AddedCid { cid, serial } => {
+                        Ok(usb_driver_api::DeviceEvent::Added { cid, serial }) => {
                             if let Err(error) = handle_usb_target(cid, &serial, &tc, &node).await {
                                 log::warn!(cid, serial:?, error:?; "Could not connect to USB target");
                             }
                         }
-                        UsbVsockHostEvent::RemovedCid(cid) => {
+                        Ok(usb_driver_api::DeviceEvent::Removed{cid}) => {
                             tc.remove_address(TargetAddr::UsbCtx(cid));
+                        }
+                        Err(error) => {
+                            log::error!(error:?; "USB discovery listening failed");
+                            break;
                         }
                     }
                 }
@@ -667,41 +670,34 @@ impl FidlProtocol for TargetCollectionProtocol {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 const VSOCK_IDENTIFY_PORT: u32 = 201;
 
-#[cfg(not(target_os = "macos"))]
 async fn handle_usb_target(
     cid: u32,
     serial: &Option<String>,
     tc: &Rc<TargetCollection>,
     overnet_node: &Arc<overnet_core::Router>,
 ) -> Result<()> {
-    let host = Target::get_usb_vsock_host().ok_or_else(|| anyhow!("USB not initialized"))?;
+    let host = Target::get_usb_driver_connection().ok_or_else(|| anyhow!("USB not available"))?;
 
     handle_usb_target_impl(cid, serial, tc, overnet_node, host).await
 }
 
-#[cfg(not(target_os = "macos"))]
 async fn handle_usb_target_impl(
     cid: u32,
     serial: &Option<String>,
     tc: &Rc<TargetCollection>,
     overnet_node: &Arc<overnet_core::Router>,
-    host: Arc<usb_vsock_host::UsbVsockHost<fuchsia_async::Socket>>,
+    driver: Arc<usb_driver_api::Driver>,
 ) -> Result<()> {
-    let (socket, other_end) = fuchsia_async::emulated_handle::Socket::create_stream();
-    let other_end = fuchsia_async::Socket::from_socket(other_end);
-    let _state = host
+    let mut socket = driver
         .connect(
             cid.try_into().map_err(|_| anyhow!("Tried to get target info from USB CID 0"))?,
             VSOCK_IDENTIFY_PORT,
-            other_end,
         )
         .await?;
 
     let mut buf = Vec::new();
-    let mut socket = fuchsia_async::Socket::from_socket(socket);
     let _buf_len = socket
         .read_to_end(&mut buf)
         .map(|x| x.map_err(anyhow::Error::from))
@@ -876,7 +872,6 @@ mod tests {
     use ffx_config::{ConfigLevel, query};
     use fidl_fuchsia_developer_ffx::TargetQuery;
     use fidl_fuchsia_net::{IpAddress, Ipv6Address};
-    use futures::AsyncWriteExt;
     use futures::channel::oneshot::channel;
     use protocols::testing::FakeDaemonBuilder;
     use serde_json::{Map, Value, json};
@@ -1135,26 +1130,30 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[fuchsia::test]
     async fn test_handle_usb_target() {
-        use usb_vsock_host as usbv;
+        use tokio::io::AsyncWriteExt;
+        use {usb_driver_impl as usbd, usb_vsock_host as usbv};
+
         const NODE_NAME: &str = "Teletechternacon";
+
+        let dir = tempfile::tempdir().unwrap();
+        let sock_path = dir.path().join("test_sock");
         let tc = Rc::new(TargetCollection::new());
         let tc_clone = Rc::clone(&tc);
         let local_node = overnet_core::Router::new(None).unwrap();
 
-        let (
-            usbv::TestHost { host, event_receiver: _ },
-            usbv::TestConnection {
-                cid,
-                connection,
-                serial,
-                mut incoming_requests,
-                abort_transfer: _,
-                scope,
-            },
-        ) = usbv::TestConnection::new();
+        let usbv::TestConnection {
+            cid,
+            connection,
+            serial,
+            mut incoming_requests,
+            abort_transfer: _,
+            scope,
+        } = usbd::HostDriver::new_for_test(sock_path.clone());
+
+        let driver = Arc::new(usb_driver_api::Driver::init(sock_path).await.unwrap());
 
         let handled = scope.compute_local(async move {
-            handle_usb_target_impl(cid, &Some(serial), &tc_clone, &local_node, host).await
+            handle_usb_target_impl(cid, &Some(serial), &tc_clone, &local_node, driver).await
         });
 
         let identify_request = incoming_requests.next().await.unwrap();
@@ -1165,11 +1164,9 @@ mod tests {
         assert_eq!(2, *host_cid);
         assert_eq!(VSOCK_IDENTIFY_PORT, *device_port);
 
-        let (identify_sock, other_end) = fuchsia_async::emulated_handle::Socket::create_stream();
-        let other_end = fuchsia_async::Socket::from_socket(other_end);
-        let _conn_state = connection.accept(identify_request, other_end).await.unwrap();
+        let (mut identify_sock, other_end) = tokio::net::UnixStream::pair().unwrap();
+        let _conn_state = connection.accept(identify_request, other_end.into()).await.unwrap();
 
-        let mut identify_sock = fuchsia_async::Socket::from_socket(identify_sock);
         let header = fidl::encoding::TransactionHeader::new(
             0,
             0x6035e1ab368deee1,
