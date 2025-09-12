@@ -5,7 +5,7 @@
 //! Utility functions for fuchsia.io files.
 
 use crate::node::{CloseError, OpenError};
-use fidl::{persist, unpersist, Persistable};
+use fidl::{Persistable, persist, unpersist};
 use flex_fuchsia_io as fio;
 use thiserror::Error;
 
@@ -27,7 +27,7 @@ pub use fuchsia::*;
 #[cfg(not(feature = "fdomain"))]
 mod fuchsia {
     use super::*;
-    use crate::node::{take_on_open_event, Kind};
+    use crate::node::{Kind, take_on_open_event};
 
     /// An error encountered while reading a named file
     #[derive(Debug, Error)]
@@ -245,8 +245,24 @@ mod fuchsia {
         Ok(data)
     }
 
-    /// Reads the contents of `file` into a Vec. `file` must have been opened with either `DESCRIBE`
-    /// or `SEND_REPRESENTATION` and the event must not have been read yet.
+    /// Writes `contents` into `stream`.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub(super) fn write_to_stream(stream: zx::Stream, contents: &[u8]) -> Result<(), WriteError> {
+        let mut offset: usize = 0;
+        while offset < contents.len() {
+            let actual = stream
+                .write(zx::StreamWriteOptions::empty(), &contents[offset..])
+                .map_err(WriteError::WriteError)?;
+            // Per the syscall docs, 0 will never be returned (an error is returned instead), but
+            // make sure we don't loop forever.
+            debug_assert!(actual > 0);
+            offset += actual;
+        }
+        Ok(())
+    }
+
+    /// Reads the contents of `file` into a Vec. `file` must have been opened with
+    /// `SEND_REPRESENTATION` and the event must not have been read yet.
     pub(crate) async fn read_file_with_on_open_event(
         file: fio::FileProxy,
     ) -> Result<Vec<u8>, ReadError> {
@@ -258,6 +274,24 @@ mod fuchsia {
         } else {
             // Fall back to FIDL reads if the file doesn't support streams.
             read(&file).await
+        }
+    }
+
+    /// Writes the contents of `buf` into `file`. `file` must have been opened with
+    /// `SEND_REPRESENTATION` and the event must not have been read yet.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub(crate) async fn write_file_with_on_open_event(
+        file: &fio::FileProxy,
+        contents: &[u8],
+    ) -> Result<(), WriteError> {
+        let event = take_on_open_event(file).await.map_err(WriteError::Open)?;
+        let stream = extract_stream_from_on_open_event(event).map_err(WriteError::Open)?;
+
+        if let Some(stream) = stream {
+            write_to_stream(stream, contents)
+        } else {
+            // Fall back to FIDL writes if the file doesn't support streams.
+            write(file, contents).await
         }
     }
 }
@@ -290,8 +324,15 @@ impl ReadError {
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
 pub enum WriteError {
-    #[error("while creating the file: {0}")]
-    Create(#[from] OpenError),
+    #[error("while opening the file: {0}")]
+    Open(#[from] OpenError),
+
+    #[error("while linking the file: {0}")]
+    Link(#[from] zx_status::Status),
+
+    #[error("while renaming the file: {0}")]
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    Rename(#[from] crate::node::RenameError),
 
     #[error("write call failed: {0}")]
     Fidl(#[from] fidl::Error),
@@ -409,16 +450,16 @@ pub async fn read_fidl<T: Persistable>(file: &fio::FileProxy) -> Result<T, ReadE
 mod tests {
     use super::*;
     use crate::directory;
-    use crate::node::{take_on_open_event, Kind};
+    use crate::node::{Kind, take_on_open_event};
     use assert_matches::assert_matches;
     use fidl_fidl_test_schema::{DataTable1, DataTable2};
     use fuchsia_async as fasync;
     use std::path::Path;
     use std::sync::Arc;
     use tempfile::TempDir;
-    use vfs::execution_scope::ExecutionScope;
-    use vfs::file::vmo::{read_only, VmoFile};
     use vfs::ToObjectRequest;
+    use vfs::execution_scope::ExecutionScope;
+    use vfs::file::vmo::{VmoFile, read_only};
     use zx::{self as zx, HandleBased as _};
 
     const DATA_FILE_CONTENTS: &str = "Hello World!\n";
@@ -484,11 +525,11 @@ mod tests {
     async fn write_in_namespace_fails_on_invalid_namespace_entry() {
         assert_matches!(
             write_in_namespace("/fake", b"").await,
-            Err(WriteNamedError { path, source: WriteError::Create(_) }) if path == "/fake"
+            Err(WriteNamedError { path, source: WriteError::Open(_) }) if path == "/fake"
         );
         let err = write_in_namespace("/fake", b"").await.unwrap_err();
         assert_eq!(err.path(), "/fake");
-        assert_matches!(err.into_inner(), WriteError::Create(_));
+        assert_matches!(err.into_inner(), WriteError::Open(_));
     }
 
     // write
@@ -539,6 +580,29 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn write_appends_to_file() {
+        let tempdir = TempDir::new().unwrap();
+        let dir = directory::open_in_namespace(
+            tempdir.path().to_str().unwrap(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        )
+        .unwrap();
+
+        // Create and write to the file.
+        let file =
+            directory::open_file(&dir, "file", fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE)
+                .await
+                .unwrap();
+        write(&file, "Hello ").await.unwrap();
+        write(&file, "World!\n").await.unwrap();
+        close(file).await.unwrap();
+
+        // Verify contents.
+        let contents = std::fs::read(tempdir.path().join(Path::new("file"))).unwrap();
+        assert_eq!(&contents[..], DATA_FILE_CONTENTS.as_bytes());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn write_stream() {
         let tempdir = TempDir::new().unwrap();
         let dir = directory::open_in_namespace(
             tempdir.path().to_str().unwrap(),
@@ -804,5 +868,26 @@ mod tests {
             read_in_namespace("/pkg/data/missing").await,
             Err(e) if e.is_not_found_error()
         );
+    }
+
+    #[test]
+    fn write_to_stream_with_contents() {
+        let data = b"file-contents".repeat(1000);
+        let vmo = zx::Vmo::create(data.len() as u64).unwrap();
+        let stream = zx::Stream::create(zx::StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
+        write_to_stream(stream, &data).unwrap();
+
+        let mut read_back = vec![0; data.len()];
+        vmo.read(&mut read_back, 0).unwrap();
+        assert_eq!(read_back, data);
+    }
+
+    #[test]
+    fn write_to_stream_empty() {
+        let data = b"";
+        let vmo = zx::Vmo::create(0).unwrap();
+        let stream = zx::Stream::create(zx::StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
+        write_to_stream(stream, data).unwrap();
+        assert_eq!(vmo.get_size().unwrap(), 0);
     }
 }

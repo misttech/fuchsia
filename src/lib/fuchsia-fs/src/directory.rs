@@ -4,8 +4,8 @@
 
 //! Utility functions for fuchsia.io directories.
 
-use crate::node::{self, CloneError, CloseError, OpenError, RenameError};
 use crate::PERM_READABLE;
+use crate::node::{self, CloneError, CloseError, OpenError, RenameError};
 use flex_fuchsia_io as fio;
 use fuchsia_async::{DurationExt, MonotonicDuration, TimeoutExt};
 use futures::future::BoxFuture;
@@ -15,8 +15,8 @@ use std::str::Utf8Error;
 use thiserror::Error;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Ref, Unaligned};
 
-use flex_client::fidl::{ClientEnd, ProtocolMarker, ServerEnd};
 use flex_client::ProxyHasDomain;
+use flex_client::fidl::{ClientEnd, ProtocolMarker, ServerEnd};
 
 mod watcher;
 pub use watcher::{WatchEvent, WatchMessage, Watcher, WatcherCreateError, WatcherStreamError};
@@ -76,6 +76,55 @@ mod fuchsia {
         let flags = fio::Flags::FLAG_SEND_REPRESENTATION | PERM_READABLE;
         let file = open_file_async(parent, path, flags).map_err(ReadError::Open)?;
         crate::file::read_file_with_on_open_event(file).await
+    }
+
+    /// Atomically creates `path` with `contents`.
+    ///
+    /// This is done by opening an unnamed temporary file, writing the contents into it, and linking
+    /// to `$(path).__tmp`, and then renaming the temporary file to `path`.
+    ///
+    /// Note that power failure after the temporary file was created, but before it was renamed,
+    /// will result in the temporary file existing in the filesystem.  This function will always try
+    /// to remove that file first, but if this function is never called, the temp file will never be
+    /// removed.
+    ///
+    /// TODO(https://fxbug.dev/444270977): It would be preferable if we could avoid creating the
+    /// named temporary file, but a limitation in Node/LinkInto prevents this.  Once that limitation
+    /// is resolved, directly LinkInto over the target file, avoiding the need to clean up on poewr
+    /// failure.
+    ///
+    /// Note that not all filesystems support this feature.
+    ///
+    /// Available at HEAD since FLAG_CREATE_AS_UNNAMED_TEMPORARY is available at HEAD
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub async fn atomic_write_file(
+        parent: &fio::DirectoryProxy,
+        path: &str,
+        contents: &[u8],
+    ) -> Result<(), crate::file::WriteError> {
+        use crate::file::WriteError;
+        let (dir, filename) = split_path(parent, path).await?;
+        let dir = dir.as_ref().unwrap_or(parent);
+        let tmp_filename = format!("{filename}.__tmp");
+        eprintln!("Got {tmp_filename}");
+        // Clean up `tmp_filename` in case it still existed from a previous attempt.  Safe to ignore
+        // errors.
+        let _ = dir.unlink(&tmp_filename, &fio::UnlinkOptions::default()).await?;
+        let flags = fio::Flags::FLAG_SEND_REPRESENTATION
+            | fio::Flags::PROTOCOL_FILE
+            | fio::PERM_READABLE
+            | fio::PERM_WRITABLE
+            | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY;
+        let tmp = open_file_async(dir, ".", flags).map_err(WriteError::Open)?;
+        crate::file::write_file_with_on_open_event(&tmp, contents).await?;
+        let (status, token) = dir.get_token().await.map_err(WriteError::Fidl)?;
+        zx::ok(status).map_err(WriteError::Link)?;
+        let token = zx::Event::from(token.unwrap());
+        tmp.link_into(token, &tmp_filename)
+            .await
+            .map_err(WriteError::Fidl)?
+            .map_err(|s| WriteError::Link(zx::Status::from_raw(s)))?;
+        rename(dir, &tmp_filename, filename).await.map_err(|err| WriteError::Rename(err))
     }
 }
 
@@ -354,9 +403,9 @@ pub async fn create_randomly_named_file(
     prefix: &str,
     flags: fio::Flags,
 ) -> Result<(String, fio::FileProxy), OpenError> {
+    use rand::SeedableRng as _;
     use rand::distr::{Alphanumeric, SampleString as _};
     use rand::rngs::SmallRng;
-    use rand::SeedableRng as _;
     let mut rng = SmallRng::from_os_rng();
 
     let flags = flags | fio::Flags::FLAG_MUST_CREATE;
@@ -381,9 +430,12 @@ async fn split_path<'a>(
 ) -> Result<(Option<fio::DirectoryProxy>, &'a str), OpenError> {
     match path.rsplit_once('/') {
         Some((parent, name)) => {
-            let proxy =
-                open_directory(dir, parent, fio::Flags::from_bits(fio::W_STAR_DIR.bits()).unwrap())
-                    .await?;
+            let proxy = open_directory(
+                dir,
+                parent,
+                fio::Flags::from_bits(fio::RW_STAR_DIR.bits()).unwrap(),
+            )
+            .await?;
             Ok((Some(proxy), name))
         }
         None => Ok((None, path)),
@@ -504,7 +556,7 @@ where
                     Ok(subentries) => subentries,
                     // Promote timeout error.
                     Err(EnumerateError::Timeout) => {
-                        return Some((Err(RecursiveEnumerateError::Timeout), (results, pending)))
+                        return Some((Err(RecursiveEnumerateError::Timeout), (results, pending)));
                     }
                     Err(err) => {
                         let error =
@@ -768,7 +820,8 @@ pub async fn read_file_to_string(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file::{write, ReadError};
+    use crate::directory::OpenError;
+    use crate::file::{ReadError, WriteError, write};
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use futures::channel::oneshot;
@@ -799,6 +852,16 @@ mod tests {
 
     fn open_tmp() -> (TempDir, fio::DirectoryProxy) {
         let tempdir = TempDir::new().expect("failed to create tmp dir");
+        let proxy = open_in_namespace(
+            tempdir.path().to_str().unwrap(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        )
+        .unwrap();
+        (tempdir, proxy)
+    }
+
+    fn open_data() -> (TempDir, fio::DirectoryProxy) {
+        let tempdir = TempDir::new_in("/data").expect("failed to create tmp dir in /data");
         let proxy = open_in_namespace(
             tempdir.path().to_str().unwrap(),
             fio::PERM_READABLE | fio::PERM_WRITABLE,
@@ -1283,9 +1346,9 @@ mod tests {
             assert!(dir_contains(&dir_proxy, file).await.unwrap());
         }
 
-        assert!(!dir_contains(&dir_proxy, "notin")
-            .await
-            .expect("error checking if dir contains notin"));
+        assert!(
+            !dir_contains(&dir_proxy, "notin").await.expect("error checking if dir contains notin")
+        );
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -1612,5 +1675,57 @@ mod tests {
             Err(ReadError::Open(OpenError::OpenError(zx_status::Status::NOT_FOUND)))
         );
         assert_matches!(result, Err(e) if e.is_not_found_error());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    async fn atomic_write_file_writes_to_file() {
+        let (_tmp, proxy) = open_data();
+        let contents = b"atomic write contents";
+        match atomic_write_file(&proxy, "atomic-file", contents).await {
+            Ok(_) => (),
+            // Don't assume that the filesystem running on the system supports unnamed temp files.
+            Err(WriteError::Open(OpenError::OpenError(zx::Status::NOT_SUPPORTED))) => return,
+            Err(err) => panic!("atomic_write_file failed: {err:?}"),
+        };
+
+        let file_contents = read_file(&proxy, "atomic-file").await.unwrap();
+        assert_eq!(file_contents, contents);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    async fn atomic_write_file_overwrites_existing_file() {
+        let (_tmp, proxy) = open_data();
+        let initial_contents = b"initial contents";
+        match atomic_write_file(&proxy, "atomic-file", initial_contents).await {
+            Ok(_) => (),
+            // Don't assume that the filesystem running on the system supports unnamed temp files.
+            Err(WriteError::Open(OpenError::OpenError(zx::Status::NOT_SUPPORTED))) => return,
+            Err(err) => panic!("atomic_write_file failed: {err:?}"),
+        };
+
+        let new_contents = b"new contents";
+        atomic_write_file(&proxy, "atomic-file", new_contents).await.unwrap();
+
+        let file_contents = read_file(&proxy, "atomic-file").await.unwrap();
+        assert_eq!(file_contents, new_contents);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    async fn atomic_write_file_nested() {
+        let (_tmp, proxy) = open_data();
+        let contents = b"atomic write contents";
+        create_directory(&proxy, "dir", fio::PERM_READABLE | fio::PERM_WRITABLE).await.unwrap();
+        match atomic_write_file(&proxy, "dir/atomic-file", contents).await {
+            Ok(_) => (),
+            // Don't assume that the filesystem running on the system supports unnamed temp files.
+            Err(WriteError::Open(OpenError::OpenError(zx::Status::NOT_SUPPORTED))) => return,
+            Err(err) => panic!("atomic_write_file failed: {err:?}"),
+        };
+
+        let file_contents = read_file(&proxy, "dir/atomic-file").await.unwrap();
+        assert_eq!(file_contents, contents);
     }
 }
