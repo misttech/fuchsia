@@ -2075,12 +2075,53 @@ fn test_scan_recovery(
 
     // Inform the internals that the interface was removed.  The internals will then recreate the
     // interface.
-    let _ = inform_watcher_of_client_iface_removal_and_expect_iface_recovery(
+    let mut iface_sme_stream = inform_watcher_of_client_iface_removal_and_expect_iface_recovery(
         &mut exec,
         &mut test_values,
         TEST_PHY_ID,
         TEST_CLIENT_IFACE_ID,
     );
+
+    // Make another failed scan request.
+    request_scan_and_reply(&mut exec, &mut test_values, &mut iface_sme_stream, scan_result.clone());
+
+    match scan_result.as_deref() {
+        Err(fidl_sme::ScanErrorCode::InternalError)
+        | Err(fidl_sme::ScanErrorCode::InternalMlmeError)
+        | Err(fidl_sme::ScanErrorCode::NotSupported)
+        | Ok([]) => {
+            // If this is a scan failure situation, expect a PHY reset request.
+            let phy_reset_req = run_while(
+                &mut exec,
+                &mut test_values.internal_objects.internal_futures,
+                test_values.external_interfaces.monitor_service_stream.next(),
+            );
+            assert_matches!(
+                phy_reset_req,
+                Some(Ok(fidl_fuchsia_wlan_device_service::DeviceMonitorRequest::Reset {
+                    phy_id: TEST_PHY_ID,
+                    ..
+                }))
+            );
+        }
+        Err(fidl_sme::ScanErrorCode::ShouldWait)
+        | Err(fidl_sme::ScanErrorCode::CanceledByDriverOrFirmware) => {
+            // Interrupted scans should not result in PHY resets.
+            assert_matches!(
+                exec.run_until_stalled(&mut test_values.internal_objects.internal_futures),
+                Poll::Pending
+            );
+            assert_matches!(
+                exec.run_until_stalled(
+                    &mut test_values.external_interfaces.monitor_service_stream.next()
+                ),
+                Poll::Pending
+            );
+        }
+        Ok(&[_, ..]) => {
+            panic!("Recovery test unexpectedly generated good scan results")
+        }
+    }
 }
 
 // This function manages interactions from IfaceManager and a client state machine as wlancfg
