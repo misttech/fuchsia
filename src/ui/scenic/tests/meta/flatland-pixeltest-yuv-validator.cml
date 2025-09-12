@@ -7,10 +7,7 @@
         "//sdk/lib/syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/flatland-pixeltest-yuv-validator",
-
-        // Only run the flip and orientation tests, so that this test component can
-        // run within the test timeout.
+        binary: "bin/flatland-pixeltest-validator",
         args: [ "--gtest_filter=YuvPixelFormats/ParameterizedYUVPixelTest.*" ],
     },
     use: [

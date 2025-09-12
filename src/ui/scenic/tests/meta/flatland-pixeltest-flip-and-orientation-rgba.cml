@@ -10,7 +10,7 @@
     children: [
         {
             name: "validator",
-            url: "flatland-pixeltest-flip-and-orientation-suite#meta/flatland-pixeltest-flip-and-orientation-validator.cm",
+            url: "flatland-pixeltest-flip-and-orientation-rgba-suite#meta/flatland-pixeltest-flip-and-orientation-rgba-validator.cm",
         },
     ],
 }

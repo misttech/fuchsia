@@ -7,8 +7,11 @@
         "//sdk/lib/syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/flatland-pixeltest-exotic-rgb-validator",
-        args: [ "--gtest_filter=ExoticRgbPixelFormats/ParameterizedSRGBPixelTest.*" ],
+        binary: "bin/flatland-pixeltest-validator",
+
+        // Only run the flip and orientation tests, so that this test component can
+        // run within the test timeout.
+        args: [ "--gtest_filter=ParameterizedFlipAndOrientationTestWithParams/ParameterizedFlipAndOrientationTestRGBA.*" ],
     },
     use: [
         {

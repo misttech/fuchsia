@@ -483,8 +483,10 @@ TEST_F(FlatlandMouseIntegrationTest, ChildReceivesFocus_OnMouseLatch) {
   EXPECT_TRUE(is_child_focused->focused());
 }
 
+class FlatlandMouseWheelIntegrationTest : public FlatlandMouseIntegrationTest {};
+
 // Send wheel events to scenic ensure client receives wheel events.
-TEST_F(FlatlandMouseIntegrationTest, Wheel) {
+TEST_F(FlatlandMouseWheelIntegrationTest, Wheel) {
   FlatlandPtr child_instance;
   MouseSourcePtr child_mouse_source;
 
@@ -535,7 +537,7 @@ TEST_F(FlatlandMouseIntegrationTest, Wheel) {
 
 // Send wheel events in button pressing sequence to scenic ensure client receives correct wheel
 // events.
-TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheel) {
+TEST_F(FlatlandMouseWheelIntegrationTest, DownWheelUpWheel) {
   FlatlandPtr child_instance;
   MouseSourcePtr child_mouse_source;
 
@@ -611,7 +613,7 @@ TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheel) {
 
 // Send wheel events bundled with button changess to scenic ensure client receives correct wheel
 // events.
-TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheelBundled) {
+TEST_F(FlatlandMouseWheelIntegrationTest, DownWheelUpWheelBundled) {
   FlatlandPtr child_instance;
   MouseSourcePtr child_mouse_source;
 
@@ -690,7 +692,7 @@ TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheelBundled) {
 }
 
 // Send wheel events with physical pixel fields to scenic ensure client receives wheel events.
-TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
+TEST_F(FlatlandMouseWheelIntegrationTest, WheelWithPhysicalPixel) {
   FlatlandPtr child_instance;
   MouseSourcePtr child_mouse_source;
 
@@ -903,6 +905,8 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
   EXPECT_TRUE(child_events[2].pointer_sample().is_precision_scroll());
 }
 
+class FlatlandMouseHitRegionIntegrationTest : public FlatlandMouseIntegrationTest {};
+
 // Hit tests follow the same basic view topology:
 //
 // root_instance     - context view
@@ -920,7 +924,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
 
 // Add full screen hit regions on both parent and child instances. Check that only the child
 // receives hits.
-TEST_F(FlatlandMouseIntegrationTest, SimpleHitTest) {
+TEST_F(FlatlandMouseHitRegionIntegrationTest, SimpleHitTest) {
   FlatlandPtr parent_instance;
   MouseSourcePtr parent_mouse_source;
 
@@ -991,7 +995,7 @@ TEST_F(FlatlandMouseIntegrationTest, SimpleHitTest) {
 // additional partial-screen overlay on top of the child, which should receive hits instead of the
 // child for that portion of the screen. This forms a parent-child-parent "sandwich" for that
 // region.
-TEST_F(FlatlandMouseIntegrationTest, SandwichTest) {
+TEST_F(FlatlandMouseHitRegionIntegrationTest, SandwichTest) {
   FlatlandPtr parent_instance;
   MouseSourcePtr parent_mouse_source;
 
@@ -1104,7 +1108,7 @@ TEST_F(FlatlandMouseIntegrationTest, SandwichTest) {
 //
 //
 // root parent context target
-TEST_F(FlatlandMouseIntegrationTest, PartialScreenViews) {
+TEST_F(FlatlandMouseHitRegionIntegrationTest, PartialScreenViews) {
   FlatlandPtr parent_instance;
   MouseSourcePtr parent_mouse_source;
 

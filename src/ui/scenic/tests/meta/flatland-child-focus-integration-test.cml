@@ -10,7 +10,7 @@
     children: [
         {
             name: "validator",
-            url: "flatland-pixeltest-exotic-rgb-suite#meta/flatland-pixeltest-exotic-rgb-validator.cm",
+            url: "flatland-child-focus-integration-test-suite#meta/flatland-child-focus-integration-test-validator.cm",
         },
     ],
 }

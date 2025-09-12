@@ -1,4 +1,4 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -8,10 +8,7 @@
     ],
     program: {
         binary: "bin/flatland-focus-integration-test-validator",
-
-        // Exclude the auto focus and child focus tests, so that this test component can
-        // run within the test timeout.
-        args: [ "--gtest_filter=-FlatlandAutoFocusIntegrationTest.*:FlatlandChildFocusIntegrationTest.*" ],
+        args: [ "--gtest_filter=FlatlandAutoFocusIntegrationTest.*" ],
     },
     use: [
         {

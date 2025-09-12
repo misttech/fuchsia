@@ -8,10 +8,7 @@
     ],
     program: {
         binary: "bin/flatland-pixeltest-validator",
-
-        // Only run the BGRA flip and orientation tests, so that this test component can
-        // run within the test timeout.
-        args: [ "--gtest_filter=ParameterizedFlipAndOrientationTestWithParams/ParameterizedFlipAndOrientationTestBGRA.*" ],
+        args: [ "--gtest_filter=RgbPixelFormats/ParameterizedSRGBPixelTest.*" ],
     },
     use: [
         {

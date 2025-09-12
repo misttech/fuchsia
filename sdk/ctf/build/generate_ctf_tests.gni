@@ -113,6 +113,31 @@ template("pre_packaged_test_with_names") {
   }
 }
 
+template("generate_scenic_test_base") {
+  forward_variables_from(invoker,
+                         [
+                           "test_component",
+                           "test_component_name",
+                           "target_test_info",
+                           "fidl_coverage",
+                         ])
+
+  fuchsia_package_with_test(target_name) {
+    test_component = test_component
+    test_component_name = test_component_name
+    subpackages = [
+      target_test_info.target_label,
+      "//src/ui/testing/scenic_realm_factory:pkg",
+    ]
+    test_specs = {
+      environments = vulkan_envs
+      log_settings = {
+        max_severity = "ERROR"
+      }
+    }
+  }
+}
+
 template("generate_archivist_integration_test_cases") {
   forward_variables_from(invoker,
                          [
@@ -634,19 +659,11 @@ template("generate_flatland-allocation-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-allocation-test-component"
     test_component_name = "flatland-allocation-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -656,20 +673,26 @@ template("generate_flatland-touch-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-touch-integration-test-component"
     test_component_name = "flatland-touch-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-transformed-touch-integration-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component = "//src/ui/scenic/tests:flatland-transformed-touch-integration-test-component"
+    test_component_name = "flatland-transformed-touch-integration-test.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -679,20 +702,42 @@ template("generate_flatland-focus-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-focus-integration-test-component"
     test_component_name = "flatland-focus-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-auto-focus-integration-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component =
+        "//src/ui/scenic/tests:flatland-auto-focus-integration-test-component"
+    test_component_name = "flatland-auto-focus-integration-test.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-child-focus-integration-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component =
+        "//src/ui/scenic/tests:flatland-child-focus-integration-test-component"
+    test_component_name = "flatland-child-focus-integration-test.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -728,20 +773,12 @@ template("generate_flatland-view-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-view-integration-test-component"
     test_component_name = "flatland-view-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -795,20 +832,12 @@ template("generate_observer-registry-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:observer-registry-integration-test-component"
     test_component_name = "observer-registry-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -818,19 +847,11 @@ template("generate_scoped-observer-registry-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:scoped-observer-registry-integration-test-component"
     test_component_name = "scoped-observer-registry-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -866,20 +887,12 @@ template("generate_screen-capture-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:screen-capture-integration-test-component"
     test_component_name = "screen-capture-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -889,20 +902,12 @@ template("generate_screen-capture2-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:screen-capture2-integration-test-component"
     test_component_name = "screen-capture2-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -912,20 +917,12 @@ template("generate_display-ownership-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:display-ownership-integration-test-component"
     test_component_name = "display-ownership-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -935,20 +932,12 @@ template("generate_singleton-display-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:singleton-display-integration-test-component"
     test_component_name = "singleton-display-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -958,20 +947,42 @@ template("generate_flatland-mouse-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-mouse-integration-test-component"
     test_component_name = "flatland-mouse-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-mouse-wheel-integration-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component =
+        "//src/ui/scenic/tests:flatland-mouse-wheel-integration-test-component"
+    test_component_name = "flatland-mouse-wheel-integration-test.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-mouse-hit-integration-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component =
+        "//src/ui/scenic/tests:flatland-mouse-hit-integration-test-component"
+    test_component_name = "flatland-mouse-hit-integration-test.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -981,20 +992,12 @@ template("generate_flatland-pixeltest-general-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-pixeltest-general-component"
     test_component_name = "flatland-pixeltest-general.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -1004,19 +1007,69 @@ template("generate_flatland-pixeltest-flip-and-orientation-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-pixeltest-flip-and-orientation-component"
     test_component_name = "flatland-pixeltest-flip-and-orientation.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-pixeltest-flip-and-orientation-rgba-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component = "//src/ui/scenic/tests:flatland-pixeltest-flip-and-orientation-rgba-component"
+    test_component_name = "flatland-pixeltest-flip-and-orientation-rgba.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-pixeltest-opacity-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component =
+        "//src/ui/scenic/tests:flatland-pixeltest-opacity-component"
+    test_component_name = "flatland-pixeltest-opacity.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-pixeltest-screenshot-format-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component =
+        "//src/ui/scenic/tests:flatland-pixeltest-screenshot-format-component"
+    test_component_name = "flatland-pixeltest-screenshot-format.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
+  }
+}
+
+template("generate_flatland-pixeltest-srgb-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  generate_scenic_test_base(target_name) {
+    test_component = "//src/ui/scenic/tests:flatland-pixeltest-srgb-component"
+    test_component_name = "flatland-pixeltest-srgb.cm"
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 
@@ -1049,19 +1102,11 @@ template("generate_trusted-flatland-factory-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
+  generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:trusted-flatland-factory-integration-test-component"
     test_component_name = "trusted-flatland-factory-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      environments = vulkan_envs
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+    target_test_info = test_info
+    fidl_coverage = fidl_coverage
   }
 }
 

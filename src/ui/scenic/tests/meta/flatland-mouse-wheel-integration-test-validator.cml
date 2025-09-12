@@ -1,4 +1,4 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -8,10 +8,7 @@
     ],
     program: {
         binary: "bin/flatland-mouse-integration-test-validator",
-
-        // Exclude the mouse wheel and hit region tests, so that this test component can
-        // run within the test timeout.
-        args: [ "--gtest_filter=-FlatlandMouseWheelIntegrationTest.*:FlatlandMouseHitRegionIntegrationTest.*" ],
+        args: [ "--gtest_filter=FlatlandMouseWheelIntegrationTest.*" ],
     },
     use: [
         {

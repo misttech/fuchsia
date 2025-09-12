@@ -11,14 +11,23 @@ group("tests") {
   public_deps = [
     ":display-ownership-integration-test",
     ":flatland-allocation-test",
+    ":flatland-auto-focus-integration-test",
+    ":flatland-child-focus-integration-test",
     ":flatland-focus-integration-test",
+    ":flatland-mouse-hit-integration-test",
     ":flatland-mouse-integration-test",
-    ":flatland-pixeltest-exotic-rgb",
+    ":flatland-mouse-wheel-integration-test",
+    ":flatland-pixeltest-exotic-srgb",
     ":flatland-pixeltest-flip-and-orientation",
+    ":flatland-pixeltest-flip-and-orientation-rgba",
     ":flatland-pixeltest-general",
+    ":flatland-pixeltest-opacity",
+    ":flatland-pixeltest-screenshot-format",
+    ":flatland-pixeltest-srgb",
     ":flatland-pixeltest-yuv",
     ":flatland-protected-memory-integration-test",
     ":flatland-touch-integration-test",
+    ":flatland-transformed-touch-integration-test",
     ":flatland-view-integration-test",
     ":flatland-view-ref-installed-integration-test",
     ":null-renderer-integration-test",
@@ -40,8 +49,11 @@ group("tests") {
 group("ctf-tests") {
   testonly = true
   deps = [
+    ":flatland-auto-focus-integration-test-suite_archive",
+    ":flatland-child-focus-integration-test-suite_archive",
     ":flatland-focus-integration-test-suite_archive",
     ":flatland-touch-integration-test-suite_archive",
+    ":flatland-transformed-touch-integration-test-suite_archive",
     ":observer-registry-integration-test-suite_archive",
     ":scoped-observer-registry-integration-test-suite_archive",
 
@@ -50,9 +62,15 @@ group("ctf-tests") {
     # ":screen-capture2-integration-test-suite_archive",
 
     ":flatland-allocation-test-suite_archive",
+    ":flatland-mouse-hit-integration-test-suite_archive",
     ":flatland-mouse-integration-test-suite_archive",
+    ":flatland-mouse-wheel-integration-test-suite_archive",
+    ":flatland-pixeltest-flip-and-orientation-rgba-suite_archive",
     ":flatland-pixeltest-flip-and-orientation-suite_archive",
     ":flatland-pixeltest-general-suite_archive",
+    ":flatland-pixeltest-opacity-suite_archive",
+    ":flatland-pixeltest-screenshot-format-suite_archive",
+    ":flatland-pixeltest-srgb-suite_archive",
     ":flatland-pixeltest-yuv-suite_archive",
     ":flatland-protected-memory-integration-test-suite_archive",
     ":flatland-view-integration-test-suite_archive",
@@ -114,11 +132,14 @@ source_set("screen-capture-utils") {
 # Usage:
 #
 # ```
-# ctf_components_packages("the-test-name") {
+# executable("the-test-validator-bin") {
 #   sources = [ "test.cc" ]
 #   deps = [
 #     "deps for *.cc test body"
 #   ]
+# }
+# ctf_components_packages("the-test-name") {
+#   bin = ":the-test-validator-bin"
 #   test_spec = { ... }
 # }
 # ```
@@ -147,17 +168,14 @@ template("ctf_components_packages") {
   assert(defined(_test_specs), "test_specs must be provided")
   test_prefix = target_name
 
-  executable("${test_prefix}-validator-bin") {
-    testonly = true
-    sources = invoker.sources
-    output_name = "${test_prefix}-validator"
-    deps = invoker.deps
-  }
+  # The template accepts a pre-built binary label.
+  _test_binary = invoker.bin
+  assert(defined(_test_binary), "bin must be provided")
 
   fuchsia_component("${test_prefix}-validator") {
     testonly = true
     manifest = "meta/${test_prefix}-validator.cml"
-    deps = [ ":${test_prefix}-validator-bin" ]
+    deps = [ _test_binary ]
   }
 
   ctf_fuchsia_package("${test_prefix}-suite") {
@@ -185,14 +203,249 @@ template("ctf_components_packages") {
   }
 }
 
-ctf_components_packages("flatland-allocation-test") {
+executable("flatland-allocation-test-validator-bin") {
+  testonly = true
   sources = [ "flatland_integration_tests/flatland_allocation_test.cc" ]
+  output_name = "flatland-allocation-test-validator"
   deps = [
     ":common-deps-zxtest",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
     "//src/ui/scenic/lib/utils",
     "//zircon/system/ulib/fbl",
   ]
+}
+
+executable("flatland-pixeltest-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
+  output_name = "flatland-pixeltest-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
+    "//src/lib/testing/loop_fixture",
+    "//src/ui/scenic/lib/utils",
+    "//src/ui/testing/util:screenshot_helper",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("flatland-pixeltest-exotic-srgb-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
+  output_name = "flatland-pixeltest-exotic-srgb-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
+    "//src/lib/testing/loop_fixture",
+    "//src/ui/scenic/lib/allocation",
+    "//src/ui/scenic/lib/utils",
+    "//src/ui/testing/util:screenshot_helper",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("flatland-touch-integration-test-validator-bin") {
+  testonly = true
+  sources = [
+    "flatland_integration_tests/flatland_touch_integration_test.cc",
+    "flatland_integration_tests/flatland_touch_local_hit_integration_test.cc",
+  ]
+  output_name = "flatland-touch-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+  ]
+}
+
+executable("flatland-focus-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/flatland_focus_integration_test.cc" ]
+  output_name = "flatland-focus-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
+  ]
+}
+
+executable("flatland-mouse-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/flatland_mouse_integration_test.cc" ]
+  output_name = "flatland-mouse-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+    "//src/ui/scenic/lib/utils",
+  ]
+}
+
+executable("flatland-view-ref-installed-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/flatland_view_ref_installed_integration_test.cc" ]
+  output_name = "flatland-view-ref-installed-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
+  ]
+}
+
+executable("flatland-view-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/flatland_view_integration_test.cc" ]
+  output_name = "flatland-view-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
+  ]
+}
+
+executable("cpu-renderer-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/cpu_renderer_integration_test.cc" ]
+  output_name = "cpu-renderer-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//src/ui/scenic/lib/utils",
+    "//src/ui/testing/util:buffers_helper",
+  ]
+}
+
+executable("null-renderer-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/null_renderer_integration_test.cc" ]
+  output_name = "null-renderer-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//src/ui/scenic/lib/utils",
+  ]
+}
+
+executable("observer-registry-integration-test-validator-bin") {
+  testonly = true
+  sources =
+      [ "observer_integration_tests/observer_registry_integration_test.cc" ]
+  output_name = "observer-registry-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
+    "//sdk/fidl/fuchsia.ui.observation.test:fuchsia.ui.observation.test_hlcpp",
+  ]
+}
+
+executable("scoped-observer-registry-integration-test-validator-bin") {
+  testonly = true
+  sources = [
+    "observer_integration_tests/scoped_observer_registry_integration_test.cc",
+  ]
+  output_name = "scoped-observer-registry-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
+    "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_hlcpp",
+  ]
+}
+
+executable("flatland-protected-memory-integration-test-validator-bin") {
+  testonly = true
+  sources =
+      [ "flatland_integration_tests/protected_memory_integration_test.cc" ]
+  output_name = "flatland-protected-memory-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//src/ui/scenic/lib/utils",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("screen-capture-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/screen_capture_integration_test.cc" ]
+  output_name = "screen-capture-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    ":screen-capture-utils",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//src/ui/scenic/lib/utils",
+    "//src/ui/testing/util:zxtest_helpers",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("screen-capture2-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "flatland_integration_tests/screen_capture2_integration_test.cc" ]
+  output_name = "screen-capture2-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    ":screen-capture-utils",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_hlcpp",
+    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
+    "//src/ui/lib/escher",
+    "//src/ui/scenic/lib/utils",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("display-ownership-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "display_ownership_integration_test.cc" ]
+  output_name = "display-ownership-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_hlcpp",
+    "//src/ui/scenic/lib/utils",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("singleton-display-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "singleton_display_integration_test.cc" ]
+  output_name = "singleton-display-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
+    "//src/ui/scenic/lib/utils",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+executable("trusted-flatland-factory-integration-test-validator-bin") {
+  testonly = true
+  sources = [
+    "flatland_integration_tests/trusted_flatland_factory_integration_test.cc",
+  ]
+  output_name = "trusted-flatland-factory-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+  ]
+}
+
+ctf_components_packages("flatland-allocation-test") {
+  bin = ":flatland-allocation-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -202,17 +455,17 @@ ctf_components_packages("flatland-allocation-test") {
 }
 
 ctf_components_packages("flatland-touch-integration-test") {
-  sources = [
-    "flatland_integration_tests/flatland_touch_integration_test.cc",
-    "flatland_integration_tests/flatland_touch_local_hit_integration_test.cc",
-  ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
-  ]
+  bin = ":flatland-touch-integration-test-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-transformed-touch-integration-test") {
+  bin = ":flatland-touch-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -222,12 +475,27 @@ ctf_components_packages("flatland-touch-integration-test") {
 }
 
 ctf_components_packages("flatland-focus-integration-test") {
-  sources = [ "flatland_integration_tests/flatland_focus_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
-  ]
+  bin = ":flatland-focus-integration-test-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-auto-focus-integration-test") {
+  bin = ":flatland-focus-integration-test-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-child-focus-integration-test") {
+  bin = ":flatland-focus-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -237,11 +505,7 @@ ctf_components_packages("flatland-focus-integration-test") {
 }
 
 ctf_components_packages("flatland-view-ref-installed-integration-test") {
-  sources = [ "flatland_integration_tests/flatland_view_ref_installed_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
-  ]
+  bin = ":flatland-view-ref-installed-integration-test-validator-bin"
   test_specs = {
     environments = [
       astro_env,
@@ -255,12 +519,7 @@ ctf_components_packages("flatland-view-ref-installed-integration-test") {
 }
 
 ctf_components_packages("flatland-view-integration-test") {
-  sources = [ "flatland_integration_tests/flatland_view_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
-  ]
+  bin = ":flatland-view-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -270,14 +529,7 @@ ctf_components_packages("flatland-view-integration-test") {
 }
 
 ctf_components_packages("cpu-renderer-integration-test") {
-  sources = [ "flatland_integration_tests/cpu_renderer_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:buffers_helper",
-  ]
+  bin = ":cpu-renderer-integration-test-validator-bin"
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -286,13 +538,7 @@ ctf_components_packages("cpu-renderer-integration-test") {
 }
 
 ctf_components_packages("null-renderer-integration-test") {
-  sources = [ "flatland_integration_tests/null_renderer_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//src/ui/scenic/lib/utils",
-  ]
+  bin = ":null-renderer-integration-test-validator-bin"
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -301,15 +547,7 @@ ctf_components_packages("null-renderer-integration-test") {
 }
 
 ctf_components_packages("observer-registry-integration-test") {
-  sources =
-      [ "observer_integration_tests/observer_registry_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.test:fuchsia.ui.observation.test_hlcpp",
-  ]
+  bin = ":observer-registry-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -319,16 +557,7 @@ ctf_components_packages("observer-registry-integration-test") {
 }
 
 ctf_components_packages("scoped-observer-registry-integration-test") {
-  sources = [
-    "observer_integration_tests/scoped_observer_registry_integration_test.cc",
-  ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_hlcpp",
-  ]
+  bin = ":scoped-observer-registry-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -338,14 +567,7 @@ ctf_components_packages("scoped-observer-registry-integration-test") {
 }
 
 ctf_components_packages("flatland-protected-memory-integration-test") {
-  sources =
-      [ "flatland_integration_tests/protected_memory_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//src/ui/scenic/lib/utils",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":flatland-protected-memory-integration-test-validator-bin"
   test_specs = {
     environments = [
       astro_env,
@@ -359,15 +581,7 @@ ctf_components_packages("flatland-protected-memory-integration-test") {
 }
 
 ctf_components_packages("screen-capture-integration-test") {
-  sources = [ "flatland_integration_tests/screen_capture_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    ":screen-capture-utils",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:zxtest_helpers",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":screen-capture-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -377,17 +591,7 @@ ctf_components_packages("screen-capture-integration-test") {
 }
 
 ctf_components_packages("screen-capture2-integration-test") {
-  sources = [ "flatland_integration_tests/screen_capture2_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    ":screen-capture-utils",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_hlcpp",
-    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
-    "//src/ui/lib/escher",
-    "//src/ui/scenic/lib/utils",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":screen-capture2-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -397,13 +601,7 @@ ctf_components_packages("screen-capture2-integration-test") {
 }
 
 ctf_components_packages("display-ownership-integration-test") {
-  sources = [ "display_ownership_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_hlcpp",
-    "//src/ui/scenic/lib/utils",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":display-ownership-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -413,14 +611,7 @@ ctf_components_packages("display-ownership-integration-test") {
 }
 
 ctf_components_packages("singleton-display-integration-test") {
-  sources = [ "singleton_display_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//src/ui/scenic/lib/utils",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":singleton-display-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -430,15 +621,27 @@ ctf_components_packages("singleton-display-integration-test") {
 }
 
 ctf_components_packages("flatland-mouse-integration-test") {
-  sources = [ "flatland_integration_tests/flatland_mouse_integration_test.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
-    "//src/ui/scenic/lib/utils",
-  ]
+  bin = ":flatland-mouse-integration-test-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-mouse-wheel-integration-test") {
+  bin = ":flatland-mouse-integration-test-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-mouse-hit-integration-test") {
+  bin = ":flatland-mouse-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -448,17 +651,7 @@ ctf_components_packages("flatland-mouse-integration-test") {
 }
 
 ctf_components_packages("flatland-pixeltest-general") {
-  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//src/lib/testing/loop_fixture",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:screenshot_helper",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":flatland-pixeltest-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -467,19 +660,18 @@ ctf_components_packages("flatland-pixeltest-general") {
   }
 }
 
-ctf_components_packages("flatland-pixeltest-exotic-rgb") {
-  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//src/lib/testing/loop_fixture",
-    "//src/ui/scenic/lib/allocation",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:screenshot_helper",
-    "//zircon/system/ulib/fbl",
-  ]
+ctf_components_packages("flatland-pixeltest-srgb") {
+  bin = ":flatland-pixeltest-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-pixeltest-exotic-srgb") {
+  bin = ":flatland-pixeltest-exotic-srgb-validator-bin"
   test_specs = {
     # TODO(https://fxbug.dev/42137913): Skip this test for AEMU as format support is lacking
     environments = magma_libvulkan_hardware_envs
@@ -490,17 +682,37 @@ ctf_components_packages("flatland-pixeltest-exotic-rgb") {
 }
 
 ctf_components_packages("flatland-pixeltest-flip-and-orientation") {
-  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//src/lib/testing/loop_fixture",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:screenshot_helper",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":flatland-pixeltest-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-pixeltest-flip-and-orientation-rgba") {
+  bin = ":flatland-pixeltest-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-pixeltest-opacity") {
+  bin = ":flatland-pixeltest-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("flatland-pixeltest-screenshot-format") {
+  bin = ":flatland-pixeltest-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
@@ -510,17 +722,7 @@ ctf_components_packages("flatland-pixeltest-flip-and-orientation") {
 }
 
 ctf_components_packages("flatland-pixeltest-yuv") {
-  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//src/lib/testing/loop_fixture",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:screenshot_helper",
-    "//zircon/system/ulib/fbl",
-  ]
+  bin = ":flatland-pixeltest-validator-bin"
   test_specs = {
     # TODO(https://fxbug.dev/42137913): Skip this test for AEMU as YUV Sysmem images are not supported yet.
     environments = magma_libvulkan_hardware_envs
@@ -531,13 +733,7 @@ ctf_components_packages("flatland-pixeltest-yuv") {
 }
 
 ctf_components_packages("trusted-flatland-factory-integration-test") {
-  sources = [
-    "flatland_integration_tests/trusted_flatland_factory_integration_test.cc",
-  ]
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-  ]
+  bin = ":trusted-flatland-factory-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {

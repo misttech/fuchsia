@@ -474,6 +474,8 @@ TEST_F(FlatlandTouchIntegrationTest, DisconnectTargetView_TriggersChannelClosure
   RunLoopUntil([this] { return injector_channel_closed_; });  // Succeeds or times out.
 }
 
+class FlatlandTransformedTouchIntegrationTest : public FlatlandTouchIntegrationTest {};
+
 // In this test we set up the context and the target. We apply a scale, rotation and translation
 // transform to both of their viewports, and then inject pointer events to confirm that
 // the coordinates received by the listener are correctly transformed.
@@ -542,7 +544,7 @@ TEST_F(FlatlandTouchIntegrationTest, DisconnectTargetView_TriggersChannelClosure
 //   O      O      O      O      O      O
 //
 //   3      O      O      O      O      2
-TEST_F(FlatlandTouchIntegrationTest, TargetViewWithScaleRotationTranslation) {
+TEST_F(FlatlandTransformedTouchIntegrationTest, TargetViewWithScaleRotationTranslation) {
   fuchsia::ui::composition::FlatlandPtr child_session;
   fuchsia::ui::pointer::TouchSourcePtr child_touch_source;
   child_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
@@ -610,7 +612,7 @@ TEST_F(FlatlandTouchIntegrationTest, TargetViewWithScaleRotationTranslation) {
 //
 // Rotate the child 90 degrees and ensure that touches starting on each corner get delivered. This
 // confirms that small floating point deviations don't cause issues.
-TEST_F(FlatlandTouchIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges) {
+TEST_F(FlatlandTransformedTouchIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges) {
   fuchsia::ui::composition::FlatlandPtr child_session;
   fuchsia::ui::pointer::TouchSourcePtr child_touch_source;
   child_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();

@@ -79,6 +79,16 @@
     "package_name": "pkgdir-tests"
   },
   {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-auto-focus-integration-test-suite_archive_copy",
+    "archive_name": "flatland-auto-focus-integration-test-suite",
+    "package_name": "flatland-auto-focus-integration-test-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-child-focus-integration-test-suite_archive_copy",
+    "archive_name": "flatland-child-focus-integration-test-suite",
+    "package_name": "flatland-child-focus-integration-test-suite"
+  },
+  {
     "archive_gn_label": "//src/ui/scenic/tests:flatland-focus-integration-test-suite_archive_copy",
     "archive_name": "flatland-focus-integration-test-suite",
     "package_name": "flatland-focus-integration-test-suite"
@@ -87,6 +97,11 @@
     "archive_gn_label": "//src/ui/scenic/tests:flatland-touch-integration-test-suite_archive_copy",
     "archive_name": "flatland-touch-integration-test-suite",
     "package_name": "flatland-touch-integration-test-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-transformed-touch-integration-test-suite_archive_copy",
+    "archive_name": "flatland-transformed-touch-integration-test-suite",
+    "package_name": "flatland-transformed-touch-integration-test-suite"
   },
   {
     "archive_gn_label": "//src/ui/scenic/tests:observer-registry-integration-test-suite_archive_copy",
@@ -104,9 +119,24 @@
     "package_name": "flatland-allocation-test-suite"
   },
   {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-mouse-hit-integration-test-suite_archive_copy",
+    "archive_name": "flatland-mouse-hit-integration-test-suite",
+    "package_name": "flatland-mouse-hit-integration-test-suite"
+  },
+  {
     "archive_gn_label": "//src/ui/scenic/tests:flatland-mouse-integration-test-suite_archive_copy",
     "archive_name": "flatland-mouse-integration-test-suite",
     "package_name": "flatland-mouse-integration-test-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-mouse-wheel-integration-test-suite_archive_copy",
+    "archive_name": "flatland-mouse-wheel-integration-test-suite",
+    "package_name": "flatland-mouse-wheel-integration-test-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-flip-and-orientation-rgba-suite_archive_copy",
+    "archive_name": "flatland-pixeltest-flip-and-orientation-rgba-suite",
+    "package_name": "flatland-pixeltest-flip-and-orientation-rgba-suite"
   },
   {
     "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-flip-and-orientation-suite_archive_copy",
@@ -117,6 +147,21 @@
     "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-general-suite_archive_copy",
     "archive_name": "flatland-pixeltest-general-suite",
     "package_name": "flatland-pixeltest-general-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-opacity-suite_archive_copy",
+    "archive_name": "flatland-pixeltest-opacity-suite",
+    "package_name": "flatland-pixeltest-opacity-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-screenshot-format-suite_archive_copy",
+    "archive_name": "flatland-pixeltest-screenshot-format-suite",
+    "package_name": "flatland-pixeltest-screenshot-format-suite"
+  },
+  {
+    "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-srgb-suite_archive_copy",
+    "archive_name": "flatland-pixeltest-srgb-suite",
+    "package_name": "flatland-pixeltest-srgb-suite"
   },
   {
     "archive_gn_label": "//src/ui/scenic/tests:flatland-pixeltest-yuv-suite_archive_copy",

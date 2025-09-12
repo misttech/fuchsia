@@ -127,19 +127,6 @@ class FlatlandFocusIntegrationTest : public ScenicCtfTest, public FocusChainList
     return request_honored;
   }
 
-  void SetAutoFocus(fuchsia::ui::views::FocuserPtr& view_focuser_ptr, const ViewRef& target) {
-    bool request_processed = false;
-    fuchsia::ui::views::FocuserSetAutoFocusRequest request{};
-    request.set_view_ref(fidl::Clone(target));
-    view_focuser_ptr->SetAutoFocus(std::move(request), [&request_processed](auto result) {
-      request_processed = true;
-      if (result.is_err()) {
-        FAIL();
-      }
-    });
-    RunLoopUntil([&request_processed] { return request_processed; });
-  }
-
   void AttachToRoot(ViewportCreationToken&& token) {
     fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     ViewportProperties properties;
@@ -261,54 +248,21 @@ TEST_F(FlatlandFocusIntegrationTest, RequestValidity_SelfRequest_ShouldSucceed) 
   EXPECT_VIEW_REF_MATCH(LastFocusChain()->focus_chain()[1], child_view_ref);
 }
 
-// Scene:
-//   parent
-//     |
-//   child (anonymous)
-//     |
-// grandchild
-TEST_F(FlatlandFocusIntegrationTest, FocusRequest_ChildOfAnonymousView_ShouldFail) {
-  // Set up the child view.
-  auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-  auto [grandchild_token, grandchild_parent_token] = scenic::ViewCreationTokenPair::New();
-
-  // Create the anonymous child view and attach the grandchild to it.
-  fuchsia::ui::composition::FlatlandPtr child_session;
-  child_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
-  {
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    child_session->CreateView(std::move(child_token), parent_viewport_watcher.NewRequest());
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
-    ViewportProperties properties;
-    properties.set_logical_size({kDefaultLogicalPixelSize, kDefaultLogicalPixelSize});
-    const TransformId kRootTransform{.value = 1};
-    const ContentId kRootContent{.value = 1};
-    child_session->CreateTransform(kRootTransform);
-    child_session->CreateViewport(kRootContent, std::move(grandchild_parent_token),
-                                  std::move(properties), child_view_watcher.NewRequest());
-    child_session->SetRootTransform(kRootTransform);
-    child_session->SetContent(kRootTransform, kRootContent);
-    BlockingPresent(this, child_session);
+class FlatlandAutoFocusIntegrationTest : public FlatlandFocusIntegrationTest {
+ protected:
+  void SetAutoFocus(fuchsia::ui::views::FocuserPtr& view_focuser_ptr, const ViewRef& target) {
+    bool request_processed = false;
+    fuchsia::ui::views::FocuserSetAutoFocusRequest request{};
+    request.set_view_ref(fidl::Clone(target));
+    view_focuser_ptr->SetAutoFocus(std::move(request), [&request_processed](auto result) {
+      request_processed = true;
+      if (result.is_err()) {
+        FAIL();
+      }
+    });
+    RunLoopUntil([&request_processed] { return request_processed; });
   }
-
-  // Create the named grandchild view.
-  fuchsia::ui::composition::FlatlandPtr grandchild_session;
-  grandchild_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
-  auto identity = scenic::NewViewIdentityOnCreation();
-  auto grandchild_view_ref = fidl::Clone(identity.view_ref);
-  {
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    grandchild_session->CreateView2(std::move(grandchild_token), std::move(identity), {},
-                                    parent_viewport_watcher.NewRequest());
-    BlockingPresent(this, grandchild_session);
-  }
-
-  AttachToRoot(std::move(parent_token));
-
-  EXPECT_EQ(CountReceivedFocusChains(), 0u);
-  // Attempt to move focus from the root to the grandchild view.
-  EXPECT_FALSE(RequestFocusChange(root_focuser_, grandchild_view_ref));
-}
+};
 
 // Scene:
 //   parent
@@ -321,7 +275,7 @@ TEST_F(FlatlandFocusIntegrationTest, FocusRequest_ChildOfAnonymousView_ShouldFai
 // 2. Set auto focus from parent to grandchild.
 // 3. Attempt to move focus back to parent.
 // 4. Observe focus moving directly to grandchild.
-TEST_F(FlatlandFocusIntegrationTest, AutoFocus_RequestFocus_Interaction) {
+TEST_F(FlatlandAutoFocusIntegrationTest, AutoFocus_RequestFocus_Interaction) {
   // Set up the granchild view.
   auto [grandchild_token, middleparent_token] = scenic::ViewCreationTokenPair::New();
   fuchsia::ui::composition::FlatlandPtr grandchild_session;
@@ -386,7 +340,7 @@ TEST_F(FlatlandFocusIntegrationTest, AutoFocus_RequestFocus_Interaction) {
 // 1. Set parent's auto focus target to child.
 // 2. Connect child to scene. Observe focus moving to child.
 // 3. Disconnect child from scene. Observe focus return to parent.
-TEST_F(FlatlandFocusIntegrationTest, AutoFocus_SceneUpdate_Interaction) {
+TEST_F(FlatlandAutoFocusIntegrationTest, AutoFocus_SceneUpdate_Interaction) {
   // Set up the child view.
   auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
   fuchsia::ui::composition::FlatlandPtr child_session;
@@ -424,7 +378,59 @@ TEST_F(FlatlandFocusIntegrationTest, AutoFocus_SceneUpdate_Interaction) {
   EXPECT_VIEW_REF_MATCH(LastFocusChain()->focus_chain().back(), root_view_ref_);
 }
 
-TEST_F(FlatlandFocusIntegrationTest, ChildView_CreatedBeforeAttachingToRoot_ShouldNotKillFocuser) {
+class FlatlandChildFocusIntegrationTest : public FlatlandFocusIntegrationTest {};
+
+// Scene:
+//   parent
+//     |
+//   child (anonymous)
+//     |
+// grandchild
+TEST_F(FlatlandChildFocusIntegrationTest, FocusRequest_ChildOfAnonymousView_ShouldFail) {
+  // Set up the child view.
+  auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
+  auto [grandchild_token, grandchild_parent_token] = scenic::ViewCreationTokenPair::New();
+
+  // Create the anonymous child view and attach the grandchild to it.
+  fuchsia::ui::composition::FlatlandPtr child_session;
+  child_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
+  {
+    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
+    child_session->CreateView(std::move(child_token), parent_viewport_watcher.NewRequest());
+    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
+    ViewportProperties properties;
+    properties.set_logical_size({kDefaultLogicalPixelSize, kDefaultLogicalPixelSize});
+    const TransformId kRootTransform{.value = 1};
+    const ContentId kRootContent{.value = 1};
+    child_session->CreateTransform(kRootTransform);
+    child_session->CreateViewport(kRootContent, std::move(grandchild_parent_token),
+                                  std::move(properties), child_view_watcher.NewRequest());
+    child_session->SetRootTransform(kRootTransform);
+    child_session->SetContent(kRootTransform, kRootContent);
+    BlockingPresent(this, child_session);
+  }
+
+  // Create the named grandchild view.
+  fuchsia::ui::composition::FlatlandPtr grandchild_session;
+  grandchild_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
+  auto identity = scenic::NewViewIdentityOnCreation();
+  auto grandchild_view_ref = fidl::Clone(identity.view_ref);
+  {
+    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
+    grandchild_session->CreateView2(std::move(grandchild_token), std::move(identity), {},
+                                    parent_viewport_watcher.NewRequest());
+    BlockingPresent(this, grandchild_session);
+  }
+
+  AttachToRoot(std::move(parent_token));
+
+  EXPECT_EQ(CountReceivedFocusChains(), 0u);
+  // Attempt to move focus from the root to the grandchild view.
+  EXPECT_FALSE(RequestFocusChange(root_focuser_, grandchild_view_ref));
+}
+
+TEST_F(FlatlandChildFocusIntegrationTest,
+       ChildView_CreatedBeforeAttachingToRoot_ShouldNotKillFocuser) {
   // Set up the child view.
   auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
   fuchsia::ui::composition::FlatlandPtr child_session;
@@ -519,7 +525,7 @@ TEST_F(FlatlandFocusIntegrationTest, ViewRefFocused_HappyCase) {
   EXPECT_TRUE(child_focused_ptr.is_bound());
 }
 
-TEST_F(FlatlandFocusIntegrationTest,
+TEST_F(FlatlandChildFocusIntegrationTest,
        ChildView_PresentsBeforeParentPresent_ShouldNotKillVrfEndpoint) {
   // Set up the child view.
   auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
@@ -548,7 +554,7 @@ TEST_F(FlatlandFocusIntegrationTest,
   EXPECT_TRUE(channel_alive);
 }
 
-TEST_F(FlatlandFocusIntegrationTest,
+TEST_F(FlatlandChildFocusIntegrationTest,
        ChildView_PresentsAfterParentPresent_ShouldNotKillVrfEndpoint) {
   // Set up the child view.
   auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
