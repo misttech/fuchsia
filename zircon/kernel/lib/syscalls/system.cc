@@ -6,6 +6,7 @@
 
 #include <align.h>
 #include <debug.h>
+#include <lib/arch/asm.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/debuglog.h>
 #include <lib/fit/defer.h>
@@ -87,10 +88,7 @@ const size_t kBootdataPlatformExtraBytes = PAGE_SIZE * 4;
 
 constexpr zx_duration_mono_t kMemoryStallMaxWindow = ZX_SEC(10);
 
-__BEGIN_CDECLS
-extern void mexec_asm(void);
-extern void mexec_asm_end(void);
-__END_CDECLS
+extern "C" arch::AsmLabel mexec_asm, mexec_asm_end;
 
 class IdentityPageAllocator {
  public:
@@ -435,7 +433,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
 
   // We're going to copy this into our identity page, make sure it's not
   // longer than a single page.
-  size_t mexec_asm_length = (uintptr_t)mexec_asm_end - (uintptr_t)mexec_asm;
+  size_t mexec_asm_length = arch::kAsmLabelSize<mexec_asm, mexec_asm_end>;
   DEBUG_ASSERT(mexec_asm_length <= PAGE_SIZE);
 
   __unsanitized_memcpy(id_page_addr, (const void*)mexec_asm, mexec_asm_length);
