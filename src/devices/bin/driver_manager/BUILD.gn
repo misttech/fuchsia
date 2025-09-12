@@ -211,7 +211,6 @@ group("driver_shared_libraries") {
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/boringssl:crypto-shared",
     "//third_party/boringssl:ssl-shared",
-    "//zircon/system/ulib/syslog",
     "//zircon/system/ulib/trace-engine",
   ]
 
