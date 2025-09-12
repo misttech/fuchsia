@@ -17,6 +17,7 @@ pub(crate) mod validate;
 pub mod translate;
 
 use crate::error::Error;
+use cm_types::HandleType;
 use cml_macro::{CheckedVec, OneOrMany, Reference};
 use fidl_fuchsia_io as fio;
 use indexmap::IndexMap;
@@ -2890,6 +2891,15 @@ pub struct Use {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<Path>,
 
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    /// A processargs ordinal (aka. "numbered handle") over which a channel to this protocol will
+    /// be delivered to the component's processargs.
+    ///
+    // TODO: We could support strings like "PA_*", but it's not clear that's necessary since usage
+    // of this feature is expected to be limited.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub numbered_handle: Option<HandleType>,
+
     /// (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     /// the directory in the component's namespace.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4692,6 +4702,7 @@ mod tests {
             key: None,
             from: None,
             path: None,
+            numbered_handle: None,
             rights: None,
             subdir: None,
             event_stream: None,

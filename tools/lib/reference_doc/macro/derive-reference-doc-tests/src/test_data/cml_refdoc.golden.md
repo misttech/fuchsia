@@ -555,6 +555,8 @@ This supports the following additional fields:
 - `path`: (_optional `string`_) The path at which to install the capability in the component's namespace. For protocols,
     defaults to `/svc/${protocol}`.  Required for `directory` and `storage`. This property is
     disallowed for declarations with arrays of capability names and for runner capabilities.
+- `numbered_handle`: (_optional `string`_) A processargs ordinal (aka. "numbered handle") over which a channel to this protocol will
+    be delivered to the component's processargs.
 - `rights`: (_optional `array of string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     the directory in the component's namespace.
 - `subdir`: (_optional `string`_) (`directory` only) A subdirectory within the directory capability to provide in the

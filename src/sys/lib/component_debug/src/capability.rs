@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use crate::realm::{
-    get_all_instances, get_resolved_declaration, GetAllInstancesError, GetDeclarationError,
+    GetAllInstancesError, GetDeclarationError, get_all_instances, get_resolved_declaration,
 };
 use cm_rust::{
     CapabilityDecl, ComponentDecl, ExposeDecl, ExposeDeclCommon, OfferDecl, OfferDeclCommon,
     SourceName, UseDecl, UseDeclCommon,
 };
 use flex_fuchsia_sys2 as fsys;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use moniker::Moniker;
 use thiserror::Error;
 
@@ -231,6 +231,7 @@ mod tests {
                             source_dictionary: Default::default(),
                             target_path: "/svc/fuchsia.foo.bar".parse().unwrap(),
                             dependency_type: DependencyType::Strong,
+                            numbered_handle: None,
                             availability: Availability::Required
                         })
                     );

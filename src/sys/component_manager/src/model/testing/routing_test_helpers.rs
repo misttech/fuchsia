@@ -1025,6 +1025,24 @@ impl RoutingTestModel for RoutingTest {
     }
 }
 
+impl RoutingTest {
+    #[cfg(feature = "src_model_tests")]
+    pub async fn take_numbered_channel<T: fidl::endpoints::ProtocolMarker>(
+        &mut self,
+        moniker: Moniker,
+        handle: fuchsia_runtime::HandleType,
+    ) -> Option<T::Proxy> {
+        let component_name = self
+            .start_instance_and_wait_start(&moniker)
+            .await
+            .unwrap_or_else(|e| panic!("start instance failed for `{}`: {:?}", moniker, e));
+        let component_resolved_url = Self::resolved_url(&component_name);
+        let handle = self.mock_runner.take_numbered_handle(&component_resolved_url, handle)?;
+        let channel: fidl::Channel = handle.into();
+        Some(T::Proxy::from_channel(fidl::AsyncChannel::from_channel(channel)))
+    }
+}
+
 /// Contains functions to use capabilities in routing tests.
 pub mod capability_util {
     use cm_types::NamespacePath;

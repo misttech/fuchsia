@@ -222,6 +222,7 @@ mod tests {
             source_name,
             source_dictionary: Default::default(),
             target_path: "/dir/svc".parse().unwrap(),
+            numbered_handle: None,
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
         }
@@ -1046,6 +1047,7 @@ mod tests {
                                     "use": {
                                         "availability": "required",
                                         "dependency_type": "strong",
+                                        "numbered_handle": null,
                                         "source": "parent",
                                         "source_dictionary": ".",
                                         "source_name": "protocol",
@@ -1168,6 +1170,7 @@ mod tests {
                                     "use": {
                                         "availability": "required",
                                         "dependency_type": "strong",
+                                        "numbered_handle": null,
                                         "source": "parent",
                                         "source_dictionary": ".",
                                         "source_name": "protocol",
@@ -1261,6 +1264,7 @@ mod tests {
                                     "use": {
                                         "availability": "required",
                                         "dependency_type": "strong",
+                                        "numbered_handle": null,
                                         "source": "parent",
                                         "source_dictionary": ".",
                                         "source_name": "protocol",

@@ -4,10 +4,10 @@
 
 use anyhow::Context;
 use cm_rust::{
-    append_box, push_box, Availability, CapabilityDecl, CapabilityTypeName, DependencyType,
-    DirectoryDecl, ExposeDecl, ExposeDeclCommon, ExposeDirectoryDecl, ExposeProtocolDecl,
-    ExposeSource, ExposeTarget, FidlIntoNative, NativeIntoFidl, OfferDecl, OfferDeclCommon,
-    OfferSource, ProtocolDecl, SourceName, UseDecl, UseProtocolDecl, UseSource,
+    Availability, CapabilityDecl, CapabilityTypeName, DependencyType, DirectoryDecl, ExposeDecl,
+    ExposeDeclCommon, ExposeDirectoryDecl, ExposeProtocolDecl, ExposeSource, ExposeTarget,
+    FidlIntoNative, NativeIntoFidl, OfferDecl, OfferDeclCommon, OfferSource, ProtocolDecl,
+    SourceName, UseDecl, UseProtocolDecl, UseSource, append_box, push_box,
 };
 use cm_types::{LongName, Path, RelativePath};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy, ServerEnd};
@@ -16,7 +16,7 @@ use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_component::server as fserver;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
-use futures::{join, FutureExt, StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt, join};
 use log::*;
 use std::collections::HashMap;
 use std::mem;
@@ -1480,13 +1480,13 @@ impl RealmNode2 {
             let file_proxy = match file_proxy_res {
                 Ok(file_proxy) => file_proxy,
                 Err(fuchsia_fs::node::OpenError::OpenError(zx_status::Status::NOT_FOUND)) => {
-                    return Err(RealmBuilderError::DeclNotFound(fragment_only_url.into()))
+                    return Err(RealmBuilderError::DeclNotFound(fragment_only_url.into()));
                 }
                 Err(e) => {
                     return Err(RealmBuilderError::DeclReadError(
                         fragment_only_url.into(),
                         e.into(),
-                    ))
+                    ));
                 }
             };
 
@@ -1667,7 +1667,7 @@ impl RealmNode2 {
                         _ => {
                             return Err(RealmBuilderError::CapabilityInvalid(anyhow::format_err!(
                                 "unknown capability type",
-                            )))
+                            )));
                         }
                     }
                     let decl = create_expose_decl(
@@ -1904,6 +1904,8 @@ async fn nested_component_manager_decl(
                     decl.source_name
                 ))
                 .unwrap(),
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::default(),
                 source_dictionary: decl.source_dictionary,
@@ -1927,21 +1929,24 @@ async fn nested_component_manager_decl(
         mem::swap(&mut component_manager_children, &mut state.mutable_children);
     }
     match **component_manager_decl
-            .program
-            .as_mut()
-            .expect("component manager's manifest is lacking a program section")
-            .info
-            .entries
-            .get_or_insert(vec![])
-            .iter_mut()
-            .find(|e| e.key == "args")
-            .expect("component manager's manifest doesn't specify a config")
-            .value
-            .as_mut()
-            .expect("component manager's manifest has a malformed 'args' section") {
-                fdata::DictionaryValue::StrVec(ref mut v) => v.push(root_url.into()),
-                _ => panic!("component manager's manifest has a single value for 'args', but we were expecting a vector"),
-        }
+        .program
+        .as_mut()
+        .expect("component manager's manifest is lacking a program section")
+        .info
+        .entries
+        .get_or_insert(vec![])
+        .iter_mut()
+        .find(|e| e.key == "args")
+        .expect("component manager's manifest doesn't specify a config")
+        .value
+        .as_mut()
+        .expect("component manager's manifest has a malformed 'args' section")
+    {
+        fdata::DictionaryValue::StrVec(ref mut v) => v.push(root_url.into()),
+        _ => panic!(
+            "component manager's manifest has a single value for 'args', but we were expecting a vector"
+        ),
+    }
     append_box(&mut component_manager_decl.capabilities, &mut passthrough_cap_decls.clone());
     append_box(&mut component_manager_decl.exposes, &mut passthrough_expose_decls.clone());
     append_box(&mut component_manager_decl.uses, &mut passthrough_use_decls.clone());
@@ -2423,7 +2428,8 @@ fn create_expose_decl(
         ftest::Capability::Storage(storage) => {
             let source_name = try_into_source_name(&storage.name)?;
             return Err(RealmBuilderError::CapabilityInvalid(anyhow::format_err!(
-                "Capability \"{}\" can not be exposed because it's not possible to expose storage capabilities. This is most likely a bug from the Realm Builder library. Please file one at https://bugs.fuchsia.dev under the ComponentFramework>SDK component.", source_name
+                "Capability \"{}\" can not be exposed because it's not possible to expose storage capabilities. This is most likely a bug from the Realm Builder library. Please file one at https://bugs.fuchsia.dev under the ComponentFramework>SDK component.",
+                source_name
             )));
         }
         ftest::Capability::Service(service) => {
@@ -2534,6 +2540,8 @@ fn create_use_decl(
                 source_name,
                 source_dictionary,
                 target_path,
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                numbered_handle: None,
                 dependency_type,
                 availability: check_and_unwrap_use_availability(protocol.availability)?,
             })
@@ -2700,56 +2708,80 @@ fn ref_to_string(ref_: &fcdecl::Ref) -> String {
 enum RealmBuilderError {
     /// Child cannot be added to the realm, as there is already a child in the realm with that
     /// name.
-    #[error("Unable to add child because one already exists with the name \"{0}\". Child names within a realm must be unique.")]
+    #[error(
+        "Unable to add child because one already exists with the name \"{0}\". Child names within a realm must be unique."
+    )]
     ChildAlreadyExists(String),
 
     /// A component declaration failed validation.
-    #[error("The constructed component declaration is invalid. Please fix all the listed errors:\n{0}\nFor a reference as to how component declarations are authored, see https://fuchsia.dev/go/components/declaration.")]
+    #[error(
+        "The constructed component declaration is invalid. Please fix all the listed errors:\n{0}\nFor a reference as to how component declarations are authored, see https://fuchsia.dev/go/components/declaration."
+    )]
     InvalidComponentDecl(String),
 
     /// A component declaration failed validation.
-    #[error("The component declaration for child \"{0}\" is invalid. Please fix all the listed errors:\n{1}\nFor a reference as to how component declarations are authored, see https://fuchsia.dev/go/components/declaration.")]
+    #[error(
+        "The component declaration for child \"{0}\" is invalid. Please fix all the listed errors:\n{1}\nFor a reference as to how component declarations are authored, see https://fuchsia.dev/go/components/declaration."
+    )]
     InvalidComponentDeclWithName(String, String),
 
     #[error("The provided path {0} is not a valid relative path.")]
     InvalidRelativePath(String),
 
     /// The referenced child does not exist.
-    #[error("No child exists with the name \"{0}\". Before fetching or changing its component declaration, a child must be added to the realm with the `AddChild` group of methods.")]
+    #[error(
+        "No child exists with the name \"{0}\". Before fetching or changing its component declaration, a child must be added to the realm with the `AddChild` group of methods."
+    )]
     NoSuchChild(String),
 
     /// The component declaration for the referenced child cannot be viewed nor manipulated by
     /// RealmBuilder because the child was added to the realm using an URL that was not a
     /// relative URL.
-    #[error("The component declaration for child {0} cannot be replaced. If you'd like to mutate a component's decl, add it your test package and reference it via a fragment-only URL: https://fuchsia.dev/go/components/url#relative-fragment-only.")]
+    #[error(
+        "The component declaration for child {0} cannot be replaced. If you'd like to mutate a component's decl, add it your test package and reference it via a fragment-only URL: https://fuchsia.dev/go/components/url#relative-fragment-only."
+    )]
     ChildDeclNotVisible(String),
 
     /// The source does not exist.
-    #[error("Source component for capability is invalid. No child exists with the name \"{0}\". Before a component can be set as a source for a capability, it must be added to the realm with the `AddChild` group of methods.")]
+    #[error(
+        "Source component for capability is invalid. No child exists with the name \"{0}\". Before a component can be set as a source for a capability, it must be added to the realm with the `AddChild` group of methods."
+    )]
     NoSuchSource(String),
 
     /// A target does not exist.
-    #[error("Target component for capability is invalid. No child exists with the name '{0}'. Before a component can be set as a source for a capability, it must be added to the realm with the `AddChild` group of methods.")]
+    #[error(
+        "Target component for capability is invalid. No child exists with the name '{0}'. Before a component can be set as a source for a capability, it must be added to the realm with the `AddChild` group of methods."
+    )]
     NoSuchTarget(String),
 
     /// A target does not exist.
-    #[error("Target capability for capability is invalid. No dictionary capability exists with the name '{0}'.")]
+    #[error(
+        "Target capability for capability is invalid. No dictionary capability exists with the name '{0}'."
+    )]
     NoSuchTargetCapability(String),
 
     /// The `capabilities` field is empty.
-    #[error("The `capabilities` field can not be omitted. It is used to specify what capabilities will be routed. Provide at least one capability to route: https://fuchsia.dev/go/components/realm-builder-reference#Realm.AddRoute.")]
+    #[error(
+        "The `capabilities` field can not be omitted. It is used to specify what capabilities will be routed. Provide at least one capability to route: https://fuchsia.dev/go/components/realm-builder-reference#Realm.AddRoute."
+    )]
     CapabilitiesEmpty,
 
     /// The `targets` field is empty.
-    #[error("The `targets` field can not be omitted. It is used to determine what component(s) to route a capability to. Provide at least one component as a target: https://fuchsia.dev/go/components/realm-builder-reference#Realm.AddRoute.")]
+    #[error(
+        "The `targets` field can not be omitted. It is used to determine what component(s) to route a capability to. Provide at least one component as a target: https://fuchsia.dev/go/components/realm-builder-reference#Realm.AddRoute."
+    )]
     TargetsEmpty,
 
     /// The `from` value is equal to one of the elements in `to`.
-    #[error("One of the targets of this route is equal to the source {0:?}. Routing a capability to itself is not supported.")]
+    #[error(
+        "One of the targets of this route is equal to the source {0:?}. Routing a capability to itself is not supported."
+    )]
     SourceAndTargetMatch(String),
 
     /// The test package does not contain the component declaration referenced by a fragment-only URL.
-    #[error("Component \"{0}\" not found in package. Only components added to the test's package can be referenced by fragment-only URLs. Ensure that this component is included in the test's package.")]
+    #[error(
+        "Component \"{0}\" not found in package. Only components added to the test's package can be referenced by fragment-only URLs. Ensure that this component is included in the test's package."
+    )]
     DeclNotFound(String),
 
     /// Encountered an I/O error when attempting to read a component declaration referenced by a
@@ -2758,7 +2790,9 @@ enum RealmBuilderError {
     DeclReadError(String, fuchsia_fs::file::ReadError),
 
     /// The `Build` function has been called multiple times on this channel.
-    #[error("Build method was called multiple times. This method can only be called once. After it's called, the realm to be constructed can not be changed.")]
+    #[error(
+        "Build method was called multiple times. This method can only be called once. After it's called, the realm to be constructed can not be changed."
+    )]
     BuildAlreadyCalled,
 
     #[error("Failed to route capability. {0:?}")]
@@ -2787,22 +2821,26 @@ enum RealmBuilderError {
 
     /// The component does not have a config schema defined. Attempting to
     /// set a config value is not allowed.
-    #[error("Could not replace config value for child \"{0}\". The component does not have a config schema in its declaration. Only components with a config schema can have their config values modified. For more information about the structured configuration feature, see https://fuchsia.dev/go/components/structured-config.")]
+    #[error(
+        "Could not replace config value for child \"{0}\". The component does not have a config schema in its declaration. Only components with a config schema can have their config values modified. For more information about the structured configuration feature, see https://fuchsia.dev/go/components/structured-config."
+    )]
     NoConfigSchema(String),
 
     /// The component's config schema does not have a field with that name.
-    #[error("Could not replace config value for child \"{name}\". No field with the name `{key}` is present in the config schema. The fields present in the schema are: {present:?}.")]
+    #[error(
+        "Could not replace config value for child \"{name}\". No field with the name `{key}` is present in the config schema. The fields present in the schema are: {present:?}."
+    )]
     NoSuchConfigField { name: String, key: String, present: Vec<String> },
 
     /// A config value is invalid. This may mean a type mismatch or an issue
     /// with constraints like string/vector length.
-    #[error(
-        "Could not replace config value for child '{0}'. The value provided is invalid: {1:?}"
-    )]
+    #[error("Could not replace config value for child '{0}'. The value provided is invalid: {1:?}")]
     ConfigValueInvalid(String, anyhow::Error),
 
     /// The caller never told us how to merge their config overrides with the packaged ones.
-    #[error("Could not replace config value for child '{name}' because no override strategy has been selected. First call InitMutableConfigFromPackage or InitMutableConfigToEmpty.")]
+    #[error(
+        "Could not replace config value for child '{name}' because no override strategy has been selected. First call InitMutableConfigFromPackage or InitMutableConfigToEmpty."
+    )]
     ConfigOverrideUnsupported { name: String },
 }
 
@@ -2870,7 +2908,7 @@ mod tests {
     use cm_rust_testing::*;
     use difference::Changeset;
     use fidl::endpoints::{
-        create_endpoints, create_proxy, create_proxy_and_stream, create_request_stream, ClientEnd,
+        ClientEnd, create_endpoints, create_proxy, create_proxy_and_stream, create_request_stream,
     };
     use std::time::Duration;
     use test_case::test_case;
@@ -3994,11 +4032,13 @@ mod tests {
         };
         expected_tree.add_auto_decls();
         assert_decls_eq!(tree_from_resolver, expected_tree);
-        assert!(realm_and_builder_task
-            .runner
-            .local_component_proxies()
-            .await
-            .contains_key(&"0".to_string()));
+        assert!(
+            realm_and_builder_task
+                .runner
+                .local_component_proxies()
+                .await
+                .contains_key(&"0".to_string())
+        );
     }
 
     #[fuchsia::test]
@@ -5324,11 +5364,13 @@ mod tests {
         };
         expected_tree.add_auto_decls();
         assert_decls_eq!(tree_from_resolver, expected_tree);
-        assert!(realm_and_builder_task
-            .runner
-            .local_component_proxies()
-            .await
-            .contains_key(&"0".to_string()));
+        assert!(
+            realm_and_builder_task
+                .runner
+                .local_component_proxies()
+                .await
+                .contains_key(&"0".to_string())
+        );
     }
 
     // Test the code paths `load_fragment_only_url` and `load_absolute_url` correctly read the abi revision

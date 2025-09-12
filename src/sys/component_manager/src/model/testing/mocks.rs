@@ -28,7 +28,10 @@ use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
 use vfs::service::endpoint;
 use zx::{self as zx, AsHandleRef, HandleBased, Koid};
-use {fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio,
+    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
+};
 
 #[cfg(not(feature = "src_model_tests"))]
 use {crate::bedrock::program::Program, fidl::endpoints::create_endpoints};
@@ -160,6 +163,9 @@ struct MockRunnerInner {
     /// Namespace for each component, mapping resolved URL to the component's namespace.
     namespaces: HashMap<String, Arc<Mutex<Namespace>>>,
 
+    /// Namespace for each component, mapping resolved URL to the component's numbered handles.
+    numbered_handles: HashMap<String, Vec<fprocess::HandleInfo>>,
+
     /// Functions for serving the `outgoing` and `runtime` directories
     /// of a given component. When a component is started, these
     /// functions will be called with the server end of the directories.
@@ -201,6 +207,7 @@ impl MockRunner {
                 urls_run: vec![],
                 url_waiters: vec![],
                 namespaces: HashMap::new(),
+                numbered_handles: HashMap::new(),
                 outgoing_host_fns: HashMap::new(),
                 runtime_host_fns: HashMap::new(),
                 failing_urls: HashSet::new(),
@@ -242,6 +249,25 @@ impl MockRunner {
     /// Get the input namespace for component `name`.
     pub fn get_namespace(&self, name: &str) -> Option<Arc<ManagedNamespace>> {
         self.inner.lock().unwrap().namespaces.get(name).map(Arc::clone)
+    }
+
+    /// Take the numbered handles for component `name` with `HandleType`.
+    #[cfg(feature = "src_model_tests")]
+    pub fn take_numbered_handle(
+        &self,
+        name: &str,
+        ordinal: fuchsia_runtime::HandleType,
+    ) -> Option<zx::Handle> {
+        let mut inner = self.inner.lock().unwrap();
+        let handles = inner.numbered_handles.get_mut(name)?;
+        for i in 0..handles.len() {
+            let info = fuchsia_runtime::HandleInfo::try_from(handles[i].id)
+                .unwrap_or_else(|e| panic!("take_numbered_handle: {e}"));
+            if info.handle_type() == ordinal {
+                return Some(handles.remove(i).handle);
+            }
+        }
+        None
     }
 
     #[cfg(not(feature = "src_model_tests"))]
@@ -310,7 +336,7 @@ impl MockRunner {
 
     fn start(
         &self,
-        start_info: fcrunner::ComponentStartInfo,
+        mut start_info: fcrunner::ComponentStartInfo,
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
     ) {
         let outgoing_host_fn;
@@ -349,6 +375,9 @@ impl MockRunner {
                 resolved_url.clone(),
                 Arc::new(Mutex::new(start_info.ns.unwrap().try_into().unwrap())),
             );
+            if let Some(numbered_handles) = start_info.numbered_handles.take() {
+                state.numbered_handles.insert(resolved_url.clone(), numbered_handles);
+            }
 
             let controller = match state.controller_response_fns.get(&resolved_url).map(|f| f()) {
                 Some(response) => MockController::new_with_responses(

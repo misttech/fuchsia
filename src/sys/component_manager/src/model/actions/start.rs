@@ -5,11 +5,14 @@
 use crate::bedrock::program::{Program, StartInfo};
 use crate::framework::controller;
 use crate::model::actions::{Action, ActionKey};
-use crate::model::component::instance::{InstanceState, StartedInstanceState};
+use crate::model::component::instance::{
+    InstanceState, ResolvedInstanceState, StartedInstanceState,
+};
 use crate::model::component::{ComponentInstance, IncomingCapabilities, StartReason};
 use crate::model::namespace::create_namespace;
 use crate::runner::RemoteRunner;
 use ::namespace::Entry as NamespaceEntry;
+use ::routing::DictExt;
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use async_trait::async_trait;
@@ -18,12 +21,14 @@ use cm_types::Name;
 use cm_util::{AbortError, AbortFutureExt, AbortHandle, AbortableScope};
 use config_encoder::ConfigFields;
 use errors::{ActionError, CreateNamespaceError, StartActionError, StructuredConfigError};
-use fidl::endpoints::create_proxy;
 use fidl::Vmo;
+use fidl::endpoints::create_proxy;
+use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::channel::oneshot;
 use hooks::{EventPayload, RuntimeInfo};
 use log::warn;
 use moniker::Moniker;
+use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
 use sandbox::{Capability, Connector, Dict, Message, Request, Router, RouterResponse};
@@ -86,11 +91,86 @@ struct StartContext {
     execution_controller_task: Option<controller::ExecutionControllerTask>,
 }
 
+fn open_protocols_with_numbered_handle(
+    resolved_instance_state: &ResolvedInstanceState,
+) -> Vec<fprocess::HandleInfo> {
+    let decl = &resolved_instance_state.resolved_component.decl;
+    let program_input_dict = resolved_instance_state.sandbox.program_input.namespace();
+    decl.uses
+        .iter()
+        .filter_map(|use_| match use_ {
+            cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
+                target_path,
+                numbered_handle: Some(numbered_handle),
+                ..
+            }) => {
+                fn handle_info_from(
+                    client: fidl::Channel,
+                    numbered_handle: &cm_types::HandleType,
+                ) -> Option<fprocess::HandleInfo> {
+                    Some(fprocess::HandleInfo {
+                        handle: client.into(),
+                        id: HandleInfo::from(HandleType::from_u8((*numbered_handle).into())?)
+                            .as_raw(),
+                    })
+                }
+                let cap = program_input_dict.get_capability(target_path);
+                match cap {
+                    Some(Capability::ConnectorRouter(router)) => {
+                        let scope = &resolved_instance_state.execution_scope;
+                        let (client, server) = fidl::Channel::create();
+                        scope.spawn(async move {
+                            let Ok(res) = router.route(None, false).await else {
+                                // router will take care of logging error
+                                return;
+                            };
+                            match res {
+                                RouterResponse::Capability(c) => {
+                                    let _ = c.send(sandbox::Message { channel: server });
+                                }
+                                RouterResponse::Unavailable => {}
+                                RouterResponse::Debug(_) => {
+                                    warn!(
+                                        "open_protocols_with_numbered_handle: debug response from \
+                                         non-debug route"
+                                    );
+                                }
+                            }
+                        });
+                        handle_info_from(client, numbered_handle)
+                    }
+                    Some(Capability::Connector(c)) => {
+                        let (client, server) = fidl::Channel::create();
+                        let _ = c.send(sandbox::Message { channel: server });
+                        handle_info_from(client, numbered_handle)
+                    }
+                    Some(_) => {
+                        warn!(
+                            "open_protocols_with_numbered_handle: Protocol capability was not a \
+                             ConnectorRouter. This should never happen."
+                        );
+                        None
+                    }
+                    None => {
+                        warn!(
+                            "open_protocols_with_numbered_handle: {} not found in \
+                            program_input_dict. This should never happen.",
+                            target_path
+                        );
+                        None
+                    }
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 async fn do_start(
     component: &Arc<ComponentInstance>,
     start_reason: &StartReason,
     execution_controller_task: Option<controller::ExecutionControllerTask>,
-    incoming: IncomingCapabilities,
+    mut incoming: IncomingCapabilities,
     abortable_scope: AbortableScope,
 ) -> Result<(), StartActionError> {
     // Translates the error when a long running future is aborted.
@@ -110,6 +190,10 @@ async fn do_start(
                 moniker: component.moniker.clone(),
                 err: Box::new(err),
             })?;
+
+        let mut numbered_handles = open_protocols_with_numbered_handle(&resolved_state);
+        incoming.numbered_handles.append(&mut numbered_handles);
+
         let runner = resolved_state.sandbox.program_input.runner();
         (
             runner,
@@ -482,13 +566,13 @@ async fn create_config_with_capabilities(
                 return Err(StartActionError::StructuredConfigError {
                     moniker: component.moniker.clone(),
                     err: StructuredConfigError::KeyNotFound { key: field.key.clone() },
-                })
+                });
             }
             Err(err) => {
                 return Err(StartActionError::StructuredConfigError {
                     moniker: component.moniker.clone(),
                     err: err.into(),
-                })
+                });
             }
         };
         // If developer overrides have been set for this field, use the override value.
@@ -984,11 +1068,13 @@ mod tests {
         let m = Moniker::try_from(["foo"]).unwrap();
 
         // Checks based on InstanceState:
-        assert!(should_return_early(
-            &InstanceState::Unresolved(UnresolvedInstanceState::new(ComponentInput::default())),
-            &m
-        )
-        .is_none());
+        assert!(
+            should_return_early(
+                &InstanceState::Unresolved(UnresolvedInstanceState::new(ComponentInput::default())),
+                &m
+            )
+            .is_none()
+        );
         assert_matches!(
             should_return_early(&InstanceState::Destroyed, &m),
             Some(Err(StartActionError::InstanceDestroyed { moniker: _ }))

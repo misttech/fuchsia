@@ -1620,6 +1620,68 @@ pub enum StorageId {
 
 symmetrical_enums!(StorageId, fdecl::StorageId, StaticInstanceId, StaticInstanceIdOrMoniker);
 
+/// We can't link the fuchsia-runtime crate because it's target side only, but we don't really
+/// need to -- its HandleType is pretty much just a thin wrapper over `u8`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct HandleType(u8);
+
+impl Serialize for HandleType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl From<HandleType> for u8 {
+    fn from(h: HandleType) -> Self {
+        h.0
+    }
+}
+
+impl From<u8> for HandleType {
+    fn from(h: u8) -> Self {
+        Self(h)
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+impl From<fuchsia_runtime::HandleType> for HandleType {
+    fn from(h: fuchsia_runtime::HandleType) -> Self {
+        (h as u8).into()
+    }
+}
+
+const HANDLE_TYPE_EXPECT_STR: &str = "a uint8 from zircon/processargs.h";
+
+impl<'de> de::Deserialize<'de> for HandleType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = HandleType;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(HANDLE_TYPE_EXPECT_STR)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let v = v.try_into().map_err(|_| {
+                    de::Error::invalid_value(de::Unexpected::Unsigned(v), &HANDLE_TYPE_EXPECT_STR)
+                })?;
+                Ok(HandleType(v))
+            }
+        }
+        deserializer.deserialize_u64(Visitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

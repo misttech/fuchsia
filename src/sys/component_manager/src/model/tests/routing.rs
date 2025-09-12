@@ -46,6 +46,7 @@ use {
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
     fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
     fuchsia_async as fasync,
+    fuchsia_runtime::HandleType,
     futures::{
         StreamExt,
         channel::{mpsc, oneshot},
@@ -3818,4 +3819,36 @@ fn capability_requested_protocol_on_delivery_readable() {
         echo_call.await.unwrap();
     });
     executor.run_until_stalled(&mut test_body).unwrap();
+}
+
+#[fuchsia::test]
+async fn protocol_as_numbered_handle() {
+    let components = vec![
+        (
+            "a",
+            ComponentDeclBuilder::new()
+                .protocol_default("foo")
+                .offer(
+                    OfferBuilder::protocol()
+                        .name("foo")
+                        .target_name("bar")
+                        .source(OfferSource::Self_)
+                        .target_static_child("b"),
+                )
+                .child_default("b")
+                .build(),
+        ),
+        (
+            "b",
+            ComponentDeclBuilder::new()
+                .use_(UseBuilder::protocol().name("bar").numbered_handle(HandleType::User0))
+                .build(),
+        ),
+    ];
+    let mut model = RoutingTestBuilder::new("a", components).build().await;
+    let proxy = model
+        .take_numbered_channel::<echo::EchoMarker>("b".parse().unwrap(), HandleType::User0)
+        .await
+        .unwrap();
+    capability_util::call_echo_and_validate_result(proxy, ExpectedResult::Ok).await
 }

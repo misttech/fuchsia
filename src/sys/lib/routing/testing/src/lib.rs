@@ -30,7 +30,7 @@ use routing::capability_source::{
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use routing::mapper::NoopRouteMapper;
-use routing::{route_capability, RouteRequest, RouteSource};
+use routing::{RouteRequest, RouteSource, route_capability};
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -3090,10 +3090,12 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 .use_(UseBuilder::protocol().name("foo").path("/svc/hippo"))
                 .build(),
         )];
-        let namespace_capabilities = vec![CapabilityBuilder::protocol()
-            .name("foo")
-            .path("/use_from_cm_namespace/svc/foo")
-            .build()];
+        let namespace_capabilities = vec![
+            CapabilityBuilder::protocol()
+                .name("foo")
+                .path("/use_from_cm_namespace/svc/foo")
+                .build(),
+        ];
         let mut builder = T::new("a", components);
         builder.set_namespace_capabilities(namespace_capabilities);
         builder.add_capability_policy(
@@ -4349,6 +4351,8 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 source_name: "A".parse().unwrap(),
                 source_dictionary: "my_dict".parse().unwrap(),
                 target_path: "/svc/B".parse().unwrap(),
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
@@ -4419,6 +4423,8 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 source_name: "A".parse().unwrap(),
                 source_dictionary: Default::default(),
                 target_path: "/svc/dict_protocol".parse().unwrap(),
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
@@ -4484,6 +4490,8 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 source_name: "A".parse().unwrap(),
                 source_dictionary: Default::default(),
                 target_path: "/svc/dict_protocol".parse().unwrap(),
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),

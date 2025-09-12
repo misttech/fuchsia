@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Error};
 use assert_matches::assert_matches;
-use cm_rust::{push_box, CapabilityTypeName, ComponentDecl, FidlIntoNative};
+use cm_rust::{CapabilityTypeName, ComponentDecl, FidlIntoNative, push_box};
 use cm_types::{LongName, Name, Path, RelativePath, Url};
 use derivative::Derivative;
 use std::collections::BTreeMap;
@@ -594,6 +594,8 @@ pub struct UseBuilder {
     source: cm_rust::UseSource,
     target_name: Option<Name>,
     target_path: Option<Path>,
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    numbered_handle: Option<cm_types::HandleType>,
     dependency_type: cm_rust::DependencyType,
     availability: cm_rust::Availability,
     rights: fio::Operations,
@@ -639,6 +641,8 @@ impl UseBuilder {
             source_name: None,
             target_name: None,
             target_path: None,
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            numbered_handle: None,
             source_dictionary: Default::default(),
             rights: fio::R_STAR_DIR,
             subdir: Default::default(),
@@ -686,6 +690,13 @@ impl UseBuilder {
                 | CapabilityTypeName::Storage
         );
         self.target_path = Some(path.parse().unwrap());
+        self
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub fn numbered_handle(mut self, h: impl Into<cm_types::HandleType>) -> Self {
+        assert_matches!(self.type_, CapabilityTypeName::Protocol);
+        self.numbered_handle = Some(h.into());
         self
     }
 
@@ -773,6 +784,8 @@ impl UseBuilder {
                 source_name: self.source_name.expect("name not set"),
                 source_dictionary: self.source_dictionary,
                 target_path: self.target_path.expect("path not set"),
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                numbered_handle: self.numbered_handle,
                 dependency_type: self.dependency_type,
                 availability: self.availability,
             }),

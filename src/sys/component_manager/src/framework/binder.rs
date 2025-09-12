@@ -22,6 +22,7 @@ static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
         source_name: BINDER_SERVICE.clone(),
         source_dictionary: Default::default(),
         target_path: cm_types::Path::new("/null").unwrap(),
+        numbered_handle: None,
         dependency_type: cm_rust::DependencyType::Strong,
         availability: Default::default(),
     })

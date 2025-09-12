@@ -18,6 +18,10 @@ rustc_library("cm_types") {
     "//third_party/rust_crates:url",
   ]
 
+  if (is_fuchsia) {
+    deps += [ "//src/lib/fuchsia-runtime" ]
+  }
+
   test_deps = [
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:serde_json",

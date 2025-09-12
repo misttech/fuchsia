@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
-use cm_rust::{append_box, ExposeDecl, ExposeProtocolDecl, ExposeSource, ExposeTarget};
+use anyhow::{Context, Error, format_err};
+use cm_rust::{ExposeDecl, ExposeProtocolDecl, ExposeSource, ExposeTarget, append_box};
 use fidl::endpoints::{self as f_end, DiscoverableProtocolMarker};
 use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
@@ -578,11 +578,7 @@ async fn register_piconet_member(
 }
 
 fn handle_fidl_err(fidl_err: fidl::Error, ctx: String) -> Result<(), Error> {
-    if fidl_err.is_closed() {
-        Ok(())
-    } else {
-        Err(anyhow::Error::from(fidl_err).context(ctx))
-    }
+    if fidl_err.is_closed() { Ok(()) } else { Err(anyhow::Error::from(fidl_err).context(ctx)) }
 }
 
 /// Given a request stream and a proxy, forward from one to the other
@@ -1107,6 +1103,7 @@ mod tests {
             target_path: format!("/svc/{}", bredr_test::ProfileTestMarker::PROTOCOL_NAME)
                 .parse()
                 .unwrap(),
+            numbered_handle: None,
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
         });
@@ -1180,6 +1177,7 @@ mod tests {
             target_path: format!("/svc/{}", bredr_test::ProfileTestMarker::PROTOCOL_NAME)
                 .parse()
                 .unwrap(),
+            numbered_handle: None,
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
         });

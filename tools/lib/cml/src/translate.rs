@@ -6,12 +6,12 @@ use crate::error::Error;
 use crate::features::{Feature, FeatureSet};
 use crate::validate::CapabilityRequirements;
 use crate::{
-    offer_to_all_would_duplicate, validate, AnyRef, AsClause, Availability, Capability,
-    CapabilityClause, Child, Collection, ConfigKey, ConfigNestedValueType, ConfigRuntimeSource,
-    ConfigType, ConfigValueType, DebugRegistration, DictionaryRef, Document, Environment,
-    EnvironmentExtends, EnvironmentRef, EventScope, Expose, ExposeFromRef, ExposeToRef, FromClause,
-    Offer, OfferFromRef, OfferToRef, OneOrMany, Path, PathClause, Program, ResolverRegistration,
-    RightsClause, RootDictionaryRef, RunnerRegistration, SourceAvailability, Use, UseFromRef,
+    AnyRef, AsClause, Availability, Capability, CapabilityClause, Child, Collection, ConfigKey,
+    ConfigNestedValueType, ConfigRuntimeSource, ConfigType, ConfigValueType, DebugRegistration,
+    DictionaryRef, Document, Environment, EnvironmentExtends, EnvironmentRef, EventScope, Expose,
+    ExposeFromRef, ExposeToRef, FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Path,
+    PathClause, Program, ResolverRegistration, RightsClause, RootDictionaryRef, RunnerRegistration,
+    SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate, validate,
 };
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name};
@@ -308,6 +308,8 @@ fn translate_use(
                     source_name: Some(source_name.to_string()),
                     source_dictionary: source_dictionary.clone(),
                     target_path: Some(target_path.into()),
+                    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                    numbered_handle: use_.numbered_handle.map(Into::into),
                     dependency_type: Some(
                         use_.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
                     ),
@@ -356,7 +358,10 @@ fn translate_use(
                     Some(value) => Some(annotate_type::<Vec<EventScope>>(value.into())),
                     None => None,
                 };
-                let internal_error = format!("Internal error in all_target_use_paths when translating an EventStream. Please file a bug.");
+                let internal_error = format!(
+                    "Internal error in all_target_use_paths when translating an EventStream. \
+                    Please file a bug."
+                );
                 let (source, _source_dictionary) =
                     extract_use_source(options, use_, all_capability_names, all_children, None)?;
                 out_uses.push(fdecl::Use::EventStream(fdecl::UseEventStream {
@@ -1598,7 +1603,7 @@ where
             return Err(Error::internal(format!(
                 "multiple unexpected \"from\" clauses for \"offer\": {}",
                 many
-            )))
+            )));
         }
     }
 }
@@ -2123,16 +2128,16 @@ mod tests {
     use crate::features::Feature;
     use crate::translate::test_util::must_parse_cml;
     use crate::{
-        create_offer, AnyRef, AsClause, Capability, CapabilityClause, Child, Collection,
-        DebugRegistration, Document, Environment, EnvironmentExtends, EnvironmentRef, Expose,
-        ExposeFromRef, ExposeToRef, FromClause, Offer, OfferFromRef, OneOrMany, Path, PathClause,
-        Program, ResolverRegistration, RightsClause, RunnerRegistration, Use, UseFromRef,
+        AnyRef, AsClause, Capability, CapabilityClause, Child, Collection, DebugRegistration,
+        Document, Environment, EnvironmentExtends, EnvironmentRef, Expose, ExposeFromRef,
+        ExposeToRef, FromClause, Offer, OfferFromRef, OneOrMany, Path, PathClause, Program,
+        ResolverRegistration, RightsClause, RunnerRegistration, Use, UseFromRef, create_offer,
     };
     use assert_matches::assert_matches;
     use cm_fidl_validator::error::{AvailabilityList, DeclField, Error as CmFidlError, ErrorList};
     use cm_types::{self as cm, Name};
     use difference::Changeset;
-    use serde_json::{json, Map, Value};
+    use serde_json::{Map, Value, json};
     use std::collections::BTreeSet;
     use std::convert::Into;
     use std::str::FromStr;
@@ -2952,6 +2957,7 @@ mod tests {
                     {
                         "protocol": "LegacyCoolFonts",
                         "path": "/svc/fuchsia.fonts.LegacyProvider",
+                        "numbered_handle": 0xab,
                         "availability": "optional",
                     },
                     { "protocol": "fuchsia.sys2.LegacyRealm", "from": "framework" },
@@ -3022,6 +3028,7 @@ mod tests {
                             source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                             source_name: Some("LegacyCoolFonts".to_string()),
                             target_path: Some("/svc/fuchsia.fonts.LegacyProvider".to_string()),
+                            numbered_handle: Some(0xab),
                             availability: Some(fdecl::Availability::Optional),
                             ..Default::default()
                         }
@@ -5594,12 +5601,14 @@ mod tests {
             OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
         ));
 
-        assert!(maybe_generate_direct_offer_from_all(
-            &offer,
-            &offer_set,
-            &Name::from_str("something").unwrap()
-        )
-        .is_empty());
+        assert!(
+            maybe_generate_direct_offer_from_all(
+                &offer,
+                &offer_set,
+                &Name::from_str("something").unwrap()
+            )
+            .is_empty()
+        );
     }
 
     #[test]

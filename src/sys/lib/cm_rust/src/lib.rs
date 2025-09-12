@@ -308,6 +308,23 @@ impl NativeIntoFidl<fdecl::DeliveryType> for DeliveryType {
     }
 }
 
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+pub use cm_types::HandleType;
+
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+impl FidlIntoNative<HandleType> for u8 {
+    fn fidl_into_native(self) -> HandleType {
+        self.into()
+    }
+}
+
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+impl NativeIntoFidl<u8> for HandleType {
+    fn native_into_fidl(self) -> u8 {
+        self.into()
+    }
+}
+
 pub trait SourcePath {
     fn source_path(&self) -> BorrowedSeparatedPath<'_>;
     fn is_from_dictionary(&self) -> bool {
@@ -356,6 +373,8 @@ pub struct UseProtocolDecl {
     #[fidl_decl(default_preserve_none)]
     pub source_dictionary: RelativePath,
     pub target_path: Path,
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub numbered_handle: Option<HandleType>,
     pub dependency_type: DependencyType,
     #[fidl_decl(default)]
     pub availability: Availability,
@@ -2907,6 +2926,7 @@ mod tests {
                         source_name: Some("legacy_netstack".to_string()),
                         source_dictionary: Some("in/dict".to_string()),
                         target_path: Some("/svc/legacy_mynetstack".to_string()),
+                        numbered_handle: Some(0xab),
                         availability: Some(fdecl::Availability::Optional),
                         ..Default::default()
                     }),
@@ -3391,6 +3411,7 @@ mod tests {
                             source_name: "legacy_netstack".parse().unwrap(),
                             source_dictionary: "in/dict".parse().unwrap(),
                             target_path: "/svc/legacy_mynetstack".parse().unwrap(),
+                            numbered_handle: Some(HandleType::from(0xab)),
                             availability: Availability::Optional,
                         }),
                         UseDecl::Protocol(UseProtocolDecl {
@@ -3399,6 +3420,7 @@ mod tests {
                             source_name: "echo_service".parse().unwrap(),
                             source_dictionary: "in/dict".parse().unwrap(),
                             target_path: "/svc/echo_service".parse().unwrap(),
+                            numbered_handle: None,
                             availability: Availability::Required,
                         }),
                         UseDecl::Directory(UseDirectoryDecl {

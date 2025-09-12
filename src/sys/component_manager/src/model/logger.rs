@@ -181,6 +181,7 @@ mod tests {
                 source_name: LOG_SINK_PROTOCOL.parse().unwrap(),
                 source_dictionary: Default::default(),
                 target_path: target_path.clone(),
+                numbered_handle: None,
                 dependency_type: cm_rust::DependencyType::Strong,
                 availability: cm_rust::Availability::Required,
             }))

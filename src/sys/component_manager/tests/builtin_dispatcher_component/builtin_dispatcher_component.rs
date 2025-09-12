@@ -15,7 +15,7 @@ use fuchsia_component_test::new::{
 };
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent, fuchsia_async,
 };
@@ -72,6 +72,7 @@ async fn get_worker_url() -> (String, fuchsia_async::Task<()>) {
             source_name: cm_types::Name::new(fecho::EchoMarker::PROTOCOL_NAME).unwrap(),
             source_dictionary: cm_types::RelativePath::dot(),
             target_path: format!("/svc/{}", fecho::EchoMarker::PROTOCOL_NAME).parse().unwrap(),
+            numbered_handle: None,
             dependency_type: cm_rust::DependencyType::Strong,
             availability: cm_rust::Availability::Required,
         }),

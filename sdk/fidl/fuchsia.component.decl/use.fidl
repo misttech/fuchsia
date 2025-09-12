@@ -88,6 +88,16 @@ type UseProtocol = table {
     /// Must be an absolute path starting with /.
     3: target_path string:MAX_PATH_LENGTH;
 
+    /// (Optional) A processargs ordinal (zircon/processargs.h) by which a channel to this protocol
+    /// will be delivered to the component's processargs.
+    ///
+    /// Must be a valid processargs ordinal defined in `zircon/processargs.h`.
+    ///
+    /// If this is set, we still require `target_path` to also be set, although we could relax this
+    /// restriction in the future.
+    @available(added=HEAD)
+    7: numbered_handle uint8;
+
     /// (Required) The dependency type this use represents.
     ///
     /// A component which offers a capability to a child from itself and uses a

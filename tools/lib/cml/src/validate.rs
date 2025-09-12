@@ -545,6 +545,15 @@ which is almost certainly a mistake: {}",
                 )));
             }
         }
+        if let Some(_) = use_.numbered_handle.as_ref() {
+            if use_.protocol.is_some() {
+                // Allowed.
+            } else {
+                return Err(Error::validate(format!(
+                    "`numbered_handle` is only supported for `use protocol`"
+                )));
+            }
+        }
 
         // Disallow multiple capability ids of the same name.
         let capability_ids = CapabilityId::from_use(use_)?;
@@ -3370,6 +3379,39 @@ mod tests {
                 ],
             }),
             Err(Error::Validate { err, .. }) if &err == "Only `use` from children can have dependency: \"weak\""
+        ),
+        test_cml_use_numbered_handle_not_a_protocol(
+            json!({
+                "use": [
+                    {
+                        "service": "foo",
+                        "numbered_handle": 0xab,
+                    },
+                ],
+            }),
+            Err(Error::Validate { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
+        ),
+        test_cml_use_numbered_handle_not_a_number(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo",
+                        "numbered_handle": "0xab",
+                    },
+                ],
+            }),
+            Err(Error::Parse { err, .. }) if &err == "error parsing number"
+        ),
+        test_cml_use_numbered_handle_out_of_range(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo",
+                        "numbered_handle": 256,
+                    },
+                ],
+            }),
+            Err(Error::Parse { err, .. }) if &err == "invalid value: integer `256`, expected a uint8 from zircon/processargs.h"
         ),
 
         // expose

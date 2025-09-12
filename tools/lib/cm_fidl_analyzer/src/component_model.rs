@@ -818,13 +818,15 @@ impl ComponentModelForAnalyzer {
                         panic!("unexpected router response");
                     };
                     dictionary
-                },
-                other_capability => panic!("unexpected capability in namespace: {other_capability:?}"),
+                }
+                other_capability => {
+                    panic!("unexpected capability in namespace: {other_capability:?}")
+                }
             };
             current_capability = dictionary
-                        .get(item)
-                        .expect("missing path in namespace")
-                        .expect("missing path in namesapce");
+                .get(item)
+                .expect("missing path in namespace")
+                .expect("missing path in namesapce");
         }
         let data = match current_capability {
             Capability::ConnectorRouter(router) => {
@@ -1607,6 +1609,7 @@ mod tests {
                 source_name: "bar_svc".parse().unwrap(),
                 source_dictionary: Default::default(),
                 target_path: "/svc/hippo".parse().unwrap(),
+                numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
