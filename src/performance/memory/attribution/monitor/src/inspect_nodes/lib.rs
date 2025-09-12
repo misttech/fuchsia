@@ -4,16 +4,16 @@
 #![warn(clippy::unwrap_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
-use anyhow::{anyhow, Error, Result};
-use attribution_processing::digest::{BucketDefinition, Digest};
+use anyhow::{Context, Error, Result, anyhow};
 use attribution_processing::AttributionDataProvider;
+use attribution_processing::digest::{BucketDefinition, Digest};
 use fpressure::WatcherRequest;
 use fuchsia_async::{MonotonicDuration, MonotonicInstant, Task, WakeupTime};
 use fuchsia_inspect::{ArrayProperty, Inspector, Node};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
-use futures::{select, try_join, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, select, try_join};
 use inspect_runtime::PublishedInspectController;
-use log::{debug, warn};
+use log::{debug, error, warn};
 use memory_monitor2_config::Config;
 use stalls::StallProvider;
 use std::sync::Arc;
@@ -27,7 +27,6 @@ use {
 /// The FIDL service stops when this object is dropped.
 pub struct ServiceTask {
     _inspect_controller: PublishedInspectController,
-    _periodic_digest: Task<Result<(), anyhow::Error>>,
 }
 
 /// Begins to serve the inspect tree, and returns an object holding the server's resources.
@@ -66,7 +65,21 @@ pub fn start_service(
         bucket_definitions,
         inspector.root().create_child("logger"),
     )?;
-    Ok(ServiceTask { _inspect_controller: inspect_controller, _periodic_digest: digest_service })
+
+    fuchsia_async::Task::spawn(async move {
+        let result = digest_service.await;
+        match result {
+            Ok(_) => {
+                error!("Digest service exited without error");
+            }
+            Err(e) => {
+                error!("Digest service failed: {:?}", e);
+            }
+        }
+    })
+    .detach();
+
+    Ok(ServiceTask { _inspect_controller: inspect_controller })
 }
 
 fn build_inspect_tree(
@@ -261,9 +274,11 @@ fn digest_service(
                 // When we receive a pressure change, update the current level, and if necessary do
                 // a capture.
                 pressure = pressure_stream.next() =>
-                    match pressure.ok_or_else(|| anyhow::Error::msg("Unexpectedly exhausted pressure stream"))?? {
+                    match pressure.ok_or_else(
+                            || anyhow::Error::msg("Unexpectedly exhausted pressure stream"))?
+                            .with_context(|| "Failed to read memory pressure stream")? {
                         WatcherRequest::OnLevelChanged{level, responder} => {
-                            responder.send()?;
+                            responder.send().with_context(|| "Failed to send pressure stream response")?;
                             // Don't do anything if the pressure has not changed.
                             if level == current_level { continue; }
                             current_level = level;
@@ -296,7 +311,8 @@ fn digest_service(
             let (kmem_stats, kmem_stats_compression) = try_join!(
                 kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
                 kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
-            )?;
+            )
+            .with_context(|| "Failed to get kernel memory stats")?;
 
             // Compute the aggregation.
             let Digest { buckets } = Digest::compute(
@@ -304,7 +320,8 @@ fn digest_service(
                 &kmem_stats,
                 &kmem_stats_compression,
                 &*bucket_definitions,
-            )?;
+            )
+            .with_context(|| "Failed to compute the Digest")?;
 
             // Initialize the inspect property containing the buckets names, if necessary.
             let _ = buckets_names.get_or_init(|| {
@@ -318,7 +335,9 @@ fn digest_service(
                 buckets_names
             });
 
-            let stall_values = stall_provider.get_stall_info()?;
+            let stall_values = stall_provider
+                .get_stall_info()
+                .with_context(|| "Unable to retrieve stall information")?;
 
             // Add an entry for the current aggregation.
             buckets_list_node.add_entry(|n| {
@@ -351,10 +370,10 @@ mod tests {
         Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
         PrincipalType, Resource, ResourceReference, ZXName,
     };
-    use diagnostics_assertions::{assert_data_tree, NonZeroIntProperty};
+    use diagnostics_assertions::{NonZeroIntProperty, assert_data_tree};
     use fuchsia_async::TestExecutor;
-    use futures::task::Poll;
     use futures::TryStreamExt;
+    use futures::task::Poll;
     use stalls::MemoryStallMetrics;
     use std::time::Duration;
     use {
@@ -607,18 +626,20 @@ mod tests {
             panic!("digest_service failed to register a watcher");
         };
         // Send a pressure signal, to trigger a capture.
-        assert!(exec
-            .run_until_stalled(&mut watcher.on_level_changed(fpressure::Level::Warning))?
-            .is_ready());
+        assert!(
+            exec.run_until_stalled(&mut watcher.on_level_changed(fpressure::Level::Warning))?
+                .is_ready()
+        );
         // Ensure that digest_service has an opportunity to react to the pressure signal.
         let _ = exec.run_until_stalled(&mut digest_service);
 
         // Fake the passage of time, so that digest_service may do another capture.
-        assert!(exec
-            .run_until_stalled(&mut std::pin::pin!(TestExecutor::advance_to(
+        assert!(
+            exec.run_until_stalled(&mut std::pin::pin!(TestExecutor::advance_to(
                 exec.now() + Duration::from_secs(10).into()
             )))
-            .is_ready());
+            .is_ready()
+        );
         // Ensure that digest_service has an opportunity to react to the passage of time.
         let _ = exec.run_until_stalled(&mut digest_service)?;
 
@@ -748,11 +769,12 @@ mod tests {
         // Give digest_service the opportunity to setup its timers.
         let _ = exec.run_until_stalled(&mut digest_service)?;
         // Fake the passage of time, so that digest_service may do another capture.
-        assert!(exec
-            .run_until_stalled(&mut std::pin::pin!(TestExecutor::advance_to(
+        assert!(
+            exec.run_until_stalled(&mut std::pin::pin!(TestExecutor::advance_to(
                 exec.now() + Duration::from_secs(15).into()
             )))
-            .is_ready());
+            .is_ready()
+        );
         // Ensure that digest_service has an opportunity to react to the passage of time.
         assert!(exec.run_until_stalled(&mut digest_service).is_pending());
         // This should resolve immediately because the inspect hierarchy has been populated by now.
@@ -865,18 +887,20 @@ mod tests {
         // Give digest_service the opportunity to setup its timers.
         assert!(exec.run_until_stalled(&mut digest_service)?.is_pending());
         // Fake a pressure change, so that the frequency of captures drops down.
-        assert!(exec
-            .run_until_stalled(&mut watcher.on_level_changed(fpressure::Level::Normal))?
-            .is_ready());
+        assert!(
+            exec.run_until_stalled(&mut watcher.on_level_changed(fpressure::Level::Normal))?
+                .is_ready()
+        );
         assert!(exec.run_until_stalled(&mut digest_service)?.is_pending());
         // Fake the passage of time, so that digest_service may do a capture; wait long enough that
         // the first two captures at Critical frequency would have already happened, but short
         // enough that no capture happens at the Normal frequency.
-        assert!(exec
-            .run_until_stalled(&mut std::pin::pin!(TestExecutor::advance_to(
+        assert!(
+            exec.run_until_stalled(&mut std::pin::pin!(TestExecutor::advance_to(
                 exec.now() + Duration::from_secs(25).into()
             )))
-            .is_ready());
+            .is_ready()
+        );
         // Ensure that digest_service has an opportunity to react to the passage of time.
         assert!(exec.run_until_stalled(&mut digest_service)?.is_pending());
         // This should resolve immediately because the inspect hierarchy has been populated by now.
