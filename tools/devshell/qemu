@@ -120,7 +120,7 @@ is_fvm=1
 image_source="$(fx-fvm-find-raw-source)"
 if [[ -z "${image_source}" ]]; then
   is_fvm=0
-  image_source="$(fx-command-run list-build-artifacts --name storage-full --type fxfs-blk --allow-empty images)"
+  image_source="$(fx-command-run list-build-artifacts --name fuchsia.fxfs_sparse --type blk --allow-empty images)"
 fi
 
 args=(
@@ -175,7 +175,8 @@ if [[ -n "${image_source}" ]]; then
     fvm_tool="$(fx-command-run host-tool --print fvm)"
     fx-fvm-extend-image "${fvm_tool}" "${FUCHSIA_BUILD_DIR}/${image_source}" "${img_raw}" "${IMAGE_SIZE}"
   else
-    cp "${FUCHSIA_BUILD_DIR}/${image_source}" "${img_raw}"
+    simg2img_tool="${FUCHSIA_DIR}/prebuilt/third_party/libsparse/bin/simg2img"
+    "${simg2img_tool}" "${FUCHSIA_BUILD_DIR}/${image_source}" "${img_raw}"
     if [[ -n "${IMAGE_SIZE}" ]]; then
       fx-extend "${img_raw}" "${IMAGE_SIZE}"
     fi
