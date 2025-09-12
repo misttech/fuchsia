@@ -26,7 +26,6 @@
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
 #include <phys/zircon-info-note.h>
-#include <platform/boot_timestamps.h>
 #include <platform/timer.h>
 #include <vm/handoff-end.h>
 #include <vm/kstack.h>
@@ -75,7 +74,6 @@ KCOUNTER(timeline_physboot_setup, "boot.timeline.physboot-setup")
 KCOUNTER(timeline_decompress_start, "boot.timeline.decompress-start")
 KCOUNTER(timeline_decompress_end, "boot.timeline.decompress-end")
 KCOUNTER(timeline_zbi_done, "boot.timeline.zbi-done")
-KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
 
 void Set(const Counter& counter, arch::EarlyTicks sample) {
   counter.Set(platform_convert_early_ticks(sample));
@@ -109,8 +107,6 @@ void TimelineCounters(unsigned int level) {
         break;
       case PhysBootTimes::kCount:
         // There is no PhysBootTimes entry corresponding to kCount.
-        // This is the first sample taken by the kernel proper after physboot handed off.
-        Set(timeline_physboot_handoff, kernel_entry_ticks);
         break;
     }
   }

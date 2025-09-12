@@ -36,7 +36,6 @@
 #include <ktl/limits.h>
 #include <lk/init.h>
 #include <phys/handoff.h>
-#include <platform/boot_timestamps.h>
 #include <platform/pc.h>
 #include <platform/pc/hpet.h>
 #include <platform/pc/timer.h>

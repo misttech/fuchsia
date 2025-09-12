@@ -30,7 +30,6 @@
 #include <ktl/limits.h>
 #include <lk/init.h>
 #include <phys/handoff.h>
-#include <platform/boot_timestamps.h>
 #include <platform/timer.h>
 
 #include <ktl/enforce.h>

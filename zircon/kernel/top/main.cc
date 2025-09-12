@@ -42,6 +42,8 @@
 
 namespace {
 
+arch::EarlyTicks gHandoffTicks;
+
 bool gConstructorsCalled = false;
 
 void CallConstructors() {
@@ -53,23 +55,17 @@ void CallConstructors() {
 
 bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsCalled; }
 
-extern "C" {
-
-// Samples taken at the first instruction in the kernel.
-arch::EarlyTicks kernel_entry_ticks;
-
-}  // extern "C"
-
 static uint secondary_idle_thread_count;
 
 static int bootstrap2(void* arg);
 
+KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
 KCOUNTER(timeline_threading, "boot.timeline.threading")
 KCOUNTER(timeline_init, "boot.timeline.init")
 
 // called from arch code
 void lk_main(PhysHandoff* handoff) {
-  kernel_entry_ticks = arch::EarlyTicks::Get();
+  gHandoffTicks = arch::EarlyTicks::Get();
 
   PostHandoffBootstrap(handoff);
 
@@ -197,6 +193,7 @@ static int bootstrap2(void*) {
   DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
 
   timeline_threading.Set(current_mono_ticks());
+  timeline_physboot_handoff.Set(platform_convert_early_ticks(gHandoffTicks));
 
   dprintf(SPEW, "top of bootstrap2()\n");
 
