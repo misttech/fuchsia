@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <zircon/availability.h>
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/syslog/internal/global.h>
-#include <lib/syslog/internal/logger.h>
-#include <lib/syslog/internal/wire_format.h>
+#include <lib/syslog/global.h>
+#include <lib/syslog/logger.h>
+#include <lib/syslog/wire_format.h>
 #include <poll.h>
 #include <string.h>
 #include <unistd.h>
@@ -348,3 +352,5 @@ TEST(SyslogSocketTests, TestLogReconfiguration) {
 }
 
 }  // namespace
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)

@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <zircon/availability.h>
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.logger/cpp/wire.h>
-#include <lib/syslog/internal/global.h>
+#include <lib/syslog/global.h>
 #include <lib/zx/socket.h>
 #include <poll.h>
 #include <stdlib.h>
@@ -324,3 +328,5 @@ TEST(SyslogTests, test_reconfigure_with_log_sink_channel_not_supported) {
 #endif
 
 }  // namespace
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)

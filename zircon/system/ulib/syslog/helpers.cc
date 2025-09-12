@@ -4,6 +4,8 @@
 
 #include "helpers.h"
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+
 #include <cstring>
 
 namespace syslog {
@@ -31,3 +33,5 @@ const char* StripFile(const char* file, fx_log_severity_t severity) {
 
 }  // namespace internal
 }  // namespace syslog
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)

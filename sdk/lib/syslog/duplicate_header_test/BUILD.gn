@@ -20,6 +20,5 @@ cc_test_executable("duplicate-header-test") {
     "//sdk/lib/syslog/cpp",
     "//sdk/lib/syslog/structured_backend",
     "//third_party/googletest:gtest",
-    "//zircon/system/ulib/syslog",
   ]
 }

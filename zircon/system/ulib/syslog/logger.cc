@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "lib/syslog/internal/logger.h"
+#include "lib/syslog/logger.h"
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
 #include <lib/zx/socket.h>
 
@@ -196,3 +198,5 @@ zx_status_t fx_logger_create(const fx_logger_config_t* config, fx_logger_t** out
 
 SYSLOG_EXPORT
 void fx_logger_destroy(fx_logger_t* logger) { delete logger; }
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)

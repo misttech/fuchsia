@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "fx_logger.h"
+#include <zircon/availability.h>
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
 #include <fidl/fuchsia.logger/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>  //nogncheck
-#include <lib/syslog/internal/logger.h>
-#include <lib/syslog/internal/wire_format.h>
+#include <lib/syslog/logger.h>
+#include <lib/syslog/wire_format.h>
 #include <stdio.h>
 #include <zircon/assert.h>
 
@@ -21,6 +23,7 @@
 #include <fbl/auto_lock.h>
 #include <fbl/string_buffer.h>
 
+#include "fx_logger.h"
 #include "zircon/system/ulib/syslog/helpers.h"
 
 namespace {
@@ -425,3 +428,5 @@ zx_status_t fx_logger::SetTags(const char* const* tags, size_t ntags) {
   }
   return ZX_OK;
 }
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)

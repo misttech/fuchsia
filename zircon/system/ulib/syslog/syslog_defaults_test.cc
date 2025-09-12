@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/syslog/internal/global.h>
+#include <lib/syslog/global.h>
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
 #include <zxtest/zxtest.h>
 
@@ -16,3 +18,5 @@ TEST(SyslogTests, test_log_severity_invalid) {
   EXPECT_STATUS(ZX_ERR_INVALID_ARGS, fx_logger_set_min_severity(logger, FX_LOG_FATAL + 1));
   EXPECT_EQ(FX_LOG_INFO, fx_logger_get_min_severity(logger));
 }
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)

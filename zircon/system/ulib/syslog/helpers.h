@@ -5,7 +5,9 @@
 #ifndef ZIRCON_SYSTEM_ULIB_SYSLOG_HELPERS_H_
 #define ZIRCON_SYSTEM_ULIB_SYSLOG_HELPERS_H_
 
-#include <lib/syslog/internal/logger.h>
+#include <lib/syslog/logger.h>
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
 namespace syslog {
 namespace internal {
@@ -23,4 +25,5 @@ const char* StripFile(const char* file, fx_log_severity_t severity);
 }  // namespace internal
 }  // namespace syslog
 
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 #endif  // ZIRCON_SYSTEM_ULIB_SYSLOG_HELPERS_H_

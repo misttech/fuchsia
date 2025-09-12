@@ -17,43 +17,23 @@ import("//build/zircon/zx_library.gni")
 #
 # This is an allowlist of targets that use the deprecated `syslog` C++ library.
 # C++ libraries should now be using `//sdk/lib/syslog/cpp` instead.
-#
-# Developers are encouraged to migrate to use the `diagnostics_log` and `tracing` libraries
-# instead which bring structured logging support.
-#
-# The policy at this time is:
-# 1. Pre-existing use of syslog in fuchsia.git are allowlisted.
-# 2. Use of syslog in new libraries and binaries is strongly discouraged and only allowed
-#    under special circumstances under which the new library isn't covering the needs.
-#
-# To add items to the allowlist, please send a change to one of the OWNERS of
-# this file to add an element to the visibility list below.
-# Please allowlist entire directories rather than individual targets as it
-# requires less allowlist churn over time.
-#
-# To regenerate:
-# fx gn refs $(fx get-build-dir) /zircon/system/ulib/syslog:syslog //zircon/system/ulib/syslog | sed 's|\(.*:\).*|"\1*",|' | sort | uniq
 syslog_visibility_allowlist = [
+  ":*",
   "//build/sdk:partner_idk_versioned_shared_libraries",
-  "//sdk/lib/syslog/duplicate_header_test:*",
-  "//zircon/system/ulib/syslog:*",
 ]
 
 syslog_headers = [
   "lib/syslog/global.h",
   "lib/syslog/logger.h",
   "lib/syslog/wire_format.h",
-  "lib/syslog/internal/global.h",
-  "lib/syslog/internal/logger.h",
-  "lib/syslog/internal/wire_format.h",
 ]
 
 zx_library("syslog") {
   sdk = "shared"
   sdk_publishable = "partner"
+  sources = []
   sdk_headers = syslog_headers
-
-  sources = [
+  sources += [
     "fx_logger.cc",
     "global.cc",
     "logger.cc",
@@ -75,7 +55,6 @@ zx_library("syslog") {
     "//sdk/lib/syslog/cpp:backend_fuchsia_globals_sdk",
     "//zircon/system/ulib/trace-engine:trace-engine_sdk",
   ]
-
   visibility = syslog_visibility_allowlist
 }
 

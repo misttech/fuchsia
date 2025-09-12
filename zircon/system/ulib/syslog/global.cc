@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "lib/syslog/internal/global.h"
+#include "lib/syslog/global.h"
 
-#include <lib/syslog/internal/logger.h>
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+
+#include <lib/syslog/logger.h>
 #include <lib/zx/process.h>
 
 #include <memory>
@@ -81,3 +83,5 @@ bool fx_vlog_is_enabled(uint8_t verbosity) {
   fx_logger_t* logger = fx_log_get_logger();
   return logger && fx_log_severity_from_verbosity(verbosity) >= fx_logger_get_min_severity(logger);
 }
+
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
