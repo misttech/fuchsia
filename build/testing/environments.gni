@@ -12,12 +12,33 @@ declare_args() {
 _all_named_fuchsia_envs = []
 _all_named_host_envs = []
 
+# The 'enum' of supported device types. These values, like all referenced under
+# environment dimensions, are known to Infrastructure.
+device_types = {
+  aemu = "AEMU"
+  astro = "Astro"
+  atlas = "Atlas"
+  crosvm = "crosvm"
+  gce = "GCE"
+  kola = "Kola"
+  lilac = "Lilac"
+  luis = "Luis"
+  maple = "Maple"
+  nelson = "Nelson"
+  nuc7 = "Intel NUC Kit NUC7i5DNHE"
+  nuc11 = "Intel NUC Kit NUC11TNHv5"
+  qemu = "QEMU"
+  sherlock = "Sherlock"
+  sorrel = "Sorrel"
+  vim3 = "Vim3"
+}
+
 ### Individual test environments
 # Please keep alphabetized.
 
 aemu_env = {
   dimensions = {
-    device_type = "AEMU"
+    device_type = device_types.aemu
   }
 }
 _all_named_fuchsia_envs += [
@@ -29,7 +50,7 @@ _all_named_fuchsia_envs += [
 
 astro_env = {
   dimensions = {
-    device_type = "Astro"
+    device_type = device_types.astro
   }
 }
 _all_named_fuchsia_envs += [
@@ -41,7 +62,7 @@ _all_named_fuchsia_envs += [
 
 wlan_astro_env = {
   dimensions = {
-    device_type = "Astro"
+    device_type = device_types.astro
     pool = "fuchsia.tests.connectivity"
   }
   tags = [ "antlion" ]
@@ -49,7 +70,7 @@ wlan_astro_env = {
 
 crosvm_env = {
   dimensions = {
-    device_type = "crosvm"
+    device_type = device_types.crosvm
   }
 }
 
@@ -66,7 +87,7 @@ if (target_cpu == "x64") {
 
 bt_lacewing_sherlock_env = {
   dimensions = {
-    device_type = "Sherlock"
+    device_type = device_types.sherlock
     pool = "fuchsia.tests.bluetooth"
     sherlocks = "2"
     testbed = "lacewing_bt_Sherlock"
@@ -75,7 +96,7 @@ bt_lacewing_sherlock_env = {
 
 bt_lacewing_vim3_env = {
   dimensions = {
-    device_type = "Vim3"
+    device_type = device_types.vim3
     pool = "fuchsia.tests.bluetooth"
     vim3s = "2"
     testbed = "lacewing_bt_vim3"
@@ -84,7 +105,7 @@ bt_lacewing_vim3_env = {
 
 bt_lacewing_sorrel_env = {
   dimensions = {
-    device_type = "Sorrel"
+    device_type = device_types.sorrel
     pool = "fuchsia.tests.bluetooth"
     sorrels = "2"
     testbed = "lacewing_bt_sorrel"
@@ -94,7 +115,7 @@ bt_lacewing_sorrel_env = {
 wlan_astro_ap_env = {
   dimensions = {
     access_points = "1"
-    device_type = "Astro"
+    device_type = device_types.astro
     pool = "fuchsia.tests.connectivity"
   }
 }
@@ -102,7 +123,7 @@ wlan_astro_ap_env = {
 wlan_sherlock_ap_env = {
   dimensions = {
     access_points = "1"
-    device_type = "Sherlock"
+    device_type = device_types.sherlock
     pool = "fuchsia.tests.connectivity"
   }
 }
@@ -110,7 +131,7 @@ wlan_sherlock_ap_env = {
 wlan_nelson_ap_env = {
   dimensions = {
     access_points = "1"
-    device_type = "Nelson"
+    device_type = device_types.nelson
     pool = "fuchsia.tests.connectivity"
   }
 }
@@ -118,7 +139,7 @@ wlan_nelson_ap_env = {
 wlan_vim3_ap_env = {
   dimensions = {
     access_points = "1"
-    device_type = "Vim3"
+    device_type = device_types.vim3
     pool = "fuchsia.tests.connectivity"
   }
 }
@@ -126,7 +147,7 @@ wlan_vim3_ap_env = {
 wlan_sorrel_ap_env = {
   dimensions = {
     access_points = "1"
-    device_type = "Sorrel"
+    device_type = device_types.sorrel
     pool = "fuchsia.tests.connectivity"
   }
 }
@@ -146,7 +167,7 @@ _all_named_host_envs += [
 
 luis_env = {
   dimensions = {
-    device_type = "Luis"
+    device_type = device_types.luis
   }
 }
 _all_named_fuchsia_envs += [
@@ -175,7 +196,7 @@ _all_named_host_envs += [
 
 kola_env = {
   dimensions = {
-    device_type = "Kola"
+    device_type = device_types.kola
   }
 }
 _all_named_fuchsia_envs += [
@@ -187,7 +208,7 @@ _all_named_fuchsia_envs += [
 
 lilac_env = {
   dimensions = {
-    device_type = "Lilac"
+    device_type = device_types.lilac
   }
 }
 _all_named_fuchsia_envs += [
@@ -199,7 +220,7 @@ _all_named_fuchsia_envs += [
 
 maple_env = {
   dimensions = {
-    device_type = "Maple"
+    device_type = device_types.maple
   }
 }
 _all_named_fuchsia_envs += [
@@ -211,7 +232,7 @@ _all_named_fuchsia_envs += [
 
 sorrel_env = {
   dimensions = {
-    device_type = "Sorrel"
+    device_type = device_types.sorrel
   }
 }
 _all_named_fuchsia_envs += [
@@ -223,7 +244,7 @@ _all_named_fuchsia_envs += [
 
 nelson_env = {
   dimensions = {
-    device_type = "Nelson"
+    device_type = device_types.nelson
   }
 }
 _all_named_fuchsia_envs += [
@@ -235,7 +256,7 @@ _all_named_fuchsia_envs += [
 
 wlan_nelson_env = {
   dimensions = {
-    device_type = "Nelson"
+    device_type = device_types.nelson
     pool = "fuchsia.tests.connectivity"
   }
   tags = [ "antlion" ]
@@ -243,7 +264,7 @@ wlan_nelson_env = {
 
 nuc7_env = {
   dimensions = {
-    device_type = "Intel NUC Kit NUC7i5DNHE"
+    device_type = device_types.nuc7
   }
 }
 
@@ -256,7 +277,7 @@ _all_named_fuchsia_envs += [
 
 nuc11_env = {
   dimensions = {
-    device_type = "Intel NUC Kit NUC11TNHv5"
+    device_type = device_types.nuc11
   }
 }
 _all_named_fuchsia_envs += [
@@ -268,7 +289,7 @@ _all_named_fuchsia_envs += [
 
 wlan_nuc11_env = {
   dimensions = {
-    device_type = "Intel NUC Kit NUC11TNHv5"
+    device_type = device_types.nuc11
     pool = "fuchsia.tests.connectivity"
   }
   tags = [ "antlion" ]
@@ -276,7 +297,7 @@ wlan_nuc11_env = {
 
 qemu_env = {
   dimensions = {
-    device_type = "QEMU"
+    device_type = device_types.qemu
   }
 }
 _all_named_fuchsia_envs += [
@@ -296,7 +317,7 @@ qemu_1cpu_env = {
 
 sherlock_env = {
   dimensions = {
-    device_type = "Sherlock"
+    device_type = device_types.sherlock
   }
 }
 _all_named_fuchsia_envs += [
@@ -308,7 +329,7 @@ _all_named_fuchsia_envs += [
 
 wlan_sherlock_env = {
   dimensions = {
-    device_type = "Sherlock"
+    device_type = device_types.sherlock
     pool = "fuchsia.tests.connectivity"
   }
   tags = [ "antlion" ]
@@ -316,7 +337,7 @@ wlan_sherlock_env = {
 
 vim3_env = {
   dimensions = {
-    device_type = "Vim3"
+    device_type = device_types.vim3
   }
 }
 _all_named_fuchsia_envs += [
@@ -328,7 +349,7 @@ _all_named_fuchsia_envs += [
 
 wlan_vim3_env = {
   dimensions = {
-    device_type = "Vim3"
+    device_type = device_types.vim3
     pool = "fuchsia.tests.connectivity"
   }
   tags = [ "antlion" ]
@@ -336,7 +357,7 @@ wlan_vim3_env = {
 
 gce_env = {
   dimensions = {
-    device_type = "GCE"
+    device_type = device_types.gce
   }
 }
 _all_named_fuchsia_envs += [
@@ -348,7 +369,7 @@ _all_named_fuchsia_envs += [
 
 atlas_env = {
   dimensions = {
-    device_type = "Atlas"
+    device_type = device_types.atlas
   }
 }
 _all_named_fuchsia_envs += [
