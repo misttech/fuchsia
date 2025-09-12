@@ -97,4 +97,7 @@ pub enum ParseWarning {
 
     #[error("encountered unknown scheduling record type {_0}")]
     UnknownSchedulingRecordType(u8),
+
+    #[error("encountered unknown profiler record type {_0}")]
+    UnknownProfilerRecordType(u8),
 }

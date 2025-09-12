@@ -16,6 +16,7 @@ pub mod init;
 pub mod log;
 pub mod metadata;
 pub mod objects;
+pub mod profiler;
 pub mod scheduling;
 pub mod session;
 pub mod string;
@@ -24,14 +25,14 @@ pub mod thread;
 pub use args::{Arg, ArgValue, RawArg, RawArgValue};
 pub use blob::{BlobRecord, BlobType, LargeBlobMetadata, LargeBlobRecord};
 pub use error::{ParseError, ParseWarning};
-pub use event::{symbolize, EventPayload, EventRecord, RawEventRecord};
+pub use event::{EventPayload, EventRecord, RawEventRecord, symbolize};
 pub use log::LogRecord;
 pub use metadata::{Provider, ProviderEvent};
 pub use objects::{KernelObjRecord, UserspaceObjRecord};
 pub use scheduling::{
     ContextSwitchEvent, LegacyContextSwitchEvent, SchedulingRecord, ThreadState, ThreadWakeupEvent,
 };
-pub use session::{parse_full_session, SessionParser};
+pub use session::{SessionParser, parse_full_session};
 pub use string::StringRef;
 pub use thread::{ProcessKoid, ThreadKoid};
 
@@ -41,6 +42,7 @@ use crate::init::InitRecord;
 use crate::log::RawLogRecord;
 use crate::metadata::{MetadataRecord, TraceInfoMetadataRecord};
 use crate::objects::{RawKernelObjRecord, RawUserspaceObjRecord};
+use crate::profiler::{ProfilerRecord, RawProfilerRecordType};
 use crate::scheduling::RawSchedulingRecord;
 use crate::session::ResolveCtx;
 use crate::string::StringRecord;
@@ -56,6 +58,7 @@ pub enum TraceRecord {
     KernelObj(KernelObjRecord),
     Scheduling(SchedulingRecord),
     Log(LogRecord),
+    Profiler(ProfilerRecord),
     LargeBlob(LargeBlobRecord),
     ProviderEvent { provider: Provider, event: ProviderEvent },
 }
@@ -68,7 +71,10 @@ impl TraceRecord {
             | Self::UserspaceObj(UserspaceObjRecord { process, .. }) => Some(*process),
             Self::Scheduling(s) => s.process(),
             Self::KernelObj(k) => k.process(),
-            Self::Blob(..) | Self::LargeBlob(..) | Self::ProviderEvent { .. } => None,
+            Self::Profiler(..)
+            | Self::Blob(..)
+            | Self::LargeBlob(..)
+            | Self::ProviderEvent { .. } => None,
         }
     }
 
@@ -79,6 +85,7 @@ impl TraceRecord {
             }
             Self::Scheduling(s) => Some(s.thread()),
             Self::Blob(..)
+            | Self::Profiler(..)
             | Self::KernelObj(..)
             | Self::LargeBlob(..)
             | Self::ProviderEvent { .. }
@@ -93,7 +100,7 @@ impl TraceRecord {
                 ctx.add_warning(ParseWarning::UnknownTraceRecordType(raw_type));
                 None
             }
-
+            RawTraceRecord::Profiler(p) => ProfilerRecord::resolve(ctx, p).map(Self::Profiler),
             RawTraceRecord::Metadata(m) => ctx.on_metadata_record(m)?,
             RawTraceRecord::Init(i) => {
                 ctx.on_init_record(i);
@@ -125,6 +132,7 @@ impl TraceRecord {
 #[derive(Debug, PartialEq)]
 enum RawTraceRecord<'a> {
     Metadata(MetadataRecord),
+    Profiler(RawProfilerRecordType<'a>),
     Init(InitRecord),
     String(StringRecord<'a>),
     Thread(ThreadRecord),
@@ -158,6 +166,7 @@ const USERSPACE_OBJ_RECORD_TYPE: u8 = 6;
 const KERNEL_OBJ_RECORD_TYPE: u8 = 7;
 const SCHEDULING_RECORD_TYPE: u8 = 8;
 const LOG_RECORD_TYPE: u8 = 9;
+const PROFILER_RECORD_TYPE: u8 = 10;
 const LARGE_RECORD_TYPE: u8 = 15;
 
 impl<'a> RawTraceRecord<'a> {
@@ -177,6 +186,9 @@ impl<'a> RawTraceRecord<'a> {
         let (buf, rem) = buf.split_at(size_bytes);
         let (_, parsed) = match base_header.raw_type() {
             METADATA_RECORD_TYPE => map(MetadataRecord::parse, |m| Self::Metadata(m)).parse(buf),
+            PROFILER_RECORD_TYPE => {
+                map(RawProfilerRecordType::parse, |p| Self::Profiler(p)).parse(buf)
+            }
             INIT_RECORD_TYPE => map(InitRecord::parse, |i| Self::Init(i)).parse(buf),
             STRING_RECORD_TYPE => map(StringRecord::parse, |s| Self::String(s)).parse(buf),
             THREAD_RECORD_TYPE => map(ThreadRecord::parse, |t| Self::Thread(t)).parse(buf),

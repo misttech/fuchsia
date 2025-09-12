@@ -559,6 +559,7 @@ fn record_timestamp(record: &fxt::TraceRecord) -> Option<i64> {
         | fxt::TraceRecord::Blob(..)
         | fxt::TraceRecord::LargeBlob(fxt::LargeBlobRecord { metadata: None, .. })
         | fxt::TraceRecord::KernelObj(..)
+        | fxt::TraceRecord::Profiler(..)
         | fxt::TraceRecord::UserspaceObj(..) => None,
     }
 }

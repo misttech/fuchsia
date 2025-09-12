@@ -21,6 +21,7 @@ rustc_library("rust") {
     "src/log.rs",
     "src/metadata.rs",
     "src/objects.rs",
+    "src/profiler.rs",
     "src/scheduling.rs",
     "src/session.rs",
     "src/string.rs",
