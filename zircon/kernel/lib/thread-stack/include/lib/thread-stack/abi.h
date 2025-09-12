@@ -7,27 +7,22 @@
 #ifndef ZIRCON_KERNEL_LIB_STACK_INCLUDE_LIB_STACK_ABI_H_
 #define ZIRCON_KERNEL_LIB_STACK_INCLUDE_LIB_STACK_ABI_H_
 
-#include <arch/defines.h>
-
-// TODO(https://fxbug.dev/42164859): Re-evaluate the need for a
-// DEFAULT_STACK_SIZE macro once there are no more uses in assembly.
-#ifdef CUSTOM_DEFAULT_STACK_SIZE
-#define DEFAULT_STACK_SIZE CUSTOM_DEFAULT_STACK_SIZE
-#else
-#define DEFAULT_STACK_SIZE (2 * PAGE_SIZE)
-#endif
-
-#ifndef __ASSEMBLER__
-
 #include <stdint.h>
 
+#include <arch/defines.h>
 #include <phys/zircon-abi-spec.h>
 
 namespace internal {
 
 // A common, convenience value for machine and unsafe stack sizes. Not intended
 // to be a part of the public API.
-constexpr uint32_t kDefaultStackSize = DEFAULT_STACK_SIZE;
+constexpr uint32_t kDefaultStackSize =
+#ifdef CUSTOM_DEFAULT_STACK_SIZE
+    CUSTOM_DEFAULT_STACK_SIZE
+#else
+    2 * PAGE_SIZE
+#endif
+    ;
 
 // The would-be unsafe stack size, if enabled.
 constexpr uint32_t kUnsafeStackSize = kDefaultStackSize;
@@ -72,7 +67,5 @@ constexpr ZirconAbiSpec::Stack kShadowCallStack = {
     .upper_guard_size_bytes = internal::kStackGuardRegionSize,
 };
 #endif
-
-#endif  // #ifndef _ASSEMBLER__
 
 #endif  // ZIRCON_KERNEL_LIB_STACK_INCLUDE_LIB_STACK_ABI_H_
