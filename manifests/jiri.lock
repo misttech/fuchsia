@@ -1105,23 +1105,23 @@
     },
     {
         "package": "gn/gn/linux-amd64",
-        "version": "git_revision:b38dcb6b9f8f020afb89ac66535682b009cdd387",
-        "instance_id": "O9f7KLApNCsMzgMgTQxv0xRgMsA9hVsSLmqYf0v1ME8C"
+        "version": "git_revision:aa3ecaecac29e23df1ee04e48b41bd274abd50ce",
+        "instance_id": "llUJ6p6cr-4lbLh3Dzw_BnG6fIe0xFwwMI6bcEFvjSEC"
     },
     {
         "package": "gn/gn/linux-arm64",
-        "version": "git_revision:b38dcb6b9f8f020afb89ac66535682b009cdd387",
-        "instance_id": "KjWX7CMdNb1XBiK2jji1QRhF4_YJknDws39gj4CXk4kC"
+        "version": "git_revision:aa3ecaecac29e23df1ee04e48b41bd274abd50ce",
+        "instance_id": "wtXFoZiBbMKzdcbZENrlFHQmLs6p0xxpyBN2BD2LVaQC"
     },
     {
         "package": "gn/gn/mac-amd64",
-        "version": "git_revision:b38dcb6b9f8f020afb89ac66535682b009cdd387",
-        "instance_id": "CSjofWyXnJN0SfgLmxQvUd1A_-xDYEKWR8VtaVLtwZIC"
+        "version": "git_revision:aa3ecaecac29e23df1ee04e48b41bd274abd50ce",
+        "instance_id": "5JsJborMVvtj2pMoKSnjeQpPoz1qbaMY-ltmwbJAMa0C"
     },
     {
         "package": "gn/gn/mac-arm64",
-        "version": "git_revision:b38dcb6b9f8f020afb89ac66535682b009cdd387",
-        "instance_id": "wFOhtjXmzVHnruTEkF7KBYGCU7gHu7IwMP0SskumqSIC"
+        "version": "git_revision:aa3ecaecac29e23df1ee04e48b41bd274abd50ce",
+        "instance_id": "OuTG4K9bJEN5-EwZXcrNMZgEAzT8JVUCagvLfCTu0aAC"
     },
     {
         "package": "infra/3pp/tools/cpython3/linux-amd64",
