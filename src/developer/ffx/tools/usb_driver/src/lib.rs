@@ -97,7 +97,7 @@ async fn implementation(
         StandaloneFhoHandler::Standalone(cmd) => cmd,
     };
 
-    let sink = if command.background || command.log_dir.is_some() {
+    let (sink, log_path) = if command.background || command.log_dir.is_some() {
         let mut path = if let Some(log_dir) = &command.log_dir {
             PathBuf::from(log_dir)
         } else {
@@ -112,7 +112,7 @@ async fn implementation(
         let _: Result<(), _> = std::fs::create_dir_all(&path);
         path.push(format!("ffx_usb.{log_id:x}.log"));
 
-        let file = match OpenOptions::new().write(true).append(true).create(true).open(path) {
+        let file = match OpenOptions::new().write(true).append(true).create(true).open(&path) {
             Ok(f) => f,
             Err(e) => {
                 return Err(ffx_command::Error::Config(anyhow::anyhow!(
@@ -121,11 +121,17 @@ async fn implementation(
             }
         };
 
-        Box::new(logging::FfxLogSink::new(Arc::new(Mutex::new(file))))
-            as Box<dyn logging::LogSinkTrait>
+        (
+            Box::new(logging::FfxLogSink::new(Arc::new(Mutex::new(file))))
+                as Box<dyn logging::LogSinkTrait>,
+            path.to_string_lossy().to_string(),
+        )
     } else {
-        Box::new(logging::FfxLogSink::new(Arc::new(Mutex::new(std::io::stderr()))))
-            as Box<dyn logging::LogSinkTrait>
+        (
+            Box::new(logging::FfxLogSink::new(Arc::new(Mutex::new(std::io::stderr()))))
+                as Box<dyn logging::LogSinkTrait>,
+            "stdout".to_owned(),
+        )
     };
 
     struct Filter;
@@ -205,6 +211,6 @@ async fn implementation(
     if let Some(serial) = &command.serial {
         log::info!("Only interacting with devices with serial {serial}");
     }
-    usb_driver_impl::HostDriver::run(socket_path, log_id, command.serial).await;
+    usb_driver_impl::HostDriver::run(socket_path, log_path, command.serial).await;
     Ok(ExitStatus::from_raw(0))
 }

@@ -235,12 +235,12 @@ pub struct HostDriver {
     listeners: Arc<ListenerTable>,
     listener_tasks: fuchsia_async::Scope,
     new_device_listeners: AsyncMutex<Vec<mpsc::Sender<UsbVsockHostEvent>>>,
-    log_id: u64,
+    log_path: String,
 }
 
 impl HostDriver {
     /// Create a new [`HostDriver`] and listen for users at the given socket path.
-    pub async fn run(socket_path: PathBuf, log_id: u64, serial: Option<String>) {
+    pub async fn run(socket_path: PathBuf, log_path: String, serial: Option<String>) {
         let listener = match remove_and_bind_socket(&socket_path).await {
             Ok(l) => l,
             Err(e) => {
@@ -255,7 +255,7 @@ impl HostDriver {
             UsbVsockHost::new([] as [&str; 0], true, sender, serial.into_iter().collect()),
             receiver,
             listener,
-            log_id,
+            log_path,
         )
         .await;
     }
@@ -264,14 +264,14 @@ impl HostDriver {
         driver: Arc<UsbVsockHost<WrapStream>>,
         mut events: mpsc::Receiver<UsbVsockHostEvent>,
         listener: UnixListener,
-        log_id: u64,
+        log_path: String,
     ) {
         let driver = HostDriver {
             driver,
             listeners: Arc::new(ListenerTable(Mutex::new(HashMap::new()))),
             listener_tasks: fuchsia_async::Scope::new_with_name("usb_driver_listeners"),
             new_device_listeners: AsyncMutex::new(Vec::new()),
-            log_id,
+            log_path,
         };
         let tasks = std::sync::Mutex::new(Vec::<LocalBoxFuture<'_, ()>>::new());
         let mut task_poller = futures::future::poll_fn(|ctx| {
@@ -317,7 +317,7 @@ impl HostDriver {
             host.host,
             host.event_receiver,
             listener,
-            0xdeadbeef,
+            "<test>".to_owned(),
         );
         conn.scope.spawn_local(fut);
         conn
@@ -460,7 +460,7 @@ impl HostDriver {
             current: CURRENT_VERSION,
             minimum: CURRENT_VERSION,
             session_id,
-            log_id: self.log_id,
+            log_path: self.log_path.clone(),
         };
 
         let resp = fidl_message::encode_response_flexible(header, res)?;

@@ -326,7 +326,7 @@ impl Driver {
         if res.minimum > CURRENT_VERSION {
             Err(ProtocolError::VersionMismatch(res.current, res.minimum))
         } else {
-            log::info!("Connected to USB driver with log ID {:x}", res.log_id);
+            log::info!("Connected to USB driver which logs to {}", res.log_path);
             Ok(Driver {
                 path: path.as_ref().into(),
                 next_txid: AtomicU32::new(1),

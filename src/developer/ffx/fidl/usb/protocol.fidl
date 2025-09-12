@@ -6,6 +6,8 @@ library fuchsia.ffx.usb;
 
 /// Maximum string length for error responses that contain strings.
 const MAX_ERROR_STRING uint16 = 1024;
+/// Maximum string length for the log path.
+const MAX_LOG_PATH_STRING uint16 = 1024;
 
 /// Identifies a VSOCK connection. We omit the local CID since it is always
 /// assumed to be 2 (the USB driver is always the host).
@@ -80,7 +82,7 @@ open protocol FfxUsb {
         current uint32;
         minimum uint32;
         session_id uint64;
-        log_id uint64;
+        log_path string:MAX_LOG_PATH_STRING;
     });
 
     /// Connect to the given CID and port. After a successful response from this
