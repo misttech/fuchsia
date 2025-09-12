@@ -14,7 +14,7 @@
                 "execute",
                 "rw*",
             ],
-            path: "/fs/blob/root",
+            path: "/fs/blob/svc/blob-exec",
         },
         {
             protocol: "fuchsia.update.verify.ComponentOtaHealthCheck",

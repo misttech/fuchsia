@@ -53,11 +53,17 @@ async fn blobfs_and_data_mounted() {
     let fixture = builder.build().await;
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
+    fixture.check_fs_type("blob-exec", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
     // Also make sure tmpfs is getting exported.
     fixture.check_fs_type("tmp", VFS_TYPE_MEMFS).await;
     fixture.check_test_data_file().await;
     fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+
+    let blob_dir =
+        fixture.dir("blob-exec", fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE);
+    assert!(fuchsia_fs::directory::readdir(&blob_dir).await.unwrap().len() > 0);
+
     fixture.tear_down().await;
 }
 
