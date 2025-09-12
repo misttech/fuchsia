@@ -61,6 +61,7 @@ void Dwc3::HandleEvent(uint32_t event) {
   switch (type) {
     case DEVT_DISCONNECT:
       fdf::debug("DEVT_DISCONNECT");
+      HandleDisconnectedEvent();
       break;
     case DEVT_USB_RESET:
       fdf::debug("DEVT_USB_RESET");
@@ -146,8 +147,6 @@ void Dwc3::HandleEvent(uint32_t event) {
       break;
     case DEVT_SUSPEND_ENTRY:
       fdf::debug("DEVT_SUSPEND_ENTRY");
-      // TODO(voydanoff) is this the best way to detect disconnect?
-      HandleDisconnectedEvent();
       break;
     case DEVT_SOF:
       fdf::debug("DEVT_SOF");
