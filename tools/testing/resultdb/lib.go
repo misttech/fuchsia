@@ -124,6 +124,31 @@ func artifactName(file string) string {
 	return file
 }
 
+// set the TestMetadata on TestResult
+func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails) {
+	if testDetail.Metadata.ComponentID > 0 {
+		r.TestMetadata = &resultpb.TestMetadata{
+			Name: testDetail.Name,
+			BugComponent: &resultpb.BugComponent{
+				System: &resultpb.BugComponent_IssueTracker{
+					IssueTracker: &resultpb.IssueTrackerComponent{
+						ComponentId: int64(testDetail.Metadata.ComponentID),
+					},
+				},
+			},
+		}
+	}
+	if len(testDetail.Metadata.Owners) > 0 {
+		listOfOwners := testDetail.Metadata.Owners
+		truncatedListOfOwners := listOfOwners
+		if len(listOfOwners) > 5 {
+			truncatedListOfOwners = listOfOwners[:5]
+		}
+		owners := strings.Join(truncatedListOfOwners, ",")
+		r.Tags = append(r.Tags, &resultpb.StringPair{Key: "owners", Value: owners})
+	}
+}
+
 // testCaseToResultSink converts TestCaseResult defined in //tools/testing/testparser/result.go
 // to ResultSink's TestResult. A testcase will not be converted if test result cannot be
 // mapped to result_sink.Status.
@@ -180,7 +205,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 				log.Printf("[Warn] outputFile: %s is not readable, skip.", outputFile)
 			}
 		}
-
+		setTestMetadata(&r, *testDetail)
 		testResult = append(testResult, &r)
 	}
 	return testResult, testsSkipped
@@ -244,27 +269,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 			PrimaryErrorMessage: createDefaultTopLevelFailureReason(testDetail),
 		}
 	}
-	if testDetail.Metadata.ComponentID > 0 {
-		r.TestMetadata = &resultpb.TestMetadata{
-			Name: testDetail.Name,
-			BugComponent: &resultpb.BugComponent{
-				System: &resultpb.BugComponent_IssueTracker{
-					IssueTracker: &resultpb.IssueTrackerComponent{
-						ComponentId: int64(testDetail.Metadata.ComponentID),
-					},
-				},
-			},
-		}
-	}
-	if len(testDetail.Metadata.Owners) > 0 {
-		listOfOwners := testDetail.Metadata.Owners
-		truncatedListOfOwners := listOfOwners
-		if len(listOfOwners) > 5 {
-			truncatedListOfOwners = listOfOwners[:5]
-		}
-		owners := strings.Join(truncatedListOfOwners, ",")
-		r.Tags = append(r.Tags, &resultpb.StringPair{Key: "owners", Value: owners})
-	}
+	setTestMetadata(&r, *testDetail)
 	return &r, testsSkipped, nil
 }
 

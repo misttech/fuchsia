@@ -193,6 +193,18 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 func TestSetTestCaseToResultSink(t *testing.T) {
 	outputRoot := t.TempDir()
 	detail := createTestDetailWithTestCase(5, outputRoot)
+	detail.Metadata = metadata.TestMetadata{
+		Owners: []string{
+			"testgoogler1@google.com",
+			"testgoogler2@google.com",
+			"testgoogler3@google.com",
+			"testgoogler4@google.com",
+			"testgoogler5@google.com",
+			"testgoogler6@google.com",
+			"testgoogler7@google.com",
+		},
+		ComponentID: 1478143,
+	}
 	results, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
 	if len(results) != 5 {
 		t.Errorf("Got %d test case results, want 5", len(results))
@@ -207,12 +219,14 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 		// 1. format:value
 		// 2. is_test_case:value
 		// 3. key1:value1
-		if len(tags) != 3 {
+		// 4. owners:value
+		if len(tags) != 4 {
 			t.Errorf("tags(%v) contains unexpected values.", tags)
 		}
 		checkTagValue(t, tags, "format", detail.Cases[i].Format)
 		checkTagValue(t, tags, "is_test_case", "true")
 		checkTagValue(t, tags, "key1", "value1")
+		checkTagValue(t, tags, "owners", "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com")
 		if len(result.Artifacts) != 2 {
 			t.Errorf("Got %d artifacts for test case %d, want 2", len(result.Artifacts), i+1)
 		}
@@ -223,6 +237,22 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 		sort.Strings(artifactNames)
 		if diff := cmp.Diff(artifactNames, []string{"case/outputfile1", "case/outputfile2"}); diff != "" {
 			t.Errorf("Diff in output files (-got +want):\n%s", diff)
+		}
+		expectedMetadata := resultpb.TestMetadata{
+			Name: detail.Name,
+			BugComponent: &resultpb.BugComponent{
+				System: &resultpb.BugComponent_IssueTracker{
+					IssueTracker: &resultpb.IssueTrackerComponent{
+						ComponentId: 1478143,
+					},
+				},
+			},
+		}
+		if diff := cmp.Diff(expectedMetadata.Name, result.TestMetadata.Name); diff != "" {
+			t.Errorf("Diff in metadata name (-got +want):\n%s", diff)
+		}
+		if diff := cmp.Diff(expectedMetadata.BugComponent.GetIssueTracker().ComponentId, result.TestMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
+			t.Errorf("Diff in the bug component's component id (-got +want):\n%s", diff)
 		}
 	}
 }
