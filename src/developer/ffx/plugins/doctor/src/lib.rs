@@ -1361,7 +1361,7 @@ async fn check_single_target_via_daemon<W: Write>(
     if run_additional_diagnostics {
         let node = ledger.add_node(
             &format!("Running additional diagnostics against {target_name}"),
-            LedgerMode::Verbose,
+            LedgerMode::Automatic,
         )?;
         run_target_diagnostics(ledger, target, env_context, retry_delay).await?;
         ledger.close(node)?;
