@@ -6,7 +6,10 @@ use crate::sysfs::{SysfsError, SysfsOps};
 use crate::sysfs_error;
 use fnanohub::{DisplayState, DisplaySyncInfo};
 use starnix_uapi::errno;
-use {fidl_fuchsia_hardware_google_nanohub as fnanohub, zx};
+use {
+    fidl_fuchsia_hardware_backlight as fbacklight,
+    fidl_fuchsia_hardware_google_nanohub as fnanohub, zx,
+};
 
 fn format_display_state(state: &DisplayState) -> String {
     let mode = state.mode.unwrap().into_primitive();
@@ -86,6 +89,33 @@ impl SysfsOps<fnanohub::DisplayDeviceSynchronousProxy> for DisplaySelectSysFsOps
         service
             .set_display_select(&request, zx::MonotonicInstant::INFINITE)?
             .map_err(|_| SysfsError(errno!(EIO)))
+    }
+}
+
+#[derive(Default)]
+pub struct DisplayBrightnessSysFsOps {}
+
+impl SysfsOps<fbacklight::DeviceSynchronousProxy> for DisplayBrightnessSysFsOps {
+    fn show(&self, service: &fbacklight::DeviceSynchronousProxy) -> Result<String, SysfsError> {
+        let backlight_state = service.get_state_normalized(zx::MonotonicInstant::INFINITE)??;
+        // Map backlight values 0.0->1.0 to 0->255.
+        Ok(format!("{}\n", (backlight_state.brightness * 255.0).floor() as i32))
+    }
+}
+
+#[derive(Default)]
+pub struct DisplayPanelStateSysFsOps {}
+
+impl SysfsOps<fbacklight::DeviceSynchronousProxy> for DisplayPanelStateSysFsOps {
+    fn show(&self, service: &fbacklight::DeviceSynchronousProxy) -> Result<String, SysfsError> {
+        let backlight_state = service.get_state_normalized(zx::MonotonicInstant::INFINITE)??;
+        match backlight_state.backlight_on {
+            // Note: These strings are a temp approach until reworked
+            // panel driver can provide this information. See also
+            // https://fxbug.dev/430383474
+            true => Ok("ON@60Hz\n".to_string()),
+            false => Ok("OFF\n".to_string()),
+        }
     }
 }
 

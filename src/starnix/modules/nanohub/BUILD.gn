@@ -22,6 +22,10 @@ fuchsia_package_with_single_component("google_nanohub") {
   manifest = "meta/nanohub.cml"
 }
 
+fuchsia_package_with_single_component("google_backlight") {
+  manifest = "meta/backlight.cml"
+}
+
 rustc_library("nanohub") {
   name = "starnix-modules-nanohub"
   edition = "2021"
@@ -51,6 +55,7 @@ rustc_library("nanohub") {
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
     "//sdk/fidl/fuchsia.hardware.google.nanohub:fuchsia.hardware.google.nanohub_rust",
     "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
     "//sdk/fidl/fuchsia.hardware.sockettunnel:fuchsia.hardware.sockettunnel_rust",

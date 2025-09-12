@@ -2106,11 +2106,13 @@ assembly_input_bundle("fastbootd_usb_support") {
 #
 assembly_input_bundle("nanohub_support") {
   base_packages = [
+    "//src/starnix/modules/nanohub:google_backlight",
     "//src/starnix/modules/nanohub:google_display",
     "//src/starnix/modules/nanohub:google_nanohub",
     "//src/starnix/modules/nanohub:sockettunnel",
   ]
   core_shards = [
+    "//src/starnix/modules/nanohub/meta/backlight.core_shard.cml",
     "//src/starnix/modules/nanohub/meta/display.core_shard.cml",
     "//src/starnix/modules/nanohub/meta/nanohub.core_shard.cml",
     "//src/starnix/modules/nanohub/meta/sockettunnel.core_shard.cml",

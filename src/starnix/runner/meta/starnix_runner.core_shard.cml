@@ -212,6 +212,13 @@
             source_availability: "unknown",
         },
         {
+            protocol: "fuchsia.hardware.backlight.Device",
+            from: "#backlight",
+            to: "#starnix_runner",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.hardware.google.nanohub.Device",
             from: "#nanohub",
             to: "#starnix_runner",

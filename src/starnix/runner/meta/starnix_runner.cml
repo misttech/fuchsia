@@ -116,6 +116,7 @@
         {
             protocol: [
                 "fuchsia.feedback.LastRebootInfoProvider",
+                "fuchsia.hardware.backlight.Device",
                 "fuchsia.hardware.google.nanohub.Device",
                 "fuchsia.hardware.google.nanohub.DisplayDevice",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureFastRpc",

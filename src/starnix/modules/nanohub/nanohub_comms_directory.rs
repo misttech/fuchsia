@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::display_sysfs_files::{
-    DisplayInfoSysFsOps, DisplaySelectSysFsOps, DisplayStateSysFsOps,
+    DisplayBrightnessSysFsOps, DisplayInfoSysFsOps, DisplayPanelStateSysFsOps,
+    DisplaySelectSysFsOps, DisplayStateSysFsOps,
 };
 use crate::nanohub_sysfs_files::{
     FirmwareNameSysFsOps, FirmwareVersionSysFsOps, HardwareResetSysFsOps, TimeSyncSysFsOps,
@@ -11,12 +12,14 @@ use crate::nanohub_sysfs_files::{
 };
 use crate::socket_tunnel_file::FirmwareFile;
 use crate::sysfs::SysfsNode;
-use fidl_fuchsia_hardware_google_nanohub as fnanohub;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_uapi::file_mode::mode;
+use {
+    fidl_fuchsia_hardware_backlight as fbacklight, fidl_fuchsia_hardware_google_nanohub as fnanohub,
+};
 
 pub fn build_display_comms_directory(device: &Device, dir: &SimpleDirectoryMutator) {
     build_device_directory(device, dir);
@@ -34,6 +37,16 @@ pub fn build_display_comms_directory(device: &Device, dir: &SimpleDirectoryMutat
         "display_select",
         SysfsNode::<fnanohub::DisplayDeviceMarker, DisplaySelectSysFsOps>::new(),
         mode!(IFREG, 0o660),
+    );
+    dir.entry(
+        "display_brightness",
+        SysfsNode::<fbacklight::DeviceMarker, DisplayBrightnessSysFsOps>::new(),
+        mode!(IFREG, 0o440),
+    );
+    dir.entry(
+        "display_panel_state",
+        SysfsNode::<fbacklight::DeviceMarker, DisplayPanelStateSysFsOps>::new(),
+        mode!(IFREG, 0o440),
     );
 }
 

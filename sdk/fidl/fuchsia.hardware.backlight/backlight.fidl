@@ -31,6 +31,7 @@ type State = struct {
 // backlight and a panel. Define the meaning of this interface for display
 // technologies that do not have backlights, such as OLED. Specify the handling of
 // invalid parameters in client requests.
+@discoverable
 closed protocol Device {
     /// Gets the current backlight brightness as a percentage value between 0.0
     /// and 1.0
