@@ -12,16 +12,16 @@ use ffx_fastboot_connection_factory::{
 };
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
-use ffx_target::{
-    Connection, TargetConnection, TargetConnectionError, TargetConnector, TargetResolver,
-};
+use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
+use futures::stream::StreamExt;
 use std::path::PathBuf;
 use std::time::Duration;
 use termion::{color, style};
 
 mod discovery_stream;
+mod formatting;
 
-pub use discovery_stream::DiagnosticsResolver;
+pub use discovery_stream::{DiagnosticsResolver, NotifierMessage, SingleTargetResolver};
 
 pub async fn run_diagnostics_with_handle<N>(
     env_context: &EnvironmentContext,
@@ -149,7 +149,7 @@ where
         output: &Self::Output,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let ReadableQuery { kind, value } = format_query(output);
+        let formatting::ReadableQuery { kind, value } = formatting::format_query(output);
         if value.is_empty() {
             notifier.on_success(format!("The target specifier is {kind}"))
         } else {
@@ -171,26 +171,7 @@ where
     }
 }
 
-struct ReadableQuery {
-    /// The kind of query in a readable form.
-    kind: &'static str,
-    /// The actual value behind the query.
-    value: String,
-}
-
-fn format_query(query: &TargetInfoQuery) -> ReadableQuery {
-    let (kind, value) = match query {
-        TargetInfoQuery::NodenameOrSerial(v) => ("nodename or serial", v.to_string()),
-        TargetInfoQuery::First => ("the first device found", "".to_string()),
-        TargetInfoQuery::Addr(a) => ("address", a.to_string()),
-        TargetInfoQuery::Serial(s) => ("serial", s.to_string()),
-        TargetInfoQuery::Usb(u) => ("usb", u.to_string()),
-        TargetInfoQuery::VSock(v) => ("vsock", v.to_string()),
-    };
-    ReadableQuery { kind, value }
-}
-
-pub struct ResolveTarget<'a, N, R = DiagnosticsResolver> {
+pub struct ResolveTarget<'a, N, R = SingleTargetResolver> {
     ctx: &'a EnvironmentContext,
     _resolver: std::marker::PhantomData<R>,
     _notifier: std::marker::PhantomData<N>,
@@ -198,7 +179,7 @@ pub struct ResolveTarget<'a, N, R = DiagnosticsResolver> {
 
 impl<'a, N, R> ResolveTarget<'a, N, R>
 where
-    R: TargetResolver,
+    R: DiagnosticsResolver,
 {
     pub fn new(ctx: &'a EnvironmentContext) -> Self {
         Self { ctx, _resolver: Default::default(), _notifier: Default::default() }
@@ -219,24 +200,6 @@ fn sources_from_query(query: &TargetInfoQuery) -> DiscoverySources {
                 | DiscoverySources::EMULATOR
                 | DiscoverySources::MANUAL
         }
-    }
-}
-
-fn format_target_state(state: &TargetState) -> String {
-    match state {
-        TargetState::Product { addrs, serial } => {
-            format!(
-                "in product state (addrs: [{}]{})",
-                addrs.iter().map(|a| a.optional_port_str()).collect::<Vec<_>>().join(", "),
-                serial
-                    .as_deref()
-                    .map(|s| format!(", serial: \"{s}\""))
-                    .unwrap_or_else(|| "".to_owned())
-            )
-        }
-        TargetState::Fastboot(state) => format!("in fastboot ({state})"),
-        TargetState::Unknown => "in an unknown state".to_owned(),
-        TargetState::Zedboot => "in zedboot".to_owned(),
     }
 }
 
@@ -273,7 +236,7 @@ where
 impl<N, R> Check for ResolveTarget<'_, N, R>
 where
     N: Notifier + Sized,
-    R: TargetResolver,
+    R: DiagnosticsResolver,
 {
     type Input = TargetInfoQuery;
     type Output = TargetHandle;
@@ -304,7 +267,7 @@ where
         output: &Self::Output,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let state_str = format_target_state(&output.state);
+        let state_str = formatting::format_target_state(&output.state);
         if let Some(name) = &output.node_name {
             notifier.on_success(format!(
                 "Device resolved to node: \"{}{}{}\" {state_str}",
@@ -335,8 +298,15 @@ where
             let sources = sources_from_query(&input);
             // There should be some kind of error here if the device resolves to an empty array.
             notify_for_discovery_sources(self.ctx, sources, notifier)?;
-            let resolver = R::default();
-            let mut targets = resolver.resolve_target_query(input, self.ctx).await?;
+            let (notifier_sender, mut notification_stream) = futures::channel::mpsc::unbounded();
+            let resolver = R::from_sources_and_notifier_sender(sources, notifier_sender);
+            let (targets, ()) =
+                futures::join!(resolver.discovered_targets(input, self.ctx), async {
+                    while let Some(NotifierMessage { ty, msg }) = notification_stream.next().await {
+                        let _ = notifier.update_status(ty, msg);
+                    }
+                });
+            let mut targets = targets?;
             if targets.is_empty() {
                 return Err(anyhow::anyhow!("Unable to find any devices"));
             }
@@ -421,7 +391,7 @@ where
         input: &Self::Input,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let state_str = format_target_state(&input.state);
+        let state_str = formatting::format_target_state(&input.state);
         if let Some(name) = &input.node_name {
             notifier.info(format!(
                 "Attempting to connect ssh to device node: \"{}{}{}\" {state_str}",
@@ -598,10 +568,11 @@ mod test {
     use fdomain_client::fidl::DiscoverableProtocolMarker;
     use fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker;
     use ffx_fastboot_connection_factory::test::setup_connection_factory;
-    use ffx_target::{FDomainConnection, Resolution};
+    use ffx_target::FDomainConnection;
     use fidl_fuchsia_developer_remotecontrol as rcs;
     use fidl_fuchsia_hwinfo::{ProductInfo, ProductMarker, ProductRequest};
     use fuchsia_async::Task;
+    use futures::channel::mpsc::UnboundedSender;
     use futures_lite::stream::StreamExt;
     use std::cell::RefCell;
     use std::collections::VecDeque;
@@ -615,29 +586,20 @@ mod test {
     #[derive(Default)]
     struct MockResolver;
 
-    impl TargetResolver for MockResolver {
+    impl DiagnosticsResolver for MockResolver {
+        fn from_sources_and_notifier_sender(
+            _source: DiscoverySources,
+            _notifier_sender: UnboundedSender<NotifierMessage>,
+        ) -> Self {
+            Self
+        }
+
         async fn discovered_targets(
-            &self,
-            _query: TargetInfoQuery,
-            _ctx: EnvironmentContext,
-        ) -> Result<Vec<TargetHandle>> {
-            Ok(MOCK_HANDLES.lock().unwrap().clone())
-        }
-
-        async fn resolve_target_query(
-            &self,
+            self,
             _query: TargetInfoQuery,
             _ctx: &EnvironmentContext,
-        ) -> Result<Vec<TargetHandle>> {
+        ) -> fho::Result<Vec<TargetHandle>> {
             Ok(MOCK_HANDLES.lock().unwrap().clone())
-        }
-
-        async fn try_resolve_manual_target(
-            &self,
-            _name: &str,
-            _ctx: &EnvironmentContext,
-        ) -> Result<Option<Resolution>> {
-            unimplemented!()
         }
     }
 
@@ -991,74 +953,6 @@ mod test {
             .await
             .expect("running checks");
         assert!(matches!(target, TargetInfoQuery::First));
-    }
-
-    #[test]
-    fn test_format_query() {
-        let query = TargetInfoQuery::NodenameOrSerial("test".to_string());
-        let f = format_query(&query);
-        assert_eq!(f.kind, "nodename or serial");
-        assert_eq!(f.value, "test");
-
-        let query = TargetInfoQuery::First;
-        let f = format_query(&query);
-        assert_eq!(f.kind, "the first device found");
-        assert_eq!(f.value, "");
-
-        let addr = "192.168.1.1:8080".parse::<SocketAddr>().unwrap();
-        let query = TargetInfoQuery::Addr(addr);
-        let f = format_query(&query);
-        assert_eq!(f.kind, "address");
-        assert_eq!(f.value, "192.168.1.1:8080");
-
-        let query = TargetInfoQuery::Serial("1234".to_string());
-        let f = format_query(&query);
-        assert_eq!(f.kind, "serial");
-        assert_eq!(f.value, "1234");
-
-        let query = TargetInfoQuery::Usb(1);
-        let f = format_query(&query);
-        assert_eq!(f.kind, "usb");
-        assert_eq!(f.value, "1");
-
-        let query = TargetInfoQuery::VSock(2);
-        let f = format_query(&query);
-        assert_eq!(f.kind, "vsock");
-        assert_eq!(f.value, "2");
-    }
-
-    #[test]
-    fn test_format_target_state() {
-        let state = TargetState::Unknown;
-        assert_eq!(format_target_state(&state), "in an unknown state");
-
-        let state = TargetState::Zedboot;
-        assert_eq!(format_target_state(&state), "in zedboot");
-
-        let state = TargetState::Fastboot(discovery::FastbootTargetState {
-            serial_number: "1234".to_string(),
-            connection_state: FastbootConnectionState::Usb,
-        });
-        assert_eq!(format_target_state(&state), "in fastboot (1234: Usb)");
-
-        let addr = "192.168.1.1:8080".parse::<SocketAddr>().unwrap();
-        let state =
-            TargetState::Product { addrs: vec![addr.into()], serial: Some("1234".to_string()) };
-        assert_eq!(
-            format_target_state(&state),
-            "in product state (addrs: [192.168.1.1:8080], serial: \"1234\")"
-        );
-
-        let state = TargetState::Product { addrs: vec![addr.into()], serial: None };
-        assert_eq!(format_target_state(&state), "in product state (addrs: [192.168.1.1:8080])");
-
-        let addr = "192.168.1.1:0".parse::<SocketAddr>().unwrap();
-        let state =
-            TargetState::Product { addrs: vec![addr.into()], serial: Some("1234".to_string()) };
-        assert_eq!(
-            format_target_state(&state),
-            "in product state (addrs: [192.168.1.1], serial: \"1234\")"
-        );
     }
 
     #[fuchsia::test]

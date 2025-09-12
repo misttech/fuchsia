@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::formatting;
 use discovery::emulator_watcher::EmulatorWatcher;
 use discovery::fastboot_file_watcher::FastbootWatcher;
 use discovery::query::TargetInfoQuery;
@@ -8,51 +9,81 @@ use discovery::{
     DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle, TargetStream, TargetStreamConfig,
 };
 use ffx_config::EnvironmentContext;
-use ffx_target::{Resolution, TargetResolver};
+use ffx_diagnostics::NotificationType;
 use fho::{FfxContext, Result};
 use fidl_fuchsia_developer_ffx as ffx;
-use futures::channel::mpsc;
+use futures::channel::mpsc::{self, UnboundedSender};
 use manual_targets::watcher::ManualTargetEvent;
 use std::path::PathBuf;
 use usb_fastboot_discovery::FastbootEvent;
 
-#[derive(Default)]
-pub struct DiagnosticsResolver {
-    sources: DiscoverySources,
+pub struct NotifierMessage {
+    pub ty: NotificationType,
+    pub msg: String,
 }
 
-impl TargetResolver for DiagnosticsResolver {
-    async fn discovered_targets(
-        &self,
-        query: TargetInfoQuery,
-        ctx: EnvironmentContext,
-    ) -> anyhow::Result<Vec<TargetHandle>> {
-        let stream = build_discovery_stream(&ctx, self.sources)?;
-        let discoverer = DiscoveryBuilder::default().build_with_stream(stream);
-        discoverer.discover_devices(query).await.map_err(|e| anyhow::anyhow!(e))
-    }
+/// A trait for resolving targets for diagnostics. Intends to be used where the caller requests
+/// a stream to be constructed with a specific notifier, and the caller then joins on the stream
+/// and the incoming information sent by the stream discovery methods.
+#[allow(async_fn_in_trait)]
+pub trait DiagnosticsResolver {
+    /// Creates a new resolver with the given discovery sources and notifier sender.
+    fn from_sources_and_notifier_sender(
+        sources: DiscoverySources,
+        notifier_sender: UnboundedSender<NotifierMessage>,
+    ) -> Self;
 
-    async fn resolve_target_query(
-        &self,
+    /// Converts the resolver into Vec<TargetHandle> of discovered devices.
+    async fn discovered_targets(
+        self,
         query: TargetInfoQuery,
         ctx: &EnvironmentContext,
-    ) -> anyhow::Result<Vec<TargetHandle>> {
-        self.discovered_targets(query, ctx.clone()).await
+    ) -> Result<Vec<TargetHandle>>;
+}
+
+pub struct SingleTargetResolver {
+    sources: DiscoverySources,
+    notifier_sender: UnboundedSender<NotifierMessage>,
+}
+
+impl DiagnosticsResolver for SingleTargetResolver {
+    fn from_sources_and_notifier_sender(
+        sources: DiscoverySources,
+        notifier_sender: UnboundedSender<NotifierMessage>,
+    ) -> Self {
+        Self { sources, notifier_sender }
     }
 
-    async fn try_resolve_manual_target(
-        &self,
-        _name: &str,
-        _ctx: &EnvironmentContext,
-    ) -> anyhow::Result<Option<Resolution>> {
-        // This is never going to be used in this implementation.
-        unimplemented!();
+    async fn discovered_targets(
+        self,
+        query: TargetInfoQuery,
+        ctx: &EnvironmentContext,
+    ) -> Result<Vec<TargetHandle>> {
+        let stream = build_discovery_stream(&ctx, self.sources, self.notifier_sender.clone())?;
+        let discoverer = DiscoveryBuilder::default().build_with_stream(stream);
+        discoverer
+            .discover_devices(query.clone())
+            .await
+            .with_user_message(|| format!("failed to discovery devices for query: {query:?}"))
+    }
+}
+
+trait NotifierSenderExt {
+    fn info(&self, msg: impl Into<String>);
+    // When used there will be more info here.
+}
+
+impl NotifierSenderExt for UnboundedSender<NotifierMessage> {
+    fn info(&self, msg: impl Into<String>) {
+        let _ =
+            self.unbounded_send(NotifierMessage { ty: NotificationType::Info, msg: msg.into() });
     }
 }
 
 pub(crate) fn build_discovery_stream(
     ctx: &EnvironmentContext,
     sources: DiscoverySources,
+    notifier_sender: UnboundedSender<NotifierMessage>,
 ) -> Result<TargetStream> {
     let emu_instance_root: PathBuf =
         ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).with_user_message(|| {
@@ -66,7 +97,9 @@ pub(crate) fn build_discovery_stream(
 
     if sources.contains(DiscoverySources::MDNS) {
         let mdns_sender = sender.clone();
+        let ns_clone = notifier_sender.clone();
         config.set_mdns_event_handler(move |res: ffx::MdnsEventType| {
+            ns_clone.info(format!("Got MDNS event: {}", formatting::format_mdns_event(&res)));
             let event = TargetEvent::try_from(res).ok();
             if let Some(event) = event {
                 let _ = mdns_sender.unbounded_send(event);
@@ -76,7 +109,9 @@ pub(crate) fn build_discovery_stream(
 
     if sources.contains(DiscoverySources::USB_FASTBOOT) {
         let fastboot_sender = sender.clone();
+        let ns_clone = notifier_sender.clone();
         config.set_fastboot_event_handler(move |res: FastbootEvent| {
+            ns_clone.info(format!("Got Fastboot event: {res:?}"));
             let event = res.into();
             let _ = fastboot_sender.unbounded_send(event);
         })
@@ -85,6 +120,7 @@ pub(crate) fn build_discovery_stream(
     if sources.contains(DiscoverySources::MANUAL) {
         let manual_targets_sender = sender.clone();
         config.set_manual_event_handler(move |res: ManualTargetEvent| {
+            notifier_sender.info(format!("Got manual event: {res:?}"));
             let event = res.into();
             let _ = manual_targets_sender.unbounded_send(event);
         })
