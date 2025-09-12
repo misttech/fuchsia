@@ -10,6 +10,7 @@
 #include <lib/inspect/cpp/reader.h>
 
 #include <array>
+#include <cinttypes>
 
 #include <bind/fuchsia/amlogic/platform/s905d3/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>

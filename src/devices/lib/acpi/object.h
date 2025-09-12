@@ -7,6 +7,8 @@
 
 #include <fidl/fuchsia.hardware.acpi/cpp/wire.h>
 
+#include <cinttypes>
+
 namespace acpi {
 
 using Processor = fuchsia_hardware_acpi::wire::Processor;

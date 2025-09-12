@@ -13,6 +13,7 @@
 #include <lib/ddk/trace/event.h>
 #include <lib/fdf/cpp/dispatcher.h>
 
+#include <cinttypes>
 #include <mutex>
 #include <vector>
 

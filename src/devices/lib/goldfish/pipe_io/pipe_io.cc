@@ -13,6 +13,7 @@
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
 
+#include <cinttypes>
 #include <cstdlib>
 #include <cstring>
 #include <variant>

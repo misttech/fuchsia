@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cinttypes>
 
 #include <fbl/algorithm.h>
 #include <gtest/gtest.h>

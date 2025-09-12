@@ -10,6 +10,7 @@
 #include <zircon/system/public/zircon/errors.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <iterator>
 
 #include "fidl/fuchsia.system.state/cpp/common_types.h"

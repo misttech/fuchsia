@@ -24,6 +24,7 @@
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

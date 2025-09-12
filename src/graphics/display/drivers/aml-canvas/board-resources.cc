@@ -12,6 +12,8 @@
 #include <zircon/assert.h>
 #include <zircon/status.h>
 
+#include <cinttypes>
+
 namespace aml_canvas {
 
 zx::result<fdf::MmioBuffer> MapMmio(

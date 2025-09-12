@@ -14,6 +14,8 @@
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
+#include <cinttypes>
+
 #include <usb/cdc.h>
 #include <usb/request-cpp.h>
 #include <usb/usb-request.h>

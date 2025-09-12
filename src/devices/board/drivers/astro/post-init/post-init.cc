@@ -7,6 +7,8 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 
+#include <cinttypes>
+
 namespace astro {
 
 namespace {

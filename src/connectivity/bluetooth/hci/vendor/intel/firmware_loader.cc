@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <zircon/status.h>
 
+#include <cinttypes>
+
 #include <fbl/string_printf.h>
 #include <fbl/unique_fd.h>
 

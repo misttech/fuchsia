@@ -11,6 +11,7 @@
 #include <lib/focaltech/focaltech.h>
 
 #include <string>
+#include <cinttypes>
 
 #include <bind/fuchsia/amlogic/platform/s905d2/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>

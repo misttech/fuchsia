@@ -12,6 +12,8 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
+#include <cinttypes>
+
 #include <fbl/alloc_checker.h>
 
 namespace buttons {

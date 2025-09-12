@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <zircon/assert.h>
 
+#include <cinttypes>
 #include <cstdint>
 #include <string_view>
 

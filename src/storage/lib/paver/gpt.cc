@@ -16,6 +16,7 @@
 #include <lib/zx/result.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <string_view>
 
 #include <fbl/algorithm.h>

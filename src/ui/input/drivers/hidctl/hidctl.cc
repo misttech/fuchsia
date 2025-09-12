@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <utility>
+#include <cinttypes>
 
 #include <fbl/array.h>
 #include <fbl/auto_lock.h>

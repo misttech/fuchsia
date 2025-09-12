@@ -12,6 +12,7 @@
 #include <lib/fidl/cpp/wire/server.h>
 #include <lib/fit/function.h>
 
+#include <cinttypes>
 #include <memory>
 
 #include <fbl/intrusive_double_list.h>

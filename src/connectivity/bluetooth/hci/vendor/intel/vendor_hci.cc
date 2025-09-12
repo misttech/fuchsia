@@ -12,6 +12,7 @@
 #include <zircon/syscalls.h>
 
 #include <algorithm>
+#include <cinttypes>
 
 #include <fbl/algorithm.h>
 

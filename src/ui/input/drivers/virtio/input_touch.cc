@@ -6,6 +6,8 @@
 
 #include <lib/ddk/debug.h>
 
+#include <cinttypes>
+
 #include <fbl/algorithm.h>
 
 namespace virtio {
