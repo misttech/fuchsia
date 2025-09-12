@@ -17,7 +17,7 @@
 #include <lib/fidl/cpp/wire/wire_types.h>
 #include <lib/stdcompat/optional.h>
 
-#include <cinttypes>
+#include <cstdint>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
