@@ -308,6 +308,8 @@ class HandoffPrep {
     for (VmObject& obj : objects) {
       obj = ktl::move(list.pop_front()->object);
     }
+    // It's useful to normalize VM object order (e.g., on base address for
+    // PhysVmars) for more readable kernel start-up logging.
     ktl::sort(objects.begin(), objects.end());
     return objects;
   }
