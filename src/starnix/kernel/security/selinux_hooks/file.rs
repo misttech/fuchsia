@@ -16,7 +16,6 @@ use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingName, MappingOptions, ProtectionFlags};
 use crate::security::selinux_hooks::{
     ProcessPermission, check_self_permission, has_fs_node_permissions, todo_check_permission,
-    todo_has_file_permissions,
 };
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
@@ -338,8 +337,7 @@ pub fn mmap_file(
             }
         } else {
             let current_sid = current_task_state(current_task).lock().current_sid;
-            todo_has_file_permissions(
-                TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
+            has_file_permissions(
                 &security_server.as_permission_check(),
                 &current_task,
                 current_sid,
