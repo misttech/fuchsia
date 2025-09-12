@@ -124,6 +124,10 @@ impl ::fidl_next::FromWire<WirePadding1ByteEnd> for Padding1ByteEnd {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding1ByteEnd {
+    type Natural = Padding1ByteEnd;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding1ByteEnd> for Padding1ByteEnd {
     #[inline]
     fn from_wire_ref(wire: &WirePadding1ByteEnd) -> Self {
@@ -299,6 +303,10 @@ impl ::fidl_next::FromWire<WirePadding1ByteMiddle> for Padding1ByteMiddle {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding1ByteMiddle {
+    type Natural = Padding1ByteMiddle;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding1ByteMiddle> for Padding1ByteMiddle {
@@ -486,6 +494,10 @@ impl ::fidl_next::FromWire<WirePadding2ByteAlignmentLength6> for Padding2ByteAli
             c: ::fidl_next::FromWire::from_wire(wire.c),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding2ByteAlignmentLength6 {
+    type Natural = Padding2ByteAlignmentLength6;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding2ByteAlignmentLength6> for Padding2ByteAlignmentLength6 {
@@ -676,6 +688,10 @@ impl ::fidl_next::FromWire<WirePadding2ByteEnd> for Padding2ByteEnd {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding2ByteEnd {
+    type Natural = Padding2ByteEnd;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding2ByteEnd> for Padding2ByteEnd {
     #[inline]
     fn from_wire_ref(wire: &WirePadding2ByteEnd) -> Self {
@@ -851,6 +867,10 @@ impl ::fidl_next::FromWire<WirePadding2ByteMiddle> for Padding2ByteMiddle {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding2ByteMiddle {
+    type Natural = Padding2ByteMiddle;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding2ByteMiddle> for Padding2ByteMiddle {
@@ -1030,6 +1050,10 @@ impl ::fidl_next::FromWire<WirePadding3ByteEnd> for Padding3ByteEnd {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding3ByteEnd {
+    type Natural = Padding3ByteEnd;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding3ByteEnd> for Padding3ByteEnd {
     #[inline]
     fn from_wire_ref(wire: &WirePadding3ByteEnd) -> Self {
@@ -1205,6 +1229,10 @@ impl ::fidl_next::FromWire<WirePadding3ByteMiddle> for Padding3ByteMiddle {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding3ByteMiddle {
+    type Natural = Padding3ByteMiddle;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding3ByteMiddle> for Padding3ByteMiddle {
@@ -1404,6 +1432,10 @@ impl ::fidl_next::FromWire<WirePadding4ByteAlignmentLength12> for Padding4ByteAl
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding4ByteAlignmentLength12 {
+    type Natural = Padding4ByteAlignmentLength12;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding4ByteAlignmentLength12> for Padding4ByteAlignmentLength12 {
     #[inline]
     fn from_wire_ref(wire: &WirePadding4ByteAlignmentLength12) -> Self {
@@ -1599,6 +1631,10 @@ impl ::fidl_next::FromWire<WirePadding4ByteEnd> for Padding4ByteEnd {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding4ByteEnd {
+    type Natural = Padding4ByteEnd;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding4ByteEnd> for Padding4ByteEnd {
     #[inline]
     fn from_wire_ref(wire: &WirePadding4ByteEnd) -> Self {
@@ -1774,6 +1810,10 @@ impl ::fidl_next::FromWire<WirePadding4ByteMiddle> for Padding4ByteMiddle {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding4ByteMiddle {
+    type Natural = Padding4ByteMiddle;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding4ByteMiddle> for Padding4ByteMiddle {
@@ -1961,6 +2001,10 @@ impl ::fidl_next::FromWire<WirePadding5ByteEnd> for Padding5ByteEnd {
             c: ::fidl_next::FromWire::from_wire(wire.c),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding5ByteEnd {
+    type Natural = Padding5ByteEnd;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding5ByteEnd> for Padding5ByteEnd {
@@ -2157,6 +2201,10 @@ impl ::fidl_next::FromWire<WirePadding5ByteMiddle> for Padding5ByteMiddle {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding5ByteMiddle {
+    type Natural = Padding5ByteMiddle;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding5ByteMiddle> for Padding5ByteMiddle {
     #[inline]
     fn from_wire_ref(wire: &WirePadding5ByteMiddle) -> Self {
@@ -2341,6 +2389,10 @@ impl ::fidl_next::FromWire<WirePadding6ByteEnd> for Padding6ByteEnd {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding6ByteEnd {
+    type Natural = Padding6ByteEnd;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding6ByteEnd> for Padding6ByteEnd {
     #[inline]
     fn from_wire_ref(wire: &WirePadding6ByteEnd) -> Self {
@@ -2516,6 +2568,10 @@ impl ::fidl_next::FromWire<WirePadding6ByteMiddle> for Padding6ByteMiddle {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding6ByteMiddle {
+    type Natural = Padding6ByteMiddle;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding6ByteMiddle> for Padding6ByteMiddle {
@@ -2695,6 +2751,10 @@ impl ::fidl_next::FromWire<WirePadding7ByteEnd> for Padding7ByteEnd {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePadding7ByteEnd {
+    type Natural = Padding7ByteEnd;
+}
+
 impl ::fidl_next::FromWireRef<WirePadding7ByteEnd> for Padding7ByteEnd {
     #[inline]
     fn from_wire_ref(wire: &WirePadding7ByteEnd) -> Self {
@@ -2870,6 +2930,10 @@ impl ::fidl_next::FromWire<WirePadding7ByteMiddle> for Padding7ByteMiddle {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WirePadding7ByteMiddle {
+    type Natural = Padding7ByteMiddle;
 }
 
 impl ::fidl_next::FromWireRef<WirePadding7ByteMiddle> for Padding7ByteMiddle {

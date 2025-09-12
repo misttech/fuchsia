@@ -126,6 +126,10 @@ impl<'de> ::fidl_next::FromWire<WireBasicStruct<'de>> for BasicStruct {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireBasicStruct<'de> {
+    type Natural = BasicStruct;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireBasicStruct<'de>> for BasicStruct {
     #[inline]
     fn from_wire_ref(wire: &WireBasicStruct<'de>) -> Self {
@@ -317,6 +321,10 @@ impl ::fidl_next::FromWire<WireSimple> for Simple {
             f2: ::fidl_next::FromWire::from_wire(wire.f2),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireSimple {
+    type Natural = Simple;
 }
 
 impl ::fidl_next::FromWireRef<WireSimple> for Simple {

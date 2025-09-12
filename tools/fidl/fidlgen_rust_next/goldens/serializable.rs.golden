@@ -111,6 +111,10 @@ impl ::fidl_next::FromWire<WireSerializableStruct> for SerializableStruct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireSerializableStruct {
+    type Natural = SerializableStruct;
+}
+
 impl ::fidl_next::FromWireRef<WireSerializableStruct> for SerializableStruct {
     #[inline]
     fn from_wire_ref(wire: &WireSerializableStruct) -> Self {
@@ -238,6 +242,10 @@ impl<'de> ::fidl_next::FromWire<WireSerializableTable<'de>> for SerializableTabl
 
         Self {}
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireSerializableTable<'de> {
+    type Natural = SerializableTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireSerializableTable<'de>> for SerializableTable {
@@ -414,6 +422,10 @@ impl ::fidl_next::FromWire<WireSerializableUnion> for SerializableUnion {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireSerializableUnion {
+    type Natural = SerializableUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireSerializableUnion> for SerializableUnion {
     #[inline]
     fn from_wire_ref(wire: &WireSerializableUnion) -> Self {
@@ -427,14 +439,27 @@ impl ::fidl_next::FromWireRef<WireSerializableUnion> for SerializableUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalSerializableUnion> for Box<SerializableUnion> {
+impl ::fidl_next::FromWireOption<WireOptionalSerializableUnion> for SerializableUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalSerializableUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalSerializableUnion {
+    type Natural = ::core::option::Option<SerializableUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalSerializableUnion> for Box<SerializableUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalSerializableUnion) -> Option<Self> {
+        <
+            SerializableUnion as ::fidl_next::FromWireOption<WireOptionalSerializableUnion>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 

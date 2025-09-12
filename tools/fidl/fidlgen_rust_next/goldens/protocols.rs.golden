@@ -258,6 +258,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolMethodARequest> for ChannelProtoco
     }
 }
 
+impl ::fidl_next::IntoNatural for WireChannelProtocolMethodARequest {
+    type Natural = ChannelProtocolMethodARequest;
+}
+
 impl ::fidl_next::FromWireRef<WireChannelProtocolMethodARequest> for ChannelProtocolMethodARequest {
     #[inline]
     fn from_wire_ref(wire: &WireChannelProtocolMethodARequest) -> Self {
@@ -446,6 +450,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolEventARequest> for ChannelProtocol
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireChannelProtocolEventARequest {
+    type Natural = ChannelProtocolEventARequest;
 }
 
 impl ::fidl_next::FromWireRef<WireChannelProtocolEventARequest> for ChannelProtocolEventARequest {
@@ -644,6 +652,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolMethodBRequest> for ChannelProtoco
     }
 }
 
+impl ::fidl_next::IntoNatural for WireChannelProtocolMethodBRequest {
+    type Natural = ChannelProtocolMethodBRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireChannelProtocolMethodBRequest> for ChannelProtocolMethodBRequest {
     #[inline]
     fn from_wire_ref(wire: &WireChannelProtocolMethodBRequest) -> Self {
@@ -825,6 +837,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolMethodBResponse> for ChannelProtoc
     }
 }
 
+impl ::fidl_next::IntoNatural for WireChannelProtocolMethodBResponse {
+    type Natural = ChannelProtocolMethodBResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireChannelProtocolMethodBResponse>
     for ChannelProtocolMethodBResponse
 {
@@ -960,6 +976,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolTakeHandleRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireChannelProtocolTakeHandleRequest {
+    type Natural = ChannelProtocolTakeHandleRequest;
+}
+
 /// The wire type corresponding to [`ChannelProtocolTakeHandleRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -1087,6 +1107,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolMutateSocketRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireChannelProtocolMutateSocketRequest {
+    type Natural = ChannelProtocolMutateSocketRequest;
+}
+
 /// The wire type corresponding to [`ChannelProtocolMutateSocketRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -1212,6 +1236,10 @@ impl ::fidl_next::FromWire<WireChannelProtocolMutateSocketResponse>
     fn from_wire(wire: WireChannelProtocolMutateSocketResponse) -> Self {
         Self { b: ::fidl_next::FromWire::from_wire(wire.b) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireChannelProtocolMutateSocketResponse {
+    type Natural = ChannelProtocolMutateSocketResponse;
 }
 
 /// The wire type corresponding to [`ChannelProtocolMutateSocketResponse`].
@@ -2102,6 +2130,10 @@ impl ::fidl_next::FromWire<WireErrorEnum> for ErrorEnum {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireErrorEnum {
+    type Natural = ErrorEnum;
+}
+
 impl ::fidl_next::FromWireRef<WireErrorEnum> for ErrorEnum {
     #[inline]
     fn from_wire_ref(wire: &WireErrorEnum) -> Self {
@@ -2252,6 +2284,10 @@ impl ::fidl_next::FromWire<WireHandleRightsProtocolNoResponseMethodRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireHandleRightsProtocolNoResponseMethodRequest {
+    type Natural = HandleRightsProtocolNoResponseMethodRequest;
+}
+
 /// The wire type corresponding to [`HandleRightsProtocolNoResponseMethodRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -2378,6 +2414,10 @@ impl ::fidl_next::FromWire<WireHandleRightsProtocolResponseMethodRequest>
     fn from_wire(wire: WireHandleRightsProtocolResponseMethodRequest) -> Self {
         Self { h: ::fidl_next::FromWire::from_wire(wire.h) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireHandleRightsProtocolResponseMethodRequest {
+    type Natural = HandleRightsProtocolResponseMethodRequest;
 }
 
 /// The wire type corresponding to [`HandleRightsProtocolResponseMethodRequest`].
@@ -2508,6 +2548,10 @@ impl ::fidl_next::FromWire<WireHandleRightsProtocolResponseMethodResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireHandleRightsProtocolResponseMethodResponse {
+    type Natural = HandleRightsProtocolResponseMethodResponse;
+}
+
 /// The wire type corresponding to [`HandleRightsProtocolResponseMethodResponse`].
 #[derive(Debug)]
 #[repr(C)]
@@ -2633,6 +2677,10 @@ impl ::fidl_next::FromWire<WireHandleRightsProtocolAnEventRequest>
     fn from_wire(wire: WireHandleRightsProtocolAnEventRequest) -> Self {
         Self { h: ::fidl_next::FromWire::from_wire(wire.h) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireHandleRightsProtocolAnEventRequest {
+    type Natural = HandleRightsProtocolAnEventRequest;
 }
 
 /// The wire type corresponding to [`HandleRightsProtocolAnEventRequest`].
@@ -3367,6 +3415,10 @@ impl ::fidl_next::FromWire<WireManyParametersFifteenRequest> for ManyParametersF
     }
 }
 
+impl ::fidl_next::IntoNatural for WireManyParametersFifteenRequest {
+    type Natural = ManyParametersFifteenRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireManyParametersFifteenRequest> for ManyParametersFifteenRequest {
     #[inline]
     fn from_wire_ref(wire: &WireManyParametersFifteenRequest) -> Self {
@@ -4038,6 +4090,10 @@ impl ::fidl_next::FromWire<WireTheUnion> for TheUnion {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireTheUnion {
+    type Natural = TheUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireTheUnion> for TheUnion {
     #[inline]
     fn from_wire_ref(wire: &WireTheUnion) -> Self {
@@ -4051,14 +4107,26 @@ impl ::fidl_next::FromWireRef<WireTheUnion> for TheUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalTheUnion> for Box<TheUnion> {
+impl ::fidl_next::FromWireOption<WireOptionalTheUnion> for TheUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalTheUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalTheUnion {
+    type Natural = ::core::option::Option<TheUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalTheUnion> for Box<TheUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalTheUnion) -> Option<Self> {
+        <TheUnion as ::fidl_next::FromWireOption<WireOptionalTheUnion>>::from_wire_option(wire)
+            .map(Box::new)
     }
 }
 
@@ -4393,6 +4461,10 @@ impl ::fidl_next::FromWire<WireMethodWithUnionUnionMethodRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMethodWithUnionUnionMethodRequest {
+    type Natural = MethodWithUnionUnionMethodRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireMethodWithUnionUnionMethodRequest>
     for MethodWithUnionUnionMethodRequest
 {
@@ -4570,6 +4642,10 @@ impl ::fidl_next::FromWire<WireMethodWithUnionUnionMethodResponse>
     fn from_wire(wire: WireMethodWithUnionUnionMethodResponse) -> Self {
         Self { u: ::fidl_next::FromWire::from_wire(wire.u) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireMethodWithUnionUnionMethodResponse {
+    type Natural = MethodWithUnionUnionMethodResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireMethodWithUnionUnionMethodResponse>
@@ -5113,6 +5189,10 @@ impl ::fidl_next::FromWire<WireProtocolEnds> for ProtocolEnds {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireProtocolEnds {
+    type Natural = ProtocolEnds;
+}
+
 /// The wire type corresponding to [`ProtocolEnds`].
 #[derive(Debug)]
 #[repr(C)]
@@ -5295,6 +5375,12 @@ impl<'de> ::fidl_next::FromWire<WireWithAndWithoutRequestResponseNoRequestWithRe
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'de>
+{
+    type Natural = WithAndWithoutRequestResponseNoRequestWithResponseResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'de>>
     for WithAndWithoutRequestResponseNoRequestWithResponseResponse
@@ -5465,6 +5551,12 @@ impl<'de> ::fidl_next::FromWire<WireWithAndWithoutRequestResponseWithRequestNoRe
     fn from_wire(wire: WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'de>) -> Self {
         Self { arg: ::fidl_next::FromWire::from_wire(wire.arg) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'de>
+{
+    type Natural = WithAndWithoutRequestResponseWithRequestNoResponseRequest;
 }
 
 impl<'de>
@@ -5642,6 +5734,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'de>
+{
+    type Natural = WithAndWithoutRequestResponseWithRequestEmptyResponseRequest;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'de>>
     for WithAndWithoutRequestResponseWithRequestEmptyResponseRequest
@@ -5815,6 +5913,12 @@ impl<'de>
     ) -> Self {
         Self { arg: ::fidl_next::FromWire::from_wire(wire.arg) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'de>
+{
+    type Natural = WithAndWithoutRequestResponseWithRequestWithResponseRequest;
 }
 
 impl<'de>
@@ -5992,6 +6096,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'de>
+{
+    type Natural = WithAndWithoutRequestResponseWithRequestWithResponseResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'de>>
     for WithAndWithoutRequestResponseWithRequestWithResponseResponse
@@ -6161,6 +6271,10 @@ impl<'de> ::fidl_next::FromWire<WireWithAndWithoutRequestResponseOnWithResponseR
     fn from_wire(wire: WireWithAndWithoutRequestResponseOnWithResponseRequest<'de>) -> Self {
         Self { ret: ::fidl_next::FromWire::from_wire(wire.ret) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireWithAndWithoutRequestResponseOnWithResponseRequest<'de> {
+    type Natural = WithAndWithoutRequestResponseOnWithResponseRequest;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireWithAndWithoutRequestResponseOnWithResponseRequest<'de>>
@@ -7033,6 +7147,10 @@ impl ::fidl_next::FromWire<WireWithErrorSyntaxResponseAsStructResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireWithErrorSyntaxResponseAsStructResponse {
+    type Natural = WithErrorSyntaxResponseAsStructResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireWithErrorSyntaxResponseAsStructResponse>
     for WithErrorSyntaxResponseAsStructResponse
 {
@@ -7192,6 +7310,10 @@ impl ::fidl_next::FromWire<WireWithErrorSyntaxHandleInResultResponse>
     fn from_wire(wire: WireWithErrorSyntaxHandleInResultResponse) -> Self {
         Self { h: ::fidl_next::FromWire::from_wire(wire.h) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireWithErrorSyntaxHandleInResultResponse {
+    type Natural = WithErrorSyntaxHandleInResultResponse;
 }
 
 /// The wire type corresponding to [`WithErrorSyntaxHandleInResultResponse`].
@@ -7603,6 +7725,10 @@ impl ::fidl_next::FromWire<WireWithProtocolEndsClientEndsRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireWithProtocolEndsClientEndsRequest {
+    type Natural = WithProtocolEndsClientEndsRequest;
+}
+
 /// The wire type corresponding to [`WithProtocolEndsClientEndsRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -7743,6 +7869,10 @@ impl ::fidl_next::FromWire<WireWithProtocolEndsClientEndsResponse>
     fn from_wire(wire: WireWithProtocolEndsClientEndsResponse) -> Self {
         Self { out: ::fidl_next::FromWire::from_wire(wire.out) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireWithProtocolEndsClientEndsResponse {
+    type Natural = WithProtocolEndsClientEndsResponse;
 }
 
 /// The wire type corresponding to [`WithProtocolEndsClientEndsResponse`].
@@ -7890,6 +8020,10 @@ impl ::fidl_next::FromWire<WireWithProtocolEndsServerEndsRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireWithProtocolEndsServerEndsRequest {
+    type Natural = WithProtocolEndsServerEndsRequest;
+}
+
 /// The wire type corresponding to [`WithProtocolEndsServerEndsRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -8029,6 +8163,10 @@ impl ::fidl_next::FromWire<WireWithProtocolEndsServerEndsResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireWithProtocolEndsServerEndsResponse {
+    type Natural = WithProtocolEndsServerEndsResponse;
+}
+
 /// The wire type corresponding to [`WithProtocolEndsServerEndsResponse`].
 #[derive(Debug)]
 #[repr(C)]
@@ -8158,6 +8296,10 @@ impl ::fidl_next::FromWire<WireWithProtocolEndsStructContainingEndsRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireWithProtocolEndsStructContainingEndsRequest {
+    type Natural = WithProtocolEndsStructContainingEndsRequest;
+}
+
 /// The wire type corresponding to [`WithProtocolEndsStructContainingEndsRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -8285,6 +8427,10 @@ impl ::fidl_next::FromWire<WireWithProtocolEndsStructContainingEndsResponse>
     fn from_wire(wire: WireWithProtocolEndsStructContainingEndsResponse) -> Self {
         Self { out: ::fidl_next::FromWire::from_wire(wire.out) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireWithProtocolEndsStructContainingEndsResponse {
+    type Natural = WithProtocolEndsStructContainingEndsResponse;
 }
 
 /// The wire type corresponding to [`WithProtocolEndsStructContainingEndsResponse`].

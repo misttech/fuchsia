@@ -206,7 +206,8 @@
 //! Natural types can support conversion from a wire type by implementing [`FromWire`]. This trait
 //! has a [`from_wire`](FromWire::from_wire) method which parallels `From::from` and implements
 //! conversion from some wire type. Like `Encode` and `Decode`, the [`FromWireOption`] variant
-//! allows types to be converted from wire optional types.
+//! allows types to be converted from wire optional types. Optionally and for convenience only, wire
+//! types can name a good default natural type to convert into with [`IntoNatural`].
 //!
 //! Natural types that can be converted from a reference to a wire type (i.e. without moving the
 //! wire type) may implement [`FromWireRef`]. Similarly for options, the [`FromWireOptionRef`] trait
@@ -247,6 +248,7 @@ pub mod encoder;
 mod from_wire;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
+mod into_natural;
 mod primitives;
 mod slot;
 mod wire;
@@ -264,6 +266,7 @@ pub use self::decoder::{Decoder, DecoderExt};
 pub use self::encode::*;
 pub use self::encoder::{Encoder, EncoderExt};
 pub use self::from_wire::*;
+pub use self::into_natural::*;
 pub use self::primitives::*;
 pub use self::slot::*;
 pub use self::wire::*;

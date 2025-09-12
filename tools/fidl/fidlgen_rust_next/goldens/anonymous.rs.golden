@@ -65,6 +65,10 @@ impl ::fidl_next::FromWire<WireBitsMember> for BitsMember {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBitsMember {
+    type Natural = BitsMember;
+}
+
 impl ::fidl_next::FromWireRef<WireBitsMember> for BitsMember {
     #[inline]
     fn from_wire_ref(wire: &WireBitsMember) -> Self {
@@ -188,6 +192,10 @@ impl ::fidl_next::FromWire<WireOp> for Op {
     fn from_wire(wire: WireOp) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireOp {
+    type Natural = Op;
 }
 
 impl ::fidl_next::FromWireRef<WireOp> for Op {
@@ -381,6 +389,10 @@ impl<'de> ::fidl_next::FromWire<WireOverrideTest<'de>> for OverrideTest {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireOverrideTest<'de> {
+    type Natural = OverrideTest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireOverrideTest<'de>> for OverrideTest {
     #[inline]
     fn from_wire_ref(wire: &WireOverrideTest<'de>) -> Self {
@@ -504,6 +516,10 @@ impl ::fidl_next::FromWire<WireFlags> for Flags {
     fn from_wire(wire: WireFlags) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireFlags {
+    type Natural = Flags;
 }
 
 impl ::fidl_next::FromWireRef<WireFlags> for Flags {
@@ -750,6 +766,10 @@ impl<'de> ::fidl_next::FromWire<WireFunctionApplication<'de>> for FunctionApplic
 
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireFunctionApplication<'de> {
+    type Natural = FunctionApplication;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireFunctionApplication<'de>> for FunctionApplication {
@@ -1079,6 +1099,10 @@ impl<'de> ::fidl_next::FromWire<WireExpression<'de>> for Expression {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExpression<'de> {
+    type Natural = Expression;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExpression<'de>> for Expression {
     #[inline]
     fn from_wire_ref(wire: &WireExpression<'de>) -> Self {
@@ -1100,14 +1124,28 @@ impl<'de> ::fidl_next::FromWireRef<WireExpression<'de>> for Expression {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalExpression<'de>> for Box<Expression> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExpression<'de>> for Expression {
     #[inline]
     fn from_wire_option(wire: WireOptionalExpression<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalExpression<'de> {
+    type Natural = ::core::option::Option<Expression>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExpression<'de>> for Box<Expression> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExpression<'de>) -> Option<Self> {
+        <Expression as ::fidl_next::FromWireOption<WireOptionalExpression<'de>>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -1438,6 +1476,10 @@ impl ::fidl_next::FromWire<WireUnionMember> for UnionMember {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnionMember {
+    type Natural = UnionMember;
+}
+
 impl ::fidl_next::FromWireRef<WireUnionMember> for UnionMember {
     #[inline]
     fn from_wire_ref(wire: &WireUnionMember) -> Self {
@@ -1451,14 +1493,28 @@ impl ::fidl_next::FromWireRef<WireUnionMember> for UnionMember {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalUnionMember> for Box<UnionMember> {
+impl ::fidl_next::FromWireOption<WireOptionalUnionMember> for UnionMember {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionMember) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnionMember {
+    type Natural = ::core::option::Option<UnionMember>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnionMember> for Box<UnionMember> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionMember) -> Option<Self> {
+        <UnionMember as ::fidl_next::FromWireOption<WireOptionalUnionMember>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -1776,6 +1832,10 @@ impl ::fidl_next::FromWire<WireTableData> for TableData {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireTableData {
+    type Natural = TableData;
+}
+
 impl ::fidl_next::FromWireRef<WireTableData> for TableData {
     #[inline]
     fn from_wire_ref(wire: &WireTableData) -> Self {
@@ -1946,6 +2006,10 @@ impl<'de> ::fidl_next::FromWire<WireTableMember<'de>> for TableMember {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTableMember<'de> {
+    type Natural = TableMember;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireTableMember<'de>> for TableMember {
@@ -2164,6 +2228,10 @@ impl<'de> ::fidl_next::FromWire<WireSomeProtocolSomeMethodRequest<'de>>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireSomeProtocolSomeMethodRequest<'de> {
+    type Natural = SomeProtocolSomeMethodRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireSomeProtocolSomeMethodRequest<'de>>
     for SomeProtocolSomeMethodRequest
 {
@@ -2352,6 +2420,10 @@ impl ::fidl_next::FromWire<WireSomeProtocolSomeMethodResponse> for SomeProtocolS
     }
 }
 
+impl ::fidl_next::IntoNatural for WireSomeProtocolSomeMethodResponse {
+    type Natural = SomeProtocolSomeMethodResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireSomeProtocolSomeMethodResponse>
     for SomeProtocolSomeMethodResponse
 {
@@ -2472,6 +2544,10 @@ impl ::fidl_next::FromWire<WireSomeProtocolSomeMethodError> for SomeProtocolSome
     fn from_wire(wire: WireSomeProtocolSomeMethodError) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireSomeProtocolSomeMethodError {
+    type Natural = SomeProtocolSomeMethodError;
 }
 
 impl ::fidl_next::FromWireRef<WireSomeProtocolSomeMethodError> for SomeProtocolSomeMethodError {

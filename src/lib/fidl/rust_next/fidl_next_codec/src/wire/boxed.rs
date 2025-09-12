@@ -11,7 +11,7 @@ use munge::munge;
 use crate::{
     Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode, EncodeError,
     EncodeOption, EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef,
-    FromWireRef, Slot, Wire, WirePointer,
+    FromWireRef, IntoNatural, Slot, Wire, WirePointer,
 };
 
 /// A boxed (optional) FIDL value.
@@ -130,6 +130,10 @@ impl<T: FromWire<W>, W> FromWireOption<WireBox<'_, W>> for T {
     fn from_wire_option(wire: WireBox<'_, W>) -> Option<Self> {
         wire.into_option().map(T::from_wire)
     }
+}
+
+impl<T: IntoNatural> IntoNatural for WireBox<'_, T> {
+    type Natural = Option<T::Natural>;
 }
 
 impl<T: FromWireRef<W>, W> FromWireOptionRef<WireBox<'_, W>> for T {

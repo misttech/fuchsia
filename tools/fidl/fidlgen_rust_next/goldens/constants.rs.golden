@@ -66,6 +66,10 @@ impl ::fidl_next::FromWire<WireBits> for Bits {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBits {
+    type Natural = Bits;
+}
+
 impl ::fidl_next::FromWireRef<WireBits> for Bits {
     #[inline]
     fn from_wire_ref(wire: &WireBits) -> Self {
@@ -180,6 +184,10 @@ impl ::fidl_next::FromWire<WireBitsType> for BitsType {
     fn from_wire(wire: WireBitsType) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireBitsType {
+    type Natural = BitsType;
 }
 
 impl ::fidl_next::FromWireRef<WireBitsType> for BitsType {
@@ -300,6 +308,10 @@ impl ::fidl_next::FromWire<WireEnum> for Enum {
     fn from_wire(wire: WireEnum) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEnum {
+    type Natural = Enum;
 }
 
 impl ::fidl_next::FromWireRef<WireEnum> for Enum {
@@ -430,6 +442,10 @@ impl ::fidl_next::FromWire<WireEnumType> for EnumType {
     fn from_wire(wire: WireEnumType) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEnumType {
+    type Natural = EnumType;
 }
 
 impl ::fidl_next::FromWireRef<WireEnumType> for EnumType {
@@ -660,6 +676,10 @@ impl<'de> ::fidl_next::FromWire<WireStruct<'de>> for Struct {
             bits_with_default: ::fidl_next::FromWire::from_wire(wire.bits_with_default),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireStruct<'de> {
+    type Natural = Struct;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireStruct<'de>> for Struct {

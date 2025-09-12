@@ -195,6 +195,10 @@ impl ::fidl_next::FromWire<WireParentGetChildResponse> for ParentGetChildRespons
     }
 }
 
+impl ::fidl_next::IntoNatural for WireParentGetChildResponse {
+    type Natural = ParentGetChildResponse;
+}
+
 /// The wire type corresponding to [`ParentGetChildResponse`].
 #[derive(Debug)]
 #[repr(C)]
@@ -326,6 +330,10 @@ impl ::fidl_next::FromWire<WireParentGetChildRequestResponse> for ParentGetChild
     }
 }
 
+impl ::fidl_next::IntoNatural for WireParentGetChildRequestResponse {
+    type Natural = ParentGetChildRequestResponse;
+}
+
 /// The wire type corresponding to [`ParentGetChildRequestResponse`].
 #[derive(Debug)]
 #[repr(C)]
@@ -449,6 +457,10 @@ impl ::fidl_next::FromWire<WireParentTakeChildRequest> for ParentTakeChildReques
     fn from_wire(wire: WireParentTakeChildRequest) -> Self {
         Self { c: ::fidl_next::FromWire::from_wire(wire.c) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireParentTakeChildRequest {
+    type Natural = ParentTakeChildRequest;
 }
 
 /// The wire type corresponding to [`ParentTakeChildRequest`].
@@ -580,6 +592,10 @@ impl ::fidl_next::FromWire<WireParentTakeChildRequestRequest> for ParentTakeChil
     fn from_wire(wire: WireParentTakeChildRequestRequest) -> Self {
         Self { r: ::fidl_next::FromWire::from_wire(wire.r) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireParentTakeChildRequestRequest {
+    type Natural = ParentTakeChildRequestRequest;
 }
 
 /// The wire type corresponding to [`ParentTakeChildRequestRequest`].

@@ -136,6 +136,10 @@ impl<'de> ::fidl_next::FromWire<WireExampleUseOfVectors<'de>> for ExampleUseOfVe
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExampleUseOfVectors<'de> {
+    type Natural = ExampleUseOfVectors;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExampleUseOfVectors<'de>> for ExampleUseOfVectors {
     #[inline]
     fn from_wire_ref(wire: &WireExampleUseOfVectors<'de>) -> Self {

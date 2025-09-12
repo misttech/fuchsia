@@ -7,7 +7,7 @@ use core::mem::{ManuallyDrop, forget};
 use core::ops::Deref;
 use core::ptr::NonNull;
 
-use crate::{FromWire, Wire};
+use crate::{FromWire, IntoNatural, Wire};
 
 /// A decoded value and the decoder which contains it.
 pub struct Decoded<T: ?Sized, D> {
@@ -61,10 +61,22 @@ impl<T: ?Sized, D> Decoded<T, D> {
         (ptr, decoder)
     }
 
-    /// Takes the value out of this `Decoded` and calls `From::from` on the taken value.
+    /// Takes the value out of this `Decoded` and calls `FromWire::from_wire` on the taken value to
+    /// convert it to the default natural type.
     ///
     /// This consumes the `Decoded`.
-    pub fn take<U>(self) -> U
+    pub fn take(self) -> T::Natural
+    where
+        T: Wire + IntoNatural,
+        T::Natural: for<'de> FromWire<T::Decoded<'de>>,
+    {
+        self.take_as::<T::Natural>()
+    }
+
+    /// Takes the value out of this `Decoded` and calls `U::from_wire` on the taken value.
+    ///
+    /// This consumes the `Decoded`.
+    pub fn take_as<U>(self) -> U
     where
         T: Wire,
         U: for<'de> FromWire<T::Decoded<'de>>,

@@ -124,6 +124,10 @@ impl ::fidl_next::FromWire<WireInt16Int8> for Int16Int8 {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireInt16Int8 {
+    type Natural = Int16Int8;
+}
+
 impl ::fidl_next::FromWireRef<WireInt16Int8> for Int16Int8 {
     #[inline]
     fn from_wire_ref(wire: &WireInt16Int8) -> Self {
@@ -287,6 +291,10 @@ impl ::fidl_next::FromWire<WireArrayInt16Int8> for ArrayInt16Int8 {
     fn from_wire(wire: WireArrayInt16Int8) -> Self {
         Self { arr: ::fidl_next::FromWire::from_wire(wire.arr) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireArrayInt16Int8 {
+    type Natural = ArrayInt16Int8;
 }
 
 impl ::fidl_next::FromWireRef<WireArrayInt16Int8> for ArrayInt16Int8 {
@@ -453,6 +461,10 @@ impl ::fidl_next::FromWire<WireInt8Int32> for Int8Int32 {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireInt8Int32 {
+    type Natural = Int8Int32;
+}
+
 impl ::fidl_next::FromWireRef<WireInt8Int32> for Int8Int32 {
     #[inline]
     fn from_wire_ref(wire: &WireInt8Int32) -> Self {
@@ -582,6 +594,10 @@ impl<'de> ::fidl_next::FromWire<WireNonInlineStructTestStruct<'de>> for NonInlin
             h: ::fidl_next::FromWire::from_wire(wire.h),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireNonInlineStructTestStruct<'de> {
+    type Natural = NonInlineStructTestStruct;
 }
 
 /// The wire type corresponding to [`NonInlineStructTestStruct`].
@@ -762,6 +778,10 @@ impl ::fidl_next::FromWire<WireStructPaddingTestStruct> for StructPaddingTestStr
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStructPaddingTestStruct {
+    type Natural = StructPaddingTestStruct;
+}
+
 impl ::fidl_next::FromWireRef<WireStructPaddingTestStruct> for StructPaddingTestStruct {
     #[inline]
     fn from_wire_ref(wire: &WireStructPaddingTestStruct) -> Self {
@@ -894,6 +914,10 @@ impl<'de> ::fidl_next::FromWire<WireTopLevelStruct<'de>> for TopLevelStruct {
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTopLevelStruct<'de> {
+    type Natural = TopLevelStruct;
 }
 
 /// The wire type corresponding to [`TopLevelStruct`].

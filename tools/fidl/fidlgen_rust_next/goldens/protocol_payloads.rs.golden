@@ -141,6 +141,10 @@ impl ::fidl_next::FromWire<WireLocalStructPayload> for LocalStructPayload {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireLocalStructPayload {
+    type Natural = LocalStructPayload;
+}
+
 impl ::fidl_next::FromWireRef<WireLocalStructPayload> for LocalStructPayload {
     #[inline]
     fn from_wire_ref(wire: &WireLocalStructPayload) -> Self {
@@ -335,6 +339,10 @@ impl ::fidl_next::FromWire<WireMainProtocolOneWayAnonRequest> for MainProtocolOn
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireMainProtocolOneWayAnonRequest {
+    type Natural = MainProtocolOneWayAnonRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireMainProtocolOneWayAnonRequest> for MainProtocolOneWayAnonRequest {
@@ -533,6 +541,10 @@ impl ::fidl_next::FromWire<WireMainProtocolTwoWayAnonRequest> for MainProtocolTw
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonRequest {
+    type Natural = MainProtocolTwoWayAnonRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonRequest> for MainProtocolTwoWayAnonRequest {
     #[inline]
     fn from_wire_ref(wire: &WireMainProtocolTwoWayAnonRequest) -> Self {
@@ -727,6 +739,10 @@ impl ::fidl_next::FromWire<WireMainProtocolTwoWayAnonResponse> for MainProtocolT
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonResponse {
+    type Natural = MainProtocolTwoWayAnonResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonResponse>
@@ -929,6 +945,10 @@ impl ::fidl_next::FromWire<WireMainProtocolTwoWayAnonWithErrorRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonWithErrorRequest {
+    type Natural = MainProtocolTwoWayAnonWithErrorRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonWithErrorRequest>
     for MainProtocolTwoWayAnonWithErrorRequest
 {
@@ -1129,6 +1149,10 @@ impl ::fidl_next::FromWire<WireMainProtocolTwoWayAnonWithErrorResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonWithErrorResponse {
+    type Natural = MainProtocolTwoWayAnonWithErrorResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonWithErrorResponse>
     for MainProtocolTwoWayAnonWithErrorResponse
 {
@@ -1319,6 +1343,10 @@ impl ::fidl_next::FromWire<WireMainProtocolOnAnonRequest> for MainProtocolOnAnon
             b: ::fidl_next::FromWire::from_wire(wire.b),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireMainProtocolOnAnonRequest {
+    type Natural = MainProtocolOnAnonRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireMainProtocolOnAnonRequest> for MainProtocolOnAnonRequest {

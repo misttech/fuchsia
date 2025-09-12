@@ -8,7 +8,7 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 
 use crate::{
     Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
-    FromWire, FromWireRef, RawWireUnion, Slot, Wire, munge,
+    FromWire, FromWireRef, IntoNatural, RawWireUnion, Slot, Wire, munge,
 };
 
 /// A FIDL result union.
@@ -199,6 +199,10 @@ where
             Err(error) => Err(E::from_wire(error)),
         }
     }
+}
+
+impl<T: IntoNatural, E: IntoNatural> IntoNatural for WireResult<'_, T, E> {
+    type Natural = Result<T::Natural, E::Natural>;
 }
 
 impl<T, E, WT, WE> FromWireRef<WireResult<'_, WT, WE>> for Result<T, E>

@@ -411,6 +411,10 @@ impl<'de> ::fidl_next::FromWire<WireTesting<'de>> for Testing {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireTesting<'de> {
+    type Natural = Testing;
+}
+
 /// The wire type corresponding to [`Testing`].
 #[derive(Debug)]
 #[repr(C)]

@@ -167,6 +167,10 @@ impl ::fidl_next::FromWire<WireAllInstants> for AllInstants {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireAllInstants {
+    type Natural = AllInstants;
+}
+
 impl ::fidl_next::FromWireRef<WireAllInstants> for AllInstants {
     #[inline]
     fn from_wire_ref(wire: &WireAllInstants) -> Self {
@@ -474,6 +478,10 @@ impl<'de> ::fidl_next::FromWire<WireComplexInstants<'de>> for ComplexInstants {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireComplexInstants<'de> {
+    type Natural = ComplexInstants;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireComplexInstants<'de>> for ComplexInstants {

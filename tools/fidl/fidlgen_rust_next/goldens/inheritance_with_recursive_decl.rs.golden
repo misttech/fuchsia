@@ -91,6 +91,10 @@ impl ::fidl_next::FromWire<WireParentFirstRequest> for ParentFirstRequest {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireParentFirstRequest {
+    type Natural = ParentFirstRequest;
+}
+
 /// The wire type corresponding to [`ParentFirstRequest`].
 #[derive(Debug)]
 #[repr(C)]
@@ -426,6 +430,10 @@ impl ::fidl_next::FromWire<WireChildSecondRequest> for ChildSecondRequest {
     fn from_wire(wire: WireChildSecondRequest) -> Self {
         Self { request: ::fidl_next::FromWire::from_wire(wire.request) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireChildSecondRequest {
+    type Natural = ChildSecondRequest;
 }
 
 /// The wire type corresponding to [`ChildSecondRequest`].

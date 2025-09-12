@@ -13,7 +13,8 @@ use munge::munge;
 use super::raw::RawWireVector;
 use crate::{
     Chunk, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, Encode, EncodeError,
-    EncodeRef, Encoder, EncoderExt as _, FromWire, FromWireRef, Slot, Wire, WirePointer,
+    EncodeRef, Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot, Wire,
+    WirePointer,
 };
 
 /// A FIDL vector
@@ -269,6 +270,10 @@ impl<T: FromWire<W>, W> FromWire<WireVector<'_, W>> for Vec<T> {
         }
         result
     }
+}
+
+impl<T: IntoNatural> IntoNatural for WireVector<'_, T> {
+    type Natural = Vec<T::Natural>;
 }
 
 impl<T: FromWireRef<W>, W> FromWireRef<WireVector<'_, W>> for Vec<T> {

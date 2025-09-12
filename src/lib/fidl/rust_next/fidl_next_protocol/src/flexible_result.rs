@@ -8,7 +8,7 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 
 use fidl_next_codec::{
     Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
-    FromWire, FromWireRef, RawWireUnion, Slot, Wire, WireResult, munge,
+    FromWire, FromWireRef, IntoNatural, RawWireUnion, Slot, Wire, WireResult, munge,
 };
 
 use crate::{FrameworkError, WireFrameworkError};
@@ -290,6 +290,10 @@ where
             FlexibleResult::FrameworkErr(framework_error) => Self::FrameworkErr(framework_error),
         }
     }
+}
+
+impl<T: IntoNatural, E: IntoNatural> IntoNatural for WireFlexibleResult<'_, T, E> {
+    type Natural = FlexibleResult<T::Natural, E::Natural>;
 }
 
 impl<T, WT, E, WE> FromWireRef<WireFlexibleResult<'_, WT, WE>> for FlexibleResult<T, E>

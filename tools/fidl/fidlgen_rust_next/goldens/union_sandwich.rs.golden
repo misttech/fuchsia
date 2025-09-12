@@ -123,6 +123,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionSize12Alignment4<'de>> for UnionSize12A
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionSize12Alignment4<'de> {
+    type Natural = UnionSize12Alignment4;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionSize12Alignment4<'de>> for UnionSize12Alignment4 {
     #[inline]
     fn from_wire_ref(wire: &WireUnionSize12Alignment4<'de>) -> Self {
@@ -137,15 +141,31 @@ impl<'de> ::fidl_next::FromWireRef<WireUnionSize12Alignment4<'de>> for UnionSize
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSize12Alignment4<'de>>
-    for Box<UnionSize12Alignment4>
+    for UnionSize12Alignment4
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionSize12Alignment4<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnionSize12Alignment4<'de> {
+    type Natural = ::core::option::Option<UnionSize12Alignment4>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSize12Alignment4<'de>>
+    for Box<UnionSize12Alignment4>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionSize12Alignment4<'de>) -> Option<Self> {
+        <UnionSize12Alignment4 as ::fidl_next::FromWireOption<
+            WireOptionalUnionSize12Alignment4<'de>,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -439,6 +459,10 @@ impl<'de> ::fidl_next::FromWire<WireSandwichUnionSize12Alignment4<'de>>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireSandwichUnionSize12Alignment4<'de> {
+    type Natural = SandwichUnionSize12Alignment4;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireSandwichUnionSize12Alignment4<'de>>
     for SandwichUnionSize12Alignment4
 {
@@ -647,6 +671,10 @@ impl ::fidl_next::FromWire<WireStructSize16Alignment8> for StructSize16Alignment
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStructSize16Alignment8 {
+    type Natural = StructSize16Alignment8;
+}
+
 impl ::fidl_next::FromWireRef<WireStructSize16Alignment8> for StructSize16Alignment8 {
     #[inline]
     fn from_wire_ref(wire: &WireStructSize16Alignment8) -> Self {
@@ -821,6 +849,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionSize24Alignment8<'de>> for UnionSize24A
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionSize24Alignment8<'de> {
+    type Natural = UnionSize24Alignment8;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionSize24Alignment8<'de>> for UnionSize24Alignment8 {
     #[inline]
     fn from_wire_ref(wire: &WireUnionSize24Alignment8<'de>) -> Self {
@@ -835,15 +867,31 @@ impl<'de> ::fidl_next::FromWireRef<WireUnionSize24Alignment8<'de>> for UnionSize
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSize24Alignment8<'de>>
-    for Box<UnionSize24Alignment8>
+    for UnionSize24Alignment8
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionSize24Alignment8<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnionSize24Alignment8<'de> {
+    type Natural = ::core::option::Option<UnionSize24Alignment8>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSize24Alignment8<'de>>
+    for Box<UnionSize24Alignment8>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionSize24Alignment8<'de>) -> Option<Self> {
+        <UnionSize24Alignment8 as ::fidl_next::FromWireOption<
+            WireOptionalUnionSize24Alignment8<'de>,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -1144,6 +1192,10 @@ impl<'de> ::fidl_next::FromWire<WireSandwichUnionSize24Alignment8<'de>>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireSandwichUnionSize24Alignment8<'de> {
+    type Natural = SandwichUnionSize24Alignment8;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireSandwichUnionSize24Alignment8<'de>>
     for SandwichUnionSize24Alignment8
 {
@@ -1334,6 +1386,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionSize36Alignment4<'de>> for UnionSize36A
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionSize36Alignment4<'de> {
+    type Natural = UnionSize36Alignment4;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionSize36Alignment4<'de>> for UnionSize36Alignment4 {
     #[inline]
     fn from_wire_ref(wire: &WireUnionSize36Alignment4<'de>) -> Self {
@@ -1348,15 +1404,31 @@ impl<'de> ::fidl_next::FromWireRef<WireUnionSize36Alignment4<'de>> for UnionSize
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSize36Alignment4<'de>>
-    for Box<UnionSize36Alignment4>
+    for UnionSize36Alignment4
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionSize36Alignment4<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnionSize36Alignment4<'de> {
+    type Natural = ::core::option::Option<UnionSize36Alignment4>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSize36Alignment4<'de>>
+    for Box<UnionSize36Alignment4>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionSize36Alignment4<'de>) -> Option<Self> {
+        <UnionSize36Alignment4 as ::fidl_next::FromWireOption<
+            WireOptionalUnionSize36Alignment4<'de>,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -1650,6 +1722,10 @@ impl<'de> ::fidl_next::FromWire<WireSandwichUnionSize36Alignment4<'de>>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireSandwichUnionSize36Alignment4<'de> {
+    type Natural = SandwichUnionSize36Alignment4;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireSandwichUnionSize36Alignment4<'de>>
     for SandwichUnionSize36Alignment4
 {
@@ -1838,6 +1914,10 @@ impl ::fidl_next::FromWire<WireUnionSize8Alignment4> for UnionSize8Alignment4 {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnionSize8Alignment4 {
+    type Natural = UnionSize8Alignment4;
+}
+
 impl ::fidl_next::FromWireRef<WireUnionSize8Alignment4> for UnionSize8Alignment4 {
     #[inline]
     fn from_wire_ref(wire: &WireUnionSize8Alignment4) -> Self {
@@ -1851,14 +1931,27 @@ impl ::fidl_next::FromWireRef<WireUnionSize8Alignment4> for UnionSize8Alignment4
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalUnionSize8Alignment4> for Box<UnionSize8Alignment4> {
+impl ::fidl_next::FromWireOption<WireOptionalUnionSize8Alignment4> for UnionSize8Alignment4 {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionSize8Alignment4) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnionSize8Alignment4 {
+    type Natural = ::core::option::Option<UnionSize8Alignment4>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnionSize8Alignment4> for Box<UnionSize8Alignment4> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionSize8Alignment4) -> Option<Self> {
+        <
+            UnionSize8Alignment4 as ::fidl_next::FromWireOption<WireOptionalUnionSize8Alignment4>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -2181,6 +2274,10 @@ impl ::fidl_next::FromWire<WireSandwichUnionSize8Alignment4> for SandwichUnionSi
             after: ::fidl_next::FromWire::from_wire(wire.after),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireSandwichUnionSize8Alignment4 {
+    type Natural = SandwichUnionSize8Alignment4;
 }
 
 impl ::fidl_next::FromWireRef<WireSandwichUnionSize8Alignment4> for SandwichUnionSize8Alignment4 {

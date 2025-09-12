@@ -126,6 +126,10 @@ impl ::fidl_next::FromWire<WirePayload> for Payload {
     }
 }
 
+impl ::fidl_next::IntoNatural for WirePayload {
+    type Natural = Payload;
+}
+
 impl ::fidl_next::FromWireRef<WirePayload> for Payload {
     #[inline]
     fn from_wire_ref(wire: &WirePayload) -> Self {
@@ -291,6 +295,10 @@ impl ::fidl_next::FromWire<WireOneWaySendRequest> for OneWaySendRequest {
     fn from_wire(wire: WireOneWaySendRequest) -> Self {
         Self { payload: ::fidl_next::FromWire::from_wire(wire.payload) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireOneWaySendRequest {
+    type Natural = OneWaySendRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireOneWaySendRequest> for OneWaySendRequest {

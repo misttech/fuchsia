@@ -145,6 +145,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarDriverProtocolStrictTwoWay
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse
+{
+    type Natural = UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse>
     for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse
 {
@@ -331,6 +337,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarDriverProtocolStrictTwoWay
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse
+{
+    type Natural = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse>
     for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse
 {
@@ -351,17 +363,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwo
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse,
-    > for Box<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse>
+    > for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse,
+    > for Box<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -724,6 +758,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<
         WireUnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'de>,
@@ -965,6 +1005,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarDriverProtocolStrictTwoWay
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse
+{
+    type Natural = UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse;
+}
+
 impl
     ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse>
     for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse
@@ -1155,6 +1201,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarDriverProtocolStrictTwoWay
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural = UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse>
     for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse
 {
@@ -1175,17 +1227,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwo
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse>
+    > for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -1548,6 +1622,12 @@ impl<'de>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse;
 }
 
 impl<'de>
@@ -2356,6 +2436,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictTwoWayFields
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
+    type Natural = UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse>
     for UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse
 {
@@ -2536,6 +2620,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictTwoWayUnionR
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse {
+    type Natural = UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse>
     for UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse
 {
@@ -2554,17 +2642,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayUni
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
-    > for Box<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse>
+    > for UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse
+{
+    type Natural = ::core::option::Option<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
+    > for Box<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -2917,6 +3027,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictTwoWayT
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsAjarProtocolStrictTwoWayTableResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'de>>
     for UnknownInteractionsAjarProtocolStrictTwoWayTableResponse
@@ -3150,6 +3266,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictTwoWayFields
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse {
+    type Natural = UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse>
     for UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse
 {
@@ -3332,6 +3452,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictTwoWayUnionE
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse {
+    type Natural = UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse>
     for UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse
 {
@@ -3352,17 +3476,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayUni
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse>
+    > for UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -3722,6 +3868,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse<'de>>
     for UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse
@@ -3950,6 +4102,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictEventFieldsR
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest {
+    type Natural = UnknownInteractionsAjarProtocolStrictEventFieldsRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest>
     for UnknownInteractionsAjarProtocolStrictEventFieldsRequest
 {
@@ -4130,6 +4286,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictEventUnionRe
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolStrictEventUnionRequest {
+    type Natural = UnknownInteractionsAjarProtocolStrictEventUnionRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictEventUnionRequest>
     for UnknownInteractionsAjarProtocolStrictEventUnionRequest
 {
@@ -4146,17 +4306,37 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictEventUnio
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest>
-    for Box<UnknownInteractionsAjarProtocolStrictEventUnionRequest>
+    for UnknownInteractionsAjarProtocolStrictEventUnionRequest
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest
+{
+    type Natural = ::core::option::Option<UnknownInteractionsAjarProtocolStrictEventUnionRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest>
+    for Box<UnknownInteractionsAjarProtocolStrictEventUnionRequest>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest,
+    ) -> Option<Self> {
+        <UnknownInteractionsAjarProtocolStrictEventUnionRequest as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsAjarProtocolStrictEventUnionRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -4507,6 +4687,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolStrictEventTa
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarProtocolStrictEventTableRequest<'de>
+{
+    type Natural = UnknownInteractionsAjarProtocolStrictEventTableRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictEventTableRequest<'de>>
     for UnknownInteractionsAjarProtocolStrictEventTableRequest
 {
@@ -4734,6 +4920,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolFlexibleEventField
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
+    type Natural = UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest>
     for UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest
 {
@@ -4914,6 +5104,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolFlexibleEventUnion
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsAjarProtocolFlexibleEventUnionRequest {
+    type Natural = UnknownInteractionsAjarProtocolFlexibleEventUnionRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolFlexibleEventUnionRequest>
     for UnknownInteractionsAjarProtocolFlexibleEventUnionRequest
 {
@@ -4932,17 +5126,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolFlexibleEventUn
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest,
-    > for Box<UnknownInteractionsAjarProtocolFlexibleEventUnionRequest>
+    > for UnknownInteractionsAjarProtocolFlexibleEventUnionRequest
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest
+{
+    type Natural = ::core::option::Option<UnknownInteractionsAjarProtocolFlexibleEventUnionRequest>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest,
+    > for Box<UnknownInteractionsAjarProtocolFlexibleEventUnionRequest>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest,
+    ) -> Option<Self> {
+        <UnknownInteractionsAjarProtocolFlexibleEventUnionRequest as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsAjarProtocolFlexibleEventUnionRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -5293,6 +5509,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsAjarProtocolFlexibleEvent
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsAjarProtocolFlexibleEventTableRequest<'de>
+{
+    type Natural = UnknownInteractionsAjarProtocolFlexibleEventTableRequest;
 }
 
 impl<'de>
@@ -6434,6 +6656,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedDriverProtocolStrictTwoW
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse
+{
+    type Natural = UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse>
     for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse
 {
@@ -6623,6 +6851,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedDriverProtocolStrictTwoW
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse
+{
+    type Natural = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse>
     for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse
 {
@@ -6643,17 +6877,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedDriverProtocolStrictT
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse,
-    > for Box<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse>
+    > for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse,
+    > for Box<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -7017,6 +7273,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<
         WireUnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'de>,
@@ -7260,6 +7522,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedDriverProtocolStrictTwoW
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse
+{
+    type Natural = UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse;
+}
+
 impl
     ::fidl_next::FromWireRef<
         WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse,
@@ -7454,6 +7722,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedDriverProtocolStrictTwoW
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural = UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse;
+}
+
 impl
     ::fidl_next::FromWireRef<
         WireUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse,
@@ -7476,17 +7750,39 @@ impl
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse>
+    > for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -7853,6 +8149,12 @@ impl<'de>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse;
 }
 
 impl<'de>
@@ -8618,6 +8920,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictTwoWayFiel
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
+    type Natural = UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse>
     for UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse
 {
@@ -8800,6 +9106,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictTwoWayUnio
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse {
+    type Natural = UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>
     for UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse
 {
@@ -8820,17 +9130,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayU
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
-    > for Box<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>
+    > for UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
+    > for Box<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -9187,6 +9519,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictTwoWa
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsClosedProtocolStrictTwoWayTableResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'de>>
     for UnknownInteractionsClosedProtocolStrictTwoWayTableResponse
@@ -9424,6 +9762,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictTwoWayFiel
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse
+{
+    type Natural = UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse>
     for UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse
 {
@@ -9610,6 +9954,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictTwoWayUnio
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural = UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse>
     for UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse
 {
@@ -9630,17 +9980,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayU
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse>
+    > for UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -10003,6 +10375,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse<'de>>
     for UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse
@@ -10233,6 +10611,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictEventField
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest {
+    type Natural = UnknownInteractionsClosedProtocolStrictEventFieldsRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest>
     for UnknownInteractionsClosedProtocolStrictEventFieldsRequest
 {
@@ -10413,6 +10795,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictEventUnion
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsClosedProtocolStrictEventUnionRequest {
+    type Natural = UnknownInteractionsClosedProtocolStrictEventUnionRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictEventUnionRequest>
     for UnknownInteractionsClosedProtocolStrictEventUnionRequest
 {
@@ -10431,17 +10817,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictEventUn
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest,
-    > for Box<UnknownInteractionsClosedProtocolStrictEventUnionRequest>
+    > for UnknownInteractionsClosedProtocolStrictEventUnionRequest
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest
+{
+    type Natural = ::core::option::Option<UnknownInteractionsClosedProtocolStrictEventUnionRequest>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest,
+    > for Box<UnknownInteractionsClosedProtocolStrictEventUnionRequest>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest,
+    ) -> Option<Self> {
+        <UnknownInteractionsClosedProtocolStrictEventUnionRequest as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsClosedProtocolStrictEventUnionRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -10792,6 +11200,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsClosedProtocolStrictEvent
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsClosedProtocolStrictEventTableRequest<'de>
+{
+    type Natural = UnknownInteractionsClosedProtocolStrictEventTableRequest;
 }
 
 impl<'de>
@@ -11684,6 +12098,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolStrictTwoWayFiel
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
+    type Natural = UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse>
     for UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse
 {
@@ -11866,6 +12284,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolStrictTwoWayUnio
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse {
+    type Natural = UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse>
     for UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse
 {
@@ -11886,17 +12308,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayU
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse,
-    > for Box<UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse>
+    > for UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse,
+    > for Box<UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -12253,6 +12697,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolStrictTwoWa
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsDriverProtocolStrictTwoWayTableResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'de>>
     for UnknownInteractionsDriverProtocolStrictTwoWayTableResponse
@@ -12490,6 +12940,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolStrictTwoWayFiel
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse
+{
+    type Natural = UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse>
     for UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse
 {
@@ -12676,6 +13132,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolStrictTwoWayUnio
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural = UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse>
     for UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse
 {
@@ -12696,17 +13158,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayU
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse>
+    > for UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -13069,6 +13553,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse<'de>>
     for UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse
@@ -13306,6 +13796,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFi
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse
+{
+    type Natural = UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse>
     for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse
 {
@@ -13490,6 +13986,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolFlexibleTwoWayUn
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse {
+    type Natural = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse>
     for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse
 {
@@ -13510,17 +14010,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWa
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse,
-    > for Box<UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse>
+    > for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse,
+    > for Box<UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -13880,6 +14402,12 @@ impl<'de>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse<'de>>
     for UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse
@@ -14119,6 +14647,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFi
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse
+{
+    type Natural = UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse>
     for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse
 {
@@ -14308,6 +14842,12 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsDriverProtocolFlexibleTwoWayUn
     }
 }
 
+impl ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse
+{
+    type Natural = UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse>
     for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse
 {
@@ -14328,17 +14868,39 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWa
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse>
+    > for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <
+            UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse as ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -14699,6 +15261,12 @@ impl<'de>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse;
 }
 
 impl<'de>
@@ -15886,6 +16454,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictTwoWayFieldsResp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse {
+    type Natural = UnknownInteractionsProtocolStrictTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse>
     for UnknownInteractionsProtocolStrictTwoWayFieldsResponse
 {
@@ -16065,6 +16637,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictTwoWayUnionRespo
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictTwoWayUnionResponse {
+    type Natural = UnknownInteractionsProtocolStrictTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayUnionResponse>
     for UnknownInteractionsProtocolStrictTwoWayUnionResponse
 {
@@ -16081,17 +16657,35 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayUnionRe
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse>
-    for Box<UnknownInteractionsProtocolStrictTwoWayUnionResponse>
+    for UnknownInteractionsProtocolStrictTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse {
+    type Natural = ::core::option::Option<UnknownInteractionsProtocolStrictTwoWayUnionResponse>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse>
+    for Box<UnknownInteractionsProtocolStrictTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <UnknownInteractionsProtocolStrictTwoWayUnionResponse as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -16438,6 +17032,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictTwoWayTable
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsProtocolStrictTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsProtocolStrictTwoWayTableResponse;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayTableResponse<'de>>
     for UnknownInteractionsProtocolStrictTwoWayTableResponse
 {
@@ -16666,6 +17266,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictTwoWayFieldsErrR
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse {
+    type Natural = UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse>
     for UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse
 {
@@ -16846,6 +17450,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictTwoWayUnionErrRe
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictTwoWayUnionErrResponse {
+    type Natural = UnknownInteractionsProtocolStrictTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayUnionErrResponse>
     for UnknownInteractionsProtocolStrictTwoWayUnionErrResponse
 {
@@ -16863,17 +17471,38 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayUnionEr
 
 impl
     ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse>
-    for Box<UnknownInteractionsProtocolStrictTwoWayUnionErrResponse>
+    for UnknownInteractionsProtocolStrictTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse
+{
+    type Natural = ::core::option::Option<UnknownInteractionsProtocolStrictTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse>
+    for Box<UnknownInteractionsProtocolStrictTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <UnknownInteractionsProtocolStrictTwoWayUnionErrResponse as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsProtocolStrictTwoWayUnionErrResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -17226,6 +17855,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictTwoWayTable
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsProtocolStrictTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsProtocolStrictTwoWayTableErrResponse;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayTableErrResponse<'de>>
     for UnknownInteractionsProtocolStrictTwoWayTableErrResponse
 {
@@ -17456,6 +18091,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsRe
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
+    type Natural = UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse>
     for UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse
 {
@@ -17636,6 +18275,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleTwoWayUnionRes
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolFlexibleTwoWayUnionResponse {
+    type Natural = UnknownInteractionsProtocolFlexibleTwoWayUnionResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayUnionResponse>
     for UnknownInteractionsProtocolFlexibleTwoWayUnionResponse
 {
@@ -17652,17 +18295,37 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayUnion
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse>
-    for Box<UnknownInteractionsProtocolFlexibleTwoWayUnionResponse>
+    for UnknownInteractionsProtocolFlexibleTwoWayUnionResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse
+{
+    type Natural = ::core::option::Option<UnknownInteractionsProtocolFlexibleTwoWayUnionResponse>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse>
+    for Box<UnknownInteractionsProtocolFlexibleTwoWayUnionResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse,
+    ) -> Option<Self> {
+        <UnknownInteractionsProtocolFlexibleTwoWayUnionResponse as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -18013,6 +18676,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleTwoWayTab
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsProtocolFlexibleTwoWayTableResponse<'de>
+{
+    type Natural = UnknownInteractionsProtocolFlexibleTwoWayTableResponse;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayTableResponse<'de>>
     for UnknownInteractionsProtocolFlexibleTwoWayTableResponse
 {
@@ -18245,6 +18914,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsEr
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
+    type Natural = UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse>
     for UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse
 {
@@ -18427,6 +19100,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleTwoWayUnionErr
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse {
+    type Natural = UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse>
     for UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse
 {
@@ -18445,17 +19122,40 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayUnion
 impl
     ::fidl_next::FromWireOption<
         WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse,
-    > for Box<UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse>
+    > for UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural
+    for WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse
+{
+    type Natural =
+        ::core::option::Option<UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse>;
+}
+
+impl
+    ::fidl_next::FromWireOption<
+        WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse,
+    > for Box<UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse,
+    ) -> Option<Self> {
+        <UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -18808,6 +19508,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleTwoWayTab
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'de>
+{
+    type Natural = UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse;
+}
+
 impl<'de>
     ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'de>>
     for UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse
@@ -19035,6 +19741,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictEventFieldsReque
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictEventFieldsRequest {
+    type Natural = UnknownInteractionsProtocolStrictEventFieldsRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictEventFieldsRequest>
     for UnknownInteractionsProtocolStrictEventFieldsRequest
 {
@@ -19214,6 +19924,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictEventUnionReques
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictEventUnionRequest {
+    type Natural = UnknownInteractionsProtocolStrictEventUnionRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictEventUnionRequest>
     for UnknownInteractionsProtocolStrictEventUnionRequest
 {
@@ -19230,17 +19944,35 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictEventUnionReq
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest>
-    for Box<UnknownInteractionsProtocolStrictEventUnionRequest>
+    for UnknownInteractionsProtocolStrictEventUnionRequest
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest {
+    type Natural = ::core::option::Option<UnknownInteractionsProtocolStrictEventUnionRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest>
+    for Box<UnknownInteractionsProtocolStrictEventUnionRequest>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest,
+    ) -> Option<Self> {
+        <UnknownInteractionsProtocolStrictEventUnionRequest as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsProtocolStrictEventUnionRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -19586,6 +20318,10 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsProtocolStrictEventTableR
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolStrictEventTableRequest<'de> {
+    type Natural = UnknownInteractionsProtocolStrictEventTableRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictEventTableRequest<'de>>
     for UnknownInteractionsProtocolStrictEventTableRequest
 {
@@ -19807,6 +20543,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleEventFieldsReq
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolFlexibleEventFieldsRequest {
+    type Natural = UnknownInteractionsProtocolFlexibleEventFieldsRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleEventFieldsRequest>
     for UnknownInteractionsProtocolFlexibleEventFieldsRequest
 {
@@ -19986,6 +20726,10 @@ impl ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleEventUnionRequ
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnknownInteractionsProtocolFlexibleEventUnionRequest {
+    type Natural = UnknownInteractionsProtocolFlexibleEventUnionRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleEventUnionRequest>
     for UnknownInteractionsProtocolFlexibleEventUnionRequest
 {
@@ -20002,17 +20746,35 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleEventUnionR
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest>
-    for Box<UnknownInteractionsProtocolFlexibleEventUnionRequest>
+    for UnknownInteractionsProtocolFlexibleEventUnionRequest
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest {
+    type Natural = ::core::option::Option<UnknownInteractionsProtocolFlexibleEventUnionRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest>
+    for Box<UnknownInteractionsProtocolFlexibleEventUnionRequest>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest,
+    ) -> Option<Self> {
+        <UnknownInteractionsProtocolFlexibleEventUnionRequest as ::fidl_next::FromWireOption<
+            WireOptionalUnknownInteractionsProtocolFlexibleEventUnionRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -20357,6 +21119,12 @@ impl<'de> ::fidl_next::FromWire<WireUnknownInteractionsProtocolFlexibleEventTabl
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireUnknownInteractionsProtocolFlexibleEventTableRequest<'de>
+{
+    type Natural = UnknownInteractionsProtocolFlexibleEventTableRequest;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleEventTableRequest<'de>>

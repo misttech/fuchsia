@@ -11,7 +11,7 @@ use munge::munge;
 
 use crate::{
     Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder, FromWire,
-    FromWireRef, Slot, Wire, WireVector,
+    FromWireRef, IntoNatural, Slot, Wire, WireVector,
 };
 
 /// A FIDL string
@@ -142,6 +142,10 @@ impl FromWire<WireString<'_>> for String {
     fn from_wire(wire: WireString<'_>) -> Self {
         String::from_wire_ref(&wire)
     }
+}
+
+impl IntoNatural for WireString<'_> {
+    type Natural = String;
 }
 
 impl FromWireRef<WireString<'_>> for String {

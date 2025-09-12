@@ -98,6 +98,10 @@ impl ::fidl_next::FromWire<WireObjType> for ObjType {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireObjType {
+    type Natural = ObjType;
+}
+
 impl ::fidl_next::FromWireRef<WireObjType> for ObjType {
     #[inline]
     fn from_wire_ref(wire: &WireObjType) -> Self {
@@ -310,6 +314,10 @@ impl<'de> ::fidl_next::FromWire<WireExampleOfUseOfAliases<'de>> for ExampleOfUse
             ),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireExampleOfUseOfAliases<'de> {
+    type Natural = ExampleOfUseOfAliases;
 }
 
 /// The wire type corresponding to [`ExampleOfUseOfAliases`].

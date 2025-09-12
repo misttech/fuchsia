@@ -94,6 +94,10 @@ impl<'de> ::fidl_next::FromWire<WireEmptyTable<'de>> for EmptyTable {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireEmptyTable<'de> {
+    type Natural = EmptyTable;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireEmptyTable<'de>> for EmptyTable {
     #[inline]
     fn from_wire_ref(wire: &WireEmptyTable<'de>) -> Self {
@@ -239,6 +243,10 @@ impl<'de> ::fidl_next::FromWire<WireExtensionTable<'de>> for ExtensionTable {
 
         Self {}
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireExtensionTable<'de> {
+    type Natural = ExtensionTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireExtensionTable<'de>> for ExtensionTable {
@@ -476,6 +484,10 @@ impl<'de> ::fidl_next::FromWire<WireNewerSimpleTable<'de>> for NewerSimpleTable 
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireNewerSimpleTable<'de> {
+    type Natural = NewerSimpleTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireNewerSimpleTable<'de>> for NewerSimpleTable {
@@ -729,6 +741,10 @@ impl<'de> ::fidl_next::FromWire<WireOlderSimpleTable<'de>> for OlderSimpleTable 
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOlderSimpleTable<'de> {
+    type Natural = OlderSimpleTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireOlderSimpleTable<'de>> for OlderSimpleTable {
@@ -990,6 +1006,10 @@ impl<'de> ::fidl_next::FromWire<WireReverseOrdinalTable<'de>> for ReverseOrdinal
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireReverseOrdinalTable<'de> {
+    type Natural = ReverseOrdinalTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireReverseOrdinalTable<'de>> for ReverseOrdinalTable {
@@ -1273,6 +1293,10 @@ impl<'de> ::fidl_next::FromWire<WireSimpleTable<'de>> for SimpleTable {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireSimpleTable<'de> {
+    type Natural = SimpleTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireSimpleTable<'de>> for SimpleTable {
@@ -3902,6 +3926,10 @@ impl<'de> ::fidl_next::FromWire<WireSixtyFourOrdinalTable<'de>> for SixtyFourOrd
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireSixtyFourOrdinalTable<'de> {
+    type Natural = SixtyFourOrdinalTable;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireSixtyFourOrdinalTable<'de>> for SixtyFourOrdinalTable {
     #[inline]
     fn from_wire_ref(wire: &WireSixtyFourOrdinalTable<'de>) -> Self {
@@ -5678,6 +5706,10 @@ impl<'de> ::fidl_next::FromWire<WireTableWithAttributes<'de>> for TableWithAttri
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTableWithAttributes<'de> {
+    type Natural = TableWithAttributes;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireTableWithAttributes<'de>> for TableWithAttributes {

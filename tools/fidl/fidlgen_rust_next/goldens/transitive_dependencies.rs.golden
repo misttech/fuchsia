@@ -129,6 +129,10 @@ impl ::fidl_next::FromWire<WireBaz> for Baz {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBaz {
+    type Natural = Baz;
+}
+
 impl ::fidl_next::FromWireRef<WireBaz> for Baz {
     #[inline]
     fn from_wire_ref(wire: &WireBaz) -> Self {

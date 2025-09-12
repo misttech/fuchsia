@@ -8,8 +8,8 @@ use core::{concat, stringify};
 
 use fidl_next_codec::{
     Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
-    EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef, FromWireRef, Slot,
-    Wire, munge,
+    EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef, FromWireRef,
+    IntoNatural, Slot, Wire, munge,
 };
 use fidl_next_protocol::{ProtocolError, Transport};
 
@@ -205,6 +205,10 @@ macro_rules! endpoint {
                     _protocol: PhantomData,
                 }
             }
+        }
+
+        impl<P, T: IntoNatural> IntoNatural for $name<P, T> {
+            type Natural = $name<P, T::Natural>;
         }
 
         impl<P, T, U> FromWireRef<$name<P, U>> for $name<P, T>

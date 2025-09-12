@@ -147,6 +147,10 @@ impl<'de> ::fidl_next::FromWire<WireFlexibleFoo<'de>> for FlexibleFoo {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireFlexibleFoo<'de> {
+    type Natural = FlexibleFoo;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireFlexibleFoo<'de>> for FlexibleFoo {
     #[inline]
     fn from_wire_ref(wire: &WireFlexibleFoo<'de>) -> Self {
@@ -164,14 +168,27 @@ impl<'de> ::fidl_next::FromWireRef<WireFlexibleFoo<'de>> for FlexibleFoo {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>> for Box<FlexibleFoo> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>> for FlexibleFoo {
     #[inline]
     fn from_wire_option(wire: WireOptionalFlexibleFoo<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalFlexibleFoo<'de> {
+    type Natural = ::core::option::Option<FlexibleFoo>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>> for Box<FlexibleFoo> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalFlexibleFoo<'de>) -> Option<Self> {
+        <
+            FlexibleFoo as ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -483,6 +500,10 @@ impl<'de> ::fidl_next::FromWire<WireStrictFoo<'de>> for StrictFoo {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStrictFoo<'de> {
+    type Natural = StrictFoo;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStrictFoo<'de>> for StrictFoo {
     #[inline]
     fn from_wire_ref(wire: &WireStrictFoo<'de>) -> Self {
@@ -500,14 +521,28 @@ impl<'de> ::fidl_next::FromWireRef<WireStrictFoo<'de>> for StrictFoo {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>> for Box<StrictFoo> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>> for StrictFoo {
     #[inline]
     fn from_wire_option(wire: WireOptionalStrictFoo<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalStrictFoo<'de> {
+    type Natural = ::core::option::Option<StrictFoo>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>> for Box<StrictFoo> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalStrictFoo<'de>) -> Option<Self> {
+        <StrictFoo as ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -798,6 +833,10 @@ impl<'de> ::fidl_next::FromWire<WireProtocolRequestStrictResponseFlexibleRequest
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireProtocolRequestStrictResponseFlexibleRequest<'de> {
+    type Natural = ProtocolRequestStrictResponseFlexibleRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestStrictResponseFlexibleRequest<'de>>
     for ProtocolRequestStrictResponseFlexibleRequest
 {
@@ -958,6 +997,10 @@ impl<'de> ::fidl_next::FromWire<WireProtocolRequestStrictResponseFlexibleRespons
     fn from_wire(wire: WireProtocolRequestStrictResponseFlexibleResponse<'de>) -> Self {
         Self { f: ::fidl_next::FromWire::from_wire(wire.f) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireProtocolRequestStrictResponseFlexibleResponse<'de> {
+    type Natural = ProtocolRequestStrictResponseFlexibleResponse;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestStrictResponseFlexibleResponse<'de>>
@@ -1122,6 +1165,10 @@ impl<'de> ::fidl_next::FromWire<WireProtocolRequestFlexibleResponseStrictRequest
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireProtocolRequestFlexibleResponseStrictRequest<'de> {
+    type Natural = ProtocolRequestFlexibleResponseStrictRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestFlexibleResponseStrictRequest<'de>>
     for ProtocolRequestFlexibleResponseStrictRequest
 {
@@ -1282,6 +1329,10 @@ impl<'de> ::fidl_next::FromWire<WireProtocolRequestFlexibleResponseStrictRespons
     fn from_wire(wire: WireProtocolRequestFlexibleResponseStrictResponse<'de>) -> Self {
         Self { f: ::fidl_next::FromWire::from_wire(wire.f) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireProtocolRequestFlexibleResponseStrictResponse<'de> {
+    type Natural = ProtocolRequestFlexibleResponseStrictResponse;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestFlexibleResponseStrictResponse<'de>>

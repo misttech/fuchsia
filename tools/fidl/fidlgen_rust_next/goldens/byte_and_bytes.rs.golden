@@ -125,6 +125,10 @@ impl ::fidl_next::FromWire<WireByteAndBytes> for ByteAndBytes {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireByteAndBytes {
+    type Natural = ByteAndBytes;
+}
+
 impl ::fidl_next::FromWireRef<WireByteAndBytes> for ByteAndBytes {
     #[inline]
     fn from_wire_ref(wire: &WireByteAndBytes) -> Self {

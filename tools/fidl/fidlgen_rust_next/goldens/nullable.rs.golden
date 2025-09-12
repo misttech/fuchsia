@@ -126,6 +126,10 @@ impl ::fidl_next::FromWire<WireInt32Wrapper> for Int32Wrapper {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireInt32Wrapper {
+    type Natural = Int32Wrapper;
+}
+
 impl ::fidl_next::FromWireRef<WireInt32Wrapper> for Int32Wrapper {
     #[inline]
     fn from_wire_ref(wire: &WireInt32Wrapper) -> Self {
@@ -307,6 +311,10 @@ impl ::fidl_next::FromWire<WireSimpleProtocolAddRequest> for SimpleProtocolAddRe
     }
 }
 
+impl ::fidl_next::IntoNatural for WireSimpleProtocolAddRequest {
+    type Natural = SimpleProtocolAddRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireSimpleProtocolAddRequest> for SimpleProtocolAddRequest {
     #[inline]
     fn from_wire_ref(wire: &WireSimpleProtocolAddRequest) -> Self {
@@ -480,6 +488,10 @@ impl ::fidl_next::FromWire<WireSimpleProtocolAddResponse> for SimpleProtocolAddR
     fn from_wire(wire: WireSimpleProtocolAddResponse) -> Self {
         Self { sum: ::fidl_next::FromWire::from_wire(wire.sum) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireSimpleProtocolAddResponse {
+    type Natural = SimpleProtocolAddResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireSimpleProtocolAddResponse> for SimpleProtocolAddResponse {
@@ -881,6 +893,10 @@ impl ::fidl_next::FromWire<WireSimpleUnion> for SimpleUnion {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireSimpleUnion {
+    type Natural = SimpleUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireSimpleUnion> for SimpleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireSimpleUnion) -> Self {
@@ -898,14 +914,28 @@ impl ::fidl_next::FromWireRef<WireSimpleUnion> for SimpleUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalSimpleUnion> for Box<SimpleUnion> {
+impl ::fidl_next::FromWireOption<WireOptionalSimpleUnion> for SimpleUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalSimpleUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalSimpleUnion {
+    type Natural = ::core::option::Option<SimpleUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalSimpleUnion> for Box<SimpleUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalSimpleUnion) -> Option<Self> {
+        <SimpleUnion as ::fidl_next::FromWireOption<WireOptionalSimpleUnion>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -1212,6 +1242,10 @@ impl ::fidl_next::FromWire<WireStructWithNullableHandle> for StructWithNullableH
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStructWithNullableHandle {
+    type Natural = StructWithNullableHandle;
+}
+
 /// The wire type corresponding to [`StructWithNullableHandle`].
 #[derive(Debug)]
 #[repr(C)]
@@ -1337,6 +1371,10 @@ impl ::fidl_next::FromWire<WireStructWithNullableProtocol> for StructWithNullabl
     fn from_wire(wire: WireStructWithNullableProtocol) -> Self {
         Self { val: ::fidl_next::FromWire::from_wire(wire.val) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireStructWithNullableProtocol {
+    type Natural = StructWithNullableProtocol;
 }
 
 /// The wire type corresponding to [`StructWithNullableProtocol`].
@@ -1465,6 +1503,10 @@ impl ::fidl_next::FromWire<WireStructWithNullableRequest> for StructWithNullable
     fn from_wire(wire: WireStructWithNullableRequest) -> Self {
         Self { val: ::fidl_next::FromWire::from_wire(wire.val) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireStructWithNullableRequest {
+    type Natural = StructWithNullableRequest;
 }
 
 /// The wire type corresponding to [`StructWithNullableRequest`].
@@ -1614,6 +1656,10 @@ impl<'de> ::fidl_next::FromWire<WireStructWithNullableString<'de>> for StructWit
     fn from_wire(wire: WireStructWithNullableString<'de>) -> Self {
         Self { val: ::fidl_next::FromWire::from_wire(wire.val) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireStructWithNullableString<'de> {
+    type Natural = StructWithNullableString;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableString<'de>> for StructWithNullableString {
@@ -1769,6 +1815,10 @@ impl<'de> ::fidl_next::FromWire<WireStructWithNullableStruct<'de>> for StructWit
     fn from_wire(wire: WireStructWithNullableStruct<'de>) -> Self {
         Self { val: ::fidl_next::FromWire::from_wire(wire.val) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireStructWithNullableStruct<'de> {
+    type Natural = StructWithNullableStruct;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableStruct<'de>> for StructWithNullableStruct {
@@ -1941,6 +1991,10 @@ impl ::fidl_next::FromWire<WireStructWithNullableUnion> for StructWithNullableUn
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStructWithNullableUnion {
+    type Natural = StructWithNullableUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireStructWithNullableUnion> for StructWithNullableUnion {
     #[inline]
     fn from_wire_ref(wire: &WireStructWithNullableUnion) -> Self {
@@ -2093,6 +2147,10 @@ impl<'de> ::fidl_next::FromWire<WireStructWithNullableVector<'de>> for StructWit
     fn from_wire(wire: WireStructWithNullableVector<'de>) -> Self {
         Self { val: ::fidl_next::FromWire::from_wire(wire.val) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireStructWithNullableVector<'de> {
+    type Natural = StructWithNullableVector;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableVector<'de>> for StructWithNullableVector {

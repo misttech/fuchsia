@@ -114,6 +114,10 @@ impl<'de> ::fidl_next::FromWire<WireExampleFooRequest<'de>> for ExampleFooReques
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExampleFooRequest<'de> {
+    type Natural = ExampleFooRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExampleFooRequest<'de>> for ExampleFooRequest {
     #[inline]
     fn from_wire_ref(wire: &WireExampleFooRequest<'de>) -> Self {
@@ -279,6 +283,10 @@ impl ::fidl_next::FromWire<WireExampleFooResponse> for ExampleFooResponse {
     fn from_wire(wire: WireExampleFooResponse) -> Self {
         Self { y: ::fidl_next::FromWire::from_wire(wire.y) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireExampleFooResponse {
+    type Natural = ExampleFooResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireExampleFooResponse> for ExampleFooResponse {

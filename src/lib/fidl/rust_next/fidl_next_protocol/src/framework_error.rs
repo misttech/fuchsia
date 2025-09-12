@@ -6,8 +6,8 @@ use core::fmt;
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire, FromWireRef, Slot,
-    Wire, WireI32, munge,
+    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire, FromWireRef,
+    IntoNatural, Slot, Wire, WireI32, munge,
 };
 
 use crate::concurrency::hint::unreachable_unchecked;
@@ -93,6 +93,10 @@ impl FromWire<WireFrameworkError> for FrameworkError {
     fn from_wire(wire: WireFrameworkError) -> Self {
         Self::from_wire_ref(&wire)
     }
+}
+
+impl IntoNatural for WireFrameworkError {
+    type Natural = FrameworkError;
 }
 
 impl FromWireRef<WireFrameworkError> for FrameworkError {

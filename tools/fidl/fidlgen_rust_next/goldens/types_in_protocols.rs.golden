@@ -226,6 +226,10 @@ impl<'de> ::fidl_next::FromWire<WireArrayBasic<'de>> for ArrayBasic {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireArrayBasic<'de> {
+    type Natural = ArrayBasic;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireArrayBasic<'de>> for ArrayBasic {
     #[inline]
     fn from_wire_ref(wire: &WireArrayBasic<'de>) -> Self {
@@ -430,6 +434,10 @@ impl ::fidl_next::FromWire<WireBits> for Bits {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBits {
+    type Natural = Bits;
+}
+
 impl ::fidl_next::FromWireRef<WireBits> for Bits {
     #[inline]
     fn from_wire_ref(wire: &WireBits) -> Self {
@@ -541,6 +549,10 @@ impl ::fidl_next::FromWire<WireEnum> for Enum {
     fn from_wire(wire: WireEnum) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEnum {
+    type Natural = Enum;
 }
 
 impl ::fidl_next::FromWireRef<WireEnum> for Enum {
@@ -701,6 +713,10 @@ impl ::fidl_next::FromWire<WireStruct> for Struct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStruct {
+    type Natural = Struct;
+}
+
 impl ::fidl_next::FromWireRef<WireStruct> for Struct {
     #[inline]
     fn from_wire_ref(wire: &WireStruct) -> Self {
@@ -828,6 +844,10 @@ impl<'de> ::fidl_next::FromWire<WireTable<'de>> for Table {
 
         Self {}
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTable<'de> {
+    type Natural = Table;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireTable<'de>> for Table {
@@ -1014,6 +1034,10 @@ impl ::fidl_next::FromWire<WireUnion> for Union {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnion {
+    type Natural = Union;
+}
+
 impl ::fidl_next::FromWireRef<WireUnion> for Union {
     #[inline]
     fn from_wire_ref(wire: &WireUnion) -> Self {
@@ -1027,14 +1051,26 @@ impl ::fidl_next::FromWireRef<WireUnion> for Union {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalUnion> for Box<Union> {
+impl ::fidl_next::FromWireOption<WireOptionalUnion> for Union {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnion {
+    type Natural = ::core::option::Option<Union>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnion> for Box<Union> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnion) -> Option<Self> {
+        <Union as ::fidl_next::FromWireOption<WireOptionalUnion>>::from_wire_option(wire)
+            .map(Box::new)
     }
 }
 
@@ -1401,6 +1437,10 @@ impl<'de> ::fidl_next::FromWire<WireArrayCompound<'de>> for ArrayCompound {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireArrayCompound<'de> {
+    type Natural = ArrayCompound;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireArrayCompound<'de>> for ArrayCompound {
     #[inline]
     fn from_wire_ref(wire: &WireArrayCompound<'de>) -> Self {
@@ -1638,6 +1678,10 @@ impl<'de> ::fidl_next::FromWire<WireArrayVectorNested<'de>> for ArrayVectorNeste
             vector_vector_uint8: ::fidl_next::FromWire::from_wire(wire.vector_vector_uint8),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireArrayVectorNested<'de> {
+    type Natural = ArrayVectorNested;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireArrayVectorNested<'de>> for ArrayVectorNested {
@@ -1932,6 +1976,10 @@ impl<'de> ::fidl_next::FromWire<WireBasic<'de>> for Basic {
             opt_string: ::fidl_next::FromWire::from_wire(wire.opt_string),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireBasic<'de> {
+    type Natural = Basic;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireBasic<'de>> for Basic {
@@ -2240,6 +2288,10 @@ impl<'de> ::fidl_next::FromWire<WireCompound<'de>> for Compound {
             opt_union: ::fidl_next::FromWire::from_wire(wire.opt_union),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireCompound<'de> {
+    type Natural = Compound;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireCompound<'de>> for Compound {
@@ -2557,6 +2609,10 @@ impl<'de> ::fidl_next::FromWire<WireVectorBasic<'de>> for VectorBasic {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireVectorBasic<'de> {
+    type Natural = VectorBasic;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireVectorBasic<'de>> for VectorBasic {
     #[inline]
     fn from_wire_ref(wire: &WireVectorBasic<'de>) -> Self {
@@ -2853,6 +2909,10 @@ impl<'de> ::fidl_next::FromWire<WireVectorCompound<'de>> for VectorCompound {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireVectorCompound<'de> {
+    type Natural = VectorCompound;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireVectorCompound<'de>> for VectorCompound {
     #[inline]
     fn from_wire_ref(wire: &WireVectorCompound<'de>) -> Self {
@@ -3089,6 +3149,10 @@ impl<'de> ::fidl_next::FromWire<WireVectorOptional<'de>> for VectorOptional {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireVectorOptional<'de> {
+    type Natural = VectorOptional;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireVectorOptional<'de>> for VectorOptional {
     #[inline]
     fn from_wire_ref(wire: &WireVectorOptional<'de>) -> Self {
@@ -3226,6 +3290,10 @@ impl ::fidl_next::FromWire<WireResourceStruct> for ResourceStruct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireResourceStruct {
+    type Natural = ResourceStruct;
+}
+
 /// The wire type corresponding to [`ResourceStruct`].
 #[derive(Debug)]
 #[repr(C)]
@@ -3313,6 +3381,10 @@ impl<'de> ::fidl_next::FromWire<WireResourceTable<'de>> for ResourceTable {
 
         Self {}
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireResourceTable<'de> {
+    type Natural = ResourceTable;
 }
 
 /// The wire type corresponding to [`ResourceTable`].
@@ -3444,14 +3516,32 @@ impl ::fidl_next::FromWire<WireResourceUnion> for ResourceUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalResourceUnion> for Box<ResourceUnion> {
+impl ::fidl_next::IntoNatural for WireResourceUnion {
+    type Natural = ResourceUnion;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalResourceUnion> for ResourceUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalResourceUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalResourceUnion {
+    type Natural = ::core::option::Option<ResourceUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalResourceUnion> for Box<ResourceUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalResourceUnion) -> Option<Self> {
+        <ResourceUnion as ::fidl_next::FromWireOption<WireOptionalResourceUnion>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -3851,6 +3941,10 @@ impl<'de> ::fidl_next::FromWire<WireResource<'de>> for Resource {
             vector_union: ::fidl_next::FromWire::from_wire(wire.vector_union),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireResource<'de> {
+    type Natural = Resource;
 }
 
 /// The wire type corresponding to [`Resource`].

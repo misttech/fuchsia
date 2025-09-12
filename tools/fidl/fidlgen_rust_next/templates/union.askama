@@ -172,6 +172,10 @@ impl{{ de }} ::fidl_next::FromWire<{{ wire_name }}{{ de }}> for {{ name }} {
     }
 }
 
+impl{{ de }} ::fidl_next::IntoNatural for {{ wire_name }}{{ de }} {
+    type Natural = {{ name }};
+}
+
 {% if !union_.is_resource %}
 impl{{ de }} ::fidl_next::FromWireRef<{{ wire_name }}{{ de }}> for {{ name }} {
     #[inline]
@@ -190,14 +194,27 @@ impl{{ de }} ::fidl_next::FromWireRef<{{ wire_name }}{{ de }}> for {{ name }} {
 }
 {% endif %}
 
-impl{{ de }} ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}> for Box<{{ name }}> {
+impl{{ de }} ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}> for {{ name }} {
     #[inline]
     fn from_wire_option(wire: {{ wire_optional_name }}{{ de }}) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl{{ de }} ::fidl_next::IntoNatural for {{ wire_optional_name }}{{ de }} {
+    type Natural = ::core::option::Option<{{ name }}>;
+}
+
+impl{{ de }} ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}> for Box<{{ name }}> {
+    #[inline]
+    fn from_wire_option(wire: {{ wire_optional_name }}{{ de }}) -> Option<Self> {
+        <
+            {{ name }} as ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 

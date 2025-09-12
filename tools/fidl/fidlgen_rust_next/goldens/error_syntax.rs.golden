@@ -118,6 +118,10 @@ impl<'de> ::fidl_next::FromWire<WireExampleUseOfErrorSyntaxCallWhichMayFailReque
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de> {
+    type Natural = ExampleUseOfErrorSyntaxCallWhichMayFailRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>>
     for ExampleUseOfErrorSyntaxCallWhichMayFailRequest
 {
@@ -297,6 +301,10 @@ impl ::fidl_next::FromWire<WireExampleUseOfErrorSyntaxCallWhichMayFailResponse>
     fn from_wire(wire: WireExampleUseOfErrorSyntaxCallWhichMayFailResponse) -> Self {
         Self { value: ::fidl_next::FromWire::from_wire(wire.value) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireExampleUseOfErrorSyntaxCallWhichMayFailResponse {
+    type Natural = ExampleUseOfErrorSyntaxCallWhichMayFailResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireExampleUseOfErrorSyntaxCallWhichMayFailResponse>

@@ -133,6 +133,10 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding4> for ShouldNeverAp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding4 {
+    type Natural = ShouldNeverAppearInAnyBinding4;
+}
+
 impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding4>
     for ShouldNeverAppearInAnyBinding4
 {
@@ -297,6 +301,10 @@ impl<'de> ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding5<'de>>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding5<'de> {
+    type Natural = ShouldNeverAppearInAnyBinding5;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding5<'de>>
@@ -503,6 +511,10 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding6> for ShouldNeverAp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding6 {
+    type Natural = ShouldNeverAppearInAnyBinding6;
+}
+
 impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding6>
     for ShouldNeverAppearInAnyBinding6
 {
@@ -519,15 +531,31 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding6>
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6>
-    for Box<ShouldNeverAppearInAnyBinding6>
+    for ShouldNeverAppearInAnyBinding6
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding6) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding6 {
+    type Natural = ::core::option::Option<ShouldNeverAppearInAnyBinding6>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6>
+    for Box<ShouldNeverAppearInAnyBinding6>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding6) -> Option<Self> {
+        <ShouldNeverAppearInAnyBinding6 as ::fidl_next::FromWireOption<
+            WireOptionalShouldNeverAppearInAnyBinding6,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -889,6 +917,10 @@ impl<'de> ::fidl_next::FromWire<WireAllowedDeniedResponse<'de>> for AllowedDenie
             ),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireAllowedDeniedResponse<'de> {
+    type Natural = AllowedDeniedResponse;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireAllowedDeniedResponse<'de>> for AllowedDeniedResponse {
@@ -1341,6 +1373,10 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding1> for ShouldNeverAp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding1 {
+    type Natural = ShouldNeverAppearInAnyBinding1;
+}
+
 impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding1>
     for ShouldNeverAppearInAnyBinding1
 {
@@ -1505,6 +1541,10 @@ impl<'de> ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding2<'de>>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding2<'de> {
+    type Natural = ShouldNeverAppearInAnyBinding2;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding2<'de>>
@@ -1711,6 +1751,10 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding3> for ShouldNeverAp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding3 {
+    type Natural = ShouldNeverAppearInAnyBinding3;
+}
+
 impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding3>
     for ShouldNeverAppearInAnyBinding3
 {
@@ -1727,15 +1771,31 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding3>
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3>
-    for Box<ShouldNeverAppearInAnyBinding3>
+    for ShouldNeverAppearInAnyBinding3
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding3) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding3 {
+    type Natural = ::core::option::Option<ShouldNeverAppearInAnyBinding3>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3>
+    for Box<ShouldNeverAppearInAnyBinding3>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding3) -> Option<Self> {
+        <ShouldNeverAppearInAnyBinding3 as ::fidl_next::FromWireOption<
+            WireOptionalShouldNeverAppearInAnyBinding3,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -2100,6 +2160,10 @@ impl<'de> ::fidl_next::FromWire<WireDeniedShouldNeverAppearInAnyBindingRequest<'
             ),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireDeniedShouldNeverAppearInAnyBindingRequest<'de> {
+    type Natural = DeniedShouldNeverAppearInAnyBindingRequest;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireDeniedShouldNeverAppearInAnyBindingRequest<'de>>
@@ -2550,6 +2614,10 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding7> for ShouldNeverAp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding7 {
+    type Natural = ShouldNeverAppearInAnyBinding7;
+}
+
 impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding7>
     for ShouldNeverAppearInAnyBinding7
 {
@@ -2714,6 +2782,10 @@ impl<'de> ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding8<'de>>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding8<'de> {
+    type Natural = ShouldNeverAppearInAnyBinding8;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding8<'de>>
@@ -2920,6 +2992,10 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding9> for ShouldNeverAp
     }
 }
 
+impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding9 {
+    type Natural = ShouldNeverAppearInAnyBinding9;
+}
+
 impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding9>
     for ShouldNeverAppearInAnyBinding9
 {
@@ -2936,15 +3012,31 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding9>
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9>
-    for Box<ShouldNeverAppearInAnyBinding9>
+    for ShouldNeverAppearInAnyBinding9
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding9) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding9 {
+    type Natural = ::core::option::Option<ShouldNeverAppearInAnyBinding9>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9>
+    for Box<ShouldNeverAppearInAnyBinding9>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding9) -> Option<Self> {
+        <ShouldNeverAppearInAnyBinding9 as ::fidl_next::FromWireOption<
+            WireOptionalShouldNeverAppearInAnyBinding9,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -3308,6 +3400,10 @@ impl<'de> ::fidl_next::FromWire<WireDeniedAnonymous<'de>> for DeniedAnonymous {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireDeniedAnonymous<'de> {
+    type Natural = DeniedAnonymous;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireDeniedAnonymous<'de>> for DeniedAnonymous {
     #[inline]
     fn from_wire_ref(wire: &WireDeniedAnonymous<'de>) -> Self {
@@ -3508,6 +3604,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyCppRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyCppRequest {
+    type Natural = DenyEachBindingOnlyDenyCppRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyCppRequest>
     for DenyEachBindingOnlyDenyCppRequest
 {
@@ -3684,6 +3784,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyCppResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyCppResponse {
+    type Natural = DenyEachBindingOnlyDenyCppResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyCppResponse>
     for DenyEachBindingOnlyDenyCppResponse
 {
@@ -3857,6 +3961,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyDartRequest>
     fn from_wire(wire: WireDenyEachBindingOnlyDenyDartRequest) -> Self {
         Self { a: ::fidl_next::FromWire::from_wire(wire.a) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyDartRequest {
+    type Natural = DenyEachBindingOnlyDenyDartRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyDartRequest>
@@ -4035,6 +4143,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyDartResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyDartResponse {
+    type Natural = DenyEachBindingOnlyDenyDartResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyDartResponse>
     for DenyEachBindingOnlyDenyDartResponse
 {
@@ -4208,6 +4320,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyGoRequest>
     fn from_wire(wire: WireDenyEachBindingOnlyDenyGoRequest) -> Self {
         Self { a: ::fidl_next::FromWire::from_wire(wire.a) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyGoRequest {
+    type Natural = DenyEachBindingOnlyDenyGoRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyGoRequest>
@@ -4386,6 +4502,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyGoResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyGoResponse {
+    type Natural = DenyEachBindingOnlyDenyGoResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyGoResponse>
     for DenyEachBindingOnlyDenyGoResponse
 {
@@ -4559,6 +4679,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyPythonRequest>
     fn from_wire(wire: WireDenyEachBindingOnlyDenyPythonRequest) -> Self {
         Self { a: ::fidl_next::FromWire::from_wire(wire.a) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyPythonRequest {
+    type Natural = DenyEachBindingOnlyDenyPythonRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyPythonRequest>
@@ -4737,6 +4861,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyPythonResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyPythonResponse {
+    type Natural = DenyEachBindingOnlyDenyPythonResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyPythonResponse>
     for DenyEachBindingOnlyDenyPythonResponse
 {
@@ -4910,6 +5038,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyRustRequest>
     fn from_wire(wire: WireDenyEachBindingOnlyDenyRustRequest) -> Self {
         Self { a: ::fidl_next::FromWire::from_wire(wire.a) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyRustRequest {
+    type Natural = DenyEachBindingOnlyDenyRustRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyRustRequest>
@@ -5088,6 +5220,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenyRustResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenyRustResponse {
+    type Natural = DenyEachBindingOnlyDenyRustResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyRustResponse>
     for DenyEachBindingOnlyDenyRustResponse
 {
@@ -5261,6 +5397,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenySyzkallerRequest>
     fn from_wire(wire: WireDenyEachBindingOnlyDenySyzkallerRequest) -> Self {
         Self { a: ::fidl_next::FromWire::from_wire(wire.a) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenySyzkallerRequest {
+    type Natural = DenyEachBindingOnlyDenySyzkallerRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenySyzkallerRequest>
@@ -5438,6 +5578,10 @@ impl ::fidl_next::FromWire<WireDenyEachBindingOnlyDenySyzkallerResponse>
     fn from_wire(wire: WireDenyEachBindingOnlyDenySyzkallerResponse) -> Self {
         Self { b: ::fidl_next::FromWire::from_wire(wire.b) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireDenyEachBindingOnlyDenySyzkallerResponse {
+    type Natural = DenyEachBindingOnlyDenySyzkallerResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenySyzkallerResponse>
@@ -6627,6 +6771,10 @@ impl ::fidl_next::FromWire<WireMemberOnlyAppearsInImportingLibrary>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMemberOnlyAppearsInImportingLibrary {
+    type Natural = MemberOnlyAppearsInImportingLibrary;
+}
+
 impl ::fidl_next::FromWireRef<WireMemberOnlyAppearsInImportingLibrary>
     for MemberOnlyAppearsInImportingLibrary
 {
@@ -6818,6 +6966,10 @@ impl ::fidl_next::FromWire<WireOnlyAppearsInImportingLibrary> for OnlyAppearsInI
             ),
         }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireOnlyAppearsInImportingLibrary {
+    type Natural = OnlyAppearsInImportingLibrary;
 }
 
 impl ::fidl_next::FromWireRef<WireOnlyAppearsInImportingLibrary> for OnlyAppearsInImportingLibrary {
@@ -7043,6 +7195,10 @@ impl ::fidl_next::FromWire<WireOnlyDart> for OnlyDart {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireOnlyDart {
+    type Natural = OnlyDart;
+}
+
 impl ::fidl_next::FromWireRef<WireOnlyDart> for OnlyDart {
     #[inline]
     fn from_wire_ref(wire: &WireOnlyDart) -> Self {
@@ -7204,6 +7360,10 @@ impl ::fidl_next::FromWire<WireOnlyGo> for OnlyGo {
     fn from_wire(wire: WireOnlyGo) -> Self {
         Self {}
     }
+}
+
+impl ::fidl_next::IntoNatural for WireOnlyGo {
+    type Natural = OnlyGo;
 }
 
 impl ::fidl_next::FromWireRef<WireOnlyGo> for OnlyGo {
@@ -7398,6 +7558,10 @@ impl ::fidl_next::FromWire<WireOnlyLlcpp> for OnlyLlcpp {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireOnlyLlcpp {
+    type Natural = OnlyLlcpp;
+}
+
 impl ::fidl_next::FromWireRef<WireOnlyLlcpp> for OnlyLlcpp {
     #[inline]
     fn from_wire_ref(wire: &WireOnlyLlcpp) -> Self {
@@ -7411,14 +7575,26 @@ impl ::fidl_next::FromWireRef<WireOnlyLlcpp> for OnlyLlcpp {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalOnlyLlcpp> for Box<OnlyLlcpp> {
+impl ::fidl_next::FromWireOption<WireOptionalOnlyLlcpp> for OnlyLlcpp {
     #[inline]
     fn from_wire_option(wire: WireOptionalOnlyLlcpp) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalOnlyLlcpp {
+    type Natural = ::core::option::Option<OnlyLlcpp>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalOnlyLlcpp> for Box<OnlyLlcpp> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalOnlyLlcpp) -> Option<Self> {
+        <OnlyLlcpp as ::fidl_next::FromWireOption<WireOptionalOnlyLlcpp>>::from_wire_option(wire)
+            .map(Box::new)
     }
 }
 
@@ -7701,6 +7877,10 @@ impl<'de> ::fidl_next::FromWire<WireOnlyPython<'de>> for OnlyPython {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireOnlyPython<'de> {
+    type Natural = OnlyPython;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireOnlyPython<'de>> for OnlyPython {
     #[inline]
     fn from_wire_ref(wire: &WireOnlyPython<'de>) -> Self {
@@ -7848,6 +8028,10 @@ impl<'de> ::fidl_next::FromWire<WireOnlyRust<'de>> for OnlyRust {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireOnlyRust<'de> {
+    type Natural = OnlyRust;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireOnlyRust<'de>> for OnlyRust {
     #[inline]
     fn from_wire_ref(wire: &WireOnlyRust<'de>) -> Self {
@@ -7963,6 +8147,10 @@ impl ::fidl_next::FromWire<WireOnlySyzkaller> for OnlySyzkaller {
     fn from_wire(wire: WireOnlySyzkaller) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireOnlySyzkaller {
+    type Natural = OnlySyzkaller;
 }
 
 impl ::fidl_next::FromWireRef<WireOnlySyzkaller> for OnlySyzkaller {

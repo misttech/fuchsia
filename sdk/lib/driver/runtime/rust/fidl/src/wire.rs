@@ -13,7 +13,7 @@ use fdf_core::handle::{DriverHandle, fdf_handle_t};
 use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
 use fidl_next::{
     Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, Slot, Wire, WireU32, munge,
+    FromWireOption, IntoNatural, Slot, Wire, WireU32, munge,
 };
 
 use crate::DriverChannel;
@@ -215,6 +215,10 @@ impl FromWire<WireDriverChannel> for DriverChannel {
     }
 }
 
+impl IntoNatural for WireDriverChannel {
+    type Natural = DriverChannel;
+}
+
 impl EncodableOption for DriverChannel {
     type EncodedOption = WireOptionalDriverChannel;
 }
@@ -259,6 +263,10 @@ impl FromWireOption<WireOptionalDriverChannel> for DriverChannel {
     }
 }
 
+impl IntoNatural for WireOptionalDriverChannel {
+    type Natural = Option<DriverChannel>;
+}
+
 #[cfg(test)]
 mod tests {
     use fdf_channel::arena::Arena;
@@ -298,7 +306,7 @@ mod tests {
         let decoded = decoder.decode::<WireDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), handle_raw.get());
 
-        let handle: DriverChannel = decoded.take();
+        let handle = decoded.take();
         let roundtripped_raw = unsafe { handle.channel.driver_handle().get_raw() };
         assert_eq!(roundtripped_raw, handle_raw);
     }
@@ -331,7 +339,7 @@ mod tests {
         let decoded = decoder.decode::<WireOptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), Some(handle_raw.get()));
 
-        let handle: Option<DriverChannel> = decoded.take();
+        let handle = decoded.take();
         let roundtripped_raw = unsafe { handle.unwrap().channel.driver_handle().get_raw() };
         assert_eq!(roundtripped_raw, handle_raw);
     }
@@ -353,7 +361,7 @@ mod tests {
         let decoded = decoder.decode::<WireOptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), None);
 
-        let handle: Option<DriverChannel> = decoded.take();
+        let handle = decoded.take();
         assert!(handle.is_none());
     }
 }

@@ -126,6 +126,10 @@ impl<'de> ::fidl_next::FromWire<WireComposedProtocolOneWayAnonComposedRequest<'d
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireComposedProtocolOneWayAnonComposedRequest<'de> {
+    type Natural = ComposedProtocolOneWayAnonComposedRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireComposedProtocolOneWayAnonComposedRequest<'de>>
     for ComposedProtocolOneWayAnonComposedRequest
 {
@@ -329,6 +333,10 @@ impl ::fidl_next::FromWire<WireComposedProtocolTwoWayAnonComposedRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireComposedProtocolTwoWayAnonComposedRequest {
+    type Natural = ComposedProtocolTwoWayAnonComposedRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireComposedProtocolTwoWayAnonComposedRequest>
     for ComposedProtocolTwoWayAnonComposedRequest
 {
@@ -345,17 +353,35 @@ impl ::fidl_next::FromWireRef<WireComposedProtocolTwoWayAnonComposedRequest>
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalComposedProtocolTwoWayAnonComposedRequest>
-    for Box<ComposedProtocolTwoWayAnonComposedRequest>
+    for ComposedProtocolTwoWayAnonComposedRequest
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalComposedProtocolTwoWayAnonComposedRequest,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalComposedProtocolTwoWayAnonComposedRequest {
+    type Natural = ::core::option::Option<ComposedProtocolTwoWayAnonComposedRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalComposedProtocolTwoWayAnonComposedRequest>
+    for Box<ComposedProtocolTwoWayAnonComposedRequest>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalComposedProtocolTwoWayAnonComposedRequest,
+    ) -> Option<Self> {
+        <ComposedProtocolTwoWayAnonComposedRequest as ::fidl_next::FromWireOption<
+            WireOptionalComposedProtocolTwoWayAnonComposedRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -674,6 +700,10 @@ impl<'de> ::fidl_next::FromWire<WireComposedProtocolTwoWayAnonComposedResponse<'
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireComposedProtocolTwoWayAnonComposedResponse<'de> {
+    type Natural = ComposedProtocolTwoWayAnonComposedResponse;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireComposedProtocolTwoWayAnonComposedResponse<'de>>
     for ComposedProtocolTwoWayAnonComposedResponse
 {
@@ -879,6 +909,10 @@ impl<'de> ::fidl_next::FromWire<WireComposedProtocolTwoWayAnonComposedWithErrorR
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireComposedProtocolTwoWayAnonComposedWithErrorRequest<'de> {
+    type Natural = ComposedProtocolTwoWayAnonComposedWithErrorRequest;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>>
@@ -1089,6 +1123,10 @@ impl ::fidl_next::FromWire<WireComposedProtocolTwoWayAnonComposedWithErrorRespon
     }
 }
 
+impl ::fidl_next::IntoNatural for WireComposedProtocolTwoWayAnonComposedWithErrorResponse {
+    type Natural = ComposedProtocolTwoWayAnonComposedWithErrorResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireComposedProtocolTwoWayAnonComposedWithErrorResponse>
     for ComposedProtocolTwoWayAnonComposedWithErrorResponse
 {
@@ -1105,17 +1143,35 @@ impl ::fidl_next::FromWireRef<WireComposedProtocolTwoWayAnonComposedWithErrorRes
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalComposedProtocolTwoWayAnonComposedWithErrorResponse>
-    for Box<ComposedProtocolTwoWayAnonComposedWithErrorResponse>
+    for ComposedProtocolTwoWayAnonComposedWithErrorResponse
 {
     #[inline]
     fn from_wire_option(
         wire: WireOptionalComposedProtocolTwoWayAnonComposedWithErrorResponse,
     ) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalComposedProtocolTwoWayAnonComposedWithErrorResponse {
+    type Natural = ::core::option::Option<ComposedProtocolTwoWayAnonComposedWithErrorResponse>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalComposedProtocolTwoWayAnonComposedWithErrorResponse>
+    for Box<ComposedProtocolTwoWayAnonComposedWithErrorResponse>
+{
+    #[inline]
+    fn from_wire_option(
+        wire: WireOptionalComposedProtocolTwoWayAnonComposedWithErrorResponse,
+    ) -> Option<Self> {
+        <ComposedProtocolTwoWayAnonComposedWithErrorResponse as ::fidl_next::FromWireOption<
+            WireOptionalComposedProtocolTwoWayAnonComposedWithErrorResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -1436,6 +1492,10 @@ impl ::fidl_next::FromWire<WireComposedProtocolOnAnonComposedRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireComposedProtocolOnAnonComposedRequest {
+    type Natural = ComposedProtocolOnAnonComposedRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireComposedProtocolOnAnonComposedRequest>
     for ComposedProtocolOnAnonComposedRequest
 {
@@ -1452,15 +1512,31 @@ impl ::fidl_next::FromWireRef<WireComposedProtocolOnAnonComposedRequest>
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalComposedProtocolOnAnonComposedRequest>
-    for Box<ComposedProtocolOnAnonComposedRequest>
+    for ComposedProtocolOnAnonComposedRequest
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalComposedProtocolOnAnonComposedRequest) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalComposedProtocolOnAnonComposedRequest {
+    type Natural = ::core::option::Option<ComposedProtocolOnAnonComposedRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalComposedProtocolOnAnonComposedRequest>
+    for Box<ComposedProtocolOnAnonComposedRequest>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalComposedProtocolOnAnonComposedRequest) -> Option<Self> {
+        <ComposedProtocolOnAnonComposedRequest as ::fidl_next::FromWireOption<
+            WireOptionalComposedProtocolOnAnonComposedRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -1776,6 +1852,10 @@ impl<'de> ::fidl_next::FromWire<WireTablePayload<'de>> for TablePayload {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireTablePayload<'de> {
+    type Natural = TablePayload;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireTablePayload<'de>> for TablePayload {
     #[inline]
     fn from_wire_ref(wire: &WireTablePayload<'de>) -> Self {
@@ -1974,6 +2054,10 @@ impl ::fidl_next::FromWire<WireUnionPayload> for UnionPayload {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnionPayload {
+    type Natural = UnionPayload;
+}
+
 impl ::fidl_next::FromWireRef<WireUnionPayload> for UnionPayload {
     #[inline]
     fn from_wire_ref(wire: &WireUnionPayload) -> Self {
@@ -1987,14 +2071,28 @@ impl ::fidl_next::FromWireRef<WireUnionPayload> for UnionPayload {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalUnionPayload> for Box<UnionPayload> {
+impl ::fidl_next::FromWireOption<WireOptionalUnionPayload> for UnionPayload {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionPayload) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnionPayload {
+    type Natural = ::core::option::Option<UnionPayload>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnionPayload> for Box<UnionPayload> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionPayload) -> Option<Self> {
+        <UnionPayload as ::fidl_next::FromWireOption<WireOptionalUnionPayload>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -2801,6 +2899,10 @@ impl<'de> ::fidl_next::FromWire<WireMainProtocolOneWayAnonRequest<'de>>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireMainProtocolOneWayAnonRequest<'de> {
+    type Natural = MainProtocolOneWayAnonRequest;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireMainProtocolOneWayAnonRequest<'de>>
     for MainProtocolOneWayAnonRequest
 {
@@ -3011,6 +3113,10 @@ impl ::fidl_next::FromWire<WireMainProtocolTwoWayAnonRequest> for MainProtocolTw
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonRequest {
+    type Natural = MainProtocolTwoWayAnonRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonRequest> for MainProtocolTwoWayAnonRequest {
     #[inline]
     fn from_wire_ref(wire: &WireMainProtocolTwoWayAnonRequest) -> Self {
@@ -3025,15 +3131,31 @@ impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonRequest> for MainProtoco
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalMainProtocolTwoWayAnonRequest>
-    for Box<MainProtocolTwoWayAnonRequest>
+    for MainProtocolTwoWayAnonRequest
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalMainProtocolTwoWayAnonRequest) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalMainProtocolTwoWayAnonRequest {
+    type Natural = ::core::option::Option<MainProtocolTwoWayAnonRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalMainProtocolTwoWayAnonRequest>
+    for Box<MainProtocolTwoWayAnonRequest>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalMainProtocolTwoWayAnonRequest) -> Option<Self> {
+        <MainProtocolTwoWayAnonRequest as ::fidl_next::FromWireOption<
+            WireOptionalMainProtocolTwoWayAnonRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -3357,6 +3479,10 @@ impl<'de> ::fidl_next::FromWire<WireMainProtocolTwoWayAnonResponse<'de>>
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonResponse<'de> {
+    type Natural = MainProtocolTwoWayAnonResponse;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonResponse<'de>>
     for MainProtocolTwoWayAnonResponse
 {
@@ -3560,6 +3686,10 @@ impl<'de> ::fidl_next::FromWire<WireMainProtocolTwoWayAnonWithErrorRequest<'de>>
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonWithErrorRequest<'de> {
+    type Natural = MainProtocolTwoWayAnonWithErrorRequest;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonWithErrorRequest<'de>>
@@ -3774,6 +3904,10 @@ impl ::fidl_next::FromWire<WireMainProtocolTwoWayAnonWithErrorResponse>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMainProtocolTwoWayAnonWithErrorResponse {
+    type Natural = MainProtocolTwoWayAnonWithErrorResponse;
+}
+
 impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonWithErrorResponse>
     for MainProtocolTwoWayAnonWithErrorResponse
 {
@@ -3790,15 +3924,31 @@ impl ::fidl_next::FromWireRef<WireMainProtocolTwoWayAnonWithErrorResponse>
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalMainProtocolTwoWayAnonWithErrorResponse>
-    for Box<MainProtocolTwoWayAnonWithErrorResponse>
+    for MainProtocolTwoWayAnonWithErrorResponse
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalMainProtocolTwoWayAnonWithErrorResponse) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalMainProtocolTwoWayAnonWithErrorResponse {
+    type Natural = ::core::option::Option<MainProtocolTwoWayAnonWithErrorResponse>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalMainProtocolTwoWayAnonWithErrorResponse>
+    for Box<MainProtocolTwoWayAnonWithErrorResponse>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalMainProtocolTwoWayAnonWithErrorResponse) -> Option<Self> {
+        <MainProtocolTwoWayAnonWithErrorResponse as ::fidl_next::FromWireOption<
+            WireOptionalMainProtocolTwoWayAnonWithErrorResponse,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -4131,6 +4281,10 @@ impl ::fidl_next::FromWire<WireMainProtocolOnAnonRequest> for MainProtocolOnAnon
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMainProtocolOnAnonRequest {
+    type Natural = MainProtocolOnAnonRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireMainProtocolOnAnonRequest> for MainProtocolOnAnonRequest {
     #[inline]
     fn from_wire_ref(wire: &WireMainProtocolOnAnonRequest) -> Self {
@@ -4145,15 +4299,31 @@ impl ::fidl_next::FromWireRef<WireMainProtocolOnAnonRequest> for MainProtocolOnA
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalMainProtocolOnAnonRequest>
-    for Box<MainProtocolOnAnonRequest>
+    for MainProtocolOnAnonRequest
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalMainProtocolOnAnonRequest) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalMainProtocolOnAnonRequest {
+    type Natural = ::core::option::Option<MainProtocolOnAnonRequest>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalMainProtocolOnAnonRequest>
+    for Box<MainProtocolOnAnonRequest>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalMainProtocolOnAnonRequest) -> Option<Self> {
+        <MainProtocolOnAnonRequest as ::fidl_next::FromWireOption<
+            WireOptionalMainProtocolOnAnonRequest,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 

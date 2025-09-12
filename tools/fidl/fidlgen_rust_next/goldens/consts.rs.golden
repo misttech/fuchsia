@@ -71,6 +71,10 @@ impl ::fidl_next::FromWire<WireBitsType> for BitsType {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBitsType {
+    type Natural = BitsType;
+}
+
 impl ::fidl_next::FromWireRef<WireBitsType> for BitsType {
     #[inline]
     fn from_wire_ref(wire: &WireBitsType) -> Self {
@@ -201,6 +205,10 @@ impl ::fidl_next::FromWire<WireEnumType> for EnumType {
     fn from_wire(wire: WireEnumType) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEnumType {
+    type Natural = EnumType;
 }
 
 impl ::fidl_next::FromWireRef<WireEnumType> for EnumType {

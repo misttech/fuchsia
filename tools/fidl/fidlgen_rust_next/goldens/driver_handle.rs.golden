@@ -91,6 +91,10 @@ impl ::fidl_next::FromWire<WireClientEndWrapper> for ClientEndWrapper {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireClientEndWrapper {
+    type Natural = ClientEndWrapper;
+}
+
 /// The wire type corresponding to [`ClientEndWrapper`].
 #[derive(Debug)]
 #[repr(C)]
@@ -349,6 +353,10 @@ impl<'de> ::fidl_next::FromWire<WireT<'de>> for T {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireT<'de> {
+    type Natural = T;
+}
+
 /// The wire type corresponding to [`T`].
 #[repr(C)]
 pub struct WireT<'de> {
@@ -509,6 +517,10 @@ impl<'de> ::fidl_next::FromWire<WireHandlesInProtocolSendHandlesRequest<'de>>
     fn from_wire(wire: WireHandlesInProtocolSendHandlesRequest<'de>) -> Self {
         Self { t: ::fidl_next::FromWire::from_wire(wire.t) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireHandlesInProtocolSendHandlesRequest<'de> {
+    type Natural = HandlesInProtocolSendHandlesRequest;
 }
 
 /// The wire type corresponding to [`HandlesInProtocolSendHandlesRequest`].
@@ -841,6 +853,10 @@ impl ::fidl_next::FromWire<WireServerEndWrapper> for ServerEndWrapper {
     fn from_wire(wire: WireServerEndWrapper) -> Self {
         Self { value: ::fidl_next::FromWire::from_wire(wire.value) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireServerEndWrapper {
+    type Natural = ServerEndWrapper;
 }
 
 /// The wire type corresponding to [`ServerEndWrapper`].

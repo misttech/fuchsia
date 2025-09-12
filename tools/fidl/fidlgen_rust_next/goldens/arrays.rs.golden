@@ -130,6 +130,10 @@ impl ::fidl_next::FromWire<WireStructLargeArray> for StructLargeArray {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStructLargeArray {
+    type Natural = StructLargeArray;
+}
+
 impl ::fidl_next::FromWireRef<WireStructLargeArray> for StructLargeArray {
     #[inline]
     fn from_wire_ref(wire: &WireStructLargeArray) -> Self {
@@ -300,6 +304,10 @@ impl ::fidl_next::FromWire<WireStructSmallArray> for StructSmallArray {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStructSmallArray {
+    type Natural = StructSmallArray;
+}
+
 impl ::fidl_next::FromWireRef<WireStructSmallArray> for StructSmallArray {
     #[inline]
     fn from_wire_ref(wire: &WireStructSmallArray) -> Self {
@@ -462,6 +470,10 @@ impl<'de> ::fidl_next::FromWire<WireTableLargeArray<'de>> for TableLargeArray {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTableLargeArray<'de> {
+    type Natural = TableLargeArray;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireTableLargeArray<'de>> for TableLargeArray {
@@ -665,6 +677,10 @@ impl<'de> ::fidl_next::FromWire<WireTableSmallArray<'de>> for TableSmallArray {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireTableSmallArray<'de> {
+    type Natural = TableSmallArray;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireTableSmallArray<'de>> for TableSmallArray {
     #[inline]
     fn from_wire_ref(wire: &WireTableSmallArray<'de>) -> Self {
@@ -865,6 +881,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionLargeArray<'de>> for UnionLargeArray {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionLargeArray<'de> {
+    type Natural = UnionLargeArray;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionLargeArray<'de>> for UnionLargeArray {
     #[inline]
     fn from_wire_ref(wire: &WireUnionLargeArray<'de>) -> Self {
@@ -878,14 +898,27 @@ impl<'de> ::fidl_next::FromWireRef<WireUnionLargeArray<'de>> for UnionLargeArray
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionLargeArray<'de>> for Box<UnionLargeArray> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionLargeArray<'de>> for UnionLargeArray {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionLargeArray<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnionLargeArray<'de> {
+    type Natural = ::core::option::Option<UnionLargeArray>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionLargeArray<'de>> for Box<UnionLargeArray> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionLargeArray<'de>) -> Option<Self> {
+        <
+            UnionLargeArray as ::fidl_next::FromWireOption<WireOptionalUnionLargeArray<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -1168,6 +1201,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionSmallArray<'de>> for UnionSmallArray {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionSmallArray<'de> {
+    type Natural = UnionSmallArray;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionSmallArray<'de>> for UnionSmallArray {
     #[inline]
     fn from_wire_ref(wire: &WireUnionSmallArray<'de>) -> Self {
@@ -1181,14 +1218,27 @@ impl<'de> ::fidl_next::FromWireRef<WireUnionSmallArray<'de>> for UnionSmallArray
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSmallArray<'de>> for Box<UnionSmallArray> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSmallArray<'de>> for UnionSmallArray {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionSmallArray<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnionSmallArray<'de> {
+    type Natural = ::core::option::Option<UnionSmallArray>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionSmallArray<'de>> for Box<UnionSmallArray> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionSmallArray<'de>) -> Option<Self> {
+        <
+            UnionSmallArray as ::fidl_next::FromWireOption<WireOptionalUnionSmallArray<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 

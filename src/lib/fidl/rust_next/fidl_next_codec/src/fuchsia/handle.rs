@@ -11,7 +11,7 @@ use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
 use crate::{
     Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, Slot, Wire, WireU32, munge,
+    FromWireOption, IntoNatural, Slot, Wire, WireU32, munge,
 };
 
 /// A Zircon handle.
@@ -163,6 +163,10 @@ impl FromWire<WireHandle> for Handle {
     }
 }
 
+impl IntoNatural for WireHandle {
+    type Natural = Handle;
+}
+
 impl EncodableOption for Handle {
     type EncodedOption = WireOptionalHandle;
 }
@@ -189,4 +193,8 @@ impl FromWireOption<WireOptionalHandle> for Handle {
         forget(wire);
         raw_handle.map(|raw| unsafe { Handle::from_raw(raw) })
     }
+}
+
+impl IntoNatural for WireOptionalHandle {
+    type Natural = Option<Handle>;
 }

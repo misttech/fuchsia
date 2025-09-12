@@ -141,6 +141,10 @@ impl ::fidl_next::FromWire<WireTwoWayAddRequest> for TwoWayAddRequest {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireTwoWayAddRequest {
+    type Natural = TwoWayAddRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireTwoWayAddRequest> for TwoWayAddRequest {
     #[inline]
     fn from_wire_ref(wire: &WireTwoWayAddRequest) -> Self {
@@ -314,6 +318,10 @@ impl ::fidl_next::FromWire<WireTwoWayAddResponse> for TwoWayAddResponse {
     fn from_wire(wire: WireTwoWayAddResponse) -> Self {
         Self { sum: ::fidl_next::FromWire::from_wire(wire.sum) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireTwoWayAddResponse {
+    type Natural = TwoWayAddResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireTwoWayAddResponse> for TwoWayAddResponse {

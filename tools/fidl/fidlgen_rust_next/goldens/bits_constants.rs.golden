@@ -66,6 +66,10 @@ impl ::fidl_next::FromWire<WireBitsType> for BitsType {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBitsType {
+    type Natural = BitsType;
+}
+
 impl ::fidl_next::FromWireRef<WireBitsType> for BitsType {
     #[inline]
     fn from_wire_ref(wire: &WireBitsType) -> Self {

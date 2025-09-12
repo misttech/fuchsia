@@ -73,6 +73,10 @@ impl ::fidl_next::FromWire<WireBits> for Bits {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireBits {
+    type Natural = Bits;
+}
+
 impl ::fidl_next::FromWireRef<WireBits> for Bits {
     #[inline]
     fn from_wire_ref(wire: &WireBits) -> Self {
@@ -186,6 +190,10 @@ impl ::fidl_next::FromWire<WireEnum> for Enum {
     fn from_wire(wire: WireEnum) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEnum {
+    type Natural = Enum;
 }
 
 impl ::fidl_next::FromWireRef<WireEnum> for Enum {
@@ -637,6 +645,10 @@ impl ::fidl_next::FromWire<WireStruct> for Struct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireStruct {
+    type Natural = Struct;
+}
+
 /// The wire type corresponding to [`Struct`].
 #[derive(Debug)]
 #[repr(C)]
@@ -751,6 +763,10 @@ impl<'de> ::fidl_next::FromWire<WireTable<'de>> for Table {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTable<'de> {
+    type Natural = Table;
 }
 
 /// The wire type corresponding to [`Table`].
@@ -900,14 +916,30 @@ impl ::fidl_next::FromWire<WireUnion> for Union {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalUnion> for Box<Union> {
+impl ::fidl_next::IntoNatural for WireUnion {
+    type Natural = Union;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnion> for Union {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnion {
+    type Natural = ::core::option::Option<Union>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnion> for Box<Union> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnion) -> Option<Self> {
+        <Union as ::fidl_next::FromWireOption<WireOptionalUnion>>::from_wire_option(wire)
+            .map(Box::new)
     }
 }
 

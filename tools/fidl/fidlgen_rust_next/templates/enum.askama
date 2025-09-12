@@ -108,6 +108,10 @@ impl ::fidl_next::FromWire<{{ wire_name }}> for {{ name }} {
     }
 }
 
+impl ::fidl_next::IntoNatural for {{ wire_name }} {
+    type Natural = {{ name }};
+}
+
 impl ::fidl_next::FromWireRef<{{ wire_name }}> for {{ name }} {
     #[inline]
     fn from_wire_ref(wire: &{{ wire_name }}) -> Self {

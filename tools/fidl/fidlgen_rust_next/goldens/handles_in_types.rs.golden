@@ -70,6 +70,10 @@ impl ::fidl_next::FromWire<WireEmptyResourceStruct> for EmptyResourceStruct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireEmptyResourceStruct {
+    type Natural = EmptyResourceStruct;
+}
+
 /// The wire type corresponding to [`EmptyResourceStruct`].
 #[derive(Debug)]
 #[repr(C)]
@@ -157,6 +161,10 @@ impl<'de> ::fidl_next::FromWire<WireEmptyResourceTable<'de>> for EmptyResourceTa
 
         Self {}
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireEmptyResourceTable<'de> {
+    type Natural = EmptyResourceTable;
 }
 
 /// The wire type corresponding to [`EmptyResourceTable`].
@@ -278,14 +286,31 @@ impl ::fidl_next::FromWire<WireEmptyResourceUnion> for EmptyResourceUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalEmptyResourceUnion> for Box<EmptyResourceUnion> {
+impl ::fidl_next::IntoNatural for WireEmptyResourceUnion {
+    type Natural = EmptyResourceUnion;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalEmptyResourceUnion> for EmptyResourceUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalEmptyResourceUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalEmptyResourceUnion {
+    type Natural = ::core::option::Option<EmptyResourceUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalEmptyResourceUnion> for Box<EmptyResourceUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalEmptyResourceUnion) -> Option<Self> {
+        <
+            EmptyResourceUnion as ::fidl_next::FromWireOption<WireOptionalEmptyResourceUnion>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -493,6 +518,10 @@ impl ::fidl_next::FromWire<WireObjType> for ObjType {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireObjType {
+    type Natural = ObjType;
+}
+
 impl ::fidl_next::FromWireRef<WireObjType> for ObjType {
     #[inline]
     fn from_wire_ref(wire: &WireObjType) -> Self {
@@ -629,6 +658,10 @@ impl<'de> ::fidl_next::FromWire<WireTableWithHandle<'de>> for TableWithHandle {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireTableWithHandle<'de> {
+    type Natural = TableWithHandle;
 }
 
 /// The wire type corresponding to [`TableWithHandle`].
@@ -779,14 +812,31 @@ impl ::fidl_next::FromWire<WireUnionWithHandle> for UnionWithHandle {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalUnionWithHandle> for Box<UnionWithHandle> {
+impl ::fidl_next::IntoNatural for WireUnionWithHandle {
+    type Natural = UnionWithHandle;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnionWithHandle> for UnionWithHandle {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionWithHandle) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnionWithHandle {
+    type Natural = ::core::option::Option<UnionWithHandle>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnionWithHandle> for Box<UnionWithHandle> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionWithHandle) -> Option<Self> {
+        <
+            UnionWithHandle as ::fidl_next::FromWireOption<WireOptionalUnionWithHandle>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -1051,6 +1101,10 @@ impl<'de> ::fidl_next::FromWire<WireHandlesInTypes<'de>> for HandlesInTypes {
             union_with_handle: ::fidl_next::FromWire::from_wire(wire.union_with_handle),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireHandlesInTypes<'de> {
+    type Natural = HandlesInTypes;
 }
 
 /// The wire type corresponding to [`HandlesInTypes`].

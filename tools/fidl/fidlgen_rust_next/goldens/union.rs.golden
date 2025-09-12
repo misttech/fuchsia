@@ -111,6 +111,10 @@ impl ::fidl_next::FromWire<WireEmpty> for Empty {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireEmpty {
+    type Natural = Empty;
+}
+
 impl ::fidl_next::FromWireRef<WireEmpty> for Empty {
     #[inline]
     fn from_wire_ref(wire: &WireEmpty) -> Self {
@@ -263,6 +267,10 @@ impl ::fidl_next::FromWire<WireEmptyFlexibleUnion> for EmptyFlexibleUnion {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireEmptyFlexibleUnion {
+    type Natural = EmptyFlexibleUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireEmptyFlexibleUnion> for EmptyFlexibleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireEmptyFlexibleUnion) -> Self {
@@ -272,14 +280,27 @@ impl ::fidl_next::FromWireRef<WireEmptyFlexibleUnion> for EmptyFlexibleUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalEmptyFlexibleUnion> for Box<EmptyFlexibleUnion> {
+impl ::fidl_next::FromWireOption<WireOptionalEmptyFlexibleUnion> for EmptyFlexibleUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalEmptyFlexibleUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalEmptyFlexibleUnion {
+    type Natural = ::core::option::Option<EmptyFlexibleUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalEmptyFlexibleUnion> for Box<EmptyFlexibleUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalEmptyFlexibleUnion) -> Option<Self> {
+        <
+            EmptyFlexibleUnion as ::fidl_next::FromWireOption<WireOptionalEmptyFlexibleUnion>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -594,6 +615,10 @@ impl<'de> ::fidl_next::FromWire<WireExplicitFlexibleUnion<'de>> for ExplicitFlex
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExplicitFlexibleUnion<'de> {
+    type Natural = ExplicitFlexibleUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExplicitFlexibleUnion<'de>> for ExplicitFlexibleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireExplicitFlexibleUnion<'de>) -> Self {
@@ -612,15 +637,31 @@ impl<'de> ::fidl_next::FromWireRef<WireExplicitFlexibleUnion<'de>> for ExplicitF
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitFlexibleUnion<'de>>
-    for Box<ExplicitFlexibleUnion>
+    for ExplicitFlexibleUnion
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalExplicitFlexibleUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalExplicitFlexibleUnion<'de> {
+    type Natural = ::core::option::Option<ExplicitFlexibleUnion>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitFlexibleUnion<'de>>
+    for Box<ExplicitFlexibleUnion>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExplicitFlexibleUnion<'de>) -> Option<Self> {
+        <ExplicitFlexibleUnion as ::fidl_next::FromWireOption<
+            WireOptionalExplicitFlexibleUnion<'de>,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -940,6 +981,10 @@ impl<'de> ::fidl_next::FromWire<WireExplicitFoo<'de>> for ExplicitFoo {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExplicitFoo<'de> {
+    type Natural = ExplicitFoo;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExplicitFoo<'de>> for ExplicitFoo {
     #[inline]
     fn from_wire_ref(wire: &WireExplicitFoo<'de>) -> Self {
@@ -957,14 +1002,27 @@ impl<'de> ::fidl_next::FromWireRef<WireExplicitFoo<'de>> for ExplicitFoo {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitFoo<'de>> for Box<ExplicitFoo> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitFoo<'de>> for ExplicitFoo {
     #[inline]
     fn from_wire_option(wire: WireOptionalExplicitFoo<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalExplicitFoo<'de> {
+    type Natural = ::core::option::Option<ExplicitFoo>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitFoo<'de>> for Box<ExplicitFoo> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExplicitFoo<'de>) -> Option<Self> {
+        <
+            ExplicitFoo as ::fidl_next::FromWireOption<WireOptionalExplicitFoo<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -1253,6 +1311,10 @@ impl<'de> ::fidl_next::FromWire<WirePizza<'de>> for Pizza {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WirePizza<'de> {
+    type Natural = Pizza;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WirePizza<'de>> for Pizza {
     #[inline]
     fn from_wire_ref(wire: &WirePizza<'de>) -> Self {
@@ -1406,6 +1468,10 @@ impl<'de> ::fidl_next::FromWire<WirePasta<'de>> for Pasta {
     fn from_wire(wire: WirePasta<'de>) -> Self {
         Self { sauce: ::fidl_next::FromWire::from_wire(wire.sauce) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WirePasta<'de> {
+    type Natural = Pasta;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WirePasta<'de>> for Pasta {
@@ -1595,6 +1661,10 @@ impl<'de> ::fidl_next::FromWire<WireExplicitPizzaOrPasta<'de>> for ExplicitPizza
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExplicitPizzaOrPasta<'de> {
+    type Natural = ExplicitPizzaOrPasta;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExplicitPizzaOrPasta<'de>> for ExplicitPizzaOrPasta {
     #[inline]
     fn from_wire_ref(wire: &WireExplicitPizzaOrPasta<'de>) -> Self {
@@ -1613,15 +1683,31 @@ impl<'de> ::fidl_next::FromWireRef<WireExplicitPizzaOrPasta<'de>> for ExplicitPi
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitPizzaOrPasta<'de>>
-    for Box<ExplicitPizzaOrPasta>
+    for ExplicitPizzaOrPasta
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalExplicitPizzaOrPasta<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalExplicitPizzaOrPasta<'de> {
+    type Natural = ::core::option::Option<ExplicitPizzaOrPasta>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitPizzaOrPasta<'de>>
+    for Box<ExplicitPizzaOrPasta>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExplicitPizzaOrPasta<'de>) -> Option<Self> {
+        <ExplicitPizzaOrPasta as ::fidl_next::FromWireOption<
+            WireOptionalExplicitPizzaOrPasta<'de>,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -1937,6 +2023,10 @@ impl<'de> ::fidl_next::FromWire<WireExplicitStrictFoo<'de>> for ExplicitStrictFo
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExplicitStrictFoo<'de> {
+    type Natural = ExplicitStrictFoo;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExplicitStrictFoo<'de>> for ExplicitStrictFoo {
     #[inline]
     fn from_wire_ref(wire: &WireExplicitStrictFoo<'de>) -> Self {
@@ -1954,16 +2044,29 @@ impl<'de> ::fidl_next::FromWireRef<WireExplicitStrictFoo<'de>> for ExplicitStric
     }
 }
 
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitStrictFoo<'de>> for ExplicitStrictFoo {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExplicitStrictFoo<'de>) -> Option<Self> {
+        if let Some(inner) = wire.into_option() {
+            Some(::fidl_next::FromWire::from_wire(inner))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalExplicitStrictFoo<'de> {
+    type Natural = ::core::option::Option<ExplicitStrictFoo>;
+}
+
 impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitStrictFoo<'de>>
     for Box<ExplicitStrictFoo>
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalExplicitStrictFoo<'de>) -> Option<Self> {
-        if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
-        } else {
-            None
-        }
+        <
+            ExplicitStrictFoo as ::fidl_next::FromWireOption<WireOptionalExplicitStrictFoo<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -2275,6 +2378,10 @@ impl<'de> ::fidl_next::FromWire<WireExplicitUnion<'de>> for ExplicitUnion {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireExplicitUnion<'de> {
+    type Natural = ExplicitUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireExplicitUnion<'de>> for ExplicitUnion {
     #[inline]
     fn from_wire_ref(wire: &WireExplicitUnion<'de>) -> Self {
@@ -2292,14 +2399,27 @@ impl<'de> ::fidl_next::FromWireRef<WireExplicitUnion<'de>> for ExplicitUnion {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitUnion<'de>> for Box<ExplicitUnion> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitUnion<'de>> for ExplicitUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalExplicitUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalExplicitUnion<'de> {
+    type Natural = ::core::option::Option<ExplicitUnion>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalExplicitUnion<'de>> for Box<ExplicitUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExplicitUnion<'de>) -> Option<Self> {
+        <
+            ExplicitUnion as ::fidl_next::FromWireOption<WireOptionalExplicitUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -2593,6 +2713,10 @@ impl ::fidl_next::FromWire<WireFieldCollision> for FieldCollision {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireFieldCollision {
+    type Natural = FieldCollision;
+}
+
 impl ::fidl_next::FromWireRef<WireFieldCollision> for FieldCollision {
     #[inline]
     fn from_wire_ref(wire: &WireFieldCollision) -> Self {
@@ -2606,14 +2730,27 @@ impl ::fidl_next::FromWireRef<WireFieldCollision> for FieldCollision {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalFieldCollision> for Box<FieldCollision> {
+impl ::fidl_next::FromWireOption<WireOptionalFieldCollision> for FieldCollision {
     #[inline]
     fn from_wire_option(wire: WireOptionalFieldCollision) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalFieldCollision {
+    type Natural = ::core::option::Option<FieldCollision>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalFieldCollision> for Box<FieldCollision> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalFieldCollision) -> Option<Self> {
+        <
+            FieldCollision as ::fidl_next::FromWireOption<WireOptionalFieldCollision>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -2949,6 +3086,10 @@ impl<'de> ::fidl_next::FromWire<WireFlexibleFoo<'de>> for FlexibleFoo {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireFlexibleFoo<'de> {
+    type Natural = FlexibleFoo;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireFlexibleFoo<'de>> for FlexibleFoo {
     #[inline]
     fn from_wire_ref(wire: &WireFlexibleFoo<'de>) -> Self {
@@ -2966,14 +3107,27 @@ impl<'de> ::fidl_next::FromWireRef<WireFlexibleFoo<'de>> for FlexibleFoo {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>> for Box<FlexibleFoo> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>> for FlexibleFoo {
     #[inline]
     fn from_wire_option(wire: WireOptionalFlexibleFoo<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalFlexibleFoo<'de> {
+    type Natural = ::core::option::Option<FlexibleFoo>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>> for Box<FlexibleFoo> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalFlexibleFoo<'de>) -> Option<Self> {
+        <
+            FlexibleFoo as ::fidl_next::FromWireOption<WireOptionalFlexibleFoo<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -3295,6 +3449,10 @@ impl<'de> ::fidl_next::FromWire<WireFlexiblePizzaOrPasta<'de>> for FlexiblePizza
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireFlexiblePizzaOrPasta<'de> {
+    type Natural = FlexiblePizzaOrPasta;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireFlexiblePizzaOrPasta<'de>> for FlexiblePizzaOrPasta {
     #[inline]
     fn from_wire_ref(wire: &WireFlexiblePizzaOrPasta<'de>) -> Self {
@@ -3313,15 +3471,31 @@ impl<'de> ::fidl_next::FromWireRef<WireFlexiblePizzaOrPasta<'de>> for FlexiblePi
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexiblePizzaOrPasta<'de>>
-    for Box<FlexiblePizzaOrPasta>
+    for FlexiblePizzaOrPasta
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalFlexiblePizzaOrPasta<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalFlexiblePizzaOrPasta<'de> {
+    type Natural = ::core::option::Option<FlexiblePizzaOrPasta>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexiblePizzaOrPasta<'de>>
+    for Box<FlexiblePizzaOrPasta>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalFlexiblePizzaOrPasta<'de>) -> Option<Self> {
+        <FlexiblePizzaOrPasta as ::fidl_next::FromWireOption<
+            WireOptionalFlexiblePizzaOrPasta<'de>,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -3665,6 +3839,10 @@ impl<'de> ::fidl_next::FromWire<WireFlexibleUnion<'de>> for FlexibleUnion {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireFlexibleUnion<'de> {
+    type Natural = FlexibleUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireFlexibleUnion<'de>> for FlexibleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireFlexibleUnion<'de>) -> Self {
@@ -3688,14 +3866,27 @@ impl<'de> ::fidl_next::FromWireRef<WireFlexibleUnion<'de>> for FlexibleUnion {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>> for Box<FlexibleUnion> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>> for FlexibleUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalFlexibleUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalFlexibleUnion<'de> {
+    type Natural = ::core::option::Option<FlexibleUnion>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>> for Box<FlexibleUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalFlexibleUnion<'de>) -> Option<Self> {
+        <
+            FlexibleUnion as ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -4065,6 +4256,10 @@ impl<'de> ::fidl_next::FromWire<WireNewerSimpleUnion<'de>> for NewerSimpleUnion 
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireNewerSimpleUnion<'de> {
+    type Natural = NewerSimpleUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireNewerSimpleUnion<'de>> for NewerSimpleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireNewerSimpleUnion<'de>) -> Self {
@@ -4088,14 +4283,27 @@ impl<'de> ::fidl_next::FromWireRef<WireNewerSimpleUnion<'de>> for NewerSimpleUni
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalNewerSimpleUnion<'de>> for Box<NewerSimpleUnion> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalNewerSimpleUnion<'de>> for NewerSimpleUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalNewerSimpleUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalNewerSimpleUnion<'de> {
+    type Natural = ::core::option::Option<NewerSimpleUnion>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalNewerSimpleUnion<'de>> for Box<NewerSimpleUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalNewerSimpleUnion<'de>) -> Option<Self> {
+        <
+            NewerSimpleUnion as ::fidl_next::FromWireOption<WireOptionalNewerSimpleUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -4416,6 +4624,10 @@ impl<'de> ::fidl_next::FromWire<WireNullableUnionStruct<'de>> for NullableUnionS
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireNullableUnionStruct<'de> {
+    type Natural = NullableUnionStruct;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireNullableUnionStruct<'de>> for NullableUnionStruct {
     #[inline]
     fn from_wire_ref(wire: &WireNullableUnionStruct<'de>) -> Self {
@@ -4604,6 +4816,10 @@ impl<'de> ::fidl_next::FromWire<WireOlderSimpleUnion<'de>> for OlderSimpleUnion 
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireOlderSimpleUnion<'de> {
+    type Natural = OlderSimpleUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireOlderSimpleUnion<'de>> for OlderSimpleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireOlderSimpleUnion<'de>) -> Self {
@@ -4621,14 +4837,27 @@ impl<'de> ::fidl_next::FromWireRef<WireOlderSimpleUnion<'de>> for OlderSimpleUni
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalOlderSimpleUnion<'de>> for Box<OlderSimpleUnion> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalOlderSimpleUnion<'de>> for OlderSimpleUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalOlderSimpleUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalOlderSimpleUnion<'de> {
+    type Natural = ::core::option::Option<OlderSimpleUnion>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalOlderSimpleUnion<'de>> for Box<OlderSimpleUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalOlderSimpleUnion<'de>) -> Option<Self> {
+        <
+            OlderSimpleUnion as ::fidl_next::FromWireOption<WireOptionalOlderSimpleUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -4938,6 +5167,10 @@ impl<'de> ::fidl_next::FromWire<WirePizzaOrPasta<'de>> for PizzaOrPasta {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WirePizzaOrPasta<'de> {
+    type Natural = PizzaOrPasta;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WirePizzaOrPasta<'de>> for PizzaOrPasta {
     #[inline]
     fn from_wire_ref(wire: &WirePizzaOrPasta<'de>) -> Self {
@@ -4955,14 +5188,27 @@ impl<'de> ::fidl_next::FromWireRef<WirePizzaOrPasta<'de>> for PizzaOrPasta {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalPizzaOrPasta<'de>> for Box<PizzaOrPasta> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalPizzaOrPasta<'de>> for PizzaOrPasta {
     #[inline]
     fn from_wire_option(wire: WireOptionalPizzaOrPasta<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalPizzaOrPasta<'de> {
+    type Natural = ::core::option::Option<PizzaOrPasta>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalPizzaOrPasta<'de>> for Box<PizzaOrPasta> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalPizzaOrPasta<'de>) -> Option<Self> {
+        <
+            PizzaOrPasta as ::fidl_next::FromWireOption<WireOptionalPizzaOrPasta<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -5274,6 +5520,10 @@ impl ::fidl_next::FromWire<WireReverseOrdinalUnion> for ReverseOrdinalUnion {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireReverseOrdinalUnion {
+    type Natural = ReverseOrdinalUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireReverseOrdinalUnion> for ReverseOrdinalUnion {
     #[inline]
     fn from_wire_ref(wire: &WireReverseOrdinalUnion) -> Self {
@@ -5291,14 +5541,27 @@ impl ::fidl_next::FromWireRef<WireReverseOrdinalUnion> for ReverseOrdinalUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalReverseOrdinalUnion> for Box<ReverseOrdinalUnion> {
+impl ::fidl_next::FromWireOption<WireOptionalReverseOrdinalUnion> for ReverseOrdinalUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalReverseOrdinalUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalReverseOrdinalUnion {
+    type Natural = ::core::option::Option<ReverseOrdinalUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalReverseOrdinalUnion> for Box<ReverseOrdinalUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalReverseOrdinalUnion) -> Option<Self> {
+        <
+            ReverseOrdinalUnion as ::fidl_next::FromWireOption<WireOptionalReverseOrdinalUnion>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -5639,6 +5902,10 @@ impl<'de> ::fidl_next::FromWire<WireStrictBoundedUnion<'de>> for StrictBoundedUn
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStrictBoundedUnion<'de> {
+    type Natural = StrictBoundedUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStrictBoundedUnion<'de>> for StrictBoundedUnion {
     #[inline]
     fn from_wire_ref(wire: &WireStrictBoundedUnion<'de>) -> Self {
@@ -5652,16 +5919,29 @@ impl<'de> ::fidl_next::FromWireRef<WireStrictBoundedUnion<'de>> for StrictBounde
     }
 }
 
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictBoundedUnion<'de>> for StrictBoundedUnion {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalStrictBoundedUnion<'de>) -> Option<Self> {
+        if let Some(inner) = wire.into_option() {
+            Some(::fidl_next::FromWire::from_wire(inner))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalStrictBoundedUnion<'de> {
+    type Natural = ::core::option::Option<StrictBoundedUnion>;
+}
+
 impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictBoundedUnion<'de>>
     for Box<StrictBoundedUnion>
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalStrictBoundedUnion<'de>) -> Option<Self> {
-        if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
-        } else {
-            None
-        }
+        <
+            StrictBoundedUnion as ::fidl_next::FromWireOption<WireOptionalStrictBoundedUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -5965,6 +6245,10 @@ impl<'de> ::fidl_next::FromWire<WireStrictFoo<'de>> for StrictFoo {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStrictFoo<'de> {
+    type Natural = StrictFoo;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStrictFoo<'de>> for StrictFoo {
     #[inline]
     fn from_wire_ref(wire: &WireStrictFoo<'de>) -> Self {
@@ -5982,14 +6266,28 @@ impl<'de> ::fidl_next::FromWireRef<WireStrictFoo<'de>> for StrictFoo {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>> for Box<StrictFoo> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>> for StrictFoo {
     #[inline]
     fn from_wire_option(wire: WireOptionalStrictFoo<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalStrictFoo<'de> {
+    type Natural = ::core::option::Option<StrictFoo>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>> for Box<StrictFoo> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalStrictFoo<'de>) -> Option<Self> {
+        <StrictFoo as ::fidl_next::FromWireOption<WireOptionalStrictFoo<'de>>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 
@@ -6299,6 +6597,10 @@ impl<'de> ::fidl_next::FromWire<WireStrictPizzaOrPasta<'de>> for StrictPizzaOrPa
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStrictPizzaOrPasta<'de> {
+    type Natural = StrictPizzaOrPasta;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStrictPizzaOrPasta<'de>> for StrictPizzaOrPasta {
     #[inline]
     fn from_wire_ref(wire: &WireStrictPizzaOrPasta<'de>) -> Self {
@@ -6316,16 +6618,29 @@ impl<'de> ::fidl_next::FromWireRef<WireStrictPizzaOrPasta<'de>> for StrictPizzaO
     }
 }
 
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictPizzaOrPasta<'de>> for StrictPizzaOrPasta {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalStrictPizzaOrPasta<'de>) -> Option<Self> {
+        if let Some(inner) = wire.into_option() {
+            Some(::fidl_next::FromWire::from_wire(inner))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalStrictPizzaOrPasta<'de> {
+    type Natural = ::core::option::Option<StrictPizzaOrPasta>;
+}
+
 impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictPizzaOrPasta<'de>>
     for Box<StrictPizzaOrPasta>
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalStrictPizzaOrPasta<'de>) -> Option<Self> {
-        if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
-        } else {
-            None
-        }
+        <
+            StrictPizzaOrPasta as ::fidl_next::FromWireOption<WireOptionalStrictPizzaOrPasta<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -6655,6 +6970,10 @@ impl<'de> ::fidl_next::FromWire<WireStrictSimpleUnion<'de>> for StrictSimpleUnio
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStrictSimpleUnion<'de> {
+    type Natural = StrictSimpleUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStrictSimpleUnion<'de>> for StrictSimpleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireStrictSimpleUnion<'de>) -> Self {
@@ -6676,16 +6995,29 @@ impl<'de> ::fidl_next::FromWireRef<WireStrictSimpleUnion<'de>> for StrictSimpleU
     }
 }
 
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictSimpleUnion<'de>> for StrictSimpleUnion {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalStrictSimpleUnion<'de>) -> Option<Self> {
+        if let Some(inner) = wire.into_option() {
+            Some(::fidl_next::FromWire::from_wire(inner))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalStrictSimpleUnion<'de> {
+    type Natural = ::core::option::Option<StrictSimpleUnion>;
+}
+
 impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictSimpleUnion<'de>>
     for Box<StrictSimpleUnion>
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalStrictSimpleUnion<'de>) -> Option<Self> {
-        if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
-        } else {
-            None
-        }
+        <
+            StrictSimpleUnion as ::fidl_next::FromWireOption<WireOptionalStrictSimpleUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -7028,6 +7360,10 @@ impl<'de> ::fidl_next::FromWire<WireStrictUnion<'de>> for StrictUnion {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStrictUnion<'de> {
+    type Natural = StrictUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStrictUnion<'de>> for StrictUnion {
     #[inline]
     fn from_wire_ref(wire: &WireStrictUnion<'de>) -> Self {
@@ -7051,14 +7387,27 @@ impl<'de> ::fidl_next::FromWireRef<WireStrictUnion<'de>> for StrictUnion {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictUnion<'de>> for Box<StrictUnion> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictUnion<'de>> for StrictUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalStrictUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalStrictUnion<'de> {
+    type Natural = ::core::option::Option<StrictUnion>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalStrictUnion<'de>> for Box<StrictUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalStrictUnion<'de>) -> Option<Self> {
+        <
+            StrictUnion as ::fidl_next::FromWireOption<WireOptionalStrictUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
@@ -7377,6 +7726,10 @@ impl<'de> ::fidl_next::FromWire<WireStructWithNullableUnion<'de>> for StructWith
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireStructWithNullableUnion<'de> {
+    type Natural = StructWithNullableUnion;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableUnion<'de>> for StructWithNullableUnion {
     #[inline]
     fn from_wire_ref(wire: &WireStructWithNullableUnion<'de>) -> Self {
@@ -7544,6 +7897,12 @@ impl<'de>
     ) -> Self {
         Self { xu: ::fidl_next::FromWire::from_wire(wire.xu) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'de>
+{
+    type Natural = TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse;
 }
 
 impl<'de>
@@ -7723,6 +8082,12 @@ impl<'de>
     ) -> Self {
         Self { xu: ::fidl_next::FromWire::from_wire(wire.xu) }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural
+    for WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'de>
+{
+    type Natural = TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse;
 }
 
 impl<'de>
@@ -8126,6 +8491,10 @@ impl<'de> ::fidl_next::FromWire<WireUnion<'de>> for Union {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnion<'de> {
+    type Natural = Union;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnion<'de>> for Union {
     #[inline]
     fn from_wire_ref(wire: &WireUnion<'de>) -> Self {
@@ -8149,14 +8518,26 @@ impl<'de> ::fidl_next::FromWireRef<WireUnion<'de>> for Union {
     }
 }
 
-impl<'de> ::fidl_next::FromWireOption<WireOptionalUnion<'de>> for Box<Union> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnion<'de>> for Union {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnion<'de> {
+    type Natural = ::core::option::Option<Union>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnion<'de>> for Box<Union> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnion<'de>) -> Option<Self> {
+        <Union as ::fidl_next::FromWireOption<WireOptionalUnion<'de>>>::from_wire_option(wire)
+            .map(Box::new)
     }
 }
 
@@ -8496,6 +8877,10 @@ impl ::fidl_next::FromWire<WireUnionContainingEmptyStruct> for UnionContainingEm
     }
 }
 
+impl ::fidl_next::IntoNatural for WireUnionContainingEmptyStruct {
+    type Natural = UnionContainingEmptyStruct;
+}
+
 impl ::fidl_next::FromWireRef<WireUnionContainingEmptyStruct> for UnionContainingEmptyStruct {
     #[inline]
     fn from_wire_ref(wire: &WireUnionContainingEmptyStruct) -> Self {
@@ -8510,15 +8895,31 @@ impl ::fidl_next::FromWireRef<WireUnionContainingEmptyStruct> for UnionContainin
 }
 
 impl ::fidl_next::FromWireOption<WireOptionalUnionContainingEmptyStruct>
-    for Box<UnionContainingEmptyStruct>
+    for UnionContainingEmptyStruct
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionContainingEmptyStruct) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalUnionContainingEmptyStruct {
+    type Natural = ::core::option::Option<UnionContainingEmptyStruct>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalUnionContainingEmptyStruct>
+    for Box<UnionContainingEmptyStruct>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionContainingEmptyStruct) -> Option<Self> {
+        <UnionContainingEmptyStruct as ::fidl_next::FromWireOption<
+            WireOptionalUnionContainingEmptyStruct,
+        >>::from_wire_option(wire)
+        .map(Box::new)
     }
 }
 
@@ -8856,6 +9257,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionSandwich<'de>> for UnionSandwich {
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionSandwich<'de> {
+    type Natural = UnionSandwich;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionSandwich<'de>> for UnionSandwich {
     #[inline]
     fn from_wire_ref(wire: &WireUnionSandwich<'de>) -> Self {
@@ -9054,6 +9459,10 @@ impl<'de> ::fidl_next::FromWire<WireUnionWithAttributes<'de>> for UnionWithAttri
     }
 }
 
+impl<'de> ::fidl_next::IntoNatural for WireUnionWithAttributes<'de> {
+    type Natural = UnionWithAttributes;
+}
+
 impl<'de> ::fidl_next::FromWireRef<WireUnionWithAttributes<'de>> for UnionWithAttributes {
     #[inline]
     fn from_wire_ref(wire: &WireUnionWithAttributes<'de>) -> Self {
@@ -9068,15 +9477,30 @@ impl<'de> ::fidl_next::FromWireRef<WireUnionWithAttributes<'de>> for UnionWithAt
 }
 
 impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionWithAttributes<'de>>
-    for Box<UnionWithAttributes>
+    for UnionWithAttributes
 {
     #[inline]
     fn from_wire_option(wire: WireOptionalUnionWithAttributes<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireOptionalUnionWithAttributes<'de> {
+    type Natural = ::core::option::Option<UnionWithAttributes>;
+}
+
+impl<'de> ::fidl_next::FromWireOption<WireOptionalUnionWithAttributes<'de>>
+    for Box<UnionWithAttributes>
+{
+    #[inline]
+    fn from_wire_option(wire: WireOptionalUnionWithAttributes<'de>) -> Option<Self> {
+        <
+            UnionWithAttributes as ::fidl_next::FromWireOption<WireOptionalUnionWithAttributes<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 

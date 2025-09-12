@@ -121,6 +121,10 @@ impl ::fidl_next::FromWire<WireMyStruct> for MyStruct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireMyStruct {
+    type Natural = MyStruct;
+}
+
 impl ::fidl_next::FromWireRef<WireMyStruct> for MyStruct {
     #[inline]
     fn from_wire_ref(wire: &WireMyStruct) -> Self {

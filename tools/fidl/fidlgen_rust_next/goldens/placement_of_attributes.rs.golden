@@ -71,6 +71,10 @@ impl ::fidl_next::FromWire<WireExampleBits> for ExampleBits {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireExampleBits {
+    type Natural = ExampleBits;
+}
+
 impl ::fidl_next::FromWireRef<WireExampleBits> for ExampleBits {
     #[inline]
     fn from_wire_ref(wire: &WireExampleBits) -> Self {
@@ -189,6 +193,10 @@ impl ::fidl_next::FromWire<WireExampleEnum> for ExampleEnum {
     fn from_wire(wire: WireExampleEnum) -> Self {
         Self::from(wire)
     }
+}
+
+impl ::fidl_next::IntoNatural for WireExampleEnum {
+    type Natural = ExampleEnum;
 }
 
 impl ::fidl_next::FromWireRef<WireExampleEnum> for ExampleEnum {
@@ -374,6 +382,10 @@ impl ::fidl_next::FromWire<WireExampleProtocolMethodRequest> for ExampleProtocol
     fn from_wire(wire: WireExampleProtocolMethodRequest) -> Self {
         Self { arg: ::fidl_next::FromWire::from_wire(wire.arg) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireExampleProtocolMethodRequest {
+    type Natural = ExampleProtocolMethodRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireExampleProtocolMethodRequest> for ExampleProtocolMethodRequest {
@@ -741,6 +753,10 @@ impl ::fidl_next::FromWire<WireExampleStruct> for ExampleStruct {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireExampleStruct {
+    type Natural = ExampleStruct;
+}
+
 impl ::fidl_next::FromWireRef<WireExampleStruct> for ExampleStruct {
     #[inline]
     fn from_wire_ref(wire: &WireExampleStruct) -> Self {
@@ -911,6 +927,10 @@ impl<'de> ::fidl_next::FromWire<WireExampleTable<'de>> for ExampleTable {
             }),
         }
     }
+}
+
+impl<'de> ::fidl_next::IntoNatural for WireExampleTable<'de> {
+    type Natural = ExampleTable;
 }
 
 impl<'de> ::fidl_next::FromWireRef<WireExampleTable<'de>> for ExampleTable {
@@ -1111,6 +1131,10 @@ impl ::fidl_next::FromWire<WireExampleUnion> for ExampleUnion {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireExampleUnion {
+    type Natural = ExampleUnion;
+}
+
 impl ::fidl_next::FromWireRef<WireExampleUnion> for ExampleUnion {
     #[inline]
     fn from_wire_ref(wire: &WireExampleUnion) -> Self {
@@ -1124,14 +1148,28 @@ impl ::fidl_next::FromWireRef<WireExampleUnion> for ExampleUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalExampleUnion> for Box<ExampleUnion> {
+impl ::fidl_next::FromWireOption<WireOptionalExampleUnion> for ExampleUnion {
     #[inline]
     fn from_wire_option(wire: WireOptionalExampleUnion) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
-            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
+            Some(::fidl_next::FromWire::from_wire(inner))
         } else {
             None
         }
+    }
+}
+
+impl ::fidl_next::IntoNatural for WireOptionalExampleUnion {
+    type Natural = ::core::option::Option<ExampleUnion>;
+}
+
+impl ::fidl_next::FromWireOption<WireOptionalExampleUnion> for Box<ExampleUnion> {
+    #[inline]
+    fn from_wire_option(wire: WireOptionalExampleUnion) -> Option<Self> {
+        <ExampleUnion as ::fidl_next::FromWireOption<WireOptionalExampleUnion>>::from_wire_option(
+            wire,
+        )
+        .map(Box::new)
     }
 }
 

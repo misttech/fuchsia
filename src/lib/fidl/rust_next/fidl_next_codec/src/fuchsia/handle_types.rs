@@ -7,7 +7,7 @@ use core::mem::MaybeUninit;
 use crate::fuchsia::{HandleDecoder, HandleEncoder, WireHandle, WireOptionalHandle};
 use crate::{
     Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, Slot, Wire, munge,
+    FromWireOption, IntoNatural, Slot, Wire, munge,
 };
 
 use zx::Handle;
@@ -133,6 +133,10 @@ macro_rules! define_wire_handle_types {
             }
         }
 
+        impl IntoNatural for $wire {
+            type Natural = zx::$natural;
+        }
+
         impl EncodableOption for zx::$natural {
             type EncodedOption = $wire_optional;
         }
@@ -152,6 +156,10 @@ macro_rules! define_wire_handle_types {
             fn from_wire_option(wire: $wire_optional) -> Option<Self> {
                 Handle::from_wire_option(wire.handle).map(zx::$natural::from)
             }
+        }
+
+        impl IntoNatural for $wire_optional {
+            type Natural = Option<zx::$natural>;
         }
     )* };
 }

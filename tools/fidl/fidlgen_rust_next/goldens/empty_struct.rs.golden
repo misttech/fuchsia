@@ -111,6 +111,10 @@ impl ::fidl_next::FromWire<WireEmpty> for Empty {
     }
 }
 
+impl ::fidl_next::IntoNatural for WireEmpty {
+    type Natural = Empty;
+}
+
 impl ::fidl_next::FromWireRef<WireEmpty> for Empty {
     #[inline]
     fn from_wire_ref(wire: &WireEmpty) -> Self {
@@ -270,6 +274,10 @@ impl ::fidl_next::FromWire<WireEmptyProtocolSendRequest> for EmptyProtocolSendRe
     fn from_wire(wire: WireEmptyProtocolSendRequest) -> Self {
         Self { e: ::fidl_next::FromWire::from_wire(wire.e) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEmptyProtocolSendRequest {
+    type Natural = EmptyProtocolSendRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireEmptyProtocolSendRequest> for EmptyProtocolSendRequest {
@@ -436,6 +444,10 @@ impl ::fidl_next::FromWire<WireEmptyProtocolReceiveRequest> for EmptyProtocolRec
     fn from_wire(wire: WireEmptyProtocolReceiveRequest) -> Self {
         Self { e: ::fidl_next::FromWire::from_wire(wire.e) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEmptyProtocolReceiveRequest {
+    type Natural = EmptyProtocolReceiveRequest;
 }
 
 impl ::fidl_next::FromWireRef<WireEmptyProtocolReceiveRequest> for EmptyProtocolReceiveRequest {
@@ -612,6 +624,10 @@ impl ::fidl_next::FromWire<WireEmptyProtocolSendAndReceiveRequest>
     }
 }
 
+impl ::fidl_next::IntoNatural for WireEmptyProtocolSendAndReceiveRequest {
+    type Natural = EmptyProtocolSendAndReceiveRequest;
+}
+
 impl ::fidl_next::FromWireRef<WireEmptyProtocolSendAndReceiveRequest>
     for EmptyProtocolSendAndReceiveRequest
 {
@@ -786,6 +802,10 @@ impl ::fidl_next::FromWire<WireEmptyProtocolSendAndReceiveResponse>
     fn from_wire(wire: WireEmptyProtocolSendAndReceiveResponse) -> Self {
         Self { e: ::fidl_next::FromWire::from_wire(wire.e) }
     }
+}
+
+impl ::fidl_next::IntoNatural for WireEmptyProtocolSendAndReceiveResponse {
+    type Natural = EmptyProtocolSendAndReceiveResponse;
 }
 
 impl ::fidl_next::FromWireRef<WireEmptyProtocolSendAndReceiveResponse>
