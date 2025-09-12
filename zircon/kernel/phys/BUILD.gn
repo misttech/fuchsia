@@ -790,6 +790,9 @@ source_set("handoff") {
 
     # handoff.h has #include <lib/crypto/entropy_pool.h>
     "//zircon/kernel/lib/crypto:crypto-entropy-src.headers",
+
+    # handoff.h has #include <lib/elfldltl/layout.h>.
+    "//src/lib/elfldltl",
   ]
 
   if (toolchain_environment == "kernel") {

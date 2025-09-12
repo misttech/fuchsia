@@ -21,6 +21,7 @@
 
 #include <lib/arch/ticks.h>
 #include <lib/crypto/entropy_pool.h>
+#include <lib/elfldltl/layout.h>
 #include <lib/memalloc/range.h>
 #include <lib/uart/all.h>
 #include <lib/zbi-format/board.h>
@@ -309,6 +310,10 @@ struct PhysHandoff {
   static_assert(std::is_default_constructible_v<PhysBootTimes>);
 
   PhysHandoffPermanentString version_string;
+
+  // DT_INIT_ARRAY functions to be called.  This points inside the kernel's
+  // load image at its virtual address, not into allocated handoff memory.
+  PhysHandoffPermanentSpan<const elfldltl::Elf<>::Addr> init_array;
 
   // Permanent VMARs to construct along with mapped regions within. The VMARs
   // will be sorted by base address, and the mappings within each VMAR will

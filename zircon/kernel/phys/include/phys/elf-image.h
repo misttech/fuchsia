@@ -9,6 +9,7 @@
 
 #include <inttypes.h>
 #include <lib/code-patching/code-patching.h>
+#include <lib/elfldltl/init-fini.h>
 #include <lib/elfldltl/load.h>
 #include <lib/elfldltl/memory.h>
 #include <lib/elfldltl/note.h>
@@ -69,6 +70,8 @@ class ElfImage {
   LoadInfo& load_info() { return load_info_; }
   const LoadInfo& load_info() const { return load_info_; }
 
+  const elfldltl::DirectMemory& image() const { return image_; }
+
   uint64_t load_bias() const {
     ZX_DEBUG_ASSERT(load_bias_);
     return *load_bias_;
@@ -88,6 +91,8 @@ class ElfImage {
   }
 
   uint64_t entry() const { return entry_ + load_bias(); }
+
+  const elfldltl::InitFiniInfo<>& init_info() const { return init_info_; }
 
   ktl::optional<size_t> stack_size() const { return stack_size_; }
 
@@ -285,6 +290,7 @@ class ElfImage {
   LoadInfo load_info_;
   uint64_t entry_ = 0;
   ktl::span<const Elf::Dyn> dynamic_;
+  elfldltl::InitFiniInfo<> init_info_;
   ktl::optional<elfldltl::ElfNote> build_id_;
   ktl::optional<elfldltl::ElfNote> zircon_info_;
   ktl::optional<ktl::string_view> interp_;

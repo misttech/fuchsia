@@ -232,6 +232,7 @@ void ElfImage::Relocate() {
     auto diagnostics = GetDiagnostics();
     elfldltl::RelocationInfo<Elf> reloc_info;
     elfldltl::DecodeDynamic(diagnostics, image_, dynamic_,
+                            elfldltl::DynamicInitObserver(init_info_),
                             elfldltl::DynamicRelocationInfoObserver(reloc_info));
     ZX_ASSERT(reloc_info.rel_symbolic().empty());
     ZX_ASSERT(reloc_info.rela_symbolic().empty());

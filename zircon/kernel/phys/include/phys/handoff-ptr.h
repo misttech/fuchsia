@@ -97,11 +97,14 @@ class PhysHandoffPtr {
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffSpan {
  public:
+  using Ptr = PhysHandoffPtr<T, Lifetime>;
+  using value_type = T;
+
   PhysHandoffSpan() = default;
   PhysHandoffSpan(const PhysHandoffSpan&) = delete;
   PhysHandoffSpan(PhysHandoffSpan&&) noexcept = default;
 
-  PhysHandoffSpan(PhysHandoffPtr<T, Lifetime> ptr, size_t size) : ptr_(ptr), size_(size) {}
+  PhysHandoffSpan(Ptr ptr, size_t size) : ptr_(std::move(ptr)), size_(size) {}
 
   PhysHandoffSpan& operator=(PhysHandoffSpan&&) noexcept = default;
 
@@ -120,7 +123,7 @@ class PhysHandoffSpan {
  private:
   friend class HandoffPrep;
 
-  PhysHandoffPtr<T, Lifetime> ptr_;
+  Ptr ptr_;
   size_t size_ = 0;
 };
 

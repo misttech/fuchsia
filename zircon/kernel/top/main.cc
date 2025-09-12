@@ -40,7 +40,18 @@
 #include <vm/init.h>
 #include <vm/vm.h>
 
-using InitFini = elfldltl::InitFiniInfo<>;
+namespace {
+
+bool gConstructorsCalled = false;
+
+void CallConstructors() {
+  elfldltl::InitFiniInfo<>{gPhysHandoff->init_array.get()}.CallInit();
+  gConstructorsCalled = true;
+}
+
+}  // namespace
+
+bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsCalled; }
 
 extern "C" {
 
@@ -55,23 +66,6 @@ static int bootstrap2(void* arg);
 
 KCOUNTER(timeline_threading, "boot.timeline.threading")
 KCOUNTER(timeline_init, "boot.timeline.init")
-
-static bool lk_global_constructors_called_flag = false;
-
-bool lk_global_constructors_called() { return lk_global_constructors_called_flag; }
-
-// These are defined by the linker script.
-// NOLINTNEXTLINE(bugprone-reserved-identifier)
-extern const InitFini::Addr __init_array_start, __init_array_end;
-
-static void call_constructors() {
-  InitFini{ktl::span{&__init_array_start, &__init_array_end}}.CallInit();
-  lk_global_constructors_called_flag = true;
-}
-
-namespace cxxabi_dynamic_init::internal {
-bool ConstructorsCalled() { return lk_global_constructors_called(); }
-}  // namespace cxxabi_dynamic_init::internal
 
 // called from arch code
 void lk_main(PhysHandoff* handoff) {
@@ -117,7 +111,7 @@ void lk_main(PhysHandoff* handoff) {
   dlog_init_early();
 
   // deal with any static constructors
-  call_constructors();
+  CallConstructors();
 
   // we can safely printf now since we have the debuglog, the current thread set
   // which holds (a per-line buffer), and global ctors finished (some of the

@@ -151,12 +151,14 @@ SECTIONS {
 
   .dynamic : ONLY_IF_RW { *(.dynamic) }
 
+  /*
+   * This inherits the SHT_INIT_ARRAY sh_type from the input sections, and
+   * that generates DT_INIT_ARRAY for physboot to collect while relocating.
+   */
   .init_array : {
-    PROVIDE_HIDDEN(__init_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)
            SORT_BY_INIT_PRIORITY(.ctors.*)))
     KEEP(*(.init_array .ctors))
-    PROVIDE_HIDDEN(__init_array_end = .);
     ASSERT(ALIGNOF(.init_array) == 8 || SIZEOF(.init_array) == 0,
            ".init_array overalignment -> maybe padding gaps");
   }

@@ -434,6 +434,9 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
   handoff()->kernel_physical_load_address = kernel_.physical_load_address();
   ZirconAbi abi = ConstructKernelAddressSpace(uart);
 
+  // This must happen after the kernel image is mapped at its virtual address.
+  SetInitArray();
+
   // Finalize the published VMOs (e.g., the log published just above), VMARs,
   // and mappings.
   FinishVmObjects();
@@ -456,4 +459,25 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
 
   // Now for the remaining arch-specific settings and the actual hand-off...
   ArchDoHandoff(abi, patch_info);
+}
+
+void HandoffPrep::SetInitArray() {
+  using InitArray = decltype(handoff()->init_array);
+
+  ZX_DEBUG_ASSERT(!kernel_.init_info().legacy());
+  const ktl::span array = kernel_.init_info().array();
+  if (array.empty()) {
+    return;
+  }
+
+  // The array collected by ElfImage points into the physical load image.
+  // Translate to its kernel virtual address.
+  const ktl::optional image_vaddr = kernel_.image().GetVaddr(array);
+  ZX_DEBUG_ASSERT(image_vaddr);
+  const uintptr_t kernel_vaddr = *image_vaddr + kernel_.load_bias();
+
+  // Turn that into the virtual-address PhysHandoffPermanentSpan to hand off.
+  InitArray::Ptr virtual_ptr;
+  virtual_ptr.ptr_ = reinterpret_cast<InitArray::value_type*>(kernel_vaddr);
+  handoff()->init_array = {ktl::move(virtual_ptr), array.size()};
 }

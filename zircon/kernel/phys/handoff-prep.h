@@ -395,6 +395,9 @@ class HandoffPrep {
   ZirconAbi ConstructKernelAddressSpace(const UartDriver& uart);
   void ArchConstructKernelAddressSpace();  // The arch-specific subroutine
 
+  // Sets handoff()->init_array after ConstructKernelAddressSpace() is done.
+  void SetInitArray();
+
   // Finalizes handoff_.arch and performs the final, architecture-specific
   // subroutine of DoHandoff().
   //
