@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -111,6 +112,12 @@ the build directory, using its name with a ".lst" suffix.""",
         help="Use objdump binary at the specified path.",
     )
     parser.add_argument(
+        "-e",
+        "--edit",
+        help="Automatically open the output disassembly file, provided $EDITOR is set",
+        action="store_true",
+    )
+    parser.add_argument(
         "binary",
         help="Name of the binary, GN target, or ELF build ID.",
     )
@@ -162,6 +169,20 @@ the build directory, using its name with a ".lst" suffix.""",
 
     rel_output_path = output_path.relative_to(Path.cwd())
     print(f"Wrote '{rel_output_path}' for '{bin_label}'")
+
+    if args.edit:
+        # $EDITOR may contain other flags like `--wait` supplied in service of
+        # `git commit` in one's terminal - but the base editor executable
+        # followed by a file should always simply open the file for common
+        # editors.
+        editor = getenv("EDITOR").split()[0]
+        subprocess.run(
+            f"{editor} {shlex.quote(str(rel_output_path))}",
+            stderr=subprocess.PIPE,
+            check=True,
+            shell=True,
+            text=True,
+        )
 
 
 def find_binary(

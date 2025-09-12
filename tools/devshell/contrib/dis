@@ -11,6 +11,7 @@ source "$SCRIPT_DIR/../lib/vars.sh" || exit $?
 
 # The script relies on the following environment variables being set.
 fx-config-read
+export EDITOR # Required if --edit is passed
 export FUCHSIA_BUILD_DIR
 export PREBUILT_BINUTILS_DIR
 export PREBUILT_CLANG_DIR # Required if --llvm is passed
