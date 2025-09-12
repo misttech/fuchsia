@@ -14,6 +14,9 @@ When updating, please add the value in alphabetical order.
     | --------------------------------------- | ---------------------------------- |
     | `connectivity.direct`                   | Support direct target connections. |
     |                                         | Defaults to `false`.               |
+    | `connectivity.enable_network`           | Enable using MDNS to discover      |
+    |                                         | targets and SSH to connect to      |
+    |                                         | them. Defaults to `true`.          |
     | `connectivity.enable_usb`               | Allow ffx to use a USB connection. |
     |                                         | Not supported on mac. Defaults to  |
     |                                         | `false`.                           |

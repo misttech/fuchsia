@@ -19,6 +19,8 @@ use std::rc::Rc;
 
 // Default port to listen on for MDNS queries
 const MDNS_PORT: u16 = 5353;
+const CONFIG_ENABLE_MDNS: &str = "discovery.mdns.enabled";
+const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 
 #[ffx_protocol]
 #[derive(Default)]
@@ -35,7 +37,11 @@ struct ConfigLoader;
 #[async_trait(?Send)]
 impl MdnsEnabledChecker for ConfigLoader {
     async fn enabled(&self) -> bool {
-        get("discovery.mdns.enabled").unwrap_or(true)
+        if get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+            get(CONFIG_ENABLE_MDNS).unwrap_or(true)
+        } else {
+            false
+        }
     }
 }
 

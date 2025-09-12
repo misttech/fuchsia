@@ -31,6 +31,7 @@ use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
+const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
@@ -517,7 +518,7 @@ pub fn get_discovery_stream(
             sources = sources | DiscoverySources::USB_VSOCK;
         }
     }
-    if mdns {
+    if mdns && ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
     get_discovery_stream_with_sources(query, sources, use_cache, ctx.clone())
@@ -543,7 +544,7 @@ pub async fn get_discovered_targets(
             sources = sources | DiscoverySources::USB_VSOCK;
         }
     }
-    if mdns {
+    if mdns && ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
     // Get nodename, in case we're trying to find an exact match
@@ -559,6 +560,9 @@ impl TargetResolver for DefaultTargetResolver {
         let mut sources = DiscoverySources::all();
         if !ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
             sources.remove(DiscoverySources::USB_VSOCK);
+        }
+        if !ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+            sources.remove(DiscoverySources::MDNS);
         }
         get_discovered_targets_with_sources(query, sources, ctx).await
     }
@@ -818,6 +822,9 @@ impl Resolution {
         } else {
             let conn = match &self.target {
                 ResolutionTarget::Addr(socket_addr) => {
+                    if !context.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+                        bail!("Network connections are disabled");
+                    }
                     let connector = SshConnector::new(
                         netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
                         context,

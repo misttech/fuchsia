@@ -56,6 +56,7 @@ const CONFIG_HOST_PIPE_SSH_TIMEOUT: &str = "daemon.host_pipe_ssh_timeout";
 const CONFIG_ENABLE_VSOCK: &str = "connectivity.enable_vsock";
 #[cfg(not(target_os = "macos"))]
 const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
+const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 
 pub(crate) type SharedIdentity = Rc<Identity>;
 pub(crate) type WeakIdentity = Weak<Identity>;
@@ -1390,6 +1391,11 @@ impl Target {
                     );
                     target.host_pipe.borrow_mut().take()
                 });
+                return;
+            }
+
+            if !ffx_config::get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+                log::debug!("Networking disabled, quitting host pipe");
                 return;
             }
 
