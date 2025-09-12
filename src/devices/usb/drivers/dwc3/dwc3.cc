@@ -746,6 +746,14 @@ void Dwc3::Stop() {
   fdf::debug("Stop()");
   irq_handler_.Cancel();
   ReleaseResources();
+
+  // The OnUnbound() handler for each endpoint server should have already called zx_bti_unpin() for
+  // each registered VMO. To guard against a crashed or stalled dispatcher, release all page
+  // quarantines. The hardware is stopped and no further DMA transactions are scheduled.
+  zx_status_t status = bti_.release_quarantine();
+  if (status != ZX_OK) {
+    fdf::error("Failed to release page quarantine ({})", zx_status_get_string(status));
+  }
 }
 
 void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
