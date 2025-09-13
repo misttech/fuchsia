@@ -54,8 +54,9 @@ the build directory, using its name with a ".lst" suffix.""",
     parser.add_argument(
         "--line-numbers",
         "-l",
-        help="Display source line numbers",
+        help="Display source line numbers (the default)",
         action="store_true",
+        default=True,
     )
     parser.add_argument(
         "--no-line-numbers",
@@ -71,7 +72,7 @@ the build directory, using its name with a ".lst" suffix.""",
     )
     parser.add_argument(
         "--no-source",
-        help="Display source interleaved with the disassembly",
+        help="Do not display source interleaved with the disassembly (the default)",
         dest="source",
         action="store_false",
     )
@@ -83,13 +84,13 @@ the build directory, using its name with a ".lst" suffix.""",
     )
     parser.add_argument(
         "--no-reloc",
-        help="Display the relocation entries",
+        help="Do not display the relocation entries",
         dest="reloc",
         action="store_false",
     )
     parser.add_argument(
         "--demangle",
-        help="Demangle symbol names",
+        help="Demangle symbol names (the default)",
         action="store_true",
         default=True,
     )
