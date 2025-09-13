@@ -56,6 +56,15 @@ toc:
     path: /docs/development/tools/ffx/workflows/start-the-fuchsia-debugger.md
   - title: Monitor FIDL messages on a device
     path: /docs/development/tools/ffx/workflows/monitor-fidl-messages-on-a-device.md
+  - title: Network connectivity triage
+    path: /docs/development/tools/ffx/workflows/network-connectivity-triage.md
+    section:
+    - title: Part 1 Basic interface configuration
+      path: /docs/development/tools/ffx/workflows/network-connectivity-triage/part-1-basic-interface-configuration.md
+    - title: Part 2 Device discovery
+      path: /docs/development/tools/ffx/workflows/network-connectivity-triage/part-2-device-discovery.md
+    - title: Part 3 The SSH daemon
+      path: /docs/development/tools/ffx/workflows/network-connectivity-triage/part-3-the-ssh-daemon.md
 - title: Performance
   section:
   - title: Record traces for performance analysis
