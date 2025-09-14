@@ -169,13 +169,10 @@ class PageQueues {
   };
   static const char* string_from_age_reason(PageQueues::AgeReason reason);
 
-  // Rotates the reclamation queues to perform aging. Every existing queue is now considered to be
-  // one epoch older. To achieve these two things are done:
-  //   1. A new queue, representing the current epoch, needs to be allocated to put pages that get
-  //      accessed from here into. This just involves incrementing the MRU generation.
-  //   2. As there is a limited number of page queues 'allocating' one might involve cleaning up an
-  //      old queue. See the description of ProcessLruQueue for how this process works.
-  void RotateReclaimQueues(AgeReason reason = AgeReason::Manual);
+  // Performs a manually requested aging event. This ignores usual aging triggers / restrictions and
+  // waits, if necessary, for aging to be possible and then performs it.
+  // Only for tests and debugging.
+  void RotateReclaimQueues();
 
   // Used to represent and return page backlink information acquired whilst holding the page queue
   // lock. As a VMO may not destruct while it has pages in it, the cow RefPtr will always be valid,
@@ -473,16 +470,9 @@ class PageQueues {
   // event.
   void CheckActiveRatioAgingLocked() TA_REQ(lock_);
 
-  // Consumes any pending age reason and either returns the reason, or how long till aging will
-  // happen. This timeout does not take into account that other changes, namely the active ratio,
-  // could cause aging to be necessary before that timeout.
-  // Due to the active ratio being sticky, it needs to be reset, which is why this method is called
-  // consume. As a result, calling ConsumeAgeReason and then GetAgeReasonLocked could give different
-  // results if an active ratio event was consumed and returned by the first call.
-  ktl::variant<AgeReason, zx_instant_mono_t> ConsumeAgeReason() TA_EXCL(lock_);
-
-  // Checks if there is any pending age reason that could be consumed. See ConsumeAgeReason for more
-  // details.
+  // Checks if there is any pending age reason and either returns the reason, or a suggestion on
+  // how long to wait before checking again. This timeout does not take into account that other
+  // changes, namely the active ratio, could cause aging to be necessary before that timeout.
   ktl::variant<AgeReason, zx_instant_mono_t> GetAgeReasonLocked() const TA_REQ(lock_);
 
   // Synchronizes with any outstanding aging. This is intended to allow a reclamation process to
@@ -490,11 +480,22 @@ class PageQueues {
   // scheduling or other delays.
   void SynchronizeWithAging() TA_EXCL(lock_);
 
+  // Helper that performs an instance of aging recording the reason, increment the mru generation
+  // and performing any needed notifications / triggers.
+  // The caller is responsible for only calling this if aging is possible, i.e. if
+  // CanIncrementMruGen is true.
+  void IncrementMruGenLocked(AgeReason age_reason) TA_REQ(lock_);
+
+  // Attempts to perform aging with the given |age_reason|. This will either perform aging, or make
+  // non-zero progress towards being able to successfully age. Must be called with lock_ held, and
+  // takes ownership of the lock acquisition and releases it.
+  void TryAgingLocked(AgeReason age_reason, Guard<CriticalMutex>::Adoptable&& adopt);
+
   // Helper method that calculates whether the current active ratio would trigger aging.
   bool IsActiveRatioTriggeringAging() TA_REQ(lock_);
 
   void LruThread();
-  void MaybeTriggerLruProcessing() TA_EXCL(lock_);
+  void MaybeTriggerLruProcessingLocked() TA_REQ(lock_);
   bool NeedsLruProcessingLocked() const TA_REQ(lock_);
 
   // Returns true if a page is both in one of the Reclaim queues, and succeeds the passed in
@@ -544,6 +545,21 @@ class PageQueues {
     return false;
   }
 
+  // Returns whether or not it is permissible to increase the mru generation, or if the lru
+  // generation would need incrementing first. This is marked as requiring lock_ as, even though the
+  // annotation is not exercised, the return value of this method is only useful / non-racy if the
+  // mru/lru generations cannot change, which requires holding the lock to guarantee.
+  bool CanIncrementMruGenLocked() const TA_REQ(lock_) {
+    return mru_gen_.load(ktl::memory_order_relaxed) - lru_gen_.load(ktl::memory_order_relaxed) <
+           kNumReclaim - 1;
+  }
+
+  // Similar to |CanIncrementMruGenLocked|, but for the lru.
+  bool CanIncrementLruGenLocked() const TA_REQ(lock_) {
+    return mru_gen_.load(ktl::memory_order_relaxed) - lru_gen_.load(ktl::memory_order_relaxed) >
+           kNumActiveQueues;
+  }
+
   // The list_lock_ is used to protect the linked lists queues as these cannot be implemented with
   // atomics. A few related members are also protected with this lock, such as the isolate_cursor.
   // The purpose of this separate spinlock, compared to the general lock_, is so that latency
@@ -557,42 +573,33 @@ class PageQueues {
   // list_lock_.
   DECLARE_CRITICAL_MUTEX(PageQueues) mutable lock_;
 
+  // Externally supplied event that we should signal anytime aging occurs.
   Event* aging_event_ TA_GUARDED(lock_) = nullptr;
 
-  // This Event is a binary semaphore and is used to control aging. Is acquired by the aging thread
-  // when it performs aging, and can be acquired separately to block aging. For this purpose it
-  // needs to start as being initially signalled.
-  AutounsignalEvent aging_token_{true};
-  // Flag used to catch programming errors related to double enabling or disabling aging.
-  ktl::atomic<bool> aging_disabled_ = false;
+  // Records whether or not the active aging via the mru thread should be disabled or not.
+  bool aging_disabled_ TA_GUARDED(lock_) = false;
 
   // Time at which the mru_gen_ was last incremented.
   ktl::atomic<zx_instant_mono_t> last_age_time_ = ZX_TIME_INFINITE_PAST;
   // Reason the last aging event happened, this is purely for informational/debugging purposes.
   // Initialized to Timeout as a somewhat arbitrary choice.
   AgeReason last_age_reason_ TA_GUARDED(lock_) = AgeReason::Timeout;
-  // Used to signal the aging thread that the active ratio has changed sufficiently that aging might
-  // be required. Due to other factors, such as a min timeouts, races, etc, this being signaled does
-  // not mean aging will happen.
-  AutounsignalEvent aging_active_ratio_event_;
   // Tracks whether the active ratio has been tripped and should contribute as an aging trigger.
   // This is stored as a boolean so that it is sticky in the advent of a race with additional
   // modifications to the page queues. Were this not sticky then, in the absence of a debounce
   // threshold, we could repeatedly trigger the active ratio on and off, causing the aging thread
   // to repeatedly wake up, miss the trigger, and do nothing.
   bool active_ratio_triggered_ TA_GUARDED(lock_) = false;
+  // Used to signal the mru thread that it should wake up and check if the mru generation needs
+  // incrementing. This must be signaled if active_ratio_triggered_ transitions false->true or if
+  // the lru_gen_ is incremented. Over signalling is safe, just less efficient. Only the MruThread
+  // is permitted to wait on this.
+  AutounsignalEvent mru_event_;
   // Used to signal the lru thread that it should wake up and check if the lru queue needs
-  // processing.
+  // processing. This must be signaled if the mru_gen_ is modified such that NeedsLruProcessLocked()
+  // becomes true. Over signalling is safe, just less efficient. Only the LruThread is permitted to
+  // wait on this.
   AutounsignalEvent lru_event_;
-
-  // Tracks whether there is a pending aging event that will happen that can be waited on. This is a
-  // raw Event, and not an AutounsignalEvent, as it is a level triggered signal. The signal itself,
-  // and hence any calls to Signal or Unsignal on the Event, must be coordinated by under the lock_
-  // to ensure no races. Due to this need to coordinate a PendingSignalEvent cannot be used, and
-  // preemption must be disabled to allow for manipulating the event with lock_ held.
-  // This event itself gets set/cleared in both ConsumeAgeReason and SynchronizeWithAging based on
-  // whether this is any aging reason present.
-  Event no_pending_aging_signal_{true};
 
   // What to do with pages when processing the LRU queue.
   LruAction lru_action_ TA_GUARDED(lock_) = LruAction::None;
@@ -666,16 +673,6 @@ class PageQueues {
   // modified with the lock hold.
   ktl::atomic<uint64_t> lru_gen_ = 0;
   ktl::atomic<uint64_t> mru_gen_ = kNumReclaim - 1;
-
-  // This semaphore counts the amount of space remaining for the mru to grow before it would overlap
-  // with the lru. Having this as a semaphore (even though it can always be calculated from lru_gen_
-  // and mru_gen_ above) provides a way for the aging thread to block when it needs to wait for
-  // eviction/lru processing to happen. This allows eviction/lru processing to be happening
-  // concurrently in a different thread, without requiring it to happen in-line in the aging thread.
-  // Without this the aging thread would need to process the LRU queue directly if it needed to make
-  // space. Initially, with the lru_gen_ and mru_gen_ definitions above, we start with no space for
-  // the mru to grow, so initialize this to 0.
-  Semaphore mru_semaphore_ = Semaphore(0);
 
   // Tracks the counts of pages in each queue in O(1) time complexity. As pages are moved between
   // queues, the corresponding source and destination counts are decremented and incremented,

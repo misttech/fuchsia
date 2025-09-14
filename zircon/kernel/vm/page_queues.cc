@@ -21,12 +21,9 @@
 
 namespace {
 
-KCOUNTER(pq_aging_reason_before_min_timeout, "pq.aging.reason_before_min_timeout")
-KCOUNTER(pq_aging_spurious_wakeup, "pq.aging.spurious_wakeup")
 KCOUNTER(pq_aging_reason_timeout, "pq.aging.reason.timeout")
 KCOUNTER(pq_aging_reason_active_ratio, "pq.aging.reason.active_ratio")
 KCOUNTER(pq_aging_reason_manual, "pq.aging.reason.manual")
-KCOUNTER(pq_aging_blocked_on_lru, "pq.aging.blocked_on_lru")
 KCOUNTER(pq_lru_spurious_wakeup, "pq.lru.spurious_wakeup")
 KCOUNTER(pq_lru_pages_evicted, "pq.lru.pages_evicted")
 KCOUNTER(pq_lru_pages_compressed, "pq.lru.pages_compressed")
@@ -255,9 +252,9 @@ void PageQueues::StartThreads(zx_duration_mono_t min_mru_rotate_time,
     ASSERT(!lru_thread_);
     mru_thread_ = mru_thread;
     lru_thread_ = lru_thread;
+    // Kick start any LRU processing that might be pending to ensure it doesn't spuriously timeout.
+    MaybeTriggerLruProcessingLocked();
   }
-  // Kick start any LRU processing that might be pending to ensure it doesn't spuriously timeout.
-  MaybeTriggerLruProcessing();
 }
 
 void PageQueues::StartDebugCompressor() {
@@ -285,18 +282,11 @@ void PageQueues::StopThreads() {
   Thread* lru_thread = nullptr;
 
   {
-    bool signal_aging;
-    {
-      Guard<CriticalMutex> guard{&lock_};
-      shutdown_threads_ = true;
-      signal_aging = aging_disabled_.exchange(false);
-      mru_thread = mru_thread_;
-      lru_thread = lru_thread_;
-    }
-    if (signal_aging) {
-      aging_token_.Signal();
-    }
-    aging_active_ratio_event_.Signal();
+    Guard<CriticalMutex> guard{&lock_};
+    shutdown_threads_ = true;
+    mru_thread = mru_thread_;
+    lru_thread = lru_thread_;
+    mru_event_.Signal();
     lru_event_.Signal();
   }
 
@@ -330,7 +320,7 @@ void PageQueues::CheckActiveRatioAgingLocked() {
   }
   if (IsActiveRatioTriggeringAging()) {
     active_ratio_triggered_ = true;
-    aging_active_ratio_event_.Signal();
+    mru_event_.Signal();
   }
 }
 
@@ -339,58 +329,40 @@ bool PageQueues::IsActiveRatioTriggeringAging() {
   return counts.active * active_ratio_multiplier_ > counts.inactive;
 }
 
-ktl::variant<PageQueues::AgeReason, zx_instant_mono_t> PageQueues::ConsumeAgeReason() {
-  AutoPreemptDisabler apd;
-  Guard<CriticalMutex> guard{&lock_};
-  auto reason = GetAgeReasonLocked();
-  // If the age reason is the active ratio, consume the trigger.
-  if (const AgeReason* age_reason = ktl::get_if<AgeReason>(&reason)) {
-    no_pending_aging_signal_.Unsignal();
-    if (*age_reason == AgeReason::ActiveRatio) {
-      active_ratio_triggered_ = false;
-      aging_active_ratio_event_.Unsignal();
-    }
-  } else {
-    no_pending_aging_signal_.Signal();
-  }
-  return reason;
-}
-
 void PageQueues::SynchronizeWithAging() {
-  while (true) {
-    // Wait for any in progress aging to complete. This is not an Autounsignal event and so waiting
-    // on it without the lock is not manipulating its state.
-    constexpr int kWarnTimeoutSeconds = 10;
-    zx_status_t status =
-        no_pending_aging_signal_.Wait(Deadline::after_mono(ZX_SEC(kWarnTimeoutSeconds)));
-    if (status == ZX_ERR_TIMED_OUT) {
-      printf("[pq]: WARNING Waited %d seconds so far for aging to complete\n", kWarnTimeoutSeconds);
-      // Only warn once, wait now with an infinite timeout.
-      no_pending_aging_signal_.Wait();
+  for (int iterations = 1;; iterations++) {
+    // Typically this loop should exit on its second iteration at most, since it might take two
+    // calls to `TryAgingLocked` before the MRU generation is incremented, at which point the LRU
+    // gen can be incremented. The exception to this is if racing with another concurrent
+    // modifications to the isolate list, such as by another reclamation thread. Still, it is
+    // incredibly unlikely to race such that other threads can completely depopulate both the LRU
+    // queues and the isolate list so if we see many instances of such an incredibly unlikely race
+    // then there's probably a bug and so generate a warning message.
+    if (iterations % 20 == 0) {
+      printf("[pq]: Warning %s iterated %d times\n", __FUNCTION__, iterations);
     }
-
-    // The MruThread may not have woken up yet to clear the pending signal, so we must check
-    // ourselves.
     Guard<CriticalMutex> guard{&lock_};
-    if (!ktl::holds_alternative<AgeReason>(GetAgeReasonLocked())) {
-      // There is no aging reason, so there is no race to worry about, and no aging can be in
-      // progress.
+    // If the LRU queue can be processed, then aging already happened and there's no need to wait
+    // for it.
+    if (CanIncrementLruGenLocked()) {
       return;
     }
-    // We may have raced with the MruThread. Either it has already seen that there is an AgeReason
-    // and cleared the this signal, or it is still pending to be scheduled and clear it. If it
-    // already cleared it, then us clearing it again is harmless, and if it is still waiting to run
-    // by clearing it we can then Wait on the event, knowing once the MruThread finishes performing
-    // aging it will do the signal.
-    // Since we hold the lock, and know there is an age reason, we know that we are not racing with
-    // the signal being set, and so cannot lose a signal here.
-    no_pending_aging_signal_.Unsignal();
+    // Check for races with LRU processing that might have already populated the isolate list.
+    if (page_queue_counts_[PageQueueReclaimIsolate].load(ktl::memory_order_relaxed) > 0) {
+      return;
+    }
+    auto reason = GetAgeReasonLocked();
+    // If there's no pending age reason then we are not going to wait, so return.
+    if (ktl::get_if<zx_instant_mono_t>(&reason)) {
+      return;
+    }
+    // Attempt to perform any aging, and then go around the loop to check if we synchronized.
+    TryAgingLocked(ktl::get<AgeReason>(reason), guard.take());
   }
 }
 
 ktl::variant<PageQueues::AgeReason, zx_instant_mono_t> PageQueues::GetAgeReasonLocked() const {
   const zx_instant_mono_t current = current_mono_time();
-  // Check if there is an active ratio that wants us to age.
   if (active_ratio_triggered_) {
     // Need to have passed the min time though.
     const zx_instant_mono_t min_timeout =
@@ -412,12 +384,8 @@ ktl::variant<PageQueues::AgeReason, zx_instant_mono_t> PageQueues::GetAgeReasonL
   return max_timeout;
 }
 
-void PageQueues::MaybeTriggerLruProcessing() {
-  bool needs_lru_processing;
-  {
-    Guard<CriticalMutex> guard{&lock_};
-    needs_lru_processing = NeedsLruProcessingLocked();
-  }
+void PageQueues::MaybeTriggerLruProcessingLocked() {
+  bool needs_lru_processing = NeedsLruProcessingLocked();
   if (needs_lru_processing) {
     lru_event_.Signal();
   }
@@ -436,14 +404,15 @@ bool PageQueues::NeedsLruProcessingLocked() const {
 }
 
 void PageQueues::DisableAging() {
+  // Take the lock over disabling aging to ensure the MruThread is not presently aging and will
+  // therefore observe the aging_disabled_ flag next time it runs.
+  Guard<CriticalMutex> guard{&lock_};
   // Validate a double DisableAging is not happening.
-  if (aging_disabled_.exchange(true)) {
+  if (aging_disabled_) {
     panic("Mismatched disable/enable pair");
   }
+  aging_disabled_ = true;
 
-  // Take the aging token. This will both wait for the aging thread to complete any in progress
-  // aging, and prevent it from aging until we return it.
-  aging_token_.Wait();
 #if DEBUG_ASSERT_IMPLEMENTED
   // Pause might drop the last reference to a VMO and trigger VMO destruction, which would then call
   // back into the page queues, so we must not hold the lock_ over the operation. We can utilize the
@@ -451,7 +420,7 @@ void PageQueues::DisableAging() {
   // it.
   VmDebugCompressor* dc = nullptr;
   {
-    Guard<CriticalMutex> guard{&list_lock_};
+    Guard<CriticalMutex> list_guard{&list_lock_};
     if (debug_compressor_) {
       dc = &*debug_compressor_;
     }
@@ -463,15 +432,19 @@ void PageQueues::DisableAging() {
 }
 
 void PageQueues::EnableAging() {
-  // Validate a double EnableAging is not happening.
-  if (!aging_disabled_.exchange(false)) {
-    panic("Mismatched disable/enable pair");
-  }
+  {
+    Guard<CriticalMutex> guard{&lock_};
+    // Validate a double EnableAging is not happening.
+    if (!aging_disabled_) {
+      panic("Mismatched disable/enable pair");
+    }
+    aging_disabled_ = false;
 
-  // Return the aging token and possibly notify the LRU thread, allowing the MRU and LRU threads to
-  // proceed if they had been waiting.
-  aging_token_.Signal();
-  MaybeTriggerLruProcessing();
+    // Notify the threads, allowing them to proceed with any pending actions if they had been
+    // waiting.
+    mru_event_.Signal();
+    lru_event_.Signal();
+  }
 
 #if DEBUG_ASSERT_IMPLEMENTED
   Guard<CriticalMutex> guard{&list_lock_};
@@ -572,79 +545,34 @@ void PageQueues::Dump() {
 void PageQueues::MruThread() {
   // Pretend that aging happens during startup to simplify the rest of the loop logic.
   last_age_time_ = current_mono_time();
-  unsigned int iterations_since_last_age = 0;
+
   while (!shutdown_threads_.load(ktl::memory_order_relaxed)) {
-    // Normally we should retry the loop at most once (i.e. pass this line of code twice) if an
-    // active ratio was triggered (kicking us out of the event), but we still needed to wait for the
-    // min timeout. In this case in the first pass we do not get an age reason, wake up on the event
-    // then perform the Sleep, come back around the loop and can now get an age reason.
-    //
-    // Unfortunately due to the way DeferredPendingSignals works, there is race where a thread can
-    // set `active_ratio_triggered_`, but fail to actually signal the event before being preempted.
-    // It is possible for us to then call ConsumeAgeReason and perform the aging without waiting on
-    // the event. At some later point that first thread could finally deliver the signal, spuriously
-    // waking us up. In an extremely unlikely event there could be multiple threads queued up in
-    // this state to deliver an unbounded number of late signals. This is extremely unlikely though
-    // and would require some precise scheduling behavior. Nevertheless it is technically possible
-    // and so we just print a warning that it has happened and do not generate any errors.
-    if (iterations_since_last_age == 10) {
-      printf("%s iterated %u times, possible bug or overloaded system", __FUNCTION__,
-             iterations_since_last_age);
-    }
-    // Check if there is an age reason waiting for us, consuming if there is, or if we need to wait.
-    auto reason_or_timeout = ConsumeAgeReason();
-    if (const zx_instant_mono_t* age_deadline =
-            ktl::get_if<zx_instant_mono_t>(&reason_or_timeout)) {
-      // Wait for this time, ensuring we wake up if the active ratio should change.
-      zx_status_t result = aging_active_ratio_event_.WaitDeadline(*age_deadline, Interruptible::No);
-      // Check if shutdown has been requested, we need this extra check even though it is part of
-      // the main loop check to ensure that we do not perform the minimal rotate time sleep with a
-      // shutdown pending.
-      if (shutdown_threads_.load(ktl::memory_order_relaxed)) {
-        break;
+    // Attempt to perform aging steps in a helper lambda that acquires the lock. Once there is no
+    // more aging to be done returns a deadline to wait for.
+    zx_instant_mono_t wait_deadline = [&]() {
+      while (!shutdown_threads_.load(ktl::memory_order_relaxed)) {
+        Guard<CriticalMutex> guard{&lock_};
+        // If aging is disabled or we are unable to age if we wanted to then exit and wait to be
+        // signaled.
+        if (aging_disabled_ || !CanIncrementMruGenLocked()) {
+          return ZX_TIME_INFINITE;
+        }
+        auto reason_or_deadline = GetAgeReasonLocked();
+        if (const zx_instant_mono_t* age_deadline =
+                ktl::get_if<zx_instant_mono_t>(&reason_or_deadline)) {
+          // Cannot age yet, so wait till the provided deadline or we are otherwise signaled.
+          return *age_deadline;
+        }
+        // Attempt to proceed with aging.
+        TryAgingLocked(ktl::get<AgeReason>(reason_or_deadline), guard.take());
       }
-      if (result != ZX_ERR_TIMED_OUT) {
-        // Might have woken up too early, ensure we have passed the minimal timeout. If the timeout
-        // was already passed and we legitimately woke up due to an active ratio event, then this
-        // sleep will short-circuit internally and immediately return.
-        Thread::Current::Sleep(zx_time_add_duration(last_age_time_.load(ktl::memory_order_relaxed),
-                                                    min_mru_rotate_time_));
-      }
-      // Due to races, there may or may not be an age reason at this point, so go back around the
-      // loop and find out, counting how many times we go around.
-      iterations_since_last_age++;
-      continue;
-    }
-    AgeReason age_reason = ktl::get<AgeReason>(reason_or_timeout);
-
-    if (iterations_since_last_age == 0) {
-      // If we did zero iterations then this means there was an age_reason waiting for us, meaning
-      // the min rotation time had already elapsed. This is not an error, but implies that aging
-      // thread is running behind.
-      pq_aging_reason_before_min_timeout.Add(1);
-    } else if (iterations_since_last_age > 1) {
-      // Typically a single iteration is expected as we might fail ConsumeAgeReason once due to
-      // needing to wait for a timeout. However, due to DeferredPendingSignals, there could be
-      // additional spurious wakeups (see comment at the top of the loop). This does not necessarily
-      // mean there is an error, but implies that other threads are running badly behind.
-      pq_aging_spurious_wakeup.Add(iterations_since_last_age - 1);
-    }
-    iterations_since_last_age = 0;
-
-    // Taken the aging token, potentially blocking if aging is disabled, make sure to return it when
-    // we are done.
-    aging_token_.Wait();
-
-    // Make sure the accessed information has been harvested since the last time we aged, otherwise
-    // we are deliberately making the age information coarser, by effectively not using one of the
-    // queues.
-    scanner_wait_for_accessed_scan(last_age_time_);
-
-    RotateReclaimQueues(age_reason);
-
-    // Changing mru_gen_ could have impacted the eviction logic.
-    MaybeTriggerLruProcessing();
-    aging_token_.Signal();
+      return ZX_TIME_INFINITE_PAST;
+    }();
+    // The deadline returned is a suggestion on how long to wait before attempting to age again.
+    // However, we additionally wait on the mru_event_ instead of just sleeping as the event will
+    // get signaled should anything material change that may cause us to be able to age sooner than
+    // the original deadline.
+    mru_event_.WaitDeadline(wait_deadline, Interruptible::No);
   }
 }
 
@@ -713,51 +641,40 @@ void PageQueues::LruThread() {
   }
 }
 
-void PageQueues::RotateReclaimQueues(AgeReason reason) {
-  VM_KTRACE_DURATION(2, "RotatePagerBackedQueues");
-  // We expect LRU processing to have already happened, so first poll the mru semaphore.
-  if (mru_semaphore_.Wait(Deadline::infinite_past()) == ZX_ERR_TIMED_OUT) {
-    // We should not have needed to wait for lru processing here, as it should have already been
-    // made available due to earlier triggers. Although this could reasonably happen due to races or
-    // delays in scheduling we record in a counter as happening regularly could indicate a bug.
-    pq_aging_blocked_on_lru.Add(1);
+void PageQueues::TryAgingLocked(AgeReason age_reason, Guard<CriticalMutex>::Adoptable&& adopt) {
+  VM_KTRACE_DURATION(2, "LruThread Aging");
+  Guard<CriticalMutex> guard{AdoptLock, &lock_, ktl::move(adopt)};
+  if (scanner_needs_accessed_scan(last_age_time_)) {
+    // Perform the accessed without our lock held to avoid unnecessary contention.
+    guard.Release();
+    scanner_wait_for_accessed_scan(last_age_time_);
+  } else {
+    IncrementMruGenLocked(age_reason);
+  }
+}
 
-    MaybeTriggerLruProcessing();
+void PageQueues::IncrementMruGenLocked(AgeReason age_reason) {
+  ASSERT(CanIncrementMruGenLocked());
 
-    // The LRU thread could take an arbitrary amount of time to get scheduled and run, so we cannot
-    // enforce a deadline. However, we can assume there might be a bug and start making noise to
-    // inform the user if we have waited multiples of the expected maximum aging interval, since
-    // that implies we are starting to lose the requested fidelity of age information.
-    int64_t timeouts = 0;
-    while (mru_semaphore_.Wait(Deadline::after_mono(max_mru_rotate_time_, TimerSlack::none())) ==
-           ZX_ERR_TIMED_OUT) {
-      timeouts++;
-      printf("[pq] WARNING: Waited %" PRIi64 " seconds for LRU thread, MRU semaphore %" PRIi64
-             ", aging is presently stalled\n",
-             (max_mru_rotate_time_ * timeouts) / ZX_SEC(1), mru_semaphore_.count());
-      Dump();
-    }
+  // Increment the mru generation and record the current age reason etc.
+  mru_gen_.fetch_add(1, ktl::memory_order_relaxed);
+  last_age_time_ = current_mono_time();
+  last_age_reason_ = age_reason;
+
+  // As aging has happened we should consume any old active ratio trigger and re-calculate it.
+  active_ratio_triggered_ = false;
+  CheckActiveRatioAgingLocked();
+
+  // Signal any externally supplied aging event if one exists.
+  if (aging_event_) {
+    aging_event_->Signal();
   }
 
-  ASSERT(mru_gen_.load(ktl::memory_order_relaxed) - lru_gen_.load(ktl::memory_order_relaxed) <
-         kNumReclaim - 1);
-
-  {
-    // Acquire the lock to increment the mru_gen_. This allows other queue logic to not worry about
-    // mru_gen_ changing whilst they hold the lock.
-    Guard<CriticalMutex> guard{&lock_};
-    mru_gen_.fetch_add(1, ktl::memory_order_relaxed);
-    last_age_time_ = current_mono_time();
-    last_age_reason_ = reason;
-    CheckActiveRatioAgingLocked();
-
-    if (aging_event_) {
-      aging_event_->Signal();
-    }
-  }
+  // Required to notify the LRU thread of mru generation changes.
+  MaybeTriggerLruProcessingLocked();
 
   // Keep a count of the different reasons we have rotated.
-  switch (reason) {
+  switch (age_reason) {
     case AgeReason::Timeout:
       pq_aging_reason_timeout.Add(1);
       break;
@@ -770,6 +687,18 @@ void PageQueues::RotateReclaimQueues(AgeReason reason) {
     default:
       panic("Unknown age reason");
   }
+}
+
+void PageQueues::RotateReclaimQueues() {
+  Guard<CriticalMutex> guard{&lock_};
+  // 'Force' aging to happen by processing the lru queue until we are able to increment the mru gen.
+  // This directly manipulates the mru gen instead of using TryAgingLocked as it intentionally
+  // sidesteps certain updates.
+  while (!CanIncrementMruGenLocked()) {
+    uint64_t target_gen = lru_gen_.load(ktl::memory_order_relaxed) + 1;
+    guard.CallUnlocked([&]() { ProcessLruQueue(target_gen, ktl::nullopt); });
+  }
+  IncrementMruGenLocked(AgeReason::Manual);
 }
 
 ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolateList() {
@@ -896,7 +825,9 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
       }
     }
     if (post) {
-      mru_semaphore_.Post();
+      // The lru gen was changed and the MruThread might be waiting for space to increment the mru
+      // gen, so kick the MruThread.
+      mru_event_.Signal();
     }
   }
 }

@@ -49,6 +49,11 @@ void scanner_debug_dump_state_before_panic();
 // return, otherwise it will wait for a new scan to complete.
 void scanner_wait_for_accessed_scan(zx_instant_mono_t update_time);
 
+// Returns whether or not an accessed scan has completed at |update_time| or later. If this returns
+// true then calling |scanner_wait_for_accessed_scan| would be a no-op. If this returns false then
+// calling |scanner_wait_for_accessed_scan| may or may not block to perform a new scan.
+bool scanner_needs_accessed_scan(zx_instant_mono_t update_time);
+
 // AutoVmScannerDisable is an RAII helper for disabling scanning using the
 // scanner_push_disable_count()/scanner_pop_disable_count(). Disabling the scanner is useful in test
 // code where it is not possible or practical to hold locks to prevent the scanner from taking

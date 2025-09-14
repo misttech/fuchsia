@@ -252,6 +252,10 @@ void scanner_dump_info() {
 
 }  // namespace
 
+bool scanner_needs_accessed_scan(zx_instant_mono_t update_time) {
+  return update_time > last_accessed_scan_complete;
+}
+
 // Currently accessed scanning happens completely inline, and so this does one of three things
 // 1. Returns immediately if a sufficiently recent scan already happened
 // 2. Waits for an in progress scan to finish, and then most likely returns unless update_time is
@@ -261,13 +265,13 @@ void scanner_dump_info() {
 // necessarily perform a scan itself, but sync up with the scanner thread that might be slowly
 // scanning in the background.
 void scanner_wait_for_accessed_scan(zx_instant_mono_t update_time) {
-  if (update_time <= last_accessed_scan_complete) {
+  if (!scanner_needs_accessed_scan(update_time)) {
     // scanning is sufficiently up to date.
     return;
   }
   Guard<Mutex> guard{accessed_scanner_lock::Get()};
   // Re-check now that we hold the lock in case a scan just finished and we were blocked on it.
-  if (update_time <= last_accessed_scan_complete) {
+  if (!scanner_needs_accessed_scan(update_time)) {
     return;
   }
   bool reclaim_pt = reclaim_pt_next_accessed_scan.exchange(false);
