@@ -477,7 +477,9 @@ def record_fuchsia_workspace(
 
     record_expanded_template(
         generated,
+        # LINT.IfChange(bazel.sh.config)
         "bazel.sh.config",
+        # LINT.ThenChange(//build/bazel/wrapper.bazel.sh)
         "template.bazel.sh.config",
         bazel_bin=config_path_value(bazel_bin),
         bazel_log_dir=config_path_value(logs_dir),

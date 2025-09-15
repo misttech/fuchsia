@@ -29,6 +29,10 @@ fx-get-bazel () {
 # Regenerate Bazel workspace and launcher script if needed.
 # Note that this also regenerates the Ninja build plan if necessary.
 fx-update-bazel-workspace () {
+  # Ignore this when running unit tests.
+  if [[ -n "${DISABLE_FX_UPDATE_BAZEL_WORKSPACE_FOR_TESTS}" ]]; then
+    return 0
+  fi
   # First, refresh Ninja build plan if needed.
   local check_script="${FUCHSIA_DIR}/build/bazel/scripts/check_regenerator_inputs.py"
   if ! "${PREBUILT_PYTHON3}" -S "${check_script}" --quiet "${FUCHSIA_BUILD_DIR}"; then
@@ -39,7 +43,6 @@ fx-update-bazel-workspace () {
 
 # Run bazel command in the Fuchsia workspace, after ensuring it is up-to-date.
 fx-bazel () {
-  local opt
   fx-update-bazel-workspace
   fx-run-bazel "" "$(fx-get-bazel)" "$@"
 }
