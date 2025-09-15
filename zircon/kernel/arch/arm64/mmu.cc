@@ -1241,6 +1241,10 @@ size_t ArmArchVmAspace::HarvestAccessedPageTable(
     } else if (index_shift > page_size_shift_ &&
                (pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_TABLE) {
       const paddr_t page_table_paddr = pte & MMU_PTE_OUTPUT_ADDR_MASK;
+      DEBUG_ASSERT_MSG(page_table_paddr && is_physmap_phys_addr(page_table_paddr),
+                       "invalid pte %#" PRIxPTR
+                       " found in page_table %p at index %lu. updates_enabled %d\n",
+                       pte, page_table, index, updates_enabled_);
       volatile pte_t* next_page_table =
           static_cast<volatile pte_t*>(paddr_to_physmap(page_table_paddr));
 
