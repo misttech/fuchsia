@@ -5,7 +5,8 @@
 use crate::vfs::socket::AuditNetlinkClient;
 use arc_swap::ArcSwapWeak;
 use linux_uapi::{
-    AUDIT_FAIL_PANIC, AUDIT_FAIL_PRINTK, AUDIT_FAIL_SILENT, AUDIT_GET, AUDIT_SET,
+    AUDIT_FAIL_PANIC, AUDIT_FAIL_PRINTK, AUDIT_FAIL_SILENT, AUDIT_FIRST_USER_MSG,
+    AUDIT_FIRST_USER_MSG2, AUDIT_GET, AUDIT_LAST_USER_MSG, AUDIT_LAST_USER_MSG2, AUDIT_SET,
     AUDIT_STATUS_BACKLOG_LIMIT, AUDIT_STATUS_ENABLED, AUDIT_STATUS_FAILURE, AUDIT_STATUS_LOST,
     AUDIT_STATUS_PID, AUDIT_USER,
 };
@@ -26,11 +27,10 @@ use crate::task::{ArgNameAndValue, Kernel};
 const DEFAULT_BACKLOG_LIMIT: u32 = 128;
 
 /// Supported requests that manipulate the `AuditLogger`
-#[repr(u32)]
 pub enum AuditRequest {
-    AuditGet = AUDIT_GET,
-    AuditSet = AUDIT_SET,
-    AuditUser = AUDIT_USER,
+    AuditGet,
+    AuditSet,
+    AuditUser,
 }
 
 impl TryFrom<u32> for AuditRequest {
@@ -40,7 +40,9 @@ impl TryFrom<u32> for AuditRequest {
         match value {
             AUDIT_GET => Ok(Self::AuditGet),
             AUDIT_SET => Ok(Self::AuditSet),
-            AUDIT_USER => Ok(Self::AuditUser),
+            AUDIT_USER
+            | AUDIT_FIRST_USER_MSG..=AUDIT_LAST_USER_MSG
+            | AUDIT_FIRST_USER_MSG2..=AUDIT_LAST_USER_MSG2 => Ok(Self::AuditUser),
             _ => error!(ENOTSUP),
         }
     }
