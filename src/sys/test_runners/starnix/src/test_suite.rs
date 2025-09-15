@@ -36,6 +36,7 @@ fn remove_test_type(program: &mut fdata::Dictionary) -> Result<TestType, Error> 
         Some("ltp") => Ok(TestType::Ltp),
         Some("selinux") => Ok(TestType::SeLinux),
         Some("syscall") => Ok(TestType::Syscall),
+        Some("vts") => Ok(TestType::Ltp),
         Some(value) => Err(anyhow!("Unrecognized test_type: {}", value)),
 
         // If test_type is not specified, then just run the component as a single test case.
