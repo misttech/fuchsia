@@ -14,7 +14,8 @@ pub fn classify_error(error: fidl::Error) -> FidlErrorKind {
         | fidl::Error::UnsupportedWireFormatVersion
         | fidl::Error::InvalidResponseOrdinal { .. }
         | fidl::Error::Invalid
-        | fidl::Error::OutOfRange
+        | fidl::Error::OutOfRange { .. }
+        | fidl::Error::OutOfHandles
         | fidl::Error::ExtraBytes
         | fidl::Error::ExtraHandles
         | fidl::Error::NonZeroPadding { .. }

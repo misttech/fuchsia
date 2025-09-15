@@ -263,7 +263,7 @@ var rustErrorCodeNames = map[ir.ErrorCode]string{
 	ir.TableCountExceeds32BitLimit:        "OutOfRange",
 	ir.TooFewBytes:                        "OutOfRange",
 	ir.TooFewBytesInPrimaryObject:         "OutOfRange",
-	ir.TooFewHandles:                      "OutOfRange",
+	ir.TooFewHandles:                      "OutOfHandles",
 	ir.TooManyBytesInMessage:              "ExtraBytes",
 	ir.TooManyHandlesInMessage:            "ExtraHandles",
 	ir.UnexpectedOrdinal:                  "OutOfRange",

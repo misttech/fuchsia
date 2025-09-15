@@ -13,8 +13,8 @@ use fidl_fidl_serversuite::{
     OpenTargetControlHandle, OpenTargetFlexibleTwoWayErrRequest,
     OpenTargetFlexibleTwoWayFieldsErrRequest, OpenTargetRequest, OpenTargetRequestStream,
     OpenTargetStrictTwoWayErrRequest, OpenTargetStrictTwoWayFieldsErrRequest, RunnerControlHandle,
-    RunnerRequest, RunnerRequestStream, StartError, TeardownReason, Test, UnknownMethodType,
-    SERVER_SUITE_VERSION,
+    RunnerRequest, RunnerRequestStream, SERVER_SUITE_VERSION, StartError, TeardownReason, Test,
+    UnknownMethodType,
 };
 use fuchsia_component::server::ServiceFs;
 use futures::future::{BoxFuture, Fuse};
@@ -56,7 +56,8 @@ fn get_teardown_reason(error: Option<fidl::Error>) -> TeardownReason {
         fidl::Error::InvalidBoolean
         | fidl::Error::InvalidHeader
         | fidl::Error::Invalid
-        | fidl::Error::OutOfRange
+        | fidl::Error::OutOfRange { .. }
+        | fidl::Error::OutOfHandles
         | fidl::Error::ExtraBytes
         | fidl::Error::ExtraHandles
         | fidl::Error::NonZeroPadding { .. }

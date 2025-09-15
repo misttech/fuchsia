@@ -1050,7 +1050,7 @@ impl<'a, D: ResourceDialect> Decoder<'a, D> {
         let inline_size = T::inline_size(context);
         let next_out_of_line = round_up_to_align(inline_size, 8);
         if next_out_of_line > buf.len() {
-            return Err(Error::OutOfRange);
+            return Err(Error::OutOfRange { expected: next_out_of_line, actual: buf.len() });
         }
         let mut decoder = Decoder {
             next_out_of_line,
@@ -1151,7 +1151,10 @@ impl<'a, D: ResourceDialect> Decoder<'a, D> {
         self.next_out_of_line += aligned_len;
         debug_assert!(self.next_out_of_line >= 8);
         if self.next_out_of_line > self.buf.len() {
-            return Err(Error::OutOfRange);
+            return Err(Error::OutOfRange {
+                expected: aligned_len,
+                actual: self.buf.len() - offset,
+            });
         }
         // Validate padding bytes at the end of the block.
         // Safety:
@@ -1248,7 +1251,7 @@ impl<'a, D: ResourceDialect> Decoder<'a, D> {
         expected_rights: crate::Rights,
     ) -> Result<D::Handle> {
         let Some(next_handle) = self.handles.get_mut(self.next_handle) else {
-            return Err(Error::OutOfRange);
+            return Err(Error::OutOfHandles);
         };
         let handle = next_handle.consume(expected_object_type, expected_rights)?;
         self.next_handle += 1;
@@ -1259,7 +1262,7 @@ impl<'a, D: ResourceDialect> Decoder<'a, D> {
     #[inline]
     pub fn drop_next_handle(&mut self) -> Result<()> {
         let Some(next_handle) = self.handles.get_mut(self.next_handle) else {
-            return Err(Error::OutOfRange);
+            return Err(Error::OutOfHandles);
         };
         next_handle.drop_in_place();
         self.next_handle += 1;
@@ -2094,7 +2097,7 @@ pub fn decode_vector_header<D: ResourceDialect>(
             if len <= u32::MAX as usize && len <= decoder.buf.len() {
                 Ok(Some(len))
             } else {
-                Err(Error::OutOfRange)
+                Err(Error::OutOfRange { expected: len, actual: decoder.buf.len() })
             }
         }
         ALLOC_ABSENT_U64 => {
@@ -3466,7 +3469,7 @@ pub fn decode_transaction_header(bytes: &[u8]) -> Result<(TransactionHeader, &[u
     let context = Context { wire_format_version: WireFormatVersion::V2 };
     let header_len = <TransactionHeader as TypeMarker>::inline_size(context);
     if bytes.len() < header_len {
-        return Err(Error::OutOfRange);
+        return Err(Error::OutOfRange { expected: header_len, actual: bytes.len() });
     }
     let (header_bytes, body_bytes) = bytes.split_at(header_len);
     Decoder::<NoHandleResourceDialect>::decode_with_context::<TransactionHeader>(
@@ -4165,7 +4168,7 @@ mod test {
                 handle_buf,
                 &mut handle_out,
             );
-            assert_matches!(res, Err(Error::OutOfRange));
+            assert_matches!(res, Err(Error::OutOfHandles));
         }
     }
 

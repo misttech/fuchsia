@@ -186,7 +186,7 @@ fn decode_wire_metadata(bytes: &[u8]) -> Result<(WireMetadata, &[u8])> {
     let context = Context { wire_format_version: WireFormatVersion::V2 };
     let header_len = <WireMetadata as TypeMarker>::inline_size(context);
     if bytes.len() < header_len {
-        return Err(Error::OutOfRange);
+        return Err(Error::OutOfRange { expected: header_len, actual: bytes.len() });
     }
     let (header_bytes, body_bytes) = bytes.split_at(header_len);
     Decoder::<NoHandleResourceDialect>::decode_with_context::<WireMetadata>(

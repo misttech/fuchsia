@@ -49,8 +49,17 @@ pub enum Error {
     #[error("Invalid FIDL buffer.")]
     Invalid,
 
-    #[error("The FIDL object could not fit within the provided buffer range")]
-    OutOfRange,
+    #[error(
+        "The FIDL object of size {actual} could not fit within the provided \
+        buffer range of size {actual}."
+    )]
+    OutOfRange { expected: usize, actual: usize },
+
+    #[error(
+        "The FIDL object requested more handles during decoding than were \
+        provided with the message."
+    )]
+    OutOfHandles,
 
     #[error("Decoding the FIDL object did not use all of the bytes provided.")]
     ExtraBytes,
