@@ -14,6 +14,8 @@ use fuchsia_sync::Mutex;
 use log::error;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_memory_attribution as fattribution};
 
+const ROOT_COMPONENT_NAME: &str = "component_manager";
+
 /// An error of the attribution client.
 #[derive(Debug)]
 pub enum AttributionClientError {
@@ -119,7 +121,7 @@ impl AttributionStateManager {
         let principal = PrincipalDefinition {
             attributor: None,
             id: root_identifier,
-            description: PrincipalDescription::Component("root".to_owned()),
+            description: PrincipalDescription::Component(ROOT_COMPONENT_NAME.to_owned()),
             principal_type: PrincipalType::Runnable,
         };
         attribution_providers.0.insert(

@@ -672,7 +672,7 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
 pub mod testing {
     use crate::{AttributionData, AttributionDataProvider, Resource, ResourcesVisitor};
     use fidl_fuchsia_memory_attribution_plugin::ResourceType;
-    use futures::future::{ready, BoxFuture};
+    use futures::future::{BoxFuture, ready};
 
     pub struct FakeAttributionDataProvider {
         pub attribution_data: AttributionData,
@@ -824,7 +824,7 @@ mod tests {
         let principals = vec![
             fplugin::Principal {
                 identifier: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                description: Some(fplugin::Description::Component("root".to_owned())),
+                description: Some(fplugin::Description::Component("component_manager".to_owned())),
                 principal_type: Some(fplugin::PrincipalType::Runnable),
                 parent: None,
                 ..Default::default()
@@ -1077,7 +1077,7 @@ mod tests {
             principals.get(&0).unwrap(),
             &PrincipalSummary {
                 id: 0,
-                name: "root".to_owned(),
+                name: "component_manager".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 1024,
                 committed_scaled: 1536.0,
@@ -1132,7 +1132,7 @@ mod tests {
                 populated_private: 2048,
                 populated_scaled: 2048.0,
                 populated_total: 2048,
-                attributor: Some("root".to_owned()),
+                attributor: Some("component_manager".to_owned()),
                 processes: vec!["runner_process (1005)".to_owned()],
                 vmos: vec![(
                     ZXName::from_string_lossy("runner_vmo"),
@@ -1164,7 +1164,7 @@ mod tests {
                 populated_private: 2048,
                 populated_scaled: 3072.0,
                 populated_total: 4096,
-                attributor: Some("root".to_owned()),
+                attributor: Some("component_manager".to_owned()),
                 processes: vec!["2_process (1009)".to_owned()],
                 vmos: vec![
                     (
@@ -1307,7 +1307,7 @@ mod tests {
         let principals = vec![
             fplugin::Principal {
                 identifier: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                description: Some(fplugin::Description::Component("root".to_owned())),
+                description: Some(fplugin::Description::Component("component_manager".to_owned())),
                 principal_type: Some(fplugin::PrincipalType::Runnable),
                 parent: None,
                 ..Default::default()
@@ -1399,7 +1399,7 @@ mod tests {
             principals.get(&0).unwrap(),
             &PrincipalSummary {
                 id: 0,
-                name: "root".to_owned(),
+                name: "component_manager".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 0,
                 committed_scaled: 0.0,
@@ -1425,7 +1425,7 @@ mod tests {
                 populated_private: 0,
                 populated_scaled: 0.0,
                 populated_total: 0,
-                attributor: Some("root".to_owned()),
+                attributor: Some("component_manager".to_owned()),
                 processes: vec![],
                 vmos: vec![].into_iter().collect(),
             }
@@ -1468,7 +1468,7 @@ mod tests {
     fn test_conversions() {
         let plugin_principal = fplugin::Principal {
             identifier: Some(fplugin::PrincipalIdentifier { id: 0 }),
-            description: Some(fplugin::Description::Component("root".to_owned())),
+            description: Some(fplugin::Description::Component("component_manager".to_owned())),
             principal_type: Some(fplugin::PrincipalType::Runnable),
             parent: None,
             ..Default::default()
@@ -1590,7 +1590,7 @@ mod tests {
         let principals = vec![
             fplugin::Principal {
                 identifier: Some(fplugin::PrincipalIdentifier { id: 0 }),
-                description: Some(fplugin::Description::Component("root".to_owned())),
+                description: Some(fplugin::Description::Component("component_manager".to_owned())),
                 principal_type: Some(fplugin::PrincipalType::Runnable),
                 parent: None,
                 ..Default::default()
@@ -1690,7 +1690,7 @@ mod tests {
             principals.get(&0).unwrap(),
             &PrincipalSummary {
                 id: 0,
-                name: "root".to_owned(),
+                name: "component_manager".to_owned(),
                 principal_type: "R".to_owned(),
                 committed_private: 0,
                 committed_scaled: 0.0,
@@ -1716,7 +1716,7 @@ mod tests {
                 populated_private: 2048,
                 populated_scaled: 2048.0,
                 populated_total: 2048,
-                attributor: Some("root".to_owned()),
+                attributor: Some("component_manager".to_owned()),
                 processes: vec!["component_process (1002)".to_owned()],
                 vmos: vec![
                     (

@@ -134,7 +134,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         # There should be at least one assertion per lazy node to detect failures and timeouts.
         asserts.assert_equal(only_entry["moniker"], "core/memory_monitor2")
 
-        root = only_entry["payload"]["root"]
+        root = only_entry["payload"]["component_manager"]
         asserts.assert_greater(root["kmem_stats"]["total_bytes"], 0)
         asserts.assert_greater_equal(
             root["kmem_stats_compression"]["pages_decompressed_unit_ns"], 0
@@ -151,7 +151,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_equal(only_entry.moniker, "core/memory_monitor2")
         if only_entry.payload is None:
             raise AssertionError("Payload should not be none")
-        root = only_entry.payload["root"]
+        root = only_entry.payload["component_manager"]
         asserts.assert_greater(root["kmem_stats"]["total_bytes"], 0)
         asserts.assert_greater_equal(
             root["kmem_stats_compression"]["pages_decompressed_unit_ns"], 0

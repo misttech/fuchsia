@@ -734,7 +734,7 @@ pub mod tests {
         mapping31_details.populated_scaled_bytes = 100;
         let root_job = Box::new(FakeJob::new(
             0,
-            "root",
+            "component_manager",
             vec![
                 FakeJob::new(
                     1,
@@ -761,14 +761,16 @@ pub mod tests {
                             31,
                             "proc31",
                             vec![],
-                            vec![zx::MapInfo::new(
-                                zx::Name::from_bytes_lossy("mapping31".as_bytes()),
-                                0x1200,
-                                1024,
-                                2,
-                                zx::MapDetails::Mapping(&mapping31_details),
-                            )
-                            .unwrap()],
+                            vec![
+                                zx::MapInfo::new(
+                                    zx::Name::from_bytes_lossy("mapping31".as_bytes()),
+                                    0x1200,
+                                    1024,
+                                    2,
+                                    zx::MapDetails::Mapping(&mapping31_details),
+                                )
+                                .unwrap(),
+                            ],
                         )],
                     )],
                     vec![FakeProcess::new(
