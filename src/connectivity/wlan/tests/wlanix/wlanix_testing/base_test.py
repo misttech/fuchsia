@@ -244,6 +244,8 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         # Maintain the invariant that every test starts with no access points.
         self.access_point().download_ap_logs(self.log_path)
         self.access_point().stop_all_aps()
+        # Ensure that our supplicant is fully disconnected.
+        asyncio.run(self.supplicant_sta_iface_proxy.disconnect())
         super().teardown_test()
 
     def teardown_class(self) -> None:
