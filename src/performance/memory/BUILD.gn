@@ -8,6 +8,7 @@ group("tests") {
     "attribution:tests",
     "heapdump:tests",
     "index_table_builder:tests",
+    "memory_mapped_vmo:tests",
     "pprof:tests",
     "sampler:tests",
   ]

@@ -5,7 +5,7 @@
 use std::alloc::Layout;
 use std::mem::{align_of, size_of, size_of_val};
 
-use crate::memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
+use memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
 
 /// An offset within the VMO.
 type Offset = u32;

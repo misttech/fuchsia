@@ -13,14 +13,13 @@ rustc_library("heapdump_vmo") {
   sources = [
     "src/allocations_table_v1.rs",
     "src/lib.rs",
-    "src/memory_mapped_vmo.rs",
     "src/resources_table_v1.rs",
     "src/stack_trace_compression.rs",
   ]
 
   deps = [
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-runtime",
+    "//src/performance/memory/memory_mapped_vmo",
     "//third_party/rust_crates:crc",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",

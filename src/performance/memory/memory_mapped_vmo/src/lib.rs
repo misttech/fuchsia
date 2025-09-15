@@ -4,6 +4,11 @@
 
 use std::mem::{align_of, size_of};
 
+#[derive(Debug)]
+pub enum Error {
+    InvalidInput,
+}
+
 /// Memory-maps a VMO and mediates access to its memory.
 pub struct MemoryMappedVmo {
     map_addr: usize,
@@ -20,7 +25,7 @@ impl MemoryMappedVmo {
     /// The caller must either guarantee that the `vmo` is not modified by others while the returned
     /// instance is alive or that accesses are synchronized in application-specific ways.
     pub unsafe fn new_readonly(vmo: &zx::Vmo) -> Result<MemoryMappedVmo, zx::Status> {
-        Self::new_impl(vmo, false)
+        unsafe { Self::new_impl(vmo, false) }
     }
 
     /// Maps a VMO in read-write mode.
@@ -29,7 +34,7 @@ impl MemoryMappedVmo {
     /// The caller must either guarantee that the `vmo` is not modified by others while the returned
     /// instance is alive or that accesses are synchronized in application-specific ways.
     pub unsafe fn new_readwrite(vmo: &zx::Vmo) -> Result<MemoryMappedVmo, zx::Status> {
-        Self::new_impl(vmo, true)
+        unsafe { Self::new_impl(vmo, true) }
     }
 
     /// # Safety
@@ -62,7 +67,7 @@ impl MemoryMappedVmo {
         &self,
         byte_offset: usize,
         num_elements: usize,
-    ) -> Result<*const T, crate::Error> {
+    ) -> Result<*const T, Error> {
         if byte_offset % align_of::<T>() == 0 {
             if let Some(num_bytes) = size_of::<T>().checked_mul(num_elements) {
                 if let Some(end) = byte_offset.checked_add(num_bytes) {
@@ -73,7 +78,7 @@ impl MemoryMappedVmo {
             }
         }
 
-        Err(crate::Error::InvalidInput)
+        Err(Error::InvalidInput)
     }
 
     /// Like validate_and_get_ptr, but returns a mut pointer and panics if the VMO is not writable.
@@ -81,7 +86,7 @@ impl MemoryMappedVmo {
         &mut self,
         byte_offset: usize,
         num_elements: usize,
-    ) -> Result<*mut T, crate::Error> {
+    ) -> Result<*mut T, Error> {
         if !self.writable {
             panic!("MemoryMappedVmo is not writable");
         }
@@ -96,7 +101,7 @@ impl MemoryMappedVmo {
         &'a self,
         byte_offset: usize,
         num_elements: usize,
-    ) -> Result<&'a [T], crate::Error> {
+    ) -> Result<&'a [T], Error> {
         let ptr = self.validate_and_get_ptr(byte_offset, num_elements)?;
         unsafe { Ok(std::slice::from_raw_parts(ptr, num_elements)) }
     }
@@ -104,10 +109,7 @@ impl MemoryMappedVmo {
     /// Returns a reference to an element in the VMO.
     ///
     /// This method validates the alignment and the bounds against the VMO size.
-    pub fn get_object<'a, T: MemoryMappable>(
-        &'a self,
-        byte_offset: usize,
-    ) -> Result<&'a T, crate::Error> {
+    pub fn get_object<'a, T: MemoryMappable>(&'a self, byte_offset: usize) -> Result<&'a T, Error> {
         let ptr = self.validate_and_get_ptr(byte_offset, 1)?;
         unsafe { Ok(&*ptr) }
     }
@@ -119,7 +121,7 @@ impl MemoryMappedVmo {
         &'a mut self,
         byte_offset: usize,
         num_elements: usize,
-    ) -> Result<&'a mut [T], crate::Error> {
+    ) -> Result<&'a mut [T], Error> {
         let ptr = self.validate_and_get_mut_ptr(byte_offset, num_elements)?;
         unsafe { Ok(std::slice::from_raw_parts_mut(ptr, num_elements)) }
     }
@@ -130,7 +132,7 @@ impl MemoryMappedVmo {
     pub fn get_object_mut<'a, T: MemoryMappable>(
         &'a mut self,
         byte_offset: usize,
-    ) -> Result<&'a mut T, crate::Error> {
+    ) -> Result<&'a mut T, Error> {
         let ptr = self.validate_and_get_mut_ptr(byte_offset, 1)?;
         unsafe { Ok(&mut *ptr) }
     }
@@ -258,13 +260,13 @@ mod tests {
 
         // Reading at a misaligned offset should fail.
         const MISALIGNED_OFFSET: usize = size_of::<u64>() - 1;
-        assert_matches!(m.get_object::<u64>(MISALIGNED_OFFSET), Err(crate::Error::InvalidInput));
+        assert_matches!(m.get_object::<u64>(MISALIGNED_OFFSET), Err(Error::InvalidInput));
 
         // Reading an out-of-bounds range should fail.
         const SECOND_ELEM_BYTE_OFFSET: usize = size_of::<u64>();
         assert_matches!(
             m.get_slice::<u64>(SECOND_ELEM_BYTE_OFFSET, COUNT),
-            Err(crate::Error::InvalidInput)
+            Err(Error::InvalidInput)
         );
     }
 

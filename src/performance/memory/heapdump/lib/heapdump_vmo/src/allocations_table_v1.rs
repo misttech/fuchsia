@@ -9,8 +9,8 @@ use std::ops::Deref;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Relaxed, SeqCst};
 
-use crate::memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
 pub use crate::resources_table_v1::ResourceKey;
+use memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
 
 type NodeIndex = u32;
 type BucketHeads = [AtomicNodeIndex; NUM_BUCKETS];
