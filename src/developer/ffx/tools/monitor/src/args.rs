@@ -9,7 +9,7 @@ use argh::{ArgsInfo, FromArgs};
     subcommand,
     name = "monitor",
     description = "Start a local server to monitor status.",
-    example = "ffx monitor start --port 8080"
+    example = "ffx monitor start"
 )]
 pub struct MonitorCommand {
     #[argh(subcommand)]

@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use ffx_config::EnvironmentContext;
+use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_developer_ffx::{RemoteControlState, TargetInfo, TargetState};
 use hyper::service::service_fn;
@@ -193,7 +194,7 @@ async fn handle_request(
 
 #[async_trait(?Send)]
 impl FfxMain for MonitorTool {
-    type Writer = ffx_writer::SimpleWriter;
+    type Writer = MachineWriter<serde_json::Value>;
     async fn main(self, mut writer: <Self as FfxMain>::Writer) -> fho::Result<()> {
         let pid_file_path: String = self
             .context
@@ -243,8 +244,14 @@ impl FfxMain for MonitorTool {
                     .context("reading response body")?;
                 let json: serde_json::Value =
                     serde_json::from_slice(&body).context("parsing json")?;
-                let pretty_json = serde_json::to_string_pretty(&json).context("formatting json")?;
-                writeln!(writer, "{}", pretty_json).context("writing response to writer")?;
+
+                if writer.is_machine() {
+                    writer.machine(&json)?;
+                } else {
+                    let pretty_json =
+                        serde_json::to_string_pretty(&json).context("formatting json")?;
+                    writeln!(writer, "{}", pretty_json).context("writing response to writer")?;
+                }
                 Ok(())
             }
         }
