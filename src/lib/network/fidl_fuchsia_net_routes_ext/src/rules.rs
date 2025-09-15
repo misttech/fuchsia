@@ -5,7 +5,6 @@
 //! Extensions for route rules FIDL.
 
 use std::fmt::Debug;
-use std::ops::RangeInclusive;
 
 use async_utils::{fold, stream};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy as _};
@@ -15,7 +14,8 @@ use futures::{Stream, TryStreamExt as _};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Subnet};
 use thiserror::Error;
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
 };
 
@@ -99,7 +99,7 @@ impl From<fnet_routes::RuleWatcherV6Request> for RuleWatcherRequest<Ipv6> {
 }
 
 /// An installed IPv4 routing rule.
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct InstalledRule<I: Ip> {
     /// Rule sets are ordered by the rule set priority, rule sets are disjoint
     /// and don’t have interleaving rules among them.
@@ -364,7 +364,7 @@ impl_responder!(
 );
 
 /// Conversion error for rule elements.
-#[derive(Debug, Error, Clone, Copy, PartialEq)]
+#[derive(Debug, Error, PartialEq)]
 pub enum RuleFidlConversionError {
     /// Destination Subnet conversion failed.
     #[error("failed to convert `destination` to net_types subnet: {0:?}")]
@@ -373,6 +373,26 @@ pub enum RuleFidlConversionError {
     #[error("unexpected union variant for {name}, got ordinal = ({unknown_ordinal})")]
     #[allow(missing_docs)]
     UnknownOrdinal { name: &'static str, unknown_ordinal: u64 },
+}
+
+impl From<fnet_matchers_ext::BoundInterfaceError> for RuleFidlConversionError {
+    fn from(value: fnet_matchers_ext::BoundInterfaceError) -> Self {
+        match value {
+            fnet_matchers_ext::BoundInterfaceError::UnknownUnionVariant(unknown_ordinal) => {
+                RuleFidlConversionError::UnknownOrdinal { name: "BoundInterface", unknown_ordinal }
+            }
+        }
+    }
+}
+
+impl From<fnet_matchers_ext::MarkError> for RuleFidlConversionError {
+    fn from(value: fnet_matchers_ext::MarkError) -> Self {
+        match value {
+            fnet_matchers_ext::MarkError::UnknownUnionVariant(unknown_ordinal) => {
+                RuleFidlConversionError::UnknownOrdinal { name: "Mark", unknown_ordinal }
+            }
+        }
+    }
 }
 
 /// The priority of the rule set, all rule sets are linearized based on this.
@@ -426,47 +446,11 @@ impl From<u32> for RuleIndex {
     }
 }
 
-/// How the interface of a packet should be matched against a rule.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum InterfaceMatcher {
-    /// Match on the name of the device.
-    DeviceName(String),
-    /// There is no bound device.
-    Unbound,
-}
-
-impl TryFrom<fnet_routes::InterfaceMatcher> for InterfaceMatcher {
-    type Error = RuleFidlConversionError;
-    fn try_from(matcher: fnet_routes::InterfaceMatcher) -> Result<Self, Self::Error> {
-        match matcher {
-            fnet_routes::InterfaceMatcher::DeviceName(name) => Ok(Self::DeviceName(name)),
-            fnet_routes::InterfaceMatcher::Unbound(fnet_routes::Unbound) => Ok(Self::Unbound),
-            fnet_routes::InterfaceMatcher::__SourceBreaking { unknown_ordinal } => {
-                Err(RuleFidlConversionError::UnknownOrdinal {
-                    name: "InterfaceMatcher",
-                    unknown_ordinal,
-                })
-            }
-        }
-    }
-}
-
-impl From<InterfaceMatcher> for fnet_routes::InterfaceMatcher {
-    fn from(matcher: InterfaceMatcher) -> Self {
-        match matcher {
-            InterfaceMatcher::DeviceName(name) => fnet_routes::InterfaceMatcher::DeviceName(name),
-            InterfaceMatcher::Unbound => {
-                fnet_routes::InterfaceMatcher::Unbound(fnet_routes::Unbound)
-            }
-        }
-    }
-}
-
 /// The matcher part of the rule that is used to match packets.
 ///
 /// The default matcher is the one that matches every packets, i.e., all the
 /// fields are none.
-#[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
 pub struct RuleMatcher<I: Ip> {
     /// Matches whether the source address of the packet is from the subnet.
     pub from: Option<Subnet<I::Addr>>,
@@ -474,11 +458,11 @@ pub struct RuleMatcher<I: Ip> {
     pub locally_generated: Option<bool>,
     /// Matches the packet iff the socket that was bound to the device using
     /// `SO_BINDTODEVICE`.
-    pub bound_device: Option<InterfaceMatcher>,
+    pub bound_device: Option<fnet_matchers_ext::BoundInterface>,
     /// The matcher for the MARK_1 domain.
-    pub mark_1: Option<MarkMatcher>,
+    pub mark_1: Option<fnet_matchers_ext::Mark>,
     /// The matcher for the MARK_2 domain.
-    pub mark_2: Option<MarkMatcher>,
+    pub mark_2: Option<fnet_matchers_ext::Mark>,
 }
 
 impl TryFrom<fnet_routes::RuleMatcherV4> for RuleMatcher<Ipv4> {
@@ -502,9 +486,11 @@ impl TryFrom<fnet_routes::RuleMatcherV4> for RuleMatcher<Ipv4> {
                 .map(|from| from.try_into_ext().map_err(RuleFidlConversionError::DestinationSubnet))
                 .transpose()?,
             locally_generated,
-            bound_device: bound_device.map(InterfaceMatcher::try_from).transpose()?,
-            mark_1: mark_1.map(MarkMatcher::try_from).transpose()?,
-            mark_2: mark_2.map(MarkMatcher::try_from).transpose()?,
+            bound_device: bound_device
+                .map(fnet_matchers_ext::BoundInterface::try_from)
+                .transpose()?,
+            mark_1: mark_1.map(fnet_matchers_ext::Mark::try_from).transpose()?,
+            mark_2: mark_2.map(fnet_matchers_ext::Mark::try_from).transpose()?,
         })
     }
 }
@@ -515,7 +501,7 @@ impl From<RuleMatcher<Ipv4>> for fnet_routes::RuleMatcherV4 {
     ) -> Self {
         let base = fnet_routes::BaseMatcher {
             locally_generated,
-            bound_device: bound_device.map(fnet_routes::InterfaceMatcher::from),
+            bound_device: bound_device.map(fnet_matchers::BoundInterface::from),
             mark_1: mark_1.map(Into::into),
             mark_2: mark_2.map(Into::into),
             __source_breaking: fidl::marker::SourceBreaking,
@@ -553,9 +539,11 @@ impl TryFrom<fnet_routes::RuleMatcherV6> for RuleMatcher<Ipv6> {
                 .map(|from| from.try_into_ext().map_err(RuleFidlConversionError::DestinationSubnet))
                 .transpose()?,
             locally_generated,
-            bound_device: bound_device.map(InterfaceMatcher::try_from).transpose()?,
-            mark_1: mark_1.map(MarkMatcher::try_from).transpose()?,
-            mark_2: mark_2.map(MarkMatcher::try_from).transpose()?,
+            bound_device: bound_device
+                .map(fnet_matchers_ext::BoundInterface::try_from)
+                .transpose()?,
+            mark_1: mark_1.map(fnet_matchers_ext::Mark::try_from).transpose()?,
+            mark_2: mark_2.map(fnet_matchers_ext::Mark::try_from).transpose()?,
         })
     }
 }
@@ -566,7 +554,7 @@ impl From<RuleMatcher<Ipv6>> for fnet_routes::RuleMatcherV6 {
     ) -> Self {
         let base = fnet_routes::BaseMatcher {
             locally_generated,
-            bound_device: bound_device.map(fnet_routes::InterfaceMatcher::from),
+            bound_device: bound_device.map(fnet_matchers::BoundInterface::from),
             mark_1: mark_1.map(Into::into),
             mark_2: mark_2.map(Into::into),
             __source_breaking: fidl::marker::SourceBreaking,
@@ -579,55 +567,6 @@ impl From<RuleMatcher<Ipv6>> for fnet_routes::RuleMatcherV6 {
             }),
             base,
             __source_breaking: fidl::marker::SourceBreaking,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-/// A matcher to be used against the mark value.
-pub enum MarkMatcher {
-    /// This mark domain does not have a mark.
-    Unmarked,
-    /// This mark domain has a mark.
-    Marked {
-        /// Mask to apply before comparing to the range in `between`.
-        mask: u32,
-        /// The mark is between the given range.
-        between: RangeInclusive<u32>,
-    },
-}
-
-impl TryFrom<fnet_routes::MarkMatcher> for MarkMatcher {
-    type Error = RuleFidlConversionError;
-
-    fn try_from(sel: fnet_routes::MarkMatcher) -> Result<Self, Self::Error> {
-        match sel {
-            fnet_routes::MarkMatcher::Unmarked(fnet_routes::Unmarked) => Ok(MarkMatcher::Unmarked),
-            fnet_routes::MarkMatcher::Marked(fnet_routes::Marked {
-                mask,
-                between: fnet_routes::Between { start, end },
-            }) => Ok(MarkMatcher::Marked { mask, between: RangeInclusive::new(start, end) }),
-            fnet_routes::MarkMatcher::__SourceBreaking { unknown_ordinal } => {
-                Err(RuleFidlConversionError::UnknownOrdinal {
-                    name: "MarkMatcher",
-                    unknown_ordinal,
-                })
-            }
-        }
-    }
-}
-
-impl From<MarkMatcher> for fnet_routes::MarkMatcher {
-    fn from(sel: MarkMatcher) -> Self {
-        match sel {
-            MarkMatcher::Unmarked => fnet_routes::MarkMatcher::Unmarked(fnet_routes::Unmarked),
-            MarkMatcher::Marked { mask, between } => {
-                let (start, end) = between.into_inner();
-                fnet_routes::MarkMatcher::Marked(fnet_routes::Marked {
-                    mask,
-                    between: fnet_routes::Between { start, end },
-                })
-            }
         }
     }
 }
@@ -997,7 +936,7 @@ pub async fn watch<'a, I: FidlRuleIpExt>(
 }
 
 /// Route watcher `Watch` errors.
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum RuleWatchError {
     /// The call to `Watch` returned a FIDL error.
     #[error("the call to `Watch()` failed: {0}")]
@@ -1045,7 +984,7 @@ pub fn rule_event_stream_from_watcher<I: FidlRuleIpExt>(
 }
 
 /// Errors returned by [`collect_rules_until_idle`].
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum CollectRulesUntilIdleError<I: FidlRuleIpExt> {
     /// There was an error in the event stream.
     #[error("there was an error in the event stream: {0}")]

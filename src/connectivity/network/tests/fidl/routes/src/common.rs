@@ -10,7 +10,8 @@ use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Subnet};
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
 use {
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
 };
 
 /// Common test setup that can be shared by all routes tests.
@@ -85,13 +86,13 @@ pub enum MarkMatcher {
     MatchMarked(u32),
 }
 
-impl From<MarkMatcher> for Option<fnet_routes_ext::rules::MarkMatcher> {
+impl From<MarkMatcher> for Option<fnet_matchers_ext::Mark> {
     fn from(value: MarkMatcher) -> Self {
         match value {
             MarkMatcher::DontMatch => None,
-            MarkMatcher::MatchUnmarked => Some(fnet_routes_ext::rules::MarkMatcher::Unmarked),
+            MarkMatcher::MatchUnmarked => Some(fnet_matchers_ext::Mark::Unmarked),
             MarkMatcher::MatchMarked(m) => {
-                Some(fnet_routes_ext::rules::MarkMatcher::Marked { mask: !0, between: m..=m })
+                Some(fnet_matchers_ext::Mark::Marked { mask: !0, between: m..=m, invert: false })
             }
         }
     }

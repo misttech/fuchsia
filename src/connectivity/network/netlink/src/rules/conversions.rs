@@ -11,8 +11,11 @@ use netlink_packet_route::rule::{
     RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleUidRange,
 };
 
-use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext};
-use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use {
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+};
 
 use crate::route_tables::NetlinkRouteTableIndex;
 
@@ -208,7 +211,7 @@ pub(super) fn fidl_rule_from_rule_message<I: Ip>(
         },
     };
     let bound_device = oifname
-        .map(|name| fnet_routes_ext::rules::InterfaceMatcher::DeviceName(name.to_owned()))
+        .map(|name| fnet_matchers_ext::BoundInterface::DeviceName(name.to_owned()))
         .or_else(||
             // If the action is `Unreachable`, we want to allow traffic with SO_BINDTODEVICE to
             // sidestep the unreachable rule and look into the main table. In most cases, Linux
@@ -218,23 +221,26 @@ pub(super) fn fidl_rule_from_rule_message<I: Ip>(
             //
             // See https://fxbug.dev/404262204 for more details.
             (action == Action::Unreachable)
-                .then_some(fnet_routes_ext::rules::InterfaceMatcher::Unbound));
+                .then_some(fnet_matchers_ext::BoundInterface::Unbound));
 
     let mark_1 = fwmark
-        .map(|fwmark| fnet_routes_ext::rules::MarkMatcher::Marked {
+        .map(|fwmark| fnet_matchers_ext::Mark::Marked {
             // If no mask is specified, default to checking the entire mark.
             mask: fwmask.unwrap_or(!0),
             between: fwmark..=fwmark,
+            invert: false,
         })
         // If no mark selector is specified, default to checking that a mark is present.
         // TODO(https://fxbug.dev/418849362): Remove this once we fully support PBR such that
         // Fuchsia components can acquire marked sockets that comply with the routing rules.
-        .or(Some(fnet_routes_ext::rules::MarkMatcher::Marked { mask: 0, between: 0..=0 }));
+        .or(Some(fnet_matchers_ext::Mark::Marked { mask: 0, between: 0..=0, invert: false }));
 
     // Fuchsia doesn't have a concept of a `uid`, so netlink and starnix have to agree on using
     // `mark_2` to encode this.
-    let mark_2 = uid_range.map(|RuleUidRange { start, end }| {
-        fnet_routes_ext::rules::MarkMatcher::Marked { mask: !0, between: start..=end }
+    let mark_2 = uid_range.map(|RuleUidRange { start, end }| fnet_matchers_ext::Mark::Marked {
+        mask: !0,
+        between: start..=end,
+        invert: false,
     });
 
     let priority = priority.unwrap_or_else(|| {
@@ -311,10 +317,7 @@ mod test {
     };
     use test_case::test_case;
 
-    use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
-    use fidl_fuchsia_net_routes_ext::rules::{
-        InterfaceMatcher, MarkMatcher, RuleIndex, RuleMatcher,
-    };
+    use fidl_fuchsia_net_routes_ext::rules::{RuleIndex, RuleMatcher};
 
     use crate::route_tables::NetlinkRouteTableIndex;
 
@@ -396,8 +399,12 @@ mod test {
                 matcher: RuleMatcher {
                     from: None,
                     locally_generated: None,
-                    bound_device: Some(InterfaceMatcher::Unbound),
-                    mark_1: Some(MarkMatcher::Marked { mask: 0, between: 0..=0 }),
+                    bound_device: Some(fnet_matchers_ext::BoundInterface::Unbound),
+                    mark_1: Some(fnet_matchers_ext::Mark::Marked {
+                        mask: 0,
+                        between: 0..=0,
+                        invert: false
+                    }),
                     mark_2: None
                 },
                 action: Action::Unreachable
@@ -542,12 +549,15 @@ mod test {
 
     #[ip_test(I)]
     #[test_case(Some("device-name"), RuleAction::Unreachable
-        => Some(InterfaceMatcher::DeviceName("device-name".to_owned())))]
+        => Some(fnet_matchers_ext::BoundInterface::DeviceName("device-name".to_owned())))]
     #[test_case(Some("device-name"), RuleAction::ToTable
-        => Some(InterfaceMatcher::DeviceName("device-name".to_owned())))]
-    #[test_case(None, RuleAction::Unreachable => Some(InterfaceMatcher::Unbound))]
+        => Some(fnet_matchers_ext::BoundInterface::DeviceName("device-name".to_owned())))]
+    #[test_case(None, RuleAction::Unreachable => Some(fnet_matchers_ext::BoundInterface::Unbound))]
     #[test_case(None, RuleAction::ToTable => None)]
-    fn bound_device<I: Ip>(oifname: Option<&str>, action: RuleAction) -> Option<InterfaceMatcher> {
+    fn bound_device<I: Ip>(
+        oifname: Option<&str>,
+        action: RuleAction,
+    ) -> Option<fnet_matchers_ext::BoundInterface> {
         test_convert_rule_args::<I>(RuleArgs {
             rule_attributes: oifname
                 .map(|name| RuleAttribute::Oifname(name.to_owned()))
@@ -563,22 +573,25 @@ mod test {
     }
 
     #[ip_test(I)]
-    #[test_case(Some(1234), Some(5678) => Some(fnet_routes_ext::rules::MarkMatcher::Marked {
+    #[test_case(Some(1234), Some(5678) => Some(fnet_matchers_ext::Mark::Marked {
         mask: 5678,
         between: 1234..=1234,
+        invert: false,
     }))]
-    #[test_case(None, Some(5678) => Some(fnet_routes_ext::rules::MarkMatcher::Marked {
+    #[test_case(None, Some(5678) => Some(fnet_matchers_ext::Mark::Marked {
         mask: 0,
         between: 0..=0,
+        invert: false,
     }); "defaults to checking mark is set (if mark is unset and mask is set)")]
-    #[test_case(None, None => Some(fnet_routes_ext::rules::MarkMatcher::Marked {
+    #[test_case(None, None => Some(fnet_matchers_ext::Mark::Marked {
         mask: 0,
         between: 0..=0,
+        invert: false,
     }); "defaults to checking mark is set (if mark is unset and mask is unset)")]
     fn mark_1_is_fwmark<I: Ip>(
         fwmark: Option<u32>,
         fwmask: Option<u32>,
-    ) -> Option<fnet_routes_ext::rules::MarkMatcher> {
+    ) -> Option<fnet_matchers_ext::Mark> {
         test_convert_rule_args::<I>(RuleArgs {
             rule_attributes: [fwmark.map(RuleAttribute::FwMark), fwmask.map(RuleAttribute::FwMask)]
                 .into_iter()
@@ -593,14 +606,13 @@ mod test {
 
     #[ip_test(I)]
     #[test_case(Some(RuleUidRange { start: 1, end: 10 })
-                => Some(fnet_routes_ext::rules::MarkMatcher::Marked {
+                => Some(fnet_matchers_ext::Mark::Marked {
                     mask: u32::MAX,
                     between: 1..=10,
+                    invert: false,
     }))]
     #[test_case(None => None)]
-    fn mark_2_is_uid<I: Ip>(
-        uidrange: Option<RuleUidRange>,
-    ) -> Option<fnet_routes_ext::rules::MarkMatcher> {
+    fn mark_2_is_uid<I: Ip>(uidrange: Option<RuleUidRange>) -> Option<fnet_matchers_ext::Mark> {
         test_convert_rule_args::<I>(RuleArgs {
             rule_attributes: uidrange
                 .map(|uidrange| RuleAttribute::UidRange(uidrange))
@@ -722,14 +734,19 @@ mod test {
                 matcher: RuleMatcher {
                     from: Some(expected_source_subnet),
                     locally_generated: Some(true),
-                    bound_device: Some(fnet_routes_ext::rules::InterfaceMatcher::DeviceName(
+                    bound_device: Some(fnet_matchers_ext::BoundInterface::DeviceName(
                         "eth0".to_owned()
                     )),
-                    mark_1: Some(MarkMatcher::Marked {
+                    mark_1: Some(fnet_matchers_ext::Mark::Marked {
                         mask: 0xBEEFDEAD,
-                        between: 0xDEADBEEF..=0xDEADBEEF
+                        between: 0xDEADBEEF..=0xDEADBEEF,
+                        invert: false,
                     }),
-                    mark_2: Some(MarkMatcher::Marked { mask: u32::MAX, between: 42..=60 })
+                    mark_2: Some(fnet_matchers_ext::Mark::Marked {
+                        mask: u32::MAX,
+                        between: 42..=60,
+                        invert: false,
+                    })
                 },
                 action: Action::ToTable(NetlinkRouteTableIndex::new(5678))
             })

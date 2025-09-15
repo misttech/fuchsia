@@ -164,6 +164,7 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.migration:fuchsia.migration",
   "//sdk/fidl/fuchsia.net.http:fuchsia.net.http",
   "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces",
+  "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers",
   "//sdk/fidl/fuchsia.net.mdns:fuchsia.net.mdns",
   "//sdk/fidl/fuchsia.net.reachability:fuchsia.net.reachability",
   "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes",

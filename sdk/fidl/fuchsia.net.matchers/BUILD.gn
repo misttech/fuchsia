@@ -6,6 +6,9 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.net.matchers") {
   sources = [ "matchers.fidl" ]
+  sdk_category = "partner"
+  stable = false
+  sdk_area = "Netstack"
 
   public_deps = [
     "//sdk/fidl/fuchsia.net",

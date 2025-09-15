@@ -31,7 +31,7 @@ use {
 ///
 /// This type also derives additional impls that are not available on
 /// `fnet_interfaces::PortClass`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 #[allow(missing_docs)]
 pub enum PortClass {
     Loopback,

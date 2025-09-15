@@ -46,7 +46,8 @@ use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_ndp as fnet_ndp,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_ndp as fnet_ndp,
     fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
@@ -714,7 +715,7 @@ async fn successfully_installs_rule_referencing_main_table<
         fnet_routes_ext::rules::InstalledRule {
             matcher: fnet_routes_ext::rules::RuleMatcher {
                 mark_1: Some(
-                    fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }
+                    fnet_matchers_ext::Mark::Marked { mask: u32::MAX, between, invert: false}
                 ),
                 ..
             },
@@ -835,7 +836,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
     // Assume that if the marks match, this is the corresponding rule.
     let (mark_range, table) = assert_matches!(added_rule, fnet_routes_ext::rules::InstalledRule {
         matcher: fnet_routes_ext::rules::RuleMatcher {
-            mark_1: Some(fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }),
+            mark_1: Some(fnet_matchers_ext::Mark::Marked { mask: u32::MAX, between, invert: false}),
             ..
         },
         action: fnet_routes_ext::rules::RuleAction::Lookup(table),
@@ -864,7 +865,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
         fnet_routes_ext::rules::InstalledRule {
             matcher: fnet_routes_ext::rules::RuleMatcher {
                 mark_1: Some(
-                    fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }
+                    fnet_matchers_ext::Mark::Marked { mask: u32::MAX, between, invert: false}
                 ),
                 ..
             },
@@ -908,7 +909,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
         fnet_routes_ext::rules::InstalledRule {
             matcher: fnet_routes_ext::rules::RuleMatcher {
                 mark_1: Some(
-                    fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }
+                    fnet_matchers_ext::Mark::Marked { mask: u32::MAX, between, invert: false}
                 ),
                 ..
             },
@@ -943,7 +944,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
         fnet_routes_ext::rules::InstalledRule {
             matcher: fnet_routes_ext::rules::RuleMatcher {
                 mark_1: Some(
-                    fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }
+                    fnet_matchers_ext::Mark::Marked { mask: u32::MAX, between, invert: false}
                 ),
                 ..
             },
@@ -1192,7 +1193,7 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     // Assume that if the marks match, this is the corresponding rule.
     let (mark_range, table) = assert_matches!(added_rule, fnet_routes_ext::rules::InstalledRule {
         matcher: fnet_routes_ext::rules::RuleMatcher {
-            mark_1: Some(fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }),
+            mark_1: Some(fnet_matchers_ext::Mark::Marked { mask: u32::MAX, between, invert: false}),
             ..
         },
         action: fnet_routes_ext::rules::RuleAction::Lookup(table),
@@ -1285,10 +1286,15 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     let removed_rule =
         assert_matches!(rule_event, fnet_routes_ext::rules::RuleEvent::Removed(rule) => rule);
     // Assume that if the marks match, this is the corresponding rule.
-    let (mark_range, removal_referenced_table) = assert_matches!(removed_rule,
+    let (mark_range, removal_referenced_table) = assert_matches!(
+        removed_rule,
         fnet_routes_ext::rules::InstalledRule {
             matcher: fnet_routes_ext::rules::RuleMatcher {
-                mark_1: Some(fnet_routes_ext::rules::MarkMatcher::Marked { mask: u32::MAX, between }),
+                mark_1: Some(fnet_matchers_ext::Mark::Marked {
+                    mask: u32::MAX,
+                    between,
+                    invert: false,
+                }),
                 ..
             },
             action: fnet_routes_ext::rules::RuleAction::Lookup(table),

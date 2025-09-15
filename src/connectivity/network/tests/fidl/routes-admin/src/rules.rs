@@ -21,7 +21,8 @@ use netstack_testing_common::realms::{Netstack2, Netstack3, TestSandboxExt as _}
 use netstack_testing_macros::netstack_test;
 use routes_common::{TestSetup, add_default_route_for_mark};
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
+    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
 
@@ -97,9 +98,7 @@ async fn add_remove_rules<I: FidlRuleAdminIpExt + FidlRouteAdminIpExt + FidlRout
             RuleIndex::from(1),
             RuleMatcher {
                 locally_generated: Some(false),
-                bound_device: Some(fnet_routes_ext::rules::InterfaceMatcher::DeviceName(
-                    "lo".into()
-                )),
+                bound_device: Some(fnet_matchers_ext::BoundInterface::DeviceName("lo".into())),
                 ..Default::default()
             },
             RuleAction::Unreachable,

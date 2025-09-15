@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.net.routes;
 
-using fuchsia.net.interfaces;
+using fuchsia.net.matchers;
 
 /// The priority of the rule set, all rule sets are linearized based on this.
 ///
@@ -39,37 +39,6 @@ type RuleAction = flexible union {
     2: unreachable struct {};
 };
 
-/// Matches the mark value of a packet.
-@available(added=HEAD)
-type MarkMatcher = flexible union {
-    /// This mark domain does not have a mark.
-    1: unmarked struct {};
-    2: marked struct {
-        /// Mask to apply before comparing to the range in `between`.
-        mask uint32;
-        /// The mark is between the given range.
-        between struct {
-            /// start of the range, inclusive.
-            start uint32;
-            /// end of the range, inclusive.
-            end uint32;
-        };
-    };
-};
-
-/// Matches on the originating interface of the outgoing packet.
-@available(added=HEAD)
-type InterfaceMatcher = flexible union {
-    /// Matches the device iff the names match.
-    ///
-    /// The name is not a pattern or regex, it needs to be an exact match for
-    /// the rule to be chosen.
-    1: device_name fuchsia.net.interfaces.Name;
-    /// Matches iff the outgoing traffic is not bound to a device.
-    2: unbound struct {};
-    // TODO(https://fxbug.dev/351015513): Introduce a variant that matches on the ID.
-};
-
 /// The common matcher that can be matched to both IPv4 and IPv6 packets.
 ///
 /// A matcher matches a packet if all of the present fields match the
@@ -79,12 +48,12 @@ type BaseMatcher = table {
     /// Matches the packet iff the packet was locally generated.
     1: locally_generated bool;
 
-    /// Matches the packet iff the packet is sent with `SO_BINDTODEVICE`.
-    2: bound_device InterfaceMatcher;
+    /// Matches on the originating interface of the outgoing packet.
+    2: bound_device fuchsia.net.matchers.BoundInterface;
 
     /// Matches the MARK_1 domain.
-    3: mark_1 MarkMatcher;
+    3: mark_1 fuchsia.net.matchers.Mark;
 
     /// Matches for the MARK_2 domain.
-    4: mark_2 MarkMatcher;
+    4: mark_2 fuchsia.net.matchers.Mark;
 };

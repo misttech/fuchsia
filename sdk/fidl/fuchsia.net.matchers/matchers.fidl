@@ -19,6 +19,20 @@ type Interface = flexible union {
     3: port_class fuchsia.net.interfaces.PortClass;
 };
 
+/// A matcher for network interfaces where it might be unbound (`BindToDevice`
+/// has not been called).
+type BoundInterface = flexible union {
+    /// Matches the device iff the names match.
+    ///
+    /// The name is not a pattern or regex, it needs to be an exact match for
+    /// the rule to be chosen.
+    1: device_name fuchsia.net.interfaces.Name;
+    /// Matches iff the outgoing traffic is not bound to a device.
+    2: unbound struct {};
+    // TODO(https://fxbug.dev/351015513): Nest `Interface` inside of here to allow matching on all
+    // interface types.
+};
+
 /// A matcher for IP addresses.
 type Address = struct {
     matcher @generated_name("AddressMatcherType") flexible union {
@@ -86,19 +100,26 @@ type PacketTransportProtocol = flexible union {
     4: icmpv6 Icmpv6Packet;
 };
 
-/// A matcher for the mark on a socket or packet.
-type Mark = struct {
-    /// The mark domain to match against.
-    domain fuchsia.net.MarkDomain;
-    /// The bitmask to apply while matching. Only those bits specified in this
-    /// mask are compared.
-    mask uint32;
-    /// The mark value to compare for equality.
-    value uint32;
-    /// Whether to check for an "inverse" or "negative" match.
-    ///
-    /// The mask is applied as normal, but the value is checked for inequality.
-    invert bool;
+/// Matches the mark value of a packet or socket.
+type Mark = flexible union {
+    /// This mark domain does not have a mark.
+    1: unmarked struct {};
+    2: marked struct {
+        /// Mask to apply before comparing to the range in `between`.
+        mask uint32;
+        /// The mark is between the given range.
+        between struct {
+            /// Start of the range, inclusive.
+            start uint32;
+            /// End of the range, inclusive.
+            end uint32;
+        };
+        /// Whether to check for an "inverse" or "negative" match.
+        ///
+        /// The mask is applied as normal, but the value is checked for
+        /// inequality.
+        invert bool;
+    };
 };
 
 /// A matcher for a socket's cookie.

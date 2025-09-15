@@ -31,7 +31,8 @@ use {
     fidl_fuchsia_net_filter_deprecated as ffilter_deprecated,
     fidl_fuchsia_net_interfaces as finterfaces,
     fidl_fuchsia_net_interfaces_admin as finterfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as finterfaces_ext, fidl_fuchsia_net_name as fname,
+    fidl_fuchsia_net_interfaces_ext as finterfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_name as fname,
     fidl_fuchsia_net_neighbor as fneighbor, fidl_fuchsia_net_neighbor_ext as fneighbor_ext,
     fidl_fuchsia_net_root as froot, fidl_fuchsia_net_routes as froutes,
     fidl_fuchsia_net_routes_ext as froutes_ext, fidl_fuchsia_net_stack as fstack,
@@ -1122,10 +1123,10 @@ async fn do_rule_list<C: NetCliDepsConnector>(
     v4_rules.sort_by_key(|r| (r.priority, r.index));
     v6_rules.sort_by_key(|r| (r.priority, r.index));
 
-    fn format_matcher(matcher: froutes_ext::rules::MarkMatcher) -> Cow<'static, str> {
+    fn format_matcher(matcher: fnet_matchers_ext::Mark) -> Cow<'static, str> {
         match matcher {
-            froutes_ext::rules::MarkMatcher::Unmarked => Cow::Borrowed("unmarked"),
-            froutes_ext::rules::MarkMatcher::Marked { mask, between } => {
+            fnet_matchers_ext::Mark::Unmarked => Cow::Borrowed("unmarked"),
+            fnet_matchers_ext::Mark::Marked { mask, between, invert: _ } => {
                 format!("{mask:#010x}:{:#010x}..{:#010x}", between.start(), between.end()).into()
             }
         }
@@ -1163,8 +1164,8 @@ async fn do_rule_list<C: NetCliDepsConnector>(
             let from = from.map(|from| from.to_string());
             let locally_generated = locally_generated.map(|x| x.to_string());
             let bound_device = bound_device.map(|matcher| match matcher {
-                froutes_ext::rules::InterfaceMatcher::DeviceName(name) => name,
-                froutes_ext::rules::InterfaceMatcher::Unbound => "unbound".into(),
+                fnet_matchers_ext::BoundInterface::DeviceName(name) => name,
+                fnet_matchers_ext::BoundInterface::Unbound => "unbound".into(),
             });
             let mark_1 = mark_1.map(format_matcher);
             let mark_2 = mark_2.map(format_matcher);

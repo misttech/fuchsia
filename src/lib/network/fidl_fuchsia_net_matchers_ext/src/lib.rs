@@ -25,7 +25,7 @@ use {
 };
 
 /// Extension type for [`fnet_matchers::Interface`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Interface {
     Id(NonZeroU64),
     Name(fnet_interfaces::Name),
@@ -68,6 +68,47 @@ impl TryFrom<fnet_matchers::Interface> for Interface {
             }
             fnet_matchers::Interface::__SourceBreaking { .. } => {
                 Err(InterfaceError::UnknownUnionVariant)
+            }
+        }
+    }
+}
+
+/// Extension type for [`fnet_matchers::BoundInterface`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BoundInterface {
+    Unbound,
+    DeviceName(String),
+}
+
+/// Errors when creating an [`BoundInterface`].
+#[derive(Debug, Error, PartialEq)]
+pub enum BoundInterfaceError {
+    #[error("interface union is of an unknown variant")]
+    UnknownUnionVariant(u64),
+}
+
+impl From<BoundInterface> for fnet_matchers::BoundInterface {
+    fn from(matcher: BoundInterface) -> Self {
+        match matcher {
+            BoundInterface::Unbound => {
+                fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound)
+            }
+            BoundInterface::DeviceName(name) => fnet_matchers::BoundInterface::DeviceName(name),
+        }
+    }
+}
+
+impl TryFrom<fnet_matchers::BoundInterface> for BoundInterface {
+    type Error = BoundInterfaceError;
+
+    fn try_from(matcher: fnet_matchers::BoundInterface) -> Result<Self, Self::Error> {
+        match matcher {
+            fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound) => {
+                Ok(BoundInterface::Unbound)
+            }
+            fnet_matchers::BoundInterface::DeviceName(name) => Ok(BoundInterface::DeviceName(name)),
+            fnet_matchers::BoundInterface::__SourceBreaking { unknown_ordinal } => {
+                Err(BoundInterfaceError::UnknownUnionVariant(unknown_ordinal))
             }
         }
     }
@@ -494,6 +535,53 @@ impl Debug for TransportProtocol {
             }
             TransportProtocol::Icmp => f.write_str("Icmp"),
             TransportProtocol::Icmpv6 => f.write_str("Icmpv6"),
+        }
+    }
+}
+
+/// An extension type for [`fnet_matchers::Mark`]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Mark {
+    Unmarked,
+    Marked { mask: u32, between: RangeInclusive<u32>, invert: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum MarkError {
+    #[error("mark union is of an unknown variant")]
+    UnknownUnionVariant(u64),
+}
+
+impl TryFrom<fnet_matchers::Mark> for Mark {
+    type Error = MarkError;
+
+    fn try_from(matcher: fnet_matchers::Mark) -> Result<Self, Self::Error> {
+        match matcher {
+            fnet_matchers::Mark::Unmarked(fnet_matchers::Unmarked) => Ok(Mark::Unmarked),
+            fnet_matchers::Mark::Marked(fnet_matchers::Marked {
+                mask,
+                between: fnet_matchers::Between { start, end },
+                invert,
+            }) => Ok(Mark::Marked { mask, between: RangeInclusive::new(start, end), invert }),
+            fnet_matchers::Mark::__SourceBreaking { unknown_ordinal } => {
+                Err(MarkError::UnknownUnionVariant(unknown_ordinal))
+            }
+        }
+    }
+}
+
+impl From<Mark> for fnet_matchers::Mark {
+    fn from(matcher: Mark) -> Self {
+        match matcher {
+            Mark::Unmarked => fnet_matchers::Mark::Unmarked(fnet_matchers::Unmarked),
+            Mark::Marked { mask, between, invert } => {
+                let (start, end) = between.into_inner();
+                fnet_matchers::Mark::Marked(fnet_matchers::Marked {
+                    mask,
+                    between: fnet_matchers::Between { start, end },
+                    invert,
+                })
+            }
         }
     }
 }

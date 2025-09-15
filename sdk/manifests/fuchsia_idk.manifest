@@ -309,6 +309,7 @@ fidl_library://fidl/fuchsia.migration
 fidl_library://fidl/fuchsia.net
 fidl_library://fidl/fuchsia.net.http
 fidl_library://fidl/fuchsia.net.interfaces
+fidl_library://fidl/fuchsia.net.matchers (unstable)
 fidl_library://fidl/fuchsia.net.mdns
 fidl_library://fidl/fuchsia.net.reachability
 fidl_library://fidl/fuchsia.net.routes

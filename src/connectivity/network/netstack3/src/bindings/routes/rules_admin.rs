@@ -11,13 +11,14 @@ use async_utils::fold::{FoldResult, FoldWhile};
 use fidl::endpoints::ControlHandle as _;
 use fnet_routes_ext::Responder;
 use fnet_routes_ext::rules::{
-    FidlRuleAdminIpExt, InstalledRule, InterfaceMatcher, MarkMatcher, RuleAction, RuleIndex,
-    RuleMatcher, RuleSetPriority, RuleSetRequest, RuleTableRequest,
+    FidlRuleAdminIpExt, InstalledRule, RuleAction, RuleIndex, RuleMatcher, RuleSetPriority,
+    RuleSetRequest, RuleTableRequest,
 };
 use futures::TryStreamExt as _;
 use futures::channel::{mpsc, oneshot};
 use net_types::ip::Ip;
 use {
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
 };
@@ -26,17 +27,19 @@ use crate::bindings::util::{IntoCore as _, ScopeExt as _, TryFromFidl, TryIntoCo
 use crate::bindings::{Ctx, routes};
 pub(super) use witness::AddableMatcher;
 
-impl TryFromFidl<InterfaceMatcher> for netstack3_core::routes::BoundDeviceMatcher {
+impl TryFromFidl<fnet_matchers_ext::BoundInterface> for netstack3_core::routes::BoundDeviceMatcher {
     type Error = std::convert::Infallible;
 
-    fn try_from_fidl(fidl: InterfaceMatcher) -> Result<Self, Self::Error> {
+    fn try_from_fidl(fidl: fnet_matchers_ext::BoundInterface) -> Result<Self, Self::Error> {
         match fidl {
-            InterfaceMatcher::DeviceName(name) => {
+            fnet_matchers_ext::BoundInterface::DeviceName(name) => {
                 Ok(netstack3_core::routes::BoundDeviceMatcher::DeviceName(
                     netstack3_core::device::DeviceNameMatcher(name),
                 ))
             }
-            InterfaceMatcher::Unbound => Ok(netstack3_core::routes::BoundDeviceMatcher::Unbound),
+            fnet_matchers_ext::BoundInterface::Unbound => {
+                Ok(netstack3_core::routes::BoundDeviceMatcher::Unbound)
+            }
         }
     }
 }
@@ -65,10 +68,12 @@ impl<I: Ip> TryFromFidl<RuleMatcher<I>> for netstack3_core::routes::RuleMatcher<
             (Some(false), Some(_)) => return Err(fnet_routes_admin::RuleSetError::InvalidMatcher),
         };
 
-        fn to_core_mark_matcher(matcher: MarkMatcher) -> netstack3_core::routes::MarkMatcher {
+        fn to_core_mark_matcher(
+            matcher: fnet_matchers_ext::Mark,
+        ) -> netstack3_core::routes::MarkMatcher {
             match matcher {
-                MarkMatcher::Unmarked => netstack3_core::routes::MarkMatcher::Unmarked,
-                MarkMatcher::Marked { mask, between } => {
+                fnet_matchers_ext::Mark::Unmarked => netstack3_core::routes::MarkMatcher::Unmarked,
+                fnet_matchers_ext::Mark::Marked { mask, between, invert: _ } => {
                     netstack3_core::routes::MarkMatcher::Marked {
                         mask,
                         start: *between.start(),
@@ -552,7 +557,7 @@ mod tests {
         let fidl = RuleMatcher {
             locally_generated,
             bound_device: has_bound_device_matcher
-                .then_some(fnet_routes_ext::rules::InterfaceMatcher::DeviceName("lo".into())),
+                .then_some(fnet_matchers_ext::BoundInterface::DeviceName("lo".into())),
             ..Default::default()
         };
         fidl.try_into_core()

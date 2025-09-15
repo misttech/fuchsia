@@ -11,8 +11,7 @@ use fidl_fuchsia_net_filter_ext::{
 };
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{
-    FidlRuleAdminIpExt, FidlRuleIpExt, MarkMatcher, RuleAction, RuleIndex, RuleMatcher,
-    RuleSetPriority,
+    FidlRuleAdminIpExt, FidlRuleIpExt, RuleAction, RuleIndex, RuleMatcher, RuleSetPriority,
 };
 use fidl_fuchsia_net_routes_ext::{FidlRouteIpExt, TableId};
 use fuchsia_async::{self as fasync};
@@ -23,6 +22,7 @@ use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_ext as fnet_ext,
     fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
@@ -549,7 +549,11 @@ async fn mark_on_incoming_syn<
         &rule_set,
         RULE_INDEX_0,
         RuleMatcher {
-            mark_1: Some(MarkMatcher::Marked { mask: !0, between: MARK..=MARK }),
+            mark_1: Some(fnet_matchers_ext::Mark::Marked {
+                mask: !0,
+                between: MARK..=MARK,
+                invert: false,
+            }),
             ..Default::default()
         },
         RuleAction::Lookup(TableId::new(main_table_id)),
@@ -661,7 +665,7 @@ async fn bind_to_device_skips_unreachable_rule<
         &rule_set,
         RULE_INDEX_0,
         RuleMatcher {
-            bound_device: Some(fnet_routes_ext::rules::InterfaceMatcher::Unbound),
+            bound_device: Some(fnet_matchers_ext::BoundInterface::Unbound),
             ..Default::default()
         },
         RuleAction::Unreachable,

@@ -1009,7 +1009,7 @@ async fn inspect_rules(name: &str) {
         2.into(),
         fnet_routes_ext::rules::RuleMatcher::<Ipv4> {
             locally_generated: Some(true),
-            bound_device: Some(fnet_routes_ext::rules::InterfaceMatcher::Unbound),
+            bound_device: Some(fnet_matchers_ext::BoundInterface::Unbound),
             ..Default::default()
         },
         fnet_routes_ext::rules::RuleAction::Unreachable,
@@ -1023,7 +1023,7 @@ async fn inspect_rules(name: &str) {
         3.into(),
         fnet_routes_ext::rules::RuleMatcher::<Ipv4> {
             locally_generated: Some(true),
-            bound_device: Some(fnet_routes_ext::rules::InterfaceMatcher::DeviceName(
+            bound_device: Some(fnet_matchers_ext::BoundInterface::DeviceName(
                 "device-name".to_owned(),
             )),
             ..Default::default()
@@ -1038,7 +1038,7 @@ async fn inspect_rules(name: &str) {
         &rule_set,
         4.into(),
         fnet_routes_ext::rules::RuleMatcher::<Ipv4> {
-            mark_1: Some(fnet_routes_ext::rules::MarkMatcher::Unmarked),
+            mark_1: Some(fnet_matchers_ext::Mark::Unmarked),
             ..Default::default()
         },
         fnet_routes_ext::rules::RuleAction::Unreachable,
@@ -1051,9 +1051,10 @@ async fn inspect_rules(name: &str) {
         &rule_set,
         5.into(),
         fnet_routes_ext::rules::RuleMatcher::<Ipv4> {
-            mark_2: Some(fnet_routes_ext::rules::MarkMatcher::Marked {
+            mark_2: Some(fnet_matchers_ext::Mark::Marked {
                 mask: 100,
                 between: 0..=100,
+                invert: false,
             }),
             ..Default::default()
         },

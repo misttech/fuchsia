@@ -28,6 +28,7 @@ rustc_library("netlink") {
     "//src/lib/fuchsia-component",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
+    "//src/lib/network/fidl_fuchsia_net_matchers_ext",
     "//src/lib/network/fidl_fuchsia_net_ndp_ext",
     "//src/lib/network/fidl_fuchsia_net_routes_ext",
     "//src/lib/network/packet",
