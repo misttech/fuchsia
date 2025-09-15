@@ -2257,27 +2257,7 @@ impl Command {
     /// Initiates a trace flow for the command and returns a guard that will terminate the flow
     /// when dropped
     fn begin_trace_flow(&self) -> CommandTraceGuard {
-        CommandTraceGuard::begin(match self {
-            Command::AcquireRef(_) => c"AcquireRef",
-            Command::ReleaseRef(_) => c"ReleaseRef",
-            Command::IncRef(_) => c"IncRef",
-            Command::DecRef(_) => c"DecRef",
-            Command::Error(_) => c"Error",
-            Command::OnewayTransaction(_) => c"OnewayTransaction",
-            Command::Transaction { .. } => c"Transaction",
-            Command::Reply(_) => c"Reply",
-            Command::TransactionComplete => c"TransactionComplete",
-            Command::OnewayTransactionComplete => c"OnewayTransactionComplete",
-            Command::FailedReply => c"FailedReply",
-            Command::DeadReply { .. } => c"DeadReply",
-            Command::DeadBinder(_) => c"DeadBinder",
-            Command::ClearDeathNotificationDone(_) => c"ClearDeathNotificationDone",
-            Command::SpawnLooper => c"SpawnLooper",
-            Command::FrozenReply => c"FrozenReply",
-            Command::PendingFrozen => c"PendingFrozen",
-            Command::FrozenBinder(_) => c"FrozenBinder",
-            Command::ClearFreezeNotificationDone(_) => c"ClearFreezeNotificationDone",
-        })
+        CommandTraceGuard::begin(&self)
     }
 
     /// Returns the command's BR_* code for serialization.
@@ -2460,14 +2440,35 @@ struct CommandTraceGuardInner {
 }
 
 impl CommandTraceGuard {
-    fn begin(kind: &'static CStr) -> Self {
-        if starnix_logging::regular_trace_category_enabled(TRACE_CATEGORY) {
-            let id = fuchsia_trace::Id::random();
-            trace_instaflow_begin!(TRACE_CATEGORY, c"BinderFlow", kind, id);
-            Self(Some(CommandTraceGuardInner { id, kind }))
-        } else {
-            Self(None)
+    fn begin(command: &Command) -> Self {
+        if !starnix_logging::regular_trace_category_enabled(TRACE_CATEGORY) {
+            return Self(None);
         }
+        let kind = match command {
+            Command::AcquireRef(_) => c"AcquireRef",
+            Command::ReleaseRef(_) => c"ReleaseRef",
+            Command::IncRef(_) => c"IncRef",
+            Command::DecRef(_) => c"DecRef",
+            Command::Error(_) => c"Error",
+            Command::OnewayTransaction(_) => c"OnewayTransaction",
+            Command::Transaction { .. } => c"Transaction",
+            Command::Reply(_) => c"Reply",
+            Command::TransactionComplete => c"TransactionComplete",
+            Command::OnewayTransactionComplete => c"OnewayTransactionComplete",
+            Command::FailedReply => c"FailedReply",
+            Command::DeadReply { .. } => c"DeadReply",
+            Command::DeadBinder(_) => c"DeadBinder",
+            Command::ClearDeathNotificationDone(_) => c"ClearDeathNotificationDone",
+            Command::SpawnLooper => c"SpawnLooper",
+            Command::FrozenReply => c"FrozenReply",
+            Command::PendingFrozen => c"PendingFrozen",
+            Command::FrozenBinder(_) => c"FrozenBinder",
+            Command::ClearFreezeNotificationDone(_) => c"ClearFreezeNotificationDone",
+        };
+        let id = fuchsia_trace::Id::random();
+        let f = format!("{:?}", command);
+        trace_instaflow_begin!(TRACE_CATEGORY, c"BinderFlow", kind, id, "cmd" => &*f);
+        Self(Some(CommandTraceGuardInner { id, kind }))
     }
 }
 
@@ -4034,6 +4035,7 @@ impl BinderDriver {
     {
         profile_duration!("ThreadWrite");
         let command = cursor.read_object::<binder_driver_command_protocol>()?;
+        trace_duration!(CATEGORY_STARNIX, c"handle_thread_write", "command" => command);
         let result = match command {
             binder_driver_command_protocol_BC_ENTER_LOOPER => {
                 profile_duration!("EnterLooper");
