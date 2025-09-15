@@ -94,7 +94,7 @@ macro_rules! firehose_trace_instant {
 #[macro_export]
 macro_rules! trace_duration {
     ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        let mut args;
+        let args;
         let _scope = if !$crate::regular_tracing_enabled() {
             None
         } else {
@@ -194,15 +194,17 @@ macro_rules! trace_instaflow_begin {
         $flow_id:expr
         $(, $key:expr => $val:expr)*
     ) => {
-        let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-        if $crate::regular_tracing_enabled() {
-            $crate::__fuchsia_trace::instaflow_begin!(
-                $category,
-                $flow_name,
-                $step_name,
-                _flow_id
-                $(, $key => $val)*
-            );
+        {
+            let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
+            if $crate::regular_tracing_enabled() {
+                $crate::__fuchsia_trace::instaflow_begin!(
+                    $category,
+                    $flow_name,
+                    $step_name,
+                    _flow_id
+                    $(, $key => $val)*
+                );
+            }
         }
     };
 }
@@ -216,15 +218,17 @@ macro_rules! trace_instaflow_end {
         $flow_id:expr
         $(, $key:expr => $val:expr)*
     ) => {
-        let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-        if $crate::regular_tracing_enabled() {
-            $crate::__fuchsia_trace::instaflow_end!(
-                $category,
-                $flow_name,
-                $step_name,
-                _flow_id
-                $(, $key => $val)*
-            );
+        {
+            let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
+            if $crate::regular_tracing_enabled() {
+                $crate::__fuchsia_trace::instaflow_end!(
+                    $category,
+                    $flow_name,
+                    $step_name,
+                    _flow_id
+                    $(, $key => $val)*
+                );
+            }
         }
     };
 }
@@ -238,15 +242,17 @@ macro_rules! trace_instaflow_step {
         $flow_id:expr
         $(, $key:expr => $val:expr)*
     ) => {
-        let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-        if $crate::regular_tracing_enabled() {
-            $crate::__fuchsia_trace::instaflow_step!(
-                $category,
-                $flow_name,
-                $step_name,
-                _flow_id
-                $(, $key => $val)*
-            );
+        {
+            let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
+            if $crate::regular_tracing_enabled() {
+                $crate::__fuchsia_trace::instaflow_step!(
+                    $category,
+                    $flow_name,
+                    $step_name,
+                    _flow_id
+                    $(, $key => $val)*
+                );
+            }
         }
     };
 }
