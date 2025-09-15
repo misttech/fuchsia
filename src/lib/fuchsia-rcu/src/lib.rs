@@ -5,6 +5,7 @@
 pub mod rcu_arc;
 pub mod rcu_cell;
 pub mod rcu_ptr;
+pub mod rcu_write_scope;
 
 mod atomic_stack;
 mod rcu_read_scope;

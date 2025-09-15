@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
-use crate::state_machine::rcu_drop;
+use crate::rcu_write_scope::RcuWriteScope;
+use crate::state_machine::rcu_synchronize;
 
 /// An RCU (Read-Copy-Update) version of `Cell`.
 ///
@@ -30,32 +31,43 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
 
     /// Write the value of the RCU Cell.
     ///
-    /// Concurrent readers may continue to see the old value of the Cell until the RCU state machine
-    /// has made sufficient progress. To wait until all concurrent readers have dropped their read
-    /// guards, call `rcu_synchronize()`.
-    pub fn set(&self, data: T) {
-        let new_ptr = Box::into_raw(Box::new(data));
-        let old_ptr = self.ptr.replace(new_ptr);
-        // SAFETY: The old pointer is no longer refernced from this cell. We can drop the object
-        // once all the in-flight readers finish.
-        unsafe { Self::drop_ptr(old_ptr) };
+    /// Blocks until all concurrent readers have dropped their read guards.
+    pub fn set_sync(&self, data: T) {
+        self.replace_sync(Box::into_raw(Box::new(data)));
     }
 
-    /// Drop the object referenced by the given pointer.
+    /// Write the value of the RCU Cell.
     ///
-    /// This function defers the drop of the object until the RCU state machine has made sufficient
-    /// progress to ensure that no concurrent readers are holding read guards.
-    unsafe fn drop_ptr(data: *mut T) {
-        rcu_drop(Box::from_raw(data));
+    /// Concurrent readers may continue to see the old value of the Cell until the RCU state machine
+    /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
+    pub fn set_deferred(&self, scope: &RcuWriteScope, data: T) {
+        let new_ptr = Box::into_raw(Box::new(data));
+        // SAFETY: `scope.drop` defers the drop of the object until the RCU state machine has made
+        // sufficient progress to ensure that no concurrent readers are holding read guards.
+        let value = unsafe { self.replace(new_ptr) };
+        scope.drop(value);
+    }
+
+    #[must_use]
+    /// Replace the pointer in the RCU Cell with a new pointer.
+    ///
+    /// SAFETY: The caller must defer the drop of the object until the RCU state machine has made
+    /// sufficient progress to ensure that no concurrent readers are holding read guards.
+    unsafe fn replace(&self, ptr: *mut T) -> Box<T> {
+        let old_ptr = self.ptr.replace(ptr);
+        Box::from_raw(old_ptr)
+    }
+
+    fn replace_sync(&self, ptr: *mut T) {
+        let value = unsafe { self.replace(ptr) };
+        rcu_synchronize();
+        std::mem::drop(value);
     }
 }
 
 impl<T: Send + Sync + 'static> Drop for RcuCell<T> {
     fn drop(&mut self) {
-        let ptr = self.ptr.replace(std::ptr::null_mut());
-        // SAFETY: The old pointer is no longer refernced from this cell. We can drop the object
-        // once all the in-flight readers finish.
-        unsafe { Self::drop_ptr(ptr) };
+        self.replace_sync(std::ptr::null_mut());
     }
 }
 
@@ -68,34 +80,32 @@ impl<T: Send + Sync + 'static> From<Box<T>> for RcuCell<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
     use std::ops::Deref;
 
     #[test]
     fn test_rcu_cell() {
-        {
-            let value = RcuCell::new(42);
-            assert_eq!(value.read().deref(), &42);
-        }
-        rcu_synchronize();
+        let value = RcuCell::new(42);
+        assert_eq!(value.read().deref(), &42);
     }
 
     #[test]
-    fn test_rcu_cell_set() {
-        {
-            let value = RcuCell::new(42);
-            value.set(43);
-            assert_eq!(value.read().deref(), &43);
-        }
-        rcu_synchronize();
+    fn test_rcu_cell_set_deferred() {
+        let value = RcuCell::new(42);
+        let scope = RcuWriteScope::default();
+        value.set_deferred(&scope, 43);
+        assert_eq!(value.read().deref(), &43);
+    }
+
+    #[test]
+    fn test_rcu_cell_set_sync() {
+        let value = RcuCell::new(42);
+        value.set_sync(43);
+        assert_eq!(value.read().deref(), &43);
     }
 
     #[test]
     fn test_rcu_cell_drop() {
-        {
-            let value = RcuCell::new(42);
-            drop(value);
-        }
-        rcu_synchronize();
+        let value = RcuCell::new(42);
+        drop(value);
     }
 }

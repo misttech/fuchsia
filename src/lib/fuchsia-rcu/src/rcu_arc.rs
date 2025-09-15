@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
-use crate::state_machine::rcu_drop;
+use crate::rcu_write_scope::RcuWriteScope;
+use crate::state_machine::rcu_synchronize;
 use std::sync::Arc;
 
 /// An RCU (Read-Copy-Update) version of `Arc`.
@@ -31,14 +32,21 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
 
     /// Write the value of the RCU Arc.
     ///
+    /// Blocks until all concurrent readers have dropped their read guards.
+    pub fn set_sync(&self, data: Arc<T>) {
+        self.replace_sync(Self::into_ptr(data));
+    }
+
+    /// Write the value of the RCU Arc.
+    ///
     /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
-    /// has made sufficient progress. To wait until all concurrent readers have dropped their read
-    /// guards, call `rcu_synchronize()`.
-    pub fn set(&self, data: Arc<T>) {
-        let old_ptr = self.ptr.replace(Self::into_ptr(data));
-        // SAFETY: The old pointer is no longer referenced from this object. We can drop our strong
-        // reference to the object once all the in-flight readers have finished.
-        unsafe { Self::drop_ptr(old_ptr) };
+    /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
+    pub fn set_deferred(&self, scope: &RcuWriteScope, data: Arc<T>) {
+        let ptr = Self::into_ptr(data);
+        // SAFETY: `scope.drop` defers the drop of the object until the RCU state machine has made
+        // sufficient progress to ensure that no concurrent readers are holding read guards.
+        let arc = unsafe { self.replace(ptr) };
+        scope.drop(arc);
     }
 
     /// Create a new `Arc` to the object referenced by the RCU Arc.
@@ -64,21 +72,32 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
         Arc::into_raw(data) as *mut T
     }
 
-    /// Decrement the reference count of the object referenced by the given pointer.
+    /// Replace the pointer in the RCU Arc with a new pointer.
     ///
-    /// This function defers the drop of the object until the RCU state machine has made sufficient
-    /// progress to ensure that no concurrent readers are holding read guards.
-    unsafe fn drop_ptr(data: *const T) {
-        rcu_drop(Arc::from_raw(data));
+    /// SAFETY: The caller must defer the drop of the object until the RCU state machine has made
+    /// sufficient progress to ensure that no concurrent readers are holding read guards.
+    #[must_use]
+    unsafe fn replace(&self, ptr: *mut T) -> Arc<T> {
+        let old_ptr = self.ptr.replace(ptr);
+        Arc::from_raw(old_ptr)
+    }
+
+    /// Replace the pointer in the RCU Arc with a new pointer.
+    ///
+    /// This function blocks until the RCU state machine has made sufficient progress to ensure
+    /// that no concurrent readers are holding read guards.
+    fn replace_sync(&self, ptr: *mut T) {
+        // SAFETY: `rcu_synchronize` blocks until the RCU state machine has made sufficient
+        // progress to ensure that no concurrent readers are holding read guards.
+        let arc = unsafe { self.replace(ptr) };
+        rcu_synchronize();
+        std::mem::drop(arc);
     }
 }
 
 impl<T: Send + Sync + 'static> Drop for RcuArc<T> {
     fn drop(&mut self) {
-        let ptr = self.ptr.replace(std::ptr::null_mut());
-        // SAFETY: The old pointer is no longer referenced from this object. We can drop our strong
-        // reference to the object once all the in-flight readers have finished.
-        unsafe { Self::drop_ptr(ptr) };
+        self.replace_sync(std::ptr::null_mut());
     }
 }
 
@@ -97,7 +116,6 @@ impl<T: Send + Sync + 'static> From<Arc<T>> for RcuArc<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct DropCounter {
@@ -118,21 +136,32 @@ mod tests {
     }
 
     #[test]
-    fn test_rcu_arc() {
-        {
-            let object = DropCounter::new(42);
-            let drops = object.drops.clone();
+    fn test_rcu_arc_deferred() {
+        let object = DropCounter::new(42);
+        let drops = object.drops.clone();
 
-            let arc = RcuArc::from(object);
-            assert_eq!(arc.read().value, 42);
-            assert_eq!(drops.load(Ordering::Relaxed), 0);
-            arc.set(DropCounter::new(43));
-            assert_eq!(arc.read().value, 43);
-            assert_eq!(drops.load(Ordering::Relaxed), 0);
+        let arc = RcuArc::from(object);
+        assert_eq!(arc.read().value, 42);
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        let scope = RcuWriteScope::default();
+        arc.set_deferred(&scope, DropCounter::new(43));
+        assert_eq!(arc.read().value, 43);
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
 
-            rcu_synchronize();
-            assert_eq!(drops.load(Ordering::Relaxed), 1);
-        }
-        rcu_synchronize();
+        scope.sync();
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_rcu_arc_sync() {
+        let object = DropCounter::new(42);
+        let drops = object.drops.clone();
+
+        let arc = RcuArc::from(object);
+        assert_eq!(arc.read().value, 42);
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        arc.set_sync(DropCounter::new(43));
+        assert_eq!(arc.read().value, 43);
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 }
