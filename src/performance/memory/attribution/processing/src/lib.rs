@@ -627,6 +627,12 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
                     if parent_koid == 0 {
                         panic!("Parent is not None but 0.");
                     }
+                    // Some VMOs' ancestry is self referential: their parent's koid is set to their
+                    // own koid. We want to detect this case and break early to avoid getting
+                    // stuck in an infinite loop.
+                    if parent_koid == resource.resource.koid {
+                        break;
+                    }
                     ancestors.push(parent_koid);
                     let mut current_resource = match resources.get(&parent_koid) {
                         Some(res) => res.borrow_mut(),

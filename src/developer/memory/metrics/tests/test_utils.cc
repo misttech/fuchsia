@@ -161,7 +161,7 @@ void TestUtils::CreateCapture(Capture* capture, const CaptureTemplate& t, Captur
   for (const auto& process : t.processes) {
     capture->koid_to_process_.emplace(process.koid, process);
   }
-  CaptureMaker::ReallocateDescendents(t.rooted_vmo_names, capture->koid_to_vmo_);
+  CaptureMaker::ReallocateDescendants(t.rooted_vmo_names, capture->koid_to_vmo_);
 }
 
 std::vector<ProcessSummary> TestUtils::GetProcessSummaries(const Summary& summary) {

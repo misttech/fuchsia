@@ -8,7 +8,6 @@
 #include <zircon/types.h>
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include "src/developer/memory/metrics/capture.h"
@@ -22,7 +21,7 @@ struct CaptureTemplate {
   zx_info_kmem_stats_extended_t kmem_extended = {};
   std::vector<zx_info_vmo_t> vmos;
   std::vector<Process> processes;
-  std::vector<std::string> rooted_vmo_names;
+  std::unordered_set<std::string> rooted_vmo_names;
 };
 
 struct GetProcessesCallback {

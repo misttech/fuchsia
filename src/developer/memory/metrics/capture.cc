@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <optional>
+#include <ranges>
 
 #include <task-utils/walker.h>
 
@@ -194,7 +195,7 @@ class OSImpl : public OS, public TaskEnumerator {
 // Returns an OS implementation querying Zircon Kernel.
 std::unique_ptr<OS> CreateDefaultOS() { return std::make_unique<OSImpl>(); }
 
-const std::vector<std::string> Capture::kDefaultRootedVmoNames = {
+const std::unordered_set<std::string> Capture::kDefaultRootedVmoNames = {
     "SysmemContiguousPool", "SysmemAmlogicProtectedPool", "Sysmem-core"};
 
 CaptureMaker::CaptureMaker(fidl::WireSyncClient<fuchsia_kernel::Stats> stats_client,
@@ -204,7 +205,7 @@ CaptureMaker::CaptureMaker(fidl::WireSyncClient<fuchsia_kernel::Stats> stats_cli
 }
 
 zx_status_t CaptureMaker::GetCapture(Capture* capture, CaptureLevel level,
-                                     const std::vector<std::string>& rooted_vmo_names) {
+                                     const std::unordered_set<std::string>& rooted_vmo_names) {
   TRACE_DURATION("memory_metrics", "Capture::GetCapture");
   capture->time_ = os_->GetBoot();
 
@@ -264,9 +265,9 @@ zx_status_t CaptureMaker::GetCapture(Capture* capture, CaptureLevel level,
   capture->koid_to_process_ = std::move(koid_to_process);
   capture->koid_to_vmo_ = std::move(koid_to_vmo);
 
-  TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::ReallocateDescendents");
-  ReallocateDescendents(rooted_vmo_names, capture->koid_to_vmo_);
-  TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::ReallocateDescendents");
+  TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::ReallocateDescendants");
+  ReallocateDescendants(rooted_vmo_names, capture->koid_to_vmo_);
+  TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::ReallocateDescendants");
   return err;
 }
 
@@ -282,13 +283,13 @@ fit::result<zx_status_t, CaptureMaker> CaptureMaker::Create(std::unique_ptr<OS> 
   return fit::ok(CaptureMaker{std::move(stats_client), std::move(os)});
 }
 
-// Descendents of this vmo will have their allocated_bytes treated as an allocation of their
+// Descendants of this vmo will have their allocated_bytes treated as an allocation of their
 // immediate parent. This supports a usage pattern where a potentially large allocation is done
 // and then slices are given to read / write children. In this case the children have no
 // committed_bytes of their own. For accounting purposes it gives more clarity to push the
 // committed bytes to the lowest points in the tree, where the vmo names give more specific
 // meanings.
-void CaptureMaker::ReallocateDescendents(Vmo& parent,
+void CaptureMaker::ReallocateDescendants(Vmo& parent,
                                          std::unordered_map<zx_koid_t, Vmo>& koid_to_vmo) {
   for (auto& child_koid : parent.children) {
     auto& child = koid_to_vmo.at(child_koid);
@@ -296,36 +297,36 @@ void CaptureMaker::ReallocateDescendents(Vmo& parent,
       uint64_t reallocated_bytes = std::min(parent.committed_bytes.integral, child.allocated_bytes);
       parent.committed_bytes.integral -= reallocated_bytes;
       child.committed_bytes.integral = reallocated_bytes;
-      ReallocateDescendents(child, koid_to_vmo);
+      ReallocateDescendants(child, koid_to_vmo);
     }
   }
 }
 
-// See the above description of ReallocateDescendents(zx_koid_t) for the specific behavior for each
+// See the above description of ReallocateDescendants(zx_koid_t) for the specific behavior for each
 // vmo that has a name listed in rooted_vmo_names.
-void CaptureMaker::ReallocateDescendents(const std::vector<std::string>& rooted_vmo_names,
+void CaptureMaker::ReallocateDescendants(const std::unordered_set<std::string>& rooted_vmo_names,
                                          std::unordered_map<zx_koid_t, Vmo>& koid_to_vmo) {
-  TRACE_DURATION("memory_metrics", "Capture::ReallocateDescendents");
-  std::vector<zx_koid_t> root_vmos;
-  for (auto const& [_, child] : koid_to_vmo) {
+  TRACE_DURATION("memory_metrics", "Capture::ReallocateDescendants");
+  std::vector<std::reference_wrapper<Vmo>> root_vmos;
+  for (auto& child : koid_to_vmo | std::views::values) {
+    // Some VMOs are their own parents; no need to reallocate them.
+    if (child.parent_koid == child.koid) {
+      continue;
+    }
+    // Root VMOs don't have parents.
     if (child.parent_koid == ZX_KOID_INVALID) {
-      root_vmos.push_back(child.koid);
+      root_vmos.emplace_back(child);
       continue;
     }
-    auto parent_it = koid_to_vmo.find(child.parent_koid);
-    if (parent_it == koid_to_vmo.end()) {
-      continue;
+    // Add references of VMOs to their children, to populate the descendance graph.
+    if (auto parent_it = koid_to_vmo.find(child.parent_koid); parent_it != koid_to_vmo.end()) {
+      parent_it->second.children.push_back(child.koid);
     }
-    parent_it->second.children.push_back(child.koid);
   }
-  for (auto& vmo_koid : root_vmos) {
-    auto& vmo = koid_to_vmo.at(vmo_koid);
-    for (const auto& vmo_name : rooted_vmo_names) {
-      if (vmo.name != vmo_name) {
-        continue;
-      }
-      ReallocateDescendents(vmo, koid_to_vmo);
-    }
+  for (auto vmo : root_vmos | std::views::filter([&rooted_vmo_names](const auto& vmo) {
+                    return rooted_vmo_names.contains(vmo.get().name);
+                  })) {
+    ReallocateDescendants(vmo, koid_to_vmo);
   }
 }
 }  // namespace memory

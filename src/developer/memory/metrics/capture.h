@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <ffl/fixed.h>
@@ -191,7 +192,7 @@ class MallocPurgeGuard {
 
 class Capture {
  public:
-  static const std::vector<std::string> kDefaultRootedVmoNames;
+  static const std::unordered_set<std::string> kDefaultRootedVmoNames;
 
   zx_instant_boot_t time() const { return time_; }
   const zx_info_kmem_stats_t& kmem() const { return kmem_; }
@@ -232,12 +233,12 @@ class CaptureMaker {
 
   zx_status_t GetCapture(
       Capture* capture, CaptureLevel level,
-      const std::vector<std::string>& rooted_vmo_names = Capture::kDefaultRootedVmoNames);
+      const std::unordered_set<std::string>& rooted_vmo_names = Capture::kDefaultRootedVmoNames);
 
  private:
   CaptureMaker(fidl::WireSyncClient<fuchsia_kernel::Stats> stats_client, std::unique_ptr<OS> os);
-  static void ReallocateDescendents(Vmo& parent, std::unordered_map<zx_koid_t, Vmo>& koid_to_vmo);
-  static void ReallocateDescendents(const std::vector<std::string>& rooted_vmo_names,
+  static void ReallocateDescendants(Vmo& parent, std::unordered_map<zx_koid_t, Vmo>& koid_to_vmo);
+  static void ReallocateDescendants(const std::unordered_set<std::string>& rooted_vmo_names,
                                     std::unordered_map<zx_koid_t, Vmo>& koid_to_vmo);
   // zx_koid_t self_koid_;
   fidl::WireSyncClient<fuchsia_kernel::Stats> stats_client_;
