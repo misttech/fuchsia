@@ -351,6 +351,17 @@ zx::error<zx_status_t> LeaseErrorToZxError(fuchsia_power_broker::LeaseError e) {
   }
 }
 
+zx::error<zx_status_t> AddElementErrorToZxError(fuchsia_power_broker::AddElementError e) {
+  switch (e) {
+    case fuchsia_power_broker::AddElementError::kInvalid:
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    case fuchsia_power_broker::AddElementError::kNotAuthorized:
+      return zx::error(ZX_ERR_ACCESS_DENIED);
+    default:
+      return zx::error(ZX_ERR_INTERNAL);
+  }
+}
+
 const char* LeaseErrorToString(fuchsia_power_broker::LeaseError e) {
   switch (e) {
     case fuchsia_power_broker::LeaseError::kInternal:
@@ -359,6 +370,17 @@ const char* LeaseErrorToString(fuchsia_power_broker::LeaseError e) {
       return "Not authorized";
     case fuchsia_power_broker::LeaseError::kInvalidLevel:
       return "Invalid level";
+    default:
+      return "(unknown)";
+  }
+}
+
+const char* AddElementErrorToString(fuchsia_power_broker::AddElementError e) {
+  switch (e) {
+    case fuchsia_power_broker::AddElementError::kInvalid:
+      return "Invalid";
+    case fuchsia_power_broker::AddElementError::kNotAuthorized:
+      return "Not authorized";
     default:
       return "(unknown)";
   }
