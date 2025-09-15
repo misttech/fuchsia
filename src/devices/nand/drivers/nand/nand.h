@@ -7,9 +7,11 @@
 
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
-#include <lib/ddk/driver.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/inspect/cpp/vmo/types.h>
 #include <lib/operation/nand.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <threads.h>
@@ -18,46 +20,35 @@
 #include <ddktl/device.h>
 #include <fbl/condition_variable.h>
 #include <fbl/intrusive_double_list.h>
-#include <fbl/mutex.h>
 
-#include "lib/inspect/cpp/vmo/types.h"
 #include "src/devices/nand/drivers/nand/read_cache.h"
 
 namespace nand {
 
 using Transaction = nand::BorrowedOperation<>;
 
-class NandDevice;
-using DeviceType = ddk::Device<NandDevice, ddk::Suspendable>;
-
-class NandDevice : public DeviceType, public ddk::NandProtocol<NandDevice, ddk::base_protocol> {
+class NandDriver : public fdf::DriverBase, public ddk::NandProtocol<NandDriver> {
  public:
+  static constexpr std::string_view kDriverName = "nand";
+  static constexpr std::string_view kChildNodeName = "nand";
+
   // Based on field metrics, this is estimated to recover for 99.5% of the failed reads that recover
   // at 100 retries while reducing the read disturb on the pages 10x to prevent tipping into
   // undetected ECC failures which makes debugging and triage difficult.
   static constexpr size_t kNandReadRetries = 10;
 
-  explicit NandDevice(zx_device_t* parent) : DeviceType(parent), raw_nand_(parent) {}
+  NandDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
-  DISALLOW_COPY_ASSIGN_AND_MOVE(NandDevice);
-
-  ~NandDevice();
-
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
-  zx_status_t Bind();
-  zx_status_t Init();
-
-  // Device protocol implementation.
-  void DdkSuspend(ddk::SuspendTxn txn);
-  void DdkRelease();
+  // fdf::DriverBase implementation.
+  zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
   // Nand protocol implementation.
   void NandQuery(nand_info_t* info_out, size_t* nand_op_size_out);
   void NandQueue(nand_operation_t* op, nand_queue_callback completion_cb, void* cookie);
   zx_status_t NandGetFactoryBadBlockList(uint32_t* bad_blocks, size_t bad_block_len,
                                          size_t* num_bad_blocks);
-
-  zx::vmo GetDuplicateInspectVmoForTest() const;
 
  private:
   // Maps the data and oob vmos from the specified |nand_op| into memory.
@@ -77,17 +68,13 @@ class NandDevice : public DeviceType, public ddk::NandProtocol<NandDevice, ddk::
   zx_status_t ReadOp(nand_operation_t* nand_op);
   zx_status_t WriteOp(nand_operation_t* nand_op);
 
-  void DoIo(Transaction txn);
-  zx_status_t WorkerThread();
-
-  void Shutdown();
+  void PerformTransaction(Transaction transaction);
 
   ddk::RawNandProtocolClient raw_nand_;
 
   nand_info_t nand_info_;
   uint32_t num_nand_pages_;
 
-  inspect::Inspector inspect_;
   inspect::Node root_;
 
   // Track number of bit flips in each read attempt, ECC failures records max ECC plus one.
@@ -109,12 +96,14 @@ class NandDevice : public DeviceType, public ddk::NandProtocol<NandDevice, ddk::
   // If a read call doesn't want the oob, store it here instead to facilitate caching.
   std::unique_ptr<uint8_t[]> oob_buffer_ = nullptr;
 
-  thrd_t worker_thread_;
+  fdf::SynchronizedDispatcher transaction_performer_dispatcher_;
 
-  fbl::Mutex lock_;
-  nand::BorrowedOperationQueue<> txn_queue_ TA_GUARDED(lock_);
-  fbl::ConditionVariable worker_event_ TA_GUARDED(lock_);
-  bool shutdown_ TA_GUARDED(lock_) = false;
+  // Completed by `transaction_performer_dispatcher_` when the dispatcher is shutdown.
+  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
+
+  compat::BanjoServer nand_server_{ZX_PROTOCOL_NAND, this, &nand_protocol_ops_};
+  compat::SyncInitializedDeviceServer compat_server_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
 };
 
 }  // namespace nand

@@ -4,6 +4,9 @@
 
 #include "src/devices/nand/drivers/nand/nand.h"
 
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -14,18 +17,17 @@
 #include <memory>
 #include <utility>
 
-#include <fbl/auto_lock.h>
-#include <fbl/mutex.h>
-#include <zxtest/zxtest.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "fuchsia/hardware/nand/c/banjo.h"
 #include "lib/inspect/cpp/hierarchy.h"
 #include "lib/inspect/cpp/inspector.h"
 #include "lib/inspect/cpp/reader.h"
 #include "lib/inspect/cpp/vmo/types.h"
-#include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/lib/testing/predicates/status.h"
 
-namespace {
+namespace nand::testing {
 
 constexpr uint32_t kPageSize = 1024;
 constexpr uint32_t kOobSize = 8;
@@ -37,7 +39,14 @@ constexpr uint32_t kNumOobSize = 8;
 constexpr uint8_t kMagic = 'd';
 constexpr uint8_t kOobMagic = 'o';
 
-nand_info_t kInfo = {kPageSize, kNumPages, kNumBlocks, kEccBits, kNumOobSize, 0, {}};
+constexpr nand_info_t kInfo = {
+    .page_size = kPageSize,
+    .pages_per_block = kNumPages,
+    .num_blocks = kNumBlocks,
+    .ecc_bits = kEccBits,
+    .oob_size = kNumOobSize,
+    .nand_class = 0,
+    .partition_guid = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}};
 
 enum class OperationType {
   kRead,
@@ -88,7 +97,7 @@ class FakeRawNand : public ddk::RawNandProtocol<FakeRawNand> {
     }
     *out_ecc_correct = ecc_bits_;
 
-    fbl::AutoLock al(&lock_);
+    std::lock_guard<std::mutex> lock(lock_);
     last_op_.type = OperationType::kRead;
     last_op_.nandpage = nandpage;
 
@@ -111,7 +120,7 @@ class FakeRawNand : public ddk::RawNandProtocol<FakeRawNand> {
       result_ = ZX_ERR_IO;
     }
 
-    fbl::AutoLock al(&lock_);
+    std::lock_guard<std::mutex> lock(lock_);
     last_op_.type = OperationType::kWrite;
     last_op_.nandpage = nandpage;
 
@@ -119,15 +128,21 @@ class FakeRawNand : public ddk::RawNandProtocol<FakeRawNand> {
   }
 
   zx_status_t RawNandEraseBlock(uint32_t nandpage) {
-    fbl::AutoLock al(&lock_);
+    std::lock_guard<std::mutex> lock(lock_);
     last_op_.type = OperationType::kErase;
     last_op_.nandpage = nandpage;
     return result_;
   }
 
   LastOperation last_op() {
-    fbl::AutoLock al(&lock_);
+    std::lock_guard<std::mutex> lock(lock_);
     return last_op_;
+  }
+
+  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
+    compat::DeviceServer::BanjoConfig config{.default_proto_id = ZX_PROTOCOL_RAW_NAND};
+    config.callbacks[ZX_PROTOCOL_RAW_NAND] = banjo_server_.callback();
+    return config;
   }
 
  private:
@@ -138,55 +153,59 @@ class FakeRawNand : public ddk::RawNandProtocol<FakeRawNand> {
   // Calls a specified callback passing "this" at the beginning of the RawNandReadPageHwecc.
   std::function<void(FakeRawNand*)> read_callback_ = {};
 
-  fbl::Mutex lock_;
+  std::mutex lock_;
   LastOperation last_op_ TA_GUARDED(lock_) = {};
+
+  compat::BanjoServer banjo_server_{ZX_PROTOCOL_RAW_NAND, this, &raw_nand_protocol_ops_};
 };
 
-class NandTest : public zxtest::Test {
+class NandTestEnvironment : public fdf_testing::Environment {
  public:
-  NandTest() {
-    root_->AddProtocol(ZX_PROTOCOL_RAW_NAND, raw_nand_.proto()->ops, raw_nand_.proto()->ctx);
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+
+    device_server_.Initialize("default", std::nullopt, raw_nand_.GetBanjoConfig());
+    if (zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs); status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    return zx::ok();
   }
 
-  MockDevice* root() { return root_.get(); }
   FakeRawNand& raw_nand() { return raw_nand_; }
 
  private:
   FakeRawNand raw_nand_;
-  std::shared_ptr<MockDevice> root_ = MockDevice::FakeRootParent();
+  compat::DeviceServer device_server_;
 };
 
-TEST_F(NandTest, TrivialLifetime) {
-  nand::NandDevice device(root());
-  ASSERT_OK(device.Init());
-}
+// Wrapper around `NandDriver` needed in order to expose the driver's inspect data.
+class TestNandDriver : public NandDriver {
+ public:
+  TestNandDriver(fdf::DriverStartArgs start_args,
+                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : NandDriver(std::move(start_args), std::move(driver_dispatcher)) {}
 
-TEST_F(NandTest, DdkLifetime) {
-  nand::NandDevice* device(new nand::NandDevice(root()));
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestNandDriver>::initialize,
+                                          fdf_internal::DriverServer<TestNandDriver>::destroy);
+  }
 
-  ASSERT_OK(device->Init());
-  ASSERT_OK(device->Bind());
-  // mock-ddk will release the device.
-}
+  inspect::ComponentInspector& inspector() { return NandDriver::inspector(); }
+};
 
-TEST_F(NandTest, Query) {
-  nand::NandDevice device(root());
-  ASSERT_OK(device.Init());
+class FixtureConfig final {
+ public:
+  using DriverType = TestNandDriver;
+  using EnvironmentType = NandTestEnvironment;
+};
 
-  nand_info_t info;
-  size_t operation_size;
-  device.NandQuery(&info, &operation_size);
-
-  ASSERT_BYTES_EQ(&info, &kInfo, sizeof(info));
-  ASSERT_GT(operation_size, sizeof(nand_operation_t));
-}
-
-class NandDeviceTest;
+class NandDriverTest;
 
 // Wrapper for a nand_operation_t.
 class Operation {
  public:
-  explicit Operation(size_t op_size, NandDeviceTest* test) : op_size_(op_size), test_(test) {}
+  explicit Operation(size_t op_size, NandDriverTest* test) : op_size_(op_size), test_(test) {}
   ~Operation() {}
 
   // Accessors for the memory represented by the operation's vmo.
@@ -210,7 +229,7 @@ class Operation {
 
   bool completed() const { return completed_; }
   zx_status_t status() const { return status_; }
-  NandDeviceTest* test() const { return test_; }
+  NandDriverTest* test() const { return test_; }
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(Operation);
 
@@ -221,7 +240,7 @@ class Operation {
   fzl::OwnedVmoMapper data_mapper_;
   fzl::OwnedVmoMapper oob_mapper_;
   size_t op_size_;
-  NandDeviceTest* test_;
+  NandDriverTest* test_;
   zx_status_t status_ = ZX_ERR_ACCESS_DENIED;
   bool completed_ = false;
   static constexpr size_t buffer_size_ = kNumBlocks * kPageSize * kNumPages;
@@ -281,21 +300,8 @@ zx_handle_t Operation::GetOobVmo() {
   return oob_mapper_.vmo().get();
 }
 
-// Provides control primitives for tests that issue IO requests to the device.
-class NandDeviceTest : public NandTest {
+class NandDriverTest : public ::testing::Test {
  public:
-  NandDeviceTest();
-  ~NandDeviceTest() {}
-
-  void TearDown() override {
-    // mock-ddk will clean up device.
-    device_.release();
-  }
-
-  nand::NandDevice* device() { return device_.get(); }
-
-  size_t op_size() const { return op_size_; }
-
   static void CompletionCb(void* cookie, zx_status_t status, nand_operation_t* op) {
     Operation* operation = reinterpret_cast<Operation*>(cookie);
 
@@ -304,6 +310,36 @@ class NandDeviceTest : public NandTest {
     sync_completion_signal(&operation->test()->event_);
   }
 
+  void SetUp() override {
+    static const uint64_t kProcessKoid = compat::internal::GetKoid();
+
+    ASSERT_OK(driver_test_.StartDriver());
+
+    zx::result compat_client_end =
+        driver_test_.Connect<fuchsia_driver_compat::Service::Device>(NandDriver::kChildNodeName);
+    EXPECT_OK(compat_client_end);
+    fidl::WireClient<fuchsia_driver_compat::Device> compat(
+        std::move(compat_client_end.value()),
+        driver_test_.runtime().GetForegroundDispatcher()->async_dispatcher());
+
+    zx::result<ddk::NandProtocolClient> nand;
+    compat->GetBanjoProtocol(ddk::NandProtocolClient::kProtocolId, kProcessKoid)
+        .ThenExactlyOnce(
+            [&](fidl::WireUnownedResult<fuchsia_driver_compat::Device::GetBanjoProtocol>& result) {
+              nand = compat::internal::OnResult<ddk::NandProtocolClient>(result);
+            });
+    driver_test_.runtime().RunUntilIdle();
+    ASSERT_OK(nand);
+    ASSERT_TRUE(nand.value().is_valid());
+    nand_ = nand.value();
+
+    nand_info_t info;
+    nand_.Query(&info, &op_size_);
+  }
+
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+
+ protected:
   bool Wait() {
     zx_status_t status = sync_completion_wait(&event_, ZX_SEC(20));
     sync_completion_reset(&event_);
@@ -319,93 +355,109 @@ class NandDeviceTest : public NandTest {
     return true;
   }
 
+  ddk::NandProtocolClient& nand() { return nand_; }
+  size_t op_size() const { return op_size_; }
+  fdf_testing::ForegroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
+
  private:
   sync_completion_t event_;
   std::atomic<int> num_completed_ = 0;
-  std::unique_ptr<nand::NandDevice> device_;
+  fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
+  ddk::NandProtocolClient nand_;
   size_t op_size_;
 };
 
-NandDeviceTest::NandDeviceTest() {
-  device_ = std::make_unique<nand::NandDevice>(root());
-  ASSERT_NOT_NULL(device_.get());
+// Verify that the nand driver can start and stop without error.
+TEST_F(NandDriverTest, StartStop) {}
 
+TEST_F(NandDriverTest, Query) {
   nand_info_t info;
-  device_->NandQuery(&info, &op_size_);
+  size_t operation_size;
+  nand().Query(&info, &operation_size);
 
-  ASSERT_EQ(device_->Init(), ZX_OK);
+  ASSERT_GT(operation_size, sizeof(nand_operation_t));
+  ASSERT_EQ(info.pages_per_block, kInfo.pages_per_block);
+  ASSERT_EQ(info.num_blocks, kInfo.num_blocks);
+  ASSERT_EQ(info.ecc_bits, kInfo.ecc_bits);
+  ASSERT_EQ(info.oob_size, kInfo.oob_size);
+  ASSERT_EQ(info.nand_class, kInfo.nand_class);
+  ASSERT_THAT(info.partition_guid, ::testing::ElementsAreArray(kInfo.partition_guid));
 }
 
 // Tests trivial attempts to queue one operation.
-TEST_F(NandDeviceTest, QueueOne) {
+TEST_F(NandDriverTest, QueueOne) {
   Operation operation(op_size(), this);
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   op->rw.command = NAND_OP_READ;
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
   ASSERT_TRUE(Wait());
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, operation.status());
 
   op->rw.length = 1;
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_EQ(ZX_ERR_BAD_HANDLE, operation.status());
 
   op->rw.offset_nand = kNumPages * kNumBlocks;
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_STATUS(ZX_ERR_OUT_OF_RANGE, operation.status());
 
   ASSERT_TRUE(operation.SetVmo());
 
   op->rw.offset_nand = (kNumPages * kNumBlocks) - 1;
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 }
 
-TEST_F(NandDeviceTest, ReadWrite) {
+TEST_F(NandDriverTest, ReadWrite) {
   Operation operation(op_size(), this);
   ASSERT_TRUE(operation.SetVmo());
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   op->rw.command = NAND_OP_READ;
   op->rw.length = 2;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
-  EXPECT_EQ(raw_nand().last_op().type, OperationType::kRead);
-  EXPECT_EQ(raw_nand().last_op().nandpage, 4);
+  driver_test().RunInEnvironmentTypeContext([](auto& env) {
+    EXPECT_EQ(env.raw_nand().last_op().type, OperationType::kRead);
+    EXPECT_EQ(env.raw_nand().last_op().nandpage, 4u);
+  });
 
   op->rw.command = NAND_OP_WRITE;
   op->rw.length = 4;
   op->rw.offset_nand = 5;
   memset(operation.buffer(), kMagic, kPageSize * 5);
   memset(operation.oob_buffer(), kOobMagic, kOobSize * 5);
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
-  EXPECT_EQ(raw_nand().last_op().type, OperationType::kWrite);
-  EXPECT_EQ(raw_nand().last_op().nandpage, 8);
+  driver_test().RunInEnvironmentTypeContext([](auto& env) {
+    EXPECT_EQ(env.raw_nand().last_op().type, OperationType::kWrite);
+    EXPECT_EQ(env.raw_nand().last_op().nandpage, 8u);
+  });
 }
 
-TEST_F(NandDeviceTest, ReadWriteVmoOffsets) {
+TEST_F(NandDriverTest, ReadWriteVmoOffsets) {
   Operation operation(op_size(), this);
   ASSERT_TRUE(operation.SetVmo());
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   for (uint32_t offset = 0; offset < kNumPages * kNumBlocks; offset++) {
     for (uint32_t length = 1; offset + length < kNumPages * kNumBlocks; length++) {
@@ -414,13 +466,15 @@ TEST_F(NandDeviceTest, ReadWriteVmoOffsets) {
       op->rw.offset_nand = offset;
       op->rw.offset_data_vmo = offset;
       op->rw.offset_oob_vmo = offset;
-      device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+      nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
       ASSERT_TRUE(Wait());
-      ASSERT_OK(operation.status(), "offset: %d length: %d", offset, length);
+      ASSERT_OK(operation.status());
 
-      EXPECT_EQ(raw_nand().last_op().type, OperationType::kRead);
-      EXPECT_EQ(raw_nand().last_op().nandpage, offset + length - 1);
+      driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+        EXPECT_EQ(env.raw_nand().last_op().type, OperationType::kRead);
+        EXPECT_EQ(env.raw_nand().last_op().nandpage, offset + length - 1);
+      });
 
       op->rw.command = NAND_OP_WRITE;
       op->rw.length = length;
@@ -431,48 +485,52 @@ TEST_F(NandDeviceTest, ReadWriteVmoOffsets) {
              kPageSize * length);
       memset(static_cast<uint8_t*>(operation.oob_buffer()) + (offset * kPageSize), kOobMagic,
              kOobSize * length);
-      device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+      nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
       ASSERT_TRUE(Wait());
       ASSERT_OK(operation.status());
 
-      EXPECT_EQ(raw_nand().last_op().type, OperationType::kWrite);
-      EXPECT_EQ(raw_nand().last_op().nandpage, length + offset - 1);
+      driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+        EXPECT_EQ(env.raw_nand().last_op().type, OperationType::kWrite);
+        EXPECT_EQ(env.raw_nand().last_op().nandpage, length + offset - 1);
+      });
     }
   }
 }
 
-TEST_F(NandDeviceTest, Erase) {
+TEST_F(NandDriverTest, Erase) {
   Operation operation(op_size(), this);
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   op->erase.command = NAND_OP_ERASE;
   op->erase.num_blocks = 1;
   op->erase.first_block = 5;
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
-  EXPECT_EQ(raw_nand().last_op().type, OperationType::kErase);
-  EXPECT_EQ(raw_nand().last_op().nandpage, 5 * kNumPages);
+  driver_test().RunInEnvironmentTypeContext([](auto& env) {
+    EXPECT_EQ(env.raw_nand().last_op().type, OperationType::kErase);
+    EXPECT_EQ(env.raw_nand().last_op().nandpage, 5 * kNumPages);
+  });
 }
 
 // Tests serialization of multiple operations.
-TEST_F(NandDeviceTest, QueryMultiple) {
+TEST_F(NandDriverTest, QueryMultiple) {
   std::unique_ptr<Operation> operations[10];
   for (int i = 0; i < 10; i++) {
     operations[i].reset(new Operation(op_size(), this));
     Operation& operation = *(operations[i].get());
     nand_operation_t* op = operation.GetOperation();
-    ASSERT_NOT_NULL(op);
+    ASSERT_NE(op, nullptr);
 
     op->rw.command = NAND_OP_READ;
     op->rw.length = 1;
     op->rw.offset_nand = i;
     ASSERT_TRUE(operation.SetVmo());
-    device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+    nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   }
 
   ASSERT_TRUE(WaitFor(10));
@@ -495,34 +553,31 @@ struct ReadMetrics {
 void ExpectUintPropertyMatches(const inspect::Hierarchy* hierarchy,
                                const std::string& property_name, uint64_t value) {
   auto* property = hierarchy->node().get_property<inspect::UintPropertyValue>(property_name);
-  EXPECT_NOT_NULL(property, "Missing property: %s", property_name.c_str());
-  EXPECT_EQ(property->value(), value, "Values do not match for %s", property_name.c_str());
+  EXPECT_NE(property, nullptr);
+  EXPECT_EQ(property->value(), value);
 }
 
 void ExpectUintHistogramMatches(const inspect::Hierarchy* hierarchy,
                                 const std::string& property_name, uint64_t histogram_size,
                                 const uint64_t* values, uint64_t overflow) {
   auto* property = hierarchy->node().get_property<inspect::UintArrayValue>(property_name);
-  ASSERT_NOT_NULL(property, "Missing property: %s", property_name.c_str());
+  ASSERT_NE(property, nullptr);
   auto histogram = property->GetBuckets();
   // Verify the overflow count.
-  EXPECT_EQ(overflow, histogram.back().count, "Failed overflow check for %s",
-            property_name.c_str());
+  EXPECT_EQ(overflow, histogram.back().count);
   // Remove the underflow and overflow buckets to simplify indexing.
   histogram.pop_back();
   histogram.erase(histogram.begin());
-  ASSERT_EQ(histogram.size(), histogram_size, "Histogram %s was not expecte size.",
-            property_name.c_str());
+  ASSERT_EQ(histogram.size(), histogram_size);
   for (uint64_t i = 0; i < histogram_size; i++) {
-    EXPECT_EQ(values[i], histogram[i].count, "Failed at histogram index %lu for %s", i,
-              property_name.c_str());
+    EXPECT_EQ(values[i], histogram[i].count);
   }
 }
 
 void ExpectMetricsMatch(const ReadMetrics& expected, const zx::vmo& inspect_vmo) {
   auto base_hierarchy = inspect::ReadFromVmo(inspect_vmo).take_value();
   auto* hierarchy = base_hierarchy.GetByPath({"nand"});
-  ASSERT_NOT_NULL(hierarchy);
+  ASSERT_NE(hierarchy, nullptr);
   ExpectUintPropertyMatches(hierarchy, "read_internal_failure", expected.internal_failure);
   ExpectUintPropertyMatches(hierarchy, "read_failure", expected.failure);
   ExpectUintHistogramMatches(hierarchy, "read_ecc_bit_flips", 32, expected.ecc_bit_flips,
@@ -531,52 +586,55 @@ void ExpectMetricsMatch(const ReadMetrics& expected, const zx::vmo& inspect_vmo)
                              expected.attempts_overflow);
 }
 
-TEST_F(NandDeviceTest, ReadMetrics) {
+TEST_F(NandDriverTest, ReadMetrics) {
   // Read different pages every time to avoid caching effects.
   Operation operation(op_size(), this);
   ASSERT_TRUE(operation.SetVmo());
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   // Check that everything is zeroes.
   ReadMetrics expected;
   memset(&expected, 0, sizeof(expected));
-  zx::vmo inspect_vmo = device()->GetDuplicateInspectVmoForTest();
-  ASSERT_NO_FAILURES(ExpectMetricsMatch(expected, inspect_vmo));
+  zx::vmo inspect_vmo = driver_test().driver()->inspector().inspector().DuplicateVmo();
+  ExpectMetricsMatch(expected, inspect_vmo);
 
   // Normal read.
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
   expected.attempts[1] += 1;
   expected.ecc_bit_flips[0] += 1;
-  ASSERT_NO_FAILURES(ExpectMetricsMatch(expected, inspect_vmo));
+  ExpectMetricsMatch(expected, inspect_vmo);
 
-  FakeRawNand& nand = raw_nand();
-  nand_info_t info;
-  ASSERT_OK(nand.RawNandGetNandInfo(&info));
-  size_t ecc_limit = info.ecc_bits;
+  size_t ecc_limit;
   int retries = 3;
-  nand.set_read_callback([&retries](FakeRawNand* n) {
-    if (--retries == 0) {
-      n->set_result(ZX_OK);
-    }
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    nand_info_t info;
+    ASSERT_OK(env.raw_nand().RawNandGetNandInfo(&info));
+    ecc_limit = info.ecc_bits;
+    env.raw_nand().set_read_callback([&retries](FakeRawNand* n) {
+      if (--retries == 0) {
+        n->set_result(ZX_OK);
+      }
+    });
+
+    // Fails ECC a few times before succeeding with bit flips.
+    env.raw_nand().set_ecc_bits(4);
+    env.raw_nand().set_result(ZX_ERR_IO_DATA_INTEGRITY);
   });
 
-  // Fails ECC a few times before succeeding with bit flips.
-  nand.set_ecc_bits(4);
-  nand.set_result(ZX_ERR_IO_DATA_INTEGRITY);
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 4;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
@@ -584,197 +642,206 @@ TEST_F(NandDeviceTest, ReadMetrics) {
   expected.internal_failure += 2;
   expected.ecc_bit_flips[ecc_limit + 1] += 2;
   expected.ecc_bit_flips[4] += 1;
-  ASSERT_NO_FAILURES(ExpectMetricsMatch(expected, inspect_vmo));
+  ExpectMetricsMatch(expected, inspect_vmo);
 
   // Fails with unexpected reason before succeeding. Should not record bit flips for failures.
-  nand.set_result(ZX_ERR_BAD_STATE);
+  driver_test().RunInEnvironmentTypeContext(
+      [&](auto& env) { env.raw_nand().set_result(ZX_ERR_BAD_STATE); });
   retries = 3;
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 5;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
   expected.attempts[2] += 1;
   expected.internal_failure += 2;
   expected.ecc_bit_flips[4] += 1;
-  ASSERT_NO_FAILURES(ExpectMetricsMatch(expected, inspect_vmo));
+  ExpectMetricsMatch(expected, inspect_vmo);
 
   // Totally fails out on retries.
-  nand.set_result(ZX_ERR_IO_DATA_INTEGRITY);
+  driver_test().RunInEnvironmentTypeContext(
+      [&](auto& env) { env.raw_nand().set_result(ZX_ERR_IO_DATA_INTEGRITY); });
   retries = 1000000;
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 6;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
-  ASSERT_NOT_OK(operation.status());
+  ASSERT_NE(operation.status(), ZX_OK);
 
   expected.attempts_overflow += 1;
   expected.failure += 1;
-  expected.internal_failure += nand::NandDevice::kNandReadRetries;
-  expected.ecc_bit_flips[ecc_limit + 1] += nand::NandDevice::kNandReadRetries;
-  ASSERT_NO_FAILURES(ExpectMetricsMatch(expected, inspect_vmo));
+  expected.internal_failure += NandDriver::kNandReadRetries;
+  expected.ecc_bit_flips[ecc_limit + 1] += NandDriver::kNandReadRetries;
+  ExpectMetricsMatch(expected, inspect_vmo);
 }
 
-TEST_F(NandDeviceTest, ReadCacheForPoorECC) {
+TEST_F(NandDriverTest, ReadCacheForPoorECC) {
   Operation operation(op_size(), this);
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   // Normal read with no ECC errors. Should not cache.
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
-  FakeRawNand& nand = raw_nand();
-
   // Read the same page with moderate ECC errors. Should not cache.
-  nand.set_ecc_bits(1);
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) { env.raw_nand().set_ecc_bits(1); });
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
   nand_info_t info;
-  ASSERT_OK(nand.RawNandGetNandInfo(&info));
-  uint32_t ecc_limit = info.ecc_bits;
+  uint32_t ecc_limit;
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    ASSERT_OK(env.raw_nand().RawNandGetNandInfo(&info));
+    ecc_limit = info.ecc_bits;
+    env.raw_nand().set_ecc_bits(ecc_limit);
+  });
 
   // Read the same page with terrible ECC errors. Should do a normal read, but also should cache
   // for the next call.
-  nand.set_ecc_bits(ecc_limit);
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
   // See all the bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 
   // Read the same page again. Should get the cached result.
-  nand.set_ecc_bits(ecc_limit);
+  driver_test().RunInEnvironmentTypeContext(
+      [&](auto& env) { env.raw_nand().set_ecc_bits(ecc_limit); });
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
   // Cached result reports no bit flips.
-  ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0);
+  ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0u);
 }
 
-TEST_F(NandDeviceTest, ReadCacheFailedRetry) {
+TEST_F(NandDriverTest, ReadCacheFailedRetry) {
   Operation operation(op_size(), this);
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   // Normal read with no ECC errors. Should not cache.
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
-  FakeRawNand& nand = raw_nand();
   nand_info_t info;
-  ASSERT_OK(nand.RawNandGetNandInfo(&info));
-  size_t ecc_limit = info.ecc_bits;
   int retries = 2;
-  nand.set_read_callback([&retries](FakeRawNand* n) {
-    if (--retries == 0) {
-      n->set_result(ZX_OK);
-    }
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    ASSERT_OK(env.raw_nand().RawNandGetNandInfo(&info));
+    env.raw_nand().set_read_callback([&retries](FakeRawNand* n) {
+      if (--retries == 0) {
+        n->set_result(ZX_OK);
+      }
+    });
+    env.raw_nand().set_ecc_bits(1);
+    env.raw_nand().set_result(ZX_ERR_IO_DATA_INTEGRITY);
   });
+  size_t ecc_limit = info.ecc_bits;
 
   // Read the same page. Fails ECC the first time before succeeding with max bit flips.
-  nand.set_ecc_bits(1);
-  nand.set_result(ZX_ERR_IO_DATA_INTEGRITY);
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 
   // Read again. Prime for failures and bit flips again. It should return no bitflips this time due
   // to cache.
-  nand.set_ecc_bits(1);
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    env.raw_nand().set_ecc_bits(1);
+    env.raw_nand().set_result(ZX_ERR_IO_DATA_INTEGRITY);
+  });
   retries = 2;
-  nand.set_result(ZX_ERR_IO_DATA_INTEGRITY);
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
-  ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0);
+  ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0u);
 }
 
-TEST_F(NandDeviceTest, ReadCachePurgeOnErase) {
+TEST_F(NandDriverTest, ReadCachePurgeOnErase) {
   Operation operation(op_size(), this);
 
   nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
+  ASSERT_NE(op, nullptr);
 
   // Normal read with no ECC errors. Should not cache.
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
 
-  FakeRawNand& nand = raw_nand();
-
   nand_info_t info;
-  ASSERT_OK(nand.RawNandGetNandInfo(&info));
-  uint32_t ecc_limit = info.ecc_bits;
+  uint32_t ecc_limit;
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    ASSERT_OK(env.raw_nand().RawNandGetNandInfo(&info));
+    ecc_limit = info.ecc_bits;
+    env.raw_nand().set_ecc_bits(ecc_limit);
+  });
 
   // Read the same page with terrible ECC errors. Should do a normal read, but also should cache
   // for the next call.
-  nand.set_ecc_bits(ecc_limit);
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
   // See all the bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 
   // Read the same page again. Should get the cached result.
-  nand.set_ecc_bits(ecc_limit);
+  driver_test().RunInEnvironmentTypeContext(
+      [&](auto& env) { env.raw_nand().set_ecc_bits(ecc_limit); });
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
   // Cached result reports no bit flips.
-  ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0);
+  ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0u);
 
   // Purge from cache.
   Operation erase_operation(op_size(), this);
@@ -783,30 +850,33 @@ TEST_F(NandDeviceTest, ReadCachePurgeOnErase) {
   erase_op->erase.command = NAND_OP_ERASE;
   erase_op->erase.first_block = 3 / info.pages_per_block;
   erase_op->erase.num_blocks = 1;
-  device()->NandQueue(erase_op, &NandDeviceTest::CompletionCb, &erase_operation);
+  nand().Queue(erase_op, &NandDriverTest::CompletionCb, &erase_operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(erase_operation.status());
 
   // Get a full read without cached result, so we see bit flips.
-  nand.set_ecc_bits(ecc_limit);
+  driver_test().RunInEnvironmentTypeContext(
+      [&](auto& env) { env.raw_nand().set_ecc_bits(ecc_limit); });
   op->rw.command = NAND_OP_READ;
   op->rw.length = 1;
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
+  nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   ASSERT_TRUE(Wait());
   ASSERT_OK(operation.status());
   // See all the bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 }
 
-TEST_F(NandDeviceTest, InsertToCacheWithNullPayloads) {
+TEST_F(NandDriverTest, InsertToCacheWithNullPayloads) {
   // All uncached reads will come back with dangerous ECC.
-  FakeRawNand& nand = raw_nand();
   nand_info_t info;
-  ASSERT_OK(nand.RawNandGetNandInfo(&info));
-  uint32_t ecc_limit = info.ecc_bits;
-  nand.set_ecc_bits(ecc_limit);
+  uint32_t ecc_limit;
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    ASSERT_OK(env.raw_nand().RawNandGetNandInfo(&info));
+    ecc_limit = info.ecc_bits;
+    env.raw_nand().set_ecc_bits(ecc_limit);
+  });
 
   // Test combinations of insert with null payload pointers. Read back after with both payload
   // pointers populated, and should see a cached result if the data pointer was populated for
@@ -818,7 +888,7 @@ TEST_F(NandDeviceTest, InsertToCacheWithNullPayloads) {
     // Initial read which may or may not cache.
     Operation insert_operation(op_size(), this);
     nand_operation_t* insert_op = insert_operation.GetOperation();
-    ASSERT_NOT_NULL(insert_op);
+    ASSERT_NE(insert_op, nullptr);
     insert_op->rw.command = NAND_OP_READ;
     insert_op->rw.length = 1;
     insert_op->rw.offset_nand = i;
@@ -830,7 +900,7 @@ TEST_F(NandDeviceTest, InsertToCacheWithNullPayloads) {
     if (set_oob_vmo) {
       ASSERT_TRUE(insert_operation.SetOobVmo());
     }
-    device()->NandQueue(insert_op, &NandDeviceTest::CompletionCb, &insert_operation);
+    nand().Queue(insert_op, &NandDriverTest::CompletionCb, &insert_operation);
     ASSERT_TRUE(Wait());
     ASSERT_OK(insert_operation.status());
     ASSERT_EQ(insert_operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
@@ -838,18 +908,18 @@ TEST_F(NandDeviceTest, InsertToCacheWithNullPayloads) {
     // Follow-on read to verify if the result is cached. Set both VMOs this time.
     Operation fetch_operation(op_size(), this);
     nand_operation_t* fetch_op = fetch_operation.GetOperation();
-    ASSERT_NOT_NULL(fetch_op);
+    ASSERT_NE(fetch_op, nullptr);
     fetch_op->rw.command = NAND_OP_READ;
     fetch_op->rw.length = 1;
     fetch_op->rw.offset_nand = i;
     ASSERT_TRUE(fetch_operation.SetVmo());
-    device()->NandQueue(fetch_op, &NandDeviceTest::CompletionCb, &fetch_operation);
+    nand().Queue(fetch_op, &NandDriverTest::CompletionCb, &fetch_operation);
     ASSERT_TRUE(Wait());
     ASSERT_OK(fetch_operation.status());
     // We don't try to do any caching if the data wasn't fetched, so we see no bit errors due to
     // caching only when the data vmo was set.
     if (set_data_vmo) {
-      ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, 0);
+      ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, 0u);
     } else {
       ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
     }
@@ -859,13 +929,15 @@ TEST_F(NandDeviceTest, InsertToCacheWithNullPayloads) {
   }
 }
 
-TEST_F(NandDeviceTest, FetchFromCacheWithNullPayloads) {
+TEST_F(NandDriverTest, FetchFromCacheWithNullPayloads) {
   // All uncached reads will come back with dangerous ECC.
-  FakeRawNand& nand = raw_nand();
   nand_info_t info;
-  ASSERT_OK(nand.RawNandGetNandInfo(&info));
-  uint32_t ecc_limit = info.ecc_bits;
-  nand.set_ecc_bits(ecc_limit);
+  uint32_t ecc_limit;
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    ASSERT_OK(env.raw_nand().RawNandGetNandInfo(&info));
+    ecc_limit = info.ecc_bits;
+    env.raw_nand().set_ecc_bits(ecc_limit);
+  });
 
   // Test combinations of read with null payload pointers. Insert with both payload pointers
   // populated, and should see a cached result every time for the second lookup. Reads with both
@@ -877,12 +949,12 @@ TEST_F(NandDeviceTest, FetchFromCacheWithNullPayloads) {
     // Initial read which sets both vmos and should always cache.
     Operation insert_operation(op_size(), this);
     nand_operation_t* insert_op = insert_operation.GetOperation();
-    ASSERT_NOT_NULL(insert_op);
+    ASSERT_NE(insert_op, nullptr);
     insert_op->rw.command = NAND_OP_READ;
     insert_op->rw.length = 1;
     insert_op->rw.offset_nand = i;
     ASSERT_TRUE(insert_operation.SetVmo());
-    device()->NandQueue(insert_op, &NandDeviceTest::CompletionCb, &insert_operation);
+    nand().Queue(insert_op, &NandDriverTest::CompletionCb, &insert_operation);
     ASSERT_TRUE(Wait());
     ASSERT_OK(insert_operation.status());
     ASSERT_EQ(insert_operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
@@ -891,7 +963,7 @@ TEST_F(NandDeviceTest, FetchFromCacheWithNullPayloads) {
     // pointers.
     Operation fetch_operation(op_size(), this);
     nand_operation_t* fetch_op = fetch_operation.GetOperation();
-    ASSERT_NOT_NULL(fetch_op);
+    ASSERT_NE(fetch_op, nullptr);
     fetch_op->rw.command = NAND_OP_READ;
     fetch_op->rw.length = 1;
     fetch_op->rw.offset_nand = i;
@@ -903,11 +975,11 @@ TEST_F(NandDeviceTest, FetchFromCacheWithNullPayloads) {
     if (set_oob_vmo) {
       ASSERT_TRUE(fetch_operation.SetOobVmo());
     }
-    device()->NandQueue(fetch_op, &NandDeviceTest::CompletionCb, &fetch_operation);
+    nand().Queue(fetch_op, &NandDriverTest::CompletionCb, &fetch_operation);
     ASSERT_TRUE(Wait());
     ASSERT_OK(fetch_operation.status());
     if (set_data_vmo) {
-      ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, 0);
+      ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, 0u);
     } else {
       ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
     }
@@ -922,42 +994,4 @@ TEST_F(NandDeviceTest, FetchFromCacheWithNullPayloads) {
   }
 }
 
-TEST_F(NandDeviceTest, OperationsCanceledAfterSuspend) {
-  ASSERT_EQ(device()->Bind(), ZX_OK);
-
-  Operation operation(op_size(), this);
-  ASSERT_TRUE(operation.SetVmo());
-
-  nand_operation_t* op = operation.GetOperation();
-  ASSERT_NOT_NULL(op);
-
-  op->rw.command = NAND_OP_READ;
-  op->rw.length = 2;
-  op->rw.offset_nand = 3;
-  ASSERT_TRUE(operation.SetVmo());
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  ASSERT_OK(operation.status());
-
-  EXPECT_EQ(raw_nand().last_op().type, OperationType::kRead);
-  EXPECT_EQ(raw_nand().last_op().nandpage, 4);
-
-  // Issue DdkSuspend and verify that errors are returned for subsequent operations.
-  ddk::SuspendTxn txn(device()->zxdev(), 0, false, DEVICE_SUSPEND_REASON_REBOOT);
-  device()->DdkSuspend(std::move(txn));
-  ASSERT_EQ(1, root()->child_count());
-  root()->GetLatestChild()->WaitUntilSuspendReplyCalled();
-
-  op->rw.command = NAND_OP_WRITE;
-  op->rw.length = 4;
-  op->rw.offset_nand = 5;
-  memset(operation.buffer(), kMagic, kPageSize * 5);
-  memset(operation.oob_buffer(), kOobMagic, kOobSize * 5);
-  device()->NandQueue(op, &NandDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  EXPECT_EQ(operation.status(), ZX_ERR_CANCELED);
-}
-
-}  // namespace
+}  // namespace nand::testing

@@ -17,13 +17,15 @@ test("nand-unittest-bin") {
     "read_cache_test.cc",
   ]
   deps = [
+    "//sdk/lib/driver/testing/cpp",
     "//src/devices/nand/drivers/nand:common",
-    "//src/devices/testing/mock-ddk",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 

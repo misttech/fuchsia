@@ -14,20 +14,24 @@ driver_bind_rules("nand-bind") {
 
 source_set("common") {
   configs += [ "//build/config:all_source" ]
-  public = [ "nand.h" ]
   sources = [
     "nand.cc",
+    "nand.h",
     "read_cache.cc",
+    "read_cache.h",
   ]
-  deps = [ ":nand-bind" ]
+  deps = [
+    "//src/devices/lib/driver:driver_runtime",
+    "//src/lib/ddk:ddk_metadata",
+  ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.rawnand:fuchsia.hardware.rawnand_banjo_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
     "//src/devices/lib/dev-operation",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/inspect",
@@ -37,18 +41,17 @@ source_set("common") {
 }
 
 fuchsia_cc_driver("nand-driver") {
-  legacy = true
   output_name = "nand"
-  deps = [
-    ":common",
-    "//src/devices/lib/driver",
-  ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("nand") {
   info = "meta/nand-info.json"
   component_name = "nand"
-  deps = [ ":nand-driver" ]
+  deps = [
+    ":nand-bind",
+    ":nand-driver",
+  ]
   manifest = "meta/nand.cml"
 }
 
