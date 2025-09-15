@@ -1247,7 +1247,12 @@ async fn wake_timer_loop(
                 // Manufacture a fake lease to make the code below work.
                 // Maybe use Option instead?
                 let (_dummy_lease, peer) = zx::EventPair::create();
-                debug!("XXX: [{}] bogus lease: 1 {:?}", line!(), &peer.get_koid().unwrap());
+                debug!(
+                    "bogus lease: {:?} fidl error [{}:{}]",
+                    &peer.get_koid().unwrap(),
+                    file!(),
+                    line!()
+                );
                 notify_all(&mut timers, &peer, now, &slack_histogram_prop)
                     .expect("notification succeeds");
                 hrtimer_status = match timers.peek_deadline_as_boot() {
@@ -1272,7 +1277,12 @@ async fn wake_timer_loop(
             } => {
                 trace::duration!(c"alarms", c"Cmd::AlarmDriverError");
                 let (_dummy_lease, peer) = zx::EventPair::create();
-                debug!("XXX: [{}] bogus lease: {:?}", line!(), &peer.get_koid().unwrap());
+                debug!(
+                    "bogus lease: {:?} driver error. [{}:{}]",
+                    &peer.get_koid().unwrap(),
+                    file!(),
+                    line!()
+                );
                 notify_all(&mut timers, &peer, now, &slack_histogram_prop)
                     .expect("notification succeeds");
                 match error {
