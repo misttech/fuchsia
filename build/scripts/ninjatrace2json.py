@@ -111,61 +111,67 @@ class Tracer:
             main_build_dir / NINJATRACE_BASENAME
         )
 
-        traces_by_name = {t["name"]: t for t in main_build_traces}
+        # Create a list of possible trace event names for the possible subbuilds
+        # this is used to filter the main build trace events to find the any
+        # subbuilds that were run.
+        possible_subbuild_target_names = {
+            _subbuild_ninja_target(b): b for b in possible_subbuild_dirs
+        }
 
-        # Filter out subbuild dirs that aren't referenced by the main trace
-        # file.
-        filtered_subbuild_dirs = [
-            b
-            for b in possible_subbuild_dirs
-            if _subbuild_ninja_target(b) in traces_by_name
-        ]
+        # Get the JsonTrace from the main build for each of the subbuilds.  These are used to
+        # establish the start-time for each of the subbuilds' traces in the merged trace file.
+        # This filtering is so that the main_build_traces list only needs to be iterated over
+        # once, comparing against a very short list of possible target names.
+        main_build_traces_by_subbuild_dir: dict[Path, JsonTrace] = {
+            possible_subbuild_target_names[t["name"]]: t
+            for t in main_build_traces
+            if t["name"] in possible_subbuild_target_names
+        }
 
         # If there weren't any subbuilds in the last build, then exit early, leaving the
         # existing trace file as-is:
-        if not filtered_subbuild_dirs:
+        if not main_build_traces_by_subbuild_dir:
             return
 
-        # Generate traces for the subbuild dirs in parallel
-        pool = futures.ThreadPoolExecutor()
-        subbuild_dir_and_traces: Iterable[
-            tuple[Path, list[JsonTrace]]
-        ] = pool.map(
-            lambda subbuild_dir: (
-                subbuild_dir,
+        # Load the traces for each of the subbuild dirs in parallel
+        with futures.ThreadPoolExecutor() as pool:
+            subbuilds_traces: Iterable[list[JsonTrace]] = pool.map(
+                lambda subbuild_dir:
                 # Subbuilds don't need extra targets (as of this writing).
                 load_compressed_trace(
                     self.trace_build_dir(
                         build_dir=main_build_dir / subbuild_dir
                     )
                 ),
-            ),
-            filtered_subbuild_dirs,
-        )
-
-        merged_traces = [*main_build_traces]
-        for subbuild_dir, subbuild_traces in subbuild_dir_and_traces:
-            target_in_main_build_trace = traces_by_name[
-                _subbuild_ninja_target(subbuild_dir)
-            ]
-            assert target_in_main_build_trace, (
-                "We already filtered out subbuilds not mentioned in the top-level build: %s"
-                % subbuild_dir
+                main_build_traces_by_subbuild_dir,
             )
-            for t in subbuild_traces:
-                merged_traces += [
+
+        # For each of the subbuilds, take all the trace events and offset their ts by
+        # the start time of the corresponding trace from the main build, and set the
+        # pid field to the name of the subbuild, and add them to the set of main traces
+        for (
+            (subbuild_dir, target_in_main_build_trace),
+            subbuild_traces,
+        ) in zip(main_build_traces_by_subbuild_dir.items(), subbuilds_traces):
+            subbuild_start = target_in_main_build_trace["ts"]
+            subbuild_name = subbuild_dir.name
+
+            main_build_traces.extend(
+                [
                     {
                         **t,
                         # Rewrite the trace to set "pid" to indicate the subbuild.
-                        "pid": subbuild_dir.name,
+                        "pid": subbuild_name,
                         # And offset the time by the start time of the subbuild
                         # action in the main build./
-                        "ts": t["ts"] + target_in_main_build_trace["ts"],
+                        "ts": t["ts"] + subbuild_start,
                     }
+                    for t in subbuild_traces
                 ]
+            )
 
         write_compressed_trace(
-            main_build_dir / NINJATRACE_BASENAME, merged_traces
+            main_build_dir / NINJATRACE_BASENAME, main_build_traces
         )
 
 
@@ -236,7 +242,7 @@ specified if --subbuilds-output-path is set.""",
     fuchsia_build_dir = args.fuchsia_build_dir
 
     # Convert the trace for the main build
-    outpath = tracer.trace_build_dir(fuchsia_build_dir)
+    outpath: Path = tracer.trace_build_dir(fuchsia_build_dir)
 
     if args.subbuilds_in_place:
         tracer.find_and_merge_subbuilds(fuchsia_build_dir)
