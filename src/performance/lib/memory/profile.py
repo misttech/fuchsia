@@ -183,6 +183,8 @@ def _simplify_digest(component_profile: JSON) -> JSON:
         digest = component_profile["ComponentDigest"]
         if not isinstance(digest, dict):
             raise ValueError
-        result["principals"] = _simplify_principals(digest["principals"])
+        result = digest | {
+            "principals": _simplify_principals(digest["principals"])
+        }
 
     return result
