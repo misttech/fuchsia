@@ -1049,7 +1049,7 @@ class IdkGenerator(object):
                         source = file["source"]
                         assert (
                             dest not in self._atom_files
-                        ), f"Path `{dest}` specified by multiple atoms."
+                        ), f"Path `{dest}` specified by multiple atoms including `{meta_path}`."
                         self._atom_files[dest] = source
 
                 if additional_atom_files:
