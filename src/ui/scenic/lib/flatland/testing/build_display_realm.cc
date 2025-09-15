@@ -46,6 +46,10 @@ component_testing::RealmRoot BuildFakeDisplayRealm(async_dispatcher_t* dispatche
     builder.SetConfigValue(kFakeDisplayStackHostChildName, "refresh_rate_millihertz",
                            component_testing::ConfigValue::Uint32(config.refresh_rate_millihertz));
   }
+  if (config.max_layer_count != 0) {
+    builder.SetConfigValue(kFakeDisplayStackHostChildName, "max_layer_count",
+                           component_testing::ConfigValue::Uint32(config.max_layer_count));
+  }
   return builder.Build(dispatcher);
 }
 

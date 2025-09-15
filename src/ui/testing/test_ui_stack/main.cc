@@ -60,6 +60,7 @@ int run_test_ui_stack(int argc, const char** argv) {
       .active_width_px = test_ui_stack_config.display_width_px(),
       .active_height_px = test_ui_stack_config.display_height_px(),
       .refresh_rate_millihertz = test_ui_stack_config.display_refresh_rate_millihertz(),
+      .max_layer_count = test_ui_stack_config.display_max_layer_count(),
   };
 
   // Build test realm.

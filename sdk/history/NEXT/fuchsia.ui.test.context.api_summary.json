@@ -29,6 +29,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.ui.test.context/RealmFactoryCreateRealmRequest.display_max_layer_count",
+        "ordinal": "6",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.ui.test.context/RealmFactoryCreateRealmRequest.display_refresh_rate_millihertz",
         "ordinal": "5",
         "type": "uint32"
@@ -98,6 +104,12 @@
         "name": "fuchsia.ui.test.context/ScenicRealmFactoryCreateRealmRequest.display_dimensions",
         "ordinal": "5",
         "type": "fuchsia.math/SizeU"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.context/ScenicRealmFactoryCreateRealmRequest.display_max_layer_count",
+        "ordinal": "7",
+        "type": "uint32"
     },
     {
         "kind": "table/member",

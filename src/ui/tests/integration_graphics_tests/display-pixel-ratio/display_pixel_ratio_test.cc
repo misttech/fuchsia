@@ -30,12 +30,14 @@ struct DisplayConfig {
   uint32_t width_px;
   uint32_t height_px;
   uint32_t refresh_rate_millihertz;
+  uint32_t max_layer_count;
 };
 
 constexpr DisplayConfig kSherlockDisplayConfig = {
     .width_px = 1280,
     .height_px = 800,
     .refresh_rate_millihertz = 60'000,
+    .max_layer_count = 1,
 };
 
 }  // namespace
@@ -65,6 +67,7 @@ class DisplayPixelRatioTest
         .active_width_px = display_config.width_px,
         .active_height_px = display_config.height_px,
         .refresh_rate_millihertz = display_config.refresh_rate_millihertz,
+        .max_layer_count = display_config.max_layer_count,
     };
     ui_test_manager_.emplace(config);
 

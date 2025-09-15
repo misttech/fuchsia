@@ -19,6 +19,9 @@ struct DisplayRealmConfig {
 
   // If zero, uses component's default config.
   uint32_t refresh_rate_millihertz = 0;
+
+  // If zero, uses component's default config.
+  uint32_t max_layer_count = 0;
 };
 
 // Returns a realm that serves the `fuchsia.hardware.display.Service` service

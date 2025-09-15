@@ -66,6 +66,10 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
   /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
   virtual uint32_t DisplayRefreshRateMillihertz() const;
 
+  /// Overrides DisplayMaxLayerCount() to provide `max_layer_count` to
+  /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
+  virtual uint32_t DisplayMaxLayerCount() const;
+
   /// Override DisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm. True
   /// by default.
   virtual bool DisplayComposition() const;

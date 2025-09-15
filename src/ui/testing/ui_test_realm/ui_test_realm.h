@@ -30,6 +30,9 @@ struct DisplayConfig {
 
   // If zero, uses component's default configuration value.
   uint32_t refresh_rate_millihertz = 0;
+
+  // If zero, uses component's default configuration value.
+  uint32_t max_layer_count = 0;
 };
 
 // Library class to manage test realm on behalf of UI integration test clients.

@@ -24,6 +24,10 @@ open protocol RealmFactory {
         /// Optional. If it has a value, it must not be zero.
         @available(added=NEXT)
         5: display_refresh_rate_millihertz uint32;
+
+        /// Optional. If it has a value, it must not be zero.
+        @available(added=NEXT)
+        6: display_max_layer_count uint32;
     }) -> () error fuchsia.testing.harness.OperationError;
 };
 
@@ -55,5 +59,9 @@ open protocol ScenicRealmFactory {
         /// Optional. If it has a value, it must not be zero.
         @available(added=NEXT)
         6: display_refresh_rate_millihertz uint32;
+
+        /// Optional. If it has a value, it must not be zero.
+        @available(added=NEXT)
+        7: display_max_layer_count uint32;
     }) -> () error fuchsia.testing.harness.OperationError;
 };

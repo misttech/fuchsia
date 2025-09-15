@@ -190,6 +190,9 @@
         // If zero, uses component default configuration.
         display_refresh_rate_millihertz: { type: "uint32" },
 
+        // If zero, uses component default configuration.
+        display_max_layer_count: { type: "uint32" },
+
         // Structured configuration doesn't support floats.
         device_pixel_ratio: {
             type: "string",

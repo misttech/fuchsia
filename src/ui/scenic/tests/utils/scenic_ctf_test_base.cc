@@ -24,6 +24,9 @@ void ScenicCtfTest::SetUp() {
     if (DisplayRefreshRateMillihertz() != 0) {
       req.set_display_refresh_rate_millihertz(DisplayRefreshRateMillihertz());
     }
+    if (DisplayMaxLayerCount() != 0) {
+      req.set_display_max_layer_count(DisplayMaxLayerCount());
+    }
 
     ASSERT_EQ(realm_factory_->CreateRealm(std::move(req), &res), ZX_OK);
   }
@@ -42,6 +45,8 @@ fuchsia::ui::test::context::RendererType ScenicCtfTest::Renderer() const {
 fuchsia::math::SizeU ScenicCtfTest::DisplayDimensions() const { return {.width = 0, .height = 0}; }
 
 uint32_t ScenicCtfTest::DisplayRefreshRateMillihertz() const { return 0; }
+
+uint32_t ScenicCtfTest::DisplayMaxLayerCount() const { return 0; }
 
 bool ScenicCtfTest::DisplayComposition() const { return true; }
 

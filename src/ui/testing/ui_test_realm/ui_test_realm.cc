@@ -391,6 +391,10 @@ void UITestRealm::ConfigureFakeDisplayStackHost() {
         kFakeDisplayStackHostName, "refresh_rate_millihertz",
         ConfigValue::Uint32(config_.display_config.refresh_rate_millihertz));
   }
+  if (config_.display_config.max_layer_count != 0) {
+    realm_builder_.SetConfigValue(kFakeDisplayStackHostName, "max_layer_count",
+                                  ConfigValue::Uint32(config_.display_config.max_layer_count));
+  }
 }
 
 void UITestRealm::ConfigureSceneOwner() {

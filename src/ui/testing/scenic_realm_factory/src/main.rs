@@ -64,6 +64,7 @@ async fn run_realm_factory_server(stream: ui_test_context::ScenicRealmFactoryReq
                         payload.display_composition,
                         payload.display_dimensions,
                         payload.display_refresh_rate_millihertz,
+                        payload.display_max_layer_count,
                     )
                     .await;
 
@@ -106,6 +107,7 @@ async fn assemble_realm(
     display_composition: Option<bool>,
     display_dimensions: Option<fidl_fuchsia_math::SizeU>,
     display_refresh_rate_millihertz: Option<u32>,
+    display_max_layer_count: Option<u32>,
 ) -> RealmInstance {
     let builder =
         RealmBuilder::with_params(RealmBuilderParams::new().from_relative_url(SCENIC_REALM_URL))
@@ -275,6 +277,12 @@ async fn assemble_realm(
             )
             .await
             .expect("failed to set refresh rate");
+    }
+    if let Some(max_layer_count) = display_max_layer_count {
+        builder
+            .set_config_value(FAKE_DISPLAY_STACK_HOST, "max_layer_count", max_layer_count.into())
+            .await
+            .expect("failed to set max layer count");
     }
 
     // Create the test realm.
