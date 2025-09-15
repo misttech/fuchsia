@@ -12,13 +12,20 @@ use std::io::Write;
 /// for tracking build dependencies.
 pub struct Depfile {
     inputs: BTreeSet<String>,
-    output: String,
+    outputs: BTreeSet<String>,
 }
 
 impl Depfile {
+    /// Construct a new depfile.
+    pub fn new() -> Self {
+        Self { inputs: BTreeSet::default(), outputs: BTreeSet::default() }
+    }
+
     /// Construct a new depfile for the output file.
     pub fn new_with_output(output: impl AsRef<str>) -> Self {
-        Self { inputs: BTreeSet::default(), output: output.as_ref().to_string() }
+        let mut depfile = Self::new();
+        depfile.add_output(output);
+        depfile
     }
 
     /// Add additional input files that are used to construct the output.
@@ -31,14 +38,25 @@ impl Depfile {
         self.inputs.insert(input.as_ref().to_string());
     }
 
+    /// Add additional output files that are produced.
+    pub fn add_outputs<I: IntoIterator<Item = impl AsRef<str>>>(&mut self, iter: I) {
+        self.outputs.extend(iter.into_iter().map(|s| s.as_ref().to_string()));
+    }
+
+    /// Add a single output file that is produced.
+    pub fn add_output(&mut self, output: impl AsRef<str>) {
+        self.outputs.insert(output.as_ref().to_string());
+    }
+
     /// Write the depfile.
     pub fn write_to(self, path: impl AsRef<Utf8Path>) -> Result<()> {
         let mut writer = std::io::BufWriter::new(std::fs::File::create(path.as_ref())?);
         let inputs: Vec<String> = self.inputs.into_iter().collect();
+        let outputs: Vec<String> = self.outputs.into_iter().collect();
         if inputs.is_empty() {
-            write!(writer, "{}:\n", self.output)?;
+            write!(writer, "{}:\n", outputs.join(" "))?;
         } else {
-            write!(writer, "{}: \\\n  {}\n", self.output, inputs.join(" \\\n  "))?;
+            write!(writer, "{}: \\\n  {}\n", outputs.join(" "), inputs.join(" \\\n  "))?;
         }
         writer.flush()?;
         Ok(())
@@ -68,6 +86,31 @@ mod tests {
         let mut depfile = std::fs::File::open(depfile_path).unwrap();
         depfile.read_to_string(&mut contents).unwrap();
         let expected = r#"a: \
+  b \
+  c \
+  d
+"#
+        .to_string();
+        assert_eq!(expected, contents);
+    }
+
+    #[test]
+    fn test_write_multiple_outputs() {
+        let dir = tempdir().unwrap();
+        let dir_path = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
+        let depfile_path = dir_path.join("depfile");
+
+        let mut d = Depfile::new_with_output("a");
+        d.add_inputs(vec!["b", "c"]);
+        d.add_input("d");
+        d.add_input("c");
+        d.add_output("e");
+        d.write_to(&depfile_path).unwrap();
+
+        let mut contents = String::new();
+        let mut depfile = std::fs::File::open(depfile_path).unwrap();
+        depfile.read_to_string(&mut contents).unwrap();
+        let expected = r#"a e: \
   b \
   c \
   d

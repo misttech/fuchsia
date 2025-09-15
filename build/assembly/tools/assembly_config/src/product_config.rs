@@ -3,14 +3,16 @@
 // found in the LICENSE file.
 
 use crate::{ExtractProductPackageArgs, HybridProductArgs, ProductArgs, common};
-
 use anyhow::{Context, Result};
 use assembly_config_schema::ProductConfig;
 use assembly_container::AssemblyContainer;
 use assembly_release_info::{ProductReleaseInfo, ReleaseInfo};
 use camino::Utf8PathBuf;
+use depfile::Depfile;
+use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use product_input_bundle::ProductInputBundle;
+use std::io::Cursor;
 
 pub fn new(args: &ProductArgs) -> Result<()> {
     let mut config = ProductConfig::from_config_path(&args.config)?;
@@ -75,12 +77,42 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
 
 pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
     let mut config = ProductConfig::from_dir(&args.config)?;
+    let mut deps = Depfile::new();
 
     if let Some(package_manifest_path) = find_package_in_product(&mut config, &args.package_name) {
         let manifest =
             PackageManifest::try_load_from(&package_manifest_path).with_context(|| {
                 format!("Loading package manifest to extract: {}", &package_manifest_path)
             })?;
+
+        if args.depfile.is_some() {
+            // The config file is a dependency.
+            let config_path = args.config.join("product_configuration.json");
+            deps.add_input(config_path.as_str());
+
+            // The manifest we are extracting from is a dependency.
+            deps.add_input(package_manifest_path.as_str());
+
+            // The source blobs of that manifest are dependencies.
+            deps.add_inputs(manifest.blobs().iter().map(|b| b.source_path.clone()));
+
+            // The contents of the `meta.far` like components will be extracted into `outdir`.
+            // Track those outputs too.
+            if let Some(blob) =
+                manifest.blobs().iter().find(|b| b.path == PackageManifest::META_FAR_BLOB_PATH)
+            {
+                let bytes = std::fs::read(&blob.source_path)
+                    .with_context(|| format!("reading {}", blob.source_path))?;
+                let meta_far = Utf8Reader::new(Cursor::new(bytes)).context("reading FAR")?;
+                deps.add_outputs(
+                    meta_far
+                        .list()
+                        .map(|e| args.outdir.join(e.path()).to_string())
+                        .filter(|p| !p.ends_with('/')),
+                );
+            }
+        }
+
         let mut builder = PackageBuilder::from_manifest(manifest, &args.outdir)
             .with_context(|| format!("Loading package to extract: {}", &args.package_name))?;
 
@@ -90,6 +122,21 @@ pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
         builder
             .build(&args.outdir, &metafar_path)
             .with_context(|| format!("Writing out extracted package: {}", &args.package_name))?;
+
+        if let Some(depfile_path) = &args.depfile {
+            deps.add_outputs(
+                [
+                    metafar_path,
+                    args.outdir.join("meta/fuchsia.abi/abi-revision"),
+                    args.outdir.join("meta/fuchsia.pkg/subpackages"),
+                    args.outdir.join("meta/package"),
+                ]
+                .iter()
+                .map(|p| p.to_string()),
+            );
+            deps.add_output(args.output_package_manifest.as_str());
+            deps.write_to(depfile_path)?;
+        }
     } else {
         anyhow::bail!("Could not find package to extract: {}", &args.package_name);
     }
@@ -226,7 +273,7 @@ mod tests {
         let test_package_path = packages_path.join("test");
         let mut builder = PackageBuilder::new("test", FAKE_ABI_REVISION);
         builder.add_contents_as_blob("some/file", "foobar", &gendir).unwrap();
-        builder.manifest_path(test_package_path);
+        builder.manifest_path(test_package_path.clone());
         let metafar_path = packages_path.join("meta.far");
         builder.build(&packages_path, &metafar_path).unwrap();
 
@@ -250,18 +297,53 @@ mod tests {
 
         let outdir_path = tmp_path.join("outdir");
         let output_package_manifest_path = tmp_path.join("manifest.json");
+        let depfile_path = tmp_path.join("depfile");
 
         let args = ExtractProductPackageArgs {
             config: product_path,
             package_name: "test".into(),
-            outdir: outdir_path,
+            outdir: outdir_path.clone(),
             output_package_manifest: output_package_manifest_path.clone(),
-            depfile: None,
+            depfile: Some(depfile_path.clone()),
         };
         extract_package(&args).unwrap();
         let extracted_package = PackageManifest::try_load_from(&output_package_manifest_path)
             .expect("Package manifest loaded");
 
         assert_eq!(extracted_package.name(), &"test".parse::<PackageName>().unwrap());
+
+        let depfile_contents = fs::read_to_string(depfile_path).unwrap();
+        println!("{}", depfile_contents);
+        let mut expected_outputs = vec![
+            tmp_path.join("meta.far").to_string(),
+            outdir_path.join("meta/contents").to_string(),
+            outdir_path.join("meta/fuchsia.abi/abi-revision").to_string(),
+            outdir_path.join("meta/fuchsia.pkg/subpackages").to_string(),
+            outdir_path.join("meta/package").to_string(),
+            output_package_manifest_path.to_string(),
+        ];
+        expected_outputs.sort();
+        let mut expected_inputs = vec![
+            packages_path.join("meta.far").to_string(),
+            config_path.to_string(),
+            test_package_path.to_string(),
+            gendir.join("some/file").into(),
+        ];
+        expected_inputs.sort();
+
+        let mut actual_parts = depfile_contents.split(":").collect::<Vec<_>>();
+        let actual_inputs_str = actual_parts.pop().unwrap().trim();
+        let actual_outputs_str = actual_parts.pop().unwrap().trim();
+
+        let mut actual_outputs =
+            actual_outputs_str.split_whitespace().filter(|x| x != &"\\").collect::<Vec<_>>();
+        actual_outputs.sort();
+
+        let mut actual_inputs =
+            actual_inputs_str.split_whitespace().filter(|x| x != &"\\").collect::<Vec<_>>();
+        actual_inputs.sort();
+
+        assert_eq!(actual_inputs, expected_inputs);
+        assert_eq!(actual_outputs, expected_outputs);
     }
 }
