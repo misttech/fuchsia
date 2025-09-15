@@ -58,6 +58,16 @@ pub enum TargetTime {
     BootInstant(zx::BootInstant),
 }
 
+impl std::fmt::Display for TargetTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TargetTime::Monotonic(t) => write!(f, "{} ns [MONO]", t.into_nanos()),
+            TargetTime::BootInstant(t) => write!(f, "{} ns [BOOT]", t.into_nanos()),
+            TargetTime::RealTime(t) => write!(f, "{} ns [UTC]", t.into_nanos()),
+        }
+    }
+}
+
 impl From<zx::BootInstant> for TargetTime {
     fn from(value: zx::BootInstant) -> Self {
         Self::BootInstant(value)

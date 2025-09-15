@@ -355,15 +355,8 @@ impl HrTimerManager {
                 // `alarm koid` -> `deadline nanos` (remains: `duration until alarm nanos`)
                 let deadlines = inspector.root().create_string_array("timers", timers.len());
                 for (i, (k, v)) in timers.into_iter().enumerate() {
-                    deadlines.set(
-                        i,
-                        format!(
-                            "{:?} -> {:?} ns (remains: {:?} ns)",
-                            k,
-                            v.estimate_boot().unwrap().into_nanos(),
-                            (v.estimate_boot().unwrap() - now).into_nanos()
-                        ),
-                    );
+                    let remains_ns = (v.estimate_boot().unwrap() - now).into_nanos();
+                    deadlines.set(i, format!("{k:?} -> {v} ns (remains: {remains_ns:?} ns)"));
                 }
                 inspector.root().record(deadlines);
 
