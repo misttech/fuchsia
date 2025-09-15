@@ -131,6 +131,7 @@ pub struct VmoDef {
     pub scaled_populated_bytes: Option<u64>,
     pub total_committed_bytes: Option<u64>,
     pub total_populated_bytes: Option<u64>,
+    pub flags: Option<u32>,
     #[serde(skip)]
     pub __source_breaking: fidl::marker::SourceBreaking,
 }

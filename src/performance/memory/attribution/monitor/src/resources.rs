@@ -504,6 +504,7 @@ impl KernelResourcesExplorer {
                         scaled_populated_bytes: Some(vmo_info.populated_scaled_bytes),
                         total_committed_bytes: Some(vmo_info.committed_bytes),
                         total_populated_bytes: Some(vmo_info.populated_bytes),
+                        flags: Some(vmo_info.flags.bits()),
                         ..Default::default()
                     },
                 )?;

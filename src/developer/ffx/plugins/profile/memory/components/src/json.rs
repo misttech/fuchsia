@@ -131,6 +131,16 @@ impl JsonConvertible for u64 {
     }
 }
 
+impl JsonConvertible for u32 {
+    fn to_json(&self) -> Value {
+        json!(*self)
+    }
+
+    fn from_json(value: &Value) -> Option<Self> {
+        value.as_u64().and_then(|v| v.try_into().ok())
+    }
+}
+
 impl JsonConvertible for String {
     fn to_json(&self) -> Value {
         json!(self)
@@ -320,6 +330,7 @@ impl JsonConvertible for fplugin::ResourceType {
                 scaled_populated_bytes,
                 total_committed_bytes,
                 total_populated_bytes,
+                flags,
                 __source_breaking: _,
             }) => json!({
                 "vmo": [parent.to_json(),
@@ -328,7 +339,8 @@ impl JsonConvertible for fplugin::ResourceType {
                         scaled_committed_bytes.to_json(),
                         scaled_populated_bytes.to_json(),
                         total_committed_bytes.to_json(),
-                        total_populated_bytes.to_json()],
+                        total_populated_bytes.to_json(),
+                        flags.to_json()],
             }),
             fplugin::ResourceType::__SourceBreaking { unknown_ordinal: _ } => unimplemented!(),
         }
@@ -362,6 +374,7 @@ impl JsonConvertible for fplugin::ResourceType {
                 scaled_populated_bytes: arr.get(4).map(|v| u64::from_json(v)).flatten(),
                 total_committed_bytes: arr.get(5).map(|v| u64::from_json(v)).flatten(),
                 total_populated_bytes: arr.get(6).map(|v| u64::from_json(v)).flatten(),
+                flags: arr.get(7).map(|v| u32::from_json(v)).flatten(),
                 ..Default::default()
             }));
         }
@@ -587,6 +600,7 @@ mod tests {
                         scaled_populated_bytes: Some(2048),
                         total_committed_bytes: Some(1024),
                         total_populated_bytes: Some(2048),
+                        flags: Some(1),
                         ..Default::default()
                     })),
                     ..Default::default()
@@ -601,6 +615,7 @@ mod tests {
                         scaled_populated_bytes: Some(2048),
                         total_committed_bytes: Some(1024),
                         total_populated_bytes: Some(2048),
+                        flags: Some(0),
                         ..Default::default()
                     })),
                     ..Default::default()
@@ -635,6 +650,7 @@ mod tests {
                         scaled_populated_bytes: Some(2048),
                         total_committed_bytes: Some(1024),
                         total_populated_bytes: Some(2048),
+                        flags: Some(0),
                         ..Default::default()
                     })),
                     ..Default::default()
@@ -649,6 +665,7 @@ mod tests {
                         scaled_populated_bytes: Some(2048),
                         total_committed_bytes: Some(1024),
                         total_populated_bytes: Some(2048),
+                        flags: Some(0),
                         ..Default::default()
                     })),
                     ..Default::default()
@@ -683,6 +700,7 @@ mod tests {
                         scaled_populated_bytes: Some(2048),
                         total_committed_bytes: Some(1024),
                         total_populated_bytes: Some(2048),
+                        flags: Some(0),
                         ..Default::default()
                     })),
                     ..Default::default()
@@ -944,7 +962,8 @@ mod tests {
                                 1024,
                                 2048,
                                 1024,
-                                2048
+                                2048,
+                                1
                             ]
                         }
                     ],
@@ -959,7 +978,8 @@ mod tests {
                                 1024,
                                 2048,
                                 1024,
-                                2048
+                                2048,
+                                0
                             ]
                         }
                     ],
@@ -999,7 +1019,8 @@ mod tests {
                                 1024,
                                 2048,
                                 1024,
-                                2048
+                                2048,
+                                0
                             ]
                         }
                     ],
@@ -1014,7 +1035,8 @@ mod tests {
                                 1024,
                                 2048,
                                 1024,
-                                2048
+                                2048,
+                                0
                             ]
                         }
                     ],
@@ -1054,7 +1076,8 @@ mod tests {
                                 1024,
                                 2048,
                                 1024,
-                                2048
+                                2048,
+                                0
                             ]
                         }
                     ]

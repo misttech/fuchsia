@@ -153,6 +153,9 @@ type Resource = table {
             6: total_committed_bytes uint64;
             /// Total number of populated bytes of this VMO.
             7: total_populated_bytes uint64;
+
+            /// Flags of this VMO, as a bitwise OR of ZX_INFO_VMO_* values.
+            8: flags uint32;
         };
     };
 };
