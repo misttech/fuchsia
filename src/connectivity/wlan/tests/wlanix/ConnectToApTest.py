@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 import asyncio
 import struct
-import time
 from dataclasses import dataclass
 from typing import Any, List
 
@@ -84,42 +83,62 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
         logger.info("Using IfaceIndex %d for connection test", iface_index)
 
         logger.info("Triggering a scan on IfaceIndex %d", iface_index)
-        trigger_scan_message = fidl_wlanix.Nl80211Message(
-            message_type=fidl_wlanix.Nl80211MessageType.MESSAGE,
-            # fmt: off
-            payload=[
-                # Generic Netlink Header
-                0x21,  # Command: TriggerScan
-                0x01,  # Version
-                0x00, 0x00,  # Reserved
-                0x08, 0x00,  # Length
-                0x03, 0x00,  # Type: IfaceIndex (little-endian)
-                *list(struct.pack("<I", iface_index)),
-            ],
-            # fmt: on
-        )
-        response_list = (
-            (await self.nl80211_proxy.message(message=trigger_scan_message))
-            .unwrap()
-            .responses
-        )
-        assert_equal(
-            len(response_list),
-            1,
-            "Response from TriggerScan should contain a single ACK message.",
-        )
-        assert_equal(
-            response_list[0].message_type,
-            3,
-            "Response should have been an ACK.",
-        )
+        with Nl80211MulticastServer() as ctx:
+            scan_queue = ctx.message_queue
+            scan_callback_channel = ctx.callback_channel
 
-        # TODO(https://fxbug.dev/369151951): Implement a Nl80211Multicast server to
-        # wait for the scan to complete.
-        logger.info(
-            "Waiting 10 seconds for scan to complete. See https://fxbug.dev/369151951"
-        )
-        time.sleep(10)
+            self.nl80211_proxy.get_multicast(
+                group="scan", multicast=scan_callback_channel.take()
+            )
+
+            trigger_scan_message = fidl_wlanix.Nl80211Message(
+                message_type=fidl_wlanix.Nl80211MessageType.MESSAGE,
+                # fmt: off
+                payload=[
+                    # Generic Netlink Header
+                    0x21,  # Command: TriggerScan
+                    0x01,  # Version
+                    0x00, 0x00,  # Reserved
+                    0x08, 0x00,  # Length
+                    0x03, 0x00,  # Type: IfaceIndex (little-endian)
+                    *list(struct.pack("<I", iface_index)),
+                ],
+                # fmt: on
+            )
+            response_list = (
+                (await self.nl80211_proxy.message(message=trigger_scan_message))
+                .unwrap()
+                .responses
+            )
+            assert_equal(
+                len(response_list),
+                1,
+                "Response from TriggerScan should contain a single ACK message.",
+            )
+            assert_equal(
+                response_list[0].message_type,
+                3,
+                "Response should have been an ACK.",
+            )
+
+            # Wait for a multicast message to indicate the scan has completed.
+            try:
+                scan_message = await asyncio.wait_for(
+                    scan_queue.get(), timeout=20
+                )
+                logger.info("Recieved nl80211 scan result signal")
+                assert (
+                    scan_message.payload is not None
+                ), "Received scan result indication without payload"
+                assert_equal(
+                    scan_message.payload[0],
+                    34,  # Command: NewScanResults
+                    "Received unexpected scan result",
+                )
+            except TimeoutError:
+                raise signals.TestFailure(
+                    "Did not receive a scan result within 20 seconds"
+                )
 
         with SupplicantStaIfaceCallbackServer() as ctx:
             state_change_queue = ctx.state_change_queue
@@ -220,6 +239,39 @@ class SupplicantStaIfaceCallbackServer(
         self.server_task = asyncio.get_running_loop().create_task(self.serve())
         return SupplicantStaIfaceCallbackContext(
             state_change_queue=self.state_change_queue,
+            callback_channel=client,
+        )
+
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+        if self.server_task:
+            self.server_task.cancel()
+
+
+@dataclass
+class Nl80211MulticastServerContext:
+    message_queue: asyncio.Queue[fidl_wlanix.Nl80211Message]
+    callback_channel: Channel
+
+
+class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
+    def __init__(self) -> None:
+        self.message_queue: asyncio.Queue[
+            fidl_wlanix.Nl80211Message
+        ] = asyncio.Queue()
+
+    def message(
+        self,
+        request: fidl_wlanix.Nl80211MulticastMessageRequest,
+    ) -> None:
+        if request.message is not None:
+            self.message_queue.put_nowait(request.message)
+
+    def __enter__(self) -> Nl80211MulticastServerContext:
+        client, server = Channel.create()
+        super().__init__(channel=server)
+        self.server_task = asyncio.get_running_loop().create_task(self.serve())
+        return Nl80211MulticastServerContext(
+            message_queue=self.message_queue,
             callback_channel=client,
         )
 
