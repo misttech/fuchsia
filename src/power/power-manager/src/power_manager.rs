@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use crate::node::Node;
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect::component;
-use futures::future::{join_all, LocalBoxFuture};
+use fuchsia_inspect::health::Reporter;
+use futures::future::{LocalBoxFuture, join_all};
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::*;
 use std::collections::HashMap;
@@ -40,6 +41,8 @@ impl PowerManager {
         let inspector = component::inspector();
         let _inspect_server_task =
             inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
+        fuchsia_inspect::component::serve_inspect_stats();
+        fuchsia_inspect::component::health().set_starting_up();
 
         let structured_config = power_manager_config_lib::Config::take_from_startup_handle();
         structured_config.record_inspect(fuchsia_inspect::component::inspector().root());
@@ -70,6 +73,7 @@ impl PowerManager {
 
         self.init_nodes().await?;
 
+        fuchsia_inspect::component::health().set_ok();
         info!("Setup complete");
 
         // Run the ServiceFs (handles incoming request streams) and node futures. This future never

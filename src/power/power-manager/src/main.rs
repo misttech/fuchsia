@@ -36,8 +36,9 @@ mod test;
 use crate::power_manager::PowerManager;
 use anyhow::Error;
 use fidl_fuchsia_process_lifecycle as flifecycle;
-use futures::stream::StreamExt;
+use fuchsia_inspect::health::Reporter;
 use futures::FutureExt;
+use futures::stream::StreamExt;
 
 async fn run_stop_watcher(mut stream: flifecycle::LifecycleRequestStream) {
     let Some(Ok(request)) = stream.next().await else {
@@ -72,6 +73,7 @@ async fn main() -> Result<(), Error> {
         result = pm.run().fuse() => {
             // This future should never complete
             log::error!("Unexpected exit with result: {:?}", result);
+            fuchsia_inspect::component::health().set_unhealthy("Unexpected exit");
             result
         },
         () = run_stop_watcher(lifecycle_stream).fuse() => {
