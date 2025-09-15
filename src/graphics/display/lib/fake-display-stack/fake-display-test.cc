@@ -129,7 +129,7 @@ class FakeDisplayTest : public testing::Test {
             .refresh_rate_millihertz = kRefreshRateHz * 1'000,
         }),
         .engine_info = display::EngineInfo({
-            .max_layer_count = 1,
+            .max_layer_count = 2,
             .max_connected_display_count = 1,
             .is_capture_supported = true,
         }),
@@ -199,8 +199,9 @@ constexpr display::DriverLayer kAcceptableLayer({
     .image_source_transformation = display::CoordinateTransformation::kIdentity,
 });
 
-TEST_F(FakeDisplayTest, CheckConfigMultipleLayers) {
+TEST_F(FakeDisplayTest, CheckConfigMultipleLayersSuccess) {
   display::DriverLayer layers[2] = {kAcceptableLayer, kAcceptableLayer};
+
   cpp20::span<const display::DriverLayer> one_layer(layers, 1);
   // Check the display configuration, to make sure the layer configuration succeeds.
   display::ConfigCheckResult config_check_result =
@@ -208,9 +209,25 @@ TEST_F(FakeDisplayTest, CheckConfigMultipleLayers) {
   ASSERT_EQ(display::ConfigCheckResult::kOk, config_check_result)
       << "This test uses a DriverLayer that does not pass FakeDisplay::CheckConfiguration().";
 
-  // Two layers should fail, as FakeDisplay only supports one layer.
-  cpp20::span<const display::DriverLayer> two_layers(layers, 2);
+  // Two layers should succeed, as FakeDisplay only supports up to two layers.
+  cpp20::span<const display::DriverLayer> two_layers(std::begin(layers), std::end(layers));
   config_check_result = fake_display_->CheckConfiguration(kDisplayId, kModeId, two_layers);
+  EXPECT_EQ(display::ConfigCheckResult::kOk, config_check_result);
+}
+
+TEST_F(FakeDisplayTest, CheckConfigMultipleLayersFailureTooMany) {
+  display::DriverLayer layers[3] = {kAcceptableLayer, kAcceptableLayer, kAcceptableLayer};
+
+  cpp20::span<const display::DriverLayer> one_layer(layers, 1);
+  // Check the display configuration, to make sure the layer configuration succeeds.
+  display::ConfigCheckResult config_check_result =
+      fake_display_->CheckConfiguration(kDisplayId, kModeId, one_layer);
+  ASSERT_EQ(display::ConfigCheckResult::kOk, config_check_result)
+      << "This test uses a DriverLayer that does not pass FakeDisplay::CheckConfiguration().";
+
+  // Three layers should fail, as FakeDisplay only supports up to two layers.
+  cpp20::span<const display::DriverLayer> three_layers(std::begin(layers), std::end(layers));
+  config_check_result = fake_display_->CheckConfiguration(kDisplayId, kModeId, three_layers);
   EXPECT_EQ(display::ConfigCheckResult::kUnsupportedConfig, config_check_result);
 }
 
@@ -354,13 +371,18 @@ fuchsia_sysmem2::wire::BufferCollectionConstraints CreateImageConstraints(
   return constraints.Build();
 }
 
+constexpr fuchsia_math::wire::Point kZeroPoint = {.x = 0, .y = 0};
+
 // Creates a layer containing an on the top-left corner.
 constexpr display::DriverLayer CreateImageLayerConfig(
     display::DriverImageId image_id, const display::Color& fallback_color,
-    const display::ImageMetadata& image_metadata) {
+    const display::ImageMetadata& image_metadata,
+    const fuchsia_math::wire::Point& top_left = kZeroPoint) {
   return display::DriverLayer({
-      .display_destination = display::Rectangle(
-          {.x = 0, .y = 0, .width = image_metadata.width(), .height = image_metadata.height()}),
+      .display_destination = display::Rectangle({.x = top_left.x,
+                                                 .y = top_left.y,
+                                                 .width = image_metadata.width(),
+                                                 .height = image_metadata.height()}),
       .image_source = display::Rectangle(
           {.x = 0, .y = 0, .width = image_metadata.width(), .height = image_metadata.height()}),
       .image_id = image_id,
@@ -891,6 +913,250 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureSolidColorFill) {
   // TODO(https://fxbug.dev/42079040): Consider adding RAII handles to release the
   // imported images and buffer collections.
   EXPECT_OK(fake_display_->ReleaseCapture(capture_import_result.value()));
+  EXPECT_OK(fake_display_->ReleaseBufferCollection(kCaptureBufferCollectionId));
+}
+
+TEST_F(FakeDisplayRealSysmemTest, CaptureMultipleImageLayers) {
+  zx::result<BufferCollectionAndToken> new_capture_buffer_collection_result =
+      CreateBufferCollection();
+  ASSERT_OK(new_capture_buffer_collection_result);
+  auto [capture_collection_client, capture_token] =
+      std::move(new_capture_buffer_collection_result.value());
+
+  zx::result<BufferCollectionAndToken> new_framebuffer_buffer_collection_result =
+      CreateBufferCollection();
+  ASSERT_OK(new_framebuffer_buffer_collection_result);
+  auto [framebuffer1_collection_client, framebuffer1_token] =
+      std::move(new_framebuffer_buffer_collection_result.value());
+
+  new_framebuffer_buffer_collection_result = CreateBufferCollection();
+  ASSERT_OK(new_framebuffer_buffer_collection_result);
+  auto [framebuffer2_collection_client, framebuffer2_token] =
+      std::move(new_framebuffer_buffer_collection_result.value());
+
+  display::EngineInfo engine_info = fake_display_->CompleteCoordinatorConnection();
+  ASSERT_EQ(true, engine_info.is_capture_supported());
+
+  constexpr display::DriverBufferCollectionId kCaptureBufferCollectionId(1);
+  constexpr display::DriverBufferCollectionId kFramebuffer1BufferCollectionId(2);
+  constexpr display::DriverBufferCollectionId kFramebuffer2BufferCollectionId(3);
+  ASSERT_OK(
+      fake_display_->ImportBufferCollection(kCaptureBufferCollectionId, std::move(capture_token)));
+  ASSERT_OK(fake_display_->ImportBufferCollection(kFramebuffer1BufferCollectionId,
+                                                  std::move(framebuffer1_token)));
+  ASSERT_OK(fake_display_->ImportBufferCollection(kFramebuffer2BufferCollectionId,
+                                                  std::move(framebuffer2_token)));
+
+  const auto kPixelFormat = PixelFormatAndModifier(fuchsia_images2::PixelFormat::kB8G8R8A8,
+                                                   fuchsia_images2::PixelFormatModifier::kLinear);
+
+  // Set BufferCollection buffer memory constraints from the display driver's
+  // end.
+  static constexpr display::ImageBufferUsage kDisplayUsage({
+      .tiling_type = display::ImageTilingType::kLinear,
+  });
+  ASSERT_OK(fake_display_->SetBufferCollectionConstraints(kDisplayUsage,
+                                                          kFramebuffer1BufferCollectionId));
+  ASSERT_OK(fake_display_->SetBufferCollectionConstraints(kDisplayUsage,
+                                                          kFramebuffer2BufferCollectionId));
+  static constexpr display::ImageBufferUsage kCaptureUsage({
+      .tiling_type = display::ImageTilingType::kCapture,
+  });
+  ASSERT_OK(
+      fake_display_->SetBufferCollectionConstraints(kCaptureUsage, kCaptureBufferCollectionId));
+
+  // Set BufferCollection buffer memory constraints from the test's end.
+  const uint32_t bytes_per_pixel = ImageFormatStrideBytesPerWidthPixel(kPixelFormat);
+  const uint32_t framebuffer1_size_bytes = kDisplayWidth * kDisplayHeight * bytes_per_pixel;
+
+  fidl::Arena arena;
+  auto framebuffer1_set_constraints_request =
+      fuchsia_sysmem2::wire::BufferCollectionSetConstraintsRequest::Builder(arena);
+  framebuffer1_set_constraints_request.constraints(
+      CreateImageConstraints(arena, framebuffer1_size_bytes, kPixelFormat.pixel_format));
+  fidl::Status set_framebuffer1_constraints_status =
+      framebuffer1_collection_client->SetConstraints(framebuffer1_set_constraints_request.Build());
+  ASSERT_TRUE(set_framebuffer1_constraints_status.ok());
+  arena.Reset();
+
+  const uint32_t framebuffer2_size_bytes =
+      (kDisplayWidth / 2) * (kDisplayHeight / 2) * bytes_per_pixel;
+
+  auto framebuffer2_set_constraints_request =
+      fuchsia_sysmem2::wire::BufferCollectionSetConstraintsRequest::Builder(arena);
+  framebuffer2_set_constraints_request.constraints(
+      CreateImageConstraints(arena, framebuffer2_size_bytes, kPixelFormat.pixel_format));
+  fidl::Status set_framebuffer2_constraints_status =
+      framebuffer2_collection_client->SetConstraints(framebuffer2_set_constraints_request.Build());
+  ASSERT_TRUE(set_framebuffer2_constraints_status.ok());
+  arena.Reset();
+
+  auto capture_set_constraints_request =
+      fuchsia_sysmem2::wire::BufferCollectionSetConstraintsRequest::Builder(arena);
+  capture_set_constraints_request.constraints(
+      CreateImageConstraints(arena, framebuffer1_size_bytes, kPixelFormat.pixel_format));
+  fidl::Status set_capture_constraints_status =
+      capture_collection_client->SetConstraints(capture_set_constraints_request.Build());
+  ASSERT_TRUE(set_capture_constraints_status.ok());
+  arena.Reset();
+
+  // Both the test-side client and the driver have set the constraints.
+  // The buffers should be allocated correctly in sysmem.
+  auto [framebuffer1_vmo, framebuffer1_settings] =
+      GetAllocatedBufferAndSettings(arena, framebuffer1_collection_client);
+  auto [framebuffer2_vmo, framebuffer2_settings] =
+      GetAllocatedBufferAndSettings(arena, framebuffer2_collection_client);
+  auto [capture_vmo, capture_settings] =
+      GetAllocatedBufferAndSettings(arena, capture_collection_client);
+
+  // Fill the framebuffers.
+  fzl::VmoMapper framebuffer1_mapper;
+  ASSERT_OK(framebuffer1_mapper.Map(framebuffer1_vmo));
+  cpp20::span<uint8_t> framebuffer1_bytes(reinterpret_cast<uint8_t*>(framebuffer1_mapper.start()),
+                                          framebuffer1_mapper.size());
+  const std::vector<uint8_t> kBlueBgraBytes = {0xff, 0, 0, 0xff};
+  FillImageWithColor(framebuffer1_bytes, kBlueBgraBytes, kDisplayWidth, kDisplayHeight,
+                     framebuffer1_settings.image_format_constraints().bytes_per_row_divisor());
+  zx_cache_flush(framebuffer1_bytes.data(), framebuffer1_bytes.size(),
+                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+  framebuffer1_mapper.Unmap();
+
+  fzl::VmoMapper framebuffer2_mapper;
+  ASSERT_OK(framebuffer2_mapper.Map(framebuffer2_vmo));
+  cpp20::span<uint8_t> framebuffer2_bytes(reinterpret_cast<uint8_t*>(framebuffer2_mapper.start()),
+                                          framebuffer2_mapper.size());
+  const std::vector<uint8_t> kPurpleBgraBytes = {0x88, 0, 0x88, 0xff};
+  FillImageWithColor(framebuffer2_bytes, kPurpleBgraBytes, kDisplayWidth / 2, kDisplayHeight / 2,
+                     framebuffer2_settings.image_format_constraints().bytes_per_row_divisor());
+  zx_cache_flush(framebuffer2_bytes.data(), framebuffer2_bytes.size(),
+                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+  framebuffer2_mapper.Unmap();
+
+  // Import capture image.
+  zx::result<display::DriverCaptureImageId> capture_import_result =
+      fake_display_->ImportImageForCapture(kCaptureBufferCollectionId,
+                                           /*buffer_index=*/0);
+  ASSERT_OK(capture_import_result);
+  ASSERT_NE(display::kInvalidDriverCaptureImageId, capture_import_result.value());
+
+  // Import framebuffer images.
+  static constexpr display::ImageMetadata kFramebuffer1ImageMetadata({
+      .width = kDisplayWidth,
+      .height = kDisplayHeight,
+      .tiling_type = display::ImageTilingType::kLinear,
+  });
+
+  zx::result<display::DriverImageId> framebuffer1_import_result =
+      fake_display_->ImportImage(kFramebuffer1ImageMetadata, kFramebuffer1BufferCollectionId,
+                                 /*buffer_index=*/0);
+  ASSERT_OK(framebuffer1_import_result);
+  ASSERT_NE(display::kInvalidDriverImageId, framebuffer1_import_result.value());
+
+  static constexpr display::ImageMetadata kFramebuffer2ImageMetadata({
+      .width = kDisplayWidth / 2,
+      .height = kDisplayHeight / 2,
+      .tiling_type = display::ImageTilingType::kLinear,
+  });
+  zx::result<display::DriverImageId> framebuffer2_import_result =
+      fake_display_->ImportImage(kFramebuffer2ImageMetadata, kFramebuffer2BufferCollectionId,
+                                 /*buffer_index=*/0);
+  ASSERT_OK(framebuffer2_import_result);
+  ASSERT_NE(display::kInvalidDriverImageId, framebuffer2_import_result.value());
+
+  // Create display configuration.
+  static constexpr display::Color kBlackBgra({
+      .format = display::PixelFormat::kB8G8R8A8,
+      .bytes = {{0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00}},
+  });
+  constexpr fuchsia_math::wire::Point kLayer1TopLeft = {.x = 0, .y = 0};
+  constexpr fuchsia_math::wire::Point kLayer2TopLeft = {.x = 10, .y = 20};
+  constexpr size_t kLayerCount = 2;
+  std::array<const display::DriverLayer, kLayerCount> kLayers = {
+      CreateImageLayerConfig(framebuffer1_import_result.value(), kBlackBgra,
+                             kFramebuffer1ImageMetadata, kLayer1TopLeft),
+      CreateImageLayerConfig(framebuffer2_import_result.value(), kBlackBgra,
+                             kFramebuffer2ImageMetadata, kLayer2TopLeft),
+  };
+
+  // Check and apply the display configuration.
+  display::ConfigCheckResult config_check_result =
+      fake_display_->CheckConfiguration(kDisplayId, kModeId, kLayers);
+  ASSERT_EQ(display::ConfigCheckResult::kOk, config_check_result);
+
+  static constexpr display::DriverConfigStamp kConfigStamp(1);
+  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
+
+  // Start capture; wait until the capture ends.
+  ASSERT_FALSE(engine_listener_.capture_completed().signaled());
+  ASSERT_OK(fake_display_->StartCapture(capture_import_result.value()));
+  engine_listener_.capture_completed().Wait();
+  EXPECT_TRUE(engine_listener_.capture_completed().signaled());
+
+  // Verify the captured image has the same content as the original image.
+  constexpr int kCaptureBytesPerPixel = 4;
+  uint32_t capture_bytes_per_row_divisor =
+      capture_settings.image_format_constraints().bytes_per_row_divisor();
+  uint32_t capture_row_stride_bytes =
+      fbl::round_up(uint32_t{kDisplayWidth} * kCaptureBytesPerPixel, capture_bytes_per_row_divisor);
+
+  {
+    fzl::VmoMapper capture_mapper;
+    ASSERT_OK(capture_mapper.Map(capture_vmo));
+    cpp20::span<const uint8_t> capture_bytes(
+        reinterpret_cast<const uint8_t*>(capture_mapper.start()), /*count=*/capture_mapper.size());
+    zx_cache_flush(capture_bytes.data(), capture_bytes.size(), ZX_CACHE_FLUSH_DATA);
+
+    for (int row = 0; row < kDisplayHeight; ++row) {
+      cpp20::span<const uint8_t> capture_row =
+          capture_bytes.subspan(row * capture_row_stride_bytes, capture_row_stride_bytes);
+      auto it = capture_row.begin();
+      for (int col = 0; col < kDisplayWidth; ++col) {
+        std::vector<uint8_t> curr_color(it, it + kCaptureBytesPerPixel);
+
+        bool is_layer2 = [&] {
+          if (row < kLayer2TopLeft.y)
+            return false;
+          if (row >= (kLayer2TopLeft.y + kFramebuffer2ImageMetadata.height()))
+            return false;
+          if (col < kLayer2TopLeft.x)
+            return false;
+          if (col >= (kLayer2TopLeft.x + kFramebuffer2ImageMetadata.width()))
+            return false;
+          return true;
+        }();
+
+        // EXPECT_THAT() would be correct here. However, it generates a lot of
+        // logging output when the capture functionality is completely broken,
+        // greatly reducing the test's helpfulness.
+        if (is_layer2) {
+          ASSERT_THAT(curr_color, testing::ElementsAreArray(kPurpleBgraBytes))
+              << "Color mismatch at row " << row << " column " << col;
+        } else {
+          ASSERT_THAT(curr_color, testing::ElementsAreArray(kBlueBgraBytes))
+              << "Color mismatch at row " << row << " column " << col;
+        }
+        it += kCaptureBytesPerPixel;
+      }
+    }
+  }
+
+  // Apply a solid color fill configuration so the image can be released.
+  static constexpr display::Dimensions kDisplayDimensions(
+      {.width = kDisplayWidth, .height = kDisplayHeight});
+  std::array<const display::DriverLayer, 1> kColorFillLayers = {
+      CreateColorFillLayerConfig(kBlackBgra, kDisplayDimensions),
+  };
+  static constexpr display::DriverConfigStamp kEmptyConfigStamp(2);
+  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kColorFillLayers, kEmptyConfigStamp);
+
+  // Release the image.
+  // TODO(https://fxbug.dev/42079040): Consider adding RAII handles to release the
+  // imported images and buffer collections.
+  fake_display_->ReleaseImage(framebuffer1_import_result.value());
+  EXPECT_OK(fake_display_->ReleaseCapture(capture_import_result.value()));
+
+  EXPECT_OK(fake_display_->ReleaseBufferCollection(kFramebuffer2BufferCollectionId));
+  EXPECT_OK(fake_display_->ReleaseBufferCollection(kFramebuffer1BufferCollectionId));
   EXPECT_OK(fake_display_->ReleaseBufferCollection(kCaptureBufferCollectionId));
 }
 

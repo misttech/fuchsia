@@ -91,9 +91,6 @@ FakeDisplay::FakeDisplay(display::DisplayEngineEventsInterface* engine_events,
       inspector_(std::move(inspector)) {
   ZX_DEBUG_ASSERT(engine_events != nullptr);
   ZX_DEBUG_ASSERT(sysmem_client_.is_valid());
-  ZX_DEBUG_ASSERT_MSG(!device_config.engine_info.is_capture_supported() ||
-                          device_config.engine_info.max_layer_count() == 1,
-                      "Capture emulation does not support multiple layers yet");
   InitializeSysmemClient();
 
   if (device_config_.periodic_vsync) {
@@ -432,6 +429,9 @@ display::ConfigCheckResult FakeDisplay::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
     cpp20::span<const display::DriverLayer> layers) {
   ZX_DEBUG_ASSERT(display_id == device_config_.display_id);
+  // `layers` is required to be non-empty by the `fuchsia.hardware.
+  // display.engine/Engine` protocol.
+  ZX_DEBUG_ASSERT(!layers.empty());
 
   if (display_mode_id != device_config_.display_mode_id) {
     return display::ConfigCheckResult::kUnsupportedDisplayModes;
@@ -448,8 +448,6 @@ display::ConfigCheckResult FakeDisplay::CheckConfiguration(
     return display::ConfigCheckResult::kUnsupportedConfig;
   }
 
-  // TODO(https://fxbug.dev/412450577): Remove the single-layer assumption.
-  const display::DriverLayer& layer = layers[0];
   const display::Rectangle display_area({
       .x = 0,
       .y = 0,
@@ -457,31 +455,30 @@ display::ConfigCheckResult FakeDisplay::CheckConfiguration(
       .height = device_config_.display_mode.active_area().height(),
   });
 
-  if (layer.display_destination() != display_area) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.image_source().dimensions().IsEmpty()) {
-    // Solid color fill layer.
-    if (layer.fallback_color().format().EncodingSize() != sizeof(uint32_t)) {
-      // The capture simulation implementation is currently optimized for 32-bit
-      // colors. Removing this constraint will require updating that
-      // implementation.
+  for (const display::DriverLayer& layer : layers) {
+    if (layer.image_source().dimensions().IsEmpty()) {
+      // Solid color fill layer.
+      if (layer.fallback_color().format().EncodingSize() != sizeof(uint32_t)) {
+        // The capture simulation implementation is currently optimized for 32-bit
+        // colors. Removing this constraint will require updating that
+        // implementation.
+        return display::ConfigCheckResult::kUnsupportedConfig;
+      }
+    } else {
+      // Image layer.
+      if (layer.image_source().dimensions() != layer.display_destination().dimensions()) {
+        return display::ConfigCheckResult::kUnsupportedConfig;
+      }
+    }
+    if (layer.image_metadata().dimensions() != layer.image_source().dimensions()) {
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
-  } else {
-    // Image layer.
-    if (layer.image_source() != layer.display_destination()) {
+    if (layer.alpha_mode() != display::AlphaMode::kDisable) {
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
-  }
-  if (layer.image_metadata().dimensions() != layer.image_source().dimensions()) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.alpha_mode() != display::AlphaMode::kDisable) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
+    if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
   }
   return display::ConfigCheckResult::kOk;
 }
@@ -497,11 +494,12 @@ void FakeDisplay::ApplyConfiguration(display::DisplayId display_id, display::Mod
 
   std::lock_guard lock(mutex_);
 
-  // TODO(https://fxbug.dev/412450577): Remove the single-layer assumption.
-  if (layers[0].image_id() != display::kInvalidDriverImageId) {
-    ZX_DEBUG_ASSERT_MSG(imported_images_.find(layers[0].image_id()) != imported_images_.end(),
-                        "Configuration contains invalid image ID: %" PRIu64,
-                        layers[0].image_id().value());
+  for (const display::DriverLayer& layer : layers) {
+    if (layer.image_id() != display::kInvalidDriverImageId) {
+      ZX_DEBUG_ASSERT_MSG(imported_images_.find(layer.image_id()) != imported_images_.end(),
+                          "Configuration contains invalid image ID: %" PRIu64,
+                          layer.image_id().value());
+    }
   }
   applied_layers_.assign(layers.begin(), layers.end());
   applied_config_stamp_ = config_stamp;
@@ -764,7 +762,6 @@ zx::result<> FakeDisplay::ServiceAnyCaptureRequest() {
     return zx::ok();
   }
 
-  // TODO(https://fxbug.dev/42075534): Support multiple layers.
   ZX_DEBUG_ASSERT(applied_layers_.size() > 0);
   zx::result<> composite_result =
       CompositeLayersToCaptureTargetLocked(applied_layers_, capture_destination_info);
