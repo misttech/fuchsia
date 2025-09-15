@@ -560,23 +560,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
         return false;
       }
     } else {
-      // TODO(https://fxbug.dev/42056054): Not all display hardware is able to handle color layers
-      // with specific sizes, which is required for doing solid-fill rects on the display path. If
-      // we encounter one of those rects here -- unless it is the backmost layer and fullscreen
-      // -- then we abort.
-      const auto& rect = data.rectangles[i];
-      const glm::uvec2& display_size = display_info_map_[data.display_id].dimensions;
-      if (i == 0 && rect.origin.x == 0 && rect.origin.y == 0 &&
-          rect.extent.x == static_cast<float>(display_size.x) &&
-          rect.extent.y == static_cast<float>(display_size.y)) {
-        ApplyLayerColor(layers[i], rect, data.images[i]);
-      } else {
-        TRACE_INSTANT("gfx", "scenic_d2d_failed: violated solid-fill rect restrictions.",
-                      TRACE_SCOPE_THREAD);
-        FLATLAND_VERBOSE_LOG
-            << "SetRenderDataOnDisplay() failed: violated solid-fill rect restrictions.";
-        return false;
-      }
+      ApplyLayerColor(layers[i], data.rectangles[i], data.images[i]);
     }
   }
 
