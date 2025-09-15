@@ -61,9 +61,9 @@ pub enum TargetTime {
 impl std::fmt::Display for TargetTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TargetTime::Monotonic(t) => write!(f, "{} ns [MONO]", t.into_nanos()),
-            TargetTime::BootInstant(t) => write!(f, "{} ns [BOOT]", t.into_nanos()),
-            TargetTime::RealTime(t) => write!(f, "{} ns [UTC]", t.into_nanos()),
+            TargetTime::Monotonic(t) => write!(f, "{} [MONO]", time_pretty::format_timer(*t)),
+            TargetTime::BootInstant(t) => write!(f, "{} [BOOT]", time_pretty::format_timer(*t)),
+            TargetTime::RealTime(t) => write!(f, "{} [UTC]", time_pretty::format_timer(*t)),
         }
     }
 }

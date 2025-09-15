@@ -391,6 +391,7 @@ rustc_library("starnix_core") {
     "//src/storage/ext4/lib/metadata",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/lib/vfs/rust:vfs",
+    "//src/sys/time/timekeeper/pretty:time_pretty",
     "//third_party/rust_crates:aes-gcm-siv",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:arc-swap",
