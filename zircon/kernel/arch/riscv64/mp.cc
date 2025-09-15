@@ -118,8 +118,12 @@ class PhysicalBootstrap {
   // Note the percpu_ptr register (s11) is not yet set up.  Just in case,
   // it's reset to zero rather than leaving any incoming garbage there
   // before it's initialized inside VirtualEntry.
-  [[noreturn, gnu::naked]] static void SbiEntry(uint64_t hart_id,        // a0
-                                                PhysicalBootstrap* p) {  // a1
+  [[noreturn, gnu::naked]]
+  // The compiler will insert instrumentation even into a naked function!
+  // This attribute ensures that it won't.
+  [[gnu::no_profile_instrument_function]] static void SbiEntry(  //
+      uint64_t hart_id,                                          // a0
+      PhysicalBootstrap* p) {                                    // a1
     __asm__ volatile(
         R"""(
         .cfi_def_cfa zero, 0
