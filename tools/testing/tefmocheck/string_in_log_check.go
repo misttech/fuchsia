@@ -918,9 +918,9 @@ func infraToolLogChecks() []FailureModeCheck {
 		&stringInLogCheck{
 			String:          "ADB communication failed, attempting restart of isolated server",
 			Type:            swarmingOutputType,
-			AlwaysFlake:     true,
 			AttributeToTest: true,
 			AddTag:          true,
+			SkipPassedTest:  true,
 		},
 		// For https://fxbug.dev/439064347
 		&stringInLogCheck{
