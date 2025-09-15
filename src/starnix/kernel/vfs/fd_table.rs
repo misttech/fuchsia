@@ -6,6 +6,7 @@ use crate::task::{CurrentTaskAndLocked, Task, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle};
 use bitflags::bitflags;
 use fuchsia_inspect_contrib::profile_duration;
+use fuchsia_rcu::rcu_arc::RcuArc;
 use starnix_sync::{LockBefore, Locked, Mutex, ThreadGroupLimits};
 use starnix_syscalls::SyscallResult;
 use starnix_types::ownership::{Releasable, ReleasableByRef};
@@ -184,6 +185,10 @@ impl FdTableInner {
     fn id(&self) -> FdTableId {
         FdTableId::new(&self.store.lock().entries as *const Vec<Option<FdTableEntry>>)
     }
+
+    fn unshare(&self) -> Arc<Self> {
+        Arc::new(self.clone())
+    }
 }
 
 impl Clone for FdTableInner {
@@ -204,7 +209,7 @@ impl Clone for FdTableInner {
 
 #[derive(Debug, Default)]
 pub struct FdTable {
-    inner: Mutex<Arc<FdTableInner>>,
+    inner: RcuArc<FdTableInner>,
 }
 
 pub enum TargetFdNumber {
@@ -220,22 +225,19 @@ pub enum TargetFdNumber {
 
 impl FdTable {
     pub fn id(&self) -> FdTableId {
-        self.inner.lock().id()
+        self.inner.read().id()
     }
 
     /// Returns new unshared FD table populated with the same FD->`FileObject` mappings as `self`.
     pub fn fork(&self) -> FdTable {
-        let old_inner = self.inner.lock();
-        let inner = Mutex::new(Arc::new((**old_inner).clone()));
-        FdTable { inner }
+        let unshared = self.inner.read().unshare();
+        FdTable { inner: RcuArc::new(unshared) }
     }
 
     /// Ensures that this FD table is not shared by any other `FdTable` instance(s).
     pub fn unshare(&self) {
-        let mut inner = self.inner.lock();
-        // `make_mut()` is a no-op if this is the only reference to the `FdTableInner`, otherwise
-        // the table will be `clone()`d and the reference updated to the new copy.
-        Arc::make_mut(&mut inner);
+        let unshared = self.inner.read().unshare();
+        self.inner.set_sync(unshared);
     }
 
     /// Trims close-on-exec FDs from the table.
@@ -269,7 +271,7 @@ impl FdTable {
     {
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let id = self.id();
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         let mut state = inner.store.lock();
         state.insert_entry(fd, rlimit, FdTableEntry::new(file, id, flags))?;
         Ok(())
@@ -288,7 +290,7 @@ impl FdTable {
         profile_duration!("AddFd");
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let id = self.id();
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         let mut state = inner.store.lock();
         let fd = state.next_fd;
         state.insert_entry(fd, rlimit, FdTableEntry::new(file, id, flags))?;
@@ -316,7 +318,7 @@ impl FdTable {
         let result = {
             let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
             let id = self.id();
-            let inner = self.inner.lock();
+            let inner = self.inner.read();
             let mut state = inner.store.lock();
             let file =
                 state.get(oldfd).map(|entry| entry.file.clone()).ok_or_else(|| errno!(EBADF))?;
@@ -354,7 +356,7 @@ impl FdTable {
         fd: FdNumber,
     ) -> Result<(FileHandle, FdFlags), Errno> {
         profile_duration!("GetFdWithFlags");
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         let state = inner.store.lock();
         state.get(fd).map(|entry| (entry.file.clone(), entry.flags)).ok_or_else(|| errno!(EBADF))
     }
@@ -372,7 +374,7 @@ impl FdTable {
         // Drop the file object only after releasing the writer lock in case
         // the close() function on the FileOps calls back into the FdTable.
         let removed = {
-            let inner = self.inner.lock();
+            let inner = self.inner.read();
             let mut state = inner.store.lock();
             state.remove_entry(&fd)
         };
@@ -385,7 +387,7 @@ impl FdTable {
 
     pub fn set_fd_flags(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
         profile_duration!("SetFdFlags");
-        self.inner.lock().store.lock().get_mut(fd).ok_or_else(|| errno!(EBADF)).map(|entry| {
+        self.inner.read().store.lock().get_mut(fd).ok_or_else(|| errno!(EBADF)).map(|entry| {
             if entry.file.flags().contains(OpenFlags::PATH) {
                 error!(EBADF)
             } else {
@@ -398,7 +400,7 @@ impl FdTable {
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
         profile_duration!("SetFdFlagsAllowingOpath");
         self.inner
-            .lock()
+            .read()
             .store
             .lock()
             .get_mut(fd)
@@ -414,13 +416,13 @@ impl FdTable {
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
         profile_duration!("RetainFds");
-        self.inner.lock().store.lock().retain(|fd, entry| f(*fd, &mut entry.flags));
+        self.inner.read().store.lock().retain(|fd, entry| f(*fd, &mut entry.flags));
     }
 
     /// Returns a vector of all current file descriptors in the table.
     pub fn get_all_fds(&self) -> Vec<FdNumber> {
         self.inner
-            .lock()
+            .read()
             .store
             .lock()
             .entries
@@ -436,7 +438,7 @@ impl FdTable {
     /// `file` with `replacement_file` in the table when
     /// `maybe_replacement == Some(replacement_file)`.
     pub fn remap_fds<F: Fn(&FileHandle) -> Option<FileHandle>>(&self, predicate: F) {
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         let mut store = inner.store.lock();
 
         for maybe_entry in store.entries.iter_mut() {
@@ -453,13 +455,13 @@ impl ReleasableByRef for FdTable {
     type Context<'a> = ();
     /// Drop the fd table, closing any files opened exclusively by this table.
     fn release<'a>(&self, _context: ()) {
-        *self.inner.lock() = Default::default();
+        self.inner.set_sync(Default::default());
     }
 }
 
 impl Clone for FdTable {
     fn clone(&self) -> Self {
-        FdTable { inner: Mutex::new(self.inner.lock().clone()) }
+        FdTable { inner: self.inner.clone() }
     }
 }
 

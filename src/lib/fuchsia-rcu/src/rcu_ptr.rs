@@ -17,6 +17,7 @@ use std::sync::atomic::AtomicPtr;
 /// the pointer value is written, the caller should typically use `rcu_call` or `rcu_drop` to defer
 /// cleanup of the object referenced by the old pointer value until the RCU state machine has made
 /// sufficient progress to ensure that no concurrent readers are holding read guards.
+#[derive(Debug)]
 pub struct RcuPtr<T> {
     ptr: AtomicPtr<T>,
 }

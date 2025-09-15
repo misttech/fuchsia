@@ -12,6 +12,7 @@ use std::sync::Arc;
 /// This Arc can be read from multiple threads concurrently without blocking.
 /// When the Arc is written, reads may continue to see the old value of the Arc
 /// for some period of time.
+#[derive(Debug)]
 pub struct RcuArc<T: Send + Sync + 'static> {
     ptr: RcuPtr<T>,
 }
@@ -110,6 +111,12 @@ impl<T: Send + Sync + 'static> Clone for RcuArc<T> {
 impl<T: Send + Sync + 'static> From<Arc<T>> for RcuArc<T> {
     fn from(data: Arc<T>) -> Self {
         Self::new(data)
+    }
+}
+
+impl<T: Default + Send + Sync + 'static> Default for RcuArc<T> {
+    fn default() -> Self {
+        Self::new(Arc::new(T::default()))
     }
 }
 
