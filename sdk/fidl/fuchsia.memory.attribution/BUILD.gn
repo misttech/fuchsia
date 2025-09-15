@@ -6,7 +6,10 @@ import("//build/fidl/fidl.gni")
 import("//tools/fidl/measure-tape/measure_tape.gni")
 
 fidl("fuchsia.memory.attribution") {
-  sources = [ "attribution.fidl" ]
+  sources = [
+    "attribution.fidl",
+    "pager.fidl",
+  ]
   sdk_area = "Diagnostics"
 
   public_deps = [ "//zircon/vdso/zx" ]
@@ -17,6 +20,7 @@ fidl("fuchsia.memory.attribution") {
     "//src/developer/memory/*",
     "//src/performance/memory/*",
     "//src/starnix/*",
+    "//src/storage/fxfs/*",
     "//src/sys/component_manager/*",
     "//src/sys/lib/elf_runner/*",
   ]
