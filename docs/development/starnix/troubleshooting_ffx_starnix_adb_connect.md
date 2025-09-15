@@ -17,7 +17,7 @@ forwarding:
     (for example, `5559`).
 
     Tip: You can also run this `ffx forward` command in the background
-    with the `-q` (quiet) flag, for example: `fx forward -q "5559:5555" &`.
+    with the `-q` (quiet) flag, for example: `ffx forward -q "5559=>5555" &`.
 
 2.  In a second terminal, connect the ADB server to that host port:
 
