@@ -19,6 +19,7 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-component/client",
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
+    "//src/performance/memory/attribution/refaults_vmo",
     "//src/storage/fxfs:lib",
     "//src/storage/fxfs/crypto",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",

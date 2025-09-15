@@ -26,6 +26,7 @@ use fxfs::object_store::volume::root_volume;
 use fxfs_crypto::Crypt;
 use fxfs_platform::fuchsia::RemoteCrypt;
 use fxfs_platform::volumes_directory::VolumesDirectory;
+use refaults_vmo::PageRefaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
@@ -298,10 +299,13 @@ async fn main() -> Result<(), Error> {
             .into(),
     ));
 
+    let blob_resupplied_count =
+        Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
     let volumes_directory = VolumesDirectory::new(
         root_volume(filesystem.clone()).await.context("root_volume failed")?,
         Weak::new(),
         None,
+        blob_resupplied_count,
     )
     .await
     .context("failed to create the VolumesDirectory")?;

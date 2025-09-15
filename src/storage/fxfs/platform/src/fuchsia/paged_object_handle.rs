@@ -1213,6 +1213,7 @@ mod tests {
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{Directory, NO_OWNER};
     use fxfs_macros::ToWeakNode;
+    use refaults_vmo::PageRefaultCounter;
     use std::collections::HashSet;
     use std::sync::Weak;
     use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -1264,8 +1265,14 @@ mod tests {
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let store = root_volume.new_volume("vol", NO_OWNER, None).await.unwrap();
         let store_object_id = store.store_object_id();
-        let volume =
-            FxVolumeAndRoot::new::<FxDirectory>(Weak::new(), store, store_object_id).await.unwrap();
+        let volume = FxVolumeAndRoot::new::<FxDirectory>(
+            Weak::new(),
+            store,
+            store_object_id,
+            Arc::new(PageRefaultCounter::new().unwrap()),
+        )
+        .await
+        .unwrap();
         (fs, volume)
     }
 

@@ -20,6 +20,7 @@ use fidl_fuchsia_fxfs::{DebugMarker, DebugRequestStream};
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fs_inspect::{FsInspect, FsInspectTree, InfoData, UsageData};
+use fuchsia_component_client::connect_to_protocol;
 use futures::TryStreamExt;
 use futures::lock::Mutex;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, MIN_BLOCK_SIZE, OpenFxFilesystem, mkfs};
@@ -27,13 +28,17 @@ use fxfs::log::*;
 use fxfs::object_store::volume::root_volume;
 use fxfs::serialized_types::LATEST_VERSION;
 use fxfs::{fsck, metrics};
+use refaults_vmo::PageRefaultCounter;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
+    fuchsia_async as fasync,
+};
 
 const FXFS_INFO_NAME: &'static str = "fxfs";
 
@@ -276,6 +281,11 @@ impl Component {
         let weak_fs = Arc::downgrade(&fs) as Weak<dyn FsInspect + Send + Sync>;
         let inspect_tree =
             Arc::new(FsInspectTree::new(weak_fs, fuchsia_inspect::component::inspector().root()));
+
+        let blob_resupplied_count = Arc::new(PageRefaultCounter::new()?);
+        connect_to_protocol::<fattribution::PageRefaultSinkMarker>()?
+            .send_page_refault_count(blob_resupplied_count.readonly_vmo()?)?;
+
         let mem_monitor = match MemoryPressureMonitor::start().await {
             Ok(v) => Some(v),
             Err(error) => {
@@ -288,8 +298,13 @@ impl Component {
             }
         };
 
-        let volumes =
-            VolumesDirectory::new(root_volume, Arc::downgrade(&inspect_tree), mem_monitor).await?;
+        let volumes = VolumesDirectory::new(
+            root_volume,
+            Arc::downgrade(&inspect_tree),
+            mem_monitor,
+            blob_resupplied_count,
+        )
+        .await?;
 
         self.export_dir.add_entry_may_overwrite(
             "volumes",

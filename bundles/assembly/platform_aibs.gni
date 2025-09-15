@@ -252,6 +252,7 @@ user_platform_aib_names =
 
       # Memory monitor
       "memory_monitor",
+      "memory_monitor_page_refaults",
 
       # Netstack
       "netstack2",
@@ -394,6 +395,7 @@ _userdebug_aib_names = bootstrap_userdebug_platform_aib_names + [
                          "memory_monitor_with_memory_sampler",
                          "memory_monitor_critical_reports",
                          "memory_monitor2",
+                         "memory_monitor_page_refaults",
 
                          # Development and debug tools for power framework
                          "power_framework_development_support",

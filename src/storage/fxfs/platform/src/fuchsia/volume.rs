@@ -32,6 +32,7 @@ use fxfs::log::*;
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore};
+use refaults_vmo::PageRefaultCounter;
 use std::future::Future;
 use std::pin::pin;
 #[cfg(any(test, feature = "testing"))]
@@ -42,7 +43,6 @@ use std::time::Duration;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::directory::simple::Simple;
 use vfs::execution_scope::ExecutionScope;
-
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // LINT.IfChange
@@ -166,6 +166,8 @@ pub struct FxVolume {
 
     #[cfg(any(test, feature = "refault-tracking"))]
     refault_tracker: RefaultTracker,
+
+    blob_resupplied_count: Arc<PageRefaultCounter>,
 }
 
 #[fxfs_trace::trace]
@@ -174,6 +176,7 @@ impl FxVolume {
         parent: Weak<VolumesDirectory>,
         store: Arc<ObjectStore>,
         fs_id: u64,
+        blob_resupplied_count: Arc<PageRefaultCounter>,
     ) -> Result<Self, Error> {
         let scope = ExecutionScope::new();
         Ok(Self {
@@ -194,6 +197,7 @@ impl FxVolume {
             poisoned: AtomicBool::new(false),
             #[cfg(any(test, feature = "refault-tracking"))]
             refault_tracker: RefaultTracker::default(),
+            blob_resupplied_count,
         })
     }
 
@@ -219,6 +223,10 @@ impl FxVolume {
 
     pub fn scope(&self) -> &ExecutionScope {
         &self.scope
+    }
+
+    pub fn blob_resupplied_count(&self) -> &PageRefaultCounter {
+        &self.blob_resupplied_count
     }
 
     /// Stop profiling, recover resources from it and finalize recordings.
@@ -869,8 +877,10 @@ impl FxVolumeAndRoot {
         parent: Weak<VolumesDirectory>,
         store: Arc<ObjectStore>,
         unique_id: u64,
+        blob_ressuplied_count: Arc<PageRefaultCounter>,
     ) -> Result<Self, Error> {
-        let volume = Arc::new(FxVolume::new(parent, store, unique_id)?);
+        let volume =
+            Arc::new(FxVolume::new(parent, store, unique_id, blob_ressuplied_count.clone())?);
         let root_object_id = volume.store().root_directory_object_id();
         let root_dir = Directory::open(&volume, root_object_id).await?;
         let root = Arc::<T>::new(root_dir.into()) as Arc<dyn RootDir>;
@@ -1033,6 +1043,7 @@ mod tests {
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore};
     use fxfs_insecure_crypto::InsecureCrypt;
+    use refaults_vmo::PageRefaultCounter;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
     use std::time::Duration;
@@ -1643,10 +1654,13 @@ mod tests {
         let mut device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         {
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
+                blob_resupplied_count,
             )
             .await
             .unwrap();
@@ -1752,10 +1766,13 @@ mod tests {
         {
             fsck(filesystem.clone()).await.expect("Fsck");
             fsck_volume(filesystem.as_ref(), volume_store_id, None).await.expect("Fsck volume");
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
+                blob_resupplied_count,
             )
             .await
             .unwrap();
@@ -1830,10 +1847,13 @@ mod tests {
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
         fsck(filesystem.clone()).await.expect("Fsck");
         fsck_volume(filesystem.as_ref(), volume_store_id, None).await.expect("Fsck volume");
+        let blob_resupplied_count =
+            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
+            blob_resupplied_count,
         )
         .await
         .unwrap();
@@ -1870,10 +1890,13 @@ mod tests {
         let mut bytes_usage;
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         {
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
+                blob_resupplied_count,
             )
             .await
             .unwrap();
@@ -1995,10 +2018,13 @@ mod tests {
             fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(InsecureCrypt::new())))
                 .await
                 .expect("Fsck volume");
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
+                blob_resupplied_count,
             )
             .await
             .unwrap();
@@ -2155,10 +2181,13 @@ mod tests {
         let mut device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         {
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
+                blob_resupplied_count,
             )
             .await
             .unwrap();
@@ -2324,10 +2353,13 @@ mod tests {
         let volume_store_id;
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         {
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
+                blob_resupplied_count,
             )
             .await
             .unwrap();
@@ -2892,7 +2924,10 @@ mod tests {
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let store = root_volume.volume("vol", NO_OWNER, None).await.unwrap();
             let unique_id = store.store_object_id();
-            let volume = FxVolume::new(Weak::new(), store, unique_id).unwrap();
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let volume =
+                FxVolume::new(Weak::new(), store, unique_id, blob_resupplied_count).unwrap();
             volume.terminate().await;
         }
         // Close the filesystem, and make sure we don't have any dangling references.
@@ -2922,7 +2957,10 @@ mod tests {
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let store = root_volume.volume("vol", NO_OWNER, Some(crypt)).await.unwrap();
             let unique_id = store.store_object_id();
-            let volume = FxVolume::new(Weak::new(), store, unique_id).unwrap();
+            let blob_resupplied_count =
+                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let volume =
+                FxVolume::new(Weak::new(), store, unique_id, blob_resupplied_count).unwrap();
             volume.terminate().await;
         }
         // Close the filesystem, and make sure we don't have any dangling references.

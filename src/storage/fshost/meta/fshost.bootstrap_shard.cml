@@ -40,6 +40,14 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.memory.attribution.PageRefaultSink",
+            from: "parent",
+            to: "#fshost",
+            dependency: "weak",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.scheduler.RoleManager",
             from: "#role_manager",
             to: [ "#fshost" ],

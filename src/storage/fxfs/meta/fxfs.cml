@@ -44,6 +44,7 @@
         {
             protocol: [
                 "fuchsia.feedback.CrashReporter",
+                "fuchsia.memory.attribution.PageRefaultSink",
                 "fuchsia.memorypressure.Provider",
                 "fuchsia.scheduler.RoleManager",
             ],

@@ -78,6 +78,14 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.memory.attribution.PageRefaultSink",
+            from: "parent",
+            to: "#fxfs",
+            dependency: "weak",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             service: "fuchsia.fxfs.CryptService",
             from: "#fxfs-crypt",
             to: "#fxfs",

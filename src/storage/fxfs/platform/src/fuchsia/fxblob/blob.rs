@@ -12,6 +12,7 @@ use crate::fuchsia::pager::{
     MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
 use crate::fuchsia::volume::{BASE_READ_AHEAD_SIZE, FxVolume};
+use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer;
@@ -57,7 +58,9 @@ pub struct FxBlob {
     pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<Self>>,
 
     #[cfg(any(test, feature = "refault-tracking"))]
-    chunks_supplied: Vec<AtomicU8>,
+    chunks_supply_count: Vec<AtomicU8>,
+
+    chunks_supplied: AtomicBitVec,
 }
 
 impl FxBlob {
@@ -74,9 +77,12 @@ impl FxBlob {
         let merkle_leaves = merkle_tree.as_ref()[0].clone().into_boxed_slice();
 
         #[cfg(any(test, feature = "refault-tracking"))]
-        let chunks_supplied: Vec<AtomicU8> = std::iter::repeat_with(AtomicU8::default)
+        let chunks_supply_count: Vec<AtomicU8> = std::iter::repeat_with(AtomicU8::default)
             .take(uncompressed_size.div_ceil(min_chunk_size(&compression_info)) as usize)
             .collect();
+
+        let chunks_supplied =
+            AtomicBitVec::new(uncompressed_size.div_ceil(min_chunk_size(&compression_info)));
 
         Arc::new_cyclic(|weak| {
             let (vmo, pager_packet_receiver_registration) = handle
@@ -95,6 +101,7 @@ impl FxBlob {
                 uncompressed_size,
                 pager_packet_receiver_registration: Arc::new(pager_packet_receiver_registration),
                 #[cfg(any(test, feature = "refault-tracking"))]
+                chunks_supply_count,
                 chunks_supplied,
             }
         })
@@ -119,11 +126,12 @@ impl FxBlob {
             uncompressed_size: self.uncompressed_size,
             pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
             #[cfg(any(test, feature = "refault-tracking"))]
-            chunks_supplied: self
-                .chunks_supplied
+            chunks_supply_count: self
+                .chunks_supply_count
                 .iter()
                 .map(|x| AtomicU8::new(x.load(Ordering::Relaxed)))
                 .collect(),
+            chunks_supplied: self.chunks_supplied.clone(),
         });
 
         // Lock must be held until the open counts is incremented to prevent concurrent handling of
@@ -151,7 +159,7 @@ impl FxBlob {
 
     #[cfg(any(test, feature = "refault-tracking"))]
     fn record_page_fault(&self, range: &Range<u64>) {
-        let chunk_size = min_chunk_size(&self.compression_info);
+        let chunk_size: u64 = min_chunk_size(&self.compression_info);
 
         let first_chunk = range.start / chunk_size;
         // The end of the range may not be chunk aligned if it's the last chunk.
@@ -159,7 +167,7 @@ impl FxBlob {
         let page_size = zx::system_get_page_size() as u64;
 
         for chunk in first_chunk..last_chunk {
-            let count = self.chunks_supplied[chunk as usize]
+            let count = self.chunks_supply_count[chunk as usize]
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                     Some(current.saturating_add(1))
                 })
@@ -180,6 +188,23 @@ impl FxBlob {
                 ) - chunk * chunk_size;
                 self.handle.owner().refault_tracker().record_refault(bytes, count);
             }
+        }
+    }
+
+    fn record_page_fault_metric(&self, range: &Range<u64>) {
+        let chunk_size: u64 = min_chunk_size(&self.compression_info);
+
+        let first_chunk = range.start / chunk_size;
+        // The end of the range may not be chunk aligned if it's the last chunk.
+        let last_chunk = range.end.div_ceil(chunk_size);
+
+        let supplied_count = self.chunks_supplied.test_and_set_range(first_chunk, last_chunk);
+
+        if supplied_count > 0 {
+            self.handle
+                .owner()
+                .blob_resupplied_count()
+                .increment(supplied_count, Ordering::Relaxed);
         }
     }
 }
@@ -310,6 +335,8 @@ impl PagerBacked for FxBlob {
 
         #[cfg(any(test, feature = "refault-tracking"))]
         self.record_page_fault(&range);
+
+        self.record_page_fault_metric(&range);
 
         let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
         let read = match &self.compression_info {
@@ -588,7 +615,6 @@ fn set_vmo_name(vmo: &zx::Vmo, merkle_root: &Hash) {
     vmo.set_name(&name).unwrap();
 }
 
-#[cfg(any(test, feature = "refault-tracking"))]
 fn min_chunk_size(compression_info: &Option<CompressionInfo>) -> u64 {
     if let Some(compression_info) = compression_info {
         read_ahead_size_for_chunk_size(compression_info.chunk_size, BASE_READ_AHEAD_SIZE)
@@ -969,6 +995,7 @@ mod tests {
     }
 
     #[fasync::run(10, test)]
+    #[cfg(any(test, feature = "refault-tracking"))]
     async fn test_refault_tracking() {
         async fn wait(condition: impl Fn() -> bool, error_msg: &'static str) {
             let mut wait_count = 0;
@@ -998,10 +1025,10 @@ mod tests {
             let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
             let blob = fixture.get_blob(hash).await.unwrap();
-            assert_eq!(blob.chunks_supplied.len(), 8);
+            assert_eq!(blob.chunks_supply_count.len(), 8);
             blob.vmo.read_to_vec(32 * 1024, 4096).unwrap();
 
-            assert_eq!(&get_chunks(&blob.chunks_supplied), &[1, 1, 1, 1, 0, 0, 0, 0]);
+            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 0, 0, 0]);
 
             fixture
                 .memory_pressure_proxy()
@@ -1016,7 +1043,7 @@ mod tests {
             .await;
 
             blob.vmo.read_to_vec(164 * 1024, 4096).unwrap();
-            assert_eq!(&get_chunks(&blob.chunks_supplied), &[1, 1, 1, 1, 0, 1, 0, 0]);
+            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 1, 0, 0]);
 
             let epochs = Epochs::new();
 
@@ -1028,11 +1055,11 @@ mod tests {
                 epochs.add_ref(),
             ));
             wait(
-                || blob.chunks_supplied[1].load(Ordering::Relaxed) == 2,
+                || blob.chunks_supply_count[1].load(Ordering::Relaxed) == 2,
                 "chunk was never supplied",
             )
             .await;
-            assert_eq!(&get_chunks(&blob.chunks_supplied), &[1, 2, 1, 1, 0, 1, 0, 0]);
+            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 2, 1, 1, 0, 1, 0, 0]);
             assert_eq!(volume.refault_tracker().count(), 1);
             assert_eq!(volume.refault_tracker().bytes(), 32 * 1024);
 
@@ -1044,17 +1071,98 @@ mod tests {
                 epochs.add_ref(),
             ));
             wait(
-                || blob.chunks_supplied[7].load(Ordering::Relaxed) == 2,
+                || blob.chunks_supply_count[7].load(Ordering::Relaxed) == 2,
                 "chunk was never supplied",
             )
             .await;
-            assert_eq!(&get_chunks(&blob.chunks_supplied), &[1, 2, 1, 1, 0, 1, 0, 2]);
+            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 2, 1, 1, 0, 1, 0, 2]);
             // `chunks_supplied` is updated before the refault tracker and possibly on a separate
             // thread which means that we also need to wait for the refault tracker to be updated.
             wait(|| volume.refault_tracker().count() == 2, "The refault tracker was not updated")
                 .await;
             // The last chunk is only 28KiB.
             assert_eq!(volume.refault_tracker().bytes(), 60 * 1024);
+        }
+
+        fixture.close().await;
+    }
+
+    #[fasync::run(10, test)]
+    async fn test_refault_metric() {
+        async fn wait(condition: impl Fn() -> bool) -> bool {
+            let mut wait_count = 0;
+            while !condition() {
+                fasync::Timer::new(Duration::from_millis(20)).await;
+                wait_count += 1;
+                if wait_count > 100 {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        let fixture = new_blob_fixture().await;
+
+        {
+            let volume = fixture.volume().volume().clone();
+            volume.start_background_task(
+                MemoryPressureConfig::default(),
+                fixture.volumes_directory().memory_pressure_monitor(),
+            );
+
+            let data = vec![0xffu8; 252 * 1024];
+            let hash = fixture.write_blob(&data, CompressionMode::Never).await;
+
+            let blob = fixture.get_blob(hash).await.unwrap();
+            assert_eq!(blob.chunks_supplied.len(), 8);
+            // Nothing has been read yet.
+            assert_eq!(
+                &blob.chunks_supplied.get(),
+                &[false, false, false, false, false, false, false, false]
+            );
+
+            blob.vmo.read_to_vec(32 * 1024, 4096).unwrap();
+
+            assert_eq!(
+                &blob.chunks_supplied.get(),
+                &[true, true, true, true, false, false, false, false]
+            );
+
+            fixture
+                .memory_pressure_proxy()
+                .on_level_changed(MemoryPressureLevel::Critical)
+                .await
+                .expect("Failed to send memory pressure level change");
+
+            assert!(
+                wait(|| volume.read_ahead_size() == BASE_READ_AHEAD_SIZE).await,
+                "read-ahead size didn't change with memory pressure change"
+            );
+
+            blob.vmo.read_to_vec(164 * 1024, 4096).unwrap();
+            assert_eq!(
+                &blob.chunks_supplied.get(),
+                &[true, true, true, true, false, true, false, false]
+            );
+
+            // We have loaded pages, but only once each.
+            assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 0);
+
+            // Re-read some pages.
+
+            let epochs = Epochs::new();
+
+            // We can't evict pages from the VMO so get the kernel to resupply them but we can call
+            // page_in directly and wait for the counters to change.
+            blob.clone().page_in(PageInRange::new(
+                32 * 1024..68 * 1024,
+                blob.clone(),
+                epochs.add_ref(),
+            ));
+
+            assert!(wait(|| volume.blob_resupplied_count().read(Ordering::SeqCst) == 2,).await);
+
+            assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 2);
         }
 
         fixture.close().await;

@@ -1831,6 +1831,30 @@ assembly_input_bundle("memory_monitor2") {
   core_shards = [ "//src/performance/memory/attribution/monitor/meta/memory_monitor2.core_shard.cml" ]
 }
 
+assembly_input_bundle("memory_monitor_page_refaults") {
+  compiled_packages = [
+    {
+      name = "core"
+      components = [
+        {
+          component_name = "core"
+          shards = [ "//src/performance/memory/attribution/monitor/meta/page_refaults.core_shard.cml" ]
+        },
+      ]
+    },
+    {
+      bootfs_package = true
+      name = "root"
+      components = [
+        {
+          component_name = "root"
+          shards = [ "//src/performance/memory/attribution/monitor/meta/page_refaults.root_shard.cml" ]
+        },
+      ]
+    },
+  ]
+}
+
 assembly_input_bundle("detect_user") {
   root_shards = [ "//src/diagnostics/detect/meta/detect_user.root_shard.cml" ]
 }

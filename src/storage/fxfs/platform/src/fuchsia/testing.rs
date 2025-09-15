@@ -20,6 +20,7 @@ use fxfs::object_store::NO_OWNER;
 use fxfs::object_store::volume::root_volume;
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::InsecureCrypt;
+use refaults_vmo::PageRefaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
@@ -99,6 +100,8 @@ impl TestFixture {
         let mem_pressure = MemoryPressureMonitor::try_from(watcher_server)
             .expect("Failed to create MemoryPressureMonitor");
 
+        let blob_resupplied_count =
+            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
         let (filesystem, volume, volumes_directory) = if options.format {
             let mut builder = FxFilesystemBuilder::new().format(true);
             if let Some(pre_commit_hook) = options.pre_commit_hook {
@@ -116,13 +119,20 @@ impl TestFixture {
                 .unwrap();
             let store_object_id = store.store_object_id();
 
-            let volumes_directory =
-                VolumesDirectory::new(root_volume, Weak::new(), Some(mem_pressure)).await.unwrap();
+            let volumes_directory = VolumesDirectory::new(
+                root_volume,
+                Weak::new(),
+                Some(mem_pressure),
+                blob_resupplied_count.clone(),
+            )
+            .await
+            .unwrap();
             let vol = if options.as_blob {
                 FxVolumeAndRoot::new::<BlobDirectory>(
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    blob_resupplied_count.clone(),
                 )
                 .await
                 .unwrap()
@@ -131,6 +141,7 @@ impl TestFixture {
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    blob_resupplied_count.clone(),
                 )
                 .await
                 .unwrap()
@@ -144,13 +155,20 @@ impl TestFixture {
                 .await
                 .unwrap();
             let store_object_id = store.store_object_id();
-            let volumes_directory =
-                VolumesDirectory::new(root_volume, Weak::new(), Some(mem_pressure)).await.unwrap();
+            let volumes_directory = VolumesDirectory::new(
+                root_volume,
+                Weak::new(),
+                Some(mem_pressure),
+                blob_resupplied_count.clone(),
+            )
+            .await
+            .unwrap();
             let vol = if options.as_blob {
                 FxVolumeAndRoot::new::<BlobDirectory>(
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    blob_resupplied_count.clone(),
                 )
                 .await
                 .unwrap()
@@ -159,6 +177,7 @@ impl TestFixture {
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    blob_resupplied_count.clone(),
                 )
                 .await
                 .unwrap()
