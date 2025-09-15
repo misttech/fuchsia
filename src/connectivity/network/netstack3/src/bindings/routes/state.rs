@@ -154,15 +154,16 @@ where
             )
         })
         .transpose()?;
+    let core_options = options.into_core();
     let ResolvedRoute {
         device,
         src_addr,
         local_delivery_device: _,
         next_hop,
         internal_forwarding: _,
-    } = match ctx.api().routes::<A::Version>().resolve_route(sanitized_dst, &options.into_core()) {
+    } = match ctx.api().routes::<A::Version>().resolve_route(sanitized_dst, &core_options) {
         Err(e) => {
-            info!("Resolve failed for {}, {:?}", destination, e);
+            info!("Resolve failed for {} ({:?}), {:?}", destination, core_options, e);
             return Err(fnet_routes::ResolveError::AddressUnreachable);
         }
         Ok(resolved_route) => resolved_route,
