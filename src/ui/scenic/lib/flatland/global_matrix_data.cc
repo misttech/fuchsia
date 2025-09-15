@@ -537,7 +537,7 @@ void CullRectanglesInPlace(GlobalRectangleVector* rectangles_in_out,
   // if they occur before the last occluder index, or if the rectangle at that entry is empty.
   {
     const auto is_rect_empty = [](const ImageRect& rect) {
-      return rect.extent.x <= 0.f && rect.extent.y <= 0.f;
+      return rect.extent.x <= 0.f || rect.extent.y <= 0.f;
     };
 
     images_in_out->erase(

@@ -82,7 +82,7 @@ GlobalRectangleVector ComputeGlobalRectangles(const GlobalMatrixVector& matrices
 // and if so, culls all rectangles that came before them (since rectangles are implicitly sorted
 // according to depth, with the first entry being the furthest back, this has the effect of
 // eliminating all rectangles behind the full-screen one). Also culls any rectangle that has
-// no size (0,0).
+// no size (width is zero, or height is zero).
 void CullRectanglesInPlace(GlobalRectangleVector* rectangles_in_out,
                            GlobalImageVector* images_in_out, uint64_t display_width,
                            uint64_t display_height);
