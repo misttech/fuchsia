@@ -248,7 +248,7 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
     RCU_CONTROL_BLOCK.callback_chain.push_front(Box::new(callback));
 }
 
-/// Schedule the object ot be dropped after all in-flight read operations have completed.
+/// Schedule the object to be dropped after all in-flight read operations have completed.
 ///
 /// To wait until the object is dropped, call `rcu_synchronize()`. The object might be dropped from
 /// an arbitrary thread.

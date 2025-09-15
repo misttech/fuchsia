@@ -131,7 +131,7 @@ callbacks scheduled with `rcu_call()` eventually happen.
 
 The `rcu_try_advance_state()` function attempts to advance the RCU state machine
 immediately, returning the current generation number after that attempt. The
-`rcu_synchronize()` function blocks until the RCU state machine has adanced
+`rcu_synchronize()` function blocks until the RCU state machine has advanced
 sufficiently to call all the callbacks that were scheduled prior to calling
 `rcu_synchronize()`.
 
@@ -221,7 +221,7 @@ Readers call `rcu_read_pointer()` before reading from `o`, which contains an
 `[D]`. This load _synchronizes-with_ the `rcu_assign_ptr()` operation performed
 by the writer because `rcu_assign_ptr()` contains an `Ordering::Release` store
 of the same `AtomicPtr` at synchronization point `[E]`. For this reason, the
-writes to `o` _happens-before_ the reads to `o`.
+write to `o` _happens-before_ the read from `o`.
 
 ### Reads Happen Before Callbacks Run
 
@@ -254,7 +254,7 @@ load at `[C1]` will _synchronize-with_ the decrement in `rcu_read_unlock()`
 that we assumed the `generation` count was originally even). If the loaded
 `generation` count is odd, then the load at `[C2]` will _synchronize-with_ the
 decrement in `rcu_read_unlock()` because both operate on `read_counter[1]`.
-Either way, the reads from `o` will _happens-before_ the state machine exits
+Either way, the read from `o` _happens-before_ the state machine exits
 `RcuMode::Waiting` the second time.
 
 #### `[C1]` is before `[A]`

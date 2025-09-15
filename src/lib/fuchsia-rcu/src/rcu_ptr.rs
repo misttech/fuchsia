@@ -68,7 +68,7 @@ impl<T> RcuReadGuard<T> {
     /// Get the raw pointer to the object.
     ///
     /// This function returns the raw pointer to the object. The caller is responsible for ensuring
-    /// that the pointer is referenced after the guard is dropped.
+    /// that the pointer is not referenced after the guard is dropped.
     ///
     /// To use the Rust borrow checker to enforce that the object is not accessed after the guard is
     /// dropped, use the `Deref` implementation.
