@@ -10,6 +10,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/result.h>
 #include <lib/fzl/vmo-mapper.h>
+#include <lib/image-format/image_format.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zx/channel.h>
@@ -57,6 +58,8 @@
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/graphics/display/lib/fake-display-stack/image-info.h"
+#include "src/graphics/display/testing/software-compositor/pixel.h"
+#include "src/graphics/display/testing/software-compositor/software-compositor.h"
 #include "src/lib/fsl/handles/object_info.h"
 
 namespace fake_display {
@@ -101,6 +104,159 @@ FakeDisplay::FakeDisplay(display::DisplayEngineEventsInterface* engine_events,
   }
 
   RecordDisplayConfigToInspectRootNode();
+}
+
+bool FakeDisplay::IsValidCaptureTarget(const CaptureImageInfo& capture_image) const {
+  if (capture_image.metadata().dimensions() != device_config_.display_mode.active_area()) {
+    fdf::error("Capture image dimension {}x{} doesn't match display size {}x{}",
+               capture_image.metadata().width(), capture_image.metadata().height(),
+               device_config_.display_mode.active_area().width(),
+               device_config_.display_mode.active_area().height());
+    return false;
+  }
+
+  switch (capture_image.sysmem_buffer_info().pixel_format) {
+    case fuchsia_images2::PixelFormat::kR8G8B8A8:
+    case fuchsia_images2::PixelFormat::kB8G8R8A8:
+      break;
+    default:
+      fdf::error("Unsupported layer image pixel format: {}",
+                 static_cast<uint32_t>(capture_image.sysmem_buffer_info().pixel_format));
+      return false;
+  }
+
+  if (capture_image.sysmem_buffer_info().coherency_domain ==
+      fuchsia_sysmem2::CoherencyDomain::kInaccessible) {
+    fdf::error("the capture image cannot be on an inaccessible coherency domain");
+    return false;
+  }
+
+  return true;
+}
+
+zx::result<> FakeDisplay::CompositeLayersToCaptureTargetLocked(
+    std::span<display::DriverLayer> layers, const CaptureImageInfo& capture_target) {
+  ZX_DEBUG_ASSERT(!layers.empty());
+  ZX_DEBUG_ASSERT(IsValidCaptureTarget(capture_target));
+
+  fzl::VmoMapper capture_target_mapper;
+  zx::result map_result =
+      zx::make_result(capture_target_mapper.Map(capture_target.vmo(), /*offset=*/0, /*size=*/0,
+                                                /*map_flags=*/ZX_VM_PERM_READ | ZX_VM_PERM_WRITE));
+  if (map_result.is_error()) {
+    fdf::error("Failed to map capture target VMO: {}", map_result);
+    return map_result;
+  }
+
+  const uint32_t bytes_per_pixel = ImageFormatStrideBytesPerWidthPixel(
+      PixelFormatAndModifier(capture_target.sysmem_buffer_info().pixel_format,
+                             capture_target.sysmem_buffer_info().pixel_format_modifier));
+  const uint32_t stride_bytes = capture_target.sysmem_buffer_info().minimum_bytes_per_row;
+  // Guaranteed by the constraints specified by
+  // `SetCaptureImageFormatConstraints()`.
+  ZX_DEBUG_ASSERT(stride_bytes >= capture_target.metadata().width() * bytes_per_pixel);
+
+  software_compositor::OutputImage canvas = {
+      .buffer = std::span<uint8_t>(reinterpret_cast<uint8_t*>(capture_target_mapper.start()),
+                                   capture_target_mapper.size()),
+      .properties = {
+          .width = capture_target.metadata().width(),
+          .height = capture_target.metadata().height(),
+          .stride_bytes = static_cast<int>(stride_bytes),
+          .pixel_format =
+              software_compositor::ToPixelFormat(capture_target.sysmem_buffer_info().pixel_format),
+      }};
+  software_compositor::SoftwareCompositor software_compositor(canvas);
+
+  // Retains layer image memory mappers, so that the image VMOs can be unmapped
+  // until the composition finishes.
+  std::vector<fzl::VmoMapper> layer_vmo_mappers;
+  std::vector<software_compositor::SoftwareCompositor::LayerForComposition> composite_layers;
+
+  composite_layers.reserve(layers.size());
+  layer_vmo_mappers.reserve(layers.size());
+
+  for (const display::DriverLayer& layer : layers) {
+    display::DriverImageId driver_image_id = layer.image_id();
+    if (driver_image_id == display::kInvalidDriverImageId) {
+      composite_layers.push_back({
+          .image = software_compositor::InputImage::kNoInputImage,
+          .properties =
+              {
+                  .image_source = layer.image_source(),
+                  .canvas_destination = layer.display_destination(),
+                  .transform = layer.image_source_transformation(),
+                  .alpha_mode = layer.alpha_mode(),
+                  .fallback_color = layer.fallback_color(),
+              },
+      });
+      continue;
+    }
+
+    auto layer_image = imported_images_.find(driver_image_id);
+    ZX_DEBUG_ASSERT(layer_image.IsValid());
+
+    fzl::VmoMapper layer_image_mapper;
+    zx::result<> map_result =
+        zx::make_result(layer_image_mapper.Map(layer_image->vmo(), /*offset=*/0, /*size=*/0,
+                                               /*map_flags=*/ZX_VM_PERM_READ));
+    if (map_result.is_error()) {
+      fdf::error("Failed to map layer image VMO: {}", map_result);
+      return map_result;
+    }
+
+    if (layer_image->sysmem_buffer_info().coherency_domain ==
+        fuchsia_sysmem2::wire::CoherencyDomain::kRam) {
+      zx_cache_flush(layer_image_mapper.start(), layer_image_mapper.size(),
+                     ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+    }
+
+    const uint32_t bytes_per_pixel = ImageFormatStrideBytesPerWidthPixel(
+        PixelFormatAndModifier(layer_image->sysmem_buffer_info().pixel_format,
+                               layer_image->sysmem_buffer_info().pixel_format_modifier));
+    // We don't specify `minimum_bytes_per_row` in the fake-display's image
+    // format constraints, so it's possible that the returned
+    // `minimum_bytes_per_row` is less than `width * bytes_per_pixel` if none of
+    // the other clients specify it in their buffer collection constraints as
+    // well.
+    const uint32_t stride_bytes = std::max(layer_image->sysmem_buffer_info().minimum_bytes_per_row,
+                                           layer_image->metadata().width() * bytes_per_pixel);
+
+    software_compositor::InputImage layer_image_to_composite = {
+        .buffer =
+            cpp20::span<const uint8_t>(reinterpret_cast<const uint8_t*>(layer_image_mapper.start()),
+                                       layer_image_mapper.size()),
+        .properties = {
+            .width = layer_image->metadata().width(),
+            .height = layer_image->metadata().height(),
+            .stride_bytes = static_cast<int>(stride_bytes),
+            .pixel_format =
+                software_compositor::ToPixelFormat(layer_image->sysmem_buffer_info().pixel_format),
+        }};
+
+    // Retain the VMO mapper so that the mapped image won't be unmapped until
+    // the composition finishes.
+    layer_vmo_mappers.push_back(std::move(layer_image_mapper));
+    composite_layers.push_back({
+        .image = layer_image_to_composite,
+        .properties =
+            {
+                .image_source = layer.image_source(),
+                .canvas_destination = layer.display_destination(),
+                .transform = layer.image_source_transformation(),
+                .alpha_mode = layer.alpha_mode(),
+                .fallback_color = layer.fallback_color(),
+            },
+    });
+  }
+  software_compositor.CompositeLayers(composite_layers);
+
+  if (capture_target.sysmem_buffer_info().coherency_domain ==
+      fuchsia_sysmem2::wire::CoherencyDomain::kRam) {
+    zx_cache_flush(capture_target_mapper.start(), capture_target_mapper.size(),
+                   ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+  }
+  return zx::ok();
 }
 
 FakeDisplay::~FakeDisplay() {
@@ -522,6 +678,9 @@ zx::result<display::DriverCaptureImageId> FakeDisplay::ImportImageForCapture(
   auto capture_image_info = std::make_unique<CaptureImageInfo>(
       driver_capture_image_id, capture_image_metadata, std::move(sysmem_buffer_info));
 
+  ZX_DEBUG_ASSERT_MSG(IsValidCaptureTarget(*capture_image_info),
+                      "Imported capture image info is invalid");
+
   imported_captures_.insert(std::move(capture_image_info));
   return zx::ok(driver_capture_image_id);
 }
@@ -607,34 +766,15 @@ zx::result<> FakeDisplay::ServiceAnyCaptureRequest() {
 
   // TODO(https://fxbug.dev/42075534): Support multiple layers.
   ZX_DEBUG_ASSERT(applied_layers_.size() > 0);
-  const display::DriverLayer& applied_layer = applied_layers_[0];
+  zx::result<> composite_result =
+      CompositeLayersToCaptureTargetLocked(applied_layers_, capture_destination_info);
 
-  if (applied_layer.image_id() == display::kInvalidDriverImageId) {
-    // Solid color fill capture.
-    zx::result<> color_fill_capture_result =
-        DoColorFillCapture(applied_layer.fallback_color(), capture_destination_info);
-    if (color_fill_capture_result.is_error()) {
-      // DoColorFillCapture() has already logged the error.
-      return color_fill_capture_result;
-    }
-  } else {
-    // Image capture.
-    auto imported_images_it = imported_images_.find(applied_layer.image_id());
-
-    ZX_ASSERT_MSG(imported_images_it.IsValid(),
-                  "Driver allowed releasing an image used in the currently applied configuration");
-    DisplayImageInfo& display_source_info = *imported_images_it;
-
-    zx::result<> image_capture_result =
-        DoImageCapture(display_source_info, capture_destination_info);
-    if (image_capture_result.is_error()) {
-      // DoImageCapture() has already logged the error.
-      return image_capture_result;
-    }
+  if (composite_result.is_error()) {
+    fdf::error("Cannot composite layers to the capture target image: {}", composite_result);
+    return composite_result;
   }
 
   engine_events_.OnCaptureComplete();
-
   started_capture_target_id_ = display::kInvalidDriverCaptureImageId;
 
   return zx::ok();

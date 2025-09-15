@@ -31,6 +31,7 @@ source_set("fake-lib") {
     "//sdk/lib/driver/logging/cpp",
     "//src/graphics/display/lib/api-protocols/cpp",
     "//src/graphics/display/lib/api-types/cpp",
+    "//src/graphics/display/testing/software-compositor",
     "//src/lib/fsl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",

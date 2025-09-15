@@ -165,6 +165,19 @@ class FakeDisplay : public display::DisplayEngineInterface {
   // be already initialized.
   void RecordDisplayConfigToInspectRootNode();
 
+  // Returns true iff `capture_image` is a valid capture target.
+  bool IsValidCaptureTarget(const CaptureImageInfo& capture_image) const;
+
+  // Composites layers in `layers` to `capture_target`.
+  //
+  // All image layers in `layers` must be accepted by `CheckConfiguration()`,
+  // and their backing memory must be mappable for read.
+  //
+  // The `capture_target` image backing memory must be mappable for read-write.
+  zx::result<> CompositeLayersToCaptureTargetLocked(std::span<display::DriverLayer> layers,
+                                                    const CaptureImageInfo& capture_target)
+      __TA_REQUIRES(mutex_);
+
   display::DisplayEngineEventsInterface& engine_events_;
 
   // Safe to access on multiple threads thanks to immutability.
