@@ -46,6 +46,7 @@ pub struct CommandMemoryStatistics {
     pub pages_decompressed_unit_ns: u64,
     pub some_memory_stalls_ns: i64,
     pub full_memory_stalls_ns: i64,
+    pub page_refaults: u64,
 }
 
 impl TryFrom<fplugin::MemoryStatistics> for CommandMemoryStatistics {
@@ -172,6 +173,12 @@ impl CommandMemoryStatistics {
                 .ok_or(anyhow::anyhow!("no performance_metrics"))?
                 .full_memory_stalls_ns
                 .ok_or(anyhow::anyhow!("no full_memory_stalls"))?,
+            page_refaults: value
+                .performance_metrics
+                .as_ref()
+                .ok_or(anyhow::anyhow!("no performance_metrics"))?
+                .page_refaults
+                .ok_or(anyhow::anyhow!("no page_refaults"))?,
         })
     }
 }

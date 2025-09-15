@@ -472,6 +472,7 @@ impl JsonConvertible for fplugin::BucketDefinition {
 struct PerformanceImpactMetricsDef {
     pub some_memory_stalls_ns: Option<i64>,
     pub full_memory_stalls_ns: Option<i64>,
+    pub page_refaults: Option<u64>,
     #[doc(hidden)]
     #[serde(skip)]
     pub __source_breaking: fidl::marker::SourceBreaking,
@@ -751,6 +752,7 @@ mod tests {
             performance_metrics: Some(fplugin::PerformanceImpactMetrics {
                 some_memory_stalls_ns: Some(33),
                 full_memory_stalls_ns: Some(44),
+                page_refaults: Some(55),
                 ..Default::default()
             }),
             ..Default::default()
@@ -852,7 +854,8 @@ mod tests {
                 },
                 "performance_metrics": {
                     "full_memory_stalls_ns": 44,
-                    "some_memory_stalls_ns": 33
+                    "some_memory_stalls_ns": 33,
+                    "page_refaults": 55
                 },
                 "principals": [
                     [

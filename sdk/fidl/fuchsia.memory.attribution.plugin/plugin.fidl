@@ -179,6 +179,8 @@ type PerformanceImpactMetrics = table {
     1: some_memory_stalls_ns int64;
     /// Total time spent with all threads memory-stalled.
     2: full_memory_stalls_ns int64;
+    /// Total number of page refaults.
+    3: page_refaults uint64;
 };
 
 /// Criteria for matching VMO within a bucket and for publishing aggregated metrics.

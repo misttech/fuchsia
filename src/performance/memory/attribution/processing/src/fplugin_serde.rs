@@ -11,6 +11,7 @@ use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memory_attribution_plugin as f
 pub struct PerformanceImpactMetricsDef {
     pub some_memory_stalls_ns: Option<i64>,
     pub full_memory_stalls_ns: Option<i64>,
+    pub page_refaults: Option<u64>,
     #[doc(hidden)]
     #[serde(skip)]
     pub __source_breaking: fidl::marker::SourceBreaking,
@@ -83,7 +84,7 @@ pub struct ProcessDef {
 // As [Process::mappings] is an Option<Vec<fplugin::Mapping>> instead of a pure struct, we can't
 // easily derive a serializer and need to provide a custom one.
 mod option_vec_mapping_def {
-    use super::{fplugin, MappingDef};
+    use super::{MappingDef, fplugin};
     use serde::ser::SerializeSeq;
     use serde::{Serialize, Serializer};
 

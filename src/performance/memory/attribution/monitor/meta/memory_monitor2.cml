@@ -13,7 +13,10 @@
     },
     capabilities: [
         {
-            protocol: [ "fuchsia.memory.attribution.plugin.MemoryMonitor" ],
+            protocol: [
+                "fuchsia.memory.attribution.PageRefaultSink",
+                "fuchsia.memory.attribution.plugin.MemoryMonitor",
+            ],
         },
     ],
     use: [
@@ -82,6 +85,10 @@
     expose: [
         {
             protocol: [ "fuchsia.memory.attribution.plugin.MemoryMonitor" ],
+            from: "self",
+        },
+        {
+            protocol: [ "fuchsia.memory.attribution.PageRefaultSink" ],
             from: "self",
         },
     ],

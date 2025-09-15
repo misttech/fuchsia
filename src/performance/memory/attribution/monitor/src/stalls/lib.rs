@@ -5,6 +5,8 @@
 use std::num::TryFromIntError;
 use std::sync::Arc;
 
+pub mod refaults;
+
 #[derive(Default)]
 pub struct MemoryStallMetrics {
     pub some: std::time::Duration,

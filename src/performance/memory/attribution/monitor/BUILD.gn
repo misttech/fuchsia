@@ -132,11 +132,17 @@ rustc_library("stalls") {
   with_unit_tests = true
   source_root = "src/stalls/lib.rs"
 
-  sources = [ "src/stalls/lib.rs" ]
+  sources = [
+    "src/stalls/lib.rs",
+    "src/stalls/refaults.rs",
+  ]
 
   deps = [
+    "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_rust",
     "//sdk/rust/zx",
+    "//src/performance/memory/attribution/refaults_vmo",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
   ]
 
   test_deps = []
