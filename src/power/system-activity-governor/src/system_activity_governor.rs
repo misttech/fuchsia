@@ -262,11 +262,12 @@ impl LeaseManager {
         Ok(client_token)
     }
 
-    async fn create_wake_lease<F>(
+    async fn create_wake_lease_using_token<F>(
         &self,
         name: String,
         once_closure: F,
-    ) -> Result<fsystem::LeaseToken>
+        server_token: fsystem::LeaseToken,
+    ) -> Result<()>
     where
         F: FnOnce() + 'static,
     {
@@ -281,7 +282,6 @@ impl LeaseManager {
             Some(blocker) => blocker,
         };
 
-        let (server_token, client_token) = fsystem::LeaseToken::create();
         let execution_state_suspending_lease = self.execution_state_suspending_lease.clone();
         let inspect_node = self.inspect_node.clone_weak();
         let execution_state_lessor = self.execution_state_lessor.clone();
@@ -384,7 +384,19 @@ impl LeaseManager {
             drop(lease);
         })
         .detach();
+        Ok(())
+    }
 
+    async fn create_wake_lease<F>(
+        &self,
+        name: String,
+        once_closure: F,
+    ) -> Result<fsystem::LeaseToken>
+    where
+        F: FnOnce() + 'static,
+    {
+        let (server_token, client_token) = fsystem::LeaseToken::create();
+        self.create_wake_lease_using_token(name, once_closure, server_token).await?;
         Ok(client_token)
     }
 }
@@ -826,6 +838,39 @@ impl SystemActivityGovernor {
                                         )
                                     })
                             })
+                            .or_else(|error| {
+                                log::warn!(
+                                    error:?;
+                                    "Encountered error while registering wake lease"
+                                );
+
+                                Err(fsystem::AcquireWakeLeaseError::Internal)
+                            })
+                    };
+
+                    if let Err(error) = responder.send(client_token_res) {
+                        log::warn!(
+                            error:?;
+                            "Encountered error while responding to AcquireWakeLease request"
+                        );
+                    }
+                }
+                Ok(fsystem::ActivityGovernorRequest::AcquireWakeLeaseWithToken {
+                    responder,
+                    name,
+                    server_token,
+                }) => {
+                    let guard: SemaphoreGuardArc = flow_control.acquire_arc().await;
+                    let once_closure = move || {
+                        drop(guard);
+                    };
+                    let client_token_res = if name.is_empty() {
+                        log::warn!("Received invalid name while acquiring wake lease");
+                        Err(fsystem::AcquireWakeLeaseError::InvalidName)
+                    } else {
+                        self.lease_manager
+                            .create_wake_lease_using_token(name, once_closure, server_token)
+                            .await
                             .or_else(|error| {
                                 log::warn!(
                                     error:?;

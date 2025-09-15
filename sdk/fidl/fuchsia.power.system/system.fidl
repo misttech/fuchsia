@@ -268,6 +268,28 @@ open protocol ActivityGovernor {
         token LeaseToken;
     }) error AcquireWakeLeaseError;
 
+    /// Creates a lease that blocks suspension of the hardware platform.
+    /// WARNING: Suspension can only be considered blocked after the client
+    /// receives the response to this call. This means, for example, an
+    /// interrupt should only be ack'ed or a different wake lease dropped only
+    /// **after** getting an error-free response.
+    ///
+    /// The hardware platform will remain resumed until `server_token` observes
+    /// `PEER_CLOSED`, indicating all handles to the client side of the
+    /// `LeaseToken` are closed.
+    @available(added=HEAD)
+    flexible AcquireWakeLeaseWithToken(resource struct {
+        /// The name of the lease.
+        ///
+        /// The name cannot be empty but is not required to be globally unique.
+        name string:MAX_ELEMENT_NAME_LEN;
+
+        /// The server side of the token that blocks hardware platform
+        /// suspension. The caller should give out handles to the client side
+        /// of the `LeaseToken` which is peered to this `server_token`.
+        server_token LeaseToken;
+    }) -> () error AcquireWakeLeaseError;
+
     /// Creates a lease that blocks the system from dropping below the Application
     /// Activity 'Active' state. In particular, this blocks suspension of the
     /// hardware platform.

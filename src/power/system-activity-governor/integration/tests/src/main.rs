@@ -2026,6 +2026,26 @@ async fn test_activity_governor_acquire_wake_lease_returns_error_on_empty_name()
     Ok(())
 }
 
+#[fuchsia::test]
+async fn test_activity_governor_acquire_wake_lease_with_token_returns_error_on_empty_name()
+-> Result<()> {
+    let (realm, _activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let (mut _client_side, mut server_side) = zx::EventPair::create();
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    assert_eq!(
+        fsystem::AcquireWakeLeaseError::InvalidName,
+        activity_governor.acquire_wake_lease_with_token("", server_side).await?.unwrap_err()
+    );
+
+    (_client_side, server_side) = zx::EventPair::create();
+    // Second call should succeed.
+    activity_governor.acquire_wake_lease_with_token("test", server_side).await.unwrap().unwrap();
+    Ok(())
+}
+
 async fn create_cpu_driver_topology(
     realm: &RealmProxyClient,
 ) -> Result<(Arc<PowerElementContext>, Arc<Cell<fbroker::PowerLevel>>)> {
