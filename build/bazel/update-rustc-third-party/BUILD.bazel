@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_rust//crate_universe:defs.bzl", "crate", "crates_vendor", "render_config")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("@rules_rust//crate_universe:defs.bzl", "crates_vendor", "render_config")
 load("@rules_rust//rust:toolchain.bzl", "rust_stdlib_filegroup", "rust_toolchain")
 load("//:crate_annotations.bzl", "CRATE_ANNOTATIONS")
 
@@ -59,14 +60,8 @@ rust_toolchain(
 
 toolchain(
     name = "toolchain_linux_x64",
-    exec_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
+    exec_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_CONSTRAINTS,
     toolchain = ":rust_toolchain_linux_x64",
     toolchain_type = "@rules_rust//rust:toolchain",
 )

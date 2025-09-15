@@ -7,6 +7,8 @@ module(
     version = "1",
 )
 
+bazel_dep(name = "platforms", version = "1.0.0")
+
 # Use local override instead of specifying a version to avoid this from
 # falling out of sync with the version used in fuchsia.git.
 bazel_dep(name = "rules_rust", version = "")
