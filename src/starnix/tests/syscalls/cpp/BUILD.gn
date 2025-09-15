@@ -294,7 +294,6 @@ config("march") {
 
 foreach(test_name, syscall_tests) {
   syscall_test(test_name) {
-    test_name = test_name
     deps = syscall_tests_deps
     resources = syscall_tests_resources
     executables = syscall_tests_executables
@@ -303,7 +302,6 @@ foreach(test_name, syscall_tests) {
 
 foreach(test_def, syscall_tests_etc) {
   syscall_test(test_def.name) {
-    test_name = test_def.name
     deps = syscall_tests_deps
     resources = syscall_tests_resources
     executables = syscall_tests_executables

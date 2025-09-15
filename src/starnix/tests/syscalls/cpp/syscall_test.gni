@@ -32,7 +32,19 @@ template("_resource_from_executables") {
 }
 
 template("syscall_test") {
-  test_name = invoker.test_name
+  _test_name = target_name
+  if (defined(invoker.test_name)) {
+    _test_name = invoker.test_name
+  }
+
+  # If _test_name is not target_name, use target_name as a namespace for the binary name
+  # to ensure multiple tests can have the same test_name across different
+  # directories in the build.
+  _test_binary_name = "${target_name}_bin"
+  if (_test_name != target_name) {
+    _test_binary_name = "${target_name}_${_test_name}_bin"
+  }
+
   _disable_sanitizers_on_host = false
   if (defined(invoker.disable_sanitizers_on_host)) {
     _disable_sanitizers_on_host = invoker.disable_sanitizers_on_host
@@ -42,7 +54,7 @@ template("syscall_test") {
   if (defined(invoker.sources)) {
     _test_sources = invoker.sources
   } else {
-    _test_sources = [ "${test_name}.cc" ]
+    _test_sources = [ "${_test_name}.cc" ]
   }
 
   _test_deps = []
@@ -92,7 +104,7 @@ template("syscall_test") {
     outputs = [ _manifest_file ]
     output_conversion = "json"
     _program = {
-      binary = "data/tests/${test_name}_bin"
+      binary = "data/tests/${_test_binary_name}"
     }
 
     # If we're targeting a different kernel, the binary should be prefixed with the target kernel,
@@ -100,7 +112,7 @@ template("syscall_test") {
     # consumed within the Starnix test runner to handle as appropriate.
     if (defined(invoker.test_target_kernel)) {
       _program.binary =
-          "data/tests/${invoker.test_target_kernel}_${test_name}_bin"
+          "data/tests/${invoker.test_target_kernel}_${_test_binary_name}"
       _program.test_target_kernel = invoker.test_target_kernel
     }
     contents = {
@@ -120,7 +132,6 @@ template("syscall_test") {
     deps = [ ":${_container_config_shard_label}" ]
   }
 
-  _target_test_label = "${target_name}_bin"
   _host_test_label = "starnix_${target_name}_host"
   if (is_linux) {
     _test_deps += [
@@ -150,7 +161,7 @@ template("syscall_test") {
       "//build/config:Wno-deprecated-pragma",
     ]
 
-    test(_target_test_label) {
+    test(_test_binary_name) {
       # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
       exclude_toolchain_tags = [ "instrumented" ]
       sources = _test_sources
@@ -168,7 +179,7 @@ template("syscall_test") {
     }
   } else {
     not_needed([
-                 "_target_test_label",
+                 "_test_binary_name",
                  "_host_test_label",
                  "_disable_sanitizers_on_host",
                ])
@@ -210,8 +221,8 @@ template("syscall_test") {
   }
 
   starnix_linux_test_component(target_name) {
-    test_label = ":${_target_test_label}"
-    test_binary = _target_test_label
+    test_label = ":${_test_binary_name}"
+    test_binary = _test_binary_name
     manifest = _manifest_file
     deps = [
       ":${_manifest_label}",
@@ -240,8 +251,8 @@ template("syscall_test") {
 
     starnix_linux_test_component("${target_name}_arch32") {
       test_toolchain = target_linux_arch32_toolchain
-      test_label = ":${_target_test_label}"
-      test_binary = _target_test_label
+      test_label = ":${_test_binary_name}"
+      test_binary = _test_binary_name
       manifest = _manifest_file
       deps = [
         ":${_manifest_label}",
