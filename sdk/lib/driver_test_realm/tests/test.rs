@@ -135,11 +135,21 @@ async fn test_empty_args() -> Result<()> {
 
     let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
 
-    let info = get_driver_info(&driver_dev, &[]).await?;
-    assert!(info
-        .iter()
-        .any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string())));
-    assert!(info.iter().any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test.cm".to_string())));
+    let driver_urls = get_driver_info(&driver_dev, &[])
+        .await?
+        .into_iter()
+        .map(|info| info.url)
+        .collect::<Vec<Option<String>>>();
+    assert!(
+        driver_urls.contains(&Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string())),
+        "{:?}",
+        driver_urls
+    );
+    assert!(
+        driver_urls.contains(&Some("fuchsia-boot:///dtr#meta/test.cm".to_string())),
+        "{:?}",
+        driver_urls
+    );
 
     Ok(())
 }
@@ -164,11 +174,21 @@ async fn test_pkg_dir() -> Result<()> {
 
     let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
 
-    let info = get_driver_info(&driver_dev, &[]).await?;
-    assert!(info
-        .iter()
-        .any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string())));
-    assert!(info.iter().any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test.cm".to_string())));
+    let driver_urls = get_driver_info(&driver_dev, &[])
+        .await?
+        .into_iter()
+        .map(|info| info.url)
+        .collect::<Vec<Option<String>>>();
+    assert!(
+        driver_urls.contains(&Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string())),
+        "{:?}",
+        driver_urls
+    );
+    assert!(
+        driver_urls.contains(&Some("fuchsia-boot:///dtr#meta/test.cm".to_string())),
+        "{:?}",
+        driver_urls
+    );
 
     let dev = instance.driver_test_realm_connect_to_dev()?;
     device_watcher::recursive_wait(&dev, "sys/test/test").await?;

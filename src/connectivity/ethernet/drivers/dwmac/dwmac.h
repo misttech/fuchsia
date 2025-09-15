@@ -9,7 +9,6 @@
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <fuchsia/hardware/ethernet/mac/cpp/banjo.h>
 #include <fuchsia/hardware/network/driver/cpp/banjo.h>
-#include <fuchsia/hardware/test/c/banjo.h>
 #include <lib/ddk/device.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/mmio/mmio.h>

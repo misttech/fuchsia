@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 #ifndef SRC_CONNECTIVITY_TELEPHONY_TESTS_FAKE_DRIVERS_FAKE_TRANSPORT_BASE_FAKE_TRANSPORT_BASE_H_
 #define SRC_CONNECTIVITY_TELEPHONY_TESTS_FAKE_DRIVERS_FAKE_TRANSPORT_BASE_FAKE_TRANSPORT_BASE_H_
-#include <fuchsia/hardware/test/c/banjo.h>
+
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>

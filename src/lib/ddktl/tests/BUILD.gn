@@ -36,7 +36,6 @@ test("ddktl-test") {
     ":testlib_bind_cpp",
     "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.test:fuchsia.hardware.test_banjo_cpp",
     "//sdk/lib/fdio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/lib/driver",

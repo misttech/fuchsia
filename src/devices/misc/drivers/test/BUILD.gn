@@ -20,22 +20,19 @@ group("tests") {
 }
 
 fuchsia_cc_driver("test-driver") {
-  legacy = true
   output_name = "test"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "test.cc" ]
+  sources = [
+    "test.cc",
+    "test.h",
+  ]
   deps = [
     ":test_bind",
-    "//sdk/banjo/fuchsia.hardware.test:fuchsia.hardware.test_banjo_cpp",
-    "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_cpp",
-    "//src/devices/lib/driver",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/zircon-internal",
+    "//sdk/lib/driver/component/cpp",
+    "//src/devices/lib/driver:driver_runtime",
   ]
 }
 
