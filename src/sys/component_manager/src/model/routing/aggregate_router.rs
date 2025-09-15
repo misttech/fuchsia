@@ -71,15 +71,6 @@ impl sandbox::Routable<DirConnector> for AggregateRouter {
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
 
-        let weak_instance: WeakComponentInstance = request.target.clone().try_into().unwrap();
-
-        ::routing::log_if_mali_vulkan_test_weak(
-            &weak_instance,
-            format!(
-                "creating aggregate dir at component {:?} for component {:?}",
-                &self.component.moniker, &weak_instance.moniker,
-            ),
-        );
         let aggregate_dir = self.get_aggregate_dir(request).await?;
         if debug {
             let data: Data = self
@@ -90,17 +81,6 @@ impl sandbox::Routable<DirConnector> for AggregateRouter {
             return Ok(RouterResponse::Debug(data));
         }
 
-        let (aggregate_dir_proxy, server_end) =
-            fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let _ = aggregate_dir.send(server_end, RelativePath::dot(), None);
-        ::routing::log_if_mali_vulkan_test_weak(
-            &weak_instance,
-            format!(
-                "connecting routing request to aggregate directory with these sources {:?} and these contents {:?}",
-                &self.sources,
-                fuchsia_fs::directory::readdir(&aggregate_dir_proxy).await
-            ),
-        );
         return Ok(RouterResponse::Capability(aggregate_dir));
     }
 }

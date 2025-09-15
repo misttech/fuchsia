@@ -68,36 +68,6 @@ pub use bedrock::with_porcelain::WithPorcelain;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-pub fn log_if_mali_vulkan_test(component: Arc<impl ComponentInstanceInterface>, message: String) {
-    if component.url().as_str().contains("vulkan_loader.cm") {
-        log::warn!("debug log for https://fxbug.dev/439108465: {}", message);
-    }
-}
-
-pub fn log_if_mali_vulkan_test_weak(
-    component: &crate::component_instance::WeakComponentInstanceInterface<
-        impl ComponentInstanceInterface,
-    >,
-    message: String,
-) {
-    if let Ok(c) = component.upgrade() {
-        log_if_mali_vulkan_test(c, message);
-    }
-}
-
-pub fn log_if_mali_vulkan_test_weak_extended(
-    component: &crate::component_instance::WeakExtendedInstanceInterface<
-        impl ComponentInstanceInterface,
-    >,
-    message: String,
-) {
-    if let Ok(crate::component_instance::ExtendedInstanceInterface::Component(c)) =
-        component.upgrade()
-    {
-        log_if_mali_vulkan_test(c, message);
-    }
-}
-
 /// A request to route a capability, together with the data needed to do so.
 #[derive(Clone, Debug)]
 pub enum RouteRequest {

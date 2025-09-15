@@ -41,35 +41,9 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         request: Option<Request>,
         debug: bool,
     ) -> Result<RouterResponse<T>, RouterError> {
-        crate::log_if_mali_vulkan_test_weak_extended(
-            &self.target,
-            format!(
-                "routing capability {} at component {:?}",
-                self.route_request,
-                self.target.extended_moniker()
-            ),
-        );
         match self.do_route(request, debug, D).await {
-            Ok(res) => {
-                crate::log_if_mali_vulkan_test_weak_extended(
-                    &self.target,
-                    format!(
-                        "successfully routed capability {} at component {:?}",
-                        self.route_request,
-                        self.target.extended_moniker()
-                    ),
-                );
-                Ok(res)
-            }
+            Ok(res) => Ok(res),
             Err(err) => {
-                crate::log_if_mali_vulkan_test_weak_extended(
-                    &self.target,
-                    format!(
-                        "failed to route capability {} at component {:?}: {err:?}",
-                        self.route_request,
-                        self.target.extended_moniker()
-                    ),
-                );
                 self.error_reporter
                     .report(&self.route_request, &err, self.target.clone().into())
                     .await;
@@ -474,10 +448,6 @@ mod tests {
     use sandbox::{Data, Dict};
     use std::sync::{Arc, Mutex};
 
-    static FAKE_URL: std::sync::LazyLock<Url> = LazyLock::new(|| {
-        Url::new("fuchsia-pkg://fuchsia.com/fake-package#meta/fake-component.cm").unwrap()
-    });
-
     #[derive(Debug)]
     struct FakeComponent {
         moniker: Moniker,
@@ -511,7 +481,7 @@ mod tests {
         }
 
         fn url(&self) -> &Url {
-            &*FAKE_URL
+            panic!()
         }
 
         fn environment(&self) -> &environment::Environment<Self> {
