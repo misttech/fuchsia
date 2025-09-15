@@ -13039,7 +13039,7 @@ rustc_library("proc-macro2-v1_0_97") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":unicode-ident-v1_0_1" ]
+  deps += [ ":unicode-ident-v1_0_19" ]
 
   rustenv = []
 
@@ -17581,7 +17581,7 @@ rustc_library("syn-v1_0_98") {
   deps = []
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_40" ]
-  deps += [ ":unicode-ident-v1_0_1" ]
+  deps += [ ":unicode-ident-v1_0_19" ]
 
   rustenv = []
 
@@ -17668,7 +17668,7 @@ rustc_library("syn-v2_0_103") {
   deps = []
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_40" ]
-  deps += [ ":unicode-ident-v1_0_1" ]
+  deps += [ ":unicode-ident-v1_0_19" ]
 
   rustenv = []
 
@@ -19725,19 +19725,20 @@ rustc_library("unicode-bidi-v0_3_18") {
   applicable_licenses = [ ":unicode-bidi-v0_3_18.license" ]
 }
 
-license("unicode-ident-v1_0_1.license") {
+license("unicode-ident-v1_0_19.license") {
   public_package_name = "unicode_ident"
   license_files = [
-    "//third_party/rust_crates/vendor/unicode-ident-1.0.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/unicode-ident-1.0.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/unicode-ident-1.0.19/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/unicode-ident-1.0.19/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/unicode-ident-1.0.19/LICENSE-UNICODE",
   ]
 }
 
-rustc_library("unicode-ident-v1_0_1") {
+rustc_library("unicode-ident-v1_0_19") {
   crate_name = "unicode_ident"
   source_root =
-      "//third_party/rust_crates/vendor/unicode-ident-1.0.1/src/lib.rs"
-  output_name = "unicode_ident-9ac3362049fe5c71"
+      "//third_party/rust_crates/vendor/unicode-ident-1.0.19/src/lib.rs"
+  output_name = "unicode_ident-6bbad14552e139a9"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -19749,13 +19750,13 @@ rustc_library("unicode-ident-v1_0_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9ac3362049fe5c71",
-    "-Cextra-filename=-9ac3362049fe5c71",
+    "-Cmetadata=6bbad14552e139a9",
+    "-Cextra-filename=-6bbad14552e139a9",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicode-ident-v1_0_1.license" ]
+  applicable_licenses = [ ":unicode-ident-v1_0_19.license" ]
 }
 
 license("unicode-normalization-v0_1_24.license") {
