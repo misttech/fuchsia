@@ -606,14 +606,6 @@ template("bazel_product_bundle") {
       if (_image_has_fxfs_blob) {
         _metadata.images += [
           {
-            name = "storage-full"
-            type = "fxfs-blk"
-            cpu = current_cpu
-            label = _full_label
-            path = "${_system_a_root}/fxfs.blk"
-            archive = add_qemu_to_build_archives
-          },
-          {
             name = "fuchsia.fxfs_sparse"
             type = "blk"
             cpu = current_cpu

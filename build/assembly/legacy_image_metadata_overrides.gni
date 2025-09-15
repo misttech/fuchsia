@@ -70,11 +70,6 @@ legacy_fuchsia_image_metadata_overrides = {
   }
 
   if (fxfs_blob) {
-    fxfs = {
-      name = "storage-full"
-      type = "fxfs-blk"
-      archive = add_qemu_to_build_archives
-    }
     fxfs_sparse = {
       name = "fuchsia.fxfs_sparse"
       type = "blk"
