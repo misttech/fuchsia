@@ -537,7 +537,7 @@
              path="third_party/vboot_reference"
              remote="https://fuchsia.googlesource.com/third_party/vboot_reference"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="410f668c7a0460595c86b3e2a25e396b96181ccf"/>
+             revision="11ad5a7b564fcb91be3635a112e81687d8524ce2"/>
     <project name="third_party/volk"
              path="third_party/volk/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/zeux/volk"
