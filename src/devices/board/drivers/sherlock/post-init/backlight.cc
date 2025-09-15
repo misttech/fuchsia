@@ -6,6 +6,7 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/device-protocol/display-panel.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -57,27 +58,29 @@ TiLp8556Metadata kDeviceMetadata = {
     .backlight_max_brightness = 350.0,
 };
 
-static const std::vector<fpbus::Metadata> backlight_metadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&kDeviceMetadata),
-            reinterpret_cast<const uint8_t*>(&kDeviceMetadata) + sizeof(kDeviceMetadata)),
-    }},
-};
-
-static const fpbus::Node backlight_dev = []() {
-  fpbus::Node dev = {};
-  dev.name() = "backlight";
-  dev.vid() = PDEV_VID_TI;
-  dev.pid() = PDEV_PID_TI_LP8556;
-  dev.did() = PDEV_DID_TI_BACKLIGHT;
-  dev.metadata() = backlight_metadata;
-  dev.mmio() = backlight_mmios;
-  return dev;
-}();
-
 zx::result<> PostInit::InitBacklight() {
+  const std::vector<fpbus::Metadata> backlight_metadata{
+      {{
+          .id = std::to_string(DEVICE_METADATA_PRIVATE),
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(&kDeviceMetadata),
+              reinterpret_cast<const uint8_t*>(&kDeviceMetadata) + sizeof(kDeviceMetadata)),
+      }},
+      {{
+          .id = std::to_string(DEVICE_METADATA_DISPLAY_PANEL_TYPE),
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(&panel_type_),
+              reinterpret_cast<const uint8_t*>(&panel_type_) + sizeof(panel_type_)),
+      }},
+  };
+
+  fpbus::Node backlight_dev = {};
+  backlight_dev.name() = "backlight";
+  backlight_dev.vid() = PDEV_VID_TI;
+  backlight_dev.pid() = PDEV_PID_TI_LP8556;
+  backlight_dev.did() = PDEV_DID_TI_BACKLIGHT;
+  backlight_dev.metadata() = backlight_metadata;
+  backlight_dev.mmio() = backlight_mmios;
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('BACK');
 
