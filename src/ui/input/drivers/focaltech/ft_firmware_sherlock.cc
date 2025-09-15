@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/device-protocol/display-panel.h>
+
 #include <array>
 
 #include "ft_firmware.h"
 
 namespace {
-
-constexpr uint8_t kDisplayVendorBoe = 0;
-constexpr uint8_t kDisplayVendorInx = 1;
-
-constexpr uint8_t kDdicVersion9364 = 1;
-constexpr uint8_t kDdicVersion9365 = 0;
 
 constexpr uint8_t kTopGroup9364Firmware[] = {
 #include "prebuilt/touch/ft5726-sherlock/TopGroup_11mm_Fiti9364_0x0B.i"
@@ -32,20 +28,17 @@ namespace ft {
 
 const FirmwareEntry kFirmwareEntries[] = {
     {
-        .display_vendor = kDisplayVendorInx,
-        .ddic_version = kDdicVersion9364,
+        .panel_type = display::PanelType::kInnoluxP101dezFitipowerJd9364,
         .firmware_data = kTopGroup9364Firmware,
         .firmware_size = sizeof(kTopGroup9364Firmware),
     },
     {
-        .display_vendor = kDisplayVendorBoe,
-        .ddic_version = kDdicVersion9364,
+        .panel_type = display::PanelType::kBoeTv101wxmFitipowerJd9364,
         .firmware_data = kLensOne9364Firmware,
         .firmware_size = sizeof(kLensOne9364Firmware),
     },
     {
-        .display_vendor = kDisplayVendorBoe,
-        .ddic_version = kDdicVersion9365,
+        .panel_type = display::PanelType::kBoeTv101wxmFitipowerJd9365,
         .firmware_data = kLensOne9365Firmware,
         .firmware_size = sizeof(kLensOne9365Firmware),
     },

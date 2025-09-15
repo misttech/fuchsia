@@ -9,6 +9,7 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/metadata.h>
+#include <lib/device-protocol/display-panel.h>
 #include <lib/fake-i2c/fake-i2c.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/focaltech/focaltech.h>
@@ -42,26 +43,22 @@ namespace ft {
 
 const FirmwareEntry kFirmwareEntries[] = {
     {
-        .display_vendor = 0,
-        .ddic_version = 0,
+        .panel_type = display::PanelType::kInnoluxP101dezFitipowerJd9364,
         .firmware_data = kFirmware0,
         .firmware_size = sizeof(kFirmware0),
     },
     {
-        .display_vendor = 1,
-        .ddic_version = 0,
+        .panel_type = display::PanelType::kBoeTv101wxmFitipowerJd9364,
         .firmware_data = kFirmware1,
         .firmware_size = sizeof(kFirmware1),
     },
     {
-        .display_vendor = 0,
-        .ddic_version = 1,
+        .panel_type = display::PanelType::kBoeTv101wxmFitipowerJd9365,
         .firmware_data = kFirmware2,
         .firmware_size = sizeof(kFirmware2),
     },
     {
-        .display_vendor = 1,
-        .ddic_version = 1,
+        .panel_type = display::PanelType::kBoeTv070wsmFitipowerJd9364Astro,
         .firmware_data = kFirmware3,
         .firmware_size = sizeof(kFirmware3),
     },
@@ -378,15 +375,15 @@ TEST_F(FocaltechTest, Firmware5726) {
   constexpr FocaltechMetadata kFt5726Metadata = {
       .device_id = FOCALTECH_DEVICE_FT5726,
       .needs_firmware = true,
-      .display_vendor = 1,
-      .ddic_version = 1,
   };
+  constexpr display::PanelType kPanelType = display::PanelType::kBoeTv101wxmFitipowerJd9365;
   fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt5726Metadata, sizeof(kFt5726Metadata));
+  fake_parent_->SetMetadata(DEVICE_METADATA_DISPLAY_PANEL_TYPE, &kPanelType, sizeof(kPanelType));
 
   CreateDut();
 
   incoming_.SyncCall([](IncomingNamespace* infra) mutable {
-    EXPECT_EQ(infra->i2c_.firmware_write_size(), sizeof(kFirmware3));
+    EXPECT_EQ(infra->i2c_.firmware_write_size(), sizeof(kFirmware2));
   });
 }
 
@@ -394,10 +391,10 @@ TEST_F(FocaltechTest, Firmware5726UpToDate) {
   constexpr FocaltechMetadata kFt5726Metadata = {
       .device_id = FOCALTECH_DEVICE_FT5726,
       .needs_firmware = true,
-      .display_vendor = 1,
-      .ddic_version = 0,
   };
+  constexpr display::PanelType kPanelType = display::PanelType::kBoeTv101wxmFitipowerJd9364;
   fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt5726Metadata, sizeof(kFt5726Metadata));
+  fake_parent_->SetMetadata(DEVICE_METADATA_DISPLAY_PANEL_TYPE, &kPanelType, sizeof(kPanelType));
 
   CreateDut();
 

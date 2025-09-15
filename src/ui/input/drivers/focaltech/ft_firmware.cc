@@ -6,6 +6,8 @@
 
 #include <lib/ddk/debug.h>
 
+#include <cinttypes>
+
 #include "ft_device.h"
 
 namespace {
@@ -85,7 +87,8 @@ uint8_t FtDevice::CalculateEcc(const uint8_t* const buffer, const size_t size, u
   return initial;
 }
 
-zx_status_t FtDevice::UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata) {
+zx_status_t FtDevice::UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata,
+                                             display::PanelType panel_type) {
   if (!metadata.needs_firmware) {
     return ZX_OK;
   }
@@ -93,16 +96,14 @@ zx_status_t FtDevice::UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata) 
   cpp20::span<const uint8_t> firmware;
   const cpp20::span<const FirmwareEntry> entries(kFirmwareEntries, kNumFirmwareEntries);
   for (const auto& entry : entries) {
-    if (entry.display_vendor == metadata.display_vendor &&
-        entry.ddic_version == metadata.ddic_version) {
+    if (entry.panel_type == panel_type) {
       firmware = cpp20::span(entry.firmware_data, entry.firmware_size);
       break;
     }
   }
 
   if (firmware.empty()) {
-    zxlogf(ERROR, "No firmware found for vendor %u DDIC %u", metadata.display_vendor,
-           metadata.ddic_version);
+    zxlogf(ERROR, "No firmware found for panel type %" PRIu32, static_cast<uint32_t>(panel_type));
     return ZX_OK;
   }
 

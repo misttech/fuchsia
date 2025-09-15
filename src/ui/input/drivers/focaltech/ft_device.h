@@ -10,6 +10,7 @@
 #include <lib/async/cpp/irq.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
+#include <lib/device-protocol/display-panel.h>
 #include <lib/focaltech/focaltech.h>
 #include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -186,7 +187,8 @@ class FtDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTR
 
   void LogRegisterValue(uint8_t addr, const char* name);
 
-  zx_status_t UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata);
+  zx_status_t UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata,
+                                     display::PanelType panel_type);
 
   async_dispatcher_t* dispatcher_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> int_gpio_;

@@ -25,12 +25,15 @@
 #include <zircon/threads.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <iterator>
 
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
+
+#include "lib/device-protocol/display-panel.h"
 
 namespace ft {
 
@@ -227,6 +230,22 @@ zx_status_t FtDevice::Init() {
     return ZX_ERR_INTERNAL;
   }
 
+  display::PanelType panel_type = display::PanelType::kUnknown;
+  status = device_get_metadata(parent(), DEVICE_METADATA_DISPLAY_PANEL_TYPE, &panel_type,
+                               sizeof(panel_type), &actual);
+  if (status == ZX_ERR_NOT_FOUND) {
+    zxlogf(WARNING, "Display panel type information not found.");
+  }
+  if (status != ZX_OK && status != ZX_ERR_NOT_FOUND) {
+    zxlogf(ERROR, "Failed to get panel type metadata: %s", zx_status_get_string(status));
+    return status;
+  }
+  if (status == ZX_OK && sizeof(panel_type) != actual) {
+    zxlogf(ERROR, "Incorrect panel type metadata size: Expected %lu bytes but actual is %lu bytes",
+           sizeof(panel_type), actual);
+    return ZX_ERR_INTERNAL;
+  }
+
   if (device_info.device_id == FOCALTECH_DEVICE_FT3X27) {
     x_max_ = kFt3x27XMax;
     y_max_ = kFt3x27YMax;
@@ -279,7 +298,7 @@ zx_status_t FtDevice::Init() {
   }
   zx::nanosleep(zx::deadline_after(zx::msec(200)));
 
-  status = UpdateFirmwareIfNeeded(device_info);
+  status = UpdateFirmwareIfNeeded(device_info, panel_type);
   if (status != ZX_OK) {
     return status;
   }
@@ -293,17 +312,9 @@ zx_status_t FtDevice::Init() {
   LogRegisterValue(FTS_REG_RELEASE_ID_LOW, "RELEASE_ID_LOW");
   LogRegisterValue(FTS_REG_IC_VERSION, "IC_VERSION");
 
-  if (device_info.needs_firmware) {
-    node_.CreateUint("Display_vendor", device_info.display_vendor, &values_);
-    node_.CreateUint("DDIC_version", device_info.ddic_version, &values_);
-    zxlogf(INFO, "Display vendor: %u", device_info.display_vendor);
-    zxlogf(INFO, "DDIC version:   %u", device_info.ddic_version);
-  } else {
-    node_.CreateString("Display_vendor", "none", &values_);
-    node_.CreateString("DDIC_version", "none", &values_);
-    zxlogf(INFO, "Display vendor: none");
-    zxlogf(INFO, "DDIC version:   none");
-  }
+  node_.CreateBool("needs_firmware_update", device_info.needs_firmware, &values_);
+  node_.CreateUint("panel_type", static_cast<uint32_t>(panel_type), &values_);
+  zxlogf(INFO, "Panel type: %" PRIu32, static_cast<uint32_t>(panel_type));
 
   // These names must match the strings in //src/diagnostics/config/sampler/input.json.
   metrics_root_ = inspector_.GetRoot().CreateChild("hid-input-report-touch");

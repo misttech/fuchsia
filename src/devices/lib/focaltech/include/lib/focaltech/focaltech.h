@@ -14,10 +14,14 @@
 #define FOCALTECH_DEVICE_FT5336 3
 
 struct FocaltechMetadata {
-  uint32_t device_id;      // The specific FocalTech IC, must be a FOCALTECH_DEVICE_ value.
-  bool needs_firmware;     // Whether or not to use the next two fields.
-  uint8_t display_vendor;  // The platform-specific display vendor ID.
-  uint8_t ddic_version;    // The platform-specific DDIC version ID.
+  // The specific FocalTech IC, must be a FOCALTECH_DEVICE_ value.
+  uint32_t device_id;
+
+  // True if and only if firmware update is needed during driver initialization.
+  //
+  // If true, the board driver must provide panel type information to the
+  // touch controller driver using PANEL_TYPE metadata.
+  bool needs_firmware;
 };
 
 #endif  // SRC_DEVICES_LIB_FOCALTECH_INCLUDE_LIB_FOCALTECH_FOCALTECH_H_

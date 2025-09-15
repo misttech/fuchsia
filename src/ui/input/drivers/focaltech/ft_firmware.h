@@ -5,14 +5,14 @@
 #ifndef SRC_UI_INPUT_DRIVERS_FOCALTECH_FT_FIRMWARE_H_
 #define SRC_UI_INPUT_DRIVERS_FOCALTECH_FT_FIRMWARE_H_
 
+#include <lib/device-protocol/display-panel.h>
 #include <stddef.h>
 #include <stdint.h>
 
 namespace ft {
 
 struct FirmwareEntry {
-  uint8_t display_vendor;
-  uint8_t ddic_version;
+  display::PanelType panel_type;
   const uint8_t* firmware_data;
   size_t firmware_size;
 };

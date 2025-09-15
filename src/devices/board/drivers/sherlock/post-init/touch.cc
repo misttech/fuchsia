@@ -71,38 +71,9 @@ const std::vector kGpioInitProperties = std::vector{
 };
 
 zx::result<> PostInit::InitTouch() {
-  // 0 for Innolux, 1 for BOE
-  uint8_t display_vendor = 0;
-
-  // 0 for JD9365, 1 for JD9364
-  uint8_t ddic_version = 0;
-
-  switch (panel_type_) {
-    case display::PanelType::kBoeTv101wxmFitipowerJd9364: {
-      display_vendor = 0;
-      ddic_version = 1;
-      break;
-    }
-    case display::PanelType::kBoeTv101wxmFitipowerJd9365: {
-      display_vendor = 0;
-      ddic_version = 0;
-      break;
-    }
-    case display::PanelType::kInnoluxP101dezFitipowerJd9364: {
-      display_vendor = 1;
-      ddic_version = 1;
-      break;
-    }
-    default:
-      FDF_LOG(ERROR, "Unknown panel type: %u", static_cast<uint32_t>(panel_type_));
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
-
   static const FocaltechMetadata device_info = {
       .device_id = FOCALTECH_DEVICE_FT5726,
       .needs_firmware = true,
-      .display_vendor = display_vendor,
-      .ddic_version = ddic_version,
   };
 
   fpbus::Node dev;
@@ -116,6 +87,12 @@ zx::result<> PostInit::InitTouch() {
           .data = std::vector<uint8_t>(
               reinterpret_cast<const uint8_t*>(&device_info),
               reinterpret_cast<const uint8_t*>(&device_info) + sizeof(device_info)),
+      }},
+      {{
+          .id = std::to_string(DEVICE_METADATA_DISPLAY_PANEL_TYPE),
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(&panel_type_),
+              reinterpret_cast<const uint8_t*>(&panel_type_) + sizeof(panel_type_)),
       }},
   };
 
@@ -152,7 +129,6 @@ zx::result<> PostInit::InitTouch() {
   if (result->is_error()) {
     FDF_LOG(ERROR, "Failed to add composite node spec: %s",
             zx_status_get_string(result->error_value()));
-    return result->take_error();
   }
 
   return zx::ok();
