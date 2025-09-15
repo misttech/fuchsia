@@ -7,7 +7,7 @@ use crate::vfs::socket::{SockOptValue, SocketDomain};
 use futures::channel::mpsc::{
     UnboundedReceiver, UnboundedSender, {self},
 };
-use linux_uapi::{AUDIT_USER, audit_status};
+use linux_uapi::{AUDIT_GET, AUDIT_USER, audit_status};
 use netlink::messaging::{Sender, SenderReceiverProvider};
 use netlink::multicast_groups::{
     InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
@@ -1528,7 +1528,7 @@ impl AuditNetlinkClient {
             return error!(EINVAL);
         };
         match audit_request_type {
-            AuditRequest::AuditGet => self.process_get_status(),
+            AuditRequest::AuditGet => self.process_get_status(nl_header.sequence_number),
             AuditRequest::AuditSet => {
                 self.process_set_status(nl_header, payload, Arc::downgrade(self))
             }
@@ -1551,7 +1551,7 @@ impl AuditNetlinkClient {
     fn read_audit_log(&self, pid: pid_t) -> Option<Vec<u8>> {
         if let Some(AuditMessage { audit_type, message }) = self.audit_logger.read_audit_log(pid) {
             return Some(AuditNetlinkClient::serialize_nlmsg(
-                AuditNetlinkClient::build_audit_nlmsg(audit_type, message),
+                AuditNetlinkClient::build_audit_nlmsg(0, audit_type, message),
             ));
         }
         None
@@ -1566,9 +1566,13 @@ impl AuditNetlinkClient {
             .ok_or_else(|| errno!(EAGAIN))
     }
 
-    fn process_get_status(&self) -> Result<NetlinkMessage<GenericMessage>, Errno> {
+    fn process_get_status(
+        &self,
+        sequence_number: u32,
+    ) -> Result<NetlinkMessage<GenericMessage>, Errno> {
         Ok(AuditNetlinkClient::build_audit_nlmsg(
-            0,
+            sequence_number,
+            AUDIT_GET as u16,
             self.audit_logger.get_status().as_bytes().to_vec(),
         ))
     }
@@ -1607,12 +1611,17 @@ impl AuditNetlinkClient {
         self.audit_logger.detach_client();
     }
 
-    fn build_audit_nlmsg(msg_type: u16, payload: Vec<u8>) -> NetlinkMessage<GenericMessage> {
+    fn build_audit_nlmsg(
+        seq_number: u32,
+        msg_type: u16,
+        payload: Vec<u8>,
+    ) -> NetlinkMessage<GenericMessage> {
         // The family in GenericMessage can be used for message type, not only for the Netlink Family,
         // because after finalizing the message, the message type is equal to family.
         let nl_payload =
             NetlinkPayload::InnerMessage(GenericMessage::Other { family: msg_type, payload });
-        let nl_header = NetlinkHeader::default();
+        let mut nl_header = NetlinkHeader::default();
+        nl_header.sequence_number = seq_number;
         let mut message = NetlinkMessage::new(nl_header, nl_payload);
         message.finalize();
         message
