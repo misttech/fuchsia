@@ -25,11 +25,11 @@ inline void BarrierAfterFlush() {
   // instead of SFENCE is mainly paranoia, though one could hypothetically create HW that starts or
   // continues DMA based on an MMIO read (please don't), in which case MFENCE might be needed here
   // before that read.
-  asm __volatile__("mfence");
+  asm __volatile__("mfence" : : : "memory");
 #elif defined(__riscv)
   // A full memory read/write + io barrier. May not be necessary on RISC-V implementations
   // without cache operations.
-  asm __volatile__("fence iorw,iorw");
+  asm __volatile__("fence iorw,iorw" : : : "memory");
 #else
 #error need definition for this platform
 #endif
@@ -50,11 +50,11 @@ inline void BarrierBeforeInvalidate() {
   __asm__ volatile("dsb sy" : : : "memory");
 #elif defined(__x86_64__)
   // This mfence may not be necessary due to cache coherent DMA on x86.
-  asm __volatile__("mfence");
+  asm __volatile__("mfence" : : : "memory");
 #elif defined(__riscv)
   // A full memory read/write + io barrier. May not be necessary on RISC-V implementations
   // without cache operations.
-  asm __volatile__("fence iorw,iorw");
+  asm __volatile__("fence iorw,iorw" : : : "memory");
 #else
 #error need definition for this platform
 #endif
@@ -75,11 +75,11 @@ inline void BarrierBeforeRelease() {
   __asm__ volatile("dsb sy" : : : "memory");
 #elif defined(__x86_64__)
   // This mfence may not be necessary.
-  asm __volatile__("mfence");
+  asm __volatile__("mfence" : : : "memory");
 #elif defined(__riscv)
   // A full memory read/write + io barrier. May not be necessary on RISC-V implementations
   // without cache operations.
-  asm __volatile__("fence iorw,iorw");
+  asm __volatile__("fence iorw,iorw" : : : "memory");
 #else
 #error need definition for this platform
 #endif
