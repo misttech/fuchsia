@@ -10,23 +10,6 @@ use std::thread_local;
 
 type RcuCallback = Box<dyn FnOnce() + Send + Sync + 'static>;
 
-/// The mode of the RCU state machine.
-///
-/// See `design.md` for more details.
-#[derive(Debug, PartialEq, Eq)]
-enum RcuMode {
-    /// The initial state for the RCU state machine.
-    ///
-    /// In this state, readers can begin read operations.
-    Idle,
-
-    /// The state for the RCU state machine when waiting for callbacks to be run.
-    ///
-    /// In this state, existing readers complete and decrement their `read_counter`.
-    /// New readers can begin read operations and increment a different `read_counter`.
-    Waiting,
-}
-
 /// The length of the queue of waiting callbacks.
 ///
 /// The state machine waits for this many generations to complete before running these callbacks.
@@ -70,32 +53,6 @@ impl CallbackQueue {
     }
 }
 
-/// The mutable state of the RCU state machine.
-///
-/// This state is used to track the mode of the state machine and the queue of waiting callbacks.
-struct RcuMutableState {
-    /// The mode of the RCU state machine.
-    ///
-    /// The mode is used to track the state of the state machine.
-    mode: RcuMode,
-
-    /// The queue of waiting callbacks.
-    ///
-    /// Callbacks are added to this queue when the state machine leaves the `Idle` state. They are
-    /// run when the state machine leaves the `Waiting` state after `QUEUE_LENGTH` generations
-    /// have completed.
-    waiting_callbacks: CallbackQueue,
-}
-
-impl RcuMutableState {
-    /// Create a new mutable state.
-    ///
-    /// The state machine starts in the `Idle` state.
-    const fn new() -> Self {
-        Self { mode: RcuMode::Idle, waiting_callbacks: CallbackQueue::new() }
-    }
-}
-
 struct RcuControlBlock {
     /// The generation counter.
     ///
@@ -115,11 +72,19 @@ struct RcuControlBlock {
     /// all currently in-flight read operations have completed.
     callback_chain: AtomicStack<RcuCallback>,
 
-    /// The mutable state of the RCU state machine.
+    /// The futex used to wait for the state machine to advance.
+    advancer: zx::Futex,
+
+    /// The queue of waiting callbacks.
     ///
-    /// This state is used to track the mode of the state machine and the queue of waiting callbacks.
-    mutable_state: Mutex<RcuMutableState>,
+    /// Callbacks are added to this queue when the state machine leaves the `Idle` state. They are
+    /// run when the state machine leaves the `Waiting` state after `QUEUE_LENGTH` generations
+    /// have completed.
+    waiting_callbacks: Mutex<CallbackQueue>,
 }
+
+const ADVANCER_IDLE: i32 = 0;
+const ADVANCER_WAITING: i32 = 1;
 
 impl RcuControlBlock {
     /// Create a new control block for the RCU state machine.
@@ -128,7 +93,8 @@ impl RcuControlBlock {
             generation: AtomicUsize::new(0),
             read_counters: [AtomicUsize::new(0), AtomicUsize::new(0)],
             callback_chain: AtomicStack::new(),
-            mutable_state: Mutex::new(RcuMutableState::new()),
+            advancer: zx::Futex::new(ADVANCER_IDLE),
+            waiting_callbacks: Mutex::new(CallbackQueue::new()),
         }
     }
 }
@@ -199,7 +165,11 @@ pub(crate) fn rcu_read_unlock() {
             // This is the outermost read lock. Decrement the read counter.
             let index = block.counter_index.get() as usize;
             // Synchronization point [B] (see design.md)
-            RCU_CONTROL_BLOCK.read_counters[index].fetch_sub(1, Ordering::Release);
+            let previous_count =
+                RCU_CONTROL_BLOCK.read_counters[index].fetch_sub(1, Ordering::SeqCst);
+            if previous_count == 1 {
+                rcu_advancer_wake_all();
+            }
             block.nesting_level.set(0);
             block.counter_index.set(u8::MAX);
         }
@@ -258,64 +228,84 @@ pub(crate) fn rcu_drop<T: Send + Sync + 'static>(value: T) {
     });
 }
 
-/// Attempt to advance the RCU state machine.
-///
-/// The function returns the current generation number after attempting to advance the state
-/// machine, which might be the same as the generation number before the attempt.
-pub(crate) fn rcu_try_advance_state() -> usize {
-    fn step() -> (usize, Vec<RcuCallback>) {
-        let mut state = RCU_CONTROL_BLOCK.mutable_state.lock();
-        loop {
-            match state.mode {
-                RcuMode::Idle => {
-                    // Synchronization point [H] (see design.md)
-                    let callbacks = RCU_CONTROL_BLOCK.callback_chain.drain();
-                    RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
-                    state.waiting_callbacks.push_back(callbacks);
-                    state.mode = RcuMode::Waiting;
-                }
-                RcuMode::Waiting => {
-                    let current_generation = RCU_CONTROL_BLOCK.generation.load(Ordering::Relaxed);
-                    let previous_generation = current_generation - 1;
-                    let i = previous_generation & 1;
-                    // Synchronization point [C] (see design.md)
-                    let pending_reader_count =
-                        RCU_CONTROL_BLOCK.read_counters[i].load(Ordering::SeqCst);
-                    if pending_reader_count == 0 {
-                        let callbacks = state.waiting_callbacks.pop_front();
-                        state.mode = RcuMode::Idle;
-                        return (current_generation, callbacks);
-                    }
-                    return (current_generation, vec![]);
-                }
-            }
-        }
-    }
+/// Check if there are any active readers for the given generation.
+fn has_active_readers(generation: usize) -> bool {
+    let i = generation & 1;
+    // Synchronization point [C] (see design.md)
+    RCU_CONTROL_BLOCK.read_counters[i].load(Ordering::SeqCst) > 0
+}
 
-    let (generation, callbacks) = step();
+/// Wake up all the threads that are waiting to advance the state machine.
+///
+/// Does nothing if no threads are waiting.
+fn rcu_advancer_wake_all() {
+    let advancer = &RCU_CONTROL_BLOCK.advancer;
+    if advancer.load(Ordering::SeqCst) == ADVANCER_WAITING {
+        advancer.store(ADVANCER_IDLE, Ordering::Relaxed);
+        advancer.wake_all();
+    }
+}
+
+/// Blocks the current thread until all in-flight read operations have completed for the given
+/// generation.
+///
+/// Postcondition: The number of active readers for the given generation is zero and the advancer
+/// futex contains `ADVANCER_IDLE`.
+fn rcu_advancer_wait(generation: usize) {
+    let advancer = &RCU_CONTROL_BLOCK.advancer;
+    loop {
+        // In order to avoid a race with `rcu_advancer_wake_all`, we must store `ADVANCER_WAITING`
+        // before checking if there are any active readers.
+        //
+        // In the single total order, either this store or the last decrement to the reader counter
+        // must happen first.
+        //
+        //  (1) If this store happens first, then the last thread to decrement the reader counter
+        //      for this generation will observe `ADVANCER_WAITING` and will reset the value to
+        //      `ADVANCER_IDLE` and wake the futex, unblocking this thread.
+        //
+        //  (2) If the last decrement to the reader counter happens first, then this thread will see
+        //      that there are no active readers in this generation and avoid blocking on the futex.
+        advancer.store(ADVANCER_WAITING, Ordering::SeqCst);
+        if !has_active_readers(generation) {
+            break;
+        }
+        let _ = advancer.wait(ADVANCER_WAITING, None, zx::MonotonicInstant::INFINITE);
+    }
+    advancer.store(ADVANCER_IDLE, Ordering::SeqCst);
+}
+
+/// Advance the RCU state machine.
+///
+/// This function blocks until all in-flight read operations have completed for the current
+/// generation and all callbacks have been run.
+fn rcu_grace_period() {
+    let callbacks = {
+        let mut waiting_callbacks = RCU_CONTROL_BLOCK.waiting_callbacks.lock();
+        // We are in the *Idle* state.
+
+        // Synchronization point [H] (see design.md)
+        waiting_callbacks.push_back(RCU_CONTROL_BLOCK.callback_chain.drain());
+        let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
+
+        // Enter the *Waiting* state.
+        rcu_advancer_wait(generation);
+        waiting_callbacks.pop_front()
+
+        // Return to the *Idle* state.
+    };
 
     // Run the callbacks in reverse order to ensure that the callbacks are run in the order in which
     // they were scheduled.
     for callback in callbacks.into_iter().rev() {
         callback();
     }
-
-    generation
 }
 
 /// Block until all in-flight read operations and callbacks have completed.
-///
-/// TODO: Currently, this function spins hot, which is not ideal. We should add a futex to wait for
-/// this condition more efficiently.
-pub(crate) fn rcu_synchronize() {
+pub fn rcu_synchronize() {
     assert!(!rcu_holding_read_lock());
-    let mut generation = rcu_try_advance_state();
-
-    // We need to wait for `QUEUE_LENGTH` generations to complete to ensure that all the callbacks
-    // that were scheduled before this function was called have been run.
-    let target_generation = generation.wrapping_add(QUEUE_LENGTH);
-    while generation != target_generation {
-        // TODO: Block on a futex until it's likely that we can advance the state machine.
-        generation = rcu_try_advance_state();
+    for _ in 0..QUEUE_LENGTH {
+        rcu_grace_period();
     }
 }

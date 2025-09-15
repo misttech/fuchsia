@@ -57,7 +57,7 @@ sufficient progress.
 ### Progress requirements
 
 In order for the RCU state machine to make progress, the program using
-`fuchsia-rcu` must periodically call `rcu_try_advance_state`. Otherwise, memory
+`fuchsia-rcu` must periodically call `rcu_synchronize`. Otherwise, memory
 allocated during `RcuCell::set` will never be freed.
 
 ## Low-level interface
@@ -122,16 +122,13 @@ readers have completed.
 The interface for progressing the RCU state machine is as follows:
 
 ```rust
-fn rcu_try_advance_state() -> usize
 fn rcu_synchronize()
 ```
 
 Clients must call at least one of these functions periodically to ensure that
 callbacks scheduled with `rcu_call()` eventually happen.
 
-The `rcu_try_advance_state()` function attempts to advance the RCU state machine
-immediately, returning the current generation number after that attempt. The
-`rcu_synchronize()` function blocks until the RCU state machine has advanced
+The `rcu_synchronize()` function blocks until the RCU state machine has advanced
 sufficiently to call all the callbacks that were scheduled prior to calling
 `rcu_synchronize()`.
 
@@ -152,32 +149,33 @@ that they have desired synchronization properties.
 
 #### Idle
 
-The RCU state machine starts in the `Idle` state. In this state, readers can
+The RCU state machine starts in the *Idle* state. In this state, readers can
 begin read operations, which are counted using the `read_counters`. The state
-machine remains in this state until the next call to `rcu_try_advance_state`.
+machine remains in this state until the next call to `rcu_synchronize`.
 
-There are no preconditions for leaving the `Idle` state. The post condition for
-leaving the `Idle` state is that the `callback_chain` has been moved to the
+There are no preconditions for leaving the *Idle* state. The post condition for
+leaving the *Idle* state is that the `callback_chain` has been moved to the
 `waiting_callbacks` queue, the `generation` counter has been increased, and the
-state machine is in the `Waiting` state.
+state machine is in the *Waiting* state.
 
 #### Waiting
 
-In the `Waiting` state, existing readers complete and decrement their
+In the *Waiting* state, existing readers complete and decrement their
 `read_counter`. New readers can begin read operations, and increment a different
-`read_counter`. The state machine remains in this state until a call to
-`rcu_try_advance_state` observes that the precondition for leaving the `Waiting`
-state has been obtained.
+`read_counter`. The state machine remains in this state until the precondition
+for leaving the *Waiting* state has been obtained.
 
-The precondition for leaving the `Waiting` state is that the `read_counter` for
+The precondition for leaving the *Waiting* state is that the `read_counter` for
 the previous generation has reached zero. This condition indicates that all the
-read operations that were in flight when the state machine entered the `Waiting`
+read operations that were in flight when the state machine entered the *Waiting*
 state have completed.
 
-The postcondition for leaving the `Waiting` state is that the front entry in the
+The postcondition for leaving the *Waiting* state is that the front entry in the
 `waiting_callbacks` queue has been removed (advancing all the callbacks in the
-queue), the state machine is in the `Idle` state, and the set of callbacks
-removed from the `waiting_callbacks` queue have been run.
+queue) and the state machine is in the *Idle* state.
+
+After leaving the *Waiting* state, the set of callbacks removed from the
+`waiting_callbacks` queue run, potentially on a different thread.
 
 ### Operations
 
@@ -225,19 +223,19 @@ write to `o` _happens-before_ the read from `o`.
 
 ### Reads Happen Before Callbacks Run
 
-Assume, without loss of generality, that the RCU state machine starts in
-`RcuMode::Idle` and that the `generation` is even. Consider a given reader
-thread reading from `o` and another thread scheduling a callback associated with
-`o`. Before we run that callback, the state machine will need to advance through
-the `Idle` and `Waiting` modes twice.
+Assume, without loss of generality, that the RCU state machine starts in the
+*Idle* state and that the `generation` is even. Consider a given reader thread
+reading from `o` and another thread scheduling a callback associated with `o`.
+Before we run that callback, the state machine will need to advance through the
+*Idle* and *Waiting* states twice.
 
 In this sequence, there are three atomic operations with `Ordering::SeqCst`:
 
  1. Synchronization point `[A]` in `rcu_read_lock()`.
- 2. Synchronization point `[C1]` the first time through the `RcuMode::Waiting`
-    state in `rcu_try_advance_state()`.
- 3. Synchronization point `[C2]` the second time through the `RcuMode::Waiting`
-    state in `rcu_try_advance_state()`.
+ 2. Synchronization point `[C1]` the first time through the *Waiting* state in
+    `rcu_synchronize()`.
+ 3. Synchronization point `[C2]` the second time through the *Waiting* state in
+    `rcu_synchronize()`.
 
 The memory model guarantees that these three operations happen in a single total
 order. The mutex that protects the `rcu_control_block` ensures that `[C1]` is
@@ -255,14 +253,14 @@ that we assumed the `generation` count was originally even). If the loaded
 `generation` count is odd, then the load at `[C2]` will _synchronize-with_ the
 decrement in `rcu_read_unlock()` because both operate on `read_counter[1]`.
 Either way, the read from `o` _happens-before_ the state machine exits
-`RcuMode::Waiting` the second time.
+the *Waiting* state the second time.
 
 #### `[C1]` is before `[A]`
 
 We will show the _happens-before_ relation for the following synchronization
 points, in order: `[F]` in `rcu_replace_pointer()`, `[G]` in `rcu_call()`, `[H]`
-in the `Idle` state of `rcu_try_advance_state()`, `[C1]` in the `Waiting` state
-of `rcu_try_advance_state()`, `[A]` in `rcu_read_lock()`, and `[D]` in
+in the *Idle* state of `rcu_synchronize()`, `[C1]` in the *Waiting* state
+of `rcu_synchronize()`, `[A]` in `rcu_read_lock()`, and `[D]` in
 `rcu_read_pointer()`:
 
  * `[F]` _happens-before_ `[G]` because `[F]` is _sequenced-before_ `[G]`.

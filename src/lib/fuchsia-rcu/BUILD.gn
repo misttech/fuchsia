@@ -15,7 +15,10 @@ rustc_library("fuchsia-rcu") {
   version = "0.1.0"
   with_unit_tests = true
 
-  deps = [ "//src/lib/fuchsia-sync" ]
+  deps = [
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia-sync",
+  ]
 
   sources = [
     "src/atomic_stack.rs",
