@@ -1,5 +1,5 @@
 {
-  "name": "rust-analyzer",
+  "name": "rust",
   "version": "1.0.0",
   "description": "A Gemini extension that uses rust-analyzer to provide code intelligence for Rust.",
   "mcpServers": {

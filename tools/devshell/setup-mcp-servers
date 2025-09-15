@@ -20,6 +20,22 @@ Options:
 EOF
 }
 
+install_extensions() {
+  # TODO(b/442696047) remove this extra flag when gemini unbreaks extensions in the internal binary
+  if [[ -d "/google" ]]; then
+    gemini --noenable_sawmill_logging extensions link $FUCHSIA_DIR/.gemini/extensions/rust
+  else
+    gemini extensions link .gemini/extensions/rust
+  fi
+}
+
+uninstall_extensions() {
+  # `gemini extensions` doesn't have an `unlink` subcommand?!
+  echo -n "Removing rust extension from home directory... "
+  rm -r $HOME/.gemini/extensions/rust
+  echo "done."
+}
+
 PROJECT_ONLY=false
 UNINSTALL=false
 EXTENSION_MODE=false
@@ -60,6 +76,9 @@ PYTHON_ARGS=("${SETTINGS_PATH}" "${FUCHSIA_DIR}")
 
 if [[ "${UNINSTALL}" == "true" ]]; then
     PYTHON_ARGS+=("--uninstall")
+    uninstall_extensions
+else
+    install_extensions
 fi
 
 if [[ "${EXTENSION_MODE}" == "true" ]]; then
