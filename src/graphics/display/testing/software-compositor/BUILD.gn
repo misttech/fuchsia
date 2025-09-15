@@ -14,9 +14,15 @@ source_set("software-compositor") {
   ]
 
   public_deps = [
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
     "//sdk/lib/stdcompat",
     "//src/graphics/display/lib/api-types/cpp",
     "//zircon/system/ulib/zx",
+  ]
+
+  configs += [
+    # Always optimize speed, even if it's debug mode.
+    "//build/config:optimize_speed",
   ]
 }
 
@@ -29,6 +35,11 @@ test("software-compositor-tests-bin") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
+  ]
+
+  configs += [
+    # Always optimize speed, even if it's debug mode.
+    "//build/config:optimize_speed",
   ]
 }
 

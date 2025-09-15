@@ -10,6 +10,7 @@
 #include <cstdint>
 
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
+#include "src/graphics/display/lib/api-types/cpp/color.h"
 #include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/graphics/display/testing/software-compositor/pixel.h"
@@ -47,8 +48,17 @@ struct InputImage {
  public:
   inline PixelData At(const Offset2D& offset) const;
 
+  static const InputImage kNoInputImage;
+
+  // Empty iff the input has no image.
   cpp20::span<const uint8_t> buffer;
   ImageProperties properties;
+};
+
+// static
+constexpr InputImage InputImage::kNoInputImage = {
+    .buffer = {},
+    .properties = {},
 };
 
 // A compositor using software rendering to fill solid colors and draw images
@@ -59,46 +69,40 @@ class SoftwareCompositor {
   struct CompositionProperties {
     // Only the `image_source` part of the input image will be clipped and used.
     //
-    // Equivalent to
-    // - the `image_source` field in FIDL [`fuchsia.hardware.display/Coordinator/
-    //   SetLayerPrimaryPosition`] method, and
-    // - the `image_source` field in banjo [`fuchsia.hardware.display.controller/
-    //   PrimaryLayer`] struct.
+    // Equivalent to the `image_source` field in FIDL
+    // [`fuchsia.hardware.display.engine/Layer`] struct.
     ::display::Rectangle image_source;
 
     // The destination (canvas) frame. The clipped input image will be scaled
     // and painted onto the `canvas_destination` region of the canvas.
     // `canvas_destination` will be cropped to the extent of the canvas.
     //
-    // Equivalent to
-    // - the `display_destination` field in FIDL [`fuchsia.hardware.display/Coordinator/
-    //   SetLayerPrimaryPosition`] method, and
-    // - the `display_destination` field in banjo [`fuchsia.hardware.display.controller/
-    //   PrimaryLayer`] struct.
+    // Equivalent to the `display_destination` field in FIDL
+    // [`fuchsia.hardware.display.engine/Layer`] struct.
     ::display::Rectangle canvas_destination;
 
     // Indicates how image will be transformed (rotated / flipped).
     //
-    // Equivalent to
-    // - the `transform` field in FIDL [`fuchsia.hardware.display/
-    //   Coordinator/SetLayerPrimaryPosition`] method, and
-    // - the `transform_mode` field in banjo [`fuchsia.hardware.display.
-    //   controller/PrimaryLayer`] struct.
+    // Equivalent to the `image_source_transformation` field in FIDL
+    // [`fuchsia.hardware.display.engine/Layer`] struct.
     ::display::CoordinateTransformation transform;
 
     // Indicates whether alpha blending will be performed and the type of alpha
     // blending.
     //
-    // Equivalent to
-    // - the `mode` field in FIDL [`fuchsia.hardware.display/Coordinator/
-    //   SetLayerPrimaryAlpha`] method, and
-    // - the `alpha_mode` field in banjo [`fuchsia.hardware.display.controller/
-    //   PrimaryLayer`] struct.
+    // Equivalent to the `alpha_mode` field in FIDL
+    // [`fuchsia.hardware.display.engine/Layer`] struct.
     ::display::AlphaMode alpha_mode;
+
+    // The color to use if the layer has no image.
+    //
+    // Equivalent to the `fallback_color` field in FIDL
+    // [`fuchsia.hardware.display.engine/Layer`] struct.
+    ::display::Color fallback_color;
   };
 
-  // Represents an Image layer to be composited on the canvas.
-  struct ImageLayerForComposition {
+  // Represents a layer to be composited on the canvas.
+  struct LayerForComposition {
     InputImage image;
     CompositionProperties properties;
   };
@@ -134,7 +138,7 @@ class SoftwareCompositor {
   // TODO(https://fxbug.dev/42080652): Instead of providing a separate ClearCanvas()
   // command, we should integrate background filling into
   // CompositeImageLayers().
-  void CompositeImageLayers(cpp20::span<const ImageLayerForComposition> image_layers) const;
+  void CompositeLayers(cpp20::span<const LayerForComposition> image_layers) const;
 
  private:
   // Composites the `input_image` onto the top of the canvas using given
@@ -153,6 +157,17 @@ class SoftwareCompositor {
   // TODO(https://fxbug.dev/42075534): Supports more composition properties.
   void CompositeImage(const InputImage& input_image,
                       const CompositionProperties& composition_properties) const;
+
+  // Composites the `fallback_color` onto the top of the canvas using given
+  // `composition_properties`.
+  //
+  // Currently only the following `composition_properties` is supported:
+  // - `alpha_mode` must be kDisable.
+  // - `transform` must be kIdentity.
+  // - the destination frame `canvas_frame` must fall completely within the
+  //   canvas and have the same size as `input_image`.
+  // TODO(https://fxbug.dev/42075534): Supports more composition properties.
+  void CompositeFallbackColor(const CompositionProperties& composition_properties) const;
 
   const OutputImage canvas_;
 };

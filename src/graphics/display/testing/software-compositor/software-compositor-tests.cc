@@ -11,6 +11,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/graphics/display/lib/api-types/cpp/color.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/graphics/display/testing/software-compositor/pixel.h"
 #include "src/graphics/display/testing/software-compositor/software-compositor.h"
@@ -146,7 +147,7 @@ TEST(ClearCanvas, ConversionBgraToRgba) {
   }
 }
 
-TEST(CompositeImageLayers, NoConversionBgra) {
+TEST(CompositeLayers, NoConversionBgra) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -180,7 +181,7 @@ TEST(CompositeImageLayers, NoConversionBgra) {
 
   {
     SoftwareCompositor software_compositor(canvas);
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
+    std::vector<software_compositor::SoftwareCompositor::LayerForComposition> image_layers = {
         {
             .image = input_image,
             .properties =
@@ -199,10 +200,14 @@ TEST(CompositeImageLayers, NoConversionBgra) {
                     }),
                     .transform = display::CoordinateTransformation::kIdentity,
                     .alpha_mode = ::display::AlphaMode::kDisable,
+                    .fallback_color = display::Color({
+                        .format = display::PixelFormat::kR8G8B8A8,
+                        .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                    }),
                 },
         },
     };
-    software_compositor.CompositeImageLayers(image_layers);
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
@@ -217,7 +222,7 @@ TEST(CompositeImageLayers, NoConversionBgra) {
   }
 }
 
-TEST(CompositeImageLayers, NoConversionRgba) {
+TEST(CompositeLayers, NoConversionRgba) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -251,7 +256,7 @@ TEST(CompositeImageLayers, NoConversionRgba) {
 
   {
     SoftwareCompositor software_compositor(canvas);
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
+    std::vector<software_compositor::SoftwareCompositor::LayerForComposition> image_layers = {
         {
             .image = input_image,
             .properties =
@@ -270,10 +275,14 @@ TEST(CompositeImageLayers, NoConversionRgba) {
                     }),
                     .transform = display::CoordinateTransformation::kIdentity,
                     .alpha_mode = ::display::AlphaMode::kDisable,
+                    .fallback_color = display::Color({
+                        .format = display::PixelFormat::kR8G8B8A8,
+                        .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                    }),
                 },
         },
     };
-    software_compositor.CompositeImageLayers(image_layers);
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
@@ -288,7 +297,71 @@ TEST(CompositeImageLayers, NoConversionRgba) {
   }
 }
 
-TEST(CompositeImageLayers, ConversionRgbaToBgra) {
+TEST(CompositeLayers, FallbackColor) {
+  constexpr int kCanvasWidth = 1280;
+  constexpr int kCanvasHeight = 800;
+  std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
+
+  OutputImage canvas = {
+      .buffer = canvas_bytes,
+      .properties =
+          {
+              .width = kCanvasWidth,
+              .height = kCanvasHeight,
+              .stride_bytes = kCanvasWidth * 4,
+              .pixel_format = PixelFormat::kRgba8888,
+          },
+  };
+
+  constexpr display::Rectangle kColorRectangle =
+      display::Rectangle({.x = 100, .y = 200, .width = 300, .height = 400});
+
+  {
+    SoftwareCompositor software_compositor(canvas);
+    std::vector<software_compositor::SoftwareCompositor::LayerForComposition>
+        fallback_color_layers = {
+            {
+                .image = InputImage::kNoInputImage,
+                .properties =
+                    {
+                        .image_source =
+                            display::Rectangle({.x = 0, .y = 0, .width = 0, .height = 0}),
+                        .canvas_destination = kColorRectangle,
+                        .transform = display::CoordinateTransformation::kIdentity,
+                        .alpha_mode = ::display::AlphaMode::kDisable,
+                        .fallback_color = display::Color({
+                            .format = display::PixelFormat::kR8G8B8A8,
+                            .bytes = {{0x12, 0x34, 0x56, 0xff, 0, 0, 0, 0}},
+                        }),
+                    },
+            },
+        };
+    software_compositor.CompositeLayers(fallback_color_layers);
+  }
+
+  for (int row = 0; row < kCanvasHeight; ++row) {
+    for (int col = 0; col < kCanvasWidth; ++col) {
+      int byte_index = (row * kCanvasWidth + col) * 4;
+      std::vector<uint8_t> pixel_actual(canvas_bytes.begin() + byte_index,
+                                        canvas_bytes.begin() + byte_index + 4);
+      bool is_fallback_color =
+          (col >= kColorRectangle.x()) && (col < kColorRectangle.x() + kColorRectangle.width()) &&
+          (row >= kColorRectangle.y()) && (row < kColorRectangle.y() + kColorRectangle.height());
+      std::array<uint8_t, 4> pixel_expected = is_fallback_color
+                                                  ? std::array<uint8_t, 4>{0x12, 0x34, 0x56, 0xff}
+                                                  : std::array<uint8_t, 4>{0x00, 0x00, 0x00, 0xff};
+
+      // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
+      // figured out.
+      EXPECT_EQ(pixel_actual[0], pixel_expected[0]);
+      EXPECT_EQ(pixel_actual[1], pixel_expected[1]);
+      EXPECT_EQ(pixel_actual[2], pixel_expected[2]);
+      EXPECT_EQ(pixel_actual[3], pixel_expected[3]);
+    }
+  }
+}
+
+TEST(CompositeLayers, ConversionRgbaToBgra) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -322,7 +395,7 @@ TEST(CompositeImageLayers, ConversionRgbaToBgra) {
 
   {
     SoftwareCompositor software_compositor(canvas);
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
+    std::vector<software_compositor::SoftwareCompositor::LayerForComposition> image_layers = {
         {
             .image = input_image,
             .properties =
@@ -341,10 +414,14 @@ TEST(CompositeImageLayers, ConversionRgbaToBgra) {
                     }),
                     .transform = display::CoordinateTransformation::kIdentity,
                     .alpha_mode = ::display::AlphaMode::kDisable,
+                    .fallback_color = display::Color({
+                        .format = display::PixelFormat::kR8G8B8A8,
+                        .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                    }),
                 },
         },
     };
-    software_compositor.CompositeImageLayers(image_layers);
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
@@ -359,7 +436,7 @@ TEST(CompositeImageLayers, ConversionRgbaToBgra) {
   }
 }
 
-TEST(CompositeImageLayers, SetDestinationFrame) {
+TEST(CompositeLayers, SetDestinationFrame) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -400,7 +477,7 @@ TEST(CompositeImageLayers, SetDestinationFrame) {
   software_compositor.ClearCanvas({0, 0, 0, 255}, PixelFormat::kRgba8888);
 
   {
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
+    std::vector<software_compositor::SoftwareCompositor::LayerForComposition> image_layers = {
         {
             .image = input_image,
             .properties =
@@ -419,10 +496,14 @@ TEST(CompositeImageLayers, SetDestinationFrame) {
                     }),
                     .transform = display::CoordinateTransformation::kIdentity,
                     .alpha_mode = ::display::AlphaMode::kDisable,
+                    .fallback_color = display::Color({
+                        .format = display::PixelFormat::kR8G8B8A8,
+                        .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                    }),
                 },
         },
     };
-    software_compositor.CompositeImageLayers(image_layers);
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (int row = 0; row < kCanvasHeight; ++row) {
@@ -445,7 +526,7 @@ TEST(CompositeImageLayers, SetDestinationFrame) {
   }
 }
 
-TEST(CompositeImageLayers, MultipleLayersNoOverlapRgba) {
+TEST(CompositeLayers, MultipleLayersNoOverlapRgba) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -496,50 +577,67 @@ TEST(CompositeImageLayers, MultipleLayersNoOverlapRgba) {
 
   {
     SoftwareCompositor software_compositor(canvas);
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
-        {
-            .image = blue_image,
-            .properties =
+    std::
+        vector<software_compositor::SoftwareCompositor::LayerForComposition>
+            image_layers =
                 {
-                    .image_source = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = blue_image.properties.width,
-                        .height = blue_image.properties.height,
-                    }),
-                    .canvas_destination = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = blue_image.properties.width,
-                        .height = blue_image.properties.height,
-                    }),
-                    .transform = display::CoordinateTransformation::kIdentity,
-                    .alpha_mode = ::display::AlphaMode::kDisable,
-                },
-        },
-        {
+                    {
+                        .image = blue_image,
+                        .properties =
+                            {
+                                .image_source = display::Rectangle({
+                                    .x = 0,
+                                    .y = 0,
+                                    .width = blue_image.properties.width,
+                                    .height = blue_image.properties.height,
+                                }),
+                                .canvas_destination = display::Rectangle({
+                                    .x = 0,
+                                    .y = 0,
+                                    .width = blue_image.properties.width,
+                                    .height = blue_image.properties.height,
+                                }),
+                                .transform = display::CoordinateTransformation::kIdentity,
+                                .alpha_mode = ::display::AlphaMode::kDisable,
+                                .fallback_color = display::Color({
+                                    .format = display::PixelFormat::kR8G8B8A8,
+                                    .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                                }),
+                            },
+                    },
+                    {
 
-            .image = red_image,
-            .properties =
-                {
-                    .image_source = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = red_image.properties.width,
-                        .height = red_image.properties.height,
-                    }),
-                    .canvas_destination = display::Rectangle({
-                        .x = 640,
-                        .y = 0,
-                        .width = red_image.properties.width,
-                        .height = red_image.properties.height,
-                    }),
-                    .transform = display::CoordinateTransformation::kIdentity,
-                    .alpha_mode = ::display::AlphaMode::kDisable,
-                },
-        },
-    };
-    software_compositor.CompositeImageLayers(image_layers);
+                        .image = red_image,
+                        .properties =
+                            {
+                                .image_source = display::
+                                    Rectangle(
+                                        {
+                                            .x = 0,
+                                            .y = 0,
+                                            .width = red_image.properties.width,
+                                            .height = red_image.properties.height,
+                                        }),
+                                .canvas_destination =
+                                    display::Rectangle(
+                                        {
+                                            .x = 640,
+                                            .y = 0,
+                                            .width = red_image.properties.width,
+                                            .height = red_image.properties.height,
+                                        }),
+                                .transform = display::CoordinateTransformation::kIdentity,
+                                .alpha_mode = ::display::AlphaMode::kDisable,
+                                .fallback_color =
+                                    display::Color(
+                                        {
+                                            .format = display::PixelFormat::kR8G8B8A8,
+                                            .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                                        }),
+                            },
+                    },
+                };
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (int row = 0; row < kCanvasHeight; ++row) {
@@ -560,7 +658,7 @@ TEST(CompositeImageLayers, MultipleLayersNoOverlapRgba) {
   }
 }
 
-TEST(CompositeImageLayers, MultipleLayersOverlapNoAlphaRgba) {
+TEST(CompositeLayers, MultipleLayersOverlapNoAlphaRgba) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -614,49 +712,66 @@ TEST(CompositeImageLayers, MultipleLayersOverlapNoAlphaRgba) {
 
   {
     SoftwareCompositor software_compositor(canvas);
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
-        {
-            .image = blue_image,
-            .properties =
+    std::
+        vector<software_compositor::SoftwareCompositor::LayerForComposition>
+            image_layers =
                 {
-                    .image_source = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = blue_image.properties.width,
-                        .height = blue_image.properties.height,
-                    }),
-                    .canvas_destination = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = blue_image.properties.width,
-                        .height = blue_image.properties.height,
-                    }),
-                    .transform = display::CoordinateTransformation::kIdentity,
-                    .alpha_mode = ::display::AlphaMode::kDisable,
-                },
-        },
-        {
-            .image = red_image,
-            .properties =
-                {
-                    .image_source = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = red_image.properties.width,
-                        .height = red_image.properties.height,
-                    }),
-                    .canvas_destination = display::Rectangle({
-                        .x = 320,
-                        .y = 0,
-                        .width = red_image.properties.width,
-                        .height = red_image.properties.height,
-                    }),
-                    .transform = display::CoordinateTransformation::kIdentity,
-                    .alpha_mode = ::display::AlphaMode::kDisable,
-                },
-        },
-    };
-    software_compositor.CompositeImageLayers(image_layers);
+                    {
+                        .image = blue_image,
+                        .properties =
+                            {
+                                .image_source = display::Rectangle({
+                                    .x = 0,
+                                    .y = 0,
+                                    .width = blue_image.properties.width,
+                                    .height = blue_image.properties.height,
+                                }),
+                                .canvas_destination = display::Rectangle({
+                                    .x = 0,
+                                    .y = 0,
+                                    .width = blue_image.properties.width,
+                                    .height = blue_image.properties.height,
+                                }),
+                                .transform = display::CoordinateTransformation::kIdentity,
+                                .alpha_mode = ::display::AlphaMode::kDisable,
+                                .fallback_color = display::Color({
+                                    .format = display::PixelFormat::kR8G8B8A8,
+                                    .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                                }),
+                            },
+                    },
+                    {
+                        .image = red_image,
+                        .properties =
+                            {
+                                .image_source = display::
+                                    Rectangle(
+                                        {
+                                            .x = 0,
+                                            .y = 0,
+                                            .width = red_image.properties.width,
+                                            .height = red_image.properties.height,
+                                        }),
+                                .canvas_destination =
+                                    display::Rectangle(
+                                        {
+                                            .x = 320,
+                                            .y = 0,
+                                            .width = red_image.properties.width,
+                                            .height = red_image.properties.height,
+                                        }),
+                                .transform = display::CoordinateTransformation::kIdentity,
+                                .alpha_mode = ::display::AlphaMode::kDisable,
+                                .fallback_color =
+                                    display::Color(
+                                        {
+                                            .format = display::PixelFormat::kR8G8B8A8,
+                                            .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                                        }),
+                            },
+                    },
+                };
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (int row = 0; row < kCanvasHeight; ++row) {
@@ -679,7 +794,7 @@ TEST(CompositeImageLayers, MultipleLayersOverlapNoAlphaRgba) {
   }
 }
 
-TEST(CompositeImageLayers, MultipleLayersNoAlphaMixedRgbaAndBgra) {
+TEST(CompositeLayers, MultipleLayersNoAlphaMixedRgbaAndBgra) {
   constexpr int kCanvasWidth = 1280;
   constexpr int kCanvasHeight = 800;
   std::vector<uint8_t> canvas_bytes(kCanvasHeight * kCanvasWidth * 4, 0);
@@ -733,49 +848,66 @@ TEST(CompositeImageLayers, MultipleLayersNoAlphaMixedRgbaAndBgra) {
 
   {
     SoftwareCompositor software_compositor(canvas);
-    std::vector<software_compositor::SoftwareCompositor::ImageLayerForComposition> image_layers = {
-        {
-            .image = blue_image,
-            .properties =
+    std::
+        vector<software_compositor::SoftwareCompositor::LayerForComposition>
+            image_layers =
                 {
-                    .image_source = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = blue_image.properties.width,
-                        .height = blue_image.properties.height,
-                    }),
-                    .canvas_destination = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = blue_image.properties.width,
-                        .height = blue_image.properties.height,
-                    }),
-                    .transform = display::CoordinateTransformation::kIdentity,
-                    .alpha_mode = ::display::AlphaMode::kDisable,
-                },
-        },
-        {
-            .image = red_image,
-            .properties =
-                {
-                    .image_source = display::Rectangle({
-                        .x = 0,
-                        .y = 0,
-                        .width = red_image.properties.width,
-                        .height = red_image.properties.height,
-                    }),
-                    .canvas_destination = display::Rectangle({
-                        .x = 640,
-                        .y = 0,
-                        .width = red_image.properties.width,
-                        .height = red_image.properties.height,
-                    }),
-                    .transform = display::CoordinateTransformation::kIdentity,
-                    .alpha_mode = ::display::AlphaMode::kDisable,
-                },
-        },
-    };
-    software_compositor.CompositeImageLayers(image_layers);
+                    {
+                        .image = blue_image,
+                        .properties =
+                            {
+                                .image_source = display::Rectangle({
+                                    .x = 0,
+                                    .y = 0,
+                                    .width = blue_image.properties.width,
+                                    .height = blue_image.properties.height,
+                                }),
+                                .canvas_destination = display::Rectangle({
+                                    .x = 0,
+                                    .y = 0,
+                                    .width = blue_image.properties.width,
+                                    .height = blue_image.properties.height,
+                                }),
+                                .transform = display::CoordinateTransformation::kIdentity,
+                                .alpha_mode = ::display::AlphaMode::kDisable,
+                                .fallback_color = display::Color({
+                                    .format = display::PixelFormat::kR8G8B8A8,
+                                    .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                                }),
+                            },
+                    },
+                    {
+                        .image = red_image,
+                        .properties =
+                            {
+                                .image_source = display::
+                                    Rectangle(
+                                        {
+                                            .x = 0,
+                                            .y = 0,
+                                            .width = red_image.properties.width,
+                                            .height = red_image.properties.height,
+                                        }),
+                                .canvas_destination =
+                                    display::Rectangle(
+                                        {
+                                            .x = 640,
+                                            .y = 0,
+                                            .width = red_image.properties.width,
+                                            .height = red_image.properties.height,
+                                        }),
+                                .transform = display::CoordinateTransformation::kIdentity,
+                                .alpha_mode = ::display::AlphaMode::kDisable,
+                                .fallback_color =
+                                    display::Color(
+                                        {
+                                            .format = display::PixelFormat::kR8G8B8A8,
+                                            .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+                                        }),
+                            },
+                    },
+                };
+    software_compositor.CompositeLayers(image_layers);
   }
 
   for (int row = 0; row < kCanvasHeight; ++row) {

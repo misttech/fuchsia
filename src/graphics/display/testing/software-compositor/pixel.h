@@ -5,10 +5,12 @@
 #ifndef SRC_GRAPHICS_DISPLAY_TESTING_SOFTWARE_COMPOSITOR_PIXEL_H_
 #define SRC_GRAPHICS_DISPLAY_TESTING_SOFTWARE_COMPOSITOR_PIXEL_H_
 
+#include <fidl/fuchsia.images2/cpp/wire.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <array>
+#include <cinttypes>
 #include <cstdint>
 
 namespace software_compositor {
@@ -21,6 +23,17 @@ enum class PixelFormat {
   kRgba8888,
   kBgra8888,
 };
+
+constexpr PixelFormat ToPixelFormat(fuchsia_images2::PixelFormat fidl_pixel_format) {
+  switch (fidl_pixel_format) {
+    case fuchsia_images2::PixelFormat::kR8G8B8A8:
+      return PixelFormat::kRgba8888;
+    case fuchsia_images2::PixelFormat::kB8G8R8A8:
+      return PixelFormat::kBgra8888;
+    default:
+      ZX_PANIC("Unsupported pixel format %" PRIu32, static_cast<uint32_t>(fidl_pixel_format));
+  }
+}
 
 constexpr int GetBytesPerPixel(PixelFormat pixel_format) {
   switch (pixel_format) {

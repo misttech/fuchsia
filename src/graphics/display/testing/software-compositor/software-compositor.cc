@@ -76,6 +76,8 @@ void SoftwareCompositor::ClearCanvas(const PixelData& color, PixelFormat pixel_f
 
 void SoftwareCompositor::CompositeImage(const InputImage& input_image,
                                         const CompositionProperties& composition_properties) const {
+  ZX_ASSERT(!input_image.buffer.empty());
+
   // TODO(https://fxbug.dev/42075534): Currently alpha compositing is not supported.
   // Callers must guarantee that alpha blending is disabled.
   ZX_ASSERT(composition_properties.alpha_mode == ::display::AlphaMode::kDisable);
@@ -90,21 +92,21 @@ void SoftwareCompositor::CompositeImage(const InputImage& input_image,
   // TODO(https://fxbug.dev/42075534): Currently this doesn't support clipping of the
   // input image. Callers must guarantee that the source frame starts at (0, 0)
   // and has the same size as the input image.
-  ZX_ASSERT(image_source.y() == 0);
   ZX_ASSERT(image_source.x() == 0);
-  ZX_ASSERT(image_source.height() == input_image.properties.height);
+  ZX_ASSERT(image_source.y() == 0);
   ZX_ASSERT(image_source.width() == input_image.properties.width);
+  ZX_ASSERT(image_source.height() == input_image.properties.height);
 
   // TODO(https://fxbug.dev/42075534): Currently this doesn't support scaling.
   // Callers must guarantee that the destination frame size is the same as the
   // original image size.
-  ZX_ASSERT(canvas_destination.height() == input_image.properties.height);
   ZX_ASSERT(canvas_destination.width() == input_image.properties.width);
+  ZX_ASSERT(canvas_destination.height() == input_image.properties.height);
 
   // TODO(https://fxbug.dev/42075534): Currently this doesn't support clipping.
   // Callers must guarantee that the destination frame falls within the canvas.
-  ZX_ASSERT(canvas_destination.y() + canvas_destination.height() <= canvas_.properties.height);
   ZX_ASSERT(canvas_destination.x() + canvas_destination.width() <= canvas_.properties.width);
+  ZX_ASSERT(canvas_destination.y() + canvas_destination.height() <= canvas_.properties.height);
 
   const int src_bytes_per_pixel = GetBytesPerPixel(input_image.properties.pixel_format);
   const int dst_bytes_per_pixel = GetBytesPerPixel(canvas_.properties.pixel_format);
@@ -129,12 +131,53 @@ void SoftwareCompositor::CompositeImage(const InputImage& input_image,
   }
 }
 
-void SoftwareCompositor::CompositeImageLayers(
-    cpp20::span<const ImageLayerForComposition> image_layers) const {
+void SoftwareCompositor::CompositeFallbackColor(
+    const CompositionProperties& composition_properties) const {
+  // TODO(https://fxbug.dev/42075534): Currently alpha compositing is not supported.
+  // Callers must guarantee that alpha blending is disabled.
+  ZX_ASSERT(composition_properties.alpha_mode == ::display::AlphaMode::kDisable);
+
+  // TODO(https://fxbug.dev/42075534): Currently image transformation is not supported.
+  // Callers must guarantee that the image to draw is not rotated nor flipped.
+  ZX_ASSERT(composition_properties.transform == display::CoordinateTransformation::kIdentity);
+
+  const ::display::Rectangle& canvas_destination = composition_properties.canvas_destination;
+
+  // TODO(https://fxbug.dev/42075534): Currently this doesn't support clipping.
+  // Callers must guarantee that the destination frame falls within the canvas.
+  ZX_ASSERT(canvas_destination.y() + canvas_destination.height() <= canvas_.properties.height);
+  ZX_ASSERT(canvas_destination.x() + canvas_destination.width() <= canvas_.properties.width);
+
+  const PixelData color_to_fill =
+      PixelData::FromRaw(composition_properties.fallback_color.bytes().subspan(0, 4))
+          .Convert(ToPixelFormat(composition_properties.fallback_color.format().ToFidl()),
+                   canvas_.properties.pixel_format);
+
+  const int dst_bytes_per_pixel = GetBytesPerPixel(canvas_.properties.pixel_format);
+
+  for (int row = 0; row < canvas_destination.height(); row++) {
+    cpp20::span<uint8_t> canvas_row =
+        canvas_.buffer.subspan((row + canvas_destination.y()) * canvas_.properties.stride_bytes +
+                                   canvas_destination.x() * dst_bytes_per_pixel,
+                               /*count=*/canvas_destination.width() * dst_bytes_per_pixel);
+
+    auto canvas_row_it = canvas_row.begin();
+    for (int column = 0; column < canvas_destination.width(); column++) {
+      canvas_row_it =
+          std::copy(color_to_fill.data.begin(), color_to_fill.data.end(), canvas_row_it);
+    }
+  }
+}
+
+void SoftwareCompositor::CompositeLayers(cpp20::span<const LayerForComposition> layers) const {
   constexpr PixelData kBlack = {0x00, 0x00, 0x00, 0xff};
   ClearCanvas(kBlack, PixelFormat::kRgba8888);
-  for (const ImageLayerForComposition& image_layer : image_layers) {
-    CompositeImage(image_layer.image, image_layer.properties);
+  for (const LayerForComposition& image_layer : layers) {
+    if (!image_layer.image.buffer.empty()) {
+      CompositeImage(image_layer.image, image_layer.properties);
+    } else {
+      CompositeFallbackColor(image_layer.properties);
+    }
   }
 }
 
