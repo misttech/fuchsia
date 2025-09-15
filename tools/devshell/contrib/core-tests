@@ -15,7 +15,7 @@ ARGS=()
 for arg in "$@"; do
   case "$arg" in
   --gtest_*) ARGS+=(--cmdline="$arg") ;;
-  -*) ARGS+=("$arg") ;;
+  *) ARGS+=("$arg") ;;
   esac
 done
 
