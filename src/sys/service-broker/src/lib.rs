@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context, Result};
-use fidl::endpoints::{Proxy, ServerEnd};
+use anyhow::{Context, Result, bail, format_err};
 use fidl::HandleBased;
+use fidl::endpoints::ServerEnd;
 use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_component::server::{ServiceFs, ServiceObj, ServiceObjTrait};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::prelude::*;
+use std::clone::Clone;
 use {
     fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess,
     fidl_fuchsia_process_lifecycle as fpl,
@@ -37,29 +38,43 @@ async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
     Ok(format!("{INPUT_SERVICE}/{filename}"))
 }
 
+async fn connect_request(svc: fio::DirectoryProxy, request: zx::Channel, protocol_name: &str) {
+    let instance_dir = wait_for_first_instance(&svc).await;
+    let Ok(instance_dir) = instance_dir else {
+        log::error!("[service-broker] Failed to forward connection for {protocol_name}");
+        return;
+    };
+
+    if let Err(e) = svc.as_ref_directory().open(
+        format!("{instance_dir}/{protocol_name}").as_str(),
+        fio::Flags::PROTOCOL_SERVICE,
+        request,
+    ) {
+        log::error!(
+            "[service-broker] Failed to forward connection to {instance_dir}/{protocol_name}: {e}"
+        );
+    }
+}
+
 async fn first_instance_to_protocol<'a>(
     svc: fio::DirectoryProxy,
     fs: &mut ServiceFs<ServiceObj<'a, ()>>,
     protocol_name: &str,
+    scope: &'a fuchsia_async::Scope,
 ) -> Result<()> {
     if protocol_name == "" {
         bail!("Invalid protocol name provided");
     }
 
-    // TODO(surajmalhotra): Do this wait every time we get a connection request to handle cases
-    // where the instance goes away and comes back.
-    let instance_dir = wait_for_first_instance(&svc).await?;
-
-    let svc = svc.into_channel().unwrap().into_zx_channel();
     let protocol_name = protocol_name.to_string();
+
     fs.dir("svc").add_service_at("output", move |request: zx::Channel| {
-        if let Err(_) =
-            fdio::service_connect_at(&svc, &format!("{instance_dir}/{protocol_name}"), request)
-        {
-            log::error!(
-                "[service-broker] Failed to forward connection to {instance_dir}/{protocol_name}"
-            );
-        }
+        let svc = Clone::clone(&svc);
+        let protocol_name = protocol_name.clone();
+        scope.spawn(async move {
+            connect_request(svc, request, &protocol_name).await;
+        });
+
         Some(())
     });
 
@@ -147,12 +162,13 @@ pub async fn main(
     let Some(program) = program else {
         bail!("No program section provided");
     };
+    let scope = fuchsia_async::Scope::new();
     let svc = svc.directory.into_proxy();
     let mut fs = ServiceFs::new();
     match get_program_string(&program, "policy")? {
         "first_instance_to_protocol" => {
             let protocol_name = get_program_string(&program, "protocol_name")?;
-            first_instance_to_protocol(svc, &mut fs, protocol_name).await
+            first_instance_to_protocol(svc, &mut fs, protocol_name, &scope).await
         }
         "first_instance_to_default" => first_instance_to_default(svc, &mut fs).await,
         "filter_and_rename" => {
