@@ -30,5 +30,6 @@
         active_width_px: { type: "uint32" },
         active_height_px: { type: "uint32" },
         refresh_rate_millihertz: { type: "uint32" },
+        max_layer_count: { type: "uint32" },
     },
 }

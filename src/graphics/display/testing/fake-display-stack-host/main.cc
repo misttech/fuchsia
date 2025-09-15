@@ -29,7 +29,7 @@ fake_display::FakeDisplayDeviceConfig GetFakeDisplayDeviceConfigFromComponentCon
               static_cast<int32_t>(component_config.refresh_rate_millihertz()),
       }),
       .engine_info = display::EngineInfo({
-          .max_layer_count = 1,
+          .max_layer_count = static_cast<int32_t>(component_config.max_layer_count()),
           .max_connected_display_count = 1,
           .is_capture_supported = true,
       }),

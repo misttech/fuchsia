@@ -7,4 +7,5 @@
     active_width_px: 1280,
     active_height_px: 800,
     refresh_rate_millihertz: 60000,
+    max_layer_count: 1,
 }
