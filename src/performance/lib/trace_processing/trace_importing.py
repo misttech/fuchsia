@@ -622,6 +622,10 @@ def create_model_from_json(root_object: Dict[str, Any]) -> trace_model.Model:
                 f"Encountered unknown phase {phase} from {trace_event}"
             )
 
+    # Maintaining a copy of all trace events and synthetic events is costly, so
+    # release the associated memory proactively.
+    del trace_events
+
     # Sort events by their start timestamp.
     #
     # We need a stable sort here, which fortunately `list.sort` is.  This is
