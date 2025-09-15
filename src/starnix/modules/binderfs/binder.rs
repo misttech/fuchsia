@@ -37,7 +37,7 @@ use starnix_logging::{
 };
 use starnix_sync::{
     FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, MutexGuard,
-    ResourceAccessorLevel, RwLock, Unlocked, ordered_lock_vec,
+    ResourceAccessorLevel, RwLock, Unlocked, ordered_lock, ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -1976,6 +1976,13 @@ impl BinderThread {
     /// Acquire the lock to the binder thread's mutable state.
     pub fn lock(&self) -> MutexGuard<'_, BinderThreadState> {
         self.state.lock()
+    }
+
+    pub fn lock_both<'a>(
+        t1: &'a Self,
+        t2: &'a Self,
+    ) -> (MutexGuard<'a, BinderThreadState>, MutexGuard<'a, BinderThreadState>) {
+        ordered_lock(&t1.state, &t2.state)
     }
 }
 
@@ -4433,21 +4440,25 @@ impl BinderDriver {
                     .into(),
                 );
 
-                // Schedule the transaction on the target process' command queue.
-                target_thread.lock().enqueue_command(Command::Reply(TransactionData {
-                    peer_pid: binder_proc.key.pid(),
-                    peer_tid: binder_thread.tid,
-                    peer_euid: current_task.with_current_creds(|creds| creds.euid),
+                // Atomically enqueue the reply on the target thread and the
+                // transaction complete command on the local thread.
+                {
+                    let (mut target_thread, mut binder_thread) =
+                        BinderThread::lock_both(&target_thread, &binder_thread);
+                    target_thread.enqueue_command(Command::Reply(TransactionData {
+                        peer_pid: binder_proc.key.pid(),
+                        peer_tid: binder_thread.tid,
+                        peer_euid: current_task.with_current_creds(|creds| creds.euid),
 
-                    object: FlatBinderObject::Remote { handle: Handle::ContextManager },
-                    code: data.transaction_data.code,
-                    flags: data.transaction_data.flags,
+                        object: FlatBinderObject::Remote { handle: Handle::ContextManager },
+                        code: data.transaction_data.code,
+                        flags: data.transaction_data.flags,
 
-                    buffers,
-                }));
+                        buffers,
+                    }));
 
-                // Schedule the transaction complete command on the caller's command queue.
-                binder_thread.lock().enqueue_command(Command::TransactionComplete);
+                    binder_thread.enqueue_command(Command::TransactionComplete);
+                }
 
                 Ok(())
             })
