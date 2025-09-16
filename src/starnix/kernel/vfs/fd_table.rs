@@ -43,8 +43,8 @@ impl FdTableId {
 }
 
 #[derive(Debug, Clone)]
-pub struct FdTableEntry {
-    pub file: FileHandle,
+struct FdTableEntry {
+    file: FileHandle,
 
     // Identifier of the FdTable containing this entry.
     fd_table_id: FdTableId,
@@ -160,7 +160,7 @@ impl FdTableStore {
         fd
     }
 
-    pub fn retain<F>(&mut self, mut f: F)
+    fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(&FdNumber, &mut FdTableEntry) -> bool,
     {
