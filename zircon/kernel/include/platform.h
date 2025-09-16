@@ -122,6 +122,41 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain);
 // Returns true if this system has a debug serial port that is enabled
 bool platform_serial_enabled();
 
+// Prepare the kernel debug UART for a suspend operation which might result in
+// de-clocking, or de-clocking+power-gating, the UART hardware.
+//
+// This function should only be called by the BOOT_CPU idle/power thread, with
+// interrupts off, after the secondaries have all suspended, just before it
+// transfers control to a higher authority (Secure Monitor, ACPI call, etc) to
+// enter into its low power state.
+//
+// This method is *not* idempotent.  `platform_serial_prepare_for_suspend`
+// should not be called again until a matching call to
+// `platform_serial_wakeup_from_suspend` has been made.
+//
+// That said, it is safe to call this method when `platform_serial_enabled`
+// returns false, as well as when the underlying serial driver does not
+// support/require suspension.  The operation will simply be a no-op.
+//
+void platform_serial_prepare_for_suspend();
+
+// Wake the kernel debug UART up after bringing the BOOT_CPU out of a low power
+// state where the UART hardware may have been de-clocked or power gated.
+//
+// This function should only be called by the BOOT_CPU idle/power thread, with
+// interrupts off, immediately after control is returned to it by its higher
+// authority.  See `platform_serial_prepare_for_suspend`.
+//
+// This method is *not* idempotent. `platform_serial_wakeup_from_suspend` should
+// not be called again until a matching call to
+// `platform_serial_prepare_for_suspend` has been made.
+//
+// That said, it is safe to call this method when `platform_serial_enabled`
+// returns false, as well as when the underlying serial driver does not
+// support/require suspension.  The operation will simply be a no-op.
+//
+void platform_serial_wakeup_from_suspend();
+
 // Accessors for the HW reboot reason which may or may not have been delivered
 // by the bootloader.
 void platform_set_hw_reboot_reason(zbi_hw_reboot_reason_t reason);

@@ -164,10 +164,16 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
                                                ? PsciCpuSuspendMaxScope::CpuAndMore
                                                : PsciCpuSuspendMaxScope::CpuOnly;
 
+  bool did_serial_suspend{false};
   if (might_power_down) {
     lockup_percpu_shutdown();
     platform_suspend_timer_curr_cpu();
     suspend_interrupts_curr_cpu();
+
+    if ((arch_curr_cpu_num() == BOOT_CPU_ID) && (max_scope == PsciCpuSuspendMaxScope::CpuAndMore)) {
+      platform_serial_prepare_for_suspend();
+      did_serial_suspend = true;
+    }
   }
 
   LTRACEF("platform_suspend_cpu for cpu-%u, current_boot_time=%ld, suspending...\n",
@@ -184,6 +190,11 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
     DEBUG_ASSERT_MSG(status == ZX_OK, "resume_interrupts_curr_cpu: %d", status);
     status = platform_resume_timer_curr_cpu();
     DEBUG_ASSERT_MSG(status == ZX_OK, "platform_resume_timer_curr_cpu: %d", status);
+
+    if (did_serial_suspend) {
+      platform_serial_wakeup_from_suspend();
+    }
+
     lockup_percpu_init();
   } else {
     // If the requested power state isn't a "power down" power state, then make

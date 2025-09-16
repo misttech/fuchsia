@@ -185,6 +185,26 @@ ktl::optional<IrqConfig> GetIrqConfigFromFlags(uint32_t uart_flags) {
 
 bool platform_serial_enabled(void) { return !!gUart; }
 
+void platform_serial_prepare_for_suspend() {
+  if (!platform_serial_enabled()) {
+    return;
+  }
+
+#if EXPERIMENTAL_ALLOW_DEBUG_UART_SUSPEND
+  gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.PrepareForSuspend(); });
+#endif
+}
+
+void platform_serial_wakeup_from_suspend() {
+  if (!platform_serial_enabled()) {
+    return;
+  }
+
+#if EXPERIMENTAL_ALLOW_DEBUG_UART_SUSPEND
+  gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.WakeupFromSuspend(); });
+#endif
+}
+
 void UartDriverHandoffEarly(const uart::all::Driver& serial) {
   gUart = serial;
   if constexpr (DPRINTF_ENABLED_FOR_LEVEL(INFO)) {

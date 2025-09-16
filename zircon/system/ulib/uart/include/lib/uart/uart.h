@@ -442,6 +442,16 @@ class DriverBase {
   void Interrupt(IoProvider& io, Sync& sync, Tx&& tx, Rx&& rx) {
     static_assert(Uninstantiated<IoProvider>, "derived class is missing Interrupt");
   }
+
+ public:
+  // Prepare/Wake-up the UART hardware before going into, and after coming out
+  // of a suspended state. Unlike other kernel API methods, these methods are
+  // considered optional, and default to no-ops.
+  template <typename IoProvider, typename IrqProvider>
+  void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {}
+
+  template <typename IoProvider, typename IrqProvider>
+  void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {}
 };
 
 // The IoProvider is a template class parameterized by UartDriver::config_type,
@@ -656,6 +666,18 @@ class KernelDriver {
     Guard<LockPolicy> lock(&lock_, SOURCE_TAG);
     irq_.Init(std::forward<Args>(args)...);
     uart_.InitInterrupt(io_, irq_);
+  }
+
+  template <typename LockPolicy = DefaultLockPolicy>
+  void PrepareForSuspend() {
+    Guard<LockPolicy> lock(&lock_, SOURCE_TAG);
+    uart_.PrepareForSuspend(io_, irq_);
+  }
+
+  template <typename LockPolicy = DefaultLockPolicy>
+  void WakeupFromSuspend() {
+    Guard<LockPolicy> lock(&lock_, SOURCE_TAG);
+    uart_.WakeupFromSuspend(io_, irq_);
   }
 
   template <typename Tx, typename Rx>

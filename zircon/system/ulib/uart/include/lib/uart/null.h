@@ -116,6 +116,12 @@ struct Driver {
   template <typename IoProvider, typename Lock, typename Waiter, typename Tx, typename Rx>
   void Interrupt(IoProvider&, Lock&, Waiter&, Tx&&, Rx&&) {}
 
+  template <typename IoProvider, typename IrqProvider>
+  void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {}
+
+  template <typename IoProvider, typename IrqProvider>
+  void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {}
+
   // This tells the IoProvider what device resources to provide.
   constexpr config_type config() const { return {}; }
   constexpr size_t io_slots() const { return 0; }
