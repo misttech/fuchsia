@@ -168,6 +168,13 @@ impl<T> From<uref32<T>> for uref<T> {
     }
 }
 
+impl<T> TryFrom<uref<T>> for uref32<T> {
+    type Error = ();
+    fn try_from(ur: uref<T>) -> Result<Self, ()> {
+        Ok(Self { addr: ur.addr.try_into().map_err(|_| ())?, _phantom: Default::default() })
+    }
+}
+
 #[repr(C)]
 #[derive(
     Clone,

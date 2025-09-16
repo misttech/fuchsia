@@ -120,6 +120,13 @@ impl<T> From<uref32<T>> for uref<T> {
         Self { addr: ur.addr.into(), _phantom: Default::default() }
     }
 }
+
+impl<T> TryFrom<uref<T>> for uref32<T> {
+    type Error = ();
+    fn try_from(ur: uref<T>) -> Result<Self, ()> {
+        Ok(Self { addr: ur.addr.try_into().map_err(|_| ())?, _phantom: Default::default() })
+    }
+}
 """
 
 # Tell bindgen not to produce records for these types.
