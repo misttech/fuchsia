@@ -12,8 +12,8 @@ use futures::StreamExt;
 use ieee80211::{MacAddr, MacAddrBytes};
 use rand::Rng;
 use wlan_common::random_fidl_bss_description;
-use wlan_rsn::key::exchange::Key;
 use wlan_rsn::key::Tk;
+use wlan_rsn::key::exchange::Key;
 use wlan_rsn::rsna::{AuthStatus, SecAssocStatus, SecAssocUpdate, UpdateSink};
 use {
     fidl_fuchsia_wlan_common as fidl_common,
@@ -297,8 +297,8 @@ async fn test_open_connect_request_success() {
     assert_eq!(driver_connect_req.auth_type.unwrap(), fidl_fullmac::WlanAuthType::OpenSystem);
 
     // TODO(https://fxbug.dev/337074689): Check that these are None instead of empty vectors.
-    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![]);
-    assert_eq!(driver_connect_req.security_ie.unwrap(), vec![]);
+    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![] as Vec<u8>);
+    assert_eq!(driver_connect_req.security_ie.unwrap(), vec![] as Vec<u8>);
 
     assert_eq!(
         fullmac_request_history[1],
@@ -397,8 +397,8 @@ async fn test_open_connect_request_error() {
     assert_eq!(driver_connect_req.auth_type.unwrap(), fidl_fullmac::WlanAuthType::OpenSystem);
 
     // TODO(https://fxbug.dev/337074689): Check that these are None instead of empty vectors.
-    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![]);
-    assert_eq!(driver_connect_req.security_ie.unwrap(), vec![]);
+    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![] as Vec<u8>);
+    assert_eq!(driver_connect_req.security_ie.unwrap(), vec![] as Vec<u8>);
 
     assert_eq!(
         fullmac_request_history[1],
@@ -537,7 +537,7 @@ async fn test_wpa2_connect_request_success() {
     assert_eq!(driver_connect_req.auth_type.unwrap(), fidl_fullmac::WlanAuthType::OpenSystem);
 
     // TODO(https://fxbug.dev/337074689): Check that these are None instead of empty vectors.
-    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![]);
+    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![] as Vec<u8>);
 
     let eapol_tx1 =
         assert_matches!(&fullmac_request_history[1], FullmacRequest::EapolTx(req) => req);
@@ -683,7 +683,9 @@ async fn test_wpa3_connect_success() {
             .await;
 
             assert!(update_sink.contains(&SecAssocUpdate::SaeAuthStatus(AuthStatus::Success)));
-            assert!(update_sink.contains(&SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)));
+            assert!(
+                update_sink.contains(&SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished))
+            );
 
             // Get initial EAPOL frame from update_sink
             update_sink
@@ -764,7 +766,7 @@ async fn test_wpa3_connect_success() {
     assert_eq!(driver_connect_req.auth_type.unwrap(), fidl_fullmac::WlanAuthType::Sae);
 
     // TODO(https://fxbug.dev/337074689): Check that these are None instead of empty vectors.
-    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![]);
+    assert_eq!(driver_connect_req.sae_password.unwrap(), vec![] as Vec<u8>);
 
     let sae_commit =
         assert_matches!(&fullmac_request_history[1], FullmacRequest::SaeFrameTx(req) => req);

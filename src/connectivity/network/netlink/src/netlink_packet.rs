@@ -222,7 +222,7 @@ mod tests {
             payload,
             NetlinkPayload::Done(DoneMessage {code, extended_ack, ..}) => {
                 assert_eq!(code, DONE_ERROR_CODE);
-                assert_eq!(extended_ack, vec![]);
+                assert_eq!(extended_ack, Vec::<u8>::new());
             }
         );
     }

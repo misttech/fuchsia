@@ -1432,7 +1432,7 @@ fn select_route_for_deletion<
             );
             let metric_matches = priority.map_or(true, |p| p.get() == *existing_metric);
             let interface_matches =
-                outbound_interface.map_or(true, |i| i.get() == (*existing_interface).into());
+                outbound_interface.map_or(true, |i| i.get() == (*existing_interface) as u64);
             let next_hop_matches = next_hop.map_or(true, |n| {
                 existing_next_hop.map_or(false, |e| {
                     crate::netlink_packet::ip_addr_from_route::<I>(&e)
