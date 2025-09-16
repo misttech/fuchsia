@@ -592,7 +592,8 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
 TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
   if (test_helper::HasSysAdmin()) {
     perf_event_attr attr =
-        example_sampling_attr(PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_CALLCHAIN);
+        example_sampling_attr(PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_IP | PERF_SAMPLE_TID |
+                              PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID);
     int32_t file_descriptor =
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
 
@@ -674,15 +675,19 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
 
       // This is a subset of the real perf_record_sample which we will implement later.
       struct perf_record_sample {
+        uint64_t sample_id;
         uint64_t ip;
         uint32_t pid;
         uint32_t tid;
+        uint64_t id;
         uint64_t nr;
       };
       struct perf_record_sample* record_details = (struct perf_record_sample*)record_details_start;
+      EXPECT_GE(record_details->sample_id, (uint64_t)1);
       EXPECT_GE(record_details->ip, (uint64_t)1);
       EXPECT_GE(record_details->pid, (uint64_t)0);
       EXPECT_GE(record_details->tid, (uint64_t)1);
+      EXPECT_GE(record_details->id, (uint64_t)1);
       // On average we are getting ~100 samples for 100ms hardcoded sample duration.
       EXPECT_GE(record_details->nr, (uint64_t)1);
       EXPECT_LT(record_details->nr, (uint64_t)200);
@@ -701,6 +706,46 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         }
       }
     }
+  }
+}
+
+TEST(PerfEventOpenTest, GroupLeaderCleanup) {
+  if (test_helper::HasSysAdmin()) {
+    perf_event_attr attr_a = {};
+    attr_a.type = PERF_TYPE_SOFTWARE;
+    attr_a.config = PERF_COUNT_SW_CPU_CLOCK;
+
+    perf_event_attr attr_b = {};
+    attr_b.type = PERF_TYPE_SOFTWARE;
+    attr_b.config = PERF_COUNT_SW_TASK_CLOCK;
+
+    // Create group A.
+    int fd_a = sys_perf_event_open(&attr_a, example_pid, example_cpu, -1, 0);
+    EXPECT_NE(fd_a, -1);
+
+    // Create group B.
+    int fd_b = sys_perf_event_open(&attr_b, example_pid, example_cpu, -1, 0);
+    EXPECT_NE(fd_b, -1);
+
+    // Add an event to group A.
+    int fd_a2 = sys_perf_event_open(&attr_a, example_pid, example_cpu, fd_a, 0);
+    EXPECT_NE(fd_a2, -1);
+
+    // Close the leader of group A.
+    EXPECT_NE(syscall(__NR_close, fd_a), EXIT_FAILURE);
+
+    // Try to add another event to group A. This should fail.
+    EXPECT_THAT(sys_perf_event_open(&attr_a, example_pid, example_cpu, fd_a, 0),
+                SyscallFailsWithErrno(EBADF));
+
+    // Add an event to group B. This should succeed.
+    int fd_b2 = sys_perf_event_open(&attr_b, example_pid, example_cpu, fd_b, 0);
+    EXPECT_NE(fd_b2, -1);
+
+    // Cleanup.
+    EXPECT_NE(syscall(__NR_close, fd_a2), EXIT_FAILURE);
+    EXPECT_NE(syscall(__NR_close, fd_b), EXIT_FAILURE);
+    EXPECT_NE(syscall(__NR_close, fd_b2), EXIT_FAILURE);
   }
 }
 

@@ -8,20 +8,22 @@ use zerocopy::IntoBytes;
 use {fidl_fuchsia_cpu_profiler as profiler, fuchsia_async};
 
 use regex::Regex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use futures::io::AsyncReadExt;
 use starnix_logging::{log_info, log_warn, track_stub};
-use starnix_sync::{FileOpsCore, Locked, RwLock, Unlocked};
+use starnix_sync::{FileOpsCore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
     PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE, PERF_EVENT_IOC_ID,
     PERF_EVENT_IOC_MODIFY_ATTRIBUTES, PERF_EVENT_IOC_PAUSE_OUTPUT, PERF_EVENT_IOC_PERIOD,
     PERF_EVENT_IOC_QUERY_BPF, PERF_EVENT_IOC_REFRESH, PERF_EVENT_IOC_RESET, PERF_EVENT_IOC_SET_BPF,
     PERF_EVENT_IOC_SET_FILTER, PERF_EVENT_IOC_SET_OUTPUT, PERF_RECORD_MISC_KERNEL,
-    perf_event_sample_format_PERF_SAMPLE_CALLCHAIN, perf_event_sample_format_PERF_SAMPLE_IP,
+    perf_event_sample_format_PERF_SAMPLE_CALLCHAIN, perf_event_sample_format_PERF_SAMPLE_ID,
+    perf_event_sample_format_PERF_SAMPLE_IDENTIFIER, perf_event_sample_format_PERF_SAMPLE_IP,
     perf_event_sample_format_PERF_SAMPLE_TID, perf_event_type_PERF_RECORD_SAMPLE,
 };
 use starnix_uapi::errors::Errno;
@@ -36,7 +38,29 @@ use starnix_uapi::{
 use zx::AsHandleRef;
 use zx::sys::zx_system_get_page_size;
 
+use crate::task::Kernel;
+
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
+
+struct PerfState {
+    // This table maps a group leader's file object id to its unique u64 "format ID".
+    //
+    // When a sample is generated for any event in a group, we use this
+    // "format ID" from the group leader as the value for *both* the
+    // `PERF_SAMPLE_ID` and `PERF_SAMPLE_IDENTIFIER` fields.
+    format_id_lookup_table: Mutex<HashMap<FileObjectId, u64>>,
+}
+
+impl Default for PerfState {
+    fn default() -> Self {
+        Self { format_id_lookup_table: Mutex::new(HashMap::new()) }
+    }
+}
+
+fn get_perf_state(kernel: &Arc<Kernel>) -> Arc<PerfState> {
+    kernel.expando.get_or_init(PerfState::default)
+}
+
 // Default sample period of one sample per millisecond.
 static DEFAULT_SAMPLE_PERIOD: u64 = 1000000;
 // Default buffer size to read from socket (for sampling data).
@@ -82,6 +106,7 @@ struct PerfEventFileState {
     // segment.
     total_time_running: u64,
     rf_id: u64,
+    sample_id: u64,
     _rf_lost: u64,
     disabled: u64,
     sample_type: u64,
@@ -110,6 +135,7 @@ impl PerfEventFileState {
             most_recent_enabled_time: 0,
             total_time_running: 0,
             rf_id: 0,
+            sample_id: 0,
             _rf_lost: 0,
             disabled,
             sample_type,
@@ -133,6 +159,17 @@ impl FileOps for PerfEventFile {
     // Don't need to implement seek or sync for PerfEventFile.
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
+
+    fn close(
+        self: Box<Self>,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileObjectState,
+        current_task: &CurrentTask,
+    ) {
+        let perf_state = get_perf_state(&current_task.kernel);
+        let mut events = perf_state.format_id_lookup_table.lock();
+        events.remove(&file.id);
+    }
 
     // See "Reading results" section of https://man7.org/linux/man-pages/man2/perf_event_open.2.html.
     fn read(
@@ -184,6 +221,7 @@ impl FileOps for PerfEventFile {
                 output.extend(total_time_running_including_curr.to_ne_bytes());
             }
             if (read_format & perf_event_read_format_PERF_FORMAT_ID as u64) != 0 {
+                // Adds a 64-bit unique value that corresponds to the event group.
                 output.extend(perf_event_file.rf_id.to_ne_bytes());
             }
 
@@ -264,6 +302,7 @@ impl FileOps for PerfEventFile {
                                     Duration::from_millis(100),
                                     &zx::Vmo::from(vmo_handle_copy.unwrap()),
                                     perf_event_file.sample_type,
+                                    perf_event_file.sample_id,
                                     perf_event_file.vmo_write_offset,
                                 )
                                 .await;
@@ -430,6 +469,7 @@ fn write_record_to_vmo(
     perf_record_sample: PerfRecordSample,
     perf_data_vmo: &zx::Vmo,
     sample_type: u64,
+    sample_id: u64,
     offset: u64,
 ) -> () {
     track_stub!(
@@ -457,6 +497,11 @@ fn write_record_to_vmo(
     }
 
     let mut sample = Vec::<u8>::new();
+
+    // sample_id
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_IDENTIFIER as u64) != 0 {
+        sample.extend(sample_id.to_ne_bytes());
+    }
     // ip
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_IP as u64) != 0 {
         sample.extend(perf_record_sample.ips[0].to_ne_bytes());
@@ -467,6 +512,11 @@ fn write_record_to_vmo(
         sample.extend(perf_record_sample.pid.expect("missing pid").to_ne_bytes());
         // tid
         sample.extend(perf_record_sample.tid.expect("missing tid").to_ne_bytes());
+    }
+
+    // id
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_ID as u64) != 0 {
+        sample.extend(sample_id.to_ne_bytes());
     }
 
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64) != 0 {
@@ -610,6 +660,7 @@ async fn collect_sample(
     duration: Duration,
     perf_data_vmo: &zx::Vmo,
     sample_type: u64,
+    sample_id: u64,
     offset: u64,
 ) -> Result<(), Errno> {
     let start_request = profiler::SessionStartRequest {
@@ -660,7 +711,13 @@ async fn collect_sample(
                 };
                 // Parse data to PerfRecordSample struct.
                 if let Some(perf_record_sample) = parse_perf_record_sample_format(received_data) {
-                    write_record_to_vmo(perf_record_sample, perf_data_vmo, sample_type, offset);
+                    write_record_to_vmo(
+                        perf_record_sample,
+                        perf_data_vmo,
+                        sample_type,
+                        sample_id,
+                        offset,
+                    );
                 }
             }
             Err(e) => {
@@ -690,10 +747,7 @@ pub fn sys_perf_event_open(
     if tid == -1 && cpu == -1 {
         return error!(EINVAL);
     }
-    if group_fd != FdNumber::from_raw(-1) {
-        track_stub!(TODO("https://fxbug.dev/409619971"), "[perf_event_open] implement group_fd");
-        return error!(ENOSYS);
-    }
+
     if tid > 0 {
         track_stub!(TODO("https://fxbug.dev/409621963"), "[perf_event_open] implement tid > 0");
         return error!(ENOSYS);
@@ -734,10 +788,24 @@ pub fn sys_perf_event_open(
         // Initialize this to 0 as we will need to return a time duration later during read().
         perf_event_file.total_time_running = 0;
     }
-    if (read_format & perf_event_read_format_PERF_FORMAT_ID as u64) != 0 {
-        // Adds a 64-bit unique value that corresponds to the event group.
-        perf_event_file.rf_id = READ_FORMAT_ID_GENERATOR.fetch_add(1, Ordering::Relaxed);
+
+    let event_id = READ_FORMAT_ID_GENERATOR.fetch_add(1, Ordering::Relaxed);
+    perf_event_file.rf_id = event_id;
+
+    if group_fd.raw() == -1 {
+        perf_event_file.sample_id = event_id;
+    } else {
+        let group_file = current_task.files.get(group_fd)?;
+        let group_file_object_id = group_file.id;
+        let perf_state = get_perf_state(&current_task.kernel);
+        let events = perf_state.format_id_lookup_table.lock();
+        if let Some(rf_id) = events.get(&group_file_object_id) {
+            perf_event_file.sample_id = *rf_id;
+        } else {
+            return error!(EINVAL);
+        }
     }
+
     if (read_format & perf_event_read_format_PERF_FORMAT_GROUP as u64) != 0 {
         track_stub!(
             TODO("https://fxbug.dev/402238049"),
@@ -760,11 +828,19 @@ pub fn sys_perf_event_open(
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
     let file_handle =
         Anon::new_private_file(locked, current_task, file, OpenFlags::RDWR, "[perf_event]");
+    let file_object_id = file_handle.id;
     let file_descriptor: Result<FdNumber, Errno> =
         current_task.add_file(locked, file_handle, FdFlags::empty());
 
     match file_descriptor {
-        Ok(fd) => Ok(fd.into()),
+        Ok(fd) => {
+            if group_fd.raw() == -1 {
+                let perf_state = get_perf_state(&current_task.kernel);
+                let mut events = perf_state.format_id_lookup_table.lock();
+                events.insert(file_object_id, event_id);
+            }
+            Ok(fd.into())
+        }
         Err(_) => {
             track_stub!(
                 TODO("https://fxbug.dev/402453955"),
@@ -786,5 +862,8 @@ pub use arch32::*;
 use crate::mm::memory::MemoryObject;
 use crate::mm::{MemoryAccessorExt, ProtectionFlags};
 use crate::task::CurrentTask;
-use crate::vfs::{Anon, FdFlags, FdNumber, FileObject, FileOps, InputBuffer, OutputBuffer};
+use crate::vfs::{
+    Anon, FdFlags, FdNumber, FileObject, FileObjectId, FileObjectState, FileOps, InputBuffer,
+    OutputBuffer,
+};
 use crate::{fileops_impl_nonseekable, fileops_impl_noop_sync};
