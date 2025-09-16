@@ -45,6 +45,10 @@
 vm_page_t* zero_page;
 paddr_t zero_page_paddr;
 
+// This exact symbol name is referenced by scripts/vmzircon-gdb.py.  It will be
+// relocated by physboot before the kernel starts.
+[[gnu::used]] extern auto* const kernel_relocated_base = __executable_start;
+
 namespace {
 
 // The initialized VMARs described in the phys hand-off.

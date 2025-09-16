@@ -55,11 +55,6 @@
 #define LOCAL_KTRACE(string, args...)
 #endif
 
-// Static relocated base to prepare for KASLR. Used at early boot and by gdb
-// script to know the target relocated address.
-// TODO(https://fxbug.dev/42098994): Choose it randomly.
-uint64_t kernel_relocated_base = kArchHandoffVirtualAddress;
-
 // The main translation table for the kernel. Used by the one kernel address space
 // when kernel only threads are active.
 alignas(PAGE_SIZE) pte_t riscv64_kernel_translation_table[RISCV64_MMU_PT_ENTRIES];

@@ -54,7 +54,9 @@ resume_context          .req x24
   orr tmp, tmp, #(1<<2)  // Enable dcache/ucache
   msr sctlr_el1, tmp
 
-  ldr_global kernel_vaddr, kernel_relocated_base
+  // The stored virtual address for the .Lmmu_on_vaddr was relocated at boot.
+  // Load the virtual address to jump to when the MMU is ready.
+  ldr_global kernel_vaddr, kMmuOnVaddr
 
   // Load the base of the translation tables.
   ldr_global page_table0, root_lower_page_table_phys
@@ -101,13 +103,7 @@ resume_context          .req x24
 .Lmmu_on_pc:
   isb
 
-  // Map our current physical PC to the virtual PC and jump there.
-  // PC = next_PC - __executable_start + kernel_vaddr
-  adr tmp, .Lmmu_on_vaddr
-  adr_global tmp2, __executable_start
-  sub tmp, tmp, tmp2
-  add tmp, tmp, kernel_vaddr
-  br tmp
+  br kernel_vaddr
 
 .Lmmu_on_vaddr:
   // Disable trampoline page-table in ttbr0
@@ -152,3 +148,9 @@ resume_context          .req x24
   wfe
   b .Lunsupported_cpu_trap
 .end_function
+
+// This gets relocated to the virtual address before boot.  The secondary CPU
+// that loads it will do so by its physical address to discover where to jump.
+.object kMmuOnVaddr, relro, align=8
+  .quad .Lmmu_on_vaddr
+.end_object

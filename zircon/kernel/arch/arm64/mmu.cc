@@ -69,9 +69,6 @@ static_assert(((long)KERNEL_ASPACE_BASE >> MMU_KERNEL_SIZE_SHIFT) == -1, "");
 static_assert(MMU_KERNEL_SIZE_SHIFT <= 48, "");
 static_assert(MMU_KERNEL_SIZE_SHIFT >= 25, "");
 
-// TODO(https://fxbug.dev/42098994): Choose it randomly.
-uint64_t kernel_relocated_base = kArchHandoffVirtualAddress;
-
 // Physical addresses of the kernel(/upper) and lower root page tables,
 // saved in start.S.
 paddr_t root_kernel_page_table_phys;

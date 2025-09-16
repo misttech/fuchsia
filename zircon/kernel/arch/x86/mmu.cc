@@ -96,11 +96,6 @@ static uint64_t num_handoff_mmu_pages = 0;
 // See Intel Volume 3A, 4.10.4.1
 #define X86_PCID_CR3_SAVE_ENTRIES (63)
 
-// Static relocated base to prepare for KASLR. Used at early boot and by gdb
-// script to know the target relocated address.
-// TODO(https://fxbug.dev/42098994): Choose it randomly.
-uint64_t kernel_relocated_base = kArchHandoffVirtualAddress;
-
 /**
  * @brief  check if the virtual address is canonical
  */
