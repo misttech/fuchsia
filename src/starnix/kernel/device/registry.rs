@@ -867,279 +867,292 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_fails_to_add_duplicate_device() {
-        let (_kernel, _current_task, locked) = create_kernel_task_and_unlocked();
-
-        let registry = DeviceRegistry::default();
-        registry
-            .register_major(
-                locked,
-                "mem".into(),
-                DeviceMode::Char,
-                MEM_MAJOR,
-                simple_device_ops::<DevNull>,
-            )
-            .expect("registers once");
-        registry
-            .register_major(
-                locked,
-                "random".into(),
-                DeviceMode::Char,
-                123,
-                simple_device_ops::<DevNull>,
-            )
-            .expect("registers unique");
-        registry
-            .register_major(
-                locked,
-                "mem".into(),
-                DeviceMode::Char,
-                MEM_MAJOR,
-                simple_device_ops::<DevNull>,
-            )
-            .expect_err("fail to register duplicate");
+        spawn_kernel_and_run(|locked, _current_task| {
+            let registry = DeviceRegistry::default();
+            registry
+                .register_major(
+                    locked,
+                    "mem".into(),
+                    DeviceMode::Char,
+                    MEM_MAJOR,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("registers once");
+            registry
+                .register_major(
+                    locked,
+                    "random".into(),
+                    DeviceMode::Char,
+                    123,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("registers unique");
+            registry
+                .register_major(
+                    locked,
+                    "mem".into(),
+                    DeviceMode::Char,
+                    MEM_MAJOR,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect_err("fail to register duplicate");
+        });
     }
 
     #[::fuchsia::test]
     async fn registry_opens_device() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        let registry = DeviceRegistry::default();
-        registry
-            .register_major(
-                locked,
-                "mem".into(),
-                DeviceMode::Char,
-                MEM_MAJOR,
-                simple_device_ops::<DevNull>,
-            )
-            .expect("registers unique");
-
-        let fs = create_testfs(locked, &kernel);
-        let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
-
-        // Fail to open non-existent device.
-        assert!(
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let registry = DeviceRegistry::default();
             registry
-                .open_device(
+                .register_major(
                     locked,
-                    &current_task,
-                    &node,
-                    OpenFlags::RDONLY,
-                    DeviceType::NONE,
-                    DeviceMode::Char
+                    "mem".into(),
+                    DeviceMode::Char,
+                    MEM_MAJOR,
+                    simple_device_ops::<DevNull>,
                 )
-                .is_err()
-        );
+                .expect("registers unique");
 
-        // Fail to open in wrong mode.
-        assert!(
-            registry
+            let fs = create_testfs(locked, &kernel);
+            let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
+
+            // Fail to open non-existent device.
+            assert!(
+                registry
+                    .open_device(
+                        locked,
+                        &current_task,
+                        &node,
+                        OpenFlags::RDONLY,
+                        DeviceType::NONE,
+                        DeviceMode::Char
+                    )
+                    .is_err()
+            );
+
+            // Fail to open in wrong mode.
+            assert!(
+                registry
+                    .open_device(
+                        locked,
+                        &current_task,
+                        &node,
+                        OpenFlags::RDONLY,
+                        DeviceType::NULL,
+                        DeviceMode::Block
+                    )
+                    .is_err()
+            );
+
+            // Open in correct mode.
+            let _ = registry
                 .open_device(
                     locked,
                     &current_task,
                     &node,
                     OpenFlags::RDONLY,
                     DeviceType::NULL,
-                    DeviceMode::Block
+                    DeviceMode::Char,
                 )
-                .is_err()
-        );
-
-        // Open in correct mode.
-        let _ = registry
-            .open_device(
-                locked,
-                &current_task,
-                &node,
-                OpenFlags::RDONLY,
-                DeviceType::NULL,
-                DeviceMode::Char,
-            )
-            .expect("opens device");
+                .expect("opens device");
+        });
     }
 
     #[::fuchsia::test]
     async fn registry_dynamic_misc() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            fn create_test_device(
+                _locked: &mut Locked<FileOpsCore>,
+                _current_task: &CurrentTask,
+                _id: DeviceType,
+                _node: &NamespaceNode,
+                _flags: OpenFlags,
+            ) -> Result<Box<dyn FileOps>, Errno> {
+                Ok(Box::new(PanickingFile))
+            }
 
-        fn create_test_device(
-            _locked: &mut Locked<FileOpsCore>,
-            _current_task: &CurrentTask,
-            _id: DeviceType,
-            _node: &NamespaceNode,
-            _flags: OpenFlags,
-        ) -> Result<Box<dyn FileOps>, Errno> {
-            Ok(Box::new(PanickingFile))
-        }
+            let registry = &kernel.device_registry;
+            let device = registry
+                .register_dyn_device(
+                    locked,
+                    &*current_task,
+                    "test-device".into(),
+                    registry.objects.virtual_block_class(),
+                    create_test_device,
+                )
+                .unwrap();
+            let device_type = device.metadata.expect("has metadata").device_type;
+            assert!(DYN_MAJOR_RANGE.contains(&device_type.major()));
 
-        let registry = &kernel.device_registry;
-        let device = registry
-            .register_dyn_device(
-                locked,
-                &current_task,
-                "test-device".into(),
-                registry.objects.virtual_block_class(),
-                create_test_device,
-            )
-            .unwrap();
-        let device_type = device.metadata.expect("has metadata").device_type;
-        assert!(DYN_MAJOR_RANGE.contains(&device_type.major()));
-
-        let fs = create_testfs(locked, &kernel);
-        let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
-        let _ = registry
-            .open_device(
-                locked,
-                &current_task,
-                &node,
-                OpenFlags::RDONLY,
-                device_type,
-                DeviceMode::Char,
-            )
-            .expect("opens device");
+            let fs = create_testfs(locked, &kernel);
+            let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
+            let _ = registry
+                .open_device(
+                    locked,
+                    &current_task,
+                    &node,
+                    OpenFlags::RDONLY,
+                    device_type,
+                    DeviceMode::Char,
+                )
+                .expect("opens device");
+        });
     }
 
     #[::fuchsia::test]
     async fn registery_add_class() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let registry = &kernel.device_registry;
-        registry
-            .register_major(
-                locked,
-                "input".into(),
-                DeviceMode::Char,
-                INPUT_MAJOR,
-                simple_device_ops::<DevNull>,
-            )
-            .expect("can register input");
-
-        let input_class =
-            registry.objects.get_or_create_class("input".into(), registry.objects.virtual_bus());
-        registry
-            .add_device(
-                locked,
-                &current_task,
-                "mouse".into(),
-                DeviceMetadata::new(
-                    "mouse".into(),
-                    DeviceType::new(INPUT_MAJOR, 0),
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+            registry
+                .register_major(
+                    locked,
+                    "input".into(),
                     DeviceMode::Char,
-                ),
-                input_class,
-                build_device_directory,
-            )
-            .expect("add_device");
+                    INPUT_MAJOR,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("can register input");
 
-        assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
+            let input_class = registry
+                .objects
+                .get_or_create_class("input".into(), registry.objects.virtual_bus());
+            registry
+                .add_device(
+                    locked,
+                    &*current_task,
+                    "mouse".into(),
+                    DeviceMetadata::new(
+                        "mouse".into(),
+                        DeviceType::new(INPUT_MAJOR, 0),
+                        DeviceMode::Char,
+                    ),
+                    input_class,
+                    build_device_directory,
+                )
+                .expect("add_device");
+
+            assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
+        });
     }
 
     #[::fuchsia::test]
     async fn registry_add_bus() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let registry = &kernel.device_registry;
-        registry
-            .register_major(
-                locked,
-                "input".into(),
-                DeviceMode::Char,
-                INPUT_MAJOR,
-                simple_device_ops::<DevNull>,
-            )
-            .expect("can register input");
-
-        let bus = registry.objects.get_or_create_bus("my-bus".into());
-        let class = registry.objects.get_or_create_class("my-class".into(), bus);
-        registry
-            .add_device(
-                locked,
-                &current_task,
-                "my-device".into(),
-                DeviceMetadata::new(
-                    "my-device".into(),
-                    DeviceType::new(INPUT_MAJOR, 0),
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+            registry
+                .register_major(
+                    locked,
+                    "input".into(),
                     DeviceMode::Char,
-                ),
-                class,
-                build_device_directory,
-            )
-            .expect("add_device");
-        assert!(registry.objects.root.lookup("bus/my-bus".into()).is_some());
-        assert!(registry.objects.root.lookup("devices/my-bus/my-class".into()).is_some());
-        assert!(registry.objects.root.lookup("devices/my-bus/my-class/my-device".into()).is_some());
+                    INPUT_MAJOR,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("can register input");
+
+            let bus = registry.objects.get_or_create_bus("my-bus".into());
+            let class = registry.objects.get_or_create_class("my-class".into(), bus);
+            registry
+                .add_device(
+                    locked,
+                    &*current_task,
+                    "my-device".into(),
+                    DeviceMetadata::new(
+                        "my-device".into(),
+                        DeviceType::new(INPUT_MAJOR, 0),
+                        DeviceMode::Char,
+                    ),
+                    class,
+                    build_device_directory,
+                )
+                .expect("add_device");
+            assert!(registry.objects.root.lookup("bus/my-bus".into()).is_some());
+            assert!(registry.objects.root.lookup("devices/my-bus/my-class".into()).is_some());
+            assert!(
+                registry.objects.root.lookup("devices/my-bus/my-class/my-device".into()).is_some()
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn registry_remove_device() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let registry = &kernel.device_registry;
-        registry
-            .register_major(
-                locked,
-                "input".into(),
-                DeviceMode::Char,
-                INPUT_MAJOR,
-                simple_device_ops::<DevNull>,
-            )
-            .expect("can register input");
-
-        let pci_bus = registry.objects.get_or_create_bus("pci".into());
-        let input_class = registry.objects.get_or_create_class("input".into(), pci_bus);
-        let mouse_dev = registry
-            .add_device(
-                locked,
-                &current_task,
-                "mouse".into(),
-                DeviceMetadata::new(
-                    "mouse".into(),
-                    DeviceType::new(INPUT_MAJOR, 0),
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+            registry
+                .register_major(
+                    locked,
+                    "input".into(),
                     DeviceMode::Char,
-                ),
-                input_class.clone(),
-                build_device_directory,
-            )
-            .expect("add_device");
+                    INPUT_MAJOR,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("can register input");
 
-        assert!(registry.objects.root.lookup("bus/pci/devices/mouse".into()).is_some());
-        assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_some());
-        assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
+            let pci_bus = registry.objects.get_or_create_bus("pci".into());
+            let input_class = registry.objects.get_or_create_class("input".into(), pci_bus);
+            let mouse_dev = registry
+                .add_device(
+                    locked,
+                    &*current_task,
+                    "mouse".into(),
+                    DeviceMetadata::new(
+                        "mouse".into(),
+                        DeviceType::new(INPUT_MAJOR, 0),
+                        DeviceMode::Char,
+                    ),
+                    input_class.clone(),
+                    build_device_directory,
+                )
+                .expect("add_device");
 
-        registry.remove_device(locked, &current_task, mouse_dev);
+            assert!(registry.objects.root.lookup("bus/pci/devices/mouse".into()).is_some());
+            assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_some());
+            assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
 
-        assert!(registry.objects.root.lookup("bus/pci/devices/mouse".into()).is_none());
-        assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_none());
-        assert!(registry.objects.root.lookup("class/input/mouse".into()).is_none());
+            registry.remove_device(locked, &current_task, mouse_dev);
+
+            assert!(registry.objects.root.lookup("bus/pci/devices/mouse".into()).is_none());
+            assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_none());
+            assert!(registry.objects.root.lookup("class/input/mouse".into()).is_none());
+        });
     }
 
     #[::fuchsia::test]
     async fn registry_add_and_remove_numberless_device() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let registry = &kernel.device_registry;
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
 
-        let cooling_device = registry.add_numberless_device(
-            locked,
-            "cooling_device0".into(),
-            registry.objects.virtual_thermal_class(),
-            build_device_directory,
-        );
+            let cooling_device = registry.add_numberless_device(
+                locked,
+                "cooling_device0".into(),
+                registry.objects.virtual_thermal_class(),
+                build_device_directory,
+            );
 
-        assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_some());
-        assert!(
-            registry
-                .objects
-                .root
-                .lookup("devices/virtual/thermal/cooling_device0".into())
-                .is_some()
-        );
+            assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_some());
+            assert!(
+                registry
+                    .objects
+                    .root
+                    .lookup("devices/virtual/thermal/cooling_device0".into())
+                    .is_some()
+            );
 
-        registry.remove_device(locked, &current_task, cooling_device);
+            registry.remove_device(locked, &current_task, cooling_device);
 
-        assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_none());
-        assert!(
-            registry
-                .objects
-                .root
-                .lookup("devices/virtual/thermal/cooling_device0".into())
-                .is_none()
-        );
+            assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_none());
+            assert!(
+                registry
+                    .objects
+                    .root
+                    .lookup("devices/virtual/thermal/cooling_device0".into())
+                    .is_none()
+            );
+        });
     }
 }
