@@ -249,7 +249,6 @@ shared_library("driver") {
     "//src/storage/fvm/driver:*",
     "//src/testing/fuzzing/syzkaller:*",
     "//src/ui/backlight/drivers/ti-lp8556:*",
-    "//src/ui/backlight/drivers/vim3-pwm-backlight:*",
     "//src/ui/input/drivers/buttons:*",
     "//src/ui/input/drivers/ctaphid:*",
     "//src/ui/input/drivers/focaltech:*",

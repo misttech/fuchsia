@@ -309,7 +309,6 @@ source_set("ddktl") {
     "//src/media/drivers/amlogic_decoder:*",
     "//src/storage/fvm/driver:*",
     "//src/ui/backlight/drivers/ti-lp8556:*",
-    "//src/ui/backlight/drivers/vim3-pwm-backlight:*",
     "//src/ui/input/drivers/buttons:*",
     "//src/ui/input/drivers/ctaphid:*",
     "//src/ui/input/drivers/focaltech:*",

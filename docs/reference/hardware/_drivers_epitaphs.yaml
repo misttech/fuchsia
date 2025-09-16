@@ -686,3 +686,15 @@
   available_in_git: '3c52e1dbdc71dbd034d1e63baf43205284370976'
   areas: ['Audio']
   path: 'src/media/audio/drivers/aml-dsp'
+- short_description: 'VIM3 Display Detect Driver'
+  deletion_reason: 'Hardware is not actively supported'
+  gerrit_change_id: '1368762'
+  available_in_git: '027a17f750ac7493f749d4477ee6664416deb416'
+  areas: ['Display']
+  path: 'src/graphics/display/drivers/vim3-display-detect'
+- short_description: 'VIM3 PWM backlight driver'
+  deletion_reason: 'Hardware is not actively supported'
+  gerrit_change_id: '1368739'
+  available_in_git: '027a17f750ac7493f749d4477ee6664416deb416'
+  areas: ['Display']
+  path: 'src/ui/backlight/drivers/vim3-pwm-backlight'

@@ -67,13 +67,6 @@
 		};
 	};
 
-	backlight {
-		gpio-names = "LCD_BACKLIGHT_ENABLE";
-		gpios = <0x31 0x01 0x00>;
-		pwm-names = "LCD_BRIGHTNESS";
-		pwms = <0x19 0x08 0x00 0x00>;
-	};
-
 	bt-uart@ffd24000 {
 		boot-metadata = "CAMm\0\0\0";
 		compatible = "amlogic,bt-uart";
