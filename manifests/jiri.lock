@@ -1145,18 +1145,18 @@
     },
     {
         "package": "infra/rbe/client/linux-amd64",
-        "version": "re_client_version:0.183.0.3b3097cd-gomaip",
-        "instance_id": "4GZmcWaY7TtNCegyxXH2lvqO3O6KaxFhvjjelrJr-4oC"
+        "version": "re_client_version:0.184.0.b56be69d-gomaip",
+        "instance_id": "zmogIdDUH59cE41szjq9n2AcOaCtOhMLdRTqM3OBUhwC"
     },
     {
         "package": "infra/rbe/client/mac-amd64",
-        "version": "re_client_version:0.183.0.3b3097cd-gomaip",
-        "instance_id": "dfGXM3NG5tahAPuHmETxYL6xTtC4HRcE8tJ2dO0BciEC"
+        "version": "re_client_version:0.184.0.b56be69d-gomaip",
+        "instance_id": "EEquKCLYtmfDmqpPsff7bECQWLKs-_mt0wtowEz_I5QC"
     },
     {
         "package": "infra/rbe/client/mac-arm64",
-        "version": "re_client_version:0.183.0.3b3097cd-gomaip",
-        "instance_id": "YVb8-yW629ExK1SaA0OHMTVxlD_MKY6FXe4RqIBTZPgC"
+        "version": "re_client_version:0.184.0.b56be69d-gomaip",
+        "instance_id": "ym3ezhkt0YXjI9e3qHO3sbbCWxN0AiSBniL1JyQNpLUC"
     },
     {
         "package": "infra/tools/bb/linux-amd64",
