@@ -124,10 +124,14 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
 
         self.access_point().stop_all_aps()
 
-    def teardown_test(self) -> None:
+    @asyncmethod
+    async def teardown_test(self) -> None:
         # Maintain the invariant that every test starts with no access points.
         self.access_point().download_ap_logs(self.log_path)
         self.access_point().stop_all_aps()
+        await self.client_sme_proxy.disconnect(
+            reason=fidl_sme.UserDisconnectReason.UNKNOWN
+        )
         super().teardown_test()
 
     @asyncmethod
