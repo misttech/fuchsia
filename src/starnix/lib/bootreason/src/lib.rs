@@ -46,6 +46,26 @@ pub fn get_android_bootreason() -> Result<&'static str, Error> {
     }
 }
 
+/// Get the last reboot reason code.
+fn get_reboot_reason() -> Option<u16> {
+    let reboot_info_proxy = connect_to_protocol_sync::<LastRebootInfoProviderMarker>().ok();
+    let deadline = zx::MonotonicInstant::after(LRIP_FIDL_TIMEOUT);
+    let reboot_info = reboot_info_proxy?.get(deadline);
+    match reboot_info {
+        Ok(info) => match info.reason {
+            Some(r) => Some(r.into_primitive()),
+            None => {
+                info!("Failed to get the reboot reason.");
+                Some(RebootReason::unknown().into_primitive())
+            }
+        },
+        Err(e) => {
+            info!("Failed to get the reboot info: {:?}", e);
+            Some(RebootReason::unknown().into_primitive())
+        }
+    }
+}
+
 /// Get contents for the pstore/console-ramoops* file.
 ///
 /// In Linux it contains a limited amount of some of the previous boot's kernel logs.
@@ -55,8 +75,8 @@ pub fn get_console_ramoops() -> Option<Vec<u8>> {
     match get_android_bootreason() {
         Ok(reason) => match reason {
             "kernel_panic" | "watchdog" | "watchdog,sw" => {
-                // Placeholder while we figure out how to get the proper logs.
-                Some("Fuchsia Console Ramoops\n".as_bytes().to_vec())
+                Some(format!("Last Reboot Reason: {}\n", get_reboot_reason()?).as_bytes().to_vec())
+                // TODO: Log additional crash signature.
             }
             _ => None,
         },

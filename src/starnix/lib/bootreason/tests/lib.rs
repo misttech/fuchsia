@@ -16,6 +16,7 @@ use fuchsia_component_test::{
 };
 use futures::{StreamExt, TryStreamExt};
 use log::info;
+use regex::Regex;
 
 /// Builds a test realm where the LastReboot info is `reason`.
 async fn build_test_realm(reason: &LastReboot) -> RealmInstance {
@@ -117,11 +118,12 @@ async fn test_pstore_present() {
     info!(status:?; "mount_pstore stopped");
     assert_eq!(status, ExitStatus::Clean);
 
+    let re = Regex::new(r"Last Reboot Reason: ([0-9]{1,2})").unwrap();
     let console =
         read_starnix_file("/fs_root/sys/fs/pstore/console-ramoops", &realm_instance).await;
     assert!(
-        console.contains("Fuchsia Console Ramoops\n"),
-        "console-ramoops ({console}) has unexpected contents"
+        re.is_match(&console),
+        "console-ramoops ({console}) doesn't have the last reboot reason"
     );
 }
 
