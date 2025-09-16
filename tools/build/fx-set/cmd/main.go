@@ -381,8 +381,25 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 		cmd.buildDir = filepath.Join("out", strings.Join(nameComponents, "-"))
 	}
 	message := "The build directory for this build is " + cmd.buildDir + "\n"
-	nudge, _ := isNudgeOn(env, "balanced")
-	if cmd.isRelease && nudge {
+
+	hostname, _ := os.Hostname()
+	isVirtual := strings.HasSuffix(hostname, "c.googlers.com")
+	isCorp := strings.HasSuffix(hostname, ".corp.google.com")
+	if isVirtual || isCorp {
+		cores := runtime.NumCPU()
+		cpuNudge, _ := isNudgeOn(env, "cpu_cores")
+		if cores < 96 && cpuNudge {
+			if isVirtual {
+				message += "[Nudge] For faster builds, resize your machine to at least 96 cores (go/resize-ct)\n"
+			} else {
+				message += "[Nudge] For faster builds, upgrade your machine to at least 96 cores\n"
+			}
+			message += "(Silence nudge with `ffx config set ffx.ui.nudges.cpu_cores false`)\n"
+		}
+	}
+
+	balancedNudge, _ := isNudgeOn(env, "balanced")
+	if cmd.isRelease && balancedNudge {
 		message += "[Nudge] You have set --release, consider --balanced: https://fuchsia.dev/fuchsia-src/development/build/build_system/fuchsia_build_system_overview#quick_comparison\n"
 		message += "(Silence nudge with `ffx config set ffx.ui.nudges.balanced false`)\n"
 	}
