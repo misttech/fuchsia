@@ -16,6 +16,19 @@ pub type Dialect = ::fidl::encoding::DefaultFuchsiaResourceDialect;
 #[cfg(feature = "fdomain")]
 pub use fdomain_client::Channel as AsyncChannel;
 
+#[cfg(feature = "fdomain")]
+pub use fdomain_client::Socket as AsyncSocket;
+
+#[cfg(feature = "fdomain")]
+pub fn socket_to_async(s: AsyncSocket) -> AsyncSocket {
+    s
+}
+
+#[cfg(not(feature = "fdomain"))]
+pub fn socket_to_async(s: Socket) -> AsyncSocket {
+    AsyncSocket::from_socket(s)
+}
+
 #[cfg(not(feature = "fdomain"))]
 pub use ::fidl::endpoints::ProxyHasDomain;
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_tracing_controller as trace;
+use flex_fuchsia_tracing_controller as trace;
 use futures::FutureExt;
 use std::collections::BTreeSet;
 use std::future::Future;

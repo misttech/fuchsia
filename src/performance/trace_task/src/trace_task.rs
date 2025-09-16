@@ -5,8 +5,8 @@
 use crate::triggers::{Trigger, TriggerAction, TriggersWatcher};
 use crate::{TracingError, trace_shutdown};
 use async_lock::Mutex;
-use fidl::AsyncSocket;
-use fidl_fuchsia_tracing_controller::{self as trace, StopResult, TraceConfig};
+use flex_client::{AsyncSocket, ProxyHasDomain, socket_to_async};
+use flex_fuchsia_tracing_controller::{self as trace, StopResult, TraceConfig};
 use fuchsia_async::Task;
 use futures::io::AsyncWrite;
 use futures::prelude::*;
@@ -65,9 +65,8 @@ impl TraceTask {
         // Start the tracing session immediately. Maybe we should consider separating the creating
         // of the session and the actual starting of it. This seems like a side-effect.
         let task_id = SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let (client, server) = fidl::Socket::create_stream();
-        let client = fidl::AsyncSocket::from_socket(client);
-        let (client_end, server_end) = fidl::endpoints::create_proxy::<trace::SessionMarker>();
+        let (client, server) = provisioner.domain().create_stream_socket();
+        let (client_end, server_end) = provisioner.domain().create_proxy::<trace::SessionMarker>();
         provisioner.initialize_tracing(server_end, &config, server)?;
 
         client_end
@@ -132,7 +131,7 @@ impl TraceTask {
             requested_categories: requested_categories.unwrap_or_default(),
             start_time: Instant::now(),
             shutdown_sender,
-            read_socket: client,
+            read_socket: socket_to_async(client),
             task: Self::make_task(
                 task_id,
                 debug_tag,

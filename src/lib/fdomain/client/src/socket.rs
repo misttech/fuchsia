@@ -133,6 +133,17 @@ impl futures::AsyncRead for Socket {
     }
 }
 
+impl futures::AsyncRead for &Socket {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let client = self.0.client();
+        client.poll_socket(self.0.proto(), cx, buf).map_err(std::io::Error::other)
+    }
+}
+
 impl futures::AsyncWrite for Socket {
     fn poll_write(
         self: std::pin::Pin<&mut Self>,

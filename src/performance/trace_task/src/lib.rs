@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_tracing_controller::{self as trace, RecordingError, StartError};
+use flex_fuchsia_tracing_controller::{self as trace, RecordingError, StartError};
 
 mod trace_task;
 mod triggers;
