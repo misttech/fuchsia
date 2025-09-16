@@ -98,6 +98,7 @@ as an example on how to use the registers driver.
       function can be used to declare bitfields:
 
       ```c++ {:.devsite-disable-click-to-copy}
+      {% verbatim %}
       zx::result metadata = fidl_metadata::registers::RegistersMetadataToFidl<uint32_t>(kRegisters);
       if (!metadata.is_ok()) {
         zxlogf(ERROR, "Failed to convert registers to metadata %s", metadata.status_string());
@@ -117,6 +118,7 @@ as an example on how to use the registers driver.
               .data = std::move(persisted_metadata.value()),
           }},
       };
+      {% endverbatim %}
       ```
 
       where the bitfields are defined in the `kRegisters` field:
