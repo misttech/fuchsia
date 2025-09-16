@@ -48,7 +48,9 @@ constexpr size_t kAddOnePatchSize = PATCH_SIZE_ADD_ONE;
 constexpr uint32_t kMultiplyByFactorCaseId = CASE_ID_MULTIPLY_BY_FACTOR;
 constexpr size_t kMultiplyByFactorPatchSize = PATCH_SIZE_MULTIPLY_BY_FACTOR;
 
-using TestFn = uint64_t(uint64_t x);
+// Mark with cfi_unchecked_callee since these are defined in ASM so CFI will
+// not generate appropriate metadata for them.
+using TestFn = uint64_t(uint64_t x) [[clang::cfi_unchecked_callee]];
 
 // Defined in add-one.S.
 extern "C" TestFn AddOne;

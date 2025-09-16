@@ -29,7 +29,11 @@
 constexpr ktl::string_view kNamespace = "code-patches-test";
 
 // Defined by //zircon/kernel/phys/test/code-patching:multiply_by_factor.
-extern "C" uint64_t multiply_by_factor(uint64_t x);
+//
+// Marked with cfi_unchecked_callee because this isn't really a C function.
+// It's a block of memory that's patched with other ASM functions, so it won't
+// have it's own CFI metadata.
+extern "C" uint64_t multiply_by_factor(uint64_t x) [[clang::cfi_unchecked_callee]];
 
 namespace {
 
