@@ -506,22 +506,6 @@ template("fidl") {
         deps = [ "//sdk/categories:marker-${marker_category}" ]
         fidl_gen_dir += "/rust"
       }
-
-      # TODO: update users to the new target names
-      group("${target_name}_fidl_flex") {
-        forward_variables_from(invoker, [ "testonly" ])
-        public_deps = [ ":${_fidl_target_name}_rust_flex" ]
-      }
-      if (enable_fdomain) {
-        group("${target_name}_fdomain") {
-          forward_variables_from(invoker, [ "testonly" ])
-          public_deps = [ ":${_fidl_target_name}_rust_fdomain" ]
-        }
-        group("${target_name}_fdomain_flex") {
-          forward_variables_from(invoker, [ "testonly" ])
-          public_deps = [ ":${_fidl_target_name}_rust_fdomain_flex" ]
-        }
-      }
     }
 
     if (enable_rust_next &&

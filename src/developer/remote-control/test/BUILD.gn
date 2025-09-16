@@ -9,8 +9,8 @@ rustc_test("fdomain-connection-test-bin") {
   edition = "2021"
 
   deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_fdomain",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_fdomain",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
     "//src/developer/remote-control/fidl:fuchsia.developer.remotecontrol.connector_rust",
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",

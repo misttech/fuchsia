@@ -9,7 +9,7 @@ rustc_library("lib") {
   edition = "2021"
   with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_fdomain",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust_fdomain",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
@@ -31,8 +31,8 @@ rustc_library("lib") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_fdomain",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/developer/ffx/lib/addr:lib",

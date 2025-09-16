@@ -53,7 +53,7 @@ template("fuchsia_fs_lib") {
 
 fuchsia_fs_lib("fuchsia-fs") {
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_fidl_flex",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_flex",
     "//src/lib/fdomain/client:flex_fidl",
   ]
 
@@ -67,7 +67,7 @@ fuchsia_fs_lib("fuchsia-fs") {
 
 fuchsia_fs_lib("fuchsia-fs_fdomain") {
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_fdomain_flex",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_flex",
     "//src/lib/fdomain/client:flex_fdomain",
   ]
 

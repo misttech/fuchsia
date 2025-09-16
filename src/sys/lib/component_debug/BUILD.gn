@@ -115,12 +115,12 @@ template("component_debug_lib") {
 
 component_debug_lib("component_debug") {
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_fidl_flex",
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_fidl_flex",
-    "//sdk/fidl/fuchsia.dash:fuchsia.dash_fidl_flex",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_fidl_flex",
-    "//sdk/fidl/fuchsia.process:fuchsia.process_fidl_flex",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_fidl_flex",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust_flex",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_flex",
+    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust_flex",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_flex",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_rust_flex",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_flex",
     "//src/lib/fdomain/client:flex_fidl",
     "//src/lib/fuchsia-fs",
   ]
@@ -140,12 +140,12 @@ component_debug_lib("component_debug") {
 
 component_debug_lib("component_debug_fdomain") {
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_fdomain_flex",
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_fdomain_flex",
-    "//sdk/fidl/fuchsia.dash:fuchsia.dash_fdomain_flex",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_fdomain_flex",
-    "//sdk/fidl/fuchsia.process:fuchsia.process_fdomain_flex",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_fdomain_flex",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust_fdomain_flex",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_fdomain_flex",
+    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust_fdomain_flex",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_flex",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_rust_fdomain_flex",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain_flex",
     "//src/lib/fdomain/client:flex_fdomain",
     "//src/lib/fuchsia-fs:fuchsia-fs_fdomain",
   ]

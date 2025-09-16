@@ -47,10 +47,10 @@ rustc_library("lib_fdomain") {
   with_unit_tests = true
 
   deps = rcs_deps + [
-           "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_fdomain",
-           "//sdk/fidl/fuchsia.io:fuchsia.io_fdomain",
-           "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_fdomain",
-           "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_fdomain",
+           "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+           "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
+           "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust_fdomain",
+           "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
            "//src/lib/fdomain/client",
          ]
 
