@@ -34,10 +34,6 @@
                 symbols: [ "__devicetree_visitor_registration__" ],
             },
             {
-                module_name: "lib/visitors/devicetree-visitors-display-detect-visitor.so",
-                symbols: [ "__devicetree_visitor_registration__" ],
-            },
-            {
                 module_name: "lib/visitors/devicetree-visitors-display-panel-visitor.so",
                 symbols: [ "__devicetree_visitor_registration__" ],
             },

@@ -3,9 +3,6 @@
 # found in the LICENSE file.
 
 group("tests") {
-  deps = [
-    "display-detect:tests",
-    "display-panel:tests",
-  ]
+  deps = [ "display-panel:tests" ]
   testonly = true
 }
