@@ -1118,11 +1118,7 @@ class MultiVmoTestInstance : public TestInstance {
 
         result = pager.create_vmo(options, port, 0, vmo_size, &vmo);
         ZX_ASSERT(result == ZX_OK);
-        // Randomly discard reliable mappings even though not resizable to give the pager a chance
-        // to generate faults on non-resizable vmos.
-        if (reliable_mappings && uniform_rand(4, rng) == 0) {
-          reliable_mappings = false;
-        }
+
         // Force spin up the pager thread as it's required to ensure the VMO threads do not block
         // forever.
         zx::vmo dup_vmo;
@@ -1166,6 +1162,12 @@ class MultiVmoTestInstance : public TestInstance {
     }
 
     auto ops = make_ops(rng);
+
+    // Randomly discard reliable mappings as some tests, such as generating pager faults on
+    // non-resizable VMOs, or changing the protections do not work for reliable mappings.
+    if (reliable_mappings && uniform_rand(4, rng) == 0) {
+      reliable_mappings = false;
+    }
 
     make_thread([this, vmo = std::move(vmo), ops = std::move(ops), reliable_mappings]() mutable {
       op_thread(std::move(vmo), std::move(ops), reliable_mappings);
@@ -1462,7 +1464,7 @@ class MultiVmoTestInstance : public TestInstance {
       // Produce a random offset and size up front since many ops will need it.
       uint64_t op_off, op_size;
       random_off_size(rng, vmo_size, &op_off, &op_size);
-      switch (uniform_rand(151, rng)) {
+      switch (uniform_rand(161, rng)) {
         case 0:  // give up early
           Printf("G");
           return;
@@ -1498,7 +1500,18 @@ class MultiVmoTestInstance : public TestInstance {
           const size_t start = uniform_rand(op_size, rng);
           memset(&buffer[start], 42, end - std::min(end, start));
           if (use_map) {
-            memcpy(buffer.data(), &mapping.value()[op_off], op_size);
+            if (reliable_mappings) {
+              memcpy(buffer.data(), &mapping.value()[op_off], op_size);
+            } else {
+              // In the absence of reliable mappings we can ask the kernel to read from the address
+              // by writing to a VMO. Should there be an issue with the mapping, the kernel will
+              // safely catch it and fail the operation.
+              zx::vmo temp;
+              zx_status_t status = zx::vmo::create(0, ZX_VMO_UNBOUNDED, &temp);
+              if (status == ZX_OK) {
+                temp.write(&mapping.value()[op_off], 0, op_size);
+              }
+            }
           } else {
             vmo.read(buffer.data(), op_off, op_size);
           }
@@ -1521,7 +1534,19 @@ class MultiVmoTestInstance : public TestInstance {
           const size_t start = uniform_rand(op_size, rng);
           memset(&buffer[start], 42, end - std::min(end, start));
           if (use_map) {
-            memcpy(&mapping.value()[op_off], buffer.data(), op_size);
+            if (reliable_mappings) {
+              memcpy(&mapping.value()[op_off], buffer.data(), op_size);
+            } else {
+              // In the absence of reliable mappings we can ask the kernel to write to the address
+              // by reading from a VMO. Should there be an issue with the mapping, the kernel will
+              // safely catch it and fail the operation.
+              zx::vmo temp;
+              zx_status_t status = zx::vmo::create(0, ZX_VMO_UNBOUNDED, &temp);
+              if (status == ZX_OK) {
+                temp.write(buffer.data(), 0, op_size);
+                temp.read(&mapping.value()[op_off], 0, op_size);
+              }
+            }
           } else {
             vmo.write(buffer.data(), op_off, op_size);
           }
@@ -1573,33 +1598,29 @@ class MultiVmoTestInstance : public TestInstance {
           break;
         }
         case 61 ... 70: {  // vmar_map/unmap
-          // If reliable mappings is true it means we know that no one else is going to mess with
-          // the VMO in a way that would cause access to a valid mapping to generate a fault.
-          // Generally this means that the VMO is not resizable.
           Printf("V");
-          if (reliable_mappings) {
-            if (!mapping.has_value() || uniform_rand(2, rng) == 0) {
-              // TODO: Also test FAULT_BEYOND_STREAM_SIZE mappings.
-              uint32_t options = ZX_VM_PERM_READ | ZX_VM_PERM_WRITE;
-              if (uniform_rand(2, rng) == 0) {
-                options |= ZX_VM_MAP_RANGE;
-              }
-              zx_info_vmo_t info;
-              ZX_ASSERT(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) == ZX_OK);
-              if (info.flags & (ZX_INFO_VMO_PAGER_BACKED | ZX_INFO_VMO_DISCARDABLE)) {
-                options |= ZX_VM_ALLOW_FAULTS;
-              }
-              zx_vaddr_t addr;
-              // Currently fault prevention isn't enforced in mappings and so we must be *very*
-              // careful to not map in outside the actual range of the vmo.
-              if (op_off + op_size <= vmo_size &&
-                  zx::vmar::root_self()->map(options, 0, vmo, op_off, op_size, &addr) == ZX_OK) {
-                unmap_mapping();
-                mapping = cpp20::span<uint8_t>{reinterpret_cast<uint8_t*>(addr), op_size};
-              }
-            } else {
-              unmap_mapping();
+          if (!mapping.has_value() || uniform_rand(2, rng) == 0) {
+            // TODO: Also test FAULT_BEYOND_STREAM_SIZE mappings.
+            uint32_t options = ZX_VM_PERM_READ | ZX_VM_PERM_WRITE;
+            if (uniform_rand(2, rng) == 0) {
+              options |= ZX_VM_MAP_RANGE;
             }
+            zx_info_vmo_t info;
+            ZX_ASSERT(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) == ZX_OK);
+            if (info.flags &
+                (ZX_INFO_VMO_PAGER_BACKED | ZX_INFO_VMO_DISCARDABLE | ZX_INFO_VMO_RESIZABLE)) {
+              options |= ZX_VM_ALLOW_FAULTS;
+            }
+            zx_vaddr_t addr;
+            // Currently fault prevention isn't enforced in mappings and so we must be *very*
+            // careful to not map in outside the actual range of the vmo.
+            if (op_off + op_size <= vmo_size &&
+                zx::vmar::root_self()->map(options, 0, vmo, op_off, op_size, &addr) == ZX_OK) {
+              unmap_mapping();
+              mapping = cpp20::span<uint8_t>{reinterpret_cast<uint8_t*>(addr), op_size};
+            }
+          } else {
+            unmap_mapping();
           }
           break;
         }
@@ -1687,6 +1708,23 @@ class MultiVmoTestInstance : public TestInstance {
             vmo.op_range(op, 0, vmo_size, &lock_state, sizeof(lock_state));
           } else {
             vmo.op_range(op, 0, vmo_size, nullptr, 0);
+          }
+          break;
+        }
+        case 151 ... 160: {  // vmar_protect
+          Printf("P");
+          // Only protect the mapping if it is deemed unreliable to avoid causing faults to any
+          // direct accesses.
+          if (mapping.has_value() && !reliable_mappings) {
+            const uint64_t page_size = zx_system_get_page_size();
+            op_off = uniform_rand(mapping.value().size_bytes() / page_size, rng) * page_size;
+            op_size =
+                uniform_rand((mapping.value().size_bytes() - op_off) / PAGE_SIZE, rng) * PAGE_SIZE;
+            const uint32_t options =
+                ZX_VM_PERM_READ | ((uniform_rand(2, rng) == 0) ? ZX_VM_PERM_WRITE : 0);
+            // Avoid ubsan complaints by making the size at least 1, so that &buffer[start] works
+            zx::vmar::root_self()->protect(
+                options, reinterpret_cast<uintptr_t>(mapping.value().data()) + op_off, op_size);
           }
           break;
         }
