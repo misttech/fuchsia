@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.dwc2/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
@@ -25,7 +26,6 @@
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 #include <usb/cdc.h>
-#include <usb/dwc2/metadata.h>
 #include <usb/usb.h>
 
 #include "nelson.h"
@@ -56,21 +56,6 @@ static const std::vector<fpbus::Bti> dwc2_btis{
         .iommu_index = 0,
         .bti_id = BTI_USB,
     }},
-};
-
-// Metadata for DWC2 driver.
-static const dwc2_metadata_t dwc2_metadata = {
-    .dma_burst_len = DWC2_DMA_BURST_INCR8,
-    .usb_turnaround_time = 9,
-    .rx_fifo_size = 256,   // for all OUT endpoints.
-    .nptx_fifo_size = 32,  // for endpoint zero IN direction.
-    .tx_fifo_sizes =
-        {
-            128,  // for CDC ethernet bulk IN.
-            4,    // for CDC ethernet interrupt IN.
-            128,  // for test function bulk IN.
-            16,   // for test function interrupt IN.
-        },
 };
 
 static const std::vector<fpbus::BootMetadata> usb_boot_metadata{
@@ -336,13 +321,30 @@ zx_status_t Nelson::UsbInit() {
     return status;
   }
 
-  const std::vector<fpbus::Metadata> usb_metadata{
-      {{
-          .id = std::to_string(DEVICE_METADATA_PRIVATE),
-          .data = std::vector<uint8_t>(
-              reinterpret_cast<const uint8_t*>(&dwc2_metadata),
-              reinterpret_cast<const uint8_t*>(&dwc2_metadata) + sizeof(dwc2_metadata)),
-      }},
+  static const fuchsia_hardware_usb_dwc2::Metadata kDwc2Metadata({
+      .dma_burst_len = fuchsia_hardware_usb_dwc2::DmaBurstLen::kIncr8,
+      .usb_turnaround_time = 9,
+      .rx_fifo_size = 256,   // for all OUT endpoints.
+      .nptx_fifo_size = 32,  // for endpoint zero IN direction.
+      .tx_fifo_sizes =
+          {
+              128,  // for CDC ethernet bulk IN.
+              4,    // for CDC ethernet interrupt IN.
+              128,  // for test function bulk IN.
+              16,   // for test function interrupt IN.
+          },
+  });
+
+  fit::result persisted_metadata = fidl::Persist(kDwc2Metadata);
+  if (persisted_metadata.is_error()) {
+    zxlogf(ERROR, "Failed to persist dwc2 metadata: %s",
+           persisted_metadata.error_value().FormatDescription().c_str());
+    return persisted_metadata.error_value().status();
+  }
+
+  std::vector<fpbus::Metadata> usb_metadata{
+      {{.id = fuchsia_hardware_usb_dwc2::Metadata::kSerializableName,
+        .data = std::move(persisted_metadata.value())}},
   };
 
   return AddDwc2Composite(pbus_, fidl_arena, arena, std::move(usb_metadata));

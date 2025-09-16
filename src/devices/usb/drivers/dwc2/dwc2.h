@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.dwc2/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -26,8 +27,6 @@
 #include <memory>
 #include <queue>
 #include <utility>
-
-#include <usb/dwc2/metadata.h>
 
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
@@ -220,7 +219,7 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
 
   zx::interrupt irq_;
 
-  dwc2_metadata_t metadata_;
+  fuchsia_hardware_usb_dwc2::Metadata metadata_;
   bool connected_ = false;
   bool configured_ = false;
   // The length of the last IN-data sent to the host.

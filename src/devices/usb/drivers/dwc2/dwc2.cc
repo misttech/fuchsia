@@ -32,7 +32,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
-#include <usb/dwc2/metadata.h>
 
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 
@@ -72,7 +71,7 @@ void Dwc2::dump_regs() {
   DUMP_REG(DAINTMSK, mmio)
   DUMP_REG(PCGCCTL, mmio)
 
-  for (uint32_t i = 0; i < std::size(metadata_.tx_fifo_sizes); i++) {
+  for (uint32_t i = 0; i < std::size(metadata_.tx_fifo_sizes()); i++) {
     DUMP_REG_W_IDX(DTXFSIZ, i + 1, mmio)
   }
   for (uint32_t i = 0; i < DWC_MAX_EPS; i++) {
@@ -231,7 +230,7 @@ void Dwc2::HandleEnumDone() {
 
   DCTL::Get().ReadFrom(mmio).set_cgnpinnak(1).WriteTo(mmio);
 
-  GUSBCFG::Get().ReadFrom(mmio).set_usbtrdtim(metadata_.usb_turnaround_time).WriteTo(mmio);
+  GUSBCFG::Get().ReadFrom(mmio).set_usbtrdtim(metadata_.usb_turnaround_time()).WriteTo(mmio);
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -883,12 +882,12 @@ zx_status_t Dwc2::InitController() {
   GAHBCFG::Get()
       .FromValue(0)
       .set_dmaenable(1)
-      .set_hburstlen(metadata_.dma_burst_len)
+      .set_hburstlen(static_cast<uint32_t>(metadata_.dma_burst_len()))
       .set_nptxfemplvl_txfemplvl(1)
       .WriteTo(mmio);
 
   // Set turnaround time based on metadata
-  GUSBCFG::Get().ReadFrom(mmio).set_usbtrdtim(metadata_.usb_turnaround_time).WriteTo(mmio);
+  GUSBCFG::Get().ReadFrom(mmio).set_usbtrdtim(metadata_.usb_turnaround_time()).WriteTo(mmio);
   DCFG::Get()
       .ReadFrom(mmio)
       .set_devaddr(0)
@@ -905,18 +904,18 @@ zx_status_t Dwc2::InitController() {
   PCGCCTL::Get().FromValue(0).WriteTo(mmio);
 
   // Set fifo sizes based on metadata.
-  GRXFSIZ::Get().FromValue(0).set_size(metadata_.rx_fifo_size).WriteTo(mmio);
+  GRXFSIZ::Get().FromValue(0).set_size(metadata_.rx_fifo_size()).WriteTo(mmio);
   GNPTXFSIZ::Get()
       .FromValue(0)
-      .set_depth(metadata_.nptx_fifo_size)
-      .set_startaddr(metadata_.rx_fifo_size)
+      .set_depth(metadata_.nptx_fifo_size())
+      .set_startaddr(metadata_.rx_fifo_size())
       .WriteTo(mmio);
 
-  auto fifo_base = metadata_.rx_fifo_size + metadata_.nptx_fifo_size;
+  auto fifo_base = metadata_.rx_fifo_size() + metadata_.nptx_fifo_size();
   auto dfifo_end = GHWCFG3::Get().ReadFrom(mmio).dfifo_depth();
 
-  for (uint32_t i = 0; i < std::size(metadata_.tx_fifo_sizes); i++) {
-    auto fifo_size = metadata_.tx_fifo_sizes[i];
+  for (uint32_t i = 0; i < std::size(metadata_.tx_fifo_sizes()); i++) {
+    auto fifo_size = metadata_.tx_fifo_sizes()[i];
 
     DTXFSIZ::Get(i + 1).FromValue(0).set_startaddr(fifo_base).set_depth(fifo_size).WriteTo(mmio);
     fifo_base += fifo_size;
@@ -1058,13 +1057,12 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
     endpoints_[i].emplace(i, this);
   }
 
-  zx::result metadata =
-      compat::GetMetadata<dwc2_metadata_t>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  zx::result metadata = pdev_->GetFidlMetadata<fuchsia_hardware_usb_dwc2::Metadata>();
   if (metadata.is_error()) {
-    FDF_LOG(ERROR, "GetMetadata(): %s", metadata.status_string());
+    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
     return ZX_ERR_INTERNAL;
   }
-  metadata_ = *metadata.value();
+  metadata_ = std::move(metadata.value());
 
   zx::result mmio = pdev_->MapMmio(0);
   if (mmio.is_error()) {

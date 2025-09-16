@@ -50,8 +50,8 @@ source_set("common") {
     "//sdk/lib/fit",
     "//src/devices/lib/dma-buffer",
     "//src/devices/lib/mmio",
+    "//src/devices/usb/lib/fuchsia.hardware.usb.dwc2:fuchsia.hardware.usb.dwc2_cpp",
     "//src/devices/usb/lib/usb:descriptors",
-    "//src/devices/usb/lib/usb:dwc2",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-server-sdk",
     "//src/lib/ddk:ddk_metadata_only",
     "//zircon/system/ulib/hwreg",
@@ -105,7 +105,7 @@ test("dwc2-test-bin") {
   output_name = "dwc2-test"
   deps = [
     ":common",
-    "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/fake-mmio-reg/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/testing/cpp",

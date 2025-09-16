@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.dwc2/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
@@ -25,7 +26,6 @@
 #include <bind/fuchsia/register/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <usb/cdc.h>
-#include <usb/dwc2/metadata.h>
 #include <usb/usb.h>
 
 #include "sherlock.h"
@@ -57,30 +57,6 @@ static const std::vector<fpbus::Bti> dwc2_btis{
     {{
         .iommu_index = 0,
         .bti_id = BTI_USB,
-    }},
-};
-
-// Metadata for DWC2 driver.
-constexpr dwc2_metadata_t dwc2_metadata = {
-    .dma_burst_len = DWC2_DMA_BURST_INCR8,
-    .usb_turnaround_time = 9,
-    .rx_fifo_size = 256,   // for all OUT endpoints.
-    .nptx_fifo_size = 32,  // for endpoint zero IN direction.
-    .tx_fifo_sizes =
-        {
-            128,  // for CDC ethernet bulk IN.
-            4,    // for CDC ethernet interrupt IN.
-            128,  // for test function bulk IN.
-            16,   // for test function interrupt IN.
-        },
-};
-
-static std::vector<fpbus::Metadata> usb_metadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&dwc2_metadata),
-            reinterpret_cast<const uint8_t*>(&dwc2_metadata) + sizeof(dwc2_metadata)),
     }},
 };
 
@@ -225,6 +201,32 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
 zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                              fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
+  static const fuchsia_hardware_usb_dwc2::Metadata kDwc2Metadata({
+      .dma_burst_len = fuchsia_hardware_usb_dwc2::DmaBurstLen::kIncr8,
+      .usb_turnaround_time = 9,
+      .rx_fifo_size = 256,   // for all OUT endpoints.
+      .nptx_fifo_size = 32,  // for endpoint zero IN direction.
+      .tx_fifo_sizes =
+          {
+              128,  // for CDC ethernet bulk IN.
+              4,    // for CDC ethernet interrupt IN.
+              128,  // for test function bulk IN.
+              16,   // for test function interrupt IN.
+          },
+  });
+
+  fit::result persisted_metadata = fidl::Persist(kDwc2Metadata);
+  if (persisted_metadata.is_error()) {
+    zxlogf(ERROR, "Failed to persist dwc2 metadata: %s",
+           persisted_metadata.error_value().FormatDescription().c_str());
+    return persisted_metadata.error_value().status();
+  }
+
+  std::vector<fpbus::Metadata> usb_metadata{
+      {{.id = fuchsia_hardware_usb_dwc2::Metadata::kSerializableName,
+        .data = std::move(persisted_metadata.value())}},
+  };
+
   fpbus::Node dwc2_dev = {};
   dwc2_dev.name() = "dwc2";
   dwc2_dev.vid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC;
@@ -233,7 +235,7 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   dwc2_dev.mmio() = dwc2_mmios;
   dwc2_dev.irq() = dwc2_irqs;
   dwc2_dev.bti() = dwc2_btis;
-  dwc2_dev.metadata() = usb_metadata;
+  dwc2_dev.metadata() = std::move(usb_metadata);
   dwc2_dev.boot_metadata() = usb_boot_metadata;
 
   const std::vector<fdf::BindRule2> kDwc2PhyRules = std::vector{

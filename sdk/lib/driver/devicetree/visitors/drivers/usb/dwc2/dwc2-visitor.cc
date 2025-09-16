@@ -4,13 +4,12 @@
 
 #include "dwc2-visitor.h"
 
+#include <fidl/fuchsia.hardware.usb.dwc2/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <cstdint>
-
-#include <usb/dwc2/metadata.h>
 
 namespace dwc2_visitor_dt {
 
@@ -38,50 +37,55 @@ zx::result<> Dwc2Visitor::DriverVisit(fdf_devicetree::Node& node,
     return parser_output.take_error();
   }
 
-  dwc2_metadata_t dwc2_metadata = {};
+  fuchsia_hardware_usb_dwc2::Metadata dwc2_metadata = {};
   bool metadata_found = false;
 
   if (auto value = parser_output->Get<uint32_t>(kGRxFifoSize)) {
-    dwc2_metadata.rx_fifo_size = *value;
+    dwc2_metadata.rx_fifo_size() = *value;
     metadata_found = true;
   }
 
   if (auto value = parser_output->Get<uint32_t>(kGNpTxFifoSize)) {
-    dwc2_metadata.nptx_fifo_size = *value;
+    dwc2_metadata.nptx_fifo_size() = *value;
     metadata_found = true;
   }
 
   if (auto value = parser_output->Get<uint32_t>(kGTurnaroundTime)) {
-    dwc2_metadata.usb_turnaround_time = *value;
+    dwc2_metadata.usb_turnaround_time() = *value;
     metadata_found = true;
   }
 
   if (auto value = parser_output->Get<uint32_t>(kDmaBurstLen)) {
-    dwc2_metadata.dma_burst_len = *value;
+    dwc2_metadata.dma_burst_len() = static_cast<fuchsia_hardware_usb_dwc2::DmaBurstLen>(*value);
     metadata_found = true;
   }
 
   if (auto tx_fifo_sizes = parser_output->Get<std::vector<uint32_t>>(kGTxFifoSize)) {
-    if (tx_fifo_sizes->size() > (sizeof(dwc2_metadata.tx_fifo_sizes) / sizeof(uint32_t))) {
+    if (tx_fifo_sizes->size() > dwc2_metadata.tx_fifo_sizes().size()) {
       FDF_LOG(ERROR, "Node '%s' has invalid '%s'. Expected size to be <= %lu, actual: %zu.",
-              node.name().c_str(), kGTxFifoSize,
-              (sizeof(dwc2_metadata.tx_fifo_sizes) / sizeof(uint32_t)), tx_fifo_sizes->size());
+              node.name().c_str(), kGTxFifoSize, dwc2_metadata.tx_fifo_sizes().size(),
+              tx_fifo_sizes->size());
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     for (size_t i = 0; i < tx_fifo_sizes->size(); ++i) {
-      dwc2_metadata.tx_fifo_sizes[i] = (*tx_fifo_sizes)[i];
+      dwc2_metadata.tx_fifo_sizes()[i] = (*tx_fifo_sizes)[i];
     }
     metadata_found = true;
   }
 
   if (metadata_found) {
-    fuchsia_hardware_platform_bus::Metadata metadata = {{
-        .id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&dwc2_metadata),
-            reinterpret_cast<const uint8_t*>(&dwc2_metadata) + sizeof(dwc2_metadata)),
-    }};
+    fit::result persisted_metadata = fidl::Persist(dwc2_metadata);
+    if (!persisted_metadata.is_ok()) {
+      FDF_LOG(ERROR, "Failed to persist dwc2 metadata: %s",
+              persisted_metadata.error_value().FormatDescription().c_str());
+      return zx::error(persisted_metadata.error_value().status());
+    }
+
+    fuchsia_hardware_platform_bus::Metadata metadata({
+        .id = fuchsia_hardware_usb_dwc2::Metadata::kSerializableName,
+        .data = std::move(persisted_metadata.value()),
+    });
     node.AddMetadata(std::move(metadata));
     FDF_LOG(DEBUG, "Added dwc2 metadata to node '%s'.", node.name().c_str());
   }
