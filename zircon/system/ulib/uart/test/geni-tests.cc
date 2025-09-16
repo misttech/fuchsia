@@ -15,8 +15,8 @@
 
 namespace {
 
-using SimpleTestDriver =
-    uart::KernelDriver<uart::geni::Driver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>;
+using SimpleTestDriver = uart::KernelDriver<uart::geni::Driver, uart::mock::IoProvider,
+                                            uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
 // Helper for initializing the driver.
@@ -47,14 +47,14 @@ TEST(GeniTests, HelloWorld) {
 
   driver.io()
       .mock()
-       // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)   // free
-       // Write
-      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)  // len=4
-      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)  // start_tx
-      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700)                                 // Write
-      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618); // clr_tx_low
+      // TxReady
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)     // !busy
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)    // free
+                                                                                 // Write
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)   // len=4
+      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)   // start_tx
+      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700)                                  // Write
+      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618);  // clr_tx_low
 
   EXPECT_EQ(3, driver.Write("hi\n"));
 }
@@ -66,18 +66,18 @@ TEST(GeniTests, HelloWorldBusy) {
 
   driver.io()
       .mock()
-       // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)    // busy
-       // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)    // busy
-       // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)   // free
-       // Write
-      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)  // len=4
-      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)  // start_tx
-      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700)                                 // Write
-      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618); // clr_tx_low
+      // TxReady
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)     // busy
+                                                                                 // TxReady
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)     // busy
+                                                                                 // TxReady
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)     // !busy
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)    // free
+                                                                                 // Write
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)   // len=4
+      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)   // start_tx
+      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700)                                  // Write
+      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618);  // clr_tx_low
 
   EXPECT_EQ(3, driver.Write("hi\n"));
 }
@@ -114,9 +114,11 @@ TEST(GeniTests, InitInterrupt) {
       .ExpectWrite(uint32_t{0b0000'1100'0000'0000'0000'0000'0011'0000}, 0x61c)   // main irq enable
       .ExpectWrite(uint32_t{0b0000'1100'0000'0000'0000'0000'0011'0000}, 0x64c);  // main irq enable
 
-  bool unmasked_irq = false;
-  driver.InitInterrupt([&unmasked_irq]() { unmasked_irq = true; });
-  EXPECT_TRUE(unmasked_irq);
+  driver.InitInterrupt();
+  EXPECT_TRUE(driver.irq().enabled());
+  EXPECT_EQ(1u, driver.irq().init_count());
+  EXPECT_EQ(1u, driver.irq().enable_count());
+  EXPECT_EQ(0u, driver.irq().disable_count());
 }
 
 void InitWithInterrupt(SimpleTestDriver& driver) {
@@ -129,8 +131,13 @@ void InitWithInterrupt(SimpleTestDriver& driver) {
       .ExpectWrite(uint32_t{0b0000'1100'0000'0000'0000'0000'0011'0000}, 0x61c)   // main irq enable
       .ExpectWrite(uint32_t{0b0000'1100'0000'0000'0000'0000'0011'0000}, 0x64c);  // main irq enable
 
-  driver.InitInterrupt([]() {});
+  driver.InitInterrupt();
   driver.io().mock().VerifyAndClear();
+
+  EXPECT_TRUE(driver.irq().enabled());
+  EXPECT_EQ(1u, driver.irq().init_count());
+  EXPECT_EQ(1u, driver.irq().enable_count());
+  EXPECT_EQ(0u, driver.irq().disable_count());
 }
 
 using UnsyncronizedGuard =

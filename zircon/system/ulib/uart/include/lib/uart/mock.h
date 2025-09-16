@@ -47,6 +47,44 @@ class IoProvider {
   hwreg::Mock io_;
 };
 
+// uart::KernelDriver IrqProvider API
+//
+// This is used as the uart::KernelDriver IrqProvider template for mock tests.
+// It tracks the number of times that Init is called, interrupts are enabled and
+// disabled, and final state of enabled vs. not.
+class IrqProvider {
+ public:
+  IrqProvider() = default;
+  ~IrqProvider() = default;
+
+  // No copy, no move.
+  IrqProvider(const IrqProvider&) = delete;
+  IrqProvider& operator=(const IrqProvider&) = delete;
+  IrqProvider(IrqProvider&&) = delete;
+  IrqProvider& operator=(IrqProvider&&) = delete;
+
+  void Init() { init_count_++; }
+  void SetInterruptsEnabled(bool enabled) {
+    if (enabled) {
+      enable_count_++;
+    } else {
+      disable_count_++;
+    }
+    enabled_ = enabled;
+  }
+
+  bool enabled() const { return enabled_; }
+  uint32_t init_count() const { return init_count_; }
+  uint32_t enable_count() const { return enable_count_; }
+  uint32_t disable_count() const { return disable_count_; }
+
+ private:
+  bool enabled_{false};
+  uint32_t init_count_{0};
+  uint32_t enable_count_{0};
+  uint32_t disable_count_{0};
+};
+
 // uart::KernelDriver UartDriver API
 //
 // This pretends to be a hardware driver but is just a mock for tests.  If

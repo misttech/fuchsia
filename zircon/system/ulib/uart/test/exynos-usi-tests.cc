@@ -11,7 +11,7 @@
 namespace {
 
 using SimpleTestDriver = uart::KernelDriver<uart::exynos_usi::Driver, uart::mock::IoProvider,
-                                            uart::UnsynchronizedPolicy>;
+                                            uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
 template <typename Mock>

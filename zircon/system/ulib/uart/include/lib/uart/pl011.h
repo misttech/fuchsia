@@ -208,8 +208,8 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_PL011_UART, zbi_dcfg
     imscr.set_rx(enable).set_rx_timeout(enable).WriteTo(io.io());
   }
 
-  template <class IoProvider, typename EnableInterruptCallback>
-  void InitInterrupt(IoProvider& io, EnableInterruptCallback&& enable_interrupt_callback) {
+  template <typename IoProvider, typename IrqProvider>
+  void InitInterrupt(IoProvider& io, IrqProvider& irq) {
     // Clear any pending interrupts.
     auto icr = InterruptClearRegister::Get().FromValue(0x3ff);
     icr.WriteTo(io.io());
@@ -226,7 +226,7 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_PL011_UART, zbi_dcfg
     auto cr = ControlRegister::Get().ReadFrom(io.io());
     cr.set_rx_enable(true).WriteTo(io.io());
 
-    enable_interrupt_callback();
+    irq.SetInterruptsEnabled(true);
   }
 
   template <class IoProvider, typename Lock, typename Waiter, typename Tx, typename Rx>

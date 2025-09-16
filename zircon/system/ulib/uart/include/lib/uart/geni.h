@@ -601,8 +601,8 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     }
   }
 
-  template <class IoProvider, typename EnableInterruptCallback>
-  void InitInterrupt(IoProvider& io, EnableInterruptCallback&& enable_interrupt_callback) {
+  template <typename IoProvider, typename IrqProvider>
+  void InitInterrupt(IoProvider& io, IrqProvider& irq) {
     // Clear any pre-existing enabled interrupts.
     auto m_clear = MainIrqEnableClearRegister::Get().FromValue(0xffffffff);
     auto s_clear = SecondaryIrqEnableClearRegister::Get().FromValue(0xffffffff);
@@ -612,7 +612,7 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     // Enable receive interrupts.
     // Transmit interrupts are enabled only when there is a blocked writer.
     EnableRxInterrupt(io, true);
-    enable_interrupt_callback();
+    irq.SetInterruptsEnabled(true);
   }
 
   template <class IoProvider, typename Lock, typename Waiter, typename Tx, typename Rx>

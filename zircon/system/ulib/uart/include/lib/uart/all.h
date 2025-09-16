@@ -194,15 +194,17 @@ class Config {
   explicit(false) Config(const uart::Config<Uart>& config) : configs_(config) {}
   template <typename Uart>
   explicit Config(const Uart& uart) : configs_(uart::Config<Uart>(uart.config())) {}
-  template <typename Uart, template <typename, IoRegisterType> class IoProvider, typename Sync>
-  explicit Config(const uart::KernelDriver<Uart, IoProvider, Sync>& uart)
+  template <typename Uart, template <typename, IoRegisterType> class IoProvider, typename Sync,
+            class IrqProvider>
+  explicit Config(const uart::KernelDriver<Uart, IoProvider, Sync, IrqProvider>& uart)
       : configs_(uart::Config<Uart>(uart.config())) {}
 
   Config& operator=(const Config&) = default;
   Config& operator=(Config&&) = default;
 
-  template <typename Uart, template <typename, IoRegisterType> class IoProvider, typename Sync>
-  Config& operator=(const uart::KernelDriver<Uart, IoProvider, Sync>& driver) {
+  template <typename Uart, template <typename, IoRegisterType> class IoProvider, typename Sync,
+            class IrqProvider>
+  Config& operator=(const uart::KernelDriver<Uart, IoProvider, Sync, IrqProvider>& driver) {
     configs_ = uart::Config<Uart>(driver.config());
     return *this;
   }
@@ -260,7 +262,7 @@ uart::all::Config<UartDriver> GetConfig(const uart::all::Driver& driver) {
 }
 
 // uart::all::KernelDriver is a variant across all the KernelDriver types.
-template <template <typename, IoRegisterType> class IoProvider, typename Sync,
+template <template <typename, IoRegisterType> class IoProvider, typename Sync, class IrqProvider,
           typename UartDriver = Driver>
 class KernelDriver {
  public:
@@ -350,7 +352,7 @@ class KernelDriver {
 
  private:
   template <class Uart>
-  using OneDriver = uart::KernelDriver<Uart, IoProvider, Sync>;
+  using OneDriver = uart::KernelDriver<Uart, IoProvider, Sync, IrqProvider>;
   template <class... Uart>
   using Variant = std::variant<OneDriver<Uart>..., std::monostate>;
 

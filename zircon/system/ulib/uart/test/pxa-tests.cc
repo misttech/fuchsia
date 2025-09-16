@@ -10,8 +10,8 @@
 
 namespace {
 
-using SimpleTestDriver =
-    uart::KernelDriver<uart::ns8250::PxaDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>;
+using SimpleTestDriver = uart::KernelDriver<uart::ns8250::PxaDriver, uart::mock::IoProvider,
+                                            uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
 TEST(PXAtests, HelloWorld) {

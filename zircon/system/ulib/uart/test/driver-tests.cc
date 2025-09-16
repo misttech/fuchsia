@@ -45,8 +45,9 @@ TEST(UartTests, Nonblocking) {
       .ExpectWrite("world\r\n"sv)
       .ExpectUnlock();
 
-  uart::KernelDriver<uart::mock::Driver, uart::mock::IoProvider, uart::mock::SyncPolicy> driver(
-      std::move(uart));
+  uart::KernelDriver<uart::mock::Driver, uart::mock::IoProvider, uart::mock::SyncPolicy,
+                     uart::mock::IrqProvider>
+      driver(std::move(uart));
 
   driver.Init<uart::mock::Locking>();
   EXPECT_EQ(driver.Write<uart::mock::Locking>("hi!"), 3);
@@ -69,8 +70,9 @@ TEST(UartTests, LockPolicy) {
       .ExpectTxReady(true)
       .ExpectWrite("world\r\n"sv);
 
-  uart::KernelDriver<uart::mock::Driver, uart::mock::IoProvider, uart::mock::SyncPolicy> driver(
-      std::move(uart));
+  uart::KernelDriver<uart::mock::Driver, uart::mock::IoProvider, uart::mock::SyncPolicy,
+                     uart::mock::IrqProvider>
+      driver(std::move(uart));
 
   driver.Init<uart::mock::Locking>();
   // Just check that lock args are forwarded correctly.
@@ -101,8 +103,9 @@ TEST(UartTests, Blocking) {
       .ExpectWrite("world\r\n"sv)
       .ExpectUnlock();
 
-  uart::KernelDriver<uart::mock::Driver, uart::mock::IoProvider, uart::mock::SyncPolicy> driver(
-      std::move(uart));
+  uart::KernelDriver<uart::mock::Driver, uart::mock::IoProvider, uart::mock::SyncPolicy,
+                     uart::mock::IrqProvider>
+      driver(std::move(uart));
 
   driver.Init<uart::mock::Locking>();
   EXPECT_EQ(driver.Write<uart::mock::Locking>("hi!"), 3);
@@ -192,7 +195,8 @@ TEST(UartTests, Config) {
       .base = 0x3f8,
       .irq = 3,
   };
-  uart::KernelDriver<uart::ns8250::PioDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>
+  uart::KernelDriver<uart::ns8250::PioDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                     uart::mock::IrqProvider>
       driver(pio_cfg);
   all_configs = driver;
   all_configs.Visit([&pio_cfg](auto& config) {
@@ -238,7 +242,8 @@ TEST(UartTests, Config) {
         .base = 0x3f8,
         .irq = 3,
     };
-    uart::KernelDriver<uart::ns8250::PioDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>
+    uart::KernelDriver<uart::ns8250::PioDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                       uart::mock::IrqProvider>
         driver(pio_cfg);
     uart::all::Config all_configs(driver);
     all_configs.Visit([&pio_cfg](auto& config) {
@@ -256,13 +261,16 @@ TEST(UartTests, Config) {
 
 TEST(UartTests, AllConfig) {
   // Assignment
-  uart::all::KernelDriver<uart::mock::IoProvider, uart::UnsynchronizedPolicy> all_driver;
+  uart::all::KernelDriver<uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                          uart::mock::IrqProvider>
+      all_driver;
   EXPECT_FALSE(all_driver);
   zbi_dcfg_simple_pio_t pio_cfg{
       .base = 0x3f8,
       .irq = 3,
   };
-  uart::KernelDriver<uart::ns8250::PioDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>
+  uart::KernelDriver<uart::ns8250::PioDriver, uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                     uart::mock::IrqProvider>
       driver(pio_cfg);
   all_driver = std::move(driver).TakeUart();
   EXPECT_TRUE(all_driver);
@@ -280,8 +288,9 @@ TEST(UartTests, AllConfig) {
   });
 
   // Constctor
-  uart::all::KernelDriver<uart::mock::IoProvider, uart::UnsynchronizedPolicy> all_driver2(
-      all_config);
+  uart::all::KernelDriver<uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                          uart::mock::IrqProvider>
+      all_driver2(all_config);
   all_driver2.Visit([&](const auto& driver) {
     using uart_type = typename std::decay_t<decltype(driver)>::uart_type;
     if constexpr (std::is_same_v<uart_type, uart::ns8250::PioDriver>) {
@@ -294,7 +303,9 @@ TEST(UartTests, AllConfig) {
 }
 
 TEST(UartTests, Null) {
-  uart::KernelDriver<uart::null::Driver, uart::mock::IoProvider, uart::UnsynchronizedPolicy> driver;
+  uart::KernelDriver<uart::null::Driver, uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                     uart::mock::IrqProvider>
+      driver;
   // Unsynchronized LockPolicy is dropped.
   driver.Init();
   EXPECT_EQ(driver.Write("hi!"), 3);
@@ -304,7 +315,8 @@ TEST(UartTests, Null) {
 
 TEST(UartTests, All) {
   using AllConfig = uart::all::Config<>;
-  using AllDriver = uart::all::KernelDriver<uart::mock::IoProvider, uart::UnsynchronizedPolicy>;
+  using AllDriver = uart::all::KernelDriver<uart::mock::IoProvider, uart::UnsynchronizedPolicy,
+                                            uart::mock::IrqProvider>;
 
   // Default constructed `configuration` should default to being the `null::Driver`.
   AllDriver driver(AllConfig{});

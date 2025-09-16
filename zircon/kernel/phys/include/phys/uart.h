@@ -9,6 +9,7 @@
 
 #include <lib/uart/all.h>
 
-using UartDriver = uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy>;
+using UartDriver = uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy,
+                                           uart::NullIrqProvider>;
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_UART_H_

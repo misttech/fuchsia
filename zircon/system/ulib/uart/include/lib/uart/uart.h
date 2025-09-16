@@ -420,8 +420,8 @@ class DriverBase {
 
   // Set the UART up to deliver interrupts.  This is called after Init.
   // After this, Interrupt (below) may be called from interrupt context.
-  template <typename IoProvider>
-  void InitInterrupt(IoProvider& io) {
+  template <typename IoProvider, typename IrqProvider>
+  void InitInterrupt(IoProvider& io, IrqProvider& irq) {
     static_assert(Uninstantiated<IoProvider>, "derived class is missing InitInterrupt");
   }
 
@@ -521,6 +521,23 @@ class BasicIoProvider<zbi_dcfg_simple_pio_t, IoType> {
 };
 #endif
 
+// A no-op implementation of an IrqProvider.  Useful in interrupts which cannot
+// (or do not want to) use interrupts.
+class NullIrqProvider {
+ public:
+  NullIrqProvider() = default;
+  ~NullIrqProvider() = default;
+
+  // No copy, no move.
+  NullIrqProvider(const NullIrqProvider&) = delete;
+  NullIrqProvider& operator=(const NullIrqProvider&) = delete;
+  NullIrqProvider(NullIrqProvider&&) = delete;
+  NullIrqProvider& operator=(NullIrqProvider&&) = delete;
+
+  void Init() {}
+  void SetInterruptsEnabled(bool enabled) {}
+};
+
 // Forward declaration.
 namespace mock {
 class Driver;
@@ -535,7 +552,8 @@ class Driver;
 // handed off from one KernelDriver instantiation to a different one using a
 // different IoProvider (physboot vs kernel) and/or Sync (polling vs blocking).
 //
-template <class UartDriver, template <typename, IoRegisterType> class IoProvider, class SyncPolicy>
+template <class UartDriver, template <typename, IoRegisterType> class IoProvider, class SyncPolicy,
+          class IrqProvider>
 class KernelDriver {
   using Waiter = typename SyncPolicy::Waiter;
 
@@ -598,6 +616,9 @@ class KernelDriver {
   // Access IoProvider object.
   auto& io() { return io_; }
 
+  // Access IrqProvider object.
+  auto& irq() { return irq_; }
+
   // Set up the device for nonblocking output and polling input.
   // If the device is handed off from a different instantiation,
   // this won't be called in the new instantiation.
@@ -630,10 +651,11 @@ class KernelDriver {
   }
 
   // TODO(https://fxbug.dev/42079801): Asses the need of |enable_interrupt_callback|.
-  template <typename LockPolicy = DefaultLockPolicy, typename EnableInterruptCallback>
-  void InitInterrupt(EnableInterruptCallback&& enable_interrupt_callback) {
+  template <typename LockPolicy = DefaultLockPolicy, typename... Args>
+  void InitInterrupt(Args&&... args) {
     Guard<LockPolicy> lock(&lock_, SOURCE_TAG);
-    uart_.InitInterrupt(io_, std::forward<EnableInterruptCallback>(enable_interrupt_callback));
+    irq_.Init(std::forward<Args>(args)...);
+    uart_.InitInterrupt(io_, irq_);
   }
 
   template <typename Tx, typename Rx>
@@ -689,6 +711,7 @@ class KernelDriver {
   uart_type uart_ TA_GUARDED(lock_);
 
   IoProvider<typename uart_type::config_type, uart_type::kIoType> io_;
+  IrqProvider irq_;
 };
 
 // These specializations are defined in the library to cover all the ZBI item

@@ -92,7 +92,31 @@ struct UartSyncPolicy {
   }
 };
 
-uart::all::KernelDriver<PlatformUartIoProvider, UartSyncPolicy> gUart;
+class KernelIrqProvider {
+ public:
+  KernelIrqProvider() = default;
+  ~KernelIrqProvider() = default;
+
+  // No copy, no move.
+  KernelIrqProvider(const KernelIrqProvider&) = delete;
+  KernelIrqProvider& operator=(const KernelIrqProvider&) = delete;
+  KernelIrqProvider(KernelIrqProvider&&) = delete;
+  KernelIrqProvider& operator=(KernelIrqProvider&&) = delete;
+
+  void Init(int irq_num) { irq_num_ = irq_num; }
+  void SetInterruptsEnabled(bool enabled) {
+    if (enabled) {
+      unmask_interrupt(irq_num_);
+    } else {
+      mask_interrupt(irq_num_);
+    }
+  }
+
+ private:
+  int irq_num_{0};
+};
+
+uart::all::KernelDriver<PlatformUartIoProvider, UartSyncPolicy, KernelIrqProvider> gUart;
 
 // Initialized by UartInitLate, provides buffered output of the uart,
 // which helps readers catch up.
@@ -275,8 +299,9 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
     auto irq_handler = [&driver]() { driver.Interrupt(tx_irq_handler, rx_irq_handler); };
     zx_status_t irq_register_result = register_permanent_int_handler(*uart_irq, irq_handler);
     DEBUG_ASSERT(irq_register_result == ZX_OK);
-    // Init Rx Interrupt.
-    driver.InitInterrupt([uart_irq]() { unmask_interrupt(*uart_irq); });
+
+    // Init UART Interrupts.
+    driver.InitInterrupt(*uart_irq);
   });
 
   if (!polling_mode) {

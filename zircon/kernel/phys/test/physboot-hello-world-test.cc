@@ -56,7 +56,7 @@ void PhysbootHandoff(PhysHandoff* handoff) {
   // Temporary hand-off pointer dereferencing checks that this is set.
   gPhysHandoff = handoff;
 
-  uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy>(
+  uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy, uart::NullIrqProvider>(
       handoff->boot_options->serial)
       .Visit([](auto& uart) {
         uart.Write("Hello world!\n");

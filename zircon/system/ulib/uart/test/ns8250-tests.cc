@@ -13,7 +13,7 @@ namespace {
 constexpr uint8_t kDefaultLineControls = 0b0000'0011;
 
 using SimpleTestDriver = uart::KernelDriver<uart::ns8250::Mmio32Driver, uart::mock::IoProvider,
-                                            uart::UnsynchronizedPolicy>;
+                                            uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
 TEST(Ns8250Tests, HelloWorld) {

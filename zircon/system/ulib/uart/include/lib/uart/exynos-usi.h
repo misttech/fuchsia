@@ -328,8 +328,8 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_EXYNOS_USI_UART, zbi
     InterruptMaskRegister::Get().ReadFrom(io.io()).set_mask_rx(!enable).WriteTo(io.io());
   }
 
-  template <class IoProvider, typename EnableInterruptCallback>
-  void InitInterrupt(IoProvider& io, EnableInterruptCallback&& enable_interrupt_callback) {
+  template <typename IoProvider, typename IrqProvider>
+  void InitInterrupt(IoProvider& io, IrqProvider& irq) {
     ControlRegister::Get()
         .ReadFrom(io.io())
         // Default(3): 32 frame bit time.
@@ -341,7 +341,7 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_EXYNOS_USI_UART, zbi
                                                                                          : false)
         .WriteTo(io.io());
 
-    enable_interrupt_callback();
+    irq.SetInterruptsEnabled(true);
     EnableRxInterrupt(io);
   }
 

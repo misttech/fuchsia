@@ -496,13 +496,13 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
     ier.set_rx_available(enable).WriteTo(io.io());
   }
 
-  template <class IoProvider, typename EnableInterruptCallback>
-  void InitInterrupt(IoProvider& io, EnableInterruptCallback&& enable_interrupt_callback) {
+  template <typename IoProvider, typename IrqProvider>
+  void InitInterrupt(IoProvider& io, IrqProvider& irq) {
     // In x86 drivers enabling the interrupt after setting up the hardware
     // may cause the Rx Interrupt never to fire.
     if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_I8250_PIO_UART ||
                   KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO32_UART) {
-      enable_interrupt_callback();
+      irq.SetInterruptsEnabled(true);
     }
     // Enable receive interrupts.
     EnableRxInterrupt(io);
@@ -517,7 +517,7 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
     if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART ||
                   KdrvExtra == ZBI_KERNEL_DRIVER_I8250_MMIO8_UART ||
                   KdrvExtra == ZBI_KERNEL_DRIVER_PXA_UART) {
-      enable_interrupt_callback();
+      irq.SetInterruptsEnabled(true);
     }
   }
 

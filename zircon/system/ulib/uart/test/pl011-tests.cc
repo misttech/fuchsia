@@ -15,8 +15,8 @@
 
 namespace {
 
-using SimpleTestDriver =
-    uart::KernelDriver<uart::pl011::Driver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>;
+using SimpleTestDriver = uart::KernelDriver<uart::pl011::Driver, uart::mock::IoProvider,
+                                            uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
 TEST(Pl011Tests, HelloWorld) {
@@ -92,8 +92,13 @@ void InitWithInterrupt(SimpleTestDriver& driver) {
       .ExpectWrite<uint16_t>(0b0011'0000'0001, 0x30);  // Enable RX.
 
   driver.Init();
-  driver.InitInterrupt([]() {});
+  driver.InitInterrupt();
   driver.io().mock().VerifyAndClear();
+
+  EXPECT_TRUE(driver.irq().enabled());
+  EXPECT_EQ(1u, driver.irq().init_count());
+  EXPECT_EQ(1u, driver.irq().enable_count());
+  EXPECT_EQ(0u, driver.irq().disable_count());
 }
 
 TEST(Pl011Tests, InitInterrupt) {
@@ -110,10 +115,13 @@ TEST(Pl011Tests, InitInterrupt) {
       .ExpectWrite<uint16_t>(0b1010000, 0x38)        // Write Interrupt Mask with Rx and Rx Timeout
       .ExpectRead<uint16_t>(0b0001'0000'0001, 0x30)  // Read Control Register State
       .ExpectWrite<uint16_t>(0b0011'0000'0001, 0x30);  // Enable RX.
+                                                       //
+  driver.InitInterrupt();
 
-  bool unmasked_irq = false;
-  driver.InitInterrupt([&unmasked_irq]() { unmasked_irq = true; });
-  EXPECT_TRUE(unmasked_irq);
+  EXPECT_TRUE(driver.irq().enabled());
+  EXPECT_EQ(1u, driver.irq().init_count());
+  EXPECT_EQ(1u, driver.irq().enable_count());
+  EXPECT_EQ(0u, driver.irq().disable_count());
 }
 
 using UnsyncronizedGuard =

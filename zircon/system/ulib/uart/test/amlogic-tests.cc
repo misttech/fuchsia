@@ -10,8 +10,8 @@
 
 namespace {
 
-using SimpleTestDriver =
-    uart::KernelDriver<uart::amlogic::Driver, uart::mock::IoProvider, uart::UnsynchronizedPolicy>;
+using SimpleTestDriver = uart::KernelDriver<uart::amlogic::Driver, uart::mock::IoProvider,
+                                            uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
 void ExpectInit(SimpleTestDriver& driver) {
