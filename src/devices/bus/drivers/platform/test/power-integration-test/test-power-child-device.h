@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_TEST_CHILD_DEVICE_H_
-#define SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_TEST_CHILD_DEVICE_H_
+#ifndef SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_CHILD_DEVICE_H_
+#define SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_CHILD_DEVICE_H_
 
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -22,10 +22,8 @@ class FakeChild : public fdf::DriverBase {
  private:
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
-  fidl::ClientEnd<fuchsia_power_broker::RequiredLevel> required_level_;
-  fidl::ClientEnd<fuchsia_power_broker::CurrentLevel> current_level_;
   fidl::ClientEnd<fuchsia_power_broker::Lessor> lessor_;
 };
 }  // namespace fake_child_device
 
-#endif /* SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_TEST_CHILD_DEVICE_H_ */
+#endif  // SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_CHILD_DEVICE_H_

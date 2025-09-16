@@ -24,19 +24,12 @@ class PowerElement {
  public:
   explicit PowerElement(async_dispatcher_t* dispatcher,
                         fidl::ServerEnd<fuchsia_power_broker::ElementControl> ec,
-                        fidl::ServerEnd<fuchsia_power_broker::Lessor> less,
-                        fidl::ServerEnd<fuchsia_power_broker::CurrentLevel> current,
-                        fidl::ServerEnd<fuchsia_power_broker::RequiredLevel> required)
-      : element_control_(dispatcher, std::move(ec)),
-        lessor_(std::move(less)),
-        current_level_(std::move(current)),
-        required_level_(std::move(required)) {}
+                        fidl::ServerEnd<fuchsia_power_broker::Lessor> less)
+      : element_control_(dispatcher, std::move(ec)), lessor_(std::move(less)) {}
 
  private:
   FidlBoundServer<FakeElementControl> element_control_;
   fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor_;
-  fidl::ServerEnd<fuchsia_power_broker::CurrentLevel> current_level_;
-  fidl::ServerEnd<fuchsia_power_broker::RequiredLevel> required_level_;
 };
 
 class Topology : public fidl::Server<fuchsia_power_broker::Topology>,
@@ -50,9 +43,7 @@ class Topology : public fidl::Server<fuchsia_power_broker::Topology>,
 
     ZX_ASSERT(dispatcher_ != nullptr);
     clients_.emplace_back(dispatcher_, std::move(req.element_control().value()),
-                          std::move(req.lessor_channel().value()),
-                          std::move(req.level_control_channels().value().current()),
-                          std::move(req.level_control_channels().value().required()));
+                          std::move(req.lessor_channel().value()));
 
     std::string element_name(req.element_name().value().data(),
                              req.element_name().value().length());

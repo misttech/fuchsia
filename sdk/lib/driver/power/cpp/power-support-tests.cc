@@ -93,68 +93,6 @@ class AddInstanceResult {
   std::shared_ptr<zx::event> token;
 };
 
-class RequiredLevelServer : public fidl::Server<fuchsia_power_broker::RequiredLevel> {
- public:
-  // Return one from the set of values until all are consumed. Then close the
-  // channel and call |on_all_values_sent|
-  explicit RequiredLevelServer(std::vector<uint8_t> values,
-                               fit::function<void()> on_all_values_sent_)
-      : values_(std::move(values)), on_all_values_sent_(std::move(on_all_values_sent_)) {}
-
-  void Watch(WatchCompleter::Sync& completer) override {
-    if (values_.size() == 0) {
-      completer.Close(ZX_ERR_STOP);
-      return;
-    }
-
-    uint8_t v = values_.front();
-    values_.erase(values_.begin());
-
-    completer.Reply(fit::success<fuchsia_power_broker::RequiredLevelWatchResponse>(v));
-    if (values_.size() == 0) {
-      on_all_values_sent_();
-    }
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::RequiredLevel> md,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {}
-
-  std::vector<uint8_t> values_;
-  fit::function<void()> on_all_values_sent_;
-};
-
-class CurrentLevelServer : public fidl::Server<fuchsia_power_broker::CurrentLevel> {
- public:
-  /// Set the number of requests to serve before call |all_requests_received_|.
-  /// Asserts if more requests than expected are received.
-  explicit CurrentLevelServer(std::vector<uint8_t> expected_values,
-                              fit::function<void()> all_requests_received_)
-      : expected_(std::move(expected_values)),
-        all_requests_received_(std::move(all_requests_received_)) {}
-  void Update(UpdateRequest& request, UpdateCompleter::Sync& completer) override {
-    request_count_++;
-    ASSERT_LE(request_count_, expected_.size()) << "Received more requests than expected";
-
-    ASSERT_EQ(request.current_level(), expected_.at(request_count_ - 1))
-        << "Unexpected reported level";
-
-    completer.Reply(fit::success());
-
-    if (request_count_ == expected_.size()) {
-      all_requests_received_();
-      return;
-    }
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::CurrentLevel> md,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {}
-
- private:
-  uint32_t request_count_ = 0;
-  std::vector<uint8_t> expected_;
-  fit::function<void()> all_requests_received_;
-};
-
 AddInstanceResult AddServiceInstance(
     async_dispatcher_t* dispatcher,
     fidl::ServerBindingGroup<fuchsia_hardware_power::PowerTokenProvider>* bindings) {
@@ -221,29 +159,11 @@ TEST_F(PowerLibTest, TestLeaseHelper) {
 
   ASSERT_FALSE(result.is_error()) << "Error value" << static_cast<uint32_t>(result.error_value());
 
-  bool level_rose = false;
-  bool lease_acquired = false;
-
   // Now run the created element with an element runner
-  fdf_power::ElementRunner element_runner(
-      "test element", std::move(description.required_level_client.value()),
-      std::move(description.current_level_client.value()),
-      [level_rose = &level_rose, lease_acquired = &lease_acquired,
-       quit = QuitLoopClosure()](uint8_t new_level) {
-        if (new_level == 1) {
-          *level_rose = true;
-        }
-
-        if (*level_rose && *lease_acquired) {
-          quit();
-        }
-        return fit::success(new_level);
-      },
-      [&](fdf_power::ElementRunnerError e) {
-        ASSERT_TRUE(false) << "Unexpected error: " << static_cast<uint32_t>(e);
-      },
-      async_get_default_dispatcher());
-  element_runner.RunPowerElement();
+  fdf_power::BasicElementRunner runner;
+  auto runner_binding = fidl::ServerBinding<fuchsia_power_broker::ElementRunner>(
+      dispatcher(), std::move(*description.element_runner_server), &runner,
+      fidl::kIgnoreBindingClosure);
 
   std::vector<fdf_power::LeaseDependency> deps;
   deps.push_back(fdf_power::LeaseDependency{
@@ -262,16 +182,12 @@ TEST_F(PowerLibTest, TestLeaseHelper) {
 
   fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease_ctl;
   std::unique_ptr<fdf_power::LeaseHelper> lease = std::move(creation_result.value());
-  lease->AcquireLease(
-      [&lease_ctl, level_rose = &level_rose, lease_acquired = &lease_acquired,
-       quit = QuitLoopClosure()](fidl::Result<fuchsia_power_broker::Lessor::Lease>& lease) {
-        ASSERT_FALSE(lease.is_error());
-        *lease_acquired = true;
-        if (*level_rose && *lease_acquired) {
-          quit();
-        }
-        lease_ctl = std::move(lease->lease_control());
-      });
+  lease->AcquireLease([&lease_ctl, quit = QuitLoopClosure()](
+                          fidl::Result<fuchsia_power_broker::Lessor::Lease>& lease) {
+    ASSERT_FALSE(lease.is_error());
+    lease_ctl = std::move(lease->lease_control());
+    quit();
+  });
 
   RunLoop();
 }
@@ -349,186 +265,6 @@ TEST_F(PowerLibTest, TestCreateLeaseHelperWithInvalidToken) {
   ASSERT_EQ(std::get<1>(error_val), fuchsia_power_broker::AddElementError::kNotAuthorized);
 }
 
-/// Tests the ElementRunner by sending it two required values and then expects
-/// those values to be reported as current levels.
-TEST_F(PowerLibTest, TestElementRunner) {
-  // Make the current and required levels channels
-  fidl::Endpoints<fuchsia_power_broker::RequiredLevel> required_level_channel =
-      fidl::Endpoints<fuchsia_power_broker::RequiredLevel>::Create();
-
-  fidl::Endpoints<fuchsia_power_broker::CurrentLevel> current_level_channel =
-      fidl::Endpoints<fuchsia_power_broker::CurrentLevel>::Create();
-
-  // Set up flags so we verify that all checks are done before we exit.
-  bool cls_done = false;
-  bool rls_done = false;
-  bool runner_done = false;
-
-  inspect::Inspector general = inspect::Inspector();
-
-  fit::function<void(fdf_power::ElementRunnerError)> completion_handler =
-      [run_done = &runner_done, cls_done = &cls_done, rls_done = &rls_done,
-       quit_loop = QuitLoopClosure()](fdf_power::ElementRunnerError err) {
-        *run_done = true;
-        if (*run_done && *cls_done && *rls_done) {
-          quit_loop();
-        }
-      };
-
-  // These are the current level values we expect inspect to have during level
-  // change callbacks.
-  const std::vector<uint8_t> current_levels{0, 2};
-  // These are teh required lievel values we expect to see in inspect during
-  // level change callbacks.
-  const std::vector<uint8_t> required_levels{2, 3};
-  uint8_t request_count = 0;
-
-  std::unique_ptr<fdf_power::ElementRunner> runner = std::make_unique<fdf_power::ElementRunner>(
-      "test element", std::move(required_level_channel.client),
-      std::move(current_level_channel.client),
-      [general = &general, loop = this, &request_count, &required_levels,
-       &current_levels](uint8_t new_level) {
-        // Check that the level reported in inspect is initially zero
-        fpromise::result<inspect::Hierarchy> inspect_tree =
-            loop->RunPromise(inspect::ReadFromInspector(*general));
-        EXPECT_TRUE(inspect_tree.is_ok());
-
-        auto* req_level =
-            inspect_tree.value().node().get_property<inspect::UintPropertyValue>("required_level");
-        EXPECT_EQ(req_level->value(), required_levels[request_count]);
-
-        auto* current_level =
-            inspect_tree.value().node().get_property<inspect::UintPropertyValue>("current_level");
-        EXPECT_EQ(current_level->value(), current_levels[request_count]);
-
-        request_count++;
-        return fit::success(new_level);
-      },
-      std::move(completion_handler), dispatcher(), &general.GetRoot());
-  runner->RunPowerElement();
-
-  // Check that the level reported in inspect is initially zero
-  fpromise::result<inspect::Hierarchy> inspect_tree =
-      RunPromise(inspect::ReadFromInspector(general));
-  ASSERT_TRUE(inspect_tree.is_ok());
-  auto* req_level =
-      inspect_tree.value().node().get_property<inspect::UintPropertyValue>("required_level");
-  ASSERT_EQ(req_level->value(), 0u);
-  auto* current_level =
-      inspect_tree.value().node().get_property<inspect::UintPropertyValue>("current_level");
-  ASSERT_EQ(current_level->value(), 0u);
-  auto* name =
-      inspect_tree.value().node().get_property<inspect::StringPropertyValue>("element_name");
-  ASSERT_EQ(name->value(), "test element");
-
-  std::unique_ptr<RequiredLevelServer> rls = std::make_unique<RequiredLevelServer>(
-      required_levels, [run_done = &runner_done, cls_done = &cls_done, rls_done = &rls_done,
-                        quit_loop = QuitLoopClosure()]() {
-        *rls_done = true;
-        if (*run_done && *cls_done && *rls_done) {
-          quit_loop();
-        }
-      });
-  fidl::ServerBindingRef<fuchsia_power_broker::RequiredLevel> required_level_binding =
-      fidl::BindServer<fuchsia_power_broker::RequiredLevel>(
-          dispatcher(), std::move(required_level_channel.server), std::move(rls),
-          [](RequiredLevelServer* imp, fidl::UnbindInfo info,
-             fidl::ServerEnd<fuchsia_power_broker::RequiredLevel> channel) {});
-
-  std::unique_ptr<CurrentLevelServer> cls = std::make_unique<CurrentLevelServer>(
-      required_levels, [run_done = &runner_done, cls_done = &cls_done, rls_done = &rls_done,
-                        quit_loop = QuitLoopClosure()]() {
-        *cls_done = true;
-        if (*run_done && *cls_done && *rls_done) {
-          quit_loop();
-        }
-      });
-  fidl::ServerBindingRef<fuchsia_power_broker::CurrentLevel> current_level_binding =
-      fidl::BindServer<fuchsia_power_broker::CurrentLevel>(
-          dispatcher(), std::move(current_level_channel.server), std::move(cls),
-          [](CurrentLevelServer* impl, fidl::UnbindInfo info,
-             fidl::ServerEnd<fuchsia_power_broker::CurrentLevel> channel) {});
-
-  RunLoop();
-  // Check that the level reported in inspect rose
-  inspect_tree = RunPromise(inspect::ReadFromInspector(general));
-  ASSERT_TRUE(inspect_tree.is_ok());
-  req_level =
-      inspect_tree.value().node().get_property<inspect::UintPropertyValue>("required_level");
-  ASSERT_EQ(req_level->value(), 3u);
-  current_level =
-      inspect_tree.value().node().get_property<inspect::UintPropertyValue>("current_level");
-  ASSERT_EQ(current_level->value(), 3u);
-}
-
-/// Test calling |ElementRunner.SetLevel| and expect the value to be received
-/// by the faked out |CurrentLevel| server and the result callback called on
-/// the client side.
-TEST_F(PowerLibTest, TestElementRunnerManualSet) {
-  fidl::Endpoints<fuchsia_power_broker::RequiredLevel> required_level_channel =
-      fidl::Endpoints<fuchsia_power_broker::RequiredLevel>::Create();
-
-  fidl::Endpoints<fuchsia_power_broker::CurrentLevel> current_level_channel =
-      fidl::Endpoints<fuchsia_power_broker::CurrentLevel>::Create();
-
-  // Set up the required level servers
-  // For this test we don't want to ask the client to change any levels
-  std::vector<uint8_t> requested_levels{};
-  std::unique_ptr<RequiredLevelServer> required_level_server =
-      std::make_unique<RequiredLevelServer>(std::move(requested_levels), []() {});
-
-  // Create flags to make sure both necessary test checks are run.
-  bool current_level_received = false;
-  bool set_response_received = false;
-
-  fidl::ServerBindingRef<fuchsia_power_broker::RequiredLevel> required_level_binding =
-      fidl::BindServer<fuchsia_power_broker::RequiredLevel>(
-          dispatcher(), std::move(required_level_channel.server), std::move(required_level_server),
-          [](RequiredLevelServer* impl, fidl::UnbindInfo unbind_info,
-             fidl::ServerEnd<fuchsia_power_broker::RequiredLevel> server_chan) {});
-
-  const uint8_t LEVEL_TO_SET = 6;
-
-  std::unique_ptr<CurrentLevelServer> current_level_server = std::make_unique<CurrentLevelServer>(
-      std::vector{LEVEL_TO_SET},
-      [set_response_received = &set_response_received,
-       current_level_received = &current_level_received, quit = QuitLoopClosure()]() {
-        *current_level_received = true;
-        if (*set_response_received && *current_level_received) {
-          quit();
-        }
-      });
-  fidl::ServerBindingRef<fuchsia_power_broker::CurrentLevel> current_level_binding =
-      fidl::BindServer<fuchsia_power_broker::CurrentLevel>(
-          dispatcher(), std::move(current_level_channel.server), std::move(current_level_server),
-          [](CurrentLevelServer* impl, fidl::UnbindInfo info,
-             fidl::ServerEnd<fuchsia_power_broker::CurrentLevel> current_level_channel) {});
-
-  std::unique_ptr<fdf_power::ElementRunner> runner = std::make_unique<fdf_power::ElementRunner>(
-      "test element", std::move(required_level_channel.client),
-      std::move(current_level_channel.client), fdf_power::default_level_changer,
-      [](fdf_power::ElementRunnerError err) {}, dispatcher());
-  runner->RunPowerElement();
-
-  // Set the level manually
-  runner->SetLevel(
-      LEVEL_TO_SET,
-      [set_response_received = &set_response_received,
-       current_level_received = &current_level_received, quit = QuitLoopClosure()](
-          fit::result<fidl::ErrorsIn<fuchsia_power_broker::CurrentLevel::Update>, zx_status_t>
-              result) {
-        fit::result<fidl::ErrorsIn<fuchsia_power_broker::CurrentLevel::Update>, zx_status_t>
-            expected = fit::ok(ZX_OK);
-        ASSERT_EQ(result, expected) << result.error_value().FormatDescription();
-        *set_response_received = true;
-        if (*set_response_received && *current_level_received) {
-          quit();
-        }
-      });
-
-  RunLoop();
-}
-
 /// Add an element which has no dependencies
 TEST_F(PowerLibTest, AddElementNoDep) {
   // Create the dependency configuration and create a
@@ -570,10 +306,10 @@ TEST_F(PowerLibTest, AddElementNoDep) {
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
   zx::event invalid1, invalid2;
-  auto call_result = fdf_power::AddElement(endpoints.client, df_config, std::move(tokens),
-                                           invalid1.borrow(), invalid2.borrow(), std::nullopt,
-                                           std::nullopt, std::move(element_control.server),
-                                           element_control.client.borrow(), std::nullopt);
+  auto call_result =
+      fdf_power::AddElement(endpoints.client, df_config, std::move(tokens), invalid1.borrow(),
+                            invalid2.borrow(), std::nullopt, std::move(element_control.server),
+                            element_control.client.borrow(), std::nullopt);
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
@@ -666,10 +402,10 @@ TEST_F(PowerLibTest, AddElementSingleDep) {
   zx::event invalid1, invalid2;
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
-  auto call_result = fdf_power::AddElement(endpoints.client, df_config, std::move(tokens),
-                                           invalid1.borrow(), invalid2.borrow(), std::nullopt,
-                                           std::nullopt, std::move(element_control.server),
-                                           element_control.client.borrow(), std::nullopt);
+  auto call_result =
+      fdf_power::AddElement(endpoints.client, df_config, std::move(tokens), invalid1.borrow(),
+                            invalid2.borrow(), std::nullopt, std::move(element_control.server),
+                            element_control.client.borrow(), std::nullopt);
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
@@ -729,7 +465,7 @@ TEST_F(PowerLibTest, AddElementWithElementRunner) {
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
   auto call_result =
       fdf_power::AddElement(endpoints.client, df_config, {}, invalid1.borrow(), invalid2.borrow(),
-                            std::nullopt, std::nullopt, std::move(element_control.server),
+                            std::nullopt, std::move(element_control.server),
                             element_control.client.borrow(), std::move(element_runner.client));
   ASSERT_TRUE(call_result.is_ok());
 
@@ -858,10 +594,10 @@ TEST_F(PowerLibTest, AddElementDoubleDep) {
   zx::event invalid1, invalid2;
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
-  auto call_result = fdf_power::AddElement(endpoints.client, df_config, std::move(tokens),
-                                           invalid1.borrow(), invalid2.borrow(), std::nullopt,
-                                           std::nullopt, std::move(element_control.server),
-                                           element_control.client.borrow(), std::nullopt);
+  auto call_result =
+      fdf_power::AddElement(endpoints.client, df_config, std::move(tokens), invalid1.borrow(),
+                            invalid2.borrow(), std::nullopt, std::move(element_control.server),
+                            element_control.client.borrow(), std::nullopt);
   ASSERT_TRUE(call_result.is_ok());
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
@@ -1390,15 +1126,11 @@ TEST_F(PowerLibTest, ApplyPowerConfiguration) {
 
   RunLoopUntil([&fake_element_control] { return fake_element_control != nullptr; });
 
-  applied_configs = fdf_power::ApplyPowerConfiguration(ns, configs, false).value();
-  ASSERT_EQ(applied_configs.size(), static_cast<size_t>(1));
-  ASSERT_EQ(applied_configs[0].element_runner_server, std::nullopt);
-
   loop.Shutdown();
   loop.JoinThreads();
 
   // Only one power broker topology instance should exist.
-  ASSERT_EQ(fake_power_brokers.size(), static_cast<size_t>(2));
+  ASSERT_EQ(fake_power_brokers.size(), static_cast<size_t>(1));
 }
 
 /// Check GetTokens with a power elements with a single level which depends

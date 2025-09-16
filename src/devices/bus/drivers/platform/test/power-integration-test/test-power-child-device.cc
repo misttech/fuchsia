@@ -63,9 +63,6 @@ zx::result<> FakeChild::Start() {
       return zx::error(ZX_ERR_INTERNAL);
     }
 
-    // That worked, so store the channels we'll need to work with the element.
-    required_level_ = std::move(description.required_level_client.value());
-    current_level_ = std::move(description.current_level_client.value());
     lessor_ = std::move(description.lessor_client.value());
   }
   return zx::ok();

@@ -386,100 +386,13 @@ const char* AddElementErrorToString(fuchsia_power_broker::AddElementError e) {
   }
 }
 
-void ElementRunner::RunPowerElement() {
-  // * First, we watch for a new required level.
-  // * Second, we report this level to |on_level_change_|.
-  // * Third, we report the level returned from |on_level_change_| which may or
-  //   may not be the same value passed into |on_level_change_|.
-  // If any errors occur we report this and then bail, otherwise method is
-  // called again.
-  required_level_client_->Watch().Then(
-      [&](fidl::Result<fuchsia_power_broker::RequiredLevel::Watch>& result) {
-        // The watch call result in an error, translate this to the error enum
-        // accepted by `on_error_`.
-        if (result.is_error()) {
-          auto err = result.error_value();
-          if (err.is_framework_error()) {
-            if (err.framework_error().is_peer_closed()) {
-              on_error_(ElementRunnerError::REQUIRED_LEVEL_TRANSPORT_PEER_CLOSED);
-            } else {
-              on_error_(ElementRunnerError::REQUIRED_LEVEL_TRANSPORT_OTHER);
-            }
-          } else {
-            switch (err.domain_error()) {
-              case fuchsia_power_broker::RequiredLevelError::kInternal:
-                on_error_(ElementRunnerError::REQUIRED_LEVEL_INTERNAL);
-                break;
-              case fuchsia_power_broker::RequiredLevelError::kNotAuthorized:
-                on_error_(ElementRunnerError::REQUIRED_LEVEL_NOT_AUTHORIZED);
-                break;
-              case fuchsia_power_broker::RequiredLevelError::kUnknown:
-                on_error_(ElementRunnerError::REQUIRED_LEVEL_UNKNOWN);
-                break;
-              default:
-                on_error_(ElementRunnerError::REQUIRED_LEVEL_UNEXPECTED);
-            }
-          }
-          return;
-        }
-
-        required_level_.Set(result->required_level());
-        fit::result<zx_status_t, uint8_t> change_result =
-            on_level_change_(result->required_level());
-
-        // The callback returned an error, report and abort.
-        if (change_result.is_error()) {
-          on_error_(ElementRunnerError::LEVEL_CHANGE_CALLBACK);
-          return;
-        }
-
-        current_level_.Set(change_result.value());
-        current_level_client_->Update({change_result.value()})
-            .Then([&](fidl::Result<fuchsia_power_broker::CurrentLevel::Update>& update_result) {
-              if (update_result.is_error()) {
-                auto err = update_result.error_value();
-                if (err.is_framework_error()) {
-                  if (err.framework_error().is_peer_closed()) {
-                    on_error_(ElementRunnerError::CURRENT_LEVEL_TRANSPORT_PEER_CLOSED);
-                  } else {
-                    on_error_(ElementRunnerError::CURRENT_LEVEL_TRANSPORT_OTHER);
-                  }
-                } else {
-                  switch (err.domain_error()) {
-                    case fuchsia_power_broker::CurrentLevelError::kNotAuthorized:
-                      on_error_(ElementRunnerError::CURRENT_LEVEL_NOT_AUTHORIZED);
-                      break;
-                    default:
-                      on_error_(ElementRunnerError::CURRENT_LEVEL_UNEXPECTED);
-                  }
-                }
-                return;
-              }
-
-              // Call ourself again to keep running the element.
-              RunPowerElement();
-            });
-      });
+void BasicElementRunner::SetLevel(SetLevelRequest& request, SetLevelCompleter::Sync& completer) {
+  completer.Reply();
 }
 
-void ElementRunner::SetLevel(
-    uint8_t level,
-    fit::function<
-        void(fit::result<fidl::ErrorsIn<fuchsia_power_broker::CurrentLevel::Update>, zx_status_t>)>
-        callback) {
-  current_level_.Set(level);
-
-  // Sets the level and reports the result to |callback|
-  current_level_client_->Update(level).Then(
-      [callback = std::move(callback)](
-          fidl::Result<fuchsia_power_broker::CurrentLevel::Update>& update_result) {
-        if (update_result.is_error()) {
-          callback(fit::error(update_result.error_value()));
-        } else {
-          callback(fit::ok(ZX_OK));
-        }
-      });
-}
+void BasicElementRunner::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> md,
+    fidl::UnknownMethodCompleter::Sync& completer) {}
 
 fit::result<Error, ElementDependencyMap> LevelDependencyFromConfig(
     const PowerElementConfiguration& element_config) {
@@ -615,9 +528,6 @@ fit::result<Error> AddElement(
     const fidl::ClientEnd<fuchsia_power_broker::Topology>& power_broker,
     const PowerElementConfiguration& config, TokenMap tokens,
     const zx::unowned_event& assertive_token, const zx::unowned_event& opportunistic_token,
-    std::optional<std::pair<fidl::ServerEnd<fuchsia_power_broker::CurrentLevel>,
-                            fidl::ServerEnd<fuchsia_power_broker::RequiredLevel>>>
-        level_control,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::Lessor>> lessor,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementControl>> element_control,
     std::optional<fidl::UnownedClientEnd<fuchsia_power_broker::ElementControl>>
@@ -676,20 +586,11 @@ fit::result<Error> AddElement(
     }
   }
 
-  // Level control is deprecated. Only use if element_runner not supplied.
-  std::optional<fuchsia_power_broker::LevelControlChannels> lvl_ctrl;
-  if (!element_runner.has_value() && level_control.has_value()) {
-    lvl_ctrl = {std::move(level_control->first), std::move(level_control->second)};
-  } else {
-    level_control = std::nullopt;
-  }
-
   fuchsia_power_broker::ElementSchema schema{{
       .element_name = std::string(config.element.name.data(), config.element.name.size()),
       .initial_current_level = static_cast<uint8_t>(0),
       .valid_levels = std::move(levels),
       .dependencies = std::move(level_deps),
-      .level_control_channels = std::move(lvl_ctrl),
       .element_runner = std::move(element_runner),
   }};
   if (lessor.has_value()) {
@@ -744,7 +645,6 @@ fit::result<Error> AddElement(fidl::ClientEnd<fuchsia_power_broker::Topology>& p
   }
   return AddElement(power_broker, description.element_config, std::move(description.tokens),
                     description.assertive_token.borrow(), description.opportunistic_token.borrow(),
-                    std::move(description.level_control_servers),
                     std::move(description.lessor_server),
                     std::move(description.element_control_server), element_control_client,
                     std::move(description.element_runner_client));
@@ -765,14 +665,12 @@ CreateLeaseHelper(const fidl::ClientEnd<fuchsia_power_broker::Topology>& topolog
                   async_dispatcher_t* dispatcher, fit::function<void()> error_callback,
                   inspect::Node* parent) {
   // Create the channels
-  fidl::Endpoints<fuchsia_power_broker::CurrentLevel> current_level =
-      fidl::CreateEndpoints<fuchsia_power_broker::CurrentLevel>().value();
-  fidl::Endpoints<fuchsia_power_broker::RequiredLevel> required_level =
-      fidl::CreateEndpoints<fuchsia_power_broker::RequiredLevel>().value();
   fidl::Endpoints<fuchsia_power_broker::Lessor> lessor =
       fidl::CreateEndpoints<fuchsia_power_broker::Lessor>().value();
   fidl::Endpoints<fuchsia_power_broker::ElementControl> element_control =
       fidl::CreateEndpoints<fuchsia_power_broker::ElementControl>().value();
+  fidl::Endpoints<fuchsia_power_broker::ElementRunner> element_runner =
+      fidl::CreateEndpoints<fuchsia_power_broker::ElementRunner>().value();
 
   fuchsia_power_broker::ElementSchema element_definition;
   element_definition.element_name() = std::move(lease_name);
@@ -791,10 +689,9 @@ CreateLeaseHelper(const fidl::ClientEnd<fuchsia_power_broker::Topology>& topolog
 
   element_definition.dependencies() = std::move(deps);
 
-  element_definition.level_control_channels() = fuchsia_power_broker::LevelControlChannels(
-      std::move(current_level.server), std::move(required_level.server));
   element_definition.lessor_channel() = std::move(lessor.server);
   element_definition.element_control() = std::move(element_control.server);
+  element_definition.element_runner() = std::move(element_runner.client);
 
   // Add the element
   fidl::Arena arena;
@@ -812,8 +709,8 @@ CreateLeaseHelper(const fidl::ClientEnd<fuchsia_power_broker::Topology>& topolog
   // Move the pieces from the FIDL creation result to the direct lease object
   std::unique_ptr<LeaseHelper> helper = std::make_unique<LeaseHelper>(
       element_definition.element_name().value(), std::move(element_control.client),
-      std::move(lessor.client), std::move(required_level.client), std::move(current_level.client),
-      dispatcher, std::move(error_callback), parent);
+      std::move(lessor.client), std::move(element_runner.server), dispatcher,
+      std::move(error_callback), parent);
   return fit::success(std::move(helper));
 }
 
@@ -838,14 +735,11 @@ fit::result<Error, std::vector<ElementDesc>> ApplyPowerConfiguration(
     }
     ElementDescBuilder builder = ElementDescBuilder(config, std::move(token_request.value()));
 
-    // If specified, use ElementRunner instead of CurrentLevel and RequiredLevel
     std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> runner_server;
-    if (use_element_runner) {
-      fidl::Endpoints<fuchsia_power_broker::ElementRunner> runner_endpoints =
-          fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
-      runner_server.emplace(std::move(runner_endpoints.server));
-      builder.SetElementRunner(std::move(runner_endpoints.client));
-    }
+    fidl::Endpoints<fuchsia_power_broker::ElementRunner> runner_endpoints =
+        fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+    runner_server.emplace(std::move(runner_endpoints.server));
+    builder.SetElementRunner(std::move(runner_endpoints.client));
 
     ElementDesc description = builder.Build();
 

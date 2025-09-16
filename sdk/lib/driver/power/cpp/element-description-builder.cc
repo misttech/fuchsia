@@ -52,36 +52,11 @@ ElementDesc ElementDescBuilder::Build() {
   if (this->element_runner_.has_value()) {
     to_return.element_runner_client = std::move(this->element_runner_.value());
   } else {
-    // Level control is deprecated, only use if element_runner is not supplied.
-    fidl::ServerEnd<fuchsia_power_broker::RequiredLevel> required_level_server;
-    std::optional<fidl::ClientEnd<fuchsia_power_broker::RequiredLevel>> required_level_client;
-
-    if (this->required_level_.has_value()) {
-      required_level_server = std::move(this->required_level_.value());
-    } else {
-      // make a channel instead, include it in output
-      fidl::Endpoints<fuchsia_power_broker::RequiredLevel> endpoints =
-          fidl::CreateEndpoints<fuchsia_power_broker::RequiredLevel>().value();
-      required_level_server = std::move(endpoints.server);
-      required_level_client = std::move(endpoints.client);
-    }
-
-    fidl::ServerEnd<fuchsia_power_broker::CurrentLevel> current_level_server;
-    std::optional<fidl::ClientEnd<fuchsia_power_broker::CurrentLevel>> current_level_client;
-    if (this->current_level_.has_value()) {
-      current_level_server = std::move(this->current_level_.value());
-    } else {
-      // make a channel instead, include it in output
-      fidl::Endpoints<fuchsia_power_broker::CurrentLevel> endpoints =
-          fidl::CreateEndpoints<fuchsia_power_broker::CurrentLevel>().value();
-      current_level_server = std::move(endpoints.server);
-      current_level_client = std::move(endpoints.client);
-    }
-
-    to_return.level_control_servers =
-        std::make_pair(std::move(current_level_server), std::move(required_level_server));
-    to_return.current_level_client = std::move(current_level_client);
-    to_return.required_level_client = std::move(required_level_client);
+    // make a channel instead, include it in output
+    fidl::Endpoints<fuchsia_power_broker::ElementRunner> endpoints =
+        fidl::CreateEndpoints<fuchsia_power_broker::ElementRunner>().value();
+    to_return.element_runner_client = std::move(endpoints.client);
+    to_return.element_runner_server = std::move(endpoints.server);
   }
 
   return to_return;
@@ -100,18 +75,6 @@ ElementDescBuilder& ElementDescBuilder::SetOpportunisticToken(
   zx::event dupe;
   opportunistic_token->duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
   opportunistic_token_ = std::move(dupe);
-  return *this;
-}
-
-ElementDescBuilder& ElementDescBuilder::SetCurrentLevel(
-    fidl::ServerEnd<fuchsia_power_broker::CurrentLevel> current) {
-  current_level_ = std::move(current);
-  return *this;
-}
-
-ElementDescBuilder& ElementDescBuilder::SetRequiredLevel(
-    fidl::ServerEnd<fuchsia_power_broker::RequiredLevel> required) {
-  required_level_ = std::move(required);
   return *this;
 }
 

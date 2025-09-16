@@ -75,103 +75,20 @@ const char* ErrorToString(Error e);
 const char* LeaseErrorToString(fuchsia_power_broker::LeaseError e);
 const char* AddElementErrorToString(fuchsia_power_broker::AddElementError e);
 
-enum class ElementRunnerError : uint8_t {
-  /// Maps to fuchsia.power.broker/RequiredLevelError::INTERNAL
-  REQUIRED_LEVEL_INTERNAL,
-  /// Maps to fuchsia.power.broker/RequiredLevelError::NOT_AUTHORIZED
-  REQUIRED_LEVEL_NOT_AUTHORIZED,
-  /// Maps to fuchsia.power.broker/RequiredLevelError::UNKNOWN
-  REQUIRED_LEVEL_UNKNOWN,
-  /// fuchsia.power.broker/RequiredLevelError has a value we don't recognize
-  REQUIRED_LEVEL_UNEXPECTED,
-  /// The fuchsia.power.broker/RequiredLevel channel closed
-  REQUIRED_LEVEL_TRANSPORT_PEER_CLOSED,
-  /// The fuchsia.power.broker/RequiredLevel had a FIDL transport error other
-  /// than closed.
-  REQUIRED_LEVEL_TRANSPORT_OTHER,
-  /// Maps to fuchsia.power.broker/CurrentLevelError::NOT_AUTHORIZED
-  CURRENT_LEVEL_NOT_AUTHORIZED,
-  /// fuchsia.power.broker/CurrentLevelError has a value we don't recognize
-  CURRENT_LEVEL_UNEXPECTED,
-  /// The fuchsia.power.broker/CurrentLevel channel closed
-  CURRENT_LEVEL_TRANSPORT_PEER_CLOSED,
-  /// The fuchsia.power.broker/CurrentLevel had a FIDL transport error other
-  /// than closed.
-  CURRENT_LEVEL_TRANSPORT_OTHER,
-  /// The level change callback returned an error
-  LEVEL_CHANGE_CALLBACK,
-};
-
-/// Runs a power element.
-///
-/// Once |RunPowerElement| is called, this object listens for new levels
-/// reported to it via |RequiredLevel.Watch|, calls the provided
-/// |level_change_callback|, and reports the level returned by that callback
-/// via |CurrentLevel.Update|. This object stops running the power element if
-/// an error occurs and reports the error via |error_handler|. This class is
-/// not thread-safe and should created on a thread with a synchronized
-/// dispatcher and given a pointer to that same dispatcher. Since the callbacks
-/// happen on the same dispatcher, blocking the callbacks blocks runnng the
-/// element. Calls to |SetLevel| do not trigger a |level_change_callback|
-/// invocation. If |inspect_node| is supplied, ElementRunner will add properties
-/// to it which represent the state of the power element.
-class ElementRunner {
- public:
-  ElementRunner(const std::string& name,
-                fidl::ClientEnd<fuchsia_power_broker::RequiredLevel> required_level,
-                fidl::ClientEnd<fuchsia_power_broker::CurrentLevel> current_level,
-                fit::function<fit::result<zx_status_t, uint8_t>(uint8_t)> level_change_callback,
-                fit::function<void(ElementRunnerError)> error_handler,
-                async_dispatcher_t* dispatcher, inspect::Node* inspect_node = nullptr) {
-    on_error_ = std::move(error_handler);
-    on_level_change_ = std::move(level_change_callback);
-    required_level_client_ =
-        fidl::Client<fuchsia_power_broker::RequiredLevel>(std::move(required_level), dispatcher);
-    current_level_client_ =
-        fidl::Client<fuchsia_power_broker::CurrentLevel>(std::move(current_level), dispatcher);
-    if (inspect_node) {
-      element_name_ = inspect_node->CreateString("element_name", name);
-      required_level_ = inspect_node->CreateUint("required_level", 0);
-      current_level_ = inspect_node->CreateUint("current_level", 0);
-    }
-  }
-
-  /// Runs the power element asynchronously. The object continues running the
-  /// power element until an error occurs or the object is destroyed. Running
-  /// the element *and* making callbacks via |level_change_callback| and
-  /// |error_handler| are done on the object's dispatcher.
-  ///
-  /// The object listens for new levels, calls |level_change_callback| when one
-  /// is received, reports the power level returned from |level_change_callback|
-  /// via the |current_level| channel provided to the constructor, and calls
-  /// |error_handler| if an error occurs.
-  ///
-  /// After |error_handler| is called, this object stops running the element.
-  /// |RunPowerElement| can then be called again to continue running it.
-  void RunPowerElement();
-
-  /// Sets the level of the element via the |CurrentLevel| channel provided to
-  /// the constructor. The call returns immediately and the result is delivered
-  /// to |callback| on the |dispatcher| passed to the constructor.
-  void SetLevel(
-      uint8_t level,
-      fit::function<void(
-          fit::result<fidl::ErrorsIn<fuchsia_power_broker::CurrentLevel::Update>, zx_status_t>)>
-          callback);
-
- private:
-  fidl::Client<fuchsia_power_broker::RequiredLevel> required_level_client_;
-  fidl::Client<fuchsia_power_broker::CurrentLevel> current_level_client_;
-  fit::function<fit::result<zx_status_t, uint8_t>(uint8_t)> on_level_change_;
-  fit::function<void(ElementRunnerError)> on_error_;
-  inspect::UintProperty current_level_;
-  inspect::UintProperty required_level_;
-  inspect::StringProperty element_name_;
-};
-
 inline fit::result<zx_status_t, uint8_t> default_level_changer(uint8_t level) {
   return fit::ok(level);
 }
+
+/// ElementRunner implementation that only updates PowerBroker immediately.
+///
+/// This helper class can be used to create an ElementRunner server that has no side effects or
+/// conditions when the power level of the given power element changes.
+class BasicElementRunner : public fidl::Server<fuchsia_power_broker::ElementRunner> {
+ public:
+  void SetLevel(SetLevelRequest& request, SetLevelCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> md,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
+};
 
 /// |LeaseHelper| wraps the collection of channels that represents a power
 /// element. When used with |CreateLeaseHelper| the caller just supplies
@@ -196,20 +113,15 @@ class LeaseHelper {
   LeaseHelper(const std::string& lease_name,
               fidl::ClientEnd<fuchsia_power_broker::ElementControl> element_control,
               fidl::ClientEnd<fuchsia_power_broker::Lessor> lessor,
-              fidl::ClientEnd<fuchsia_power_broker::RequiredLevel> required_level,
-              fidl::ClientEnd<fuchsia_power_broker::CurrentLevel> current_level,
+              fidl::ServerEnd<fuchsia_power_broker::ElementRunner> element_runner_server,
               async_dispatcher_t* dispatcher, fit::function<void()> error_callback,
               inspect::Node* parent)
       : dispatcher_(dispatcher),
         element_control_(fidl::Client<fuchsia_power_broker::ElementControl>(
             std::move(element_control), dispatcher_)),
         lessor_(fidl::Client<fuchsia_power_broker::Lessor>(std::move(lessor), dispatcher_)),
-        runner_(
-            lease_name, std::move(required_level), std::move(current_level), default_level_changer,
-            [callback = std::move(error_callback)](ElementRunnerError err) { callback(); },
-            dispatcher_, parent) {
-    runner_.RunPowerElement();
-  }
+        runner_binding_(dispatcher_, std::move(element_runner_server), &runner_,
+                        fidl::kIgnoreBindingClosure) {}
 
   /// Trigger the lease acquisition. The lease is **created**, but not active,
   /// when |callback| is invoked. The lease is active when
@@ -226,7 +138,8 @@ class LeaseHelper {
   async_dispatcher_t* dispatcher_;
   fidl::Client<fuchsia_power_broker::ElementControl> element_control_;
   fidl::Client<fuchsia_power_broker::Lessor> lessor_;
-  ElementRunner runner_;
+  BasicElementRunner runner_;
+  fidl::ServerBinding<fuchsia_power_broker::ElementRunner> runner_binding_;
 };
 
 class LeaseDependency {
@@ -256,7 +169,7 @@ fit::result<Error, std::vector<ElementDesc>> ApplyPowerConfiguration(
 /// use |LeaseHelper::AcquireLease| to trigger lease activation.
 ///
 /// The |dispatcher| passed in is used to run a power element, so blocking
-/// the dispatcher while acquiriring a lease with |LeaseHelper::AcquireLease|
+/// the dispatcher while acquiring a lease with |LeaseHelper::AcquireLease|
 /// will result in a deadlock.
 ///
 /// |error_callback| is **not** invoked if |LeaseHelper| creation fails,
@@ -265,7 +178,7 @@ fit::result<Error, std::vector<ElementDesc>> ApplyPowerConfiguration(
 /// and the |LeaseHelper| should be replaced with a new instance.
 ///
 /// RETURN VALUES
-/// On error returns a tuple representng whether it was a FIDL error or a
+/// On error returns a tuple representing whether it was a FIDL error or a
 /// protocol error. If the |fidl::Status| is not ZX_OK, this was a FIDL error,
 /// and the second member of the tuple will be `nullopt`. Otherwise, this is a
 /// protocol error from adding the power element that the direct lease wraps
@@ -356,9 +269,6 @@ fit::result<Error> AddElement(
     const fidl::ClientEnd<fuchsia_power_broker::Topology>& power_broker,
     const PowerElementConfiguration& config, TokenMap tokens,
     const zx::unowned_event& assertive_token, const zx::unowned_event& opportunistic_token,
-    std::optional<std::pair<fidl::ServerEnd<fuchsia_power_broker::CurrentLevel>,
-                            fidl::ServerEnd<fuchsia_power_broker::RequiredLevel>>>
-        level_control,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::Lessor>> lessor,
     std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementControl>> element_control,
     std::optional<fidl::UnownedClientEnd<fuchsia_power_broker::ElementControl>>
