@@ -8,7 +8,9 @@ use crate::{Error, Handle, ordinals};
 use fidl_fuchsia_fdomain as proto;
 use futures::FutureExt;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll, ready};
 
 /// A socket in a remote FDomain.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -122,50 +124,63 @@ impl Drop for SocketReadStream {
     }
 }
 
+/// Wrapper for [`Client::poll_socket`] that adapts the return value semantics
+/// to what Unix prescribes, and what `futures::io` thus prescribes.
+fn async_read_poll_socket(
+    client: Arc<crate::Client>,
+    proto: proto::HandleId,
+    cx: &mut Context<'_>,
+    buf: &mut [u8],
+) -> Poll<std::io::Result<usize>> {
+    let res = ready!(client.poll_socket(proto, cx, buf)).or_else(|e| match e {
+        Error::FDomain(proto::Error::TargetError(e))
+            if e == zx_status::Status::PEER_CLOSED.into_raw() =>
+        {
+            Ok(0)
+        }
+        other => Err(std::io::Error::other(other)),
+    });
+    Poll::Ready(res)
+}
+
 impl futures::AsyncRead for Socket {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         let client = self.0.client();
-        client.poll_socket(self.0.proto(), cx, buf).map_err(std::io::Error::other)
+        async_read_poll_socket(client, self.0.proto(), cx, buf)
     }
 }
 
 impl futures::AsyncRead for &Socket {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         let client = self.0.client();
-        client.poll_socket(self.0.proto(), cx, buf).map_err(std::io::Error::other)
+        async_read_poll_socket(client, self.0.proto(), cx, buf)
     }
 }
 
 impl futures::AsyncWrite for Socket {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         let _ = self.write_all(buf);
-        std::task::Poll::Ready(Ok(buf.len()))
+        Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn poll_close(
-        mut self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_close(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         self.0 = Handle::invalid();
-        std::task::Poll::Ready(Ok(()))
+        Poll::Ready(Ok(()))
     }
 }
