@@ -13,12 +13,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio};
 
-/// A trait for types that can be imported into a [`CapabilityStore`].
-///
-/// Meant to be implemented by newtypes of [`CapabilityHandle`].
+/// A trait for value types that can be imported into a [`CapabilityStore`], such as
+/// String, u64, and fsandbox::DictionaryRef.
 pub trait Importable<'a>: Sized + Into<Capability> + TryFrom<Capability, Error = Error> {
-    /// The type of handle that will be returned on import.
-    type Handle: CapabilityHandle<'a>;
+    /// The type of CapabilityRef that will be returned on import.
+    type Ref: CapabilityRef<'a>;
 }
 
 /// An error that can occur when interacting with the sandbox APIs.
@@ -91,13 +90,13 @@ impl<'a> CapabilityStore {
     }
 
     /// Imports a capability into the store.
-    pub async fn import<T>(&'a self, value: T) -> Result<T::Handle, Error>
+    pub async fn import<T>(&'a self, value: T) -> Result<T::Ref, Error>
     where
         T: Importable<'a>,
     {
         let id = self.id_gen.next();
         self.proxy.import(id, value.into().0).await??;
-        Ok(T::Handle::from_store(self, id))
+        Ok(T::Ref::from_store(self, id))
     }
 
     /// Creates a new, empty dictionary in the capability store.
@@ -107,7 +106,7 @@ impl<'a> CapabilityStore {
         Ok(Dictionary { store: self, id })
     }
 
-    /// Creates a new `Connector` capability from a `Receiver` client end.
+    /// Creates a new [`Connector`] capability from a `Receiver` client end.
     pub async fn create_connector(
         &'a self,
         client_end: fidl::endpoints::ClientEnd<fsandbox::ReceiverMarker>,
@@ -116,21 +115,40 @@ impl<'a> CapabilityStore {
         self.proxy.connector_create(id, client_end).await??;
         Ok(Connector { store: self, id })
     }
+
+    /// Creates a new [`DirConnector`] capability from a `DirReceiver` client end.
+    pub async fn create_dir_connector(
+        &'a self,
+        client_end: fidl::endpoints::ClientEnd<fsandbox::DirReceiverMarker>,
+    ) -> Result<DirConnector<'a>, Error> {
+        let id = self.id_gen.next();
+        self.proxy.dir_connector_create(id, client_end).await??;
+        Ok(DirConnector { store: self, id })
+    }
 }
 
-/// A handle to a [`fsandbox::Capability`] stored in a repository held by the
+/// A reference to a [`fsandbox::Capability`] stored in a repository held by the
 /// component framework.
 ///
-/// This handle represents a capability of an unconfirmed type. Specify type
+/// This reference represents a capability of an unconfirmed type. Specify type
 /// parameters on `export()` methods to derive the type.
 #[allow(async_fn_in_trait)]
-pub trait CapabilityHandle<'a>: Sized {
+pub trait CapabilityRef<'a>: Sized {
+    /// Create a [`CapabilityRef`] referencing the given store and id.
+    ///
+    /// Warning: If the capability stored in the store at the given key is not
+    /// of type `T`, the type mismatch will only become apparent when attempting
+    /// to call [`CapabilityRef::export`] or call type-specific methods on it.
     fn from_store(store: &'a CapabilityStore, id: fsandbox::CapabilityId) -> Self;
+
+    /// Return a reference to the store containing this Capability.
     fn store(&self) -> &'a CapabilityStore;
+
+    /// Return the identifier for this Capability.
     fn id(&self) -> fsandbox::CapabilityId;
 
-    /// Duplicates the capability referenced by this handle, returning a new
-    /// handle to the duplicated capability.
+    /// Duplicates the capability referenced by this ref, returning a new
+    /// ref to the duplicated capability.
     async fn duplicate(&'a self) -> Result<Self, Error> {
         let dup_id = self.store().id_gen.next();
         self.store().proxy.duplicate(self.id(), dup_id).await??;
@@ -146,7 +164,7 @@ pub trait CapabilityHandle<'a>: Sized {
     /// component framework runtime.
     async fn export<T>(self) -> Result<T, Error>
     where
-        T: Importable<'a, Handle = Self>,
+        T: Importable<'a, Ref = Self>,
     {
         let cap = self.store().proxy.export(self.id()).await??;
         T::try_from(cap.into())
@@ -178,15 +196,6 @@ fn capability_type_name(cap: fsandbox::Capability) -> &'static str {
     match cap {
         fsandbox::Capability::Unit(_) => "Unit",
         fsandbox::Capability::Handle(_) => "Handle",
-        fsandbox::Capability::Dictionary(_) => "Dictionary",
-        fsandbox::Capability::Connector(_) => "Connector",
-        fsandbox::Capability::Directory(_) => "Directory",
-        fsandbox::Capability::DirEntry(_) => "DirEntry",
-        fsandbox::Capability::ConnectorRouter(_) => "ConnectorRouter",
-        fsandbox::Capability::DictionaryRouter(_) => "DictionaryRouter",
-        fsandbox::Capability::DirEntryRouter(_) => "DirEntryRouter",
-        fsandbox::Capability::DataRouter(_) => "DataRouter",
-        fsandbox::Capability::DirConnectorRouter(_) => "DirConnectorRouter",
         fsandbox::Capability::Data(data) => match data {
             fsandbox::Data::Bytes(_) => "Data::Bytes",
             fsandbox::Data::String(_) => "Data::String",
@@ -194,13 +203,43 @@ fn capability_type_name(cap: fsandbox::Capability) -> &'static str {
             fsandbox::Data::Uint64(_) => "Data::Uint64",
             _ => "Data::Unknown",
         },
+        fsandbox::Capability::Dictionary(_) => "Dictionary",
+        fsandbox::Capability::Connector(_) => "Connector",
+        fsandbox::Capability::DirConnector(_) => "DirConnector",
+        fsandbox::Capability::Directory(_) => "Directory",
+        fsandbox::Capability::DirEntry(_) => "DirEntry",
+        fsandbox::Capability::ConnectorRouter(_) => "ConnectorRouter",
+        fsandbox::Capability::DictionaryRouter(_) => "DictionaryRouter",
+        fsandbox::Capability::DirEntryRouter(_) => "DirEntryRouter",
+        fsandbox::Capability::DataRouter(_) => "DataRouter",
+        fsandbox::Capability::DirConnectorRouter(_) => "DirConnectorRouter",
         _ => "Unknown",
     }
 }
 
-/// Implement TryFrom on simple [`fsandbox::Capability`] variants.
-macro_rules! impl_try_from_capability {
-    ($t:ty, $variant:path, $variant_type_name:expr) => {
+/// Generate a struct that implements [`CapabilityRef`]. Optionally generate
+/// a [`Importable`] implementation for `Item`.
+macro_rules! impl_capability_ref {
+    // Generate struct and impls for Item.
+    (
+        $(#[$attr:meta])*
+        $ref:ident, $t:ty, $variant:path
+    ) => {
+        impl_capability_ref!(
+            $(#[$attr])*
+            $ref
+        );
+
+        impl<'a> Importable<'a> for $t {
+            type Ref = $ref<'a>;
+        }
+
+        impl From<$t> for Capability {
+            fn from(value: $t) -> Self {
+                Self($variant(value))
+            }
+        }
+
         impl TryFrom<Capability> for $t {
             type Error = Error;
             fn try_from(value: Capability) -> Result<Self, Self::Error> {
@@ -208,55 +247,165 @@ macro_rules! impl_try_from_capability {
                     $variant(inner) => Ok(inner),
                     capability => Err(Error::WrongType {
                         got: capability_type_name(capability),
-                        want: $variant_type_name,
+                        want: stringify!($t),
                     }),
                 }
             }
         }
     };
+    // Generate struct.
+    (
+        $(#[$attr:meta])*
+        $ref:ident
+    ) => {
+        $(#[$attr])*
+        #[derive(Debug)]
+        pub struct $ref<'a> {
+            store: &'a CapabilityStore,
+            id: fsandbox::CapabilityId,
+        }
+
+        impl<'a> CapabilityRef<'a> for $ref<'a> {
+            fn from_store(store: &'a CapabilityStore, id: fsandbox::CapabilityId) -> Self {
+                Self { store, id }
+            }
+
+            fn store(&self) -> &'a CapabilityStore {
+                self.store
+            }
+
+            fn id(&self) -> fsandbox::CapabilityId {
+                self.id
+            }
+        }
+    };
 }
 
-impl_try_from_capability!(fsandbox::Unit, fsandbox::Capability::Unit, "Unit");
-impl_try_from_capability!(fidl::Handle, fsandbox::Capability::Handle, "Handle");
-impl_try_from_capability!(fsandbox::DictionaryRef, fsandbox::Capability::Dictionary, "Dictionary");
-impl_try_from_capability!(fsandbox::Connector, fsandbox::Capability::Connector, "Connector");
-impl_try_from_capability!(
-    fidl::endpoints::ClientEnd<fio::DirectoryMarker>,
-    fsandbox::Capability::Directory,
-    "Directory"
+impl_capability_ref!(
+    /// A reference to a Unit capability in the store.
+    Unit, fsandbox::Unit, fsandbox::Capability::Unit
 );
-impl_try_from_capability!(fsandbox::DirEntry, fsandbox::Capability::DirEntry, "DirEntry");
-impl_try_from_capability!(
-    fidl::endpoints::ClientEnd<fsandbox::ConnectorRouterMarker>,
-    fsandbox::Capability::ConnectorRouter,
-    "ConnectorRouter"
+
+impl_capability_ref!(
+    /// A reference to a Zircon handle capability in the store.
+    Handle, fidl::Handle, fsandbox::Capability::Handle
 );
-impl_try_from_capability!(
-    fidl::endpoints::ClientEnd<fsandbox::DictionaryRouterMarker>,
-    fsandbox::Capability::DictionaryRouter,
-    "DictionaryRouter"
+
+impl_capability_ref!(
+    /// A reference to a Data capability in the store.
+    ///
+    /// The underlying Data in the component framework runtime holds primitive
+    /// types like strings, integers, and byte vectors.
+    Data
 );
-impl_try_from_capability!(
-    fidl::endpoints::ClientEnd<fsandbox::DirEntryRouterMarker>,
-    fsandbox::Capability::DirEntryRouter,
-    "DirEntryRouter"
+
+impl_capability_ref!(
+    /// A reference to a Dictionary capability in the store.
+    ///
+    /// Component framework dictionaries are mutable collections of other
+    /// [`fsandbox::Capability`], keyed by strings.
+    Dictionary, fsandbox::DictionaryRef, fsandbox::Capability::Dictionary
 );
-impl_try_from_capability!(
-    fidl::endpoints::ClientEnd<fsandbox::DataRouterMarker>,
-    fsandbox::Capability::DataRouter,
-    "DataRouter"
+
+impl<'a> Dictionary<'a> {
+    /// Inserts a capability into the dictionary with the given key.
+    pub async fn insert<V>(&self, key: impl Into<String>, value: V) -> Result<(), Error>
+    where
+        V: CapabilityRef<'a>,
+    {
+        self.store
+            .proxy
+            .dictionary_insert(
+                self.id,
+                &fsandbox::DictionaryItem { key: key.into(), value: value.id() },
+            )
+            .await??;
+        Ok(())
+    }
+
+    /// Retrieves a capability from the dictionary by its key.
+    pub async fn get<T>(&self, key: impl AsRef<str>) -> Result<T, Error>
+    where
+        T: CapabilityRef<'a>,
+    {
+        let id = self.store.id_gen.next();
+        self.store.proxy.dictionary_get(self.id, key.as_ref(), id).await??;
+        Ok(T::from_store(self.store, id))
+    }
+}
+
+impl_capability_ref!(
+    /// A reference to a Connector capability in the store.
+    ///
+    /// A [`Connector`] can be used to receive a channel from a client component.
+    Connector, fsandbox::Connector, fsandbox::Capability::Connector
 );
-impl_try_from_capability!(
-    fidl::endpoints::ClientEnd<fsandbox::DirConnectorRouterMarker>,
-    fsandbox::Capability::DirConnectorRouter,
-    "DirConnectorRouter"
+
+impl<'a> Connector<'a> {
+    /// Open the underlying connection to `Receiver`.
+    pub async fn open(
+        &self,
+        server_end: fidl::endpoints::ServerEnd<fsandbox::ReceiverMarker>,
+    ) -> Result<(), Error> {
+        Ok(self.store.proxy.connector_open(self.id, server_end.into_channel()).await??)
+    }
+}
+
+impl_capability_ref!(
+    /// A reference to a DirConnector capability in the store.
+    DirConnector, fsandbox::DirConnector, fsandbox::Capability::DirConnector
+);
+
+impl<'a> DirConnector<'a> {
+    /// Open the underlying connection to `Directory`.
+    pub async fn open(
+        &self,
+        server_end: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<(), Error> {
+        Ok(self.store.proxy.dir_connector_open(self.id, server_end).await??)
+    }
+}
+
+impl_capability_ref!(
+    /// A reference to a Directory capability in the store.
+    Directory, fidl::endpoints::ClientEnd<fio::DirectoryMarker>, fsandbox::Capability::Directory
+);
+
+impl_capability_ref!(
+    /// A reference to a DirEntry capability in the store.
+    DirEntry, fsandbox::DirEntry, fsandbox::Capability::DirEntry
+);
+
+impl_capability_ref!(
+    /// A reference to a ConnectorRouter capability in the store.
+    ConnectorRouter, fidl::endpoints::ClientEnd<fsandbox::ConnectorRouterMarker>, fsandbox::Capability::ConnectorRouter
+);
+
+impl_capability_ref!(
+    /// A reference to a DictionaryRouter capability in the store.
+    DictionaryRouter, fidl::endpoints::ClientEnd<fsandbox::DictionaryRouterMarker>, fsandbox::Capability::DictionaryRouter
+);
+
+impl_capability_ref!(
+    /// A reference to a DirEntryRouter capability in the store.
+    DirEntryRouter, fidl::endpoints::ClientEnd<fsandbox::DirEntryRouterMarker>, fsandbox::Capability::DirEntryRouter
+);
+
+impl_capability_ref!(
+    /// A reference to a DataRouter capability in the store.
+    DataRouter, fidl::endpoints::ClientEnd<fsandbox::DataRouterMarker>, fsandbox::Capability::DataRouter
+);
+
+impl_capability_ref!(
+    /// A reference to a DirConnectorRouter capability in the store.
+    DirConnectorRouter, fidl::endpoints::ClientEnd<fsandbox::DirConnectorRouterMarker>, fsandbox::Capability::DirConnectorRouter
 );
 
 /// Implement TryFrom on [`fsandbox::Capability::Data`] variants.
 macro_rules! impl_data_capability {
     ($t:ty, $variant:path, $variant_type_name:expr) => {
         impl<'a> Importable<'a> for $t {
-            type Handle = Data<'a>;
+            type Ref = Data<'a>;
         }
 
         impl From<$t> for Capability {
@@ -282,118 +431,8 @@ macro_rules! impl_data_capability {
 
 impl_data_capability!(Vec<u8>, fsandbox::Data::Bytes, "Data::Bytes");
 impl_data_capability!(String, fsandbox::Data::String, "Data::String");
-impl_data_capability!(i64, fsandbox::Data::Int64, "Data:Int64");
-impl_data_capability!(u64, fsandbox::Data::Uint64, "Data:Uint64");
-
-impl<'a> Importable<'a> for fsandbox::DictionaryRef {
-    type Handle = Dictionary<'a>;
-}
-
-impl From<fsandbox::DictionaryRef> for Capability {
-    fn from(value: fsandbox::DictionaryRef) -> Self {
-        Capability(fsandbox::Capability::Dictionary(value))
-    }
-}
-
-/// A handle to a dictionary capability in the store.
-///
-/// Component framework dictionaries are mutable collections of other
-/// capabilities, keyed by strings.
-#[derive(Debug)]
-pub struct Dictionary<'a> {
-    store: &'a CapabilityStore,
-    id: fsandbox::CapabilityId,
-}
-
-impl<'a> CapabilityHandle<'a> for Dictionary<'a> {
-    fn from_store(store: &'a CapabilityStore, id: fsandbox::CapabilityId) -> Self {
-        Self { store, id }
-    }
-
-    fn store(&self) -> &'a CapabilityStore {
-        self.store
-    }
-
-    fn id(&self) -> fsandbox::CapabilityId {
-        self.id
-    }
-}
-
-impl<'a> Dictionary<'a> {
-    /// Inserts a capability into the dictionary with the given key.
-    pub async fn insert<V>(&self, key: impl Into<String>, value: V) -> Result<(), Error>
-    where
-        V: CapabilityHandle<'a>,
-    {
-        self.store
-            .proxy
-            .dictionary_insert(
-                self.id,
-                &fsandbox::DictionaryItem { key: key.into(), value: value.id() },
-            )
-            .await??;
-        Ok(())
-    }
-
-    /// Retrieves a capability from the dictionary by its key.
-    pub async fn get<T>(&self, key: impl AsRef<str>) -> Result<T, Error>
-    where
-        T: CapabilityHandle<'a>,
-    {
-        let id = self.store.id_gen.next();
-        self.store.proxy.dictionary_get(self.id, key.as_ref(), id).await??;
-        Ok(T::from_store(self.store, id))
-    }
-}
-
-/// A handle to a connector capability in the store.
-///
-/// A [`Connector`] can be used to receive a channel from a client component.
-#[derive(Debug)]
-pub struct Connector<'a> {
-    store: &'a CapabilityStore,
-    id: fsandbox::CapabilityId,
-}
-
-impl<'a> CapabilityHandle<'a> for Connector<'a> {
-    fn from_store(store: &'a CapabilityStore, id: fsandbox::CapabilityId) -> Self {
-        Self { store, id }
-    }
-
-    fn store(&self) -> &'a CapabilityStore {
-        self.store
-    }
-
-    fn id(&self) -> fsandbox::CapabilityId {
-        self.id
-    }
-}
-
-impl<'a> Connector<'a> {}
-
-/// A handle to a data capability in the store.
-///
-/// The underlying [`Data`] in the component framework runtime holds fundamental
-/// types like strings, integers, and byte vectors.
-#[derive(Debug)]
-pub struct Data<'a> {
-    store: &'a CapabilityStore,
-    id: fsandbox::CapabilityId,
-}
-
-impl<'a> CapabilityHandle<'a> for Data<'a> {
-    fn from_store(store: &'a CapabilityStore, id: fsandbox::CapabilityId) -> Self {
-        Self { store, id }
-    }
-
-    fn store(&self) -> &'a CapabilityStore {
-        self.store
-    }
-
-    fn id(&self) -> fsandbox::CapabilityId {
-        self.id
-    }
-}
+impl_data_capability!(i64, fsandbox::Data::Int64, "Data::Int64");
+impl_data_capability!(u64, fsandbox::Data::Uint64, "Data::Uint64");
 
 #[cfg(test)]
 mod tests {
@@ -401,11 +440,12 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
-    use futures::FutureExt;
+    use futures::future::FutureExt;
     use futures::prelude::*;
     use futures::task::Poll;
     use std::pin::Pin;
-    use zx::AsHandleRef as _;
+    use test_case::test_case;
+    use zx::AsHandleRef;
 
     fn setup_store() -> (CapabilityStore, fsandbox::CapabilityStoreRequestStream) {
         let (proxy, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
@@ -430,29 +470,39 @@ mod tests {
         assert_eq!(id_gen.next(), 7);
     }
 
-    #[test]
-    fn data_capability_conversions() {
-        // String
-        let cap: Capability = "hello".to_string().into();
-        let str_again: String = cap.try_into().unwrap();
-        assert_eq!(str_again, "hello");
-
-        // u64
-        let cap: Capability = 123u64.into();
-        let num_again: u64 = cap.try_into().unwrap();
-        assert_eq!(num_again, 123);
-
-        // Wrong type
-        let cap: Capability = "hello".to_string().into();
-        let res: Result<u64, _> = cap.try_into();
-        assert_matches!(res, Err(Error::WrongType { got: "Data::String", want: _ }));
+    #[test_case("hello".to_string(); "string")]
+    #[test_case(123u64; "u64")]
+    #[test_case(-123i64; "i64")]
+    #[test_case(vec![1, 2, 3]; "bytes")]
+    fn data_capability_conversions<T>(val: T)
+    where
+        T: for<'a> Importable<'a, Ref = Data<'a>> + Clone + PartialEq + std::fmt::Debug,
+    {
+        let cap: Capability = val.clone().into();
+        let val_again: T = cap.try_into().unwrap();
+        assert_eq!(val_again, val);
     }
 
+    #[test]
+    fn data_capability_conversions_wrong_type() {
+        let cap: Capability = "hello".to_string().into();
+        let res: Result<u64, _> = cap.try_into();
+        assert_matches!(res, Err(Error::WrongType { got: "Data::String", want: "Data::Uint64" }));
+    }
+
+    #[test_case("hello".to_string(); "string")]
+    #[test_case(123u64; "u64")]
+    #[test_case(-123i64; "i64")]
+    #[test_case(vec![1, 2, 3]; "bytes")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn capability_store_import() {
+    async fn capability_store_import_export<T>(val: T)
+    where
+        T: for<'a> Importable<'a, Ref: std::fmt::Debug> + Clone + PartialEq + std::fmt::Debug,
+    {
         let (store, mut stream) = setup_store();
 
-        let mut import_fut = store.import("hello".to_string()).boxed_local();
+        // Test import
+        let mut import_fut = store.import(val.clone()).boxed_local();
         wait_for_request(&mut import_fut).await;
 
         let (capability, responder) = assert_matches!(
@@ -460,20 +510,38 @@ mod tests {
             fsandbox::CapabilityStoreRequest::Import { id, capability, responder } if id == 0 => (capability, responder)
         );
 
-        assert_matches!(capability, fsandbox::Capability::Data(fsandbox::Data::String(s)) if s == "hello");
+        // Check that the imported capability matches the value.
+        let imported_val: T = Capability(capability).try_into().unwrap();
+        assert_eq!(imported_val, val);
+
         responder.send(Ok(())).unwrap();
-        let handle = import_fut.await.unwrap();
-        assert_eq!(handle.id, 0);
+        let cap = import_fut.await.unwrap();
+        assert_eq!(cap.id(), 0);
+
+        // Test export
+        let mut export_fut = cap.export::<T>().boxed_local();
+        wait_for_request(&mut export_fut).await;
+
+        let responder = assert_matches!(
+            stream.next().await.unwrap().unwrap(),
+            fsandbox::CapabilityStoreRequest::Export { id, responder } if id == 0 => responder
+        );
+
+        let cap_to_return: Capability = val.clone().into();
+        responder.send(Ok(cap_to_return.into())).unwrap();
+
+        let result = export_fut.await.unwrap();
+        assert_eq!(result, val);
     }
 
     #[fuchsia::test(allow_stalls = false)]
-    async fn capability_handle_duplicate() {
+    async fn capability_ref_duplicate() {
         let (store, mut stream) = setup_store();
 
         // Simulate an existing capability with id 100
-        let handle = Data { id: 100, store: &store };
+        let data = Data { id: 100, store: &store };
 
-        let mut duplicate_fut = handle.duplicate().boxed_local();
+        let mut duplicate_fut = data.duplicate().boxed_local();
         wait_for_request(&mut duplicate_fut).await;
 
         let responder = assert_matches!(
@@ -482,17 +550,17 @@ mod tests {
         );
 
         responder.send(Ok(())).unwrap();
-        let new_handle: Data<'_> = duplicate_fut.await.unwrap();
-        assert_eq!(new_handle.id, 0);
+        let new_data: Data<'_> = duplicate_fut.await.unwrap();
+        assert_eq!(new_data.id, 0);
         assert_eq!(store.id_gen.next(), 1); // next id is 1
     }
 
     #[fuchsia::test(allow_stalls = false)]
-    async fn capability_handle_drop() {
+    async fn capability_ref_drop() {
         let (store, mut stream) = setup_store();
-        let handle = Data { id: 100, store: &store };
+        let data = Data { id: 100, store: &store };
 
-        let mut drop_fut = handle.drop().boxed_local();
+        let mut drop_fut = data.drop().boxed_local();
         wait_for_request(&mut drop_fut).await;
 
         let responder = assert_matches!(
@@ -502,26 +570,6 @@ mod tests {
 
         responder.send(Ok(())).unwrap();
         drop_fut.await.unwrap();
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn capability_handle_export() {
-        let (store, mut stream) = setup_store();
-        let handle = Data { id: 100, store: &store };
-
-        let mut export_fut = handle.export::<String>().boxed_local();
-        wait_for_request(&mut export_fut).await;
-
-        let responder = assert_matches!(
-            stream.next().await.unwrap().unwrap(),
-            fsandbox::CapabilityStoreRequest::Export { id, responder } if id == 100 => responder
-        );
-
-        let cap = fsandbox::Capability::Data(fsandbox::Data::String("exported".to_string()));
-        responder.send(Ok(cap)).unwrap();
-
-        let result = export_fut.await.unwrap();
-        assert_eq!(result, "exported");
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -573,8 +621,8 @@ mod tests {
         );
 
         responder.send(Ok(())).unwrap();
-        let handle = get_fut.await.unwrap();
-        assert_eq!(handle.id, 0);
+        let data = get_fut.await.unwrap();
+        assert_eq!(data.id, 0);
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -618,22 +666,60 @@ mod tests {
     }
 
     #[fuchsia::test(allow_stalls = false)]
-    async fn data_export() {
+    async fn connector_open() {
         let (store, mut stream) = setup_store();
-        let data = Data { id: 10, store: &store };
+        let connector = Connector { id: 10, store: &store };
 
-        let mut export_fut = data.export::<String>().boxed_local();
-        wait_for_request(&mut export_fut).await;
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fsandbox::ReceiverMarker>();
+        let mut open_fut = connector.open(server_end).boxed_local();
+        wait_for_request(&mut open_fut).await;
 
         let responder = assert_matches!(
             stream.next().await.unwrap().unwrap(),
-            fsandbox::CapabilityStoreRequest::Export { id, responder } if id == 10 => responder
+            fsandbox::CapabilityStoreRequest::ConnectorOpen { id, server_end, responder } if id == 10 && server_end.as_handle_ref().is_invalid() == false => responder
         );
 
-        let cap = fsandbox::Capability::Data(fsandbox::Data::String("exported data".to_string()));
-        responder.send(Ok(cap)).unwrap();
+        responder.send(Ok(())).unwrap();
+        open_fut.await.unwrap();
+        assert_eq!(client_end.as_handle_ref().is_invalid(), false);
+    }
 
-        let result = export_fut.await.unwrap();
-        assert_eq!(result, "exported data");
+    #[fuchsia::test(allow_stalls = false)]
+    async fn dir_connector_create() {
+        let (store, mut stream) = setup_store();
+        let (client_end, _server_end) =
+            fidl::endpoints::create_endpoints::<fsandbox::DirReceiverMarker>();
+
+        let mut create_fut = store.create_dir_connector(client_end).boxed_local();
+        wait_for_request(&mut create_fut).await;
+
+        let responder = assert_matches!(
+            stream.next().await.unwrap().unwrap(),
+            fsandbox::CapabilityStoreRequest::DirConnectorCreate { id, receiver, responder } if id == 0 && receiver.as_handle_ref().is_invalid() == false => responder
+        );
+
+        responder.send(Ok(())).unwrap();
+        let connector = create_fut.await.unwrap();
+        assert_eq!(connector.id, 0);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn dir_connector_open() {
+        let (store, mut stream) = setup_store();
+        let connector = DirConnector { id: 10, store: &store };
+
+        let (client_end, server_end) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+        let mut open_fut = connector.open(server_end).boxed_local();
+        wait_for_request(&mut open_fut).await;
+
+        let responder = assert_matches!(
+            stream.next().await.unwrap().unwrap(),
+            fsandbox::CapabilityStoreRequest::DirConnectorOpen { id, server_end, responder } if id == 10 && server_end.as_handle_ref().is_invalid() == false => responder
+        );
+
+        responder.send(Ok(())).unwrap();
+        open_fut.await.unwrap();
+        assert_eq!(client_end.as_handle_ref().is_invalid(), false);
     }
 }
