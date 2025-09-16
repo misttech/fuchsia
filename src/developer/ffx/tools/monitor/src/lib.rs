@@ -102,10 +102,10 @@ async fn start_server(addr: SocketAddr, cmd: StartCommand) -> anyhow::Result<()>
                     log::debug!("Successfully updated target status cache {:?}", cache_lock);
                 }
                 Ok(Err(e)) => {
-                    eprintln!("Error collecting target status: {:?}", e);
+                    log::error!("Error collecting target status: {:?}", e);
                 }
                 Err(e) => {
-                    eprintln!("Task panicked while collecting target status: {:?}", e);
+                    log::error!("Task panicked while collecting target status: {:?}", e);
                 }
             }
         }
@@ -123,7 +123,7 @@ async fn start_server(addr: SocketAddr, cmd: StartCommand) -> anyhow::Result<()>
                 )
                 .await
             {
-                eprintln!("Error serving connection: {:?}", err);
+                log::error!("Error serving connection: {:?}", err);
             }
         });
     }
