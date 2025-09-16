@@ -829,17 +829,6 @@ class MappingProtectionRanges {
   zx_status_t UpdateProtectionRange(vaddr_t mapping_base, size_t mapping_size, vaddr_t base,
                                     size_t size, uint new_arch_mmu_flags, F callback);
 
-  // Returns the precise mmu flags for the given vaddr. The vaddr is assumed to be within the range
-  // of this mapping.
-  uint MmuFlagsForRegion(vaddr_t vaddr) const {
-    // Check the common case here inline since it doesn't generate much code. The full lookup
-    // requires wavl tree traversal, and so we want to avoid inlining that.
-    if (protect_region_list_rest_.is_empty()) {
-      return first_region_arch_mmu_flags_;
-    }
-    return MmuFlagsForWavlRegion(vaddr);
-  }
-
   // Enumerates any different protection ranges that exist inside this mapping. The virtual range
   // specified by range_base and range_size must be within this mappings base_ and size_. The
   // provided callback is called in virtual address order for each protection type. ZX_ERR_NEXT
@@ -964,11 +953,6 @@ class MappingProtectionRanges {
                                RegionList::iterator removal_start, RegionList::iterator removal_end,
                                uint new_mmu_flags) const;
 
-  // Helper method for MmuFlagsForRegionLocked that does the wavl tree lookup. Defined this way so
-  // that the common case can inline efficiently, and the wavl tree traversal can stay behind a
-  // function call.
-  uint MmuFlagsForWavlRegion(vaddr_t vaddr) const;
-
   // To efficiently track the current protection/arch mmu flags of the mapping we want to avoid
   // allocating ProtectNode's as much as possible. For this the following scheme is used:
   // * The first_region_arch_mmu_flags_ represent the mmu flags from the start of the mapping (that
@@ -1004,11 +988,11 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // These can be read under either lock (both locks being held for writing), so we provide two
   // different accessors, one for each lock.
   uint arch_mmu_flags_locked(vaddr_t offset) const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_.MmuFlagsForRegion(offset);
+    return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
   }
   uint arch_mmu_flags_locked_object(vaddr_t offset) const
       TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_.MmuFlagsForRegion(offset);
+    return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
   }
   uint64_t object_offset_locked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return object_offset_;

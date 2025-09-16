@@ -1570,18 +1570,6 @@ zx_status_t MappingProtectionRanges::UpdateProtectionRange(vaddr_t mapping_base,
   return ZX_OK;
 }
 
-uint MappingProtectionRanges::MmuFlagsForWavlRegion(vaddr_t vaddr) const {
-  DEBUG_ASSERT(!protect_region_list_rest_.is_empty());
-  auto it = --protect_region_list_rest_.upper_bound(vaddr);
-  if (it.IsValid()) {
-    DEBUG_ASSERT(it->region_start <= vaddr);
-    return it->arch_mmu_flags;
-  } else {
-    DEBUG_ASSERT(protect_region_list_rest_.begin()->region_start > vaddr);
-    return first_region_arch_mmu_flags_;
-  }
-}
-
 // Counts how many nodes would need to be allocated for a protection range. This calculation is
 // based of whether there are actually changes in the protection type that require a node to be
 // added.
