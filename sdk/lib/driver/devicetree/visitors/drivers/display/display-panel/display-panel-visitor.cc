@@ -22,7 +22,7 @@ DisplayPanelVisitor::DisplayPanelVisitor() {
 
 bool DisplayPanelVisitor::IsMatch(const std::string& node_name) {
   // Check that it contains "display" and optionally contains a unit address (eg:
-  // hdmi-display@ffaa0000).
+  // display@ffaa0000).
   std::regex name_regex(".*display(@.*)?$");
   return std::regex_match(node_name, name_regex);
 }

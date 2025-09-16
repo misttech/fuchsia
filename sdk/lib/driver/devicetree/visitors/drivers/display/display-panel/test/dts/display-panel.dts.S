@@ -11,7 +11,7 @@
     #address-cells = <2>;
     #size-cells = <2>;
 
-    hdmi-display {
+    display {
       compatible = "test,display";
       panel-type = < TEST_PANEL_TYPE >;
     };

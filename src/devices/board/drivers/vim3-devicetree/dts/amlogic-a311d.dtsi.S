@@ -107,7 +107,7 @@
 		#clock-cells = <1>;
 	};
 
-	hdmi-display@ff900000 {
+	display@ff900000 {
 		compatible = "amlogic,display";
 		reg = <0x0 A311D_VPU_BASE 0x0 A311D_VPU_LENGTH>,
 			<0x0 A311D_TOP_MIPI_DSI_BASE 0x0 A311D_TOP_MIPI_DSI_LENGTH>,

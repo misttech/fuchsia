@@ -23,6 +23,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
 
       "dev.sys.platform.clock-controller-ff63c000.clocks",
       "dev.sys.platform.clock-controller-ff63c000.clocks.clock-init",
+      "dev.sys.platform.display-ff900000",
       "dev.sys.platform.ethernet-phy-ff634000.ethernet-phy-ff634000_group.aml-ethernet.dwmac-ff3f0000_group.dwmac.Designware-MAC.network-device",
       "dev.sys.platform.ethernet-phy-ff634000.ethernet-phy-ff634000_group.aml-ethernet.dwmac-ff3f0000_group.dwmac.eth_phy.phy_null_device",
       "dev.sys.platform.fuchsia-sysmem",
@@ -30,7 +31,6 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "dev.sys.platform.gpio-controller-ff634400.aml-gpio.gpio-init",
       "dev.sys.platform.gpio-controller-ff634400.aml-gpio.gpio",
       "dev.sys.platform.gpio-controller-ff634400.aml-gpio.gpio.gpio-93.fusb302-22_group.fusb302",
-      "dev.sys.platform.hdmi-display-ff900000",
       "dev.sys.platform.hrtimer-0.aml-hrtimer",
       "dev.sys.platform.i2c-5000",
       "dev.sys.platform.i2c-5000.i2c-5000_group.aml-i2c.i2c.i2c-0-24",
@@ -96,7 +96,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "dev.sys.platform.canvas-ff638000.aml-canvas",
 
       // display
-      "dev.sys.platform.hdmi-display-ff900000.hdmi-display-ff900000_group.amlogic-display.display-coordinator",
+      "dev.sys.platform.display-ff900000.display-ff900000_group.amlogic-display.display-coordinator",
 #endif
 
   };

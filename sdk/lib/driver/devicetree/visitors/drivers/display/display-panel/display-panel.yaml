@@ -26,7 +26,7 @@ additionalProperties: true
 
 examples:
   - |
-    hdmi-display {
+    display {
       compatible = "test,display";
       panel-type = <0xc>;
     };

@@ -34,7 +34,7 @@ TEST(DisplayPanelVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, display_panel_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(display_panel_visitor_tester->DoPublish().is_ok());
 
-  auto hdmi_node = display_panel_visitor_tester->GetPbusNodes("hdmi-display");
+  auto hdmi_node = display_panel_visitor_tester->GetPbusNodes("display");
   ASSERT_EQ(hdmi_node.size(), 1u);
   auto metadata = hdmi_node[0].metadata();
   // Test metadata properties.
