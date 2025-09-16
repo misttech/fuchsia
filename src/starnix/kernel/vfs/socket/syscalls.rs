@@ -359,7 +359,7 @@ pub fn sys_connect(
             }
             SocketPeer::Handle(resolve_unix_socket_address(locked, current_task, name.as_ref())?)
         }
-        // Connect not available for AF_VSOCK
+        // TODO(https://fxbug.dev/445433238): Connect not available for AF_VSOCK
         SocketAddress::Vsock { .. } => return error!(ENOSYS),
         SocketAddress::Inet(ref addr) | SocketAddress::Inet6(ref addr) => {
             log_trace!("connect to inet socket named {:?}", addr);
