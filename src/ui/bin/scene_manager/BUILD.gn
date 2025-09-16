@@ -128,5 +128,8 @@ fuchsia_structured_config_values2("config_for_test") {
     viewing_distance = "near"
     suspend_enabled = false
     attach_a11y_view = true
+    enable_button_baton_passing = false
+    enable_mouse_baton_passing = false
+    enable_touch_baton_passing = false
   }
 }

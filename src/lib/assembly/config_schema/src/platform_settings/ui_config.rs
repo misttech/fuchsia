@@ -54,16 +54,16 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub supported_input_devices: Vec<InputDeviceType>,
 
-    // The rotation of the display, counter-clockwise, in 90-degree increments.
+    /// The rotation of the display, counter-clockwise, in 90-degree increments.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub display_rotation: u64,
 
     // TODO(https://fxbug.dev/324217535): change to float when supported in structured config.
-    // The density of the display, in pixels per mm.
+    /// The density of the display, in pixels per mm.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub display_pixel_density: String,
 
-    // The expected viewing distance for the display.
+    /// The expected viewing distance for the display.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub viewing_distance: ViewingDistance,
 
@@ -79,7 +79,7 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub renderer: RendererType,
 
-    // The constraints on the display mode
+    /// The constraints on the display mode
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub display_mode: DisplayModeConfig,
 
@@ -92,8 +92,14 @@ pub struct PlatformUiConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub visual_debugging_level: VisualDebuggingLevel,
 
-    // Attaches a11y view in SceneManager
+    /// Attaches a11y view in SceneManager
     pub attach_a11y_view: bool,
+
+    // TODO(b/443729860): Remove these temporary feature flags once enabled.
+    /// Enables baton passing in different input drivers.
+    pub enable_button_baton_passing: bool,
+    pub enable_mouse_baton_passing: bool,
+    pub enable_touch_baton_passing: bool,
 }
 
 impl Default for PlatformUiConfig {
@@ -116,6 +122,9 @@ impl Default for PlatformUiConfig {
             scenic_frame_counter_overlay: Default::default(),
             visual_debugging_level: Default::default(),
             attach_a11y_view: true,
+            enable_button_baton_passing: false,
+            enable_mouse_baton_passing: false,
+            enable_touch_baton_passing: false,
         }
     }
 }

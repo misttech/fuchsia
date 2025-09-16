@@ -233,6 +233,20 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             Config::new(ConfigValueType::Uint16, power_off_display_millis.into()),
         )?;
 
+        // TODO(b/443729860): Remove these temporary feature flags once enabled.
+        builder.set_config_capability(
+            "fuchsia.ui.EnableButtonBatonPassing",
+            Config::new(ConfigValueType::Bool, ui_config.enable_button_baton_passing.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.ui.EnableMouseBatonPassing",
+            Config::new(ConfigValueType::Bool, ui_config.enable_mouse_baton_passing.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.ui.EnableTouchBatonPassing",
+            Config::new(ConfigValueType::Bool, ui_config.enable_touch_baton_passing.into()),
+        )?;
+
         Ok(())
     }
 }

@@ -428,6 +428,9 @@ void UITestRealm::ConfigureSceneOwner() {
       .capabilities =
           {
               component_testing::Config{.name = "fuchsia.ui.AttachA11yView"},
+              component_testing::Config{.name = "fuchsia.ui.EnableButtonBatonPassing"},
+              component_testing::Config{.name = "fuchsia.ui.EnableMouseBatonPassing"},
+              component_testing::Config{.name = "fuchsia.ui.EnableTouchBatonPassing"},
               component_testing::Config{.name = "fuchsia.ui.SupportedInputDevices"},
               component_testing::Config{.name = "fuchsia.ui.ViewingDistance"},
           },

@@ -16,6 +16,9 @@
             config: [
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.starnix.mcu.ExpectReady",
+                "fuchsia.ui.EnableButtonBatonPassing",
+                "fuchsia.ui.EnableMouseBatonPassing",
+                "fuchsia.ui.EnableTouchBatonPassing",
             ],
             from: "parent",
             to: "#base-drivers",
