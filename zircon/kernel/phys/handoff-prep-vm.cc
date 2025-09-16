@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <inttypes.h>
 #include <lib/arch/paging.h>
 #include <lib/elfldltl/machine.h>
 #include <lib/memalloc/range.h>
@@ -240,26 +241,45 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
 
   // The kernel's mapping.
   {
-    PhysVmarPrep prep = PrepareVmarAt("kernel"sv, kernel_.load_address(), kernel_.vaddr_size());
-    kernel_.load_info().VisitSegments([this, &prep](const auto& segment) {
-      uintptr_t vaddr = segment.vaddr() + kernel_.load_bias();
-      uintptr_t paddr = kernel_.physical_load_address() + segment.offset();
+    using size_type = ElfImage::size_type;
 
-      PhysMapping::Permissions perms = PhysMapping::Permissions::FromSegment(segment);
+    PhysVmarPrep prep = PrepareVmarAt("kernel"sv, kernel_.load_address(), kernel_.vaddr_size());
+
+    // Publish one contiguous vaddr->paddr mapping.
+    auto publish_mapping = [&prep](  //
+                               uint64_t vaddr, uint64_t memsz, uint64_t paddr,
+                               PhysMapping::Permissions perms) {
+      PhysMapping mapping({}, PhysMapping::Type::kNormal, vaddr, memsz, paddr, perms);
+      // Use a compact name as the vaddr will take most of the available space.
+      snprintf(mapping.name.data(), mapping.name.size(), "%c%c%c@%#" PRIxPTR,
+               perms.readable() ? 'r' : '-', perms.writable() ? 'w' : '-',
+               perms.executable() ? 'x' : '-', vaddr);
+      prep.PublishMapping(mapping);
+    };
+
+    // The whole contiguous kernel image has been set up by Load(), including
+    // all the zero-fill (.bss), even past the original size of the ELF file.
+    ZX_DEBUG_ASSERT_MSG(kernel_.aligned_memory_image().size_bytes() >= kernel_.vaddr_size(),
+                        ": %#zx vs %#zx", kernel_.aligned_memory_image().size_bytes(),
+                        kernel_.vaddr_size());
+    auto result = kernel_.MapInto([this, publish_mapping](                   //
+                                      uintptr_t vaddr, size_type offset,     //
+                                      size_type filesz, size_type memsz,     //
+                                      arch::AccessPermissions access_perms)  //
+                                  -> fit::result<AddressSpace::MapError> {
       // If the segment is executable and the hardware doesn't support
       // executable-only mappings, we fix up the permissions as also readable.
-      if constexpr (!AddressSpace::kExecuteOnlyAllowed) {
-        if (segment.executable()) {
-          perms.set_readable();
-        }
-      }
-
-      PhysMapping mapping({}, PhysMapping::Type::kNormal, vaddr, segment.memsz(), paddr, perms);
-      snprintf(mapping.name.data(), mapping.name.size(), "segment (p_vaddr = %#zx)",
-               segment.vaddr());
-      prep.PublishMapping(ktl::move(mapping));
-      return true;
+      constexpr bool kReadIfExecute = !AddressSpace::kExecuteOnlyAllowed;
+      publish_mapping(  //
+          vaddr, memsz, kernel_.physical_load_address() + offset,
+          PhysMapping::Permissions{}
+              .set_readable(access_perms.readable ||  //
+                            (access_perms.executable && kReadIfExecute))
+              .set_writable(access_perms.writable)
+              .set_executable(access_perms.executable));
+      return fit::ok();
     });
+    ZX_ASSERT(result.is_ok());
     ktl::move(prep).Publish();
   }
 

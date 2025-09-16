@@ -42,6 +42,7 @@ class ElfImage {
   static constexpr size_t kMaxBuildIdLen = 32;
 
   using Elf = elfldltl::Elf<>;
+  using size_type = Elf::size_type;
   using LoadInfo = elfldltl::LoadInfo<Elf, elfldltl::StaticVector<kMaxLoad>::Container,
                                       elfldltl::PhdrLoadPolicy::kContiguous>;
 
@@ -53,6 +54,10 @@ class ElfImage {
       size_t content_size)>;
 
   using PrintPatchFunction = fit::inline_function<void(ktl::initializer_list<ktl::string_view>)>;
+
+  using MapSegmentFunction = fit::inline_function<fit::result<AddressSpace::MapError>(
+      uintptr_t vaddr, size_type offset, size_type filesz, size_type memsz,
+      arch::AccessPermissions)>;
 
   // An ELF image is found at "dir/name". That can be an ELF file or a subtree.
   // The subtree should contain "image.elf", "code-patches.bin", etc.  A
@@ -72,7 +77,7 @@ class ElfImage {
 
   const elfldltl::DirectMemory& image() const { return image_; }
 
-  uint64_t load_bias() const {
+  uintptr_t load_bias() const {
     ZX_DEBUG_ASSERT(load_bias_);
     return *load_bias_;
   }
@@ -203,6 +208,13 @@ class ElfImage {
   // AddressSpace::Map()). Must be called after Load().
   fit::result<AddressSpace::MapError> MapInto(AddressSpace& aspace) const;
 
+  // Generalized form of MapInto uses a MapSegmentFunction callback in place of
+  // aspace.Map; the translation from image() offset to paddr is handled by the
+  // callback.  The callback need not require Load() beforehand, if can handle
+  // memsz > filesz (.bss) without adding physically contiguous space past the
+  // end of the original image() of ELF file contents left by Init().
+  fit::result<AddressSpace::MapError> MapInto(MapSegmentFunction map_segment) const;
+
   // Panic if the loaded file doesn't have a PT_INTERP matching the hex string
   // corresponding to this build ID note; the prefix is used in panic messages.
   void AssertInterpMatchesBuildId(ktl::string_view prefix, const elfldltl::ElfNote& build_id);
@@ -296,7 +308,7 @@ class ElfImage {
   ktl::optional<ktl::string_view> interp_;
   code_patching::Patcher patcher_;
   ktl::optional<uintptr_t> load_bias_;
-  ktl::optional<Elf::size_type> stack_size_;
+  ktl::optional<size_type> stack_size_;
   decltype(PublishSelf)* publish_self_ = nullptr;
 };
 
