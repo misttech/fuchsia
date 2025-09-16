@@ -1017,6 +1017,9 @@ class VmMapping final : public VmAddressRegionOrMapping {
       TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return object_offset_;
   }
+  uint64_t mapping_subtree_max_offset() const TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    return mapping_subtree_state_.max_last_offset();
+  }
 
   Lock<CriticalMutex>* object_lock() const TA_RET_CAP(object_->lock()) TA_REQ(lock()) {
     return object_->lock();
@@ -1085,7 +1088,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // Since this is asserting that the lock is held, and not just returning a reference to the lock,
   // this method is logically correct since object_ itself is only modified if object_->lock() is
   // held.
-  void assert_object_lock() TA_ASSERT(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+  void assert_object_lock() const TA_ASSERT(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     AssertHeld(object_->lock_ref());
   }
 

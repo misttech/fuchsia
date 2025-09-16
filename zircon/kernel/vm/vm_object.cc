@@ -253,6 +253,28 @@ zx_status_t VmObject::GetPageBlocking(uint64_t offset, uint pf_flags, list_node*
   return status;
 }
 
+ktl::optional<ktl::pair<uint64_t, uint64_t>> VmObject::GetMaximalMappedRange() const {
+  canary_.Assert();
+  uint64_t min_mapped, max_mapped;
+
+  Guard<CriticalMutex> guard{lock()};
+  if (unlikely(mapping_list_len_ == 0)) {
+    return ktl::nullopt;
+  }
+
+  // O(log N)
+  auto& first_mapping = mapping_list_.front();
+  first_mapping.assert_object_lock();
+  min_mapped = first_mapping.object_offset_locked_object();
+
+  // O(1)
+  auto& root_mapping = *mapping_list_.root();
+  root_mapping.assert_object_lock();
+  max_mapped = root_mapping.mapping_subtree_max_offset() + 1;
+
+  return ktl::pair(min_mapped, max_mapped);
+}
+
 void VmObject::RangeChangeUpdateMappingsLocked(uint64_t offset, uint64_t len, RangeChangeOp op) {
   canary_.Assert();
   DEBUG_ASSERT(len != 0);

@@ -510,6 +510,11 @@ class VmObject : public fbl::ContainableBaseClasses<
   // The associated VmObjectDispatcher will set an observer to notify user mode.
   void SetChildObserver(VmObjectChildObserver* child_observer);
 
+  bool is_child_observer_valid() const {
+    Guard<Mutex> guard{ChildObserverLock::Get()};
+    return child_observer_ != nullptr;
+  }
+
   // Returns a null-terminated name, or the empty string if set_name() has not
   // been called.
   void get_name(char* out_name, size_t len) const;
@@ -660,6 +665,22 @@ class VmObject : public fbl::ContainableBaseClasses<
     }
     return ZX_OK;
   }
+
+  // Same as ForEach but works with VmObject*.
+  template <typename T>
+  static zx_status_t ForEachRef(T func) {
+    Guard<CriticalMutex> guard{AllVmosLock::Get()};
+    for (auto& iter : all_vmos_) {
+      zx_status_t s = func(&iter);
+      if (s != ZX_OK) {
+        return s;
+      }
+    }
+    return ZX_OK;
+  }
+
+  // If this VMO has any mappings, return the maximal range spanning all the mappings.
+  ktl::optional<ktl::pair<uint64_t, uint64_t>> GetMaximalMappedRange() const;
 
   // Detaches the underlying page source, if present. Can be called multiple times.
   virtual void DetachSource() {}

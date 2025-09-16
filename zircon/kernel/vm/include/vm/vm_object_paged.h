@@ -170,7 +170,33 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   AttributionCounts GetAttributedMemoryInReferenceOwner() const override {
     DEBUG_ASSERT(is_reference());
     Guard<CriticalMutex> guard{lock()};
-    return cow_pages_locked()->GetAttributedMemoryInRangeLocked(VmCowRange(0, size_locked()));
+    auto cow_range = GetCowRange(0, size_locked());
+    DEBUG_ASSERT(cow_range.has_value());
+    return cow_pages_locked()->GetAttributedMemoryInRangeLocked(cow_range.value());
+  }
+
+  AttributionCounts GetAttributedMemoryRangeInReferenceOwner(uint64_t offset, uint64_t len) const {
+    DEBUG_ASSERT(is_reference());
+    Guard<CriticalMutex> guard{lock()};
+    return cow_pages_locked()->GetAttributedMemoryInRangeLocked(VmCowRange(offset, len));
+  }
+
+  // Does this VMO have any children that can see pages owned by this VMO (i.e. pages held by its
+  // VmCowPages page list).
+  bool children_cannot_access_pages() const {
+    // If this is a reference whose parent has gone away, then the reference_list_ can contain
+    // sibling references. Only consider actual children for this check.
+    DEBUG_ASSERT(!is_reference());
+    Guard<CriticalMutex> guard{lock()};
+    // There are two cases to consider here:
+    // - If there is a hidden node above this node in the parent chain, this node can only be a leaf
+    // in the VmCowPages hierarchy tree. So its page list can only be seen by any references/slices,
+    // hence the check for reference_list_.is_empty(). cow_pages_locked()->has_no_children_locked()
+    // will always be true for this case.
+    // - If there is no hidden node, then a CoW clone can exist below this node and can see its
+    // pages, so we need to check for all types of children, both children represented in the CoW
+    // tree, and also the reference list.
+    return reference_list_.is_empty() && cow_pages_locked()->has_no_children_locked();
   }
 
   zx_status_t CommitRange(uint64_t offset, uint64_t len) override {

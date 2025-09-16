@@ -698,6 +698,175 @@ void DumpAllVmObjects(bool hidden_only, pretty::SizeUnit format_unit) {
   PrintVmoDumpHeader(/* handles */ false);
 }
 
+// Dump memory held by slices whose parent VMOs have gone away.
+void DumpOrphanedSlices(pretty::SizeUnit format_unit) {
+  size_t orphaned = 0;
+  size_t total = 0;
+  size_t contig = 0, pager = 0, anon = 0;
+  size_t orphaned_bytes = 0;
+  VmObject::ForEachRef([&](VmObject* vmo) {
+    if (auto paged = DownCastVmObject<VmObjectPaged>(vmo)) {
+      if (paged->is_slice()) {
+        total++;
+        if (paged->is_contiguous()) {
+          contig++;
+        } else if (paged->is_user_pager_backed()) {
+          pager++;
+        } else {
+          anon++;
+        }
+        // Orphaned slices will not have a parent ID.
+        if (paged->parent_user_id() == 0) {
+          orphaned++;
+          // Note that it's possible to accumulate some pages multiple times if some slices point to
+          // the same parent. At the time of writing this, there were no orphaned slices found. If
+          // that changes, it would make sense to deduplicate.
+          size_t owner_total =
+              paged->GetAttributedMemoryRangeInReferenceOwner(0, UINT64_MAX).total_bytes();
+          size_t owner_visible = paged->GetAttributedMemoryInReferenceOwner().total_bytes();
+          DEBUG_ASSERT(owner_total >= owner_visible);
+          orphaned_bytes += owner_total - owner_visible;
+        }
+      }
+    }
+    return ZX_OK;
+  });
+  FormattedBytes orphaned_bytes_str(orphaned_bytes, format_unit);
+  printf(
+      "%zu orphaned slice vmos using %s. total slices: %zu (contig %zu, pager %zu, anon %zu)\n\n",
+      orphaned, orphaned_bytes_str.c_str(), total, contig, pager, anon);
+}
+
+// Dump memory held on by VMOs that are only referenced by mappings but no VMO handles. Try to find
+// pages that lie outside of any mappings, and ideally should have been reclaimed.
+void DumpOrphanedMappedVmos(pretty::SizeUnit format_unit) {
+  enum types : uint8_t { Root, CowClone, Slice, Reference, NumTypes };
+  char type_str[][6] = {"root", "cow", "slice", "ref"};
+
+  // Track orphaned memory vs total memory held by the VMO.
+  size_t orphaned[NumTypes] = {0, 0, 0, 0};
+  size_t orphaned_total = 0;
+  size_t orphaned_private_bytes[NumTypes] = {0, 0, 0, 0};
+  size_t orphaned_total_bytes[NumTypes] = {0, 0, 0, 0};
+
+  // Track some additional info about the distribution of VMO types, mapping ranges, etc., that can
+  // help inform any heuristics we might use to reclaim the unmapped memory.
+  size_t childless[NumTypes] = {0, 0, 0, 0};
+  size_t pager[NumTypes] = {0, 0, 0, 0};
+  size_t non_zero_lower_bound = 0;
+
+  VmObject::ForEachRef([&](VmObject* vmo) {
+    if (auto paged = DownCastVmObject<VmObjectPaged>(vmo)) {
+      // If the VMO has handles, it will have a dispatcher, which is also the child observer. So
+      // check for a null child observer.
+      if (paged->IsMappedByUser() && !vmo->is_child_observer_valid()) {
+        // - If this is a reference or slice, then check if the parent is alive, because only then
+        // could the reference be the only one keeping the parent's VmCowPages alive. (Note that we
+        // do not account for sibling references of the same parent, so there is some duplication
+        // here. At the time of writing this, there was no orphaned memory found in references so
+        // this was not relevant.)
+        // - If not a reference, then we need to make sure no child can see into us. See
+        // children_cannot_access_pages() for details on how this is determined.
+        bool maybe_has_orphaned_memory = paged->is_reference()
+                                             ? paged->parent_user_id() == 0
+                                             : paged->children_cannot_access_pages();
+        if (maybe_has_orphaned_memory) {
+          orphaned_total++;
+          // Find the maximal range in the VMO that is mapped. There can be races and the mapping(s)
+          // could go away by the time we query this range. This is fine since we're not aiming to
+          // take a snapshot of the system, just an estimate.
+          auto range_opt = vmo->GetMaximalMappedRange();
+          if (!range_opt.has_value()) {
+            return ZX_OK;
+          }
+          auto range = range_opt.value();
+          if (range.first > 0) {
+            non_zero_lower_bound++;
+          }
+
+          uint8_t type;
+          switch (paged->child_type()) {
+            case VmObject::kNotChild:
+              type = Root;
+              break;
+            case VmObject::kCowClone:
+              type = CowClone;
+              break;
+            case VmObject::kSlice:
+              type = Slice;
+              break;
+            case VmObject::kReference:
+              type = Reference;
+              break;
+          }
+
+          orphaned[type]++;
+          if (paged->num_children() == 0) {
+            childless[type]++;
+          }
+          if (paged->is_user_pager_backed()) {
+            pager[type]++;
+          }
+
+          // How much memory is orphaned below the lower bound of the maximal mapped range.
+          auto lower_bytes = paged->is_reference()
+                                 ? paged->GetAttributedMemoryRangeInReferenceOwner(0, range.first)
+                                 : paged->GetAttributedMemoryInRange(0, range.first);
+          // How much memory is orphaned above the upper bound of the maximal mapped range.
+          auto upper_bytes =
+              paged->is_reference()
+                  ? paged->GetAttributedMemoryRangeInReferenceOwner(range.second, paged->size())
+                  : paged->GetAttributedMemoryInRange(range.second, paged->size());
+          if (type == Root) {
+            DEBUG_ASSERT(lower_bytes.total_private_bytes() == lower_bytes.total_bytes());
+            DEBUG_ASSERT(upper_bytes.total_private_bytes() == upper_bytes.total_bytes());
+          }
+          orphaned_private_bytes[type] +=
+              lower_bytes.total_private_bytes() + upper_bytes.total_private_bytes();
+          orphaned_total_bytes[type] += lower_bytes.total_bytes() + upper_bytes.total_bytes();
+          // If we found any orphaned memory, dump some info about the VMO.
+          if (lower_bytes.total_private_bytes() + upper_bytes.total_private_bytes() > 0) {
+            char name[ZX_MAX_NAME_LEN];
+            vmo->get_name(name, sizeof(name));
+            FormattedBytes private_str(
+                lower_bytes.total_private_bytes() + upper_bytes.total_private_bytes(), format_unit);
+            FormattedBytes total_str(lower_bytes.total_bytes() + upper_bytes.total_bytes(),
+                                     format_unit);
+            FormattedBytes lower_str(lower_bytes.total_private_bytes(), format_unit);
+            FormattedBytes upper_str(upper_bytes.total_private_bytes(), format_unit);
+            printf(
+                "orphaned %s: %s in %u mapping(s) [range: %zu, %zu],"
+                " unmapped private %s (total %s) l:%s u:%s\n",
+                type_str[type], name, vmo->num_mappings(), range.first, range.second,
+                private_str.c_str(), total_str.c_str(), lower_str.c_str(), upper_str.c_str());
+          }
+        }
+      }
+    }
+    return ZX_OK;
+  });
+
+  size_t private_bytes = 0;
+  for (auto bytes : orphaned_private_bytes) {
+    private_bytes += bytes;
+  }
+  FormattedBytes private_str(private_bytes, format_unit);
+  size_t total_bytes = 0;
+  for (auto bytes : orphaned_total_bytes) {
+    total_bytes += bytes;
+  }
+  FormattedBytes total_str(total_bytes, format_unit);
+  printf("%zu vmos with mappings only. unmapped private %s (total %s). non-zero lower bound: %zu\n",
+         orphaned_total, private_str.c_str(), total_str.c_str(), non_zero_lower_bound);
+  printf("DISTRIBUTION\n");
+  for (uint8_t type = 0; type < NumTypes; type++) {
+    private_str = FormattedBytes(orphaned_private_bytes[type], format_unit);
+    total_str = FormattedBytes(orphaned_total_bytes[type], format_unit);
+    printf("%s vmos: %zu (pager %zu, childless %zu). private %s, total %s\n", type_str[type],
+           orphaned[type], pager[type], childless[type], private_str.c_str(), total_str.c_str());
+  }
+}
+
 // Dumps VMOs under a VmAspace.
 class AspaceVmoDumper final : public VmEnumerator {
  public:
@@ -1238,8 +1407,8 @@ int cmd_diagnostics(int argc, const cmd_args* argv, uint32_t flags) {
     printf("%s mwd  <mb>         : memory watchdog\n", argv[0].str);
     printf("%s ht   <pid>        : dump process handles\n", argv[0].str);
     printf("%s hwd  <count>      : handle watchdog\n", argv[0].str);
-    printf("%s vmos <pid>|all|hidden [-u?]\n", argv[0].str);
-    printf("                     : dump process/all/hidden VMOs\n");
+    printf("%s vmos <pid>|all|hidden|orphaned [-u?]\n", argv[0].str);
+    printf("                     : dump process/all/hidden/orphaned VMOs\n");
     printf("                 -u? : fix all sizes to the named unit\n");
     printf("                       where ? is one of [BkMGTPE]\n");
     printf("%s cow-tree <vmo>    : dump the copy-on-write tree for a vmo koid\n", argv[0].str);
@@ -1345,6 +1514,9 @@ int cmd_diagnostics(int argc, const cmd_args* argv, uint32_t flags) {
       DumpAllVmObjects(/*hidden_only=*/false, format_unit);
     } else if (strcmp(argv[2].str, "hidden") == 0) {
       DumpAllVmObjects(/*hidden_only=*/true, format_unit);
+    } else if (strcmp(argv[2].str, "orphaned") == 0) {
+      DumpOrphanedSlices(format_unit);
+      DumpOrphanedMappedVmos(format_unit);
     } else {
       DumpProcessVmObjects(argv[2].u, format_unit);
     }

@@ -242,6 +242,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   bool is_parent_hidden_locked() const TA_REQ(lock()) { return parent_ && parent_->is_hidden(); }
 
+  bool has_no_children_locked() const TA_REQ(lock()) { return children_list_len_ == 0; }
+
   bool is_discardable() const { return !!discardable_tracker_; }
 
   bool can_evict() const {
