@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use display_utils::{Image, ImageId};
 use fuchsia_image_format::{
     image_format_minimum_row_bytes_2, image_format_stride_bytes_per_width_pixel_2,
@@ -67,7 +67,7 @@ impl MappedImage {
     /// Fill the specified region of this image with the specified color. The size and
     /// interpretation of the given color must match the underlying image format.
     pub fn fill_region(&self, color: &[u8], frame: &Frame) -> Result<()> {
-        if self.pixel_width != color.len().try_into()? {
+        if self.pixel_width != u32::try_from(color.len())? {
             return Err(format_err!(
                 "provided color width ({}) does not match expected pixel format width ({})",
                 color.len(),
