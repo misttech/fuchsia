@@ -47,12 +47,10 @@ impl DeviceOps for DataChannelDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let device_proxy = (|| {
-            let device_proxy = self.service_proxy.connect_to_device_sync()?;
-            Ok(device_proxy)
-        })()
-        .map_err(|_: fidl::Error| errno!(EIO, "Failed to get data channel device"))?;
-
+        let device_proxy = self
+            .service_proxy
+            .connect_to_device_sync()
+            .map_err(|_: fidl::Error| errno!(EIO, "Failed to get data channel device"))?;
         Ok(Box::new(DataChannelFile::new(Arc::new(device_proxy), self.manager.clone())?))
     }
 }
