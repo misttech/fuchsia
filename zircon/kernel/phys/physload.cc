@@ -96,6 +96,7 @@ void LogSerial(FILE* out = stdout) {
   // Provide space for loading modules.
   ktl::array<const ElfImage*, kMaxPhysloadModules> modules_storage;
   symbolize.ReplaceModulesStorage(Symbolize::ModuleList(modules_storage));
+  symbolize.HandleCfiSlowpath();
 
   ktl::string_view next_file_name = gBootOptions->phys_next.data();
 
@@ -120,6 +121,7 @@ void LogSerial(FILE* out = stdout) {
   next_elf.AssertInterpMatchesBuildId(symbolize.name(), symbolize.build_id());
 
   if (gBootOptions->phys_verbose) {
+    Allocation::GetPool().PrintMemoryRanges(symbolize.name());
     symbolize.LogHandoff(next_elf.name(), next_elf.entry());
   }
 

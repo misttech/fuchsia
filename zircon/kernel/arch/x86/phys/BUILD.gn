@@ -344,6 +344,7 @@ if (current_toolchain == default_toolchain) {
       "//zircon/kernel/phys:address-space.header",
       "//zircon/kernel/phys:allocation",
       "//zircon/kernel/phys:main",
+      "//zircon/kernel/phys:symbolize",
       "//zircon/kernel/phys/lib/memalloc",
     ]
     include_dirs = [ "//." ]

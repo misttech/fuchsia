@@ -231,9 +231,17 @@ void ElfImage::Relocate() {
   if (!dynamic_.empty()) {
     auto diagnostics = GetDiagnostics();
     elfldltl::RelocationInfo<Elf> reloc_info;
+    elfldltl::SymbolInfo<Elf> symbol_info;
     elfldltl::DecodeDynamic(diagnostics, image_, dynamic_,
                             elfldltl::DynamicInitObserver(init_info_),
-                            elfldltl::DynamicRelocationInfoObserver(reloc_info));
+                            elfldltl::DynamicRelocationInfoObserver(reloc_info),
+                            elfldltl::DynamicSymbolInfoObserver(symbol_info));
+
+    constexpr elfldltl::SymbolName kCfiCheck = "__cfi_check";
+    if (auto* sym = kCfiCheck.Lookup(symbol_info)) {
+      cfi_check_ = sym->value + *load_bias_;
+    }
+
     ZX_ASSERT(reloc_info.rel_symbolic().empty());
     ZX_ASSERT(reloc_info.rela_symbolic().empty());
     bool relocated = elfldltl::RelocateRelative(diagnostics, image_, reloc_info, *load_bias_);

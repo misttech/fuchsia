@@ -28,6 +28,7 @@
 class ElfImage;
 struct PhysExceptionState;
 class Symbolize;
+class MainSymbolize;
 
 // The Symbolize instance registered by MainSymbolize.
 extern Symbolize* gSymbolize;
@@ -49,6 +50,15 @@ class Symbolize {
 
   using ModuleList = elfldltl::PreallocatedVector<const ElfImage*>;
 
+  // This is the type of the generated __cfi_check function in a module.
+  //
+  // TODO(https://fxbug.dev/432080124): For consistency with other type aliases,
+  // this attribute should be placed after `CfiCheckFunction` and before the `=`,
+  // but the parsing mechanics aren't set up yet to support this for `cfi_unchecked_callee`.
+  // Relocate the attribute once it's addressed upstream.
+  using CfiCheckFunction = void(uint64_t key, void* entry, const void* diag_data)
+      [[clang::cfi_unchecked_callee]];
+
   Symbolize() = delete;
   Symbolize(const Symbolize&) = delete;
 
@@ -60,6 +70,8 @@ class Symbolize {
   void set_name(const char* new_name) { name_ = new_name; }
 
   auto modules() const { return modules_.as_span(); }
+
+  const ElfImage* module_for_vaddr_range(uintptr_t vaddr, size_t len) const;
 
   // Return the ELF build ID note for the currently executing module (i.e., the
   // first module to call OnLoad or the last module to call OnHandoff).
@@ -146,11 +158,29 @@ class Symbolize {
   PHYS_SINGLETHREAD void PrintException(uint64_t vector, const char* vector_name,
                                         const PhysExceptionState& regs);
 
+  static void CallCfiSlowpath(uint64_t key, void* entry, const void* diag_data = nullptr,
+                              void* caller = __builtin_return_address(0));
+
+  // The arguments must be a subrange of the main module's final segment's
+  // runtime vaddr bounds (i.e. a range of data + bss addresses).  That tail
+  // should no longer be considered part of the segment's or module's bounds.
+  void PruneFromMainModule(uint64_t start, uint64_t end);
+
  protected:
+  // TODO(https://fxbug.dev/432080124): For consistency with other type aliases,
+  // this attribute should be placed after `CallCfiSlowpathFunction` and before the `=`,
+  // but the parsing mechanics aren't set up yet to support this for `cfi_unchecked_callee`.
+  // Relocate the attribute once it's addressed upstream.
+  using CallCfiSlowpathFunction = void(Symbolize* main_symbolize, uint64_t key, void* entry,
+                                       const void* diag_data, void* caller)
+      [[clang::cfi_unchecked_callee]];
+
   void set_main_module(const ElfImage& main) {
     ZX_DEBUG_ASSERT(!main_module_);
     main_module_ = &main;
   }
+
+  void set_cfi_slowpath(CallCfiSlowpathFunction* cfi_slowpath, CfiCheckFunction* main_cfi_check);
 
  private:
   struct Sink {
@@ -173,6 +203,7 @@ class Symbolize {
   // the last to call OnHandoff().
   const ElfImage* main_module_ = nullptr;
   bool context_done_ = false;
+  CallCfiSlowpathFunction* cfi_slowpath_ = nullptr;
 };
 
 // MainSymbolize represents the singleton Symbolize instance to be used by the
@@ -186,7 +217,14 @@ class MainSymbolize : public Symbolize {
 
   void set_self(const ElfImage* self);
 
+  // This is called when cross-DSO CFI checking is going to be supported.
+  void HandleCfiSlowpath();
+
  private:
+  static void CallCfiSlowpath(Symbolize* main_symbolize, uint64_t key, void* entry,
+                              const void* diag_data, void* caller);
+  void CfiSlowpath(uint64_t key, void* entry, const void* diag_data, void* caller);
+
   const ElfImage* self_ = nullptr;
 };
 

@@ -104,6 +104,7 @@ if (toolchain_environment == "kernel.phys" ||
 
   group("phys_config_deps") {
     deps = [
+      ":cfi-runtime",
       ":ubsan-runtime",
       "//src/lib/trivial-allocator:panic-delete",
     ]
@@ -691,6 +692,19 @@ if (toolchain_environment == "kernel.phys" ||
       ]
     }
   }
+
+  # This is always built but nothing will be linked into any module not using
+  # the cross-DSO instrumentation.
+  static_library("cfi-runtime") {
+    visibility = [ ":phys_config_deps" ]
+    sources = [ "cfi-runtime.cc" ]
+    deps = [
+      ":elf-image",
+      ":symbolize",
+      "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/libc",
+    ]
+  }
 }
 
 source_set("zbi") {
@@ -821,7 +835,10 @@ kernel_package("physboot.package") {
 }
 
 zbi_executable("physload") {
-  sources = [ "physload.cc" ]
+  sources = [
+    "main-symbolize-cfi.cc",
+    "physload.cc",
+  ]
   deps = [
     ":address-space",
     ":allocation",
@@ -835,9 +852,11 @@ zbi_executable("physload") {
     ":symbolize",
     ":uart-console",
     "$arch_phys:arch-physload",
+    "//sdk/lib/fit",
     "//src/lib/elfldltl",
     "//src/lib/zbitl",
     "//zircon/kernel/lib/boot-options",
+    "//zircon/system/ulib/zircon-internal",
   ]
 }
 
@@ -846,11 +865,17 @@ kernel_elf_interp("physload.interp") {
   deps = [ ":physload" ]
 }
 
-# The GNU linkers don't do page-aligned segments by default like LLD,
-# so a linker script is required.
 config("phys-elf-module.config") {
+  # When `-fsanitize=cfi` is enabled, this ensures that the ELF modules loaded
+  # by physload (i.e. physboot) or physboot (i.e. the kernel proper) export the
+  # cross-DSO checking entrypoint.  When that instrumentation is not enabled,
+  # this will have no effect, so it doesn't need to be conditionalized.
+  ldflags = [ "-Wl,--export-dynamic-symbol=__cfi_check" ]
+
+  # The GNU linkers don't do page-aligned segments by default like LLD,
+  # so a linker script is required.
   if (is_gcc) {
-    ldflags = [ "-Wl,-z,relro" ]
+    ldflags += [ "-Wl,-z,relro" ]
     if (toolchain_environment != "kernel") {
       # The kernel has its own linker script, so don't pass two -T switches.
       inputs = [ "phys-elf-module.ld" ]

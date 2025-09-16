@@ -89,6 +89,14 @@ template("sanitizer_rustflags") {
 variant("cfi") {
   common_flags = [ "-fsanitize=cfi" ]
   configs = [ ":cfi.rustflags" ]
+
+  # The phys environment has a custom cross-DSO runtime implementation.  The
+  # kernel proper doesn't need to enable the cross-DSO instrumentation (though
+  # it participates in the dynamic symbol export scheme for it) because it's
+  # only a cross-DSO _callee_, never a cross-DSO _caller_.
+  if (toolchain_environment == "kernel.phys") {
+    common_flags += [ "-fsanitize-cfi-cross-dso" ]
+  }
 }
 
 sanitizer_rustflags("cfi.rustflags") {

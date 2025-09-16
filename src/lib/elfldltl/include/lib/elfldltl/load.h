@@ -326,6 +326,11 @@ class LoadInfo {
 
   constexpr size_type vaddr_size() const { return vaddr_size_; }
 
+  constexpr bool contains_vaddr_range(size_type vaddr, size_type len) const {
+    return vaddr >= vaddr_start_ && vaddr - vaddr_start_ < vaddr_size_ &&
+           vaddr_size_ - (vaddr - vaddr_start_) >= len;
+  }
+
   // Add a PT_LOAD segment.  Merge with the preceding segment if they are
   // adjacent and compatible, unless merge=false.
   template <class Diagnostics>

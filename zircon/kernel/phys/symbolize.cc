@@ -16,6 +16,7 @@
 #include <ktl/iterator.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
+#include <ktl/variant.h>
 #include <phys/elf-image.h>
 #include <phys/main.h>
 #include <phys/stack.h>
@@ -29,6 +30,40 @@
 
 #include <ktl/enforce.h>
 
+namespace {
+
+using LoadInfo = ElfImage::LoadInfo;
+using size_type = ElfImage::Elf::size_type;
+
+auto PanicDiagnostics(ktl::string_view name) {
+  return elfldltl::Diagnostics{
+      elfldltl::PrintfDiagnosticsReport(__zx_panic, name, ": "),
+      elfldltl::DiagnosticsPanicFlags(),
+  };
+}
+
+void PruneSegment(LoadInfo::ZeroFillSegment& segment, size_type memsz) {
+  segment = LoadInfo::ZeroFillSegment{segment.vaddr(), memsz};
+}
+
+void PruneSegment(LoadInfo::DataWithZeroFillSegment& segment, size_type memsz) {
+  ZX_DEBUG_ASSERT(memsz >= segment.filesz());
+  segment = LoadInfo::DataWithZeroFillSegment{
+      segment.offset(),
+      segment.vaddr(),
+      memsz,
+      segment.filesz(),
+  };
+}
+
+void PruneSegment(auto& segment, size_type memsz) {
+  // The final segment being pruned should only ever be either
+  // DataWithZeroFillSegment or pure ZeroFillSegment.
+  ZX_PANIC("impossible segment type for Symbolize::PruneFromMainModule!");
+}
+
+}  // namespace
+
 Symbolize* gSymbolize = nullptr;
 
 void Symbolize::ReplaceModulesStorage(ModuleList modules) {
@@ -40,10 +75,7 @@ void Symbolize::ReplaceModulesStorage(ModuleList modules) {
 }
 
 void Symbolize::AddModule(const ElfImage* module) {
-  elfldltl::Diagnostics diag{
-      elfldltl::PrintfDiagnosticsReport(__zx_panic, name_, ": "),
-      elfldltl::DiagnosticsPanicFlags(),
-  };
+  auto diag = PanicDiagnostics(name_);
   [[maybe_unused]] bool ok = modules_.push_back(diag, "too many modules loaded", module);
   ZX_DEBUG_ASSERT(ok);
 }
@@ -93,6 +125,18 @@ void Symbolize::ModuleContext(const ElfImage& loaded, unsigned int module_id, bo
 void Symbolize::OnLoad(const ElfImage& loaded) {
   ModuleContext(loaded, static_cast<unsigned int>(modules_.size()));
   AddModule(&loaded);
+}
+
+const ElfImage* Symbolize::module_for_vaddr_range(uintptr_t vaddr, size_t len) const {
+  auto contains_vaddr_range = [vaddr, len](const ElfImage* module) {
+    return module->contains_vaddr_range(vaddr, len);
+  };
+  auto list = modules();
+  auto it = ktl::ranges::find_if(list, contains_vaddr_range);
+  if (it == list.end()) [[unlikely]] {
+    return nullptr;
+  }
+  return *it;
 }
 
 void Symbolize::OnHandoff(ElfImage& next) {
@@ -190,6 +234,32 @@ arch::ShadowCallStackBacktrace Symbolize::GetShadowCallStackBacktrace(uintptr_t 
     }
   }
   return backtrace;
+}
+
+void Symbolize::PruneFromMainModule(uint64_t start, uint64_t end) {
+  // Modify the ZeroFillSegment or DataWithZeroFillSegment to prune the range.
+  auto adjust_memsz = [start, end, this](auto& segment) {
+    [[maybe_unused]] auto abs = segment.vaddr() + main_module_->load_bias();
+    ZX_DEBUG_ASSERT(start >= abs);
+    ZX_DEBUG_ASSERT(end >= start);
+    ZX_DEBUG_ASSERT(end - abs <= segment.memsz());
+    auto rel_end = static_cast<size_type>(start - main_module_->load_bias());
+    size_type new_memsz = rel_end - segment.vaddr();
+    ZX_DEBUG_ASSERT(new_memsz >= segment.filesz());
+    PruneSegment(segment, new_memsz);
+  };
+
+  // Adjusting the last segment in LoadInfo is actually done by removing the
+  // existing segment and then adding back its replacement.
+  auto& load_info = const_cast<ElfImage*>(main_module_)->load_info();
+  auto segment = load_info.RemoveLastSegment();
+  ktl::visit(adjust_memsz, segment);
+  auto diag = PanicDiagnostics(name_);
+  load_info.AddSegment(diag, segment);
+  if (!gBootOptions || gBootOptions->phys_verbose) {
+    // Reset the symbolizer markup for the new bounds.
+    ContextAlways();
+  }
 }
 
 #ifndef __i386__

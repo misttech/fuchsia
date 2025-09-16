@@ -82,6 +82,11 @@ class ElfImage {
     return *load_bias_;
   }
 
+  bool contains_vaddr_range(Elf::size_type vaddr, Elf::size_type len) const {
+    vaddr = static_cast<Elf::size_type>(vaddr - load_bias());
+    return load_info_.contains_vaddr_range(vaddr, len);
+  }
+
   // Return the memory image within the current address space. Must be called
   // after Init().
   ktl::span<const ktl::byte> memory_image() const { return image_.image(); }
@@ -98,6 +103,10 @@ class ElfImage {
   uint64_t entry() const { return entry_ + load_bias(); }
 
   const elfldltl::InitFiniInfo<>& init_info() const { return init_info_; }
+
+  ktl::optional<uint64_t> cfi_check_function() const { return cfi_check_; }
+
+  void set_cfi_check_function(uint64_t cfi_check) { cfi_check_ = cfi_check; }
 
   ktl::optional<size_t> stack_size() const { return stack_size_; }
 
@@ -309,6 +318,7 @@ class ElfImage {
   code_patching::Patcher patcher_;
   ktl::optional<uintptr_t> load_bias_;
   ktl::optional<size_type> stack_size_;
+  ktl::optional<uint64_t> cfi_check_;
   decltype(PublishSelf)* publish_self_ = nullptr;
 };
 

@@ -19,6 +19,7 @@
 #include <ktl/span.h>
 #include <phys/address-space.h>
 #include <phys/allocation.h>
+#include <phys/symbolize.h>
 
 #include <ktl/enforce.h>
 
@@ -63,11 +64,19 @@ void ArchSetUpAddressSpace(AddressSpace& aspace) {
 
   // Per the above, we Free() the .bss bootstrap region to be able to allocate
   // from it, and then clamp the global page table allocation bounds to it.
-
   if (pool.Free(bootstrap_start, gBootstrapMemory.size()).is_error()) {
     ZX_PANIC("Failed to free .bss page table bootstrap region [%#" PRIx64 ", %#" PRIx64 ")",
              bootstrap_start, bootstrap_end);
   }
+
+  // But those allocations won't necessarily use all of it!  Whatever remains
+  // will still be free RAM in the pool that can be used for any kind of future
+  // allocation.  That includes ElfImage::Load and the like; those allocations'
+  // vaddr ranges will become the new ElfImage vaddr ranges.  But those are
+  // still inside the .bss region of the main module!  The ElfImage and
+  // Symbolize bookkeeping does not expect overlapping modules.  So trim the
+  // module's vaddr size (and final segment) to omit what's being taken here.
+  gSymbolize->PruneFromMainModule(bootstrap_start, bootstrap_end);
 
   aspace.SetPageTableAllocationBounds(bootstrap_start, bootstrap_end);
   SetUpAddressSpace(aspace);
