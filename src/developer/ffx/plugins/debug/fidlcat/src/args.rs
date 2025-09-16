@@ -197,6 +197,12 @@ pub struct FidlcatCommand {
     #[argh(option)]
     pub fidl_ir_path: Vec<String>,
 
+    /// don't quit fidlcat when all the monitored processes have ended.  This allows to keep
+    /// monitoring upcoming process.  At the end you have to use control-c to quit fidlcat.  This is
+    /// useful when you monitor a process and restart this process.";
+    #[argh(switch)]
+    pub stay_alive: bool,
+
     /// extra arguments passed to fidlcat. Any arguments starting with "-" must be after a "--" separator.
     #[argh(positional)]
     pub extra_args: Vec<String>,

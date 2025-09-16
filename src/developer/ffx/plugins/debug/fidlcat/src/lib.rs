@@ -97,6 +97,7 @@ impl FfxMain for FidlTool {
         arguments.add_values("--thread", &cmd.thread);
         arguments.add_values("--fidl-ir-path", &cmd.fidl_ir_path);
         arguments.add_flag("--dump-messages", cmd.dump_messages);
+        arguments.add_flag("--stay-alive", cmd.stay_alive);
 
         if debug_agent_socket.is_some() {
             // Processes to monitor.
