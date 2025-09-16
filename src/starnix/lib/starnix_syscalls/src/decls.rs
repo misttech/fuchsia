@@ -123,6 +123,7 @@ macro_rules! for_each_arch_arch32_syscall {
             fcntl,
             fcntl64,
             fstat,
+            fstat64,
             fstatat64,
             fstatfs,
             fstatfs64,
