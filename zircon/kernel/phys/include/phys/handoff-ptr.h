@@ -32,16 +32,23 @@ extern PhysHandoff* gPhysHandoff;
 
 // PhysHandoffPtr has no destructor and the "owning" pointer dying doesn't have
 // any direct effect.  The lifetime of all handoff pointers is actually grouped
-// in two buckets:
+// in three buckets:
 //
 //  * Permanent handoff data will be accessible in the kernel's virtual address
 //    space permanently.  This data resides on pages that the PMM has been told
 //    are owned by kernel mappings.
 //
+//  * Pointers into the kernel's own load image.  From the kernel's perspective
+//    these are just more permanent pointers.  However, in physboot they are
+//    created by translating from existing locations in the kernel ELF file
+//    that was mapped at a virtual address, whereas permanent handoff data is
+//    in physical pages specifically allocated for that purpose by physboot.
+//
 //  * Temporary handoff data must be consumed only during the handoff phase,
 //    which ends once EndHandoff() is called.  This data resides on pages that
 //    the PMM may be told to reuse after handoff.
-enum class PhysHandoffPtrLifetime { Permanent, Temporary };
+//
+enum class PhysHandoffPtrLifetime { kPermanent, kKernelImage, kTemporary };
 
 #ifndef HANDOFF_PTR_DEREF
 #ifdef _KERNEL
@@ -71,7 +78,7 @@ class PhysHandoffPtr {
   // Handoff pointers can only be dereferenced in the kernel proper.
 
   T* get() const {
-    if constexpr (Lifetime == PhysHandoffPtrLifetime::Temporary) {
+    if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
       ZX_DEBUG_ASSERT_MSG(gPhysHandoff,
                           "Pointer no longer valid; phys hand-off has already ended!");
     }
@@ -135,7 +142,8 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
   using Base = PhysHandoffSpan<const char, Lifetime>;
 
   PhysHandoffString() = default;
-  PhysHandoffString(const PhysHandoffString&) = default;
+  PhysHandoffString(PhysHandoffString&&) noexcept = default;
+  PhysHandoffString& operator=(PhysHandoffString&&) noexcept = default;
 
 #ifdef HANDOFF_PTR_DEREF
   std::string_view get() const {
@@ -153,19 +161,27 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
 // Convenience aliases used in the PhysHandoff declaration.
 
 template <typename T>
-using PhysHandoffTemporaryPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::Temporary>;
+using PhysHandoffTemporaryPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kTemporary>;
 
 template <typename T>
-using PhysHandoffTemporarySpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::Temporary>;
+using PhysHandoffTemporarySpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kTemporary>;
 
-using PhysHandoffTemporaryString = PhysHandoffString<PhysHandoffPtrLifetime::Temporary>;
-
-template <typename T>
-using PhysHandoffPermanentPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::Permanent>;
+using PhysHandoffTemporaryString = PhysHandoffString<PhysHandoffPtrLifetime::kTemporary>;
 
 template <typename T>
-using PhysHandoffPermanentSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::Permanent>;
+using PhysHandoffPermanentPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kPermanent>;
 
-using PhysHandoffPermanentString = PhysHandoffString<PhysHandoffPtrLifetime::Permanent>;
+template <typename T>
+using PhysHandoffPermanentSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kPermanent>;
+
+using PhysHandoffPermanentString = PhysHandoffString<PhysHandoffPtrLifetime::kPermanent>;
+
+template <typename T>
+using PhysHandoffKernelImagePtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kKernelImage>;
+
+template <typename T>
+using PhysHandoffKernelImageSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kKernelImage>;
+
+using PhysHandoffKernelImageString = PhysHandoffString<PhysHandoffPtrLifetime::kKernelImage>;
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_PTR_H_

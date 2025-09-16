@@ -433,22 +433,10 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
 }
 
 void HandoffPrep::SetInitArray() {
-  using InitArray = decltype(handoff()->init_array);
-
+  // DT_INIT should not be used, only DT_INIT_ARRAY.
   ZX_DEBUG_ASSERT(!kernel_.init_info().legacy());
-  const ktl::span array = kernel_.init_info().array();
-  if (array.empty()) {
-    return;
-  }
 
-  // The array collected by ElfImage points into the physical load image.
-  // Translate to its kernel virtual address.
-  const ktl::optional image_vaddr = kernel_.image().GetVaddr(array);
-  ZX_DEBUG_ASSERT(image_vaddr);
-  const uintptr_t kernel_vaddr = *image_vaddr + kernel_.load_bias();
-
-  // Turn that into the virtual-address PhysHandoffPermanentSpan to hand off.
-  InitArray::Ptr virtual_ptr;
-  virtual_ptr.ptr_ = reinterpret_cast<InitArray::value_type*>(kernel_vaddr);
-  handoff()->init_array = {ktl::move(virtual_ptr), array.size()};
+  // The array collected by ElfImage points into the kernel's physical load
+  // image.  Turn that into the virtual-address KernelImageSpan to hand off.
+  handoff()->init_array = KernelImageSpan(kernel_.init_info().array());
 }

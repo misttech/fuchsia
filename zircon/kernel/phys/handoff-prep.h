@@ -48,9 +48,10 @@ class HandoffPrep {
   // This returns new T(args...) using the temporary handoff allocator and
   // fills in the handoff_ptr to point to it.
   template <typename T, PhysHandoffPtrLifetime Lifetime, typename... Args>
+    requires(Lifetime != PhysHandoffPtrLifetime::kKernelImage)
   T* New(PhysHandoffPtr<const T, Lifetime>& handoff_ptr, fbl::AllocChecker& ac, Args&&... args) {
     T* ptr;
-    if constexpr (Lifetime == PhysHandoffPtrLifetime::Temporary) {
+    if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
       ptr = new (temporary_data_allocator_, ac) T(ktl::forward<Args>(args)...);
     } else {
       ptr = new (permanent_data_allocator_, ac) T(ktl::forward<Args>(args)...);
@@ -63,10 +64,11 @@ class HandoffPrep {
 
   // Similar but for new T[n] using spans instead of pointers.
   template <typename T, PhysHandoffPtrLifetime Lifetime>
+    requires(Lifetime != PhysHandoffPtrLifetime::kKernelImage)
   ktl::span<T> New(PhysHandoffSpan<const T, Lifetime>& handoff_span, fbl::AllocChecker& ac,
                    size_t n) {
     T* ptr;
-    if constexpr (Lifetime == PhysHandoffPtrLifetime::Temporary) {
+    if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
       ptr = new (temporary_data_allocator_, ac) T[n];
     } else {
       ptr = new (permanent_data_allocator_, ac) T[n];
@@ -80,6 +82,7 @@ class HandoffPrep {
   }
 
   template <PhysHandoffPtrLifetime Lifetime>
+    requires(Lifetime != PhysHandoffPtrLifetime::kKernelImage)
   ktl::string_view New(PhysHandoffString<Lifetime>& handoff_string, fbl::AllocChecker& ac,
                        ktl::string_view str) {
     ktl::span chars = New(handoff_string, ac, str.size());
@@ -88,6 +91,39 @@ class HandoffPrep {
     }
     ZX_DEBUG_ASSERT(chars.size() == str.size());
     return {chars.data(), str.copy(chars.data(), chars.size())};
+  }
+
+  // Translate a pointer into the kernel's ElfImage::image() contents to its
+  // kernel virtual address.
+  template <typename T>
+  PhysHandoffKernelImagePtr<T> KernelImagePtr(const T* kernel_data) {
+    if (kernel_data) {
+      return KernelImageSpan({&kernel_data, 1}).ptr_;
+    }
+    return {};
+  }
+
+  template <typename T>
+  PhysHandoffKernelImageSpan<const T> KernelImageSpan(ktl::span<const T> kernel_data) {
+    if (kernel_data.empty()) {
+      return {};
+    }
+    const ktl::optional image_vaddr = kernel_.image().GetVaddr(kernel_data);
+    ZX_DEBUG_ASSERT(image_vaddr);
+    const uintptr_t kernel_vaddr = *image_vaddr + kernel_.load_bias();
+    PhysHandoffKernelImageSpan<const T> result;
+    result.ptr_.ptr_ = reinterpret_cast<const T*>(kernel_vaddr);
+    result.size_ = kernel_data.size();
+    return result;
+  }
+
+  PhysHandoffKernelImageString KernelImageString(ktl::string_view kernel_str) {
+    PhysHandoffKernelImageString result;
+    if (!kernel_str.empty()) {
+      static_cast<PhysHandoffKernelImageString::Base&>(result) =
+          KernelImageSpan(ktl::span(kernel_str));
+    }
+    return result;
   }
 
   // This does all the main work of preparing for the kernel, and then calls
