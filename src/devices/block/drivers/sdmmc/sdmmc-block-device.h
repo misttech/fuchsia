@@ -255,11 +255,6 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> AcquireInitLease(
       const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client);
 
-  // Informs Power Broker of the updated |power_level| via the supplied |current_level_client|.
-  void UpdatePowerLevel(
-      const fidl::WireSyncClient<fuchsia_power_broker::CurrentLevel>& current_level_client,
-      fuchsia_power_broker::PowerLevel power_level);
-
   // Watches the required hardware power level and adjusts it accordingly. Also serves requests that
   // were delayed because they were received during suspended state. Communicates power level
   // transitions to the Power Broker.
