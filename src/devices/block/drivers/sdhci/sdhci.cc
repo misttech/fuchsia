@@ -14,6 +14,7 @@
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/trace/event.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/pmt.h>
 #include <lib/zx/time.h>
@@ -471,6 +472,7 @@ void Sdhci::Request(RequestRequestView request, fdf::Arena& arena,
 
 zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
     const fuchsia_hardware_sdmmc::wire::SdmmcReq& request) {
+  TRACE_DURATION("sdhci", "request", "cmd", request.cmd_idx, "arg", request.arg);
   if (request.client_id >= std::size(registered_vmo_stores_)) {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }

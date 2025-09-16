@@ -12,6 +12,7 @@
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmo-mapper.h>
+#include <lib/trace/event.h>
 #include <threads.h>
 #include <zircon/hw/gpt.h>
 #include <zircon/process.h>
@@ -1406,6 +1407,13 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     zx::result<> Flush(bool split_last = false) TA_NO_THREAD_SAFETY_ANALYSIS {
       if (requests_.empty())
         return zx::ok();
+      TRACE_DURATION(
+          "sdmmc",
+          requests_[0].operation.tag == block_server::Operation::Tag::Read ? "read" : "write",
+          "count", requests_.size(),
+          // The total number of bytes that will be read or written excluding the packed command
+          // header.
+          "size", total_bytes_ - zx_system_get_page_size());
       zx::result<> result =
           zx::make_result(device_.ReadWriteWithRetries(requests_, partition_.partition()));
       if (split_last && result.is_ok())

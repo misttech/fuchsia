@@ -56,6 +56,7 @@ source_set("sdhci-driver-source") {
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/trace",
   ]
   public_deps = [
     ":dma-descriptor-builder",
