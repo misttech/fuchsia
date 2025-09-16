@@ -21,11 +21,20 @@ EOF
 }
 
 install_extensions() {
+  if command -v gemini &> /dev/null; then
+    GEMINI_CMD="gemini"
+  elif [ -x "/google/bin/releases/gemini-cli/tools/gemini" ]; then
+    GEMINI_CMD="/google/bin/releases/gemini-cli/tools/gemini"
+  else
+    fx-error "Error: 'gemini' executable not found. You might need to run gcert."
+    exit 1
+  fi
+
   # TODO(b/442696047) remove this extra flag when gemini unbreaks extensions in the internal binary
   if [[ -d "/google" ]]; then
-    gemini --noenable_sawmill_logging extensions link $FUCHSIA_DIR/.gemini/extensions/rust
+    $GEMINI_CMD --noenable_sawmill_logging extensions link $FUCHSIA_DIR/.gemini/extensions/rust
   else
-    gemini extensions link .gemini/extensions/rust
+    $GEMINI_CMD extensions link .gemini/extensions/rust
   fi
 }
 
