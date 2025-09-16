@@ -120,12 +120,6 @@
 		};
 	};
 
-	display_detect: display-detect {
-		gpios = <&gpio_expander 0 0>;
-		gpio-names = "LCD_RESET";
-		#display-detect-cells = <0>;
-	};
-
 	backlight {
 		gpios = <&gpio_expander 1 0>;
 		// This gpio pin is named LCD_EN on VIM3 V14 Schematics [1] (Page 6). Though per

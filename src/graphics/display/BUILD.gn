@@ -14,7 +14,6 @@ group("drivers") {
     "drivers/framebuffer-intel-display",
     "drivers/goldfish-display",
     "drivers/intel-display",
-    "drivers/vim3-display-detect",
     "drivers/virtio-gpu-display:component",
   ]
 }

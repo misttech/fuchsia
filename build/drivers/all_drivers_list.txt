@@ -314,7 +314,6 @@
 //src/graphics/display/drivers/framebuffer-intel-display:driver
 //src/graphics/display/drivers/goldfish-display:goldfish-display-driver
 //src/graphics/display/drivers/intel-display:driver
-//src/graphics/display/drivers/vim3-display-detect:vim3-display-detect-driver
 //src/graphics/display/drivers/virtio-gpu-display:driver
 //src/graphics/drivers/aml-gpu:aml-gpu-driver
 //src/graphics/drivers/misc/goldfish:goldfish_driver-driver

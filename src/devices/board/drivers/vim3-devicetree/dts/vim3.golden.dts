@@ -202,12 +202,6 @@
 		};
 	};
 
-	display-detect {
-		#display-detect-cells = <0x00>;
-		gpio-names = "LCD_RESET";
-		gpios = <0x31 0x00 0x00>;
-	};
-
 	gpio-buttons {
 		compatible = "fuchsia,gpio-buttons";
 		gpio-names = "POWER";

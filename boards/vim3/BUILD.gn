@@ -146,12 +146,6 @@ board_input_bundle("main_bundle") {
       driver_components = [ "meta/amlogic-display.cm" ]
     },
     {
-      package_target =
-          "//src/graphics/display/drivers/vim3-display-detect:package"
-      package_set = "base"
-      driver_components = [ "meta/vim3-display-detect.cm" ]
-    },
-    {
       package_target = "//src/graphics/drivers/aml-gpu:aml-gpu-package"
       package_set = "base"
       driver_components = [ "meta/aml-gpu.cm" ]
@@ -261,7 +255,6 @@ group("vim3-release") {
     "//src/devices/usb/drivers/xhci:package-archive",
     "//src/graphics/display/drivers/aml-canvas:package-archive",
     "//src/graphics/display/drivers/amlogic-display:package-archive",
-    "//src/graphics/display/drivers/vim3-display-detect:package-archive",
     "//src/graphics/drivers/aml-gpu:aml-gpu-package-archive",
     "//src/graphics/drivers/msd-arm-mali:msd-arm-mali-archive",
     "//src/graphics/drivers/msd-vsi-vip:msd-vsi-vip-archive",
