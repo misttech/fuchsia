@@ -127,7 +127,6 @@ impl FileOps for DevFuse {
         _file: &FileObjectState,
         _current_task: &CurrentTask,
     ) {
-        log_error!("DevFuse::close: fuse disconnected due to /dev/fuse close");
         self.connection.lock().disconnect();
     }
 
@@ -354,7 +353,6 @@ impl FileSystemOps for FuseFs {
         "fuse".into()
     }
     fn unmount(&self) {
-        log_error!("FuseFS::unmount: fuse disconnected due to unmount");
         self.connection.lock().disconnect();
     }
 }
@@ -529,7 +527,6 @@ impl FileOps for AbortFile {
     ) -> Result<usize, Errno> {
         let drained = data.drain();
         if drained > 0 {
-            log_error!("AbortFile::write: fuse disconnected due to user abort");
             self.connection.lock().disconnect();
         }
         Ok(drained)
@@ -776,12 +773,6 @@ impl FileOps for FuseFileObject {
         let is_dir = file.node().is_dir();
         {
             let mut connection = self.connection.lock();
-            log_error!(
-                "FuseFileObject::close: fh = {}, is_dir = {}, connection state = {:?}",
-                self.open_out.fh,
-                is_dir,
-                connection.state
-            );
             if let Err(e) = connection.execute_operation(
                 locked,
                 current_task,
@@ -805,13 +796,7 @@ impl FileOps for FuseFileObject {
         current_task: &CurrentTask,
     ) {
         let node = Self::get_fuse_node(file);
-        let mut connection = self.connection.lock();
-        log_error!(
-            "FuseFileObject::flush: fh = {}, connection state = {:?}",
-            self.open_out.fh,
-            connection.state
-        );
-        if let Err(e) = connection.execute_operation(
+        if let Err(e) = self.connection.lock().execute_operation(
             locked,
             current_task,
             node,
