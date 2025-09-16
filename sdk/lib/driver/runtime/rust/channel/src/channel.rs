@@ -193,7 +193,7 @@ pub(crate) fn try_read_raw(
 /// # Panic
 ///
 /// Panics if this is not run from a driver framework dispatcher.
-pub(crate) fn read_raw<D>(channel: &DriverHandle, dispatcher: D) -> ReadMessageRawFut<D> {
+pub(crate) fn read_raw<D>(channel: &mut DriverHandle, dispatcher: D) -> ReadMessageRawFut<D> {
     // SAFETY: Since the future's lifetime is bound to the original driver handle and it
     // holds the message state, the message state object can't outlive the handle.
     ReadMessageRawFut { raw_fut: unsafe { ReadMessageState::new(channel) }, dispatcher }
@@ -212,8 +212,11 @@ impl<T> Channel<T> {
     }
 
     /// Reads an object of type `T` and a handle set from the channel asynchronously
-    pub async fn read<D: OnDispatcher>(&self, dispatcher: D) -> Result<Option<Message<T>>, Status> {
-        let Some(message) = read_raw(&self.0, dispatcher).await? else {
+    pub async fn read<D: OnDispatcher>(
+        &mut self,
+        dispatcher: D,
+    ) -> Result<Option<Message<T>>, Status> {
+        let Some(message) = read_raw(&mut self.0, dispatcher).await? else {
             return Ok(None);
         };
         // SAFETY: It is an invariant of Channel<T> that messages sent or received are always of
@@ -236,11 +239,11 @@ impl Channel<[u8]> {
 
     /// Reads a slice of type `T` and a handle set from the channel asynchronously
     pub async fn read_bytes<D: OnDispatcher>(
-        &self,
+        &mut self,
         dispatcher: D,
     ) -> Result<Option<Message<[u8]>>, Status> {
         // read a message from the channel
-        let Some(message) = read_raw(&self.0, dispatcher).await? else {
+        let Some(message) = read_raw(&mut self.0, dispatcher).await? else {
             return Ok(None);
         };
         // SAFETY: It is an invariant of Channel<[u8]> that messages sent or received are always of
@@ -305,7 +308,7 @@ mod tests {
     fn send_and_receive_bytes_asynchronously() {
         spawn_in_driver("channel async", async {
             let arena = Arena::new();
-            let (first, second) = Channel::create();
+            let (mut first, second) = Channel::create();
 
             assert!(poll!(pin!(first.read_bytes(CurrentDispatcher))).is_pending());
             second.write_with_data(arena, |arena| arena.insert_slice(&[1, 2, 3, 4])).unwrap();
@@ -367,7 +370,7 @@ mod tests {
         assert_eq!(inner_second.try_read().unwrap().unwrap().data().unwrap(), &"boom".to_string());
     }
 
-    async fn ping(chan: Channel<u8>) {
+    async fn ping(mut chan: Channel<u8>) {
         println!("starting ping!");
         chan.write_with_data(Arena::new(), |arena| arena.insert(0)).unwrap();
         while let Ok(Some(msg)) = chan.read(CurrentDispatcher).await {
@@ -377,7 +380,7 @@ mod tests {
         }
     }
 
-    async fn pong(chan: Channel<u8>) {
+    async fn pong(mut chan: Channel<u8>) {
         println!("starting pong!");
         while let Some(msg) = chan.read(CurrentDispatcher).await.unwrap() {
             let next = *msg.data().unwrap();

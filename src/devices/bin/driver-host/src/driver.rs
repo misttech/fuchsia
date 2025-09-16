@@ -400,7 +400,7 @@ impl Driver {
         self.inner.lock().shutdown_signaler = Some(shutdown_signaler);
 
         let (completer, task_result) = oneshot::channel();
-        let (server_chan, client_chan) = fdf::Channel::<[u8]>::create();
+        let (server_chan, mut client_chan) = fdf::Channel::<[u8]>::create();
         {
             let self_clone = self.clone();
             self.inner
@@ -455,7 +455,7 @@ impl Driver {
                     };
                 })?;
         }
-        let client_chan = match task_result.await.unwrap() {
+        let mut client_chan = match task_result.await.unwrap() {
             Err(e) => {
                 // We need to shutdown the dispatcher if start failed.
                 self.shutdown(driver_request);

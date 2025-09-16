@@ -215,10 +215,10 @@ mod test {
     /// of the op arc at the end so it can be verified that the count goes down
     /// to zero correctly.
     async fn read_and_drop<T: ?Sized + 'static, D: OnDispatcher>(
-        channel: &Channel<T>,
+        channel: &mut Channel<T>,
         dispatcher: D,
     ) -> Weak<ReadMessageStateOp> {
-        let fut = read_raw(&channel.0, dispatcher);
+        let fut = read_raw(&mut channel.0, dispatcher);
         let op_arc = Arc::downgrade(&fut.raw_fut.op);
         assert_strong_count(&op_arc, 1);
         let mut fut = pin!(fut);
@@ -232,11 +232,11 @@ mod test {
     #[test]
     fn early_cancel_future() {
         spawn_in_driver("early cancellation", async {
-            let (a, b) = Channel::create();
+            let (mut a, b) = Channel::create();
 
             // create, poll, and then immediately drop a read future for channel `a`
             // so that it properly sets up the wait.
-            read_and_drop(&a, CurrentDispatcher).await;
+            read_and_drop(&mut a, CurrentDispatcher).await;
             b.write_with_data(Arena::new(), |arena| arena.insert(1)).unwrap();
             assert_eq!(a.read(CurrentDispatcher).await.unwrap().unwrap().data(), Some(&1));
         })
@@ -245,10 +245,10 @@ mod test {
     #[test]
     fn very_early_cancel_state_drops_correctly() {
         spawn_in_driver("early cancellation drop correctness", async {
-            let (a, _b) = Channel::<[u8]>::create();
+            let (mut a, _b) = Channel::<[u8]>::create();
 
             // drop before even polling it should drop the arc correctly
-            let fut = read_raw(&a.0, CurrentDispatcher);
+            let fut = read_raw(&mut a.0, CurrentDispatcher);
             let op_arc = Arc::downgrade(&fut.raw_fut.op);
             assert_strong_count(&op_arc, 1);
             drop(fut);
@@ -259,9 +259,9 @@ mod test {
     #[test]
     fn synchronized_early_cancel_state_drops_correctly() {
         spawn_in_driver("early cancellation drop correctness", async {
-            let (a, _b) = Channel::<[u8]>::create();
+            let (mut a, _b) = Channel::<[u8]>::create();
 
-            assert_strong_count(&read_and_drop(&a, CurrentDispatcher).await, 0);
+            assert_strong_count(&read_and_drop(&mut a, CurrentDispatcher).await, 0);
         });
     }
 
@@ -269,14 +269,14 @@ mod test {
     fn unsynchronized_early_cancel_state_drops_correctly() {
         // the channel needs to outlive the dispatcher for this test because the channel shouldn't
         // be closed before the read wait has been cancelled.
-        let (a, _b) = Channel::<[u8]>::create();
+        let (mut a, _b) = Channel::<[u8]>::create();
         let (unsync_op, _a) =
             spawn_in_driver_etc("early cancellation drop correctness", false, true, async move {
                 // We send the arc out to be checked after the dispatcher has shut down so
                 // that we can be sure that the callback has had a chance to be called.
                 // We send the channel back out so that it lives long enough for the
                 // cancellation to be called on it.
-                let res = read_and_drop(&a, CurrentDispatcher).await;
+                let res = read_and_drop(&mut a, CurrentDispatcher).await;
                 (res, a)
             });
 

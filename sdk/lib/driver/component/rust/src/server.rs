@@ -122,7 +122,7 @@ impl<T: Driver> DriverServer<T> {
     /// driver host and passing them on to the implementation of [`Driver`] we contain.
     async fn message_loop(&mut self, dispatcher: DispatcherRef<'_>) {
         loop {
-            let server_handle_lock = self.server_handle.get();
+            let server_handle_lock = self.server_handle.get_mut();
             let Some(server_handle) = server_handle_lock else {
                 panic!("driver already shut down while message loop was running")
             };
