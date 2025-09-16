@@ -42,14 +42,6 @@ node "canvas" {
   fuchsia.hardware.amlogiccanvas.Service == fuchsia.hardware.amlogiccanvas.Service.ZirconTransport;
 }
 
-optional node "mipi-dsi-display" {
-  fuchsia.display.OUTPUT == fuchsia.display.OUTPUT.MIPI_DSI;
-}
-
-optional node "hdmi-display" {
-  fuchsia.display.OUTPUT == fuchsia.display.OUTPUT.HDMI;
-}
-
 optional node "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

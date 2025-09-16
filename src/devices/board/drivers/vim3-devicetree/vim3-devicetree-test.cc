@@ -44,7 +44,6 @@ TEST_F(Vim3DevicetreeTest, DevicetreeEnumeration) {
       "sys/platform/bt-uart-ffd24000",
       "sys/platform/canvas-ff638000",
       "sys/platform/clock-controller-ff63c000",
-      "sys/platform/dsi-display-ff900000",
       "sys/platform/cpu-controller-0",
       "sys/platform/dwmac-ff3f0000",
       "sys/platform/ethernet-phy-ff634000",

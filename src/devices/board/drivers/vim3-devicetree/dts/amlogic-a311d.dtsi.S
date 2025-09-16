@@ -132,8 +132,6 @@
 		gpio-names = "LCD_RESET", "HDMI_HOTPLUG_DETECT";
 		pinctrl-0 = <&hdmi_hotplug_detect_pins>;
 		amlogic,canvas = <&canvas>;
-		display-detect = <&display_detect>;
-		display-detect-names = "HDMI";
 	};
 
 	vddcpu0: pwm_a0_d-regulator {

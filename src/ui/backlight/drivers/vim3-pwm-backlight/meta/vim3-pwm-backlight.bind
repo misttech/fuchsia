@@ -19,7 +19,3 @@ node "gpio-lcd-backlight-enable" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.LCD_BACKLIGHT_ENABLE;
 }
-
-node "mipi-dsi-display" {
-  fuchsia.display.OUTPUT == fuchsia.display.OUTPUT.MIPI_DSI;
-}

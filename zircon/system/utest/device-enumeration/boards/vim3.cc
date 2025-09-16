@@ -23,7 +23,6 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
 
       "dev.sys.platform.clock-controller-ff63c000.clocks",
       "dev.sys.platform.clock-controller-ff63c000.clocks.clock-init",
-      "dev.sys.platform.dsi-display-ff900000",
       "dev.sys.platform.ethernet-phy-ff634000.ethernet-phy-ff634000_group.aml-ethernet.dwmac-ff3f0000_group.dwmac.Designware-MAC.network-device",
       "dev.sys.platform.ethernet-phy-ff634000.ethernet-phy-ff634000_group.aml-ethernet.dwmac-ff3f0000_group.dwmac.eth_phy.phy_null_device",
       "dev.sys.platform.fuchsia-sysmem",
@@ -95,19 +94,14 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
 
       // aml-canvas
       "dev.sys.platform.canvas-ff638000.aml-canvas",
+
+      // display
+      "dev.sys.platform.hdmi-display-ff900000.hdmi-display-ff900000_group.amlogic-display.display-coordinator",
 #endif
 
   };
 
   VerifyNodes(kNodeMonikers);
-
-#ifdef include_packaged_drivers
-  static const char* kDisplayNodeMonikers[] = {
-      "dev.sys.platform.hdmi-display-ff900000.hdmi-display-ff900000_group.amlogic-display.display-coordinator",
-      "dev.sys.platform.dsi-display-ff900000.dsi-display-ff900000_group.amlogic-display.display-coordinator",
-  };
-  VerifyOneOf(kDisplayNodeMonikers);
-#endif
 }
 
 }  // namespace

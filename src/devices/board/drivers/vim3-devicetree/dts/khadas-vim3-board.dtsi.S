@@ -138,35 +138,6 @@
 		gpio-names = "LCD_BACKLIGHT_ENABLE";
 		pwms = <&pwm 8 0 0>; //PWM_AO_C
 		pwm-names = "LCD_BRIGHTNESS";
-		display-detect = <&display_detect>;
-		display-detect-names = "MIPI_DSI";
-	};
-
-	dsi-display@ff900000 {
-		compatible = "amlogic,display";
-		reg = <0x0 A311D_VPU_BASE 0x0 A311D_VPU_LENGTH>,
-			<0x0 A311D_TOP_MIPI_DSI_BASE 0x0 A311D_TOP_MIPI_DSI_LENGTH>,
-			<0x0 A311D_DSI_PHY_BASE 0x0 A311D_DSI_PHY_LENGTH>,
-			<0x0 A311D_MIPI_DSI_BASE 0x0 A311D_MIPI_DSI_LENGTH>,
-			<0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>,
-			<0x0 A311D_AOBUS_BASE 0x0 0x1000>,
-			<0x0 A311D_RESET_BASE 0x0 A311D_RESET_LENGTH>,
-			<0x0 A311D_GPIO_BASE 0x0 A311D_GPIO_LENGTH>,
-			<0x0 A311D_HDMITX_CONTROLLER_IP_BASE 0x0 A311D_HDMITX_CONTROLLER_IP_LENGTH>,
-			<0x0 A311D_HDMITX_TOP_LEVEL_BASE 0x0 A311D_HDMITX_TOP_LEVEL_LENGTH>;
-		interrupts = <GIC_SPI 3 GIC_IRQ_MODE_EDGE_RISING>,
-			<GIC_SPI 89 GIC_IRQ_MODE_EDGE_RISING>,
-			<GIC_SPI 86 GIC_IRQ_MODE_EDGE_RISING>;
-		iommus = <&dummy_iommu DISPLAY_BTI>;
-		smcs = <2 1 0>;
-		gpios = <&gpio_expander 0 0>,
-			<&gpio A311D_GPIOH(2) 0>;
-		gpio-names = "LCD_RESET", "HDMI_HOTPLUG_DETECT";
-		pinctrl-0 = <&hdmi_hotplug_detect_pins>;
-		amlogic,canvas = <&canvas>;
-		display-detect = <&display_detect>;
-		display-detect-names = "MIPI_DSI";
-		panel-type = <0xc>;
 	};
 
 	function_button: adc-buttons {
