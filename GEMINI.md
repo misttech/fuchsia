@@ -342,24 +342,24 @@ committing a file), **always** follow these steps:
 1.  **Get Absolute Path of Target File:** No matter if the input path is
     relative (e.g., `vendor/google/baz/foo.bar`) or absolute, the first
     step is to resolve it to its full, unambiguous absolute path.
-    *   **Command:** `ABS_FILE_PATH=$(realpath "vendor/google/baz/foo.bar")`
+    *   **Command:** `realpath "vendor/google/baz/foo.bar"`
 
 2.  **Determine Absolute Path of Repository Root:** Use the file's
     absolute path to find the repository root. This will also be an
     absolute path. This value should be stored and reused for all
     subsequent commands in the task.
-    *   **Command:** `GIT_ROOT=$(git -C "$(dirname "$ABS_FILE_PATH")" rev-parse --show-toplevel)`
+    *   **Command:** `git -C "<directory of absolute path from step 1>" rev-parse --show-toplevel`
 
 3.  **Calculate Path Relative to Repository Root:** Now that both the file
     path and the repository root are absolute, we can reliably calculate
     the file's path relative to the root.
-    *   **Command:** `RELATIVE_PATH="${ABS_FILE_PATH#"$GIT_ROOT"/}"`
+    *   **Command:** `realpath --relative-to <git root from step 2> <absolute file path from step 1>`
 
 4.  **Execute Git Commands in Context:** Use the stored `$GIT_ROOT` and the
     calculated `$RELATIVE_PATH` for all `git` actions. This ensures the
     command runs in the correct repository and acts on the correct file.
-    *   **Example:** `git -C "$GIT_ROOT" add "$RELATIVE_PATH"`
-    *   **Example:** `git -C "$GIT_ROOT" commit -m "Your message"`
+    *   **Example:** `git -C <git root from step 2> add <relative path from step 3>`
+    *   **Example:** `git -C <git root from step 2> commit -m "Your message"`
 
 5.  **Repeat for New Tasks:** If you switch context to a file in a
     different location (e.g., moving from `//vendor/google` to `//src`),
