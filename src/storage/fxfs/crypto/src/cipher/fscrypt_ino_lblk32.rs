@@ -113,6 +113,14 @@ impl Cipher for FscryptInoLblk32DirCipher {
             &self.dir_hash_key,
         )
     }
+
+    fn supports_inline_encryption(&self) -> bool {
+        false
+    }
+
+    fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -198,6 +206,14 @@ impl Cipher for FscryptInoLblk32FileCipher {
     fn hash_code_casefold(&self, _filename: &str) -> u32 {
         debug_assert!(false, "hash_code_casefold called on file cipher");
         0
+    }
+
+    fn supports_inline_encryption(&self) -> bool {
+        false
+    }
+
+    fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
+        None
     }
 }
 

@@ -67,6 +67,13 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
 
     /// Returns a case-folded hash_code to use for 'filename'.
     fn hash_code_casefold(&self, _filename: &str) -> u32;
+
+    /// True if supports inline encryption
+    fn supports_inline_encryption(&self) -> bool;
+
+    /// If this cipher type supports inline encryption, returns the (dun, slot) value.
+    /// Else returns None.
+    fn crypt_ctx(&self, ino: u64, file_offset: u64) -> Option<(u32, u8)>;
 }
 
 /// Helper function to obtain a Cipher for a key.

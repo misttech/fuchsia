@@ -105,6 +105,14 @@ impl Cipher for FxfsCipher {
         // seed the hash here to avoid leaking data.
         hash
     }
+
+    fn supports_inline_encryption(&self) -> bool {
+        false
+    }
+
+    fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
+        None
+    }
 }
 
 #[cfg(test)]

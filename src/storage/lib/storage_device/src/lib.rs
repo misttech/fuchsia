@@ -15,7 +15,7 @@ use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use anyhow::{Error, bail};
 use async_trait::async_trait;
 // pub so `Device` trait implementations don't need to depend on the `block_protocol` crate
-pub use block_protocol::{ReadOptions, WriteOptions};
+pub use block_protocol::{InlineCryptoOptions, ReadOptions, WriteOptions};
 use futures::channel::oneshot::{Sender, channel};
 use std::future::Future;
 use std::mem::ManuallyDrop;

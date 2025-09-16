@@ -37,6 +37,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
+use storage_device::{InlineCryptoOptions, ReadOptions, WriteOptions};
 
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -486,11 +487,12 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     }
 
     // Writes aligned data (that should already be encrypted) to the given offset and computes
-    // checksums if requested.
+    // checksums if requested. The aligned data must be from a single logical file range.
     async fn write_aligned(
         &self,
         buf: BufferRef<'_>,
         device_offset: u64,
+        crypt_ctx: Option<(u32, u8)>,
     ) -> Result<MaybeChecksums, Error> {
         if self.trace() {
             info!(
@@ -507,20 +509,34 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let _watchdog = Watchdog::new(10, |count| {
             warn!("Write has been stalled for {} seconds", count * 10);
         });
-        try_join!(store.device.write(device_offset, buf), async {
-            if !self.options.skip_checksums {
+
+        if self.options.skip_checksums {
+            store
+                .device
+                .write_with_opts(
+                    device_offset as u64,
+                    buf,
+                    crypt_ctx.map_or_else(
+                        || WriteOptions::default(),
+                        |(dun, slot)| WriteOptions {
+                            inline_crypto_options: InlineCryptoOptions { dun, slot },
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await?;
+            Ok(MaybeChecksums::None)
+        } else {
+            debug_assert!(crypt_ctx.is_none());
+            try_join!(store.device.write(device_offset, buf), async {
                 let block_size = self.block_size();
                 for chunk in buf.as_slice().chunks_exact(block_size as usize) {
                     checksums.push(fletcher64(chunk, 0));
                 }
-            }
-            Ok(())
-        })?;
-        Ok(if !self.options.skip_checksums {
-            MaybeChecksums::Fletcher(checksums)
-        } else {
-            MaybeChecksums::None
-        })
+                Ok(())
+            })?;
+            Ok(MaybeChecksums::Fletcher(checksums))
+        }
     }
 
     /// Flushes the underlying device.  This is expensive and should be used sparingly.
@@ -712,6 +728,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         Ok(NeedsTrim(needs_trim))
     }
 
+    /// Reads and decrypts a singular logical range.
     pub async fn read_and_decrypt(
         &self,
         device_offset: u64,
@@ -721,19 +738,30 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     ) -> Result<(), Error> {
         let store = self.store();
         store.device_read_ops.fetch_add(1, Ordering::Relaxed);
-        let ((), (_key_id, key)) = {
-            let _watchdog = Watchdog::new(10, |count| {
-                warn!("Read has been stalled for {} seconds", count * 10);
-            });
-            futures::future::try_join(
-                store.device.read(device_offset, buffer.reborrow()),
-                self.get_key(Some(key_id)),
-            )
-            .await?
-        };
+
+        let _watchdog = Watchdog::new(10, |count| {
+            warn!("Read has been stalled for {} seconds", count * 10);
+        });
+
+        let (_key_id, key) = self.get_key(Some(key_id)).await?;
         if let Some(key) = key {
-            key.decrypt(self.object_id, device_offset, file_offset, buffer.as_mut_slice())?;
+            if let Some((dun, slot)) = key.crypt_ctx(self.object_id, file_offset) {
+                store
+                    .device
+                    .read_with_opts(
+                        device_offset as u64,
+                        buffer.reborrow(),
+                        ReadOptions { inline_crypto_options: InlineCryptoOptions { dun, slot } },
+                    )
+                    .await?;
+            } else {
+                store.device.read(device_offset, buffer.reborrow()).await?;
+                key.decrypt(self.object_id, device_offset, file_offset, buffer.as_mut_slice())?;
+            }
+        } else {
+            store.device.read(device_offset, buffer.reborrow()).await?;
         }
+
         Ok(())
     }
 
@@ -1174,16 +1202,20 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 (range, transfer_buf.as_mut())
             };
 
+        let mut crypt_ctx = None;
         if let (_, Some(key)) = self.get_key(key_id).await? {
-            key.encrypt(
-                self.object_id,
-                device_offset,
-                range.start,
-                transfer_buf_ref.as_mut_slice(),
-            )?;
+            if let Some(ctx) = key.crypt_ctx(self.object_id, range.start) {
+                crypt_ctx = Some(ctx);
+            } else {
+                key.encrypt(
+                    self.object_id,
+                    device_offset,
+                    range.start,
+                    transfer_buf_ref.as_mut_slice(),
+                )?;
+            }
         }
-
-        self.write_aligned(transfer_buf_ref.as_ref(), device_offset).await
+        self.write_aligned(transfer_buf_ref.as_ref(), device_offset, crypt_ctx).await
     }
 
     /// Writes to multiple ranges with data provided in `buf`. This function is specifically
@@ -1239,18 +1271,20 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         } else {
             self.get_key(key_id).await?
         };
-        if let Some(key) = key {
-            let mut slice = buf.as_mut_slice();
-            for r in ranges {
-                let l = r.end - r.start;
-                let (head, tail) = slice.split_at_mut(l as usize);
-                key.encrypt(
-                    self.object_id,
-                    0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
-                    r.start,
-                    head,
-                )?;
-                slice = tail;
+        if let Some(key) = &key {
+            if !key.supports_inline_encryption() {
+                let mut slice = buf.as_mut_slice();
+                for r in ranges {
+                    let l = r.end - r.start;
+                    let (head, tail) = slice.split_at_mut(l as usize);
+                    key.encrypt(
+                        self.object_id,
+                        0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
+                        r.start,
+                        head,
+                    )?;
+                    slice = tail;
+                }
             }
         }
 
@@ -1258,8 +1292,12 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let allocator = store.allocator();
         let trace = self.trace();
         let mut writes = FuturesOrdered::new();
+
+        let mut logical_ranges = ranges.iter();
+        let mut current_range = logical_ranges.next().unwrap().clone();
+
         while !buf.is_empty() {
-            let device_range = allocator
+            let mut device_range = allocator
                 .allocate(transaction, store_id, buf.len() as u64)
                 .await
                 .context("allocation failed")?;
@@ -1272,20 +1310,43 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     "A",
                 );
             }
-            let device_range_len = device_range.end - device_range.start;
+            let mut device_range_len = device_range.end - device_range.start;
             allocated += device_range_len;
+            // If inline encryption is NOT supported, this loop should only happen once.
+            while device_range_len > 0 {
+                if current_range.end <= current_range.start {
+                    current_range = logical_ranges.next().unwrap().clone();
+                }
+                let (crypt_ctx, split) = if let Some(key) = &key {
+                    if key.supports_inline_encryption() {
+                        let split = std::cmp::min(
+                            current_range.end - current_range.start,
+                            device_range_len,
+                        );
+                        current_range.start += split;
 
-            let (head, tail) = buf.split_at_mut(device_range_len as usize);
-            buf = tail;
+                        (key.crypt_ctx(self.object_id, current_range.start), split)
+                    } else {
+                        (None, device_range_len)
+                    }
+                } else {
+                    (None, device_range_len)
+                };
 
-            writes.push_back(async move {
-                let len = head.len() as u64;
-                Result::<_, Error>::Ok((
-                    device_range.start,
-                    len,
-                    self.write_aligned(head.as_ref(), device_range.start).await?,
-                ))
-            });
+                let (head, tail) = buf.split_at_mut(split as usize);
+                buf = tail;
+
+                writes.push_back(async move {
+                    let len = head.len() as u64;
+                    Result::<_, Error>::Ok((
+                        device_range.start,
+                        len,
+                        self.write_aligned(head.as_ref(), device_range.start, crypt_ctx).await?,
+                    ))
+                });
+                device_range.start += split;
+                device_range_len = device_range.end - device_range.start;
+            }
         }
 
         self.store().logical_write_ops.fetch_add(1, Ordering::Relaxed);
@@ -1395,17 +1456,19 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         let (key_id, key) = self.get_key(None).await?;
         if let Some(key) = &key {
-            let mut slice = buf.as_mut_slice();
-            for r in ranges {
-                let l = r.end - r.start;
-                let (head, tail) = slice.split_at_mut(l as usize);
-                key.encrypt(
-                    self.object_id,
-                    0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
-                    r.start,
-                    head,
-                )?;
-                slice = tail;
+            if !key.supports_inline_encryption() {
+                let mut slice = buf.as_mut_slice();
+                for r in ranges {
+                    let l = r.end - r.start;
+                    let (head, tail) = slice.split_at_mut(l as usize);
+                    key.encrypt(
+                        self.object_id,
+                        0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
+                        r.start,
+                        head,
+                    )?;
+                    slice = tail;
+                }
             }
         }
 
@@ -1502,9 +1565,16 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             block_size,
                             write_device_range,
                         );
+
+                        let crypt_ctx = if let Some(key) = &key {
+                            key.crypt_ctx(self.object_id, target_range.start)
+                        } else {
+                            None
+                        };
+
                         writes.push(async move {
                             let maybe_checksums = self
-                                .write_aligned(current_buf.as_ref(), write_device_offset)
+                                .write_aligned(current_buf.as_ref(), write_device_offset, crypt_ctx)
                                 .await?;
                             Ok::<_, Error>(match maybe_checksums {
                                 MaybeChecksums::None => Vec::new(),
