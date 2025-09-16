@@ -8,8 +8,8 @@ use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties};
 use crate::object_store::object_record::{
-    ChildValue, EncryptionKey, ObjectAttributes, ObjectDescriptor, ObjectItem, ObjectKey,
-    ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
+    ChildValue, ObjectAttributes, ObjectDescriptor, ObjectItem, ObjectKey, ObjectKeyData,
+    ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
     LockKey, LockKeys, Mutation, Options, Transaction, lock_keys,
@@ -22,7 +22,7 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fscrypt::proxy_filename::ProxyFilename;
 use fuchsia_sync::Mutex;
-use fxfs_crypto::Cipher;
+use fxfs_crypto::{Cipher, ObjectType};
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -226,13 +226,14 @@ impl<S: HandleOwner> Directory<S> {
         );
         if let Some(wrapping_key_id) = &wrapping_key_id {
             if let Some(crypt) = store.crypt() {
-                let (key, unwrapped_key) =
-                    crypt.create_key_with_id(object_id, *wrapping_key_id).await?;
+                let (key, unwrapped_key) = crypt
+                    .create_key_with_id(object_id, *wrapping_key_id, ObjectType::Directory)
+                    .await?;
                 transaction.add(
                     store.store_object_id(),
                     Mutation::insert_object(
                         ObjectKey::keys(object_id),
-                        ObjectValue::keys(vec![(FSCRYPT_KEY_ID, EncryptionKey::Fxfs(key))].into()),
+                        ObjectValue::keys(vec![(FSCRYPT_KEY_ID, key)].into()),
                     ),
                 );
                 // Note that it's possible that this entry gets inserted into the key manager but
@@ -268,7 +269,8 @@ impl<S: HandleOwner> Directory<S> {
         let object_id = self.object_id();
         let store = self.store();
         if let Some(crypt) = store.crypt() {
-            let (key, unwrapped_key) = crypt.create_key_with_id(object_id, id).await?;
+            let (key, unwrapped_key) =
+                crypt.create_key_with_id(object_id, id, ObjectType::Directory).await?;
             let mut mutation = store.txn_get_object_mutation(transaction, object_id).await?;
             if let ObjectValue::Object {
                 kind: ObjectKind::Directory { wrapping_key_id, .. }, ..
@@ -304,14 +306,12 @@ impl<S: HandleOwner> Directory<S> {
                         store.store_object_id(),
                         Mutation::insert_object(
                             ObjectKey::keys(object_id),
-                            ObjectValue::keys(
-                                vec![(FSCRYPT_KEY_ID, EncryptionKey::Fxfs(key))].into(),
-                            ),
+                            ObjectValue::keys(vec![(FSCRYPT_KEY_ID, key)].into()),
                         ),
                     );
                 }
                 Some(Item { value: ObjectValue::Keys(mut keys), .. }) => {
-                    keys.insert(FSCRYPT_KEY_ID, EncryptionKey::Fxfs(key));
+                    keys.insert(FSCRYPT_KEY_ID, key.into());
                     transaction.add(
                         store.store_object_id(),
                         Mutation::replace_or_insert_object(
@@ -839,8 +839,9 @@ impl<S: HandleOwner> Directory<S> {
 
         if let Some(wrapping_key_id) = wrapping_key_id {
             if let Some(crypt) = self.store().crypt() {
-                let (fxfs_key, unwrapped_key) =
-                    crypt.create_key_with_id(symlink_id, wrapping_key_id).await?;
+                let (fxfs_key, unwrapped_key) = crypt
+                    .create_key_with_id(symlink_id, wrapping_key_id, ObjectType::Symlink)
+                    .await?;
 
                 // Note that it's possible that this entry gets inserted into the key manager but
                 // this transaction doesn't get committed. This shouldn't be a problem because
@@ -874,9 +875,7 @@ impl<S: HandleOwner> Directory<S> {
                     self.store().store_object_id(),
                     Mutation::insert_object(
                         ObjectKey::keys(symlink_id),
-                        ObjectValue::keys(
-                            vec![(FSCRYPT_KEY_ID, EncryptionKey::Fxfs(fxfs_key))].into(),
-                        ),
+                        ObjectValue::keys(vec![(FSCRYPT_KEY_ID, fxfs_key)].into()),
                     ),
                 );
                 transaction.add(

@@ -6,7 +6,10 @@ use super::errors::map_to_status;
 use async_trait::async_trait;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_fxfs::{CryptMarker, CryptProxy, KeyPurpose as FidlKeyPurpose};
-use fxfs_crypto::{Crypt, FxfsKey, KeyPurpose, UnwrappedKey, WrappedKey, WrappedKeyBytes};
+use fxfs_crypto::{
+    Crypt, EncryptionKey, FxfsKey, KeyPurpose, ObjectType, UnwrappedKey, WrappedKey,
+    WrappedKeyBytes,
+};
 use zx;
 
 pub struct RemoteCrypt {
@@ -58,20 +61,26 @@ impl Crypt for RemoteCrypt {
         &self,
         owner: u64,
         wrapping_key_id: u128,
-    ) -> Result<(FxfsKey, UnwrappedKey), zx::Status> {
+        object_type: ObjectType,
+    ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
         let (key, unwrapped_key) = self
             .client
-            .create_key_with_id(owner, &wrapping_key_id.to_le_bytes())
+            .create_key_with_id(owner, &wrapping_key_id.to_le_bytes(), object_type)
             .await
             .map_err(|e| map_to_status(e.into()))?
             .map_err(|e| zx::Status::from_raw(e))?;
-        Ok((
-            FxfsKey {
-                wrapping_key_id,
-                key: WrappedKeyBytes::try_from(key).map_err(map_to_status)?,
-            },
-            UnwrappedKey::new(unwrapped_key.try_into().map_err(|_| zx::Status::INTERNAL)?),
-        ))
+        match key {
+            WrappedKey::Fxfs(fidl_fuchsia_fxfs::FxfsKey { wrapping_key_id, wrapped_key }) => Ok((
+                EncryptionKey::Fxfs(FxfsKey {
+                    wrapping_key_id: u128::from_le_bytes(wrapping_key_id),
+                    key: WrappedKeyBytes::try_from(wrapped_key)
+                        .map_err(|_| zx::Status::BAD_STATE)?,
+                }),
+                UnwrappedKey::new(unwrapped_key.try_into().map_err(|_| zx::Status::INTERNAL)?),
+            )),
+            // TODO(https://fxbug.dev/436902004): Add support for the lblk32 wrapped key type.
+            _ => Err(zx::Status::NOT_SUPPORTED),
+        }
     }
 
     async fn unwrap_key(

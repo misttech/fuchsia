@@ -20,7 +20,7 @@ pub mod ff1;
 pub use cipher::fxfs::FxfsCipher;
 pub use cipher::{Cipher, CipherSet, FindKeyResult};
 pub use fidl_fuchsia_fxfs::{
-    EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, WrappedKey,
+    EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, ObjectType, WrappedKey,
 };
 
 pub use cipher::FSCRYPT_PADDING;
@@ -126,6 +126,50 @@ impl<'de> Deserialize<'de> for WrappedKeyBytes {
             }
         }
         deserializer.deserialize_byte_buf(WrappedKeyVisitor)
+    }
+}
+
+/// This specifies a single key to be used to encrypt/decrypt.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
+pub enum EncryptionKey {
+    Fxfs(FxfsKey),
+    // NOTE: `key_identifier` can be thought of as the "name" of the key to use; it is not a
+    // per-file or per-directory key. It is similar to Fxfs's wrapping key ID, although it
+    // doesn't wrap anything. Files using the same `key_identifier` are encrypted using the
+    // same underlying key, with just differences in the tweak used. Directories also use the
+    // same underlying key, but some structures are further salted using the provided nonce.
+    FscryptInoLblk32File { key_identifier: [u8; 16] },
+    FscryptInoLblk32Dir { key_identifier: [u8; 16], nonce: [u8; 16] },
+}
+
+impl<'a> arbitrary::Arbitrary<'a> for EncryptionKey {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(match u.int_in_range(0..=2)? {
+            0 => EncryptionKey::Fxfs(u.arbitrary()?),
+            1 => EncryptionKey::FscryptInoLblk32File { key_identifier: u.arbitrary()? },
+            2 => EncryptionKey::FscryptInoLblk32Dir {
+                key_identifier: u.arbitrary()?,
+                nonce: u.arbitrary()?,
+            },
+            _ => unreachable!(),
+        })
+    }
+}
+
+impl From<EncryptionKey> for WrappedKey {
+    fn from(value: EncryptionKey) -> Self {
+        match value {
+            EncryptionKey::Fxfs(key) => WrappedKey::Fxfs(key.into()),
+            EncryptionKey::FscryptInoLblk32File { key_identifier } => {
+                WrappedKey::FscryptInoLblk32File(FscryptKeyIdentifier { key_identifier })
+            }
+            EncryptionKey::FscryptInoLblk32Dir { key_identifier, nonce } => {
+                WrappedKey::FscryptInoLblk32Dir(FscryptKeyIdentifierAndNonce {
+                    key_identifier,
+                    nonce,
+                })
+            }
+        }
     }
 }
 
@@ -243,7 +287,8 @@ pub trait Crypt: Send + Sync {
         &self,
         owner: u64,
         wrapping_key_id: u128,
-    ) -> Result<(FxfsKey, UnwrappedKey), zx::Status>;
+        object_type: ObjectType,
+    ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status>;
 
     /// Unwraps a single key, returning a raw unwrapped key.
     /// This method is generally only used with StreamCipher and FF1.

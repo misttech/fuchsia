@@ -20,7 +20,7 @@ use crate::object_store::{
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
 use anyhow::{Context, Error, bail};
-use fxfs_crypto::KeyPurpose;
+use fxfs_crypto::{EncryptionKey, KeyPurpose};
 use once_cell::sync::OnceCell;
 use std::sync::atomic::Ordering;
 
@@ -272,7 +272,7 @@ impl ObjectStore {
                 &mut transaction,
                 object_id,
                 handle_options,
-                key,
+                EncryptionKey::Fxfs(key),
                 unwrapped_key,
             )
             .await?

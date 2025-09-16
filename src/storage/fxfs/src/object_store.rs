@@ -60,7 +60,7 @@ use fidl_fuchsia_io as fio;
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
-use fxfs_crypto::{Cipher, Crypt, FxfsCipher, KeyPurpose, StreamCipher, UnwrappedKey};
+use fxfs_crypto::{Cipher, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey};
 use once_cell::sync::OnceCell;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
@@ -212,7 +212,7 @@ pub struct ObjectEncryptionOptions {
     /// child store.  Generally, most objects should have this set to `false`.
     pub permanent: bool,
     pub key_id: u64,
-    pub key: FxfsKey,
+    pub key: EncryptionKey,
     pub unwrapped_key: UnwrappedKey,
 }
 
@@ -995,7 +995,7 @@ impl ObjectStore {
                 store.store_object_id(),
                 Mutation::insert_object(
                     ObjectKey::keys(object_id),
-                    ObjectValue::keys(vec![(key_id, EncryptionKey::Fxfs(key))].into()),
+                    ObjectValue::keys(vec![(key_id, key)].into()),
                 ),
             );
             let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
@@ -1044,9 +1044,11 @@ impl ObjectStore {
             let key_id =
                 if wrapping_key_id.is_some() { FSCRYPT_KEY_ID } else { VOLUME_DATA_KEY_ID };
             let (key, unwrapped_key) = if let Some(wrapping_key_id) = wrapping_key_id {
-                crypt.create_key_with_id(object_id, wrapping_key_id).await?
+                crypt.create_key_with_id(object_id, wrapping_key_id, ObjectType::File).await?
             } else {
-                crypt.create_key(object_id, KeyPurpose::Data).await?
+                let (fxfs_key, unwrapped_key) =
+                    crypt.create_key(object_id, KeyPurpose::Data).await?;
+                (EncryptionKey::Fxfs(fxfs_key), unwrapped_key)
             };
             Some(ObjectEncryptionOptions { permanent: false, key_id, key, unwrapped_key })
         } else {
@@ -1072,7 +1074,7 @@ impl ObjectStore {
         mut transaction: &mut Transaction<'_>,
         object_id: u64,
         options: HandleOptions,
-        key: FxfsKey,
+        key: EncryptionKey,
         unwrapped_key: UnwrappedKey,
     ) -> Result<DataObjectHandle<S>, Error> {
         ObjectStore::create_object_with_id(

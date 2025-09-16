@@ -499,7 +499,7 @@ mod tests {
     use futures::join;
     use fxfs_crypto::{
         Cipher, Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsCipher, FxfsKey, KeyPurpose,
-        UnwrappedKey, WrappedKey, WrappedKeyBytes,
+        ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes,
     };
     use std::future::pending;
     use std::sync::Arc;
@@ -572,7 +572,8 @@ mod tests {
             &self,
             _owner: u64,
             _wrapping_key_id: u128,
-        ) -> Result<(FxfsKey, UnwrappedKey), zx::Status> {
+            _object_type: ObjectType,
+        ) -> Result<(fxfs_crypto::EncryptionKey, UnwrappedKey), zx::Status> {
             unimplemented!("Not used in tests");
         }
 

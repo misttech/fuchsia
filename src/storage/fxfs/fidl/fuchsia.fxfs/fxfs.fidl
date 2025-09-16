@@ -18,6 +18,13 @@ type KeyPurpose = flexible enum {
     DATA = 2;
 };
 
+/// Designates the type of object that is interacting with the Crypt protocol.
+type ObjectType = flexible enum {
+    FILE = 1;
+    DIRECTORY = 2;
+    SYMLINK = 3;
+};
+
 type FxfsKey = struct {
     wrapping_key_id array<uint8, 16>;
     wrapped_key array<uint8, 48>;
@@ -59,6 +66,7 @@ closed protocol Crypt {
     /// the owner of the key and must be supplied to `UnwrapKey`.  The crypt service chooses a
     /// `wrapping_key_id` which must be supplied to UnwrapKey.  The `wrapping_key_id` has no
     /// meaning to Fxfs.
+    /// TODO(https://fxbug.dev/445189846): Add an `object_type` field to support inline encryption.
     strict CreateKey(struct {
         owner uint64;
         purpose KeyPurpose;
@@ -74,8 +82,9 @@ closed protocol Crypt {
     strict CreateKeyWithId(struct {
         owner uint64;
         wrapping_key_id array<uint8, 16>;
+        object_type ObjectType;
     }) -> (struct {
-        wrapped_key vector<uint8>:132;
+        wrapped_key WrappedKey;
         unwrapped_key vector<uint8>:80;
     }) error zx.Status;
 

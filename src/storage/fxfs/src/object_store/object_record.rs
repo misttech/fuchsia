@@ -17,7 +17,7 @@ use crate::object_store::extent_record::{
 };
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use fprint::TypeFingerprint;
-use fxfs_crypto::{FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, WrappedKey};
+use fxfs_crypto::WrappedKey;
 use fxfs_unicode::CasefoldString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -565,37 +565,7 @@ pub struct FsverityMetadataV33 {
 }
 
 pub type EncryptionKey = EncryptionKeyV47;
-
-/// This specifies a single key to be used to encrypt/decrypt.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum EncryptionKeyV47 {
-    Fxfs(FxfsKeyV40),
-    // NOTE: `key_identifier` can be thought of as the "name" of the key to use; it is not a
-    // per-file or per-directory key. It is similar to Fxfs's wrapping key ID, although it
-    // doesn't wrap anything. Files using the same `key_identifier` are encrypted using the
-    // same underlying key, with just differences in the tweak used. Directories also use the
-    // same underlying key, but some structures are further salted using the provided nonce.
-    FscryptInoLblk32File { key_identifier: [u8; 16] },
-    FscryptInoLblk32Dir { key_identifier: [u8; 16], nonce: [u8; 16] },
-}
-
-impl From<EncryptionKey> for WrappedKey {
-    fn from(value: EncryptionKey) -> Self {
-        match value {
-            EncryptionKey::Fxfs(key) => WrappedKey::Fxfs(key.into()),
-            EncryptionKey::FscryptInoLblk32File { key_identifier } => {
-                WrappedKey::FscryptInoLblk32File(FscryptKeyIdentifier { key_identifier })
-            }
-            EncryptionKey::FscryptInoLblk32Dir { key_identifier, nonce } => {
-                WrappedKey::FscryptInoLblk32Dir(FscryptKeyIdentifierAndNonce {
-                    key_identifier,
-                    nonce,
-                })
-            }
-        }
-    }
-}
+pub type EncryptionKeyV47 = fxfs_crypto::EncryptionKey;
 
 pub type EncryptionKeys = EncryptionKeysV47;
 

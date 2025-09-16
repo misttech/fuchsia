@@ -115,7 +115,13 @@ impl CryptService {
             zx::Status::INTERNAL.into_raw()
         })?;
 
-        Ok((wrapped.into(), key.into()))
+        Ok((
+            WrappedKey::Fxfs(FxfsKey {
+                wrapping_key_id: wrapping_key_id.as_raw(),
+                wrapped_key: wrapped.try_into().expect("wrapped key wrong size"),
+            }),
+            key.into(),
+        ))
     }
 
     fn unwrap_key(&self, owner: u64, key: WrappedKey) -> CryptUnwrapKeyResult {
@@ -221,7 +227,7 @@ impl CryptService {
                             log_error!("Failed to send CreateKey response {:?}", e)
                         });
                 }
-                Ok(CryptRequest::CreateKeyWithId { owner, wrapping_key_id, responder }) => {
+                Ok(CryptRequest::CreateKeyWithId { owner, wrapping_key_id, responder, .. }) => {
                     responder
                         .send(
                             match self
@@ -388,31 +394,43 @@ mod tests {
             .create_key_with_id(0, u128::to_le_bytes(1).into())
             .expect("create_key_with_id failed");
         let wrapping_key_id = u128::to_le_bytes(1);
-        let unwrap_result = service
-            .unwrap_key(
-                0,
-                WrappedKey::Fxfs(FxfsKey {
-                    wrapping_key_id,
-                    wrapped_key: wrapped_key.try_into().unwrap(),
-                }),
-            )
-            .expect("unwrap_key failed");
-        assert_eq!(unwrap_result, unwrapped_key);
+        // TODO(https://fxbug.dev/436902004): Switch to lkb32 wrapped key type.
+        match wrapped_key {
+            WrappedKey::Fxfs(fxfs_key) => {
+                let unwrap_result = service
+                    .unwrap_key(
+                        0,
+                        WrappedKey::Fxfs(FxfsKey {
+                            wrapping_key_id,
+                            wrapped_key: fxfs_key.wrapped_key.try_into().unwrap(),
+                        }),
+                    )
+                    .expect("unwrap_key failed");
+                assert_eq!(unwrap_result, unwrapped_key);
+            }
+            _ => panic!("Found a non-FxfsKey wrapped key"),
+        }
 
         // Do it twice to make sure the service can use the same key repeatedly.
         let (wrapped_key, unwrapped_key) = service
             .create_key_with_id(1, u128::to_le_bytes(1).into())
             .expect("create_key_with_id failed");
-        let unwrap_result = service
-            .unwrap_key(
-                1,
-                WrappedKey::Fxfs(FxfsKey {
-                    wrapping_key_id,
-                    wrapped_key: wrapped_key.try_into().unwrap(),
-                }),
-            )
-            .expect("unwrap_key failed");
-        assert_eq!(unwrap_result, unwrapped_key);
+        // TODO(https://fxbug.dev/436902004): Switch to lkb32 wrapped key type.
+        match wrapped_key {
+            WrappedKey::Fxfs(fxfs_key) => {
+                let unwrap_result = service
+                    .unwrap_key(
+                        1,
+                        WrappedKey::Fxfs(FxfsKey {
+                            wrapping_key_id,
+                            wrapped_key: fxfs_key.wrapped_key.try_into().unwrap(),
+                        }),
+                    )
+                    .expect("unwrap_key failed");
+                assert_eq!(unwrap_result, unwrapped_key);
+            }
+            _ => panic!("Found a non-FxfsKey wrapped key"),
+        }
     }
 
     #[test]
@@ -431,16 +449,23 @@ mod tests {
         let (wrapped_key, unwrapped_key) = service
             .create_key_with_id(0, u128::to_le_bytes(1).into())
             .expect("create_key_with_id failed");
-        let unwrap_result = service
-            .unwrap_key(
-                0,
-                WrappedKey::Fxfs(FxfsKey {
-                    wrapping_key_id,
-                    wrapped_key: wrapped_key.try_into().unwrap(),
-                }),
-            )
-            .expect("unwrap_key failed");
-        assert_eq!(unwrap_result, unwrapped_key);
+
+        // TODO(https://fxbug.dev/436902004): Switch to lkb32 wrapped key type.
+        match wrapped_key {
+            WrappedKey::Fxfs(fxfs_key) => {
+                let unwrap_result = service
+                    .unwrap_key(
+                        0,
+                        WrappedKey::Fxfs(FxfsKey {
+                            wrapping_key_id,
+                            wrapped_key: fxfs_key.wrapped_key.try_into().unwrap(),
+                        }),
+                    )
+                    .expect("unwrap_key failed");
+                assert_eq!(unwrap_result, unwrapped_key);
+            }
+            _ => panic!("Found a non-FxfsKey wrapped key"),
+        }
     }
 
     #[test]

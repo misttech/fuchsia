@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use fscrypt::hkdf::{self, fscrypt_hkdf};
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{
-    Crypt, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKey, KeyPurpose, UnwrappedKey,
-    WrappedKey, WrappedKeyBytes, WrappingKey,
+    Crypt, EncryptionKey, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKey, KeyPurpose,
+    ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKey,
 };
 use log::error;
 use rand::rngs::StdRng;
@@ -136,7 +136,8 @@ impl Crypt for InsecureCrypt {
         &self,
         owner: u64,
         wrapping_key_id: u128,
-    ) -> Result<(FxfsKey, UnwrappedKey), zx::Status> {
+        _object_type: ObjectType,
+    ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
         if self.shutdown.load(Ordering::Relaxed) {
             error!("Crypt was shut down");
             return Err(zx::Status::INTERNAL);
@@ -155,7 +156,7 @@ impl Crypt for InsecureCrypt {
         })?;
         let wrapped = WrappedKeyBytes::try_from(wrapped).map_err(|_| zx::Status::BAD_STATE)?;
         Ok((
-            FxfsKey { wrapping_key_id: wrapping_key_id as u128, key: wrapped },
+            EncryptionKey::Fxfs(FxfsKey { wrapping_key_id: wrapping_key_id as u128, key: wrapped }),
             UnwrappedKey::new(key.to_vec()),
         ))
     }

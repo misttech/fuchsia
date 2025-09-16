@@ -9,11 +9,11 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, Directory, EncryptionKey, ExtentValue, FSCRYPT_KEY_ID,
-    HandleOptions, NO_OWNER, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind,
-    ObjectStore, ObjectValue, PosixAttributes, Timestamp, VOLUME_DATA_KEY_ID,
+    AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, Directory, ExtentValue, FSCRYPT_KEY_ID, HandleOptions,
+    NO_OWNER, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue,
+    PosixAttributes, Timestamp, VOLUME_DATA_KEY_ID,
 };
-use fxfs_crypto::Crypt;
+use fxfs_crypto::{Crypt, EncryptionKey};
 use fxfs_insecure_crypto::InsecureCrypt;
 use std::collections::HashSet;
 use std::ops::Deref;

@@ -30,7 +30,7 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use futures::join;
-use fxfs_crypto::{Crypt, KeyPurpose};
+use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
 use fxfs_insecure_crypto::InsecureCrypt;
 use mundane::hash::{Digest, Hasher, Sha256};
 use std::ops::Deref;
@@ -142,7 +142,7 @@ async fn install_items_in_store<K: Key, V: Value>(
             &mut transaction,
             object_id,
             HandleOptions::default(),
-            key,
+            EncryptionKey::Fxfs(key),
             unwrapped_key,
         )
         .await

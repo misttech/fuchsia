@@ -1837,7 +1837,7 @@ mod tests {
     use futures::FutureExt;
     use futures::channel::oneshot::channel;
     use futures::stream::{FuturesUnordered, StreamExt};
-    use fxfs_crypto::{Crypt, KeyPurpose};
+    use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
     use fxfs_insecure_crypto::InsecureCrypt;
     use mundane::hash::{Digest, Hasher, Sha256};
     use std::ops::Range;
@@ -1890,7 +1890,7 @@ mod tests {
                 &mut transaction,
                 object_id,
                 HandleOptions::default(),
-                key,
+                EncryptionKey::Fxfs(key),
                 unwrapped_key,
             )
             .await

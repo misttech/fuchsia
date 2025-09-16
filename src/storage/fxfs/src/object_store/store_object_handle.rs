@@ -11,8 +11,8 @@ use crate::object_handle::ObjectHandle;
 use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
-    AttributeKey, EncryptionKey, ExtendedAttributeValue, ObjectAttributes, ObjectItem, ObjectKey,
-    ObjectKeyData, ObjectValue, Timestamp,
+    AttributeKey, ExtendedAttributeValue, ObjectAttributes, ObjectItem, ObjectKey, ObjectKeyData,
+    ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options, ReadGuard,
@@ -28,7 +28,7 @@ use assert_matches::assert_matches;
 use bit_vec::BitVec;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::{TryStreamExt, try_join};
-use fxfs_crypto::{Cipher, CipherSet, FindKeyResult, FxfsCipher, KeyPurpose};
+use fxfs_crypto::{Cipher, CipherSet, EncryptionKey, FindKeyResult, FxfsCipher, KeyPurpose};
 use fxfs_trace::trace;
 use static_assertions::const_assert;
 use std::cmp::min;
@@ -858,7 +858,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             }
         }
 
-        encryption_keys.insert(VOLUME_DATA_KEY_ID, EncryptionKey::Fxfs(key));
+        encryption_keys.insert(VOLUME_DATA_KEY_ID, EncryptionKey::Fxfs(key).into());
 
         transaction.add_with_object(
             store.store_object_id(),
