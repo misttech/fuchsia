@@ -190,7 +190,7 @@ pub(super) fn audit_todo_decision(
     permission: KernelPermission,
     audit_context: Auditable<'_>,
 ) {
-    result.todo_bug = Some(bug.into());
+    result.todo_bug = result.todo_bug.or_else(|| Some(bug.into()));
     audit_decision(
         audit_fw,
         permission_check,
