@@ -71,7 +71,7 @@ async fn socket() {
     };
 
     assert_eq!(tid_write, got_tid);
-    assert_eq!(data_len, wrote.try_into().unwrap());
+    assert_eq!(data_len, wrote as usize);
 
     let response_read = fdomain.next().await.unwrap();
 
@@ -316,7 +316,7 @@ async fn channel() {
     };
 
     assert_eq!(tid_write_socket, got_tid);
-    assert_eq!(socket_data_compare.len(), wrote.try_into().unwrap());
+    assert_eq!(socket_data_compare.len(), wrote as usize);
 
     let tid_read_succeed = 111.try_into().unwrap();
     fdomain.read_socket(
@@ -771,10 +771,10 @@ async fn duplicate_socket() {
 
     let (got_tid, wrote_actual) = wrote_socket_events.remove(0);
     assert_eq!(tid_1, got_tid);
-    assert_eq!(data_a.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_a.len(), wrote_actual as usize);
     let (got_tid, wrote_actual) = wrote_socket_events.remove(0);
     assert_eq!(tid_2, got_tid);
-    assert_eq!(data_b.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_b.len(), wrote_actual as usize);
 
     let (got_tid, got_data) = socket_data_events.remove(0);
     assert_eq!(tid_3, got_tid);
@@ -856,7 +856,7 @@ async fn socket_disposition() {
         panic!()
     };
     assert_eq!(tid_1, got_tid);
-    assert_eq!(data_a.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_a.len(), wrote_actual as usize);
 
     let FDomainEvent::SocketDispositionSet(got_tid, Ok(())) = fdomain.next().await.unwrap() else {
         panic!()
@@ -914,7 +914,7 @@ async fn socket_disposition_peer() {
         panic!()
     };
     assert_eq!(tid_1, got_tid);
-    assert_eq!(data_a.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_a.len(), wrote_actual as usize);
 
     fdomain.set_socket_disposition(
         tid_2,
@@ -986,7 +986,7 @@ async fn socket_async_read() {
         panic!()
     };
     assert_eq!(tid_1, got_tid);
-    assert_eq!(data_a.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_a.len(), wrote_actual as usize);
 
     fdomain.read_socket_streaming_start(
         tid_2,
@@ -1023,7 +1023,7 @@ async fn socket_async_read() {
         panic!()
     };
     assert_eq!(tid_3, got_tid);
-    assert_eq!(data_b.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_b.len(), wrote_actual as usize);
 
     let FDomainEvent::SocketStreamingData(proto::SocketOnSocketStreamingDataRequest {
         handle: got_handle,
@@ -1074,7 +1074,7 @@ async fn socket_async_read_detect_close() {
         panic!()
     };
     assert_eq!(tid_1, got_tid);
-    assert_eq!(data_a.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_a.len(), wrote_actual as usize);
 
     fdomain.read_socket_streaming_start(
         tid_2,
@@ -1156,7 +1156,7 @@ async fn socket_async_read_stop() {
         panic!()
     };
     assert_eq!(tid_1, got_tid);
-    assert_eq!(data_a.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_a.len(), wrote_actual as usize);
 
     fdomain.read_socket_streaming_start(
         tid_2,
@@ -1204,7 +1204,7 @@ async fn socket_async_read_stop() {
         panic!()
     };
     assert_eq!(tid_4, got_tid);
-    assert_eq!(data_b.len(), wrote_actual.try_into().unwrap());
+    assert_eq!(data_b.len(), wrote_actual as usize);
 
     fdomain.read_socket(tid_5, proto::SocketReadSocketRequest { handle: hid_b, max_bytes: 4096 });
 
@@ -1536,7 +1536,7 @@ async fn datagram_socket() {
     };
 
     assert_eq!(tid_write, got_tid);
-    assert_eq!(data_len, wrote.try_into().unwrap());
+    assert_eq!(data_len, wrote as usize);
 
     let response_read = fdomain.next().await.unwrap();
 
