@@ -6,15 +6,11 @@ use args::{MonitorCommand, SubCommand};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_developer_ffx::{RemoteControlState, TargetInfo, TargetState};
 use hyper::service::service_fn;
 use hyper::{Body, Request, Response, StatusCode};
-use serde::Serialize;
-use serde::ser::{SerializeStruct, Serializer};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs;
@@ -23,6 +19,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
+use target_formatter::{JsonTarget, JsonTargetFormatter};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
@@ -42,38 +39,6 @@ pub struct MonitorTool {
     cmd: MonitorCommand,
 
     context: EnvironmentContext,
-}
-
-#[derive(Debug, PartialEq)]
-struct TargetStatus {
-    name: Option<String>,
-    status: Option<TargetState>,
-    timestamp: DateTime<Utc>,
-    rcs_state: Option<RemoteControlState>,
-    product_config: Option<String>,
-    board_config: Option<String>,
-    serial_number: Option<String>,
-    ssh_address: Option<String>,
-    ssh_host_address: Option<String>,
-}
-
-impl Serialize for TargetStatus {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut s = serializer.serialize_struct("TargetStatus", 9)?;
-        s.serialize_field("name", &self.name)?;
-        s.serialize_field("status", &self.status.as_ref().map(|val| format!("{:?}", val)))?;
-        s.serialize_field("timestamp", &self.timestamp.to_rfc3339())?;
-        s.serialize_field("rcs_state", &self.rcs_state.as_ref().map(|val| format!("{:?}", val)))?;
-        s.serialize_field("product_config", &self.product_config)?;
-        s.serialize_field("board_config", &self.board_config)?;
-        s.serialize_field("serial_number", &self.serial_number)?;
-        s.serialize_field("ssh_address", &self.ssh_address)?;
-        s.serialize_field("ssh_host_address", &self.ssh_host_address)?;
-        s.end()
-    }
 }
 
 type Cache = Arc<Mutex<HashMap<String, serde_json::Value>>>;
@@ -129,29 +94,10 @@ async fn start_server(addr: SocketAddr, cmd: StartCommand) -> anyhow::Result<()>
     }
 }
 
-/// Converts a vector of TargetInfo into a vector of TargetStatus.
-fn infos_to_statuses(infos: Vec<TargetInfo>) -> Vec<TargetStatus> {
-    let now = Utc::now();
-    infos
-        .into_iter()
-        .map(|info| TargetStatus {
-            name: info.nodename,
-            status: info.target_state,
-            timestamp: now,
-            rcs_state: info.rcs_state,
-            product_config: info.product_config,
-            board_config: info.board_config,
-            serial_number: info.serial_number,
-            ssh_address: info.ssh_address.map(|addr| format!("{:?}", addr)),
-            ssh_host_address: info.ssh_host_address.map(|addr| format!("{:?}", addr)),
-        })
-        .collect()
-}
-
 async fn collect_target_status(
     context: &EnvironmentContext,
     cmd: StartCommand,
-) -> Result<Vec<TargetStatus>> {
+) -> Result<Vec<JsonTarget>> {
     let infos = ffx_target::list_targets(
         context,
         cmd.nodename.clone(),
@@ -160,7 +106,8 @@ async fn collect_target_status(
         !cmd.no_probe,
     )
     .await?;
-    Ok(infos_to_statuses(infos))
+    let formatter = JsonTargetFormatter::try_from(infos)?;
+    Ok(formatter.targets)
 }
 
 async fn handle_request(
@@ -254,57 +201,5 @@ impl FfxMain for MonitorTool {
                 Ok(())
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_infos_to_statuses() {
-        let infos = vec![
-            TargetInfo {
-                nodename: Some("fuchsia-one".to_string()),
-                target_state: Some(TargetState::Product),
-                rcs_state: Some(RemoteControlState::Up),
-                ..Default::default()
-            },
-            TargetInfo {
-                nodename: Some("fuchsia-two".to_string()),
-                target_state: Some(TargetState::Fastboot),
-                rcs_state: Some(RemoteControlState::Down),
-                ..Default::default()
-            },
-        ];
-
-        let statuses = infos_to_statuses(infos);
-
-        let expected = vec![
-            TargetStatus {
-                name: Some("fuchsia-one".to_string()),
-                status: Some(TargetState::Product),
-                timestamp: statuses[0].timestamp,
-                rcs_state: Some(RemoteControlState::Up),
-                product_config: None,
-                board_config: None,
-                serial_number: None,
-                ssh_address: None,
-                ssh_host_address: None,
-            },
-            TargetStatus {
-                name: Some("fuchsia-two".to_string()),
-                status: Some(TargetState::Fastboot),
-                timestamp: statuses[1].timestamp,
-                rcs_state: Some(RemoteControlState::Down),
-                product_config: None,
-                board_config: None,
-                serial_number: None,
-                ssh_address: None,
-                ssh_host_address: None,
-            },
-        ];
-
-        assert_eq!(statuses, expected);
     }
 }
