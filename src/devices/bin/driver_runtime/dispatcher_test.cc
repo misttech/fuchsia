@@ -779,6 +779,44 @@ TEST_F(DispatcherTest, AllowSyncCallsDoesNotBlockGlobalLoop) {
   fdf_handle_close(blocking_remote_ch);
 }
 
+// Waits for the read to be ready, periodically running the stall scanner.
+class ReadWaiter : public fdf_env_stall_scanner_t {
+ public:
+  // |read_completion| is the read to wait for to be ready.
+  ReadWaiter(sync_completion_t* read_completion)
+      : fdf_env_stall_scanner_t(fdf_env_stall_scanner_t{.handler = &ReadWaiter::Handler}),
+        read_completion_(read_completion) {
+    fdf_env_register_stall_scanner(this);
+  }
+
+  ~ReadWaiter() { fdf_env_register_stall_scanner(nullptr); }
+
+  static void Handler(fdf_env_stall_scanner_t* scanner, zx_duration_mono_t duration) {
+    static_cast<ReadWaiter*>(scanner)->Scan(duration);
+  }
+
+  void Scan(zx_duration_mono_t wait_time) {
+    while (true) {
+      zx_status_t read_status = sync_completion_wait(read_completion_, wait_time);
+      if (read_status == ZX_OK) {
+        return;
+      }
+      // Read timed out so we should check if threads are stalled.
+      ASSERT_EQ(ZX_ERR_TIMED_OUT, read_status);
+      wait_time = fdf_env_scan_threads_for_stalls2();
+      if (wait_time == 0) {
+        // Wait for next |Scan| callback.
+        return;
+      }
+    }
+  }
+
+  void WaitForReadReady() { Scan(0); }
+
+ private:
+  sync_completion_t* read_completion_;
+};
+
 // Tests that a blocking dispatcher does not block the global async loop shared between
 // all dispatchers in a process when running on an environment set up with dynamic thread spawning
 // and running the stall checker periodically.
@@ -823,15 +861,8 @@ TEST_F(DynamicEnvDispatcherTest, AllowSyncCallsDoesNotBlockGlobalLoopWithDynamic
     ASSERT_EQ(ZX_OK, fdf_channel_write(local_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
   }
 
-  while (true) {
-    zx_duration_mono_t wait_time =
-        driver_runtime::GetDispatcherCoordinator().ScanThreadsForStalls();
-    zx_status_t read_status = sync_completion_wait(&read_completion, wait_time);
-    if (read_status == ZX_OK) {
-      break;
-    }
-    ASSERT_EQ(ZX_ERR_TIMED_OUT, read_status);
-  }
+  ReadWaiter read_waiter(&read_completion);
+  read_waiter.WaitForReadReady();
 
   ASSERT_NO_FATAL_FAILURE(AssertRead(remote_ch_, nullptr, 0, nullptr, 0));
 

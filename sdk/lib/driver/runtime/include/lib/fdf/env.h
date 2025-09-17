@@ -31,6 +31,20 @@ struct fdf_env_driver_shutdown_observer {
   fdf_env_driver_shutdown_handler_t* handler;
 };
 
+typedef struct fdf_env_stall_scanner fdf_env_stall_scanner_t;
+
+// Called when stall scanning should begin.
+typedef void(fdf_env_stall_scan_begin)(fdf_env_stall_scanner_t* scanner,
+                                       zx_duration_mono_t duration);
+
+// Holds context for the stall scanner which will be called when stall scanning should occur.
+//
+// The client is responsible for retaining this structure in memory (and unmodified) until the
+// handler runs.
+struct fdf_env_stall_scanner {
+  fdf_env_stall_scan_begin* handler;
+};
+
 // When new dispatchers are created, enforce that scheduler_roles specified must line up with
 // roles previously registered via the `fdf_env_add_allowed_scheduler_role_for_driver` API.
 #define FDF_ENV_ENFORCE_ALLOWED_SCHEDULER_ROLES ((uint32_t)1u << 0)
@@ -163,19 +177,23 @@ zx_status_t fdf_env_get_driver_on_tid(zx_koid_t tid, const void** out_driver)
 // This should not be called from a thread managed by the driver runtime, such as from tasks or
 // ChannelRead callbacks.
 void fdf_env_scan_threads_for_stalls(void)
-    ZX_DEPRECATED_SINCE(28, NEXT, "use fdf_env_scan_threads_for_stalls_wait_time instead");
+    ZX_REMOVED_SINCE(28, NEXT, NEXT, "use fdf_env_scan_threads_for_stalls2 instead");
 
 // Scans active thread pools for threads that are stalled on long running tasks and potentially
 // spawn new threads to compensate.
 //
 // Returns the amount of time the caller should wait before calling this again as a
-// `zx_duration_mono_t`.
+// `zx_duration_mono_t`. If 0 is returned, scanning should suspend until a start callback is made
+// via the registered stall scanner.
 //
 // # Thread requirements
 //
 // This should not be called from a thread managed by the driver runtime, such as from tasks or
 // ChannelRead callbacks.
-zx_duration_mono_t fdf_env_scan_threads_for_stalls_wait_time(void) ZX_AVAILABLE_SINCE(NEXT);
+zx_duration_mono_t fdf_env_scan_threads_for_stalls2(void) ZX_AVAILABLE_SINCE(NEXT);
+
+// Registers a for callbacks for when stall scanning should occur.
+void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* scanner) ZX_AVAILABLE_SINCE(NEXT);
 
 __END_CDECLS
 

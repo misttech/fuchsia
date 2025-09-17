@@ -10,7 +10,8 @@ use fidl::encoding::{DefaultFuchsiaResourceDialect, clear_tls_buf};
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fuchsia_async::Timer;
 use fuchsia_component::client;
-use futures::channel::oneshot;
+use fuchsia_sync::Mutex;
+use futures::channel::{mpsc, oneshot};
 use futures::{StreamExt, TryStreamExt};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -202,11 +203,31 @@ impl DriverHost {
     }
 
     pub fn run_thread_monitor_task(&self) {
+        let (tx, mut rx) = mpsc::channel(0);
+        let tx = Mutex::new(tx);
+
+        let scanner = fdf_env::StallScanner::new(move |duration| {
+            // We don't log errors here as it can be excessive if the
+            // rx handling is slow. We don't expect the other side close either.
+            let _ = tx.lock().try_send(duration);
+        });
+        self.env.register_stall_scanner(scanner);
+
         self.scope.spawn_local(async move {
             loop {
+                // Drain queue.
+                while let Ok(Some(_)) = rx.try_next() {}
+
                 // SAFETY: this call does not use any memory allocated by rust and only does
                 // anything if the fdf_env is currently set up, otherwise it does nothing.
-                let next_wait = unsafe { fdf_sys::fdf_env_scan_threads_for_stalls_wait_time() };
+                let mut next_wait = unsafe { fdf_sys::fdf_env_scan_threads_for_stalls2() };
+                if next_wait == 0 {
+                    // Wait for start.
+                    let Some(duration) = rx.next().await else {
+                        break;
+                    };
+                    next_wait = duration;
+                }
                 Timer::new(zx::MonotonicDuration::from_nanos(next_wait)).await;
             }
         });
