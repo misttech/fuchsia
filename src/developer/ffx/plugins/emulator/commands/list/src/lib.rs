@@ -38,7 +38,7 @@ impl TryFromEnv for InstanceData {
     async fn try_from_env(env: &fho::FhoEnvironment) -> Result<Self, fho::Error> {
         let instance_root: PathBuf = env
             .environment_context()
-            .get(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            .get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .map_err(|e| bug!("{e}"))?;
         Ok(InstanceData { emu_instances: EmulatorInstances::new(instance_root) })
     }

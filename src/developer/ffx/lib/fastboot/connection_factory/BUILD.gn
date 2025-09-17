@@ -20,7 +20,6 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/fastboot/interface:lib",
     "//src/developer/ffx/lib/fastboot/transport/factory:lib",
     "//src/developer/ffx/lib/fastboot/transport/interface:lib",
-    "//src/developer/ffx/lib/fastboot_file_discovery:lib",
     "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
     "//third_party/rust_crates:anyhow",

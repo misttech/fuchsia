@@ -5,8 +5,8 @@
 use addr::TargetIpAddr;
 use anyhow::Context;
 use argh::{ArgsInfo, FromArgs};
-use emulator_instance::EMU_INSTANCE_ROOT_DIR;
 use ffx_config::EnvironmentContext;
+use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
 use fho::{FfxContext, Result, bug, return_bug, return_user_error};

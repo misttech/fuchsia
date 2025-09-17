@@ -5,9 +5,10 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
-use emulator_instance::{EMU_INSTANCE_ROOT_DIR, EmulatorInstances};
+use emulator_instance::EmulatorInstances;
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
+use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::EngineConsoleType;
 use ffx_emulator_console_args::ConsoleCommand;
 use ffx_emulator_engines::EngineBuilder;

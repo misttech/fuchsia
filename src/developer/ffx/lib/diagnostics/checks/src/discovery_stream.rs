@@ -86,11 +86,10 @@ pub(crate) fn build_discovery_stream(
     notifier_sender: UnboundedSender<NotifierMessage>,
 ) -> Result<TargetStream> {
     let emu_instance_root: PathBuf =
-        ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).with_user_message(|| {
-            format!("unable to get `{}`", emulator_instance::EMU_INSTANCE_ROOT_DIR)
+        ctx.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).with_user_message(|| {
+            format!("unable to get `{}`", ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
         })?;
-    let fastboot_file_path: Option<PathBuf> =
-        ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+    let fastboot_file_path: Option<PathBuf> = ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
 
     let mut config = TargetStreamConfig::new();
     let (sender, queue) = mpsc::unbounded();

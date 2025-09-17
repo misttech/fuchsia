@@ -6,10 +6,6 @@ use anyhow::{Context, Result, anyhow};
 use std::fs::{File, create_dir_all};
 use std::path::PathBuf;
 
-/// The root directory for storing instance specific data. Instances
-/// should create a subdirectory in this directory to store data.
-pub const EMU_INSTANCE_ROOT_DIR: &'static str = "emu.instance_dir";
-
 pub(crate) const SERIALIZE_FILE_NAME: &str = "engine.json";
 
 #[derive(Debug, Clone)]

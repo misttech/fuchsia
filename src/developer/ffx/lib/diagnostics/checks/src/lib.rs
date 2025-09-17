@@ -213,12 +213,12 @@ where
 {
     if sources.contains(DiscoverySources::EMULATOR) {
         // This isn't an option as it's intended to be part of the default config.
-        let emu_instance_root: PathBuf = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
+        let emu_instance_root: PathBuf = ctx.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)?;
         notifier.info(format!("Searching for emulators at {}", emu_instance_root.display()))?;
     }
     if sources.contains(DiscoverySources::FASTBOOT_FILE) {
         let fastboot_file_path: Option<PathBuf> =
-            ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+            ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
         // Note: there are no tests covering the `None` case because this is built into the default
         // config, and despite `no_environment` being set in the config we're still resolving this
         // to $HOME/.fastboot/devices even if nothing is set in our test environment.
@@ -226,7 +226,7 @@ where
             Some(p) => notifier.info(format!("Checking fastboot file at {}", p.display()))?,
             None => notifier.info(format!(
                 "No fastboot file set in the config under {}",
-                fastboot_file_discovery::FASTBOOT_FILE_PATH
+                ffx_config::keys::FASTBOOT_FILE_PATH
             ))?,
         }
     }
@@ -958,7 +958,7 @@ mod test {
     #[fuchsia::test]
     async fn test_notify_for_discovery_sources_emulator() {
         let env = ffx_config::test_env()
-            .runtime_config(emulator_instance::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
+            .runtime_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
             .build()
             .await
             .unwrap();
@@ -973,7 +973,7 @@ mod test {
     #[fuchsia::test]
     async fn test_notify_for_discovery_sources_fastboot_file_set() {
         let env = ffx_config::test_env()
-            .runtime_config(fastboot_file_discovery::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
+            .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
             .build()
             .await
             .unwrap();
@@ -988,8 +988,8 @@ mod test {
     #[fuchsia::test]
     async fn test_notify_for_discovery_sources_both() {
         let env = ffx_config::test_env()
-            .runtime_config(emulator_instance::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
-            .runtime_config(fastboot_file_discovery::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
+            .runtime_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
+            .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
             .build()
             .await
             .unwrap();

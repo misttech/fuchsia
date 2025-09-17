@@ -60,7 +60,7 @@ impl FfxMain for EmuShowTool {
     type Writer = VerifiedMachineWriter<Vec<ShowDetail>>;
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let instance_dir: PathBuf =
-            self.context.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;
+            self.context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;
         let emu_instances = EmulatorInstances::new(instance_dir);
         self.show(&emu_instances, writer).await.map_err(|e| e.into())
     }
@@ -234,7 +234,7 @@ mod tests {
     async fn test_show_part() {
         let env = ffx_config::test_init().await.unwrap();
         env.context
-            .query(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(env.isolate_root.path().to_string_lossy().into())
             .expect("setting test config");

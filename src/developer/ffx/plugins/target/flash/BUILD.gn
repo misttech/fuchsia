@@ -29,7 +29,6 @@ ffx_plugin("ffx_flash") {
     "//src/developer/ffx/lib/fastboot/connection_factory:lib",
     "//src/developer/ffx/lib/fastboot/flash_manifest:lib",
     "//src/developer/ffx/lib/fastboot/interface:lib",
-    "//src/developer/ffx/lib/fastboot_file_discovery:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target/holders:lib",

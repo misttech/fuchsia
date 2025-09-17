@@ -47,7 +47,7 @@ impl FastbootConnectionFactory for ConnectionFactory {
             FastbootConnectionKind::Tcp(target_name, addr) => {
                 let config = FastbootNetworkConnectionConfig::new_tcp().await;
                 let fastboot_device_file_path: Option<PathBuf> =
-                    ffx_config::get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+                    ffx_config::get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
                     tcp_proxy(target_name, fastboot_device_file_path, &addr, config).await?,
                 ))
@@ -55,7 +55,7 @@ impl FastbootConnectionFactory for ConnectionFactory {
             FastbootConnectionKind::Udp(target_name, addr) => {
                 let config = FastbootNetworkConnectionConfig::new_udp().await;
                 let fastboot_device_file_path: Option<PathBuf> =
-                    ffx_config::get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+                    ffx_config::get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
                     udp_proxy(target_name, fastboot_device_file_path, &addr, config).await?,
                 ))

@@ -125,7 +125,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
 
         // Create the data directory if needed.
         let mut instance_root: PathBuf = env
-            .query(config::EMU_INSTANCE_ROOT_DIR)
+            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .get_file()
             .map_err(|e| bug!("Error reading config for instance root: {e}"))?;
         // This should really just be part of the conversion, but the structure of the config file

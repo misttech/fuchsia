@@ -4,6 +4,7 @@
 
 use emulator_instance::{EmulatorInstanceInfo, EmulatorInstances};
 use ffx_config::EnvironmentContext;
+use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_engines::EngineBuilder;
 use ffx_emulator_stop_args::StopCommand;
 use ffx_emulator_stop_command_output::CommandStatus;
@@ -56,7 +57,7 @@ impl EmuStopTool {
     ) -> fho::Result<Vec<Error>> {
         let mut names = vec![self.cmd.name];
         let instance_dir: PathBuf =
-            self.context.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;
+            self.context.get(EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;
         let emu_instances = EmulatorInstances::new(instance_dir);
 
         if self.cmd.all {
@@ -138,7 +139,7 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         env.context
-            .query(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_path))
             .expect("setting instance dir config");
@@ -174,7 +175,7 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         env.context
-            .query(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_path))
             .expect("setting instance dir config");
@@ -201,7 +202,7 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         env.context
-            .query(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_path))
             .expect("setting instance dir config");
@@ -224,7 +225,7 @@ mod tests {
     async fn test_stop_not_running() {
         let env = ffx_config::test_init().await.unwrap();
         env.context
-            .query(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(env.isolate_root.path()))
             .expect("setting instance dir config");

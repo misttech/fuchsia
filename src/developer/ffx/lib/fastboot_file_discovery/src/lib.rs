@@ -18,9 +18,6 @@ use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
 
-// Defaults to ${HOME}/.fastboot/devices
-pub const FASTBOOT_FILE_PATH: &str = "fastboot.devices_file.path";
-
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
 pub enum FastbootMode {
     TCP,

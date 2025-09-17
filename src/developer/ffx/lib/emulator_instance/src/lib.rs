@@ -21,9 +21,7 @@ pub use enumerations::{
     NetworkingMode, OperatingSystem, VirtualCpu,
 };
 use fletcher64::get_file_hash;
-pub use instances::{
-    EMU_INSTANCE_ROOT_DIR, EmulatorInstances, read_from_disk, read_from_disk_untyped, write_to_disk,
-};
+pub use instances::{EmulatorInstances, read_from_disk, read_from_disk_untyped, write_to_disk};
 pub use targets::{
     EmulatorTargetAction, EmulatorWatcher, get_all_targets, start_emulator_watching,
 };

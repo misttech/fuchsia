@@ -26,3 +26,10 @@ pub const LOCAL_DISCOVERY_TIMEOUT: &str = "discovery.timeout";
 // LINT.IfChange
 pub const METRICS_UPLOAD_TIMEOUT_DEFAULT: f64 = 2.0;
 // LINT.ThenChange(../../../docs/configuration.md, ../../../data/config.json)
+
+/// The location of the fastboot devices file. Defaults to ${HOME}/.fastboot/devices
+pub const FASTBOOT_FILE_PATH: &str = "fastboot.devices_file.path";
+
+/// The root directory for storing instance specific emulator data. Instances
+/// should create a subdirectory in this directory to store data.
+pub const EMU_INSTANCE_ROOT_DIR: &'static str = "emu.instance_dir";

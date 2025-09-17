@@ -17,7 +17,6 @@ rustc_library("ffx_daemon_protocol_fastboot_target_stream") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/discovery:lib",
-    "//src/developer/ffx/lib/fastboot_file_discovery:lib",
     "//src/developer/ffx/lib/protocols:lib",
     "//src/developer/ffx/lib/stream_util:lib",
     "//src/lib/fidl/rust/fidl",

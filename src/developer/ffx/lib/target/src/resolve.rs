@@ -273,8 +273,8 @@ fn build_discovery(
     // will simply be ignored. The alternative is to throw an error, which,
     // e.g. will cause ffx-strict to fail under certain circumstances if either
     // default config option is not overridden.
-    let emu_instance_root = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).ok();
-    let fastboot_file_path = ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+    let emu_instance_root = ctx.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).ok();
+    let fastboot_file_path = ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
     let mut builder = DiscoveryBuilder::default()
         .set_source(sources)
         .with_fastboot_devices_file_path(fastboot_file_path)

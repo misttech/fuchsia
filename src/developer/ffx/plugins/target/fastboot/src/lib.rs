@@ -286,7 +286,7 @@ fn gather_connection_info(
         let target_name =
             if let Some(nodename) = &info.nodename { nodename } else { &socket_addr.to_string() };
         let fastboot_device_file_path: Option<PathBuf> =
-            ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+            ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
         Ok(NetworkConnectionInfo {
             target_name: target_name.to_owned(),
             addr: socket_addr,
@@ -319,7 +319,7 @@ mod test {
     #[fuchsia::test]
     async fn test_gather_connection_info_success() -> Result<()> {
         let env = ffx_config::test_env()
-            .runtime_config(fastboot_file_discovery::FASTBOOT_FILE_PATH, "/foo")
+            .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
             .build()
             .await?;
         let target_info: TargetInfoHolder =
@@ -345,7 +345,7 @@ mod test {
     #[fuchsia::test]
     async fn test_gather_connection_info_node_name() -> Result<()> {
         let env = ffx_config::test_env()
-            .runtime_config(fastboot_file_discovery::FASTBOOT_FILE_PATH, "/foo")
+            .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
             .build()
             .await?;
         let target_info: TargetInfoHolder =

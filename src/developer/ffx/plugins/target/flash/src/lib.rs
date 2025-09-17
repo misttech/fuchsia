@@ -9,8 +9,8 @@ use chrono::{Duration, Utc};
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetState};
 use errors::ffx_bail;
-use fastboot_file_discovery::FASTBOOT_FILE_PATH;
 use ffx_config::EnvironmentContext;
+use ffx_config::keys::FASTBOOT_FILE_PATH;
 use ffx_fastboot::common::from_manifest;
 use ffx_fastboot::util::{Event, UnlockEvent};
 use ffx_fastboot_connection_factory::{
@@ -482,7 +482,7 @@ Reboot the Target to the bootloader and re-run this command."
                         };
                         let config = FastbootNetworkConnectionConfig::new_udp().await;
                         let fastboot_device_file_path: Option<PathBuf> =
-                            ffx_config::get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+                            ffx_config::get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = udp_proxy(
                             target_name.clone(),
                             fastboot_device_file_path,
@@ -527,7 +527,7 @@ Reboot the Target to the bootloader and re-run this command."
                         };
                         let config = FastbootNetworkConnectionConfig::new_tcp().await;
                         let fastboot_device_file_path: Option<PathBuf> =
-                            ffx_config::get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+                            ffx_config::get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = tcp_proxy(
                             target_name.clone(),
                             fastboot_device_file_path,

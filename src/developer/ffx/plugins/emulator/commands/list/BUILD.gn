@@ -13,6 +13,7 @@ if (is_host) {
     args_deps = []
     deps = [
       "command_output",
+      "//src//developer/ffx/config:lib",
       "//src//developer/ffx/lib/writer:lib",
       "//src/developer/ffx/lib/emulator_instance:lib",
       "//src/developer/ffx/lib/fho:lib",

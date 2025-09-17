@@ -588,7 +588,7 @@ impl FidlProtocol for TargetCollectionProtocol {
         let context = self.context.clone();
         let node_clone = Arc::clone(&node);
         self.tasks.spawn(async move {
-            let instance_root: PathBuf = match context.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+            let instance_root: PathBuf = match context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             {
                 Ok(dir) => dir,
                 Err(e) => {
@@ -998,7 +998,7 @@ mod tests {
     }
 
     async fn init_test_config(_env: &ffx_config::TestEnv, temp_dir: &Path) {
-        query(emulator_instance::EMU_INSTANCE_ROOT_DIR)
+        query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_dir.display().to_string()))
             .unwrap();

@@ -64,7 +64,7 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
         self.fastboot_task.replace(Task::local(async move {
             loop {
                 let fastboot_file_path: Option<PathBuf> =
-                    get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+                    get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 let discovery = DiscoveryBuilder::default()
                     .with_fastboot_devices_file_path(fastboot_file_path)
                     .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
