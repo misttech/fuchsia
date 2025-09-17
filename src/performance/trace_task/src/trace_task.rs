@@ -291,7 +291,7 @@ impl TraceTask {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_tracing_controller::StartError;
+    use flex_fuchsia_tracing_controller::StartError;
 
     const FAKE_CONTROLLER_TRACE_OUTPUT: &'static str = "HOWDY HOWDY HOWDY";
 
