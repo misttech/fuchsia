@@ -10,6 +10,7 @@
         {
             type: "expect_failure",
             matchers: [
+                //TODO(https://fxbug.dev/445523586): failing tests in kselftest
                 "binderfs",
                 "capabilities_test_execve",
                 "kcmp_kcmp_test",
@@ -24,10 +25,6 @@
                 "timers_set_tai",
                 "timers_valid_adjtimex",
                 "vDSO_kselftest_vdso_test_abi",
-                "x86_ldt_gdt",
-                "x86_ptrace_syscall",
-                "x86_single_step_syscall",
-                "x86_syscall_nt",
             ],
         },
         {
