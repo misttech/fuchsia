@@ -212,7 +212,9 @@ def _generate_manifest_impl(target, actx):
     # To work around this, use print() here to print the execroot-related path
     # to stderr, and ensure the caller can process this line to extract the file's
     # location.
+    # LINT.IfChange(debug_symbols_manifest_prefix)
     print("DEBUG_SYMBOLS_MANIFEST_PATH=%s" % output.path)
+    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py:debug_symbols_manifest_prefix)
 
     return [
         OutputGroupInfo(
