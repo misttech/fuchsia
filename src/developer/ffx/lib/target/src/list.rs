@@ -111,10 +111,14 @@ pub async fn list_targets(
     include_usb: bool,
     include_mdns: bool,
     connect: bool,
-    use_cache: bool,
 ) -> Result<Vec<ffx::TargetInfo>> {
     let query = TargetInfoQuery::from(nodename);
-    let stream = get_discovery_stream(query, include_usb, include_mdns, use_cache, ctx)
+    // When explicitly listing all targets, we don't want to use the
+    // cache, for a couple reasons:
+    // * explicitly listing the targets probably warrants accurate results
+    // * if we get back a stale target, we don't want to waste time trying
+    //   to connect to RCS
+    let stream = get_discovery_stream(query, include_usb, include_mdns, false, ctx)
         .map_err(anyhow::Error::from)?;
     let targets = handles_to_infos(stream, ctx, connect).await?;
     Ok(targets)
