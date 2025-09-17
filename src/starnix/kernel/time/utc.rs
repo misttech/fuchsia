@@ -9,7 +9,7 @@ use fuchsia_runtime::{
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::Mutex;
 use std::sync::LazyLock;
-use zx::{self as zx, AsHandleRef, Unowned};
+use zx::{self as zx, AsHandleRef, HandleBased, Unowned};
 
 fn utc_clock() -> Unowned<'static, UtcClockHandle> {
     // SAFETY: basic FFI call which returns either a valid handle or ZX_HANDLE_INVALID.
@@ -131,6 +131,13 @@ impl UtcClock {
 static UTC_CLOCK: LazyLock<Mutex<UtcClock>> = LazyLock::new(|| {
     Mutex::new(UtcClock::new(duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap()))
 });
+
+/// Creates a copy of the UTC clock handle currently in use in Starnix.
+pub fn duplicate_real_utc_clock_handle() -> Result<UtcClockHandle, zx::Status> {
+    let lock = (*UTC_CLOCK).lock();
+    // Maybe reduce rights here?
+    (*lock).real_utc_clock.duplicate_handle(zx::Rights::SAME_RIGHTS)
+}
 
 /// Updates the UTC clock transform.
 pub fn update_utc_clock(dest: &MemoryMappedVvar) {

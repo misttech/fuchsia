@@ -43,6 +43,13 @@ pub trait TimerOps: Send + Sync + 'static {
 
     /// Returns a reference to the underlying Zircon handle.
     fn as_handle_ref(&self) -> HandleRef<'_>;
+
+    /// For TimerOps that support monitoring timeline changes (e.g. timers on the
+    /// UTC timeline), this returns a counter that reports the number of changes
+    /// since last reset.
+    ///
+    /// The caller must reset this value to zero to restart counting from zero.
+    fn get_timeline_changes_counter(&self, current_task: &CurrentTask) -> Option<zx::Counter>;
 }
 
 /// A `TimerFile` represents a file created by `timerfd_create`.

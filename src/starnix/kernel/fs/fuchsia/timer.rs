@@ -46,6 +46,11 @@ impl TimerOps for MonotonicZxTimer {
     fn as_handle_ref(&self) -> HandleRef<'_> {
         self.timer.as_handle_ref()
     }
+
+    // Not supported.
+    fn get_timeline_changes_counter(&self, _: &CurrentTask) -> Option<zx::Counter> {
+        None
+    }
 }
 
 pub struct BootZxTimer {
@@ -87,5 +92,10 @@ impl TimerOps for BootZxTimer {
 
     fn as_handle_ref(&self) -> HandleRef<'_> {
         self.timer.as_handle_ref()
+    }
+
+    // Not supported.
+    fn get_timeline_changes_counter(&self, _: &CurrentTask) -> Option<zx::Counter> {
+        None
     }
 }
