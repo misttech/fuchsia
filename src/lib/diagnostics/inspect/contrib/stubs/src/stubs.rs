@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Stubs for tracking unimplemented code paths.
+//!
+//! This crate provides macros and utilities to track stubbed implementations
+//! and surface them in Inspect for diagnostics.
+
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
@@ -13,6 +18,15 @@ use std::sync::LazyLock;
 static STUB_COUNTS: LazyLock<Mutex<HashMap<Invocation, Counts>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Tracks a stubbed implementation.
+///
+/// This macro records that a stub was encountered so that it may be surfaced in inspect.
+/// The first time a particular stub is encountered, a log message will be emitted.
+///
+/// Example:
+/// ```
+/// track_stub!(TODO("https://fxbug.dev/12345"), "my component is not implemented");
+/// ```
 #[macro_export]
 macro_rules! track_stub {
     (TODO($bug_url:literal), $message:expr, $flags:expr $(,)?) => {{
@@ -33,6 +47,16 @@ macro_rules! track_stub {
     }};
 }
 
+/// Tracks a stubbed implementation with a specified log level.
+///
+/// This macro records that a stub was encountered so that it may be surfaced in inspect.
+/// The first time a particular stub is encountered, a log message will be emitted at the
+/// specified level.
+///
+/// Example:
+/// ```
+/// track_stub_log!(log::Level::Warn, TODO("https://fxbug.dev/12345"), "my component is not implemented");
+/// ```
 #[macro_export]
 macro_rules! track_stub_log {
     ($level:expr, TODO($bug_url:literal), $message:expr, $flags:expr $(,)?) => {{
@@ -107,6 +131,10 @@ pub fn __track_stub_inner_with_level(
     *context_count
 }
 
+/// Returns a future that resolves to an `Inspector` containing stub information.
+///
+/// This function can be used to create a lazy node in inspect that exposes the locations
+/// where stubs have been tracked.
 pub fn track_stub_lazy_node_callback() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> {
     Box::pin(async {
         let inspector = Inspector::default();
@@ -142,6 +170,9 @@ pub fn track_stub_lazy_node_callback() -> BoxFuture<'static, Result<Inspector, a
     })
 }
 
+/// Creates a `BugRef` from a URL literal.
+///
+/// This macro will cause a compilation error if the provided literal is not a valid Fuchsia bug URL.
 #[macro_export]
 macro_rules! bug_ref {
     ($bug_url:literal) => {{
@@ -154,6 +185,9 @@ macro_rules! bug_ref {
     }};
 }
 
+/// Represents a reference to a Fuchsia bug.
+///
+/// This struct is used to ensure that stubs are tracked against a valid bug.
 #[derive(Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BugRef {
     number: u64,
@@ -214,18 +248,21 @@ impl BugRef {
 }
 
 impl From<NonZeroU64> for BugRef {
+    /// Converts a `NonZeroU64` into a `BugRef`.
     fn from(value: NonZeroU64) -> Self {
         Self { number: value.get() }
     }
 }
 
 impl Into<NonZeroU64> for BugRef {
+    /// Converts a `BugRef` into a `NonZeroU64`.
     fn into(self) -> NonZeroU64 {
         NonZeroU64::new(self.number).unwrap()
     }
 }
 
 impl std::fmt::Display for BugRef {
+    /// Formats the `BugRef` as a URL string.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "https://fxbug.dev/{}", self.number)
     }
