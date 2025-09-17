@@ -69,14 +69,12 @@ class FuchsiaPowerManager final : public TimeoutSource {
   static constexpr char kOnReadyForWorkPowerElementName[] = "mali-on-ready-for-work";
 
  private:
-  void CheckRequiredLevel();
   zx_status_t AcquireLease(
       const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client,
       fidl::ClientEnd<fuchsia_power_broker::LeaseControl>& lease_control_client_end);
   Owner* owner_;
   fidl::WireSyncClient<fuchsia_power_broker::Lessor> hardware_power_lessor_client_;
 
-  fidl::WireSyncClient<fuchsia_power_broker::CurrentLevel> hardware_power_current_level_client_;
   fidl::ClientEnd<fuchsia_power_broker::ElementControl> hardware_power_element_control_client_end_;
   HardwareElementRunner hardware_power_element_runner_server_;
   std::optional<fidl::ServerBindingRef<fuchsia_power_broker::ElementRunner>>
