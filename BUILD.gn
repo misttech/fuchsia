@@ -2131,7 +2131,7 @@ build_api_module("nuc11_fastboot_images_location") {
 # used to implement `fx bazel-tool set_gn_targets <bazel_label>` as well as
 # `fx build @<bazel_target>`.
 #
-# LINT.IfChange(bazel_build_actions)
+# LINT.IfChange
 #
 # Type: list(scope)
 #
@@ -2155,11 +2155,6 @@ build_api_module("nuc11_fastboot_images_location") {
 #     - Required: Path to manifest file describing the content of @gn_targets, relative
 #         to the Ninja build directory. Rebuilding this artifact with Ninja should ensure
 #         that all files exposed by the repository are up-to-date.
-#     - Type: string
-#
-#   debug_symbols_manifest
-#     - Required: Path to a debug_symbols.json manifest (see //:debug_symbols for schema)
-#         describing the debug binaries for the Bazel targets.
 #     - Type: string
 #
 #   bazel_command_file
@@ -2191,7 +2186,7 @@ generated_file("bazel_build_action_targets") {
   output_conversion = "json"
 }
 
-# LINT.ThenChange(//build/bazel/scripts/gn_targets_utils.py, //build/bazel/bazel_action.gni:bazel_build_actions)
+# LINT.ThenChange(//build/bazel/scripts/gn_targets_utils.py)
 
 ###
 ### Top-level targets.
