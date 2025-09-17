@@ -16,6 +16,7 @@
 #include "src/starnix/tests/syscalls/cpp/binder/common.h"
 #include "src/starnix/tests/syscalls/cpp/binder/manager_provider_client_test.h"
 #include "src/starnix/tests/syscalls/cpp/binder_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 extern std::string DoPrePolicyLoadWork() { return "binder.pp"; }
@@ -235,13 +236,15 @@ const auto kCallPermissionValues = ::testing::Values(
     "test_u:test_r:binder_ioctl_call_test_t:s0", "test_u:test_r:binder_ioctl_no_call_test_t:s0");
 INSTANTIATE_TEST_SUITE_P(BinderTest, CallPermission, kCallPermissionValues);
 
-class ImpersonatePermission : public BinderTest,
-                              public testing::WithParamInterface<std::string_view> {};
+class Impersonation
+    : public BinderTest,
+      public testing::WithParamInterface<std::tuple<std::string_view, std::string_view>> {};
 
-TEST_P(ImpersonatePermission, DoImpersonate) {
+TEST_P(Impersonation, ImpersonateViaTransition) {
   auto enforce = ScopedEnforcement::SetEnforcing();
-  std::string_view label = ImpersonatePermission::GetParam();
-  bool expect_success = label.find("_deny_") == std::string::npos;
+  auto& [pretransition_label, posttransition_label] = Impersonation::GetParam();
+  bool expect_success = pretransition_label.find("_allow_") != std::string::npos &&
+                        posttransition_label.find("_allow_") != std::string::npos;
 
   test_helper::Rendezvous context_manager_ready = test_helper::MakeRendezvous();
 
@@ -266,115 +269,117 @@ TEST_P(ImpersonatePermission, DoImpersonate) {
   std::unique_ptr<test_helper::ForkHelper> transactor_fork_helper =
       std::make_unique<test_helper::ForkHelper>();
 
-  RunInForkedProcessWithLabel(
-      *transactor_fork_helper, "test_u:test_r:binder_impersonate_transactor_t:s0", [&]() {
-        auto fd_and_mapping = OpenBinderAndMap(temp_dir_.path());
+  RunInForkedProcessWithLabel(*transactor_fork_helper, pretransition_label, [&]() {
+    auto fd_and_mapping = OpenBinderAndMap(temp_dir_.path());
 
-        auto transition_result = WriteTaskAttr("current", label);
-        ASSERT_TRUE(transition_result.is_ok())
-            << "Failed to transition to \"" << label << "\" with error "
-            << transition_result.error_value();
+    auto transition_result = WriteTaskAttr("current", posttransition_label);
+    ASSERT_TRUE(transition_result.is_ok()) << "Failed to transition to \"" << posttransition_label
+                                           << "\" with error " << transition_result.error_value();
 
-        std::string_view hello = "Hello!";
-        TransactionWriteBuffer hello_write_buffer = {
-            .command = BC_TRANSACTION,
-            .data =
-                {
-                    .target =
-                        {
-                            .handle = kServiceManagerHandle,
-                        },
-                    .cookie = 0,
-                    .code = 0,
-                    .flags = 0,
-                    .data_size = hello.size(),
-                    .offsets_size = 0,
-                    .data =
-                        {
-                            .ptr =
-                                {
-                                    .buffer = (binder_uintptr_t)hello.data(),
-                                    .offsets = (binder_uintptr_t) nullptr,
-                                },
-                        },
-                },
-        };
-        struct binder_write_read hello_write_read = {
-            .write_size = sizeof(hello_write_buffer),
-            .write_consumed = 0,
-            .write_buffer = (binder_uintptr_t)&hello_write_buffer,
-        };
+    std::string_view hello = "Hello!";
+    TransactionWriteBuffer hello_write_buffer = {
+        .command = BC_TRANSACTION,
+        .data =
+            {
+                .target =
+                    {
+                        .handle = kServiceManagerHandle,
+                    },
+                .cookie = 0,
+                .code = 0,
+                .flags = 0,
+                .data_size = hello.size(),
+                .offsets_size = 0,
+                .data =
+                    {
+                        .ptr =
+                            {
+                                .buffer = (binder_uintptr_t)hello.data(),
+                                .offsets = (binder_uintptr_t) nullptr,
+                            },
+                    },
+            },
+    };
+    struct binder_write_read hello_write_read = {
+        .write_size = sizeof(hello_write_buffer),
+        .write_consumed = 0,
+        .write_buffer = (binder_uintptr_t)&hello_write_buffer,
+    };
 
-        ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &hello_write_read),
-                    SyscallSucceeds());
+    ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &hello_write_read),
+                SyscallSucceeds());
 
-        bool br_reply_observed = false;
-        bool br_transaction_complete_observed = false;
-        bool br_failed_reply_observed = false;
-        auto transaction_succeeded = [&] {
-          return br_reply_observed &&
-                 // TODO: https://fxbug.dev/443721582 - why doesn't this process observe a
-                 // BR_TRANSACTION_COMPLETE when run with Starnix? It seems to see one when run with
-                 // Linux?
-                 (br_transaction_complete_observed || test_helper::IsStarnix());
-        };
-        auto transaction_failed = [&] { return br_failed_reply_observed; };
+    bool br_reply_observed = false;
+    bool br_transaction_complete_observed = false;
+    bool br_failed_reply_observed = false;
+    auto transaction_succeeded = [&] {
+      return br_reply_observed &&
+             // TODO: https://fxbug.dev/443721582 - why doesn't this process observe a
+             // BR_TRANSACTION_COMPLETE when run with Starnix? It seems to see one when run with
+             // Linux?
+             (br_transaction_complete_observed || test_helper::IsStarnix());
+    };
+    auto transaction_failed = [&] { return br_failed_reply_observed; };
 
-        while (!transaction_failed() && !transaction_succeeded()) {
-          std::array<uint8_t, kReadBufferSize> read_buffer = {};
-          struct binder_write_read drain_write_read = {
-              .read_size = sizeof(read_buffer),
-              .read_consumed = 0,
-              .read_buffer = (binder_uintptr_t)read_buffer.data(),
-          };
-          ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &drain_write_read),
-                      SyscallSucceeds());
+    while (!transaction_failed() && !transaction_succeeded()) {
+      std::array<uint8_t, kReadBufferSize> read_buffer = {};
+      struct binder_write_read drain_write_read = {
+          .read_size = sizeof(read_buffer),
+          .read_consumed = 0,
+          .read_buffer = (binder_uintptr_t)read_buffer.data(),
+      };
+      ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &drain_write_read),
+                  SyscallSucceeds());
 
-          binder_uintptr_t cursor = (binder_uintptr_t)read_buffer.data();
-          binder_uintptr_t limit = cursor + drain_write_read.read_consumed;
-          while (cursor < limit) {
-            binder_driver_return_protocol returned = *(binder_driver_return_protocol*)(cursor);
-            cursor += sizeof(binder_driver_return_protocol);
+      binder_uintptr_t cursor = (binder_uintptr_t)read_buffer.data();
+      binder_uintptr_t limit = cursor + drain_write_read.read_consumed;
+      while (cursor < limit) {
+        binder_driver_return_protocol returned = *(binder_driver_return_protocol*)(cursor);
+        cursor += sizeof(binder_driver_return_protocol);
 
-            switch (returned) {
-              case BR_NOOP:
-                break;
-              case BR_TRANSACTION_COMPLETE:
-                br_transaction_complete_observed = true;
-                break;
-              case BR_INCREFS:
-              case BR_ACQUIRE:
-              case BR_RELEASE:
-              case BR_DECREFS:
-                cursor += sizeof(struct binder_ptr_cookie);
-                break;
-              case BR_TRANSACTION:
-                cursor += sizeof(struct binder_transaction_data);
-                break;
-              case BR_REPLY:
-                br_reply_observed = true;
-                cursor += sizeof(struct binder_transaction_data);
-                break;
-              case BR_FAILED_REPLY:
-                br_failed_reply_observed = true;
-                break;
-              case BR_DEAD_BINDER:
-              case BR_DEAD_REPLY:
-              case BR_ERROR:
-              default:
-                FAIL() << "Unexpected \"returned\" value " << returned << "!";
-            }
-          }
+        switch (returned) {
+          case BR_NOOP:
+            break;
+          case BR_TRANSACTION_COMPLETE:
+            br_transaction_complete_observed = true;
+            break;
+          case BR_INCREFS:
+          case BR_ACQUIRE:
+          case BR_RELEASE:
+          case BR_DECREFS:
+            cursor += sizeof(struct binder_ptr_cookie);
+            break;
+          case BR_TRANSACTION:
+            cursor += sizeof(struct binder_transaction_data);
+            break;
+          case BR_REPLY:
+            br_reply_observed = true;
+            cursor += sizeof(struct binder_transaction_data);
+            break;
+          case BR_FAILED_REPLY:
+            br_failed_reply_observed = true;
+            break;
+          case BR_DEAD_BINDER:
+          case BR_DEAD_REPLY:
+          case BR_ERROR:
+          default:
+            FAIL() << "Unexpected \"returned\" value " << returned << "!";
         }
-        ASSERT_TRUE(expect_success ? br_reply_observed : br_failed_reply_observed);
-      });
+      }
+    }
+    ASSERT_TRUE(expect_success ? br_reply_observed : br_failed_reply_observed);
+  });
   transactor_fork_helper->OnlyWaitForForkedChildren();
 }
 
-const auto kImpersonatePermissionValues =
-    ::testing::Values("test_u:test_r:binder_allow_impersonate_transactor_t:s0",
-                      "test_u:test_r:binder_deny_impersonate_transactor_t:s0");
-INSTANTIATE_TEST_SUITE_P(BinderTest, ImpersonatePermission, kImpersonatePermissionValues);
+// TODO: https://fxbug.dev/443684136 - add verification that for the "_deny_" test executions, the
+// "denied" lines emitted to the audit log correspond across SELinux and SEStarnix.
+const auto kImpersonatePermissionValues = ::testing::Combine(
+    ::testing::Values("test_u:test_r:binder_impersonation_allow_call_pretransition_t:s0",
+                      "test_u:test_r:binder_impersonation_deny_call_pretransition_t:s0"),
+    ::testing::Values("test_u:test_r:binder_impersonation_allow_impersonate_posttransition_t:s0",
+                      "test_u:test_r:binder_impersonation_deny_impersonate_posttransition_t:s0"));
+INSTANTIATE_TEST_SUITE_P(BinderTest, Impersonation, kImpersonatePermissionValues);
 
 }  // namespace
 
