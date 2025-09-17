@@ -4,11 +4,6 @@
 
 #include "server.h"
 
-#include <fidl/fuchsia.hardware.ufs/cpp/common_types.h>
-#include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
-#include <lib/fidl/cpp/wire/vector_view.h>
-#include <lib/trace/event.h>
-
 #include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 #include "src/devices/block/drivers/ufs/upiu/attributes.h"
 #include "src/devices/block/drivers/ufs/upiu/descriptors.h"
@@ -312,6 +307,48 @@ void UfsServer::ProcessQueryRequestUpiu(const RequestRequestView& request,
                                          response_upiu_data + sizeof(QueryResponseUpiuData));
 
   completer.ReplySuccess(request_data);
+}
+
+void UfsServer::ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync& completer) {
+  size_t size;
+  if (request->data.get_prop_content_size(&size); size < request->length) {
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+
+  std::vector<uint8_t> buf(request->length);
+  if (zx_status_t status = controller_->ReadBuffer(
+          kPlaceholderTarget, request->lun, static_cast<uint8_t>(request->mode), request->buffer_id,
+          request->buffer_offset, {.iov_base = buf.data(), .iov_len = request->length});
+      status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+
+  if (zx_status_t status = request->data.write(buf.data(), 0, request->length); status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+
+  completer.ReplySuccess();
+}
+
+void UfsServer::WriteBuffer(WriteBufferRequestView request, WriteBufferCompleter::Sync& completer) {
+  std::vector<uint8_t> buf(request->length);
+  if (zx_status_t status = request->data.read(buf.data(), 0, request->length); status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+
+  if (zx_status_t status = controller_->WriteBuffer(
+          kPlaceholderTarget, request->lun, static_cast<uint8_t>(request->mode), request->buffer_id,
+          request->buffer_offset, {.iov_base = buf.data(), .iov_len = request->length});
+      status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+
+  completer.ReplySuccess();
 }
 
 }  // namespace ufs

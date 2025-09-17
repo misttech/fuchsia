@@ -48,6 +48,7 @@ constexpr uint32_t kPWRMode = 0x11;
 constexpr uint32_t kUniproVersion = 5;
 constexpr uint32_t kTActivate = 2;
 constexpr uint32_t kGranularity = 6;
+constexpr uint32_t kMaxDeviceBufferSize = 64 * 1024;
 
 class FakeRegisters final {
  public:
@@ -86,6 +87,16 @@ class FakeRegisters final {
   uint8_t *registers_ = nullptr;
 };
 
+class UfsDeviceBuffer {
+ public:
+  zx_status_t Write(const void *buf, uint32_t offset, uint32_t length);
+  zx_status_t Read(void *buf, uint32_t offset, uint32_t length);
+  void SetBufferSize(const size_t size);
+
+ private:
+  std::vector<uint8_t> data_buffer_;
+};
+
 // Simulates a logical unit and its contents.
 class UfsLogicalUnit {
  public:
@@ -97,10 +108,14 @@ class UfsLogicalUnit {
   zx_status_t BufferRead(void *buf, size_t block_count, off_t block_offset);
   UnitDescriptor &GetUnitDesc() { return unit_desc_; }
 
+  zx_status_t WriteToDeviceBuffer(const void *buf, uint32_t offset, uint32_t length);
+  zx_status_t ReadFromDeviceBuffer(void *buf, uint32_t offset, uint32_t length);
+
  private:
   uint64_t block_count_;
   std::vector<uint8_t> buffer_;
   UnitDescriptor unit_desc_;
+  UfsDeviceBuffer device_buffer_;
 };
 
 class UfsMockDevice {
@@ -139,6 +154,8 @@ class UfsMockDevice {
 
   zx_status_t BufferWrite(uint8_t lun, const void *buf, size_t block_count, off_t block_offset);
   zx_status_t BufferRead(uint8_t lun, void *buf, size_t block_count, off_t block_offset);
+  zx_status_t WriteToDeviceBuffer(uint8_t lun, const void *buf, uint32_t offset, uint32_t length);
+  zx_status_t ReadFromDeviceBuffer(uint8_t lun, void *buf, uint32_t offset, uint32_t length);
 
   FakeRegisters *GetRegisters() { return &registers_; }
   DeviceDescriptor &GetDeviceDesc() { return device_desc_; }

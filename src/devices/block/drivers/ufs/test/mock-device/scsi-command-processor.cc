@@ -6,11 +6,11 @@
 
 #include <algorithm>
 
+#include "src/devices/block/lib/common/include/common.h"
 #include "ufs-mock-device.h"
 
 namespace ufs {
 namespace ufs_mock_device {
-
 namespace {
 zx::result<uint8_t *> PrdtMapAndGetVirtualAddress(
     UfsMockDevice &mock_device, const PhysicalRegionDescriptionTableEntry &prdt_upiu) {
@@ -86,6 +86,7 @@ zx_status_t CopyPhysicalRegionToBuffer(
 
   return ZX_OK;
 }
+
 }  // namespace
 
 void ScsiCommandProcessor::BuildSenseData(ResponseUpiuData &response_upiu,
@@ -445,6 +446,60 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultStartStopUnitHandl
 
   // Nothing to do in mock device.
 
+  return zx::ok(std::move(data_buffer));
+}
+
+zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultReadBufferHandler(
+    UfsMockDevice &mock_device, CommandUpiuData &command_upiu, ResponseUpiuData &response_upiu,
+    cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upius) {
+  uint8_t lun = command_upiu.header.lun;
+  ScsiCommandUpiu readbuffer_command(command_upiu);
+
+  scsi::ReadBufferCDB *scsi_cdb =
+      reinterpret_cast<scsi::ReadBufferCDB *>(readbuffer_command.GetData<CommandUpiuData>()->cdb);
+  uint32_t buffer_offset = block::ReadFromBigEndian24(scsi_cdb->buffer_offset);
+  uint32_t length = block::ReadFromBigEndian24(scsi_cdb->allocation_length);
+
+  std::vector<uint8_t> data_buffer(length);
+  if (zx_status_t status =
+          mock_device.ReadFromDeviceBuffer(lun, data_buffer.data(), buffer_offset, length);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  if (zx_status_t status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
+      status != ZX_OK) {
+    FDF_LOG(ERROR, "UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
+    return zx::error(status);
+  }
+  return zx::ok(std::move(data_buffer));
+}
+
+zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultWriteBufferHandler(
+    UfsMockDevice &mock_device, CommandUpiuData &command_upiu, ResponseUpiuData &response_upiu,
+    cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upius) {
+  uint8_t lun = command_upiu.header.lun;
+  ScsiCommandUpiu writebuffer_command(command_upiu);
+
+  scsi::WriteBufferCDB *scsi_cdb =
+      reinterpret_cast<scsi::WriteBufferCDB *>(writebuffer_command.GetData<CommandUpiuData>()->cdb);
+  uint32_t buffer_offset = block::ReadFromBigEndian24(scsi_cdb->buffer_offset);
+  uint32_t length = block::ReadFromBigEndian24(scsi_cdb->parameter_list_length);
+
+  std::vector<uint8_t> data_buffer(length);
+
+  ZX_DEBUG_ASSERT(command_upiu.header_flags_w());
+  if (zx_status_t status = CopyPhysicalRegionToBuffer(mock_device, data_buffer, prdt_upius);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  if (zx_status_t status =
+          mock_device.WriteToDeviceBuffer(lun, data_buffer.data(), buffer_offset, length);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
   return zx::ok(std::move(data_buffer));
 }
 

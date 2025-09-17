@@ -38,6 +38,7 @@ enum class Opcode : uint8_t {
   PRE_FETCH_10 = 0x34,
   SYNCHRONIZE_CACHE_10 = 0x35,
   WRITE_BUFFER = 0x3B,
+  READ_BUFFER = 0x3C,
   UNMAP = 0x42,
   MODE_SELECT_10 = 0x55,
   MODE_SENSE_10 = 0x5A,
@@ -337,7 +338,7 @@ static_assert(sizeof(Mode6ParameterHeader) == 4, "Mode Sense 6 parameters must b
 struct ModeSense10CDB {
   Opcode opcode;
   // dbd (4) is 'LLBAA (Long LBA accepted)'
-  // dbd (3) is 'DBD (Disalbe block descriptors)'
+  // dbd (3) is 'DBD (Disable block descriptors)'
   uint8_t llbaa_dbd;
   // pc_and_page_code (7 downto 6) is 'PC (Page control)'
   // pc_and_page_code (5 downto 0) is 'PAGE CODE'
@@ -534,7 +535,7 @@ static_assert(sizeof(Read16CDB) == 16, "Read 16 CDB must be 16 bytes");
 struct Verify10CDB {
   Opcode opcode;
   // vrprotect_and_dpo_and_bytchk(7 downto 5) is 'VRPROTECT (Verify Protect)'
-  // vrprotect_and_dpo_and_bytchk(4) is 'DPO (Disble Page Out)'
+  // vrprotect_and_dpo_and_bytchk(4) is 'DPO (Disable Page Out)'
   // vrprotect_and_dpo_and_bytchk (2 downto 1) is 'BYTCHK (Byte Check)'
   uint8_t vrprotect_and_dpo_and_bytchk;
   uint32_t logical_block_address;
@@ -790,6 +791,21 @@ struct WriteBufferCDB {
 } __PACKED;
 
 static_assert(sizeof(WriteBufferCDB) == 10, "Write Buffer CDB must be 10 bytes");
+
+// SPC-4 Revision 37, section 6.18 "READ BUFFER command".
+struct ReadBufferCDB {
+  Opcode opcode;
+  uint8_t mod;
+  uint8_t buffer_id;
+  uint8_t buffer_offset[3];
+  uint8_t allocation_length[3];
+  uint8_t control;
+
+  DEF_SUBFIELD(mod, 4, 0, mode);
+  DEF_SUBFIELD(mod, 7, 5, mode_specific);
+} __PACKED;
+
+static_assert(sizeof(ReadBufferCDB) == 10, "Read Buffer CDB must be 10 bytes");
 
 // SBC-3 Revision 36, section 5.3 "FORMAT UNIT command".
 struct FormatUnitCDB {
@@ -1049,6 +1065,14 @@ class Controller {
   void SetExpectCheckConditionOrUnitAttention(bool value) {
     expect_check_condition_or_unit_attention_ = value;
   }
+
+  // Reads data from the device's internal buffer, used for diagnostics or firmware retrieval.
+  zx_status_t ReadBuffer(uint8_t target, uint16_t lun, uint8_t mod, uint8_t buffer_id,
+                         uint32_t buffer_offset, iovec data);
+
+  // Writes data to the device's internal buffer, used for firmware upload or buffer initialization
+  zx_status_t WriteBuffer(uint8_t target, uint16_t lun, uint8_t mod, uint8_t buffer_id,
+                          uint32_t buffer_offset, iovec data);
 
   // Logical units that were bound using ScanAndBindLogicalUnits().
   const std::unordered_map<uint8_t /*target*/,

@@ -1,16 +1,17 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 #include <endian.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
 #include <zircon/status.h>
 
+#include <cstdint>
 #include <tuple>
 
 #include <safemath/safe_math.h>
 
+#include "src/devices/block/lib/common/include/common.h"
 namespace scsi {
 
 zx_status_t Controller::TestUnitReady(uint8_t target, uint16_t lun) {
@@ -551,6 +552,48 @@ zx::result<> Controller::ScsiComplete(StatusMessage status_message,
   }
 
   return zx::make_result(post_process.status_value());
+}
+
+zx_status_t Controller::ReadBuffer(uint8_t target, uint16_t lun, uint8_t mod, uint8_t buffer_id,
+                                   uint32_t buffer_offset, iovec data) {
+  ReadBufferCDB cdb = {};
+  cdb.opcode = Opcode::READ_BUFFER;
+  cdb.mod = mod;
+  cdb.buffer_id = buffer_id;
+  block::WriteToBigEndian24(buffer_offset, cdb.buffer_offset);
+  if (data.iov_len > UINT32_MAX) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  block::WriteToBigEndian24(static_cast<uint32_t>(data.iov_len), cdb.allocation_length);
+
+  zx_status_t status = ExecuteCommandSync(target, lun, {.iov_base = &cdb, .iov_len = sizeof(cdb)},
+                                          /*is_write=*/false, data);
+  if (status != ZX_OK) {
+    FDF_LOGL(DEBUG, driver_logger(), "READ BUFFER failed for target %u, lun %u: %s", target, lun,
+             zx_status_get_string(status));
+  }
+  return status;
+}
+
+zx_status_t Controller::WriteBuffer(uint8_t target, uint16_t lun, uint8_t mod, uint8_t buffer_id,
+                                    uint32_t buffer_offset, iovec data) {
+  WriteBufferCDB cdb = {};
+  cdb.opcode = Opcode::WRITE_BUFFER;
+  cdb.mod = mod;
+  cdb.buffer_id = buffer_id;
+  block::WriteToBigEndian24(buffer_offset, cdb.buffer_offset);
+  if (data.iov_len > UINT32_MAX) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  block::WriteToBigEndian24(static_cast<uint32_t>(data.iov_len), cdb.parameter_list_length);
+
+  zx_status_t status = ExecuteCommandSync(target, lun, {.iov_base = &cdb, .iov_len = sizeof(cdb)},
+                                          /*is_write=*/true, data);
+  if (status != ZX_OK) {
+    FDF_LOGL(DEBUG, driver_logger(), "WRITE BUFFER failed for target %u, lun %u: %s", target, lun,
+             zx_status_get_string(status));
+  }
+  return status;
 }
 
 }  // namespace scsi

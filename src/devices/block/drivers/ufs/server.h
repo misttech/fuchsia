@@ -5,13 +5,11 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_SERVER_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_SERVER_H_
 
-#include <fidl/fuchsia.hardware.ufs/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
+#include <fidl/fuchsia.hardware.ufs/cpp/wire.h>
 
 #include <vector>
 
 #include "src/devices/block/drivers/ufs/ufs.h"
-#include "src/devices/block/drivers/ufs/upiu/upiu_transactions.h"
 
 namespace ufs {
 
@@ -37,6 +35,9 @@ class UfsServer : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
   void SendUicCommand(SendUicCommandRequestView request,
                       SendUicCommandCompleter::Sync &completer) override;
   void Request(RequestRequestView request, RequestCompleter::Sync &completer) override;
+
+  void ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync &completer) override;
+  void WriteBuffer(WriteBufferRequestView request, WriteBufferCompleter::Sync &completer) override;
 
  private:
   template <typename ResponseUpiu>

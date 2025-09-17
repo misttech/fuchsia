@@ -5,6 +5,7 @@
 library fuchsia.hardware.ufs;
 
 using zx;
+using fuchsia.hardware.scsi;
 
 /// Maximum supported size of the UPIU (UFS Protocol Information Unit)
 /// This includes the 12-byte basic header segment, transaction-specific fields,
@@ -13,6 +14,7 @@ const MAX_UPIU_SIZE uint32 = 65600;
 
 @discoverable
 closed protocol Ufs {
+    compose fuchsia.hardware.scsi.Scsi;
     /// Retrieves and returns the UFS Descriptor.
     strict ReadDescriptor(struct {
         descriptor Descriptor;

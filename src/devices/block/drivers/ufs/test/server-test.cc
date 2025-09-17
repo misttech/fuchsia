@@ -9,6 +9,7 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/vector_view.h>
 #include <lib/fidl/cpp/wire/wire_types.h>
+#include <lib/fzl/owned-vmo-mapper.h>
 #include <zircon/errors.h>
 
 #include <cstdint>
@@ -425,6 +426,198 @@ TEST_F(ServerTest, SendUicCommandWithUnsupportedOpcode) {
     const fit::result response = result.value();
     ASSERT_TRUE(response.is_error());
     ASSERT_EQ(response.error_value(), ZX_ERR_NOT_SUPPORTED);
+  });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, ReadBuffer) {
+  const uint8_t kTestLun = 0;
+  uint32_t offset = 0;
+
+  // Write test data to the mock device buffer
+  char buf[kMockBlockSize];
+  std::memset(buf, 0xf0, sizeof(buf));
+  mock_device_.WriteToDeviceBuffer(kTestLun, buf, offset, sizeof(buf));
+
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
+      [client_end = GetClient(), &mock_device = mock_device_]() {
+        uint32_t buffer_offset = 1024;
+        uint32_t length = 256;
+
+        fzl::OwnedVmoMapper mapper;
+        ASSERT_OK(mapper.CreateAndMap(zx_system_get_page_size(), "read-buffer-test-vmo"));
+        zx::vmo dup;
+        ASSERT_OK(mapper.vmo().duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+        const fidl::WireResult result =
+            fidl::WireCall(client_end)
+                ->ReadBuffer(0, fuchsia_hardware_scsi::wire::ReadBufferMode::kData, 0,
+                             buffer_offset, length, std::move(dup));
+        ASSERT_TRUE(result.ok());
+        const fit::result response = result.value();
+        ASSERT_TRUE(response.is_ok());
+
+        // Reads data from mock_device and compares it to the mapper.
+        char buf[kMockBlockSize];
+        mock_device.ReadFromDeviceBuffer(0, buf, buffer_offset, length);
+        ASSERT_EQ(memcmp(mapper.start(), buf, length), 0);
+      });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, WriteBuffer) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
+      [client_end = GetClient(), &mock_device = mock_device_]() {
+        uint32_t buffer_offset = 0;
+        uint32_t length = 1024;
+        zx::vmo vmo;
+        ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+        char write_buf[kMockBlockSize];
+        std::memset(write_buf, 0xf0, sizeof(write_buf));
+        vmo.write(&write_buf, 0, length);
+
+        const fidl::WireResult result =
+            fidl::WireCall(client_end)
+                ->WriteBuffer(0, fuchsia_hardware_scsi::wire::WriteBufferMode::kData, 0,
+                              buffer_offset, length, std::move(vmo));
+        ASSERT_TRUE(result.ok());
+        const fit::result response = result.value();
+        ASSERT_TRUE(response.is_ok());
+
+        char buf[kMockBlockSize];
+        mock_device.ReadFromDeviceBuffer(0, buf, buffer_offset, length);
+        ASSERT_EQ(memcmp(&write_buf, buf, length), 0);
+      });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, ReadWirteBufferOutOfRange) {
+  const uint8_t kTestLun = 0;
+  uint32_t offset = 0;
+
+  // Write test data to the mock device buffer
+  char buf[kMockBlockSize];
+  std::memset(buf, 0xf0, sizeof(buf));
+  mock_device_.WriteToDeviceBuffer(kTestLun, buf, offset, sizeof(buf));
+
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    uint32_t buffer_offset = kMaxDeviceBufferSize;
+    uint32_t length = 256;
+
+    // Read buffer
+    {
+      fzl::OwnedVmoMapper mapper;
+      ASSERT_OK(mapper.CreateAndMap(zx_system_get_page_size(), "read-buffer-test-vmo"));
+      zx::vmo dup;
+      ASSERT_OK(mapper.vmo().duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)
+              ->ReadBuffer(0, fuchsia_hardware_scsi::wire::ReadBufferMode::kData, 0, buffer_offset,
+                           length, std::move(dup));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
+    }
+
+    // Write buffer
+    {
+      zx::vmo vmo;
+      ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+      char write_buf[kMockBlockSize];
+      std::memset(write_buf, 0xf0, sizeof(write_buf));
+      vmo.write(&write_buf, 0, length);
+
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)
+              ->WriteBuffer(0, fuchsia_hardware_scsi::wire::WriteBufferMode::kData, 0,
+                            buffer_offset, length, std::move(vmo));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
+    }
+  });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, ReadWriteBufferInvalidVmoSize) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    uint32_t buffer_offset = 0;
+    uint32_t length = kMockBlockSize * 2;
+
+    // Read buffer with invalid vmo size
+    {
+      fzl::OwnedVmoMapper mapper;
+      ASSERT_OK(mapper.CreateAndMap(kMockBlockSize, "read-buffer-test-vmo"));
+      zx::vmo dup;
+      ASSERT_OK(mapper.vmo().duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)
+              ->ReadBuffer(0, fuchsia_hardware_scsi::wire::ReadBufferMode::kData, 0, buffer_offset,
+                           length, std::move(dup));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_EQ(response.error_value(), ZX_ERR_OUT_OF_RANGE);
+    }
+
+    // Write buffer with invalid vmo size
+    {
+      zx::vmo vmo;
+      ASSERT_OK(zx::vmo::create(kMockBlockSize, 0, &vmo));
+
+      char write_buf[kMockBlockSize * 2];
+      std::memset(write_buf, 0xf0, sizeof(write_buf));
+      vmo.write(&write_buf, 0, length);
+
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)
+              ->WriteBuffer(0, fuchsia_hardware_scsi::wire::WriteBufferMode::kData, 0,
+                            buffer_offset, length, std::move(vmo));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_EQ(response.error_value(), ZX_ERR_OUT_OF_RANGE);
+    }
+  });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, ReadWriteBufferWithInvalidLun) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    uint32_t buffer_offset = 0;
+    uint32_t length = kMockBlockSize;
+    zx::vmo vmo;
+    ASSERT_OK(zx::vmo::create(kMockBlockSize, 0, &vmo));
+
+    const uint8_t kTestLun = 1;
+    // Request to write buffer with invalid lun
+    {
+      char write_buf[kMockBlockSize];
+      std::memset(write_buf, 0xf0, sizeof(write_buf));
+      vmo.write(&write_buf, 0, length);
+
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)
+              ->WriteBuffer(kTestLun, fuchsia_hardware_scsi::wire::WriteBufferMode::kData, 0,
+                            buffer_offset, length, std::move(vmo));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
+    }
+
+    // Request to read buffer with invalid lun
+    {
+      fzl::OwnedVmoMapper mapper;
+      ASSERT_OK(mapper.CreateAndMap(zx_system_get_page_size(), "read-buffer-test-vmo"));
+      zx::vmo dup;
+      ASSERT_OK(mapper.vmo().duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)
+              ->ReadBuffer(kTestLun, fuchsia_hardware_scsi::wire::ReadBufferMode::kData, 0,
+                           buffer_offset, length, std::move(dup));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
+    }
   });
   ASSERT_OK(result.status_value());
 }

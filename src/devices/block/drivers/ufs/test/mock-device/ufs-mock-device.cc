@@ -10,6 +10,28 @@
 
 namespace ufs {
 namespace ufs_mock_device {
+zx_status_t UfsDeviceBuffer::Write(const void *buf, uint32_t offset, uint32_t length) {
+  if (offset >= data_buffer_.size() || length > data_buffer_.size() - offset) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+
+  std::memcpy(data_buffer_.data() + offset, buf, length);
+  return ZX_OK;
+}
+
+zx_status_t UfsDeviceBuffer::Read(void *buf, uint32_t offset, uint32_t length) {
+  if (offset >= data_buffer_.size() || length > data_buffer_.size() - offset) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+
+  std::memcpy(buf, data_buffer_.data() + offset, length);
+  return ZX_OK;
+}
+
+void UfsDeviceBuffer::SetBufferSize(const size_t size) {
+  ZX_DEBUG_ASSERT(size <= kMaxDeviceBufferSize);
+  data_buffer_.resize(size);
+}
 
 UfsLogicalUnit::UfsLogicalUnit() {
   unit_desc_ = UnitDescriptor{
@@ -30,6 +52,7 @@ zx_status_t UfsLogicalUnit::Enable(uint8_t lun, uint64_t block_count) {
   unit_desc_.qLogicalBlockCount = htobe64(block_count);
   unit_desc_.bLUEnable = 0x01;
   buffer_.resize(kMockBlockSize * block_count);
+  device_buffer_.SetBufferSize(kMaxDeviceBufferSize);
   return ZX_OK;
 }
 
@@ -61,6 +84,20 @@ zx_status_t UfsLogicalUnit::BufferRead(void *buf, size_t block_count, off_t bloc
 
   std::memcpy(buf, buffer_.data() + offset, count);
   return ZX_OK;
+}
+
+zx_status_t UfsLogicalUnit::WriteToDeviceBuffer(const void *buf, uint32_t offset, uint32_t length) {
+  if (unit_desc_.bLUEnable == 0) {
+    return ZX_ERR_UNAVAILABLE;
+  }
+  return device_buffer_.Write(buf, offset, length);
+}
+
+zx_status_t UfsLogicalUnit::ReadFromDeviceBuffer(void *buf, uint32_t offset, uint32_t length) {
+  if (unit_desc_.bLUEnable == 0) {
+    return ZX_ERR_UNAVAILABLE;
+  }
+  return device_buffer_.Read(buf, offset, length);
 }
 
 void UfsMockDevice::Init(std::unique_ptr<zx::interrupt> irq) {
@@ -195,5 +232,22 @@ zx_status_t UfsMockDevice::BufferRead(uint8_t lun, void *buf, size_t block_count
 
   return logical_units_[lun].BufferRead(buf, block_count, block_offset);
 }
+
+zx_status_t UfsMockDevice::WriteToDeviceBuffer(uint8_t lun, const void *buf, uint32_t offset,
+                                               uint32_t length) {
+  if (lun >= logical_units_.size()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return logical_units_[lun].WriteToDeviceBuffer(buf, offset, length);
+}
+
+zx_status_t UfsMockDevice::ReadFromDeviceBuffer(uint8_t lun, void *buf, uint32_t offset,
+                                                uint32_t length) {
+  if (lun >= logical_units_.size()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return logical_units_[lun].ReadFromDeviceBuffer(buf, offset, length);
+}
+
 }  // namespace ufs_mock_device
 }  // namespace ufs
