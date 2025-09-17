@@ -91,6 +91,10 @@ $udev_rules = @(EOF/L)
   ATTRS{idProduct}=="a023", GOTO="zircon_net_name"
   # CDC Ethernet & ADB
   ATTRS{idProduct}=="a026", GOTO="zircon_net_name"
+  # CDC Ethernet & USB VSOCK bridge
+  ATTRS{idProduct}=="a029", GOTO="zircon_net_name"
+  # CDC Ethernet & ADB & USB VSOCK bridge
+  ATTRS{idProduct}=="a02b", GOTO="zircon_net_name"
   GOTO="zircon_end"
 
   # Set the interface name based on the MAC
