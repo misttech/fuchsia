@@ -14,6 +14,11 @@
     ],
     capabilities: [
         {
+            config: "fuchsia.gpu.test.SupportSysmemYuv",
+            type: "bool",
+            value: true,
+        },
+        {
             config: "fuchsia.gpu.test.SupportSysmemYv12",
             type: "bool",
             value: true,
@@ -21,9 +26,14 @@
     ],
     offer: [
         {
+            config: "fuchsia.gpu.test.SupportSysmemYuv",
             from: "self",
             to: "#test",
+        },
+        {
             config: "fuchsia.gpu.test.SupportSysmemYv12",
+            from: "self",
+            to: "#test",
         },
     ],
     expose: [

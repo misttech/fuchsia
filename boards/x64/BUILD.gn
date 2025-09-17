@@ -156,11 +156,15 @@ board_input_bundle("main_bundle") {
   ]
   base_packages = [
     "//src/graphics/bin/vulkan_loader",
+
+    # Goldfish devices are provided by femu/aemu.
     "//src/graphics/lib/goldfish-vulkan/gnbuild:goldfish",
+
+    # Lavapipe used in some scenarios
+    "//src/graphics/lib/lavapipe-vulkan:lavapipe_pkg",
 
     # Vulkan ICD for virtio-gpu
     "//src/graphics/drivers/gfxstream-vulkan",
-    "//src/graphics/drivers/intel-gen/icd:libvulkan_intel_gen",
   ]
   version = build_info_version
 }

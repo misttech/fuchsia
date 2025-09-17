@@ -20,6 +20,8 @@ class IcdList {
 
   void Add(std::shared_ptr<IcdComponent> component);
 
+  bool AllIcdsFinishedOrFailed();
+
   // Updates information about which component is active whenever a component changes state.
   bool UpdateCurrentComponent();
 

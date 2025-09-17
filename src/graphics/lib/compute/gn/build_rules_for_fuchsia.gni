@@ -162,12 +162,10 @@ template("graphics_compute_test_rule") {
     forward_variables_from(invoker, "*")
     test_package = true
     if (defined(invoker.needs_vulkan) && invoker.needs_vulkan) {
+      # Intel NUC not tested because of switch to lavapipe.
       test_environments = [
         astro_env,
-        atlas_env,
         nelson_env,
-        nuc7_env,
-        nuc11_env,
         sherlock_env,
         vim3_env,
       ]

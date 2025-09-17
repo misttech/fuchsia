@@ -64,7 +64,7 @@ class LoaderUnittest : public ::testing::Test {
   static Config GetDefaultConfig() {
     Config config;
     config.allow_goldfish_icd() = true;
-    config.allow_lavapipe_icd() = true;
+    config.allow_lavapipe_icd() = false;
     config.allow_magma_icds() = true;
     return config;
   }
@@ -226,7 +226,7 @@ TEST_F(LoaderUnittest, LavapipeDeviceAllowed) {
   config().allow_magma_icds() = false;
   zx_status_t status = app()->InitDeviceWatcher();
   ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
-  EXPECT_EQ(1U, app()->device_count());
+  RunLoopUntil([this] { return app()->device_count() == 1; });
 }
 
 TEST_F(LoaderUnittest, LavapipeDeviceDisallowed) {

@@ -17,6 +17,15 @@ void IcdList::Add(std::shared_ptr<IcdComponent> component) {
   UpdateCurrentComponent();
 }
 
+bool IcdList::AllIcdsFinishedOrFailed() {
+  for (auto& icd : components_) {
+    if (icd->stage() == IcdComponent::LookupStages::kStarted) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool IcdList::UpdateCurrentComponent() {
   for (auto& icd : components_) {
     // Wait for earlier components to start before checking later components.

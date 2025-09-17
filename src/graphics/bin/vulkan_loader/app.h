@@ -132,8 +132,7 @@ class LoaderApp {
   fbl::RefPtr<fs::PseudoDir> trusted_device_root_node_;
   fbl::RefPtr<fs::PseudoDir> manifest_fs_root_node_;
 
-  std::unique_ptr<fsl::DeviceWatcher> gpu_watcher_;
-  std::unique_ptr<fsl::DeviceWatcher> goldfish_watcher_;
+  std::vector<std::unique_ptr<fsl::DeviceWatcher>> device_watchers_;
 
   std::vector<std::unique_ptr<GpuDevice>> devices_;
 
@@ -153,6 +152,8 @@ class LoaderApp {
   bool allow_goldfish_icd_ = false;
   bool allow_lavapipe_icd_ = false;
   std::string lavapipe_icd_url_;
+
+  bool lavapipe_added_ = false;
 };
 
 #endif  // SRC_GRAPHICS_BIN_VULKAN_LOADER_APP_H_

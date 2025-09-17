@@ -150,6 +150,13 @@ void ValidateIcd(fidl::WireSyncClient<fuchsia_vulkan_loader::Loader>& loader,
 
   std::string library_path = manifest_doc["ICD"].GetObject()["library_path"].GetString();
 
+  // TODO(b/434062283) - lavapipe depends on libfdio.so because of prebuilt LLVM libraries.
+  // Since lavapipe is eng-only, we can ignore its lack of conformance.
+  // String may have a prefix like 0-
+  if (library_path.ends_with("libvulkan_lavapipe.so")) {
+    GTEST_SKIP();
+  }
+
   auto res = loader->Get(fidl::StringView::FromExternal(library_path));
   ASSERT_EQ(res.status(), ZX_OK);
   zx::vmo vmo = std::move(res->lib);

@@ -29,6 +29,7 @@ zx::result<fidl::ClientEnd<fuchsia_component::Realm>> GetRealmClient() {
   }
   return zx::ok(std::move(endpoints->client));
 }
+
 }  // namespace
 
 LoaderApp::LoaderApp(component::OutgoingDirectory* outgoing_dir, async_dispatcher_t* dispatcher,
@@ -192,9 +193,10 @@ static void CheckForDirectory(const char* path) {
     return;
   }
 
-  auto result = fidl::WireCall(dir.value())->Watch(fio::wire::WatchMask::kAdded | fio::wire::WatchMask::kExisting |
-                  fio::wire::WatchMask::kIdle,
-              0, std::move(endpoints->server));
+  auto result = fidl::WireCall(dir.value())
+                    ->Watch(fio::wire::WatchMask::kAdded | fio::wire::WatchMask::kExisting |
+                                fio::wire::WatchMask::kIdle,
+                            0, std::move(endpoints->server));
   if (!result.ok()) {
     FX_LOGS(ERROR) << "Calling Watch failed " << zx_status_get_string(result.status());
     return;
@@ -212,7 +214,7 @@ zx_status_t LoaderApp::InitDeviceWatcher() {
   if (allow_magma_icds_) {
     CheckForDirectory("/svc/fuchsia.gpu.magma.Service");
     auto gpu_watcher_token = GetPendingActionToken();
-    gpu_watcher_ = fsl::DeviceWatcher::CreateWithIdleCallback(
+    auto gpu_watcher = fsl::DeviceWatcher::CreateWithIdleCallback(
         "/svc/fuchsia.gpu.magma.Service",
         [this](const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) {
           // TODO(b/435953902) - remove this logging
@@ -227,16 +229,19 @@ zx_status_t LoaderApp::InitDeviceWatcher() {
         [gpu_watcher_token = std::move(gpu_watcher_token), app = this]() {
           // Idle callback and gpu_watcher_token will be destroyed on idle.
           // TODO(b/435953902) - remove this logging
-          FX_LOGS(INFO) << "*** Vulkan loader idle callback with magma device count: " << app->devices_.size();
+          FX_LOGS(INFO) << "*** Vulkan loader idle callback with magma device count: "
+                        << app->devices_.size();
         },
         dispatcher_);
-    if (!gpu_watcher_)
+    if (!gpu_watcher)
       return ZX_ERR_INTERNAL;
+
+    device_watchers_.emplace_back(std::move(gpu_watcher));
   }
 
   if (allow_goldfish_icd_) {
     auto goldfish_watcher_token = GetPendingActionToken();
-    goldfish_watcher_ = fsl::DeviceWatcher::CreateWithIdleCallback(
+    auto goldfish_watcher = fsl::DeviceWatcher::CreateWithIdleCallback(
         "/dev/class/goldfish-pipe",
         [this](const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) {
           if (filename == ".") {
@@ -251,15 +256,15 @@ zx_status_t LoaderApp::InitDeviceWatcher() {
           // Idle callback and goldfish_watcher_token will be destroyed on idle.
         },
         dispatcher_);
-    if (!goldfish_watcher_)
+    if (!goldfish_watcher)
       return ZX_ERR_INTERNAL;
+
+    device_watchers_.emplace_back(std::move(goldfish_watcher));
   }
 
-  if (allow_lavapipe_icd_) {
-    auto device = LavapipeDevice::Create(this, "0", &devices_node_, lavapipe_icd_url_);
-    if (device) {
-      devices_.emplace_back(std::move(device));
-    }
+  if (allow_lavapipe_icd_ && device_watchers_.empty()) {
+    // Ensure Lavapipe is added.
+    auto lavapipe_token = GetPendingActionToken();
   }
 
   return ZX_OK;
@@ -301,6 +306,7 @@ void LoaderApp::NotifyIcdsChangedLocked() {
   if (icd_notification_pending_)
     return;
   icd_notification_pending_ = true;
+
   async::PostTask(dispatcher_, [this]() { this->NotifyIcdsChangedOnMainThread(); });
 }
 
@@ -310,10 +316,31 @@ void LoaderApp::NotifyIcdsChangedOnMainThread() {
     std::lock_guard lock(pending_action_mutex_);
     icd_notification_pending_ = false;
   }
+
   bool have_icd = false;
   for (auto& device : devices_) {
     have_icd |= device->icd_list().UpdateCurrentComponent();
   }
+
+  // We load Lavapipe only if all devices have failed to load an ICD;
+  // otherwise, we don't load Lavapipe because we aren't controlling the order that physical
+  // devices are enumerated to clients, and some clients just choose the first device.
+  if (!have_icd && !lavapipe_added_ && allow_lavapipe_icd_) {
+    for (auto& device : devices_) {
+      if (!device->icd_list().AllIcdsFinishedOrFailed()) {
+        // Wait for ICD components to finish loading.
+        return;
+      }
+    }
+    // Creating the lavapipe device will trigger another ICDs-changed notification.
+    auto device = LavapipeDevice::Create(this, "0", &devices_node_, lavapipe_icd_url_);
+    if (device) {
+      devices_.emplace_back(std::move(device));
+      lavapipe_added_ = true;
+      return;
+    }
+  }
+
   if (have_icd) {
     inspector_.Health().Ok();
   }

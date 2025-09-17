@@ -1334,6 +1334,12 @@ class DisplayCompositorFallbackParameterizedPixelTest
 // display's screen, so that the left half is blue and the right half is red.
 VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  if (GetParam() == fuchsia::images2::PixelFormat::NV12 ||
+      GetParam() == fuchsia::images2::PixelFormat::I420) {
+    // TODO(https://fxbug.dev/321072153)
+    SKIP_TEST_IF_ESCHER_USES_DEVICE(SoftwareGpu);
+  }
+
   auto display = display_manager_->default_display();
   auto display_coordinator = display_manager_->default_display_coordinator();
 

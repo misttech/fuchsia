@@ -23,11 +23,6 @@
     ],
     capabilities: [
         {
-            config: "fuchsia.gpu.test.SupportSysmemYuv",
-            type: "bool",
-            value: false,
-        },
-        {
             config: "fuchsia.gpu.test.SupportSysmemRenderableLinear",
             type: "bool",
             value: true,
@@ -39,11 +34,6 @@
         },
     ],
     offer: [
-        {
-            config: "fuchsia.gpu.test.SupportSysmemYuv",
-            from: "self",
-            to: "#test",
-        },
         {
             config: "fuchsia.gpu.test.SupportSysmemRenderableLinear",
             from: "self",

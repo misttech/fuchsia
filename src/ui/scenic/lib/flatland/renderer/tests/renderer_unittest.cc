@@ -2212,6 +2212,9 @@ class VulkanRendererParameterizedYuvTest
 // rectangle, with a fuchsia texture. The render target and the rectangle are 32x32.
 VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  // TODO(https://fxbug.dev/321072153)
+  SKIP_TEST_IF_ESCHER_USES_DEVICE(SoftwareGpu);
+
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
 
   // Create a pair of tokens for the Image allocation.
