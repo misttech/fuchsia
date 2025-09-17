@@ -8,20 +8,22 @@ use camino::Utf8PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub fn path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(gen).into();
+pub fn path_schema(r#gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(r#gen).into();
     schema.format = Some("Utf8PathBuf".to_owned());
     schema.into()
 }
 
-pub fn vec_path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <Vec<String>>::json_schema(gen).into();
+pub fn vec_path_schema(r#gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <Vec<String>>::json_schema(r#gen).into();
     schema.format = Some("Vec<Utf8PathBuf>".to_owned());
     schema.into()
 }
 
-pub fn option_path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <Option<String>>::json_schema(gen).into();
+pub fn option_path_schema(
+    r#gen: &mut schemars::r#gen::SchemaGenerator,
+) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <Option<String>>::json_schema(r#gen).into();
     schema.format = Some("Option<Utf8PathBuf>".to_owned());
     schema.into()
 }
