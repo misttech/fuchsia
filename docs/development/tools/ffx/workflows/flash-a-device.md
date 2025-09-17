@@ -103,14 +103,34 @@ To flash a Fuchsia image on your device, do the following:
 5. Flash the device:
 
    ```posix-terminal
-   ffx target flash <FUCHSIA_IMAGE>
+   ffx target flash -b <FUCHSIA_IMAGE>
    ```
 
    Replace `FUCHSIA_IMAGE` with an archive file that contains
    a Fuchsia prebuilt image and its flash manifest file, for example:
 
    ```none {:.devsite-disable-click-to-copy}
-   $ ffx target flash ~/Downloads/fuchsia-image-example.zip
+   $ ffx target flash -b ~/Downloads/fuchsia-image-example.zip
+   ```
+
+   Once the flashing is finished, the device reboots and starts running
+   Fuchsia.
+
+## Flash the device using a product bundle from fx create-pb-zip {:#flash-pb-zip}
+
+To flash a product bundle (`.zip`) created from running the `fx create-pb-zip`
+command in a Fuchsia source checkout setup, run the `ffx target flash` command
+with the `-b` flag:
+
+   ```posix-terminal
+   ffx target flash -b <FUCHSIA_IMAGE>
+   ```
+
+   Replace `FUCHSIA_IMAGE` with the generated product bundle zip file, for
+   example:
+
+   ```none {:.devsite-disable-click-to-copy}
+   $ ffx target flash -b pb.zip
    ```
 
    Once the flashing is finished, the device reboots and starts running
