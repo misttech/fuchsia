@@ -864,20 +864,19 @@ mod tests {
     use super::*;
     use assembly_images_config::BoardFilesystemConfig;
     use assembly_named_file_map::SourceMerklePair;
-    use lazy_static::lazy_static;
     use std::io::Write;
+    use std::sync::LazyLock;
     use tempfile::TempDir;
     use utf8_path::path_relative_from_current_dir;
 
-    lazy_static! {
-        pub(crate) static ref BOARD_INFORMATION_FOR_TESTS: BoardConfig = BoardConfig {
+    pub(crate) static BOARD_INFORMATION_FOR_TESTS: LazyLock<BoardConfig> =
+        LazyLock::new(|| BoardConfig {
             name: "Test Board".into(),
             provided_features: vec![],
             input_bundles: Default::default(),
             filesystems: BoardFilesystemConfig::default(),
             ..Default::default()
-        };
-    }
+        });
 
     #[test]
     fn test_config_builder() {

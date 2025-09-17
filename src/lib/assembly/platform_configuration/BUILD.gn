@@ -89,7 +89,6 @@ rustc_library("platform_configuration") {
     "//src/lib/assembly/util",
     "//src/lib/diagnostics/selectors",
     "//src/lib/utf8_path",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:tempfile",
   ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
