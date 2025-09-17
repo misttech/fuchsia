@@ -7,6 +7,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
+use xattr;
 
 /// Copy a file from `src` to `dst`, using hardlinks if possible, and silently
 /// falling back to a "slow" copy (using `std::fs::copy()`) if the hardlink
@@ -37,8 +38,21 @@ fn fast_copy_impl(src: &Path, dst: &Path) -> Result<()> {
         // falling back to a slow copy if it can't be copied.
         std::fs::copy(&real_path, dst)
             .map(|_| ())
-            .with_context(|| format!("copying {} to {}", src.display(), dst.display()))
+            .with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
+        // Also copy the extended attributes (such as hashes used by build systems)
+        _copy_xattrs(&real_path, dst);
+        Ok(())
     })
+}
+
+fn _copy_xattrs(src: &Path, dst: &Path) {
+    if let Ok(xattr_names) = xattr::list(&src) {
+        for xattr_name in xattr_names {
+            if let Ok(Some(value)) = xattr::get(&src, &xattr_name) {
+                let _ = xattr::set(dst, &xattr_name, &value);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -166,5 +180,23 @@ mod tests_unix {
 
         let result = fast_copy(&symlink, &dst);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_copy_xattrs() {
+        let temp_dir = TempDir::new().unwrap();
+        let src = temp_dir.path().join("src.txt");
+        let dst = temp_dir.path().join("dst.txt");
+
+        std::fs::write(&src, "some text").unwrap();
+        std::fs::write(&dst, "some text").unwrap();
+
+        let name = std::ffi::OsString::from("user.fuchsia.test");
+        let value = "some_value".as_bytes().to_vec();
+        xattr::set(&src, &name, &value).unwrap();
+
+        _copy_xattrs(&src, &dst);
+
+        assert_eq!(Some(value), xattr::get(&dst, &name).unwrap());
     }
 }

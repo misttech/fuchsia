@@ -1278,6 +1278,12 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("xattr") {
+    public_deps = [ ":xattr-v0_2_3" ]
+  }
+}
+
 group("xml-rs") {
   public_deps = [ ":xml-rs-v0_8_26" ]
 }

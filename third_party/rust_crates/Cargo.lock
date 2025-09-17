@@ -1807,6 +1807,7 @@ dependencies = [
  "walkdir",
  "which",
  "x509-cert",
+ "xattr",
  "xml-rs",
  "zerocopy 0.8.26-alpha",
  "zeroize",
