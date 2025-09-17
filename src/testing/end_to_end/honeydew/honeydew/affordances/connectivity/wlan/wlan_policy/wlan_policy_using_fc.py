@@ -46,6 +46,8 @@ _CLIENT_LISTENER_PROXY = FidlEndpoint(
     "core/wlancfg", "fuchsia.wlan.policy.ClientListener"
 )
 
+DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = 10
+
 
 async def collect_network_config_iterator(
     iterator: (f_wlan_policy.NetworkConfigIteratorClient),
@@ -395,6 +397,8 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet
+            TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+            per network.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -428,6 +432,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet
+            TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -444,24 +449,28 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         )
 
         try:
-            res = await self._client_controller.proxy.remove_network(
-                config=f_wlan_policy.NetworkConfig(
-                    id_=f_wlan_policy.NetworkIdentifier(
-                        ssid=list(target_ssid.encode("utf-8")),
-                        type_=security_type.to_fidl(),
+            res = await asyncio.wait_for(
+                self._client_controller.proxy.remove_network(
+                    config=f_wlan_policy.NetworkConfig(
+                        id_=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(target_ssid.encode("utf-8")),
+                            type_=security_type.to_fidl(),
+                        ),
+                        credential=Credential.from_password(
+                            target_pwd
+                        ).to_fidl(),
                     ),
-                    credential=Credential.from_password(target_pwd).to_fidl(),
                 ),
+                timeout=DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
             )
             if res.err:
                 raise wlan_errors.HoneydewWlanError(
-                    "ClientController.SaveNetworks() NetworkConfigChangeError "
-                    f"{res.err}"
+                    f"ClientController.RemoveNetwork() error {res.err}"
                 )
         except ZxStatus as status:
             raise wlan_errors.HoneydewWlanError(
-                f"ClientController.SaveNetwork() error {status}"
-            ) from status
+                f"ClientController.RemoveNetwork() ZxStatus error {status}"
+            )
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
@@ -638,6 +647,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet
+            TimeoutError: timeout
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -650,8 +660,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         )
 
         try:
-            resp = (
-                await self._client_controller.proxy.start_client_connections()
+            resp = await asyncio.wait_for(
+                self._client_controller.proxy.start_client_connections(),
+                timeout=DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
             )
             status = f_wlan_policy.RequestStatus(resp.status)
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
@@ -661,8 +672,8 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 )
         except ZxStatus as status:
             raise wlan_errors.HoneydewWlanError(
-                f"ClientController.StartClientConnections() error {status}"
-            ) from status
+                f"ClientController.StartClientConnections() ZxStatus error {status}"
+            )
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method

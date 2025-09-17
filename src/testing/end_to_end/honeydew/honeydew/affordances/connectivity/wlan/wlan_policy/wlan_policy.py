@@ -95,6 +95,7 @@ class WlanPolicy(affordance.Affordance):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Operation takes longer than expected.
         """
 
     @abc.abstractmethod
@@ -114,6 +115,7 @@ class WlanPolicy(affordance.Affordance):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Operation takes longer than expected.
         """
 
     @abc.abstractmethod
@@ -171,6 +173,7 @@ class WlanPolicy(affordance.Affordance):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet
+            TimeoutError: Operation takes longer than expected.
         """
 
     @abc.abstractmethod

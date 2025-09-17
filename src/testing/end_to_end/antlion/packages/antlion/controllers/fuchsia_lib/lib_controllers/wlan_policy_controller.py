@@ -25,7 +25,7 @@ from honeydew.fuchsia_device.fuchsia_device import (
 from mobly import logger, signals
 
 SESSION_MANAGER_TIMEOUT_SEC = 10
-FUCHSIA_DEFAULT_WLAN_CONFIGURE_TIMEOUT = 30
+FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES = 3
 DEFAULT_GET_UPDATE_TIMEOUT = 60
 
 
@@ -69,14 +69,14 @@ class WlanPolicyController:
     def configure_wlan(
         self,
         preserve_saved_networks: bool,
-        timeout_sec: int = FUCHSIA_DEFAULT_WLAN_CONFIGURE_TIMEOUT,
+        retries: int = FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES,
     ) -> None:
         """Sets up wlan policy layer.
 
         Args:
             preserve_saved_networks: whether to clear existing saved
                 networks and client state, to be restored at test close.
-            timeout_sec: time to wait for device to configure WLAN.
+            retries: number of times to re-attempt to configure WLAN policy.
         """
 
         # We need to stop session manager to free control of
@@ -96,19 +96,36 @@ class WlanPolicyController:
                 )
 
         # Acquire control of policy layer
-        self.honeydew.wlan_policy.create_client_controller()
-        self.log.info("ACTS tests now have control of the WLAN policy layer.")
-
-        if (
-            preserve_saved_networks
-            and not self.preserved_networks_and_client_state
-        ):
-            self.preserved_networks_and_client_state = (
-                self.remove_and_preserve_networks_and_client_state()
-            )
-
-        self.honeydew.wlan_policy.start_client_connections()
-        self.policy_configured = True
+        for attempt in range(retries):
+            try:
+                self.honeydew.wlan_policy.create_client_controller()
+                if (
+                    preserve_saved_networks
+                    and not self.preserved_networks_and_client_state
+                ):
+                    self.preserved_networks_and_client_state = (
+                        self.remove_and_preserve_networks_and_client_state()
+                    )
+                self.honeydew.wlan_policy.start_client_connections()
+                self.log.info(
+                    "ACTS tests now have control of the WLAN policy layer."
+                )
+                self.policy_configured = True
+                return
+            except HoneydewWlanError as e:
+                self.log.warning(
+                    "Attempt %d/%d to configure WLAN policy failed: %s",
+                    attempt + 1,
+                    retries,
+                    e,
+                )
+            except TimeoutError as e:
+                raise WlanPolicyControllerError(
+                    f"An operation timed out while configuring WLAN policy client controller: {e}."
+                )
+        raise WlanPolicyControllerError(
+            f"Failed to configure WLAN policy client controller after {retries} retries."
+        )
 
     def _deconfigure_wlan(self) -> None:
         self.honeydew.wlan_policy.stop_client_connections()
@@ -125,7 +142,9 @@ class WlanPolicyController:
         self.restore_preserved_networks_and_client_state()
 
     def _find_network(
-        self, ssid: str, networks: list[NetworkState]
+        self,
+        ssid: str,
+        networks: list[NetworkState],
     ) -> NetworkState | None:
         """Helper method to find network in list of network states.
 
@@ -312,17 +331,23 @@ class WlanPolicyController:
         self.log.error(f"Networks still connected. Waited: {timeout_sec}s")
         raise WlanPolicyControllerError from last_err
 
-    def remove_and_preserve_networks_and_client_state(self) -> PreservedState:
+    def remove_and_preserve_networks_and_client_state(
+        self, timeout: int = DEFAULT_GET_UPDATE_TIMEOUT
+    ) -> PreservedState:
         """Preserves networks already saved on devices before removing them.
 
         This method is used to set up a clean test environment. Records the state of
         client connections before tests.
 
+        Args:
+            timeout: Timeout in seconds for network operations.
+
         Returns:
             PreservedState: State of the client containing NetworkConfigs and client
                 connection state.
+            TimeoutError: Operation takes longer than expected.
         """
-        client = self.honeydew.wlan_policy.get_update()
+        client = self.honeydew.wlan_policy.get_update(timeout=timeout)
         networks = self.honeydew.wlan_policy.get_saved_networks()
         self.honeydew.wlan_policy.remove_all_networks()
         self.log.info("Saved networks cleared and preserved.")
