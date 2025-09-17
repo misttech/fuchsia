@@ -333,10 +333,10 @@ fn get_discovery_stream_with_sources(
 async fn get_discovered_targets_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
+    use_cache: bool,
     ctx: EnvironmentContext,
 ) -> Result<Vec<TargetHandle>> {
-    // Currently no callers of this function need to be able to ignore the cache, so we always pass in use_cache=true
-    let discovery = build_discovery(sources, true, ctx);
+    let discovery = build_discovery(sources, use_cache, ctx);
     discovery.discover_devices(query.clone()).await.map_err(|e| anyhow::anyhow!(e))
 }
 
@@ -494,8 +494,16 @@ pub async fn resolve_target_address(
     DefaultTargetResolver::default().resolve_target_address(target_spec, ctx).await
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct DefaultTargetResolver;
+#[derive(Clone, Copy)]
+pub struct DefaultTargetResolver {
+    pub(crate) use_cache: bool,
+}
+
+impl Default for DefaultTargetResolver {
+    fn default() -> Self {
+        Self { use_cache: true }
+    }
+}
 
 /// Return a stream of handles matching the query. If a target matches the query
 /// exactly (i.e. the query is the full name of the target, not a substring),
@@ -548,7 +556,8 @@ pub async fn get_discovered_targets(
         sources = sources | DiscoverySources::MDNS;
     }
     // Get nodename, in case we're trying to find an exact match
-    get_discovered_targets_with_sources(query, sources, ctx.clone()).await
+    let use_cache = true;
+    get_discovered_targets_with_sources(query, sources, use_cache, ctx.clone()).await
 }
 
 impl TargetResolver for DefaultTargetResolver {
@@ -564,7 +573,7 @@ impl TargetResolver for DefaultTargetResolver {
         if !ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
             sources.remove(DiscoverySources::MDNS);
         }
-        get_discovered_targets_with_sources(query, sources, ctx).await
+        get_discovered_targets_with_sources(query, sources, self.use_cache, ctx).await
     }
 
     async fn resolve_target_query(

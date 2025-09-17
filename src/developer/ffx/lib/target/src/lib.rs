@@ -447,8 +447,12 @@ pub async fn knock_target_daemonless(
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
+        // When knocking, we are trying to determine if a device is up, usually
+        // in a loop. In that situation, we need the latest state, so we want to
+        // ignore the cache when resolving.
+        let resolver = resolve::DefaultTargetResolver { use_cache: false };
         let res =
-            resolve::resolve_target_address(target_spec, context).await.map_err(|e| match e {
+            resolver.resolve_target_address(target_spec, context).await.map_err(|e| match e {
                 // When knocking, it's not critical if we have not yet found the target. The caller should just retry
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::TargetNotFound,
