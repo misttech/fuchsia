@@ -162,7 +162,7 @@ size_t fidl::internal::DisplayError<{{ . }}>::Format(
       default: return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
       "{{ .Enum.Name }}", member_name, static_cast<{{ .Type }}>(value));
   return std::min(written, capacity - 1);
 }

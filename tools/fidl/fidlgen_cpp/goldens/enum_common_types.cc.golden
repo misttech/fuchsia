@@ -19,8 +19,8 @@ size_t fidl::internal::DisplayError<::test_enum::MyStrictEnum>::Format(
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.enum/MyStrictEnum", member_name, static_cast<uint32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.enum/MyStrictEnum", member_name, static_cast<uint32_t>(value));
   return std::min(written, capacity - 1);
 }
 
@@ -36,8 +36,8 @@ size_t fidl::internal::DisplayError<::test_enum::MyFlexibleEnum>::Format(
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.enum/MyFlexibleEnum", member_name, static_cast<uint32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.enum/MyFlexibleEnum", member_name, static_cast<uint32_t>(value));
   return std::min(written, capacity - 1);
 }
 
@@ -55,8 +55,8 @@ size_t fidl::internal::DisplayError<::test_enum::MyFlexibleEnumWithCustomUnknown
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.enum/MyFlexibleEnumWithCustomUnknown", member_name, static_cast<uint32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.enum/MyFlexibleEnumWithCustomUnknown", member_name, static_cast<uint32_t>(value));
   return std::min(written, capacity - 1);
 }
 
@@ -68,8 +68,8 @@ size_t fidl::internal::DisplayError<::test_enum::MyEmptyFlexibleEnum>::Format(
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.enum/MyEmptyFlexibleEnum", member_name, static_cast<uint32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.enum/MyEmptyFlexibleEnum", member_name, static_cast<uint32_t>(value));
   return std::min(written, capacity - 1);
 }
 

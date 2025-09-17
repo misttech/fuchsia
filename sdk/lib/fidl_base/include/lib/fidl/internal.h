@@ -15,12 +15,6 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
-#ifdef __Fuchsia__
-#ifdef __cplusplus
-#include <zircon/syscalls.h>
-#endif
-#endif
-
 #ifdef __cplusplus
 #include <type_traits>
 #endif  // __cplusplus

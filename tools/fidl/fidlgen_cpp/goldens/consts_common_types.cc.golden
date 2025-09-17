@@ -19,8 +19,8 @@ size_t fidl::internal::DisplayError<::test_consts::EnumType>::Format(
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.consts/EnumType", member_name, static_cast<int32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.consts/EnumType", member_name, static_cast<int32_t>(value));
   return std::min(written, capacity - 1);
 }
 

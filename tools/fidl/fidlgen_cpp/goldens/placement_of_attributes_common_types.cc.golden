@@ -17,8 +17,8 @@ size_t fidl::internal::DisplayError<::test_placementofattributes::ExampleEnum>::
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.placementofattributes/ExampleEnum", member_name, static_cast<uint32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.placementofattributes/ExampleEnum", member_name, static_cast<uint32_t>(value));
   return std::min(written, capacity - 1);
 }
 

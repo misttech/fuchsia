@@ -19,8 +19,8 @@ size_t fidl::internal::DisplayError<::test_protocols::ErrorEnum>::Format(
         return "[UNKNOWN]";
     }
   }();
-  size_t written = std::snprintf(destination, capacity, "%s.%s (value: %u)",
-                                 "test.protocols/ErrorEnum", member_name, static_cast<uint32_t>(value));
+  size_t written = snprintf(destination, capacity, "%s.%s (value: %u)",
+                            "test.protocols/ErrorEnum", member_name, static_cast<uint32_t>(value));
   return std::min(written, capacity - 1);
 }
 
