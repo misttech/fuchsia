@@ -15,6 +15,7 @@ group("testing") {
     "fake-hrtimer",
     "fake-wake-alarms",
     "realm-proxy",
+    "utc-handle-vendor",
     "wake-alarms",
   ]
 }
