@@ -6,6 +6,7 @@
 
 #include <lib/cmdline/args_parser.h>
 #include <lib/syslog/cpp/log_settings.h>
+#include <lib/syslog/cpp/macros.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -585,17 +586,6 @@ std::string ParseCommandLine(int argc, const char* argv[], CommandLineOptions* o
   return "";
 }
 
-namespace {
-
-bool EndsWith(const std::string& value, const std::string& suffix) {
-  if (suffix.size() > value.size()) {
-    return false;
-  }
-  return std::equal(suffix.rbegin(), suffix.rend(), value.rbegin());
-}
-
-}  // namespace
-
 void ExpandFidlPathsFromOptions(std::vector<std::string> cli_ir_paths,
                                 std::vector<std::string>& paths,
                                 std::vector<std::string>& bad_paths) {
@@ -623,13 +613,17 @@ void ExpandFidlPathsFromOptions(std::vector<std::string> cli_ir_paths,
 
         paths.push_back(jsonfile_path);
       }
+    } else if (path.ends_with("all_fidl_json.txt")) {
+      FX_LOGS(WARNING) << "Path '" << path
+                       << "' looks like an all_fidl_json.txt file.  "
+                          "You probably meant to prefix it with '@', to expand its contents?";
     }
   }
 
   std::set<std::string> checked_dirs;
   // Repeat until cli_ir_paths is empty:
   //  If it is a directory, add the directory contents to the cli_ir_paths.
-  //  If it is a .fidl.json file, add it to |paths|.
+  //  If it is a file, add it to |paths|.
   while (!cli_ir_paths.empty()) {
     std::string current_string = cli_ir_paths.back();
     cli_ir_paths.pop_back();
@@ -643,12 +637,11 @@ void ExpandFidlPathsFromOptions(std::vector<std::string> cli_ir_paths,
             checked_dirs.insert(ent_name);
             cli_ir_paths.push_back(ent_name);
           }
-        } else if (EndsWith(ent_name, ".fidl.json")) {
-          paths.push_back(dir_ent.path());
+        } else if (std::filesystem::is_regular_file(ent_name)) {
+          paths.push_back(ent_name);
         }
       }
-    } else if (std::filesystem::is_regular_file(current_path) &&
-               EndsWith(current_string, ".fidl.json")) {
+    } else if (std::filesystem::is_regular_file(current_path)) {
       paths.push_back(current_string);
     } else {
       bad_paths.push_back(current_string);
