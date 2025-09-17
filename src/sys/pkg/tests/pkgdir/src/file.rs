@@ -77,7 +77,7 @@ async fn assert_read_past_end(root_dir: &fio::DirectoryProxy, path: &str, expect
     assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected_contents);
 
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, &[] as &[u8]);
 }
 
 async fn assert_read_exceeds_buffer_success(root_dir: &fio::DirectoryProxy, path: &str) {
@@ -96,7 +96,7 @@ async fn assert_read_exceeds_buffer_success(root_dir: &fio::DirectoryProxy, path
 
     // Since we are now at the end of the file, bytes should be empty.
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, &[] as &[u8]);
 }
 
 #[fuchsia::test]
@@ -276,7 +276,7 @@ async fn assert_seek_affects_read(root_dir: &fio::DirectoryProxy, path: &str, ex
             .unwrap()
             .map_err(zx::Status::from_raw)
             .unwrap_or_else(|_| panic!("path: {path}, seek_offset: {seek_offset}"));
-        assert_eq!(bytes, &[]);
+        assert_eq!(bytes, &[] as &[u8]);
 
         let expected_contents = &expected[expected.len() - seek_offset..];
         let position = file
@@ -314,7 +314,7 @@ async fn assert_seek_past_end(
     assert_eq!(expected.len() as u64 + 1, position);
 
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, &[] as &[u8]);
 }
 
 // The difference between this test and `assert_seek_past_end` is that the offset is 1
@@ -330,7 +330,7 @@ async fn assert_seek_past_end_end_origin(
     assert_eq!(expected.len() as u64 + 1, position);
 
     let bytes = file.read(fio::MAX_BUF).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes, &[]);
+    assert_eq!(bytes, &[] as &[u8]);
 }
 
 #[fuchsia::test]
