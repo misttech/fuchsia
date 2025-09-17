@@ -171,7 +171,7 @@ class DebugSymbolsManifestParser(object):
             pos += len(".build-id/")
             rest = debug[pos:]
             if len(rest) > 3 and rest[2] == "/" and rest.endswith(".debug"):
-                build_id = rest[:2] + rest[3:-6]
+                build_id = rest[0:2] + rest[3:-6]
                 return build_id
 
         # Second, look for an elf_build_id_file path.
@@ -389,7 +389,6 @@ class DebugSymbolExporter(object):
         self,
         build_dir: Path | str,
         dump_syms_tool: None | Path | str = None,
-        gsymutil_tool: None | Path | str = None,
         log: None | T.Callable[[str], None] = None,
         log_error: None | T.Callable[[str], None] = None,
     ) -> None:
@@ -400,11 +399,7 @@ class DebugSymbolExporter(object):
 
             dump_syms_tool: Optional path the Breakpad dump_syms host tool.
                 If provided, will be used to generate breakpad symbol files
-                from ELF debug binaries.
-
-            gsymutil_tool: Optional path to the LLVM gsymutil tool host
-                tool. If provided, will be used to generate GSYM symbol files
-                from ELF debug binaries.
+                from ELF debug symbol ones.
         """
         self._build_dir = Path(build_dir)
 
@@ -416,11 +411,7 @@ class DebugSymbolExporter(object):
         # the manifest entry.
         self._breakpad_map: dict[Path, DebugSymbolEntryType] = {}
 
-        # A similar map for GSYM symbol extraction.
-        self._gsym_map: dict[Path, DebugSymbolEntryType] = {}
-
         self._dump_syms_tool = dump_syms_tool
-        self._gsymutil_tool = gsymutil_tool
         self._log = log
         self._log_error = log_error
 
@@ -464,7 +455,7 @@ class DebugSymbolExporter(object):
 
             # Record a .debug symlink in the symlink map.
             debug_dst_path = (
-                Path(".build-id") / build_id[:2] / f"{build_id[2:]}.debug"
+                Path(".build-id") / build_id[0:2] / f"{build_id[2:]}.debug"
             )
             debug_src_path = self._build_dir / entry["debug"]
             self._symlink_map[debug_dst_path] = debug_src_path
@@ -473,14 +464,13 @@ class DebugSymbolExporter(object):
             if entry.get("stripped", "") != "":
                 stripped_src_path = self._build_dir / entry["stripped"]
                 stripped_dst_path = (
-                    Path(".build-id") / build_id[:2] / f"{build_id[2:]}"
+                    Path(".build-id") / build_id[0:2] / f"{build_id[2:]}"
                 )
                 self._symlink_map[stripped_dst_path] = stripped_src_path
 
             # If a breakpad file path is provided by the entry, record a .sym symlink in the
             # map. Otherwise, add an entry in breakpad_map to ensure a breakpad symbol
-            # file can be created later. *Unless* this is not a Fuchsia binary, see
-            # https://fxbug.dev/445119122 for context.
+            # file can be created later.
             breakpad_dst_path = Path(
                 str(debug_dst_path).replace(".debug", ".sym")
             )
@@ -489,16 +479,8 @@ class DebugSymbolExporter(object):
                 self._symlink_map[breakpad_dst_path] = (
                     self._build_dir / breakpad_file
                 )
-            elif entry["os"] == "fuchsia":
+            else:
                 self._breakpad_map[breakpad_dst_path] = entry
-
-            # Same for GSYM symbols.
-            gsym_dst_path = Path(str(debug_dst_path).replace(".debug", ".gsym"))
-            gsym_file = entry.get("gsym")
-            if gsym_file:
-                self._symlink_map[gsym_dst_path] = self._build_dir / gsym_file
-            elif entry["os"] == "fuchsia":
-                self._gsym_map[gsym_dst_path] = entry
 
             debug_symbol = entry.copy()
             debug_symbol["debug"] = str(debug_dst_path)
@@ -507,7 +489,7 @@ class DebugSymbolExporter(object):
             debug_symbol.pop("stripped", None)
             if entry.get("stripped", "") != "":
                 debug_symbol["stripped"] = ".build-id/{}/{}".format(
-                    build_id[:2], build_id[2:]
+                    build_id[0:2], build_id[2:]
                 )
             debug_symbol["breakpad"] = str(breakpad_dst_path)
             debug_symbol.pop("elf_build_id_file", None)
@@ -635,7 +617,7 @@ class DebugSymbolExporter(object):
               installation path, and its optional breakpad file.
         """
         log = self._log
-        self._log_error
+        log_error = self._log_error
 
         output_dir = Path(output_dir)
 
@@ -678,41 +660,12 @@ class DebugSymbolExporter(object):
         with (output_dir / "debug_symbols.json").open("wt") as f:
             json.dump(self._debug_symbols, f, indent=2, sort_keys=True)
 
-        if depth <= 0:
-            depth = len(os.sched_getaffinity(0))
-
-        if self._dump_syms_tool and not self._generate_breakpad_symbols(
-            output_dir, depth
-        ):
-            return False
-
-        if self._gsymutil_tool and not self._generate_gsym_symbols(
-            output_dir, depth
-        ):
-            return False
-
-        if log:
-            log("Done!")
-
-        return True
-
-    def _generate_breakpad_symbols(self, output_dir: Path, depth: int) -> bool:
-        """Generate breakpad symbols from debug binaries.
-
-        Runs the dumpsym tool in multiple processes concurrently.
-
-        Args:
-            output_dir: Output directory path.
-            depth: Number of max concurrent processes allowed.
-        Returns:
-            True in case of success.
-        """
-        log = self._log
-        log_error = self._log_error
+        if not self._dump_syms_tool:
+            return True
 
         if len(self._breakpad_map) == 0:
             if log:
-                log("Skipping breakpad symbol generation (no inputs).")
+                log("Skipping breakpad symbol generation.")
             return True
 
         if log:
@@ -720,6 +673,9 @@ class DebugSymbolExporter(object):
                 "Generating %d breakpad symbols in %s"
                 % (len(self._breakpad_map), output_dir)
             )
+
+        if depth <= 0:
+            depth = len(os.sched_getaffinity(0))
 
         command_pool = CommandPool(depth)
 
@@ -739,7 +695,7 @@ class DebugSymbolExporter(object):
 
             build_id = entry["elf_build_id"]
             symbol_path = (
-                Path(".build-id") / build_id[:2] / f"{build_id[2:]}.sym"
+                Path(".build-id") / build_id[0:2] / f"{build_id[2:]}.sym"
             )
             if log:
                 log(
@@ -781,7 +737,7 @@ class DebugSymbolExporter(object):
         ) -> bool:
             """Process the result of a completed command."""
             assert proc.returncode is not None
-            assert proc.stderr  # make pypy happy.
+
             stderr = proc.stderr.read()
             proc.stderr.close()
 
@@ -792,11 +748,6 @@ class DebugSymbolExporter(object):
                 return True
 
             if log_error:
-                log_error(
-                    "Failure to generate breakpad symbol for: {}".format(
-                        entry["debug"]
-                    )
-                )
                 log_error(stderr)
 
             return False
@@ -812,108 +763,8 @@ class DebugSymbolExporter(object):
             if not cmd_success:
                 success = False
 
-        return success
-
-    def _generate_gsym_symbols(self, output_dir: Path, depth: int) -> bool:
-        """Generate breakpad symbols from debug binaries.
-
-        Runs the gsymutil tool in multiple processes concurrently.
-
-
-        Args:
-            output_dir: Output directory path.
-            depth: Number of max concurrent processes allowed.
-        Returns:
-            True in case of success.
-        """
-        log = self._log
-        log_error = self._log_error
-        log = self._log
-        log_error = self._log_error
-
-        if len(self._gsym_map) == 0:
+        if success:
             if log:
-                log("Skipping GSYM symbol generation (no inputs).")
-            return True
-
-        if log:
-            log(
-                "Generating %d GSYM symbols in %s"
-                % (len(self._gsym_map), output_dir)
-            )
-
-        command_pool = CommandPool(depth)
-
-        def cmd_gsymutil_runner(
-            cmd_id: int, entry: DebugSymbolEntryType
-        ) -> subprocess.Popen[str]:
-            """Start a command to generate the GSYM symbol file for a given entry.
-
-            Args:
-                entry: The input debug symbol manifest entry.
-            Returns:
-                a new subprocess.Popen instance.
-            """
-            src_symbol_path = self._build_dir / entry["debug"]
-            build_id = entry["elf_build_id"]
-            gsymbol_path = ".build-id/{}/{}.gsym".format(
-                build_id[:2], build_id[2:]
-            )
-            if log:
-                log(
-                    f"  - Creating {gsymbol_path} FROM {os.path.relpath(src_symbol_path)}"
-                )
-
-            dst_symbol_path = output_dir / gsymbol_path
-
-            gsymutil_cmd = [
-                str(self._gsymutil_tool),
-                f"--convert={src_symbol_path}",
-                f"--out-file={dst_symbol_path}",
-            ]
-
-            dst_symbol_path.parent.mkdir(parents=True, exist_ok=True)
-
-            return subprocess.Popen(
-                gsymutil_cmd,
-                # Do not capture stdout with subprocess.PIPE here as it is often
-                # larger than the pipe's capacity (64 kiB on Linux), blocking the
-                # process and preventing it from ever completing.
-                # The alternative would be to redirect to an opened file object
-                # but there is no need for this output anyway.
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-
-        def cmd_gsymutil_result_processor(
-            cmd_id: int,
-            entry: DebugSymbolEntryType,
-            proc: subprocess.Popen[str],
-        ) -> bool:
-            """Process the result of a completed command."""
-            assert proc.returncode is not None
-            assert proc.stderr  # make pypy happy.
-            stderr = proc.stderr.read()
-            proc.stderr.close()
-
-            if proc.returncode == 0:
-                return True
-
-            if log_error:
-                log_error(stderr)
-
-            return False
-
-        for entry in self._gsym_map.values():
-            command_pool.add_command(entry, cmd_gsymutil_runner)
-
-        # Run all commands in parallel and change result to False if at
-        # least one error is detected. Error messages are sent to log_error
-        # by cmd_result_processor() directly.
-        success = True
-        for cmd_success in command_pool.run(cmd_gsymutil_result_processor):
-            if not cmd_success:
-                success = False
+                log("Done!")
 
         return success

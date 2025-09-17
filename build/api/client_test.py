@@ -677,25 +677,6 @@ print(args.debug_symbol_file)
         )
         dump_syms.chmod(0o755)
 
-        gsymutil = self._top_dir / "gsymutil"
-        gsymutil.write_text(
-            f"""#!{sys.executable}
-import argparse
-import os
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--convert", required=True, help="Input debug binary")
-parser.add_argument("--out-file", required=True, help="Output file path")
-args = parser.parse_args()
-
-os.makedirs(os.path.dirname(args.out_file), exist_ok=True)
-with open(args.out_file, "wt") as f:
-    f.write(args.convert)
-    f.write("\\n")
-"""
-        )
-        gsymutil.chmod(0o755)
-
         export_dir = self._top_dir / "exported_debug_symbols"
 
         expected_err = """MISSING build-id FOR {'cpu': 'x64', 'debug': 'obj/src/zoo/binary.unstripped', 'label': '//src/zoo:binary', 'os': 'fuchsia'}
@@ -708,10 +689,6 @@ Generating 3 breakpad symbols in {export_dir}
   - Creating .build-id/00/000000000000001.sym FROM obj/src/foo/lib_shared/libfoo.so.unstripped
   - Creating .build-id/aa/bbbbbbbbbbb.sym FROM ../../prebuilt/.build-id/aa/bbbbbbbbbbb.debug
   - Creating .build-id/bu/ild_id_for_bar.sym FROM obj/src/bar/binary.unstripped
-Generating 3 GSYM symbols in {export_dir}
-  - Creating .build-id/00/000000000000001.gsym FROM obj/src/foo/lib_shared/libfoo.so.unstripped
-  - Creating .build-id/aa/bbbbbbbbbbb.gsym FROM ../../prebuilt/.build-id/aa/bbbbbbbbbbb.debug
-  - Creating .build-id/bu/ild_id_for_bar.gsym FROM obj/src/bar/binary.unstripped
 Done!
 """
         self.assert_raw_outputs(
@@ -723,10 +700,7 @@ Done!
                     str(_SCRIPT_DIR.parent.parent.resolve()),
                     "export_last_build_debug_symbols",
                     f"--output-dir={export_dir}",
-                    "--with-breakpad-symbols",
                     f"--dump_syms={dump_syms}",
-                    "--with-gsym-symbols",
-                    f"--gsymutil={gsymutil}",
                 ]
             ),
             expected_out,
