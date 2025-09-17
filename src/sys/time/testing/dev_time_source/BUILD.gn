@@ -35,5 +35,5 @@ fuchsia_component("component") {
 fuchsia_package("pkg") {
   package_name = "dev_time_source"
   testonly = true
-  deps = [ ":dev_time_source" ]
+  deps = [ ":component" ]
 }
