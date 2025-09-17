@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/message.h>
 #include <lib/fidl/internal.h>
 #include <zircon/assert.h>
@@ -11,14 +12,14 @@
 #include <memory>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/client_base.h>
 #include <lib/fidl/cpp/wire/internal/transport_channel.h>
 #include <lib/fidl/cpp/wire/server.h>
 #include <zircon/syscalls.h>
 #else
 #include <lib/fidl/cpp/wire/internal/transport_channel_host.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace fidl {
 

@@ -33,7 +33,7 @@ void fidl::internal::NaturalCodingTraits<::test_handlesintypes::ObjType, ::fidl:
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_handlesintypes::HandlesInTypes::HandlesInTypes(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_handlesintypes::HandlesInTypes::HandlesInTypes(::zx::vmo normal_handle, ::std::vector<::zx::vmo> handle_in_vec, ::std::array<::zx::vmo, 5> handle_in_array, ::std::vector<::std::array<::zx::vmo, 5>> handle_in_mixed_vec_array, ::test_handlesintypes::TableWithHandle table_with_handle, ::test_handlesintypes::UnionWithHandle union_with_handle) noexcept
@@ -280,6 +280,6 @@ bool test_handlesintypes::EmptyResourceUnion::IsUnknown() const {
   return Which() == ::test_handlesintypes::EmptyResourceUnion::Tag::_do_not_handle_this__write_a_default_case_instead;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

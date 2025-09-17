@@ -286,7 +286,7 @@ static_assert(std::is_standard_layout_v<::test_protocols::wire::WithErrorSyntaxE
 static_assert(offsetof(::test_protocols::wire::WithErrorSyntaxErrorAsEnumResponse, __reserved) == 0);
 static_assert(sizeof(::test_protocols::wire::WithErrorSyntaxErrorAsEnumResponse) == ::fidl::TypeTraits<::test_protocols::wire::WithErrorSyntaxErrorAsEnumResponse>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_protocols::wire::WithErrorSyntaxHandleInResultResponse::_CloseHandles() {
   h.reset();
@@ -318,7 +318,7 @@ static_assert(std::is_standard_layout_v<::test_protocols::wire::WithErrorSyntaxH
 static_assert(offsetof(::test_protocols::wire::WithErrorSyntaxHandleInResultResponse, h) == 0);
 static_assert(sizeof(::test_protocols::wire::WithErrorSyntaxHandleInResultResponse) == ::fidl::TypeTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResponse>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <bool IsRecursive>
 void fidl::internal::WireCodingTraits<::test_protocols::wire::ChannelProtocolMethodARequest, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>::Encode(
@@ -436,7 +436,7 @@ static_assert(std::is_standard_layout_v<::test_protocols::wire::ChannelProtocolM
 static_assert(offsetof(::test_protocols::wire::ChannelProtocolMethodBResponse, result) == 0);
 static_assert(sizeof(::test_protocols::wire::ChannelProtocolMethodBResponse) == ::fidl::TypeTraits<::test_protocols::wire::ChannelProtocolMethodBResponse>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_protocols::wire::ChannelProtocolTakeHandleRequest::_CloseHandles() {
   h.reset();
@@ -528,7 +528,7 @@ static_assert(std::is_standard_layout_v<::test_protocols::wire::ChannelProtocolM
 static_assert(offsetof(::test_protocols::wire::ChannelProtocolMutateSocketResponse, b) == 0);
 static_assert(sizeof(::test_protocols::wire::ChannelProtocolMutateSocketResponse) == ::fidl::TypeTraits<::test_protocols::wire::ChannelProtocolMutateSocketResponse>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <bool IsRecursive>
 void fidl::internal::WireCodingTraits<::test_protocols::wire::SyscallProtocolMethodCRequest, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>::Encode(
@@ -560,7 +560,7 @@ static_assert(offsetof(::test_protocols::wire::SyscallProtocolMethodCRequest, a)
 static_assert(offsetof(::test_protocols::wire::SyscallProtocolMethodCRequest, b) == 8);
 static_assert(sizeof(::test_protocols::wire::SyscallProtocolMethodCRequest) == ::fidl::TypeTraits<::test_protocols::wire::SyscallProtocolMethodCRequest>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_protocols::wire::HandleRightsProtocolNoResponseMethodRequest::_CloseHandles() {
   h.reset();
@@ -907,7 +907,7 @@ static_assert(std::is_standard_layout_v<::test_protocols::wire::WithProtocolEnds
 static_assert(offsetof(::test_protocols::wire::WithProtocolEndsStructContainingEndsResponse, out) == 0);
 static_assert(sizeof(::test_protocols::wire::WithProtocolEndsStructContainingEndsResponse) == ::fidl::TypeTraits<::test_protocols::wire::WithProtocolEndsStructContainingEndsResponse>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <bool IsRecursive>
 void fidl::internal::WireCodingTraits<::test_protocols::wire::ManyParametersFifteenRequest, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>::Encode(
@@ -1493,7 +1493,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_protocols::wire::WithE
 template struct ::fidl::internal::WireCodingTraits<::test_protocols::wire::WithErrorSyntaxErrorAsEnumResult, ::fidl::internal::WireCodingConstraintUnion<true>, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_protocols::wire::WithErrorSyntaxErrorAsEnumResult, ::fidl::internal::WireCodingConstraintUnion<true>, false>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::wire::WithErrorSyntaxHandleInResultResult::WithErrorSyntaxHandleInResultResult() : ordinal_(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Ordinal::Invalid), envelope_{} {}
 ::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Tag test_protocols::wire::WithErrorSyntaxHandleInResultResult::Which() const {
@@ -1692,7 +1692,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_protocols::wire::WithE
 template struct ::fidl::internal::WireCodingTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResult, ::fidl::internal::WireCodingConstraintUnion<true>, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResult, ::fidl::internal::WireCodingConstraintUnion<true>, false>;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::wire::TheUnion::TheUnion() : ordinal_(::test_protocols::wire::TheUnion::Ordinal::Invalid), envelope_{} {}
 auto ::test_protocols::wire::TheUnion::Which() const -> ::test_protocols::wire::TheUnion::Tag {

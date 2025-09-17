@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include <fidl/test.types/cpp/hlcpp_conversion.h>
+#include <lib/fidl/cpp/features.h>
 
 #include <gtest/gtest.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/event.h>
 #endif
 
@@ -91,7 +92,7 @@ TEST(TableConversion, MultipleToHLCPP) {
   EXPECT_FALSE(hlcpp.has_s());
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 TEST(TableConversion, HandleToNatural) {
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);

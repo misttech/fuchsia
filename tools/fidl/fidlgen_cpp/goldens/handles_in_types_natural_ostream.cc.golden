@@ -22,7 +22,7 @@ std::ostream& fidl::ostream::Formatter<::test_handlesintypes::ObjType>::Format(s
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_handlesintypes::HandlesInTypes>::Format(std::ostream& os, const ::test_handlesintypes::HandlesInTypes& value) {
   os << "test_handlesintypes::HandlesInTypes";
@@ -91,14 +91,14 @@ std::ostream& fidl::ostream::Formatter<::test_handlesintypes::EmptyResourceUnion
   return os;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_handlesintypes {
 
 std::ostream& operator<<(std::ostream& os, const ::test_handlesintypes::ObjType& value) {
   return fidl::ostream::Formatter<::test_handlesintypes::ObjType>::Format(os, value);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_handlesintypes::TableWithHandle& value) {
   return fidl::ostream::Formatter<::test_handlesintypes::TableWithHandle>::Format(os, value);
@@ -124,7 +124,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_handlesintypes::EmptyRes
   return fidl::ostream::Formatter<::test_handlesintypes::EmptyResourceUnion>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

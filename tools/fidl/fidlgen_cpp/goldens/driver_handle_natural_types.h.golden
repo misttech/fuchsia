@@ -12,13 +12,13 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/fidl_driver/cpp/natural_types.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/event.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -33,7 +33,7 @@ class HandlesInProtocolSendHandlesRequest;
 
 class T;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ClientEndWrapper {
  private:
@@ -209,12 +209,12 @@ class HandlesInProtocolSendHandlesRequest {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_driverhandle
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_driverhandle::ClientEndWrapper> : public std::true_type {};
@@ -299,7 +299,7 @@ struct IsTable<::test_driverhandle::T> : public std::true_type {};
 template <>
 struct internal::NaturalCodingTraits<::test_driverhandle::T, ::fidl::internal::NaturalCodingConstraintEmpty> : public ::fidl::internal::NaturalTableCodingTraits<::test_driverhandle::T> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

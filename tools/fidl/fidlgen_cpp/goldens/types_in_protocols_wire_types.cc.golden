@@ -67,7 +67,7 @@ static_assert(std::is_standard_layout_v<::test_typesinprotocols::wire::Struct>);
 static_assert(offsetof(::test_typesinprotocols::wire::Struct, __reserved) == 0);
 static_assert(sizeof(::test_typesinprotocols::wire::Struct) == ::fidl::TypeTraits<::test_typesinprotocols::wire::Struct>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
     void ::test_typesinprotocols::wire::ResourceStruct::_CloseHandles() {
 
@@ -102,7 +102,7 @@ static_assert(std::is_standard_layout_v<::test_typesinprotocols::wire::ResourceS
 static_assert(offsetof(::test_typesinprotocols::wire::ResourceStruct, __reserved) == 0);
 static_assert(sizeof(::test_typesinprotocols::wire::ResourceStruct) == ::fidl::TypeTraits<::test_typesinprotocols::wire::ResourceStruct>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <bool IsRecursive>
 void fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Basic, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>::Encode(
@@ -562,7 +562,7 @@ static_assert(offsetof(::test_typesinprotocols::wire::ArrayVectorNested, vector_
 static_assert(offsetof(::test_typesinprotocols::wire::ArrayVectorNested, vector_vector_uint8) == 128);
 static_assert(sizeof(::test_typesinprotocols::wire::ArrayVectorNested) == ::fidl::TypeTraits<::test_typesinprotocols::wire::ArrayVectorNested>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
     void ::test_typesinprotocols::wire::Resource::_CloseHandles() {
         handle.reset();
@@ -770,7 +770,7 @@ static_assert(offsetof(::test_typesinprotocols::wire::Resource, vector_table) ==
 static_assert(offsetof(::test_typesinprotocols::wire::Resource, vector_union) == 440);
 static_assert(sizeof(::test_typesinprotocols::wire::Resource) == ::fidl::TypeTraits<::test_typesinprotocols::wire::Resource>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::wire::Union::Union() : ordinal_(::test_typesinprotocols::wire::Union::Ordinal::Invalid), envelope_{} {}
 auto ::test_typesinprotocols::wire::Union::Which() const -> ::test_typesinprotocols::wire::Union::Tag {
@@ -900,7 +900,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Union, ::fidl::internal::WireCodingConstraintUnion<true>, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Union, ::fidl::internal::WireCodingConstraintUnion<true>, false>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::wire::ResourceUnion::ResourceUnion() : ordinal_(::test_typesinprotocols::wire::ResourceUnion::Ordinal::Invalid), envelope_{} {}
 auto ::test_typesinprotocols::wire::ResourceUnion::Which() const -> ::test_typesinprotocols::wire::ResourceUnion::Tag {
@@ -1067,7 +1067,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ResourceUnion, ::fidl::internal::WireCodingConstraintUnion<true>, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ResourceUnion, ::fidl::internal::WireCodingConstraintUnion<true>, false>;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::wire::ProtocolErrorBasicResult::ProtocolErrorBasicResult() : ordinal_(::test_typesinprotocols::wire::ProtocolErrorBasicResult::Ordinal::Invalid), envelope_{} {}
 ::test_typesinprotocols::wire::ProtocolErrorBasicResult::Tag test_typesinprotocols::wire::ProtocolErrorBasicResult::Which() const {
@@ -2285,7 +2285,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorArrayVectorNestedResult, ::fidl::internal::WireCodingConstraintUnion<true>, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorArrayVectorNestedResult, ::fidl::internal::WireCodingConstraintUnion<true>, false>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::wire::ProtocolErrorResourceResult::ProtocolErrorResourceResult() : ordinal_(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Ordinal::Invalid), envelope_{} {}
 ::test_typesinprotocols::wire::ProtocolErrorResourceResult::Tag test_typesinprotocols::wire::ProtocolErrorResourceResult::Which() const {
@@ -2485,7 +2485,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorResourceResult, ::fidl::internal::WireCodingConstraintUnion<true>, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorResourceResult, ::fidl::internal::WireCodingConstraintUnion<true>, false>;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 bool ::fidl::WireTableFrame<::test_typesinprotocols::wire::Table>::HasUnknownData() const {
   return false;
@@ -2613,7 +2613,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire
 
 static_assert(std::is_standard_layout_v<::test_typesinprotocols::wire::Table>);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 bool ::fidl::WireTableFrame<::test_typesinprotocols::wire::ResourceTable>::HasUnknownData() const {
   return false;
@@ -2744,7 +2744,7 @@ template struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire
 
 static_assert(std::is_standard_layout_v<::test_typesinprotocols::wire::ResourceTable>);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
   #pragma clang diagnostic pop
 

@@ -18,8 +18,9 @@
   #pragma once
 
   #include <{{ .Library | Filename "CommonTypesHeader" }}>
+  #include <lib/fidl/cpp/features.h>
 
-  #if defined(__cpp_lib_format) && __cplusplus >= 202002L && defined(__Fuchsia__)
+  #if __FIDL_SUPPORT_FORMAT
   #include <format>
 
   {{ EnsureNamespace "" }}

@@ -23,7 +23,7 @@ std::ostream& fidl::ostream::Formatter<::test_nullable::StructWithNullableVector
   os << "}";
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_nullable::StructWithNullableHandle>::Format(std::ostream& os, const ::test_nullable::StructWithNullableHandle& value) {
   os << "test_nullable::StructWithNullableHandle";
@@ -34,7 +34,7 @@ std::ostream& fidl::ostream::Formatter<::test_nullable::StructWithNullableHandle
   return os;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_nullable::SimpleProtocolAddRequest>::Format(std::ostream& os, const ::test_nullable::SimpleProtocolAddRequest& value) {
   os << "test_nullable::SimpleProtocolAddRequest";
@@ -54,7 +54,7 @@ std::ostream& fidl::ostream::Formatter<::test_nullable::SimpleProtocolAddRespons
   os << "}";
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_nullable::StructWithNullableProtocol>::Format(std::ostream& os, const ::test_nullable::StructWithNullableProtocol& value) {
   os << "test_nullable::StructWithNullableProtocol";
@@ -74,7 +74,7 @@ std::ostream& fidl::ostream::Formatter<::test_nullable::StructWithNullableReques
   return os;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_nullable::Int32Wrapper>::Format(std::ostream& os, const ::test_nullable::Int32Wrapper& value) {
   os << "test_nullable::Int32Wrapper";
@@ -114,7 +114,7 @@ std::ostream& fidl::ostream::Formatter<::test_nullable::SimpleUnion>::Format(std
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_nullable::SimpleProtocol>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_nullable::SimpleProtocol>& value) {
   return os << "ClientEnd<" << "test_nullable::SimpleProtocol" << ">(" << value.channel().get() << ")";
@@ -132,7 +132,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_nullab
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_nullable::SimpleProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_nullable {
 
 std::ostream& operator<<(std::ostream& os, const ::test_nullable::StructWithNullableString& value) {
@@ -143,13 +143,13 @@ std::ostream& operator<<(std::ostream& os, const ::test_nullable::StructWithNull
   return fidl::ostream::Formatter<::test_nullable::StructWithNullableVector>::Format(os, value);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_nullable::StructWithNullableHandle& value) {
   return fidl::ostream::Formatter<::test_nullable::StructWithNullableHandle>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_nullable::SimpleProtocolAddRequest& value) {
   return fidl::ostream::Formatter<::test_nullable::SimpleProtocolAddRequest>::Format(os, value);
@@ -159,7 +159,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_nullable::SimpleProtocol
   return fidl::ostream::Formatter<::test_nullable::SimpleProtocolAddResponse>::Format(os, value);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_nullable::StructWithNullableProtocol& value) {
   return fidl::ostream::Formatter<::test_nullable::StructWithNullableProtocol>::Format(os, value);
@@ -169,7 +169,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_nullable::StructWithNull
   return fidl::ostream::Formatter<::test_nullable::StructWithNullableRequest>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_nullable::Int32Wrapper& value) {
   return fidl::ostream::Formatter<::test_nullable::Int32Wrapper>::Format(os, value);

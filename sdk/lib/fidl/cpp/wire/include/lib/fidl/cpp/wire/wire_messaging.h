@@ -5,18 +5,18 @@
 #ifndef LIB_FIDL_CPP_WIRE_WIRE_MESSAGING_H_
 #define LIB_FIDL_CPP_WIRE_WIRE_MESSAGING_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/base_wire_result.h>
 #include <lib/fidl/cpp/wire/wire_messaging_declarations.h>
+#include <lib/fidl/cpp/wire_format_metadata.h>
 #include <lib/fit/function.h>
 
-#include "lib/fidl/cpp/wire_format_metadata.h"
-
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/endpoints.h>
 #include <lib/fidl/cpp/wire/message.h>
 #include <lib/fidl/cpp/wire/transaction.h>
 #include <zircon/fidl.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 // # Wire messaging layer
 //
@@ -27,7 +27,7 @@ namespace fidl {
 template <typename Result>
 WireResponse(Result) -> WireResponse<typename Result::FidlMethod>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <typename FidlMethod>
 using WireClientCallback =
@@ -90,7 +90,7 @@ void WireDispatch(fidl::WireServer<FidlProtocol>* impl, fidl::IncomingHeaderAndM
   fidl::internal::WireServerDispatcher<FidlProtocol>::Dispatch(impl, std::move(msg), nullptr, txn);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace internal {
 
@@ -128,7 +128,7 @@ auto InplaceDecodeTransactionalMessage(::fidl::IncomingHeaderAndMessage&& messag
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <typename FidlMethod>
 auto InplaceDecodeTransactionalResponse(::fidl::IncomingHeaderAndMessage&& message) {
@@ -160,7 +160,7 @@ auto InplaceDecodeTransactionalEvent(::fidl::IncomingHeaderAndMessage&& message)
   }
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <typename... T>
 ::fidl::Status StatusFromResult(const ::fit::result<::fidl::Error, T...>& r) {

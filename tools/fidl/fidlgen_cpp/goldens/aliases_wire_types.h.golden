@@ -16,10 +16,10 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.aliases/cpp/common_types.h>
 #include <fidl/test.aliases/cpp/markers.h>
@@ -41,16 +41,16 @@ using VecOfStrings = ::fidl::VectorView<::fidl::StringView>;
 
 using VecOfStringsAtMost5 = ::fidl::VectorView<::fidl::StringView>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 using Channel = ::zx::channel;
 
 using AliasOfChannel = ::zx::channel;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 using ReferenceMe = ::test_someotherlibrary::wire::ReferenceMe;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct ExampleOfUseOfAliases {
   uint32_t field_of_u32 = {};
@@ -72,7 +72,7 @@ struct ExampleOfUseOfAliases {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_aliases
@@ -87,7 +87,7 @@ struct internal::WireCodingTraits<::test_aliases::wire::ObjType, ::fidl::interna
   static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_aliases::wire::ExampleOfUseOfAliases> : public std::true_type {};
@@ -124,7 +124,7 @@ struct ::fidl::internal::WireCodingTraits<::test_aliases::wire::ExampleOfUseOfAl
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

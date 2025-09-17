@@ -6,8 +6,9 @@
 
 #include <fidl/test.transitivedependenciescompose/cpp/markers.h>
 #include <fidl/test.transitivedependenciescompose/cpp/wire_types.h>
+#include <lib/fidl/cpp/features.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.bottom/cpp/driver/wire_messaging.h>
 #include <fidl/test.middle/cpp/driver/wire_messaging.h>
@@ -27,4 +28,4 @@ namespace fidl {
 
 }  // namespace fidl
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

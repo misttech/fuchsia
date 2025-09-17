@@ -7,11 +7,11 @@
 #include <fidl/test.encapsulatedstructs/cpp/markers.h>
 #include <fidl/test.encapsulatedstructs/cpp/natural_types.h>
 #include <fidl/test.encapsulatedstructs/cpp/wire_types.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.encapsulatedstructs/cpp/natural_messaging.h>
 #include <fidl/test.encapsulatedstructs/cpp/wire_messaging.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 
 #pragma clang diagnostic push
@@ -80,7 +80,7 @@ struct WireTypeForNaturalType<::test_encapsulatedstructs::StructPaddingTestStruc
   using type = ::test_encapsulatedstructs::wire::StructPaddingTestStruct;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_encapsulatedstructs::wire::NonInlineStructTestStruct, ::test_encapsulatedstructs::NonInlineStructTestStruct> {
@@ -112,7 +112,7 @@ struct WireTypeForNaturalType<::test_encapsulatedstructs::TopLevelStruct> {
   using type = ::test_encapsulatedstructs::wire::TopLevelStruct;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

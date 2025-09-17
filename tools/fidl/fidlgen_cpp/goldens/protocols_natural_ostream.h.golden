@@ -64,7 +64,7 @@ template <>
 struct fidl::ostream::Formatter<::test_protocols::WithErrorSyntaxErrorAsEnumResult> {
   static std::ostream& Format(std::ostream& os, const ::test_protocols::WithErrorSyntaxErrorAsEnumResult& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocols::WithErrorSyntaxHandleInResultResponse> {
@@ -76,7 +76,7 @@ struct fidl::ostream::Formatter<::test_protocols::WithErrorSyntaxHandleInResultR
   static std::ostream& Format(std::ostream& os, const ::test_protocols::WithErrorSyntaxHandleInResultResult& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocols::ChannelProtocolMethodARequest> {
@@ -94,7 +94,7 @@ template <>
 struct fidl::ostream::Formatter<::test_protocols::ChannelProtocolMethodBResponse> {
   static std::ostream& Format(std::ostream& os, const ::test_protocols::ChannelProtocolMethodBResponse& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocols::ChannelProtocolTakeHandleRequest> {
@@ -111,13 +111,13 @@ struct fidl::ostream::Formatter<::test_protocols::ChannelProtocolMutateSocketRes
   static std::ostream& Format(std::ostream& os, const ::test_protocols::ChannelProtocolMutateSocketResponse& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocols::SyscallProtocolMethodCRequest> {
   static std::ostream& Format(std::ostream& os, const ::test_protocols::SyscallProtocolMethodCRequest& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocols::HandleRightsProtocolNoResponseMethodRequest> {
@@ -174,7 +174,7 @@ struct fidl::ostream::Formatter<::test_protocols::WithProtocolEndsStructContaini
   static std::ostream& Format(std::ostream& os, const ::test_protocols::WithProtocolEndsStructContainingEndsResponse& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocols::ManyParametersFifteenRequest> {
@@ -221,13 +221,13 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocols::WithErrorSynt
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::WithErrorSyntaxErrorAsEnumResult& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::WithErrorSyntaxHandleInResultResponse& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::WithErrorSyntaxHandleInResultResult& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::ChannelProtocolMethodARequest& value);
 
@@ -237,7 +237,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocols::ChannelProtoc
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::ChannelProtocolMethodBResponse& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::ChannelProtocolTakeHandleRequest& value);
 
@@ -245,11 +245,11 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocols::ChannelProtoc
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::ChannelProtocolMutateSocketResponse& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::SyscallProtocolMethodCRequest& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::HandleRightsProtocolNoResponseMethodRequest& value);
 
@@ -273,7 +273,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocols::WithProtocolE
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::WithProtocolEndsStructContainingEndsResponse& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocols::ManyParametersFifteenRequest& value);
 
@@ -285,7 +285,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocols::MethodWithUni
 
 }  // namespace test_protocols
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_protocols::WithAndWithoutRequestResponse>> {
@@ -409,6 +409,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_protoc
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protocols::MethodWithUnion>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

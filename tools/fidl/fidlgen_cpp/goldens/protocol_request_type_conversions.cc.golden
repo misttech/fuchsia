@@ -10,7 +10,7 @@
 namespace fidl {
 namespace internal {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocolrequest::ParentGetChildResponse WireNaturalConversionTraits<::test_protocolrequest::wire::ParentGetChildResponse, ::test_protocolrequest::ParentGetChildResponse>::ToNatural(::test_protocolrequest::wire::ParentGetChildResponse src) {
   return ::test_protocolrequest::ParentGetChildResponse(WireNaturalConversionTraits<::fidl::ClientEnd<::test_protocolrequest::Child>, ::fidl::ClientEnd<::test_protocolrequest::Child>>::ToNatural(std::move(src.c)));
@@ -66,7 +66,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_protocolrequest::wire::ParentGetChildRequestResponse, ::test_protocolrequest::ParentGetChildRequestResponse>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

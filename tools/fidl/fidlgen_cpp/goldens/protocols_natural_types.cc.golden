@@ -424,7 +424,7 @@ uint8_t& ::test_protocols::WithErrorSyntaxErrorAsEnumResponse::__reserved() {
   storage_.__reserved = std::move(value);
   return *this;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::WithErrorSyntaxHandleInResultResponse::WithErrorSyntaxHandleInResultResponse(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocols::WithErrorSyntaxHandleInResultResponse::WithErrorSyntaxHandleInResultResponse(::zx::handle h) noexcept
@@ -447,7 +447,7 @@ test_protocols::WithErrorSyntaxHandleInResultResponse::h() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::ChannelProtocolMethodARequest::ChannelProtocolMethodARequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocols::ChannelProtocolMethodARequest::ChannelProtocolMethodARequest(int64_t a, int64_t b) noexcept
@@ -656,7 +656,7 @@ int64_t& ::test_protocols::ChannelProtocolMethodBResponse::result() {
   storage_.result = std::move(value);
   return *this;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::ChannelProtocolTakeHandleRequest::ChannelProtocolTakeHandleRequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocols::ChannelProtocolTakeHandleRequest::ChannelProtocolTakeHandleRequest(::zx::handle h) noexcept
@@ -721,7 +721,7 @@ test_protocols::ChannelProtocolMutateSocketResponse::b() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::SyscallProtocolMethodCRequest::SyscallProtocolMethodCRequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocols::SyscallProtocolMethodCRequest::SyscallProtocolMethodCRequest(int64_t a, int64_t b) noexcept
@@ -778,7 +778,7 @@ int64_t& ::test_protocols::SyscallProtocolMethodCRequest::b() {
   storage_.b = std::move(value);
   return *this;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::HandleRightsProtocolNoResponseMethodRequest::HandleRightsProtocolNoResponseMethodRequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocols::HandleRightsProtocolNoResponseMethodRequest::HandleRightsProtocolNoResponseMethodRequest(::zx::socket h) noexcept
@@ -1056,7 +1056,7 @@ test_protocols::WithProtocolEndsStructContainingEndsResponse::out() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::ManyParametersFifteenRequest::ManyParametersFifteenRequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocols::ManyParametersFifteenRequest::ManyParametersFifteenRequest(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15) noexcept
@@ -1722,7 +1722,7 @@ const ::fidl::internal::UnionMemberView<2, ::test_protocols::WithErrorSyntaxErro
   storage_->emplace<2>(std::move(value));
   return *this;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::WithErrorSyntaxHandleInResultResult::WithErrorSyntaxHandleInResultResult(WithErrorSyntaxHandleInResultResult&& other) noexcept : WithErrorSyntaxHandleInResultResult(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {
   *storage_ = std::move(*other.storage_);
@@ -1805,7 +1805,7 @@ const ::fidl::internal::UnionMemberView<2, ::test_protocols::WithErrorSyntaxHand
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::TheUnion::TheUnion(TheUnion&& other) noexcept : TheUnion(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {
   *storage_ = std::move(*other.storage_);

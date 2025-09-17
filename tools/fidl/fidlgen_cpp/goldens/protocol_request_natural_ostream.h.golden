@@ -12,7 +12,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_protocolrequest::ParentGetChildResponse> {
@@ -34,11 +34,11 @@ struct fidl::ostream::Formatter<::test_protocolrequest::ParentTakeChildRequestRe
   static std::ostream& Format(std::ostream& os, const ::test_protocolrequest::ParentTakeChildRequestRequest& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace test_protocolrequest {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocolrequest::ParentGetChildResponse& value);
 
@@ -48,11 +48,11 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocolrequest::ParentT
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocolrequest::ParentTakeChildRequestRequest& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_protocolrequest
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_protocolrequest::Child>> {
@@ -80,6 +80,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_protoc
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protocolrequest::Parent>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

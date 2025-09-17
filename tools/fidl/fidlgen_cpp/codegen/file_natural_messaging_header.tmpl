@@ -30,6 +30,8 @@ Those libraries should not define business logic types or protocols, and we
 do not support them in the bindings. */}}
 {{- if not .SingleComponentLibraryName }}
 
+#include <lib/fidl/cpp/features.h>
+
 {{- IfdefFuchsia }}
 
 #include <lib/fidl/cpp/client.h>

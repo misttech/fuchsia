@@ -47,7 +47,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_emptystruct::EmptyProtoc
 
 }  // namespace test_emptystruct
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_emptystruct::EmptyProtocol>> {
@@ -63,6 +63,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_emptys
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_emptystruct::EmptyProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

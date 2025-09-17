@@ -12,11 +12,11 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -27,7 +27,7 @@ class ParentFirstRequest;
 
 class ChildSecondRequest;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ParentFirstRequest {
  private:
@@ -115,12 +115,12 @@ class ChildSecondRequest {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_inheritancewithrecursivedecl
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_inheritancewithrecursivedecl::ParentFirstRequest> : public std::true_type {};
@@ -164,7 +164,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_inheritancewithrecursivedecl::ChildSecondRequest, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_inheritancewithrecursivedecl::ChildSecondRequest, 4> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

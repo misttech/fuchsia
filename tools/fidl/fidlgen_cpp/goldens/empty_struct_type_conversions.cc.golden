@@ -55,7 +55,7 @@ namespace internal {
   };
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_emptystruct::EmptyProtocol::SendAndReceive> WireNaturalConversionTraits<::fidl::WireResponse<::test_emptystruct::EmptyProtocol::SendAndReceive>, ::fidl::Response<::test_emptystruct::EmptyProtocol::SendAndReceive>>::ToNatural(::fidl::WireResponse<::test_emptystruct::EmptyProtocol::SendAndReceive> src) {
   return ::fidl::Response<::test_emptystruct::EmptyProtocol::SendAndReceive>(
@@ -66,7 +66,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_emptystruct::wire::EmptyProtocolSendAndReceiveResponse, ::test_emptystruct::EmptyProtocolSendAndReceiveResponse>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

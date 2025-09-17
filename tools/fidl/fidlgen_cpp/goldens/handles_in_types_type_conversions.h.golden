@@ -7,11 +7,11 @@
 #include <fidl/test.handlesintypes/cpp/markers.h>
 #include <fidl/test.handlesintypes/cpp/natural_types.h>
 #include <fidl/test.handlesintypes/cpp/wire_types.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.handlesintypes/cpp/natural_messaging.h>
 #include <fidl/test.handlesintypes/cpp/wire_messaging.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 
 #pragma clang diagnostic push
@@ -29,7 +29,7 @@ struct WireTypeForNaturalType<::test_handlesintypes::ObjType> {
   using type = ::test_handlesintypes::wire::ObjType;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_handlesintypes::wire::HandlesInTypes, ::test_handlesintypes::HandlesInTypes> {
@@ -133,7 +133,7 @@ struct WireTypeForNaturalType<::test_handlesintypes::EmptyResourceUnion> {
   using type = ::test_handlesintypes::wire::EmptyResourceUnion;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

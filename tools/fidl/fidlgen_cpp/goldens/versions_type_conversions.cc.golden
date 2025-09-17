@@ -10,7 +10,7 @@
 namespace fidl {
 namespace internal {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_versions::Struct WireNaturalConversionTraits<::test_versions::wire::Struct, ::test_versions::Struct>::ToNatural(::test_versions::wire::Struct src) {
   return ::test_versions::Struct(WireNaturalConversionTraits<uint32_t, uint32_t>::ToNatural(std::move(src.x)));
@@ -58,7 +58,7 @@ namespace internal {
   }
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

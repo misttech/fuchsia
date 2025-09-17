@@ -16,12 +16,12 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl_driver/cpp/wire_types.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/event.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.driverhandle/cpp/common_types.h>
 #include <fidl/test.driverhandle/cpp/markers.h>
@@ -41,7 +41,7 @@ struct HandlesInProtocolSendHandlesRequest;
 
 class T;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct ClientEndWrapper {
   ::fdf::ClientEnd<::test_driverhandle::DriverProtocol> value = {};
@@ -241,13 +241,13 @@ struct HandlesInProtocolSendHandlesRequest {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_driverhandle
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_driverhandle::wire::ClientEndWrapper> : public std::true_type {};
@@ -386,7 +386,7 @@ struct ::fidl::internal::WireCodingTraits<::test_driverhandle::wire::T, ::fidl::
   static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

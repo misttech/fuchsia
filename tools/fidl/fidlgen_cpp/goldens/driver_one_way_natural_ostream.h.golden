@@ -30,7 +30,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_driveroneway::OneWaySend
 
 }  // namespace test_driveroneway
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fdf::ClientEnd<::test_driveroneway::OneWay>> {
@@ -46,6 +46,6 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ClientEnd<::test_drivero
 
 std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_driveroneway::OneWay>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

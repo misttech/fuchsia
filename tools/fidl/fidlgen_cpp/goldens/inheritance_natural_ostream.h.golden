@@ -29,7 +29,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_inheritance::SuperFooRes
 
 }  // namespace test_inheritance
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_inheritance::Super>> {
@@ -57,6 +57,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_inheri
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_inheritance::Sub>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

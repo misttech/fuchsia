@@ -1,5 +1,6 @@
 {
   "pkg/fidl_base/include/lib/fidl/coding.h": "463c609fcc093ee673f376dd62f141ce",
+  "pkg/fidl_base/include/lib/fidl/cpp/features.h": "bf7014987e5c96342b2026fa7b3e279a",
   "pkg/fidl_base/include/lib/fidl/cpp/framework_err.h": "ee007523d29da60714f88fa86db4050c",
   "pkg/fidl_base/include/lib/fidl/cpp/time.h": "2d0a681247779e89d960aa9f42733298",
   "pkg/fidl_base/include/lib/fidl/cpp/transaction_header.h": "5e248521f37cc00b1a316b1d040c5a64",

@@ -7,6 +7,7 @@
 
 #include <lib/fidl/cpp/box.h>
 #include <lib/fidl/cpp/enum.h>
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/framework_err.h>
 #include <lib/fidl/cpp/string.h>
 #include <lib/fidl/cpp/time.h>
@@ -17,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/object.h>
 #endif
 
@@ -79,7 +80,7 @@ template <zx_clock_t ClockId>
 struct NaturalToHLCPPTraits<fidl::basic_time<ClockId>> final
     : public NaturalToHLCPPTraitsIdentical<fidl::basic_time<ClockId>> {};
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 /* Natural to HLCPP types for handle types */
 template <typename Natural>
 struct NaturalToHLCPPTraits<Natural, std::enable_if_t<std::is_base_of_v<zx::object_base, Natural>>>

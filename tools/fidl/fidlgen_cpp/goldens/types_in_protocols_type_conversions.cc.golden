@@ -18,7 +18,7 @@ namespace internal {
       .__reserved = WireNaturalConversionTraits<uint8_t, uint8_t>::ToWire(arena, std::move(src.__reserved())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ResourceStruct WireNaturalConversionTraits<::test_typesinprotocols::wire::ResourceStruct, ::test_typesinprotocols::ResourceStruct>::ToNatural(::test_typesinprotocols::wire::ResourceStruct src) {
   return ::test_typesinprotocols::ResourceStruct(WireNaturalConversionTraits<uint8_t, uint8_t>::ToNatural(std::move(src.__reserved)));
@@ -29,7 +29,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::Basic WireNaturalConversionTraits<::test_typesinprotocols::wire::Basic, ::test_typesinprotocols::Basic>::ToNatural(::test_typesinprotocols::wire::Basic src) {
   return ::test_typesinprotocols::Basic{{
@@ -232,7 +232,7 @@ namespace internal {
       .vector_vector_uint8 = WireNaturalConversionTraits<::fidl::VectorView<::fidl::VectorView<uint8_t>>, ::std::vector<::std::vector<uint8_t>>>::ToWire(arena, std::move(src.vector_vector_uint8())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::Resource WireNaturalConversionTraits<::test_typesinprotocols::wire::Resource, ::test_typesinprotocols::Resource>::ToNatural(::test_typesinprotocols::wire::Resource src) {
   return ::test_typesinprotocols::Resource{{
@@ -297,7 +297,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::Table WireNaturalConversionTraits<::test_typesinprotocols::wire::Table, ::test_typesinprotocols::Table>::ToNatural(::test_typesinprotocols::wire::Table src) {
   ::test_typesinprotocols::Table dst;
@@ -309,7 +309,7 @@ namespace internal {
   return builder.Build();
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 ::test_typesinprotocols::ResourceTable WireNaturalConversionTraits<::test_typesinprotocols::wire::ResourceTable, ::test_typesinprotocols::ResourceTable>::ToNatural(::test_typesinprotocols::wire::ResourceTable src) {
   ::test_typesinprotocols::ResourceTable dst;
 
@@ -320,7 +320,7 @@ namespace internal {
   return builder.Build();
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::Union WireNaturalConversionTraits<::test_typesinprotocols::wire::Union, ::test_typesinprotocols::Union>::ToNatural(::test_typesinprotocols::wire::Union src) {
   switch (src.Which()) {
@@ -341,7 +341,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ResourceUnion WireNaturalConversionTraits<::test_typesinprotocols::wire::ResourceUnion, ::test_typesinprotocols::ResourceUnion>::ToNatural(::test_typesinprotocols::wire::ResourceUnion src) {
   switch (src.Which()) {
@@ -362,7 +362,7 @@ namespace internal {
   }
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ProtocolErrorBasicResult WireNaturalConversionTraits<::test_typesinprotocols::wire::ProtocolErrorBasicResult, ::test_typesinprotocols::ProtocolErrorBasicResult>::ToNatural(::test_typesinprotocols::wire::ProtocolErrorBasicResult src) {
   switch (src.Which()) {
@@ -548,7 +548,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ProtocolErrorResourceResult WireNaturalConversionTraits<::test_typesinprotocols::wire::ProtocolErrorResourceResult, ::test_typesinprotocols::ProtocolErrorResourceResult>::ToNatural(::test_typesinprotocols::wire::ProtocolErrorResourceResult src) {
   switch (src.Which()) {
@@ -735,7 +735,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_typesinprotocols::wire::ProtocolErrorResourceResult, ::fit::result<uint32_t, ::test_typesinprotocols::Resource>>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

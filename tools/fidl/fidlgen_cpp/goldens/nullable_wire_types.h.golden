@@ -16,11 +16,11 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.nullable/cpp/common_types.h>
 #include <fidl/test.nullable/cpp/markers.h>
@@ -54,7 +54,7 @@ struct StructWithNullableUnion;
 
 class SimpleUnion;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct StructWithNullableHandle {
   ::zx::vmo val = {};
@@ -62,13 +62,13 @@ struct StructWithNullableHandle {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 struct SimpleProtocolAddResponse {
   int32_t sum = {};
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct StructWithNullableProtocol {
   ::fidl::ClientEnd<::test_nullable::SimpleProtocol> val = {};
@@ -82,7 +82,7 @@ struct StructWithNullableRequest {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 struct Int32Wrapper {
   int32_t val = {};
@@ -224,7 +224,7 @@ struct ::fidl::internal::WireCodingTraits<::test_nullable::wire::StructWithNulla
   static void Decode(
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_nullable::wire::StructWithNullableHandle> : public std::true_type {};
@@ -261,7 +261,7 @@ struct ::fidl::internal::WireCodingTraits<::test_nullable::wire::StructWithNulla
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct TypeTraits<::test_nullable::wire::SimpleProtocolAddRequest> {
@@ -326,7 +326,7 @@ struct ::fidl::internal::WireCodingTraits<::test_nullable::wire::SimpleProtocolA
   static void Decode(
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_nullable::wire::StructWithNullableProtocol> : public std::true_type {};
@@ -398,7 +398,7 @@ struct ::fidl::internal::WireCodingTraits<::test_nullable::wire::StructWithNulla
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct TypeTraits<::test_nullable::wire::Int32Wrapper> {

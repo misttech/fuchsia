@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_handles::Handles::Handles(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_handles::Handles::Handles(::zx::handle plain_handle, ::zx::bti bti_handle, ::zx::channel channel_handle, ::zx::clock clock_handle, ::zx::debuglog debuglog_handle, ::zx::event event_handle, ::zx::eventpair eventpair_handle, ::zx::exception exception_handle, ::zx::fifo fifo_handle, ::zx::guest guest_handle, ::zx::interrupt interrupt_handle, ::zx::iob iob_handle, ::zx::iommu iommu_handle, ::zx::job job_handle, ::zx::msi msi_handle, ::zx::pager pager_handle, ::zx::pmt pmt_handle, ::zx::port port_handle, ::zx::process process_handle, ::zx::profile profile_handle, ::zx::resource resource_handle, ::zx::socket socket_handle, ::zx::stream stream_handle, ::zx::suspend_token suspendtoken_handle, ::zx::thread thread_handle, ::zx::timer timer_handle, ::zx::vcpu vcpu_handle, ::zx::vmar vmar_handle, ::zx::vmo vmo_handle, ::zx::vmo rights_handle, ::zx::handle aliased_plain_handle_field, ::zx::vmo aliased_subtype_handle_field, ::zx::vmo aliased_rights_handle_field, ::fidl::ClientEnd<::test_handles::SomeProtocol> some_protocol, ::fidl::ServerEnd<::test_handles::SomeProtocol> request_some_protocol) noexcept
@@ -591,6 +591,6 @@ test_handles::FdfHandles::server_end_driver() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

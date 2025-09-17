@@ -95,7 +95,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_anonymous::SomeProtocolS
 
 }  // namespace test_anonymous
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_anonymous::SomeProtocol>> {
@@ -111,6 +111,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_anonym
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_anonymous::SomeProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

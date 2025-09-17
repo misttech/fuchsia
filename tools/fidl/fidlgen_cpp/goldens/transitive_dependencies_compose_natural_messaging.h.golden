@@ -6,8 +6,8 @@
 
 #include <fidl/test.bottom/cpp/markers.h>
 #include <fidl/test.middle/cpp/markers.h>
-
-#ifdef __Fuchsia__
+#include <lib/fidl/cpp/features.h>
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.transitivedependenciescompose/cpp/markers.h>
 #include <fidl/test.transitivedependenciescompose/cpp/natural_types.h>
@@ -165,4 +165,4 @@ struct ::fidl::internal::NaturalServerDispatcher<::test_transitivedependenciesco
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

@@ -227,7 +227,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> WireNaturalConversionTraits<::fidl::WireResponse<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>, ::fidl::Response<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>>::ToNatural(::fidl::WireResponse<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> src) {
   return ::fidl::Response<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>(
@@ -337,7 +337,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_protocollayouts_imported::wire::ComposedOpenProtocolStrictTwoWayWithErrorResult, ::fit::result<int32_t, ::test_protocollayouts_imported::ComposedOpenProtocolStrictTwoWayWithErrorResponse>>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

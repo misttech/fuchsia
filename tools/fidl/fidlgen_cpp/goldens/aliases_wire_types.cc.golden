@@ -38,7 +38,7 @@ void fidl::internal::WireCodingTraits<::test_aliases::wire::ObjType, ::fidl::int
 template struct ::fidl::internal::WireCodingTraits<::test_aliases::wire::ObjType, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_aliases::wire::ObjType, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_aliases::wire::ExampleOfUseOfAliases::_CloseHandles() {
   field_of_channel.reset();
@@ -104,6 +104,6 @@ static_assert(offsetof(::test_aliases::wire::ExampleOfUseOfAliases, field_of_cli
 static_assert(offsetof(::test_aliases::wire::ExampleOfUseOfAliases, field_of_nullable_client_end) == 80);
 static_assert(sizeof(::test_aliases::wire::ExampleOfUseOfAliases) == ::fidl::TypeTraits<::test_aliases::wire::ExampleOfUseOfAliases>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

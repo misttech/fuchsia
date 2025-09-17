@@ -5,8 +5,9 @@
 #pragma once
 
 #include <fidl/test.protocolrequest/cpp/common_types.h>
+#include <lib/fidl/cpp/features.h>
 
-#if defined(__cpp_lib_format) && __cplusplus >= 202002L && defined(__Fuchsia__)
+#if __FIDL_SUPPORT_FORMAT
 #include <format>
 
 #endif

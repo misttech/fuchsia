@@ -5,20 +5,21 @@
 #ifndef LIB_FIDL_CPP_WIRE_CONNECT_SERVICE_H_
 #define LIB_FIDL_CPP_WIRE_CONNECT_SERVICE_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/internal/transport.h>
 #include <lib/fidl/cpp/wire/string_view.h>
 #include <lib/fidl/cpp/wire/sync_call.h>
 #include <zircon/fidl.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 namespace internal {
 
@@ -30,7 +31,7 @@ using ConnectMemberFunc = zx::result<> (*)(zx::unowned_channel service_dir,
 
 }  // namespace internal
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace internal {
 // Helper type for compile-time string concatenation.

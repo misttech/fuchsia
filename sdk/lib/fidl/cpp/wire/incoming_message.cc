@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/incoming_message.h>
 #include <lib/fidl/txn_header.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/transport_channel.h>
 #else
 #include <lib/fidl/cpp/wire/internal/transport_channel_host.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace fidl {
 

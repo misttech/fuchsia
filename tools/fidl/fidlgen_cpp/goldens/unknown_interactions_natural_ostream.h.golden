@@ -696,7 +696,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_unknowninteractions::Unk
 
 }  // namespace test_unknowninteractions
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>> {
@@ -772,6 +772,6 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ClientEnd<::test_unknown
 
 std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_unknowninteractions::UnknownInteractionsClosedDriverProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

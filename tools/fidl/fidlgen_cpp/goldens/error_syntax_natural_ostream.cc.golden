@@ -37,7 +37,7 @@ std::ostream& fidl::ostream::Formatter<::test_errorsyntax::ExampleUseOfErrorSynt
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>& value) {
   return os << "ClientEnd<" << "test_errorsyntax::ExampleUseOfErrorSyntax" << ">(" << value.channel().get() << ")";
@@ -55,7 +55,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_errors
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_errorsyntax {
 
 std::ostream& operator<<(std::ostream& os, const ::test_errorsyntax::ExampleUseOfErrorSyntaxCallWhichMayFailRequest& value) {

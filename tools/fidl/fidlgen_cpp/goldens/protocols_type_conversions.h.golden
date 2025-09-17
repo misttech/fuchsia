@@ -7,11 +7,11 @@
 #include <fidl/test.protocols/cpp/markers.h>
 #include <fidl/test.protocols/cpp/natural_types.h>
 #include <fidl/test.protocols/cpp/wire_types.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.protocols/cpp/natural_messaging.h>
 #include <fidl/test.protocols/cpp/wire_messaging.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 
 #pragma clang diagnostic push
@@ -164,7 +164,7 @@ struct WireTypeForNaturalType<::test_protocols::WithErrorSyntaxErrorAsEnumRespon
   using type = ::test_protocols::wire::WithErrorSyntaxErrorAsEnumResponse;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResponse, ::test_protocols::WithErrorSyntaxHandleInResultResponse> {
@@ -181,7 +181,7 @@ struct WireTypeForNaturalType<::test_protocols::WithErrorSyntaxHandleInResultRes
   using type = ::test_protocols::wire::WithErrorSyntaxHandleInResultResponse;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::ChannelProtocolMethodARequest, ::test_protocols::ChannelProtocolMethodARequest> {
@@ -243,7 +243,7 @@ struct WireTypeForNaturalType<::test_protocols::ChannelProtocolMethodBResponse> 
   using type = ::test_protocols::wire::ChannelProtocolMethodBResponse;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::ChannelProtocolTakeHandleRequest, ::test_protocols::ChannelProtocolTakeHandleRequest> {
@@ -290,7 +290,7 @@ struct WireTypeForNaturalType<::test_protocols::ChannelProtocolMutateSocketRespo
   using type = ::test_protocols::wire::ChannelProtocolMutateSocketResponse;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::SyscallProtocolMethodCRequest, ::test_protocols::SyscallProtocolMethodCRequest> {
@@ -307,7 +307,7 @@ struct WireTypeForNaturalType<::test_protocols::SyscallProtocolMethodCRequest> {
   using type = ::test_protocols::wire::SyscallProtocolMethodCRequest;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::HandleRightsProtocolNoResponseMethodRequest, ::test_protocols::HandleRightsProtocolNoResponseMethodRequest> {
@@ -474,7 +474,7 @@ struct WireTypeForNaturalType<::test_protocols::WithProtocolEndsStructContaining
   using type = ::test_protocols::wire::WithProtocolEndsStructContainingEndsResponse;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::ManyParametersFifteenRequest, ::test_protocols::ManyParametersFifteenRequest> {
@@ -584,7 +584,7 @@ struct WireTypeForNaturalType<::test_protocols::WithErrorSyntaxErrorAsEnumResult
   using type = ::test_protocols::wire::WithErrorSyntaxErrorAsEnumResult;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResult, ::test_protocols::WithErrorSyntaxHandleInResultResult> {
@@ -607,7 +607,7 @@ struct WireTypeForNaturalType<::test_protocols::WithErrorSyntaxHandleInResultRes
   using type = ::test_protocols::wire::WithErrorSyntaxHandleInResultResult;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_protocols::wire::TheUnion, ::test_protocols::TheUnion> {
@@ -630,7 +630,7 @@ struct WireTypeForNaturalType<::test_protocols::TheUnion> {
   using type = ::test_protocols::wire::TheUnion;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::fidl::WireResponse<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>, ::fidl::Response<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>> {
@@ -827,7 +827,7 @@ struct WireTypeForNaturalType<::fidl::Response<::test_protocols::MethodWithUnion
   using type = ::fidl::WireResponse<::test_protocols::MethodWithUnion::UnionMethod>;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

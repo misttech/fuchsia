@@ -30,7 +30,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_drivertwoway::TwoWayAddR
 
 }  // namespace test_drivertwoway
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fdf::ClientEnd<::test_drivertwoway::TwoWay>> {
@@ -46,6 +46,6 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ClientEnd<::test_drivert
 
 std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_drivertwoway::TwoWay>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

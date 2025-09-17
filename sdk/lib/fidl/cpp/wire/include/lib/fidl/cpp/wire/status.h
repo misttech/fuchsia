@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_WIRE_STATUS_H_
 #define LIB_FIDL_CPP_WIRE_STATUS_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/internal/display_error.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
@@ -15,7 +16,7 @@
 #include <iosfwd>
 #include <optional>
 
-#if __cplusplus >= 202002L
+#if __FIDL_SUPPORT_FORMAT
 #include <format>
 #endif
 
@@ -423,7 +424,7 @@ class [[nodiscard]] Status {
   friend class UnbindInfo;
   friend std::ostream& operator<<(std::ostream& ostream, const Status& result);
   friend struct fidl::internal::DisplayError<fidl::Status>;
-#if __cplusplus >= 202002L
+#if __FIDL_SUPPORT_FORMAT
   friend struct std::formatter<fidl::Status>;
 #endif
 
@@ -453,7 +454,7 @@ struct fidl::internal::DisplayError<fidl::Status> {
 
 }  // namespace fidl
 
-#if __cplusplus >= 202002L
+#if __FIDL_SUPPORT_FORMAT
 template <>
 struct std::formatter<fidl::Status> : std::formatter<std::string_view> {
   auto format(const fidl::Status& result, std::format_context& ctx) const {

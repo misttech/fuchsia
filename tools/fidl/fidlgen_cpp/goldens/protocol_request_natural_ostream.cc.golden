@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_protocolrequest::ParentGetChildResponse>::Format(std::ostream& os, const ::test_protocolrequest::ParentGetChildResponse& value) {
   os << "test_protocolrequest::ParentGetChildResponse";
@@ -76,10 +76,10 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protoc
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_protocolrequest::Parent>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_protocolrequest {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocolrequest::ParentGetChildResponse& value) {
   return fidl::ostream::Formatter<::test_protocolrequest::ParentGetChildResponse>::Format(os, value);
@@ -97,7 +97,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocolrequest::ParentT
   return fidl::ostream::Formatter<::test_protocolrequest::ParentTakeChildRequestRequest>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

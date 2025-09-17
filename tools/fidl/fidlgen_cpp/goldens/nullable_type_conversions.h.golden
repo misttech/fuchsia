@@ -7,11 +7,11 @@
 #include <fidl/test.nullable/cpp/markers.h>
 #include <fidl/test.nullable/cpp/natural_types.h>
 #include <fidl/test.nullable/cpp/wire_types.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.nullable/cpp/natural_messaging.h>
 #include <fidl/test.nullable/cpp/wire_messaging.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 
 #pragma clang diagnostic push
@@ -50,7 +50,7 @@ struct WireTypeForNaturalType<::test_nullable::StructWithNullableVector> {
   using type = ::test_nullable::wire::StructWithNullableVector;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_nullable::wire::StructWithNullableHandle, ::test_nullable::StructWithNullableHandle> {
@@ -67,7 +67,7 @@ struct WireTypeForNaturalType<::test_nullable::StructWithNullableHandle> {
   using type = ::test_nullable::wire::StructWithNullableHandle;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_nullable::wire::SimpleProtocolAddRequest, ::test_nullable::SimpleProtocolAddRequest> {
@@ -99,7 +99,7 @@ struct WireTypeForNaturalType<::test_nullable::SimpleProtocolAddResponse> {
   using type = ::test_nullable::wire::SimpleProtocolAddResponse;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_nullable::wire::StructWithNullableProtocol, ::test_nullable::StructWithNullableProtocol> {
@@ -131,7 +131,7 @@ struct WireTypeForNaturalType<::test_nullable::StructWithNullableRequest> {
   using type = ::test_nullable::wire::StructWithNullableRequest;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::test_nullable::wire::Int32Wrapper, ::test_nullable::Int32Wrapper> {
@@ -199,7 +199,7 @@ struct WireTypeForNaturalType<::test_nullable::SimpleUnion> {
   using type = ::test_nullable::wire::SimpleUnion;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::fidl::WireResponse<::test_nullable::SimpleProtocol::Add>, ::fidl::Response<::test_nullable::SimpleProtocol::Add>> {
@@ -216,7 +216,7 @@ struct WireTypeForNaturalType<::fidl::Response<::test_nullable::SimpleProtocol::
   using type = ::fidl::WireResponse<::test_nullable::SimpleProtocol::Add>;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

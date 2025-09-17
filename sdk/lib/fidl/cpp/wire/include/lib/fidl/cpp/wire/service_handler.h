@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_WIRE_SERVICE_HANDLER_H_
 #define LIB_FIDL_CPP_WIRE_SERVICE_HANDLER_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/string_view.h>
 #include <lib/fit/function.h>
 #include <zircon/fidl.h>
@@ -13,15 +14,15 @@
 #include <string>
 #include <string_view>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/endpoints.h>
 #include <lib/fidl/cpp/wire/internal/transport.h>
 #include <lib/zx/result.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <typename Protocol>
 using ProtocolHandler = fit::function<void(fidl::internal::ServerEndType<Protocol>)>;
@@ -98,7 +99,7 @@ class ServiceInstanceHandler {
   std::map<std::string, AnyMemberHandler> handlers_ = {};
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace fidl
 

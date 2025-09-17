@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/fit/nullable.h>
 #include <zircon/compiler.h>
@@ -180,7 +181,7 @@ size_t Status::FormatImpl(char* destination, size_t length, bool from_unbind_inf
       underlying_description = "";
     }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
     num_would_write = snprintf(destination, length, "%s due to %s%s, %s: %s (%d)%s%s", prelude,
                                reason_description(), underlying_description, status_meaning,
                                zx_status_get_string(status_), status_, detail_prefix, detail);
@@ -188,7 +189,7 @@ size_t Status::FormatImpl(char* destination, size_t length, bool from_unbind_inf
     num_would_write =
         snprintf(destination, length, "%s due to %s%s, %s: %d%s%s", prelude, reason_description(),
                  underlying_description, status_meaning, status_, detail_prefix, detail);
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
   }
 
   ZX_ASSERT(num_would_write > 0);

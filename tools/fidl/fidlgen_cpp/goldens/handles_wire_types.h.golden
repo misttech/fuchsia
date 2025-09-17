@@ -16,7 +16,7 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl_driver/cpp/wire_types.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/channel.h>
@@ -48,7 +48,7 @@
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/fdf/cpp/wire_types.h>
 #include <fidl/test.handles/cpp/common_types.h>
@@ -65,7 +65,7 @@ struct Handles;
 
 struct FdfHandles;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 using AliasedPlainHandle = ::zx::handle;
 
 using AliasedSubtypeHandle = ::zx::vmo;
@@ -156,13 +156,13 @@ struct FdfHandles {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_handles
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_handles::wire::Handles> : public std::true_type {};
@@ -234,7 +234,7 @@ struct ::fidl::internal::WireCodingTraits<::test_handles::wire::FdfHandles, ::fi
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

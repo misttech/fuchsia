@@ -115,9 +115,14 @@ func removeBlankLines(source []byte) []byte {
 
 var collapseIfdefsRE1 = regexp.MustCompile(`(?m)#endif  // __Fuchsia__\s+#ifdef __Fuchsia__`)
 var collapseIfdefsRE2 = regexp.MustCompile(`(?m)#ifdef __Fuchsia__\s+#endif  // __Fuchsia__`)
+var collapseIfdefsRE3 = regexp.MustCompile(`(?m)#endif  // __FIDL_SUPPORT_HANDLES\s+#if __FIDL_SUPPORT_HANDLES`)
+var collapseIfdefsRE4 = regexp.MustCompile(`(?m)#if __FIDL_SUPPORT_HANDLES\s+#endif  // __FIDL_SUPPORT_HANDLES`)
 
 func collapseIfdefs(source []byte) []byte {
-	return collapseIfdefsRE2.ReplaceAll(collapseIfdefsRE1.ReplaceAll(source, nil), nil)
+	return collapseIfdefsRE4.ReplaceAll(
+		collapseIfdefsRE3.ReplaceAll(
+			collapseIfdefsRE2.ReplaceAll(
+				collapseIfdefsRE1.ReplaceAll(source, nil), nil), nil), nil)
 }
 
 var removeEmptyNamespacesOuterRE = regexp.MustCompile(`(?m)namespace [a-z0-9_]+ \{\s*\}  // namespace [a-z0-9_]+`)

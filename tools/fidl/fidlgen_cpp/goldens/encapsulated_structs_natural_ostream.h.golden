@@ -28,7 +28,7 @@ template <>
 struct fidl::ostream::Formatter<::test_encapsulatedstructs::StructPaddingTestStruct> {
   static std::ostream& Format(std::ostream& os, const ::test_encapsulatedstructs::StructPaddingTestStruct& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_encapsulatedstructs::NonInlineStructTestStruct> {
@@ -40,7 +40,7 @@ struct fidl::ostream::Formatter<::test_encapsulatedstructs::TopLevelStruct> {
   static std::ostream& Format(std::ostream& os, const ::test_encapsulatedstructs::TopLevelStruct& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace test_encapsulatedstructs {
 
@@ -52,13 +52,13 @@ std::ostream& operator<<(std::ostream& os, const ::test_encapsulatedstructs::Arr
 
 std::ostream& operator<<(std::ostream& os, const ::test_encapsulatedstructs::StructPaddingTestStruct& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_encapsulatedstructs::NonInlineStructTestStruct& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_encapsulatedstructs::TopLevelStruct& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_encapsulatedstructs
 

@@ -7,11 +7,11 @@
 #include <fidl/test.emptystruct/cpp/markers.h>
 #include <fidl/test.emptystruct/cpp/natural_types.h>
 #include <fidl/test.emptystruct/cpp/wire_types.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.emptystruct/cpp/natural_messaging.h>
 #include <fidl/test.emptystruct/cpp/wire_messaging.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 
 #pragma clang diagnostic push
@@ -95,7 +95,7 @@ struct WireTypeForNaturalType<::test_emptystruct::EmptyProtocolSendAndReceiveRes
   using type = ::test_emptystruct::wire::EmptyProtocolSendAndReceiveResponse;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::fidl::WireResponse<::test_emptystruct::EmptyProtocol::SendAndReceive>, ::fidl::Response<::test_emptystruct::EmptyProtocol::SendAndReceive>> {
@@ -112,7 +112,7 @@ struct WireTypeForNaturalType<::fidl::Response<::test_emptystruct::EmptyProtocol
   using type = ::fidl::WireResponse<::test_emptystruct::EmptyProtocol::SendAndReceive>;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

@@ -96,7 +96,7 @@ namespace internal {
       .__reserved = WireNaturalConversionTraits<uint8_t, uint8_t>::ToWire(arena, std::move(src.__reserved())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::WithErrorSyntaxHandleInResultResponse WireNaturalConversionTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResponse, ::test_protocols::WithErrorSyntaxHandleInResultResponse>::ToNatural(::test_protocols::wire::WithErrorSyntaxHandleInResultResponse src) {
   return ::test_protocols::WithErrorSyntaxHandleInResultResponse(WireNaturalConversionTraits<::zx::handle, ::zx::handle>::ToNatural(std::move(src.h)));
@@ -107,7 +107,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::ChannelProtocolMethodARequest WireNaturalConversionTraits<::test_protocols::wire::ChannelProtocolMethodARequest, ::test_protocols::ChannelProtocolMethodARequest>::ToNatural(::test_protocols::wire::ChannelProtocolMethodARequest src) {
   return ::test_protocols::ChannelProtocolMethodARequest{{
@@ -156,7 +156,7 @@ namespace internal {
       .result = WireNaturalConversionTraits<int64_t, int64_t>::ToWire(arena, std::move(src.result())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::ChannelProtocolTakeHandleRequest WireNaturalConversionTraits<::test_protocols::wire::ChannelProtocolTakeHandleRequest, ::test_protocols::ChannelProtocolTakeHandleRequest>::ToNatural(::test_protocols::wire::ChannelProtocolTakeHandleRequest src) {
   return ::test_protocols::ChannelProtocolTakeHandleRequest(WireNaturalConversionTraits<::zx::handle, ::zx::handle>::ToNatural(std::move(src.h)));
@@ -185,7 +185,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::SyscallProtocolMethodCRequest WireNaturalConversionTraits<::test_protocols::wire::SyscallProtocolMethodCRequest, ::test_protocols::SyscallProtocolMethodCRequest>::ToNatural(::test_protocols::wire::SyscallProtocolMethodCRequest src) {
   return ::test_protocols::SyscallProtocolMethodCRequest{{
@@ -199,7 +199,7 @@ namespace internal {
       .b = WireNaturalConversionTraits<int64_t, int64_t>::ToWire(arena, std::move(src.b())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::HandleRightsProtocolNoResponseMethodRequest WireNaturalConversionTraits<::test_protocols::wire::HandleRightsProtocolNoResponseMethodRequest, ::test_protocols::HandleRightsProtocolNoResponseMethodRequest>::ToNatural(::test_protocols::wire::HandleRightsProtocolNoResponseMethodRequest src) {
   return ::test_protocols::HandleRightsProtocolNoResponseMethodRequest(WireNaturalConversionTraits<::zx::socket, ::zx::socket>::ToNatural(std::move(src.h)));
@@ -308,7 +308,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::ManyParametersFifteenRequest WireNaturalConversionTraits<::test_protocols::wire::ManyParametersFifteenRequest, ::test_protocols::ManyParametersFifteenRequest>::ToNatural(::test_protocols::wire::ManyParametersFifteenRequest src) {
   return ::test_protocols::ManyParametersFifteenRequest{{
@@ -436,7 +436,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::WithErrorSyntaxHandleInResultResult WireNaturalConversionTraits<::test_protocols::wire::WithErrorSyntaxHandleInResultResult, ::test_protocols::WithErrorSyntaxHandleInResultResult>::ToNatural(::test_protocols::wire::WithErrorSyntaxHandleInResultResult src) {
   switch (src.Which()) {
@@ -461,7 +461,7 @@ namespace internal {
   }
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_protocols::TheUnion WireNaturalConversionTraits<::test_protocols::wire::TheUnion, ::test_protocols::TheUnion>::ToNatural(::test_protocols::wire::TheUnion src) {
   switch (src.Which()) {
@@ -482,7 +482,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> WireNaturalConversionTraits<::fidl::WireResponse<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>, ::fidl::Response<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>>::ToNatural(::fidl::WireResponse<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> src) {
   return ::fidl::Response<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>(
@@ -601,7 +601,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_protocols::wire::MethodWithUnionUnionMethodResponse, ::test_protocols::MethodWithUnionUnionMethodResponse>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

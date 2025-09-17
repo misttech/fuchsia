@@ -16,10 +16,10 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.handlesintypes/cpp/common_types.h>
 #include <fidl/test.handlesintypes/cpp/markers.h>
@@ -44,7 +44,7 @@ class UnionWithHandle;
 
 class EmptyResourceUnion;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct EmptyResourceStruct {
   uint8_t __reserved = {};
@@ -420,7 +420,7 @@ struct HandlesInTypes {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_handlesintypes
@@ -435,7 +435,7 @@ struct internal::WireCodingTraits<::test_handlesintypes::wire::ObjType, ::fidl::
   static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_handlesintypes::wire::HandlesInTypes> : public std::true_type {};
@@ -643,7 +643,7 @@ template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_handlesintypes::wire::EmptyResourceUnion, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_handlesintypes::wire::EmptyResourceUnion, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

@@ -119,7 +119,7 @@ std::ostream& fidl::ostream::Formatter<::test_protocolpayloads::MainProtocolTwoW
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_protocolpayloads::MainProtocol>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_protocolpayloads::MainProtocol>& value) {
   return os << "ClientEnd<" << "test_protocolpayloads::MainProtocol" << ">(" << value.channel().get() << ")";
@@ -137,7 +137,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protoc
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_protocolpayloads::MainProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_protocolpayloads {
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocolpayloads::LocalStructPayload& value) {

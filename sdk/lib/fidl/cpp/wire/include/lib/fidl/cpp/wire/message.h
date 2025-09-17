@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_WIRE_MESSAGE_H_
 #define LIB_FIDL_CPP_WIRE_MESSAGE_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/transaction_header.h>
 #include <lib/fidl/cpp/wire/decoded_value.h>
 #include <lib/fidl/cpp/wire/incoming_message.h>
@@ -29,10 +30,10 @@
 #include <variant>
 #include <vector>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/endpoints.h>
 #include <lib/zx/channel.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace fidl {
 

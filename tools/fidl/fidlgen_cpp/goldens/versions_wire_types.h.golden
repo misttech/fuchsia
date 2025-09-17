@@ -16,10 +16,10 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.versions/cpp/common_types.h>
 #include <fidl/test.versions/cpp/markers.h>
@@ -42,7 +42,7 @@ class Union;
 
 using Alias = ::fidl::StringView;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct Struct {
   uint32_t x = {};
@@ -246,7 +246,7 @@ class Union {
   ::fidl::UntypedEnvelope envelope_;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 constexpr uint32_t kConst = 0u;
 
@@ -275,7 +275,7 @@ struct internal::WireCodingTraits<::test_versions::wire::Enum, ::fidl::internal:
   static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_versions::wire::Struct> : public std::true_type {};
@@ -380,7 +380,7 @@ template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_versions::wire::Union, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_versions::wire::Union, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

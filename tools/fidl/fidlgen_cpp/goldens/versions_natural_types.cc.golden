@@ -26,7 +26,7 @@ void fidl::internal::NaturalCodingTraits<::test_versions::Enum, ::fidl::internal
   *value = *decoder->template GetPtr<::test_versions::Enum>(offset);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_versions::Struct::Struct(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_versions::Struct::Struct(uint32_t x) noexcept
@@ -130,6 +130,6 @@ const ::fidl::internal::UnionMemberView<1, ::test_versions::Union::Storage_> tes
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

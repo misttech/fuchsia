@@ -2,7 +2,8 @@
 
 // fidl_experiment = output_index_json
 
-#ifdef __Fuchsia__
+#include <lib/fidl/cpp/features.h>
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.driverhandle/cpp/natural_messaging.h>
 #include <fidl/test.driverhandle/cpp/wire_messaging.h>
@@ -13,4 +14,4 @@
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

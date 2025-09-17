@@ -13,7 +13,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_driverhandle::ClientEndWrapper> {
@@ -35,11 +35,11 @@ struct fidl::ostream::Formatter<::test_driverhandle::HandlesInProtocolSendHandle
   static std::ostream& Format(std::ostream& os, const ::test_driverhandle::HandlesInProtocolSendHandlesRequest& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace test_driverhandle {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_driverhandle::ClientEndWrapper& value);
 
@@ -49,11 +49,11 @@ std::ostream& operator<<(std::ostream& os, const ::test_driverhandle::T& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_driverhandle::HandlesInProtocolSendHandlesRequest& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_driverhandle
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fdf::ClientEnd<::test_driverhandle::DriverProtocol>> {
@@ -81,6 +81,6 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ClientEnd<::test_driverh
 
 std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_driverhandle::HandlesInProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

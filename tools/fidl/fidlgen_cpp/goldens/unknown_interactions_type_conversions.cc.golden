@@ -2033,7 +2033,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>  WireNaturalConversionTraits<::fidl::WireResponse<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>, ::fidl::Response<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>>::ToNatural(::fidl::WireResponse<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> src) {
   return ::fidl::Response<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>(
@@ -2224,7 +2224,7 @@ namespace internal {
     WireNaturalConversionTraits<::test_unknowninteractions::wire::UnknownInteractionsClosedProtocolStrictTwoWayTableErrResult, ::fit::result<int32_t, ::test_unknowninteractions::UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse>>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

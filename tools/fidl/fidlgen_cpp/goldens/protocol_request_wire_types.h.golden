@@ -16,10 +16,10 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.protocolrequest/cpp/common_types.h>
 #include <fidl/test.protocolrequest/cpp/markers.h>
@@ -39,7 +39,7 @@ struct ParentTakeChildRequest;
 
 struct ParentTakeChildRequestRequest;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct ParentGetChildResponse {
   ::fidl::ClientEnd<::test_protocolrequest::Child> c = {};
@@ -65,13 +65,13 @@ struct ParentTakeChildRequestRequest {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_protocolrequest
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_protocolrequest::wire::ParentGetChildResponse> : public std::true_type {};
@@ -213,7 +213,7 @@ struct ::fidl::internal::WireCodingTraits<::test_protocolrequest::wire::ParentTa
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

@@ -27,7 +27,7 @@ namespace internal {
       .val = WireNaturalConversionTraits<::fidl::VectorView<int32_t>, ::std::optional<::std::vector<int32_t>>>::ToWire(arena, std::move(src.val())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::StructWithNullableHandle WireNaturalConversionTraits<::test_nullable::wire::StructWithNullableHandle, ::test_nullable::StructWithNullableHandle>::ToNatural(::test_nullable::wire::StructWithNullableHandle src) {
   return ::test_nullable::StructWithNullableHandle(WireNaturalConversionTraits<::zx::vmo, ::zx::vmo>::ToNatural(std::move(src.val)));
@@ -38,7 +38,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::SimpleProtocolAddRequest WireNaturalConversionTraits<::test_nullable::wire::SimpleProtocolAddRequest, ::test_nullable::SimpleProtocolAddRequest>::ToNatural(::test_nullable::wire::SimpleProtocolAddRequest src) {
   return ::test_nullable::SimpleProtocolAddRequest{{
@@ -61,7 +61,7 @@ namespace internal {
       .sum = WireNaturalConversionTraits<int32_t, int32_t>::ToWire(arena, std::move(src.sum())),
   };
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::StructWithNullableProtocol WireNaturalConversionTraits<::test_nullable::wire::StructWithNullableProtocol, ::test_nullable::StructWithNullableProtocol>::ToNatural(::test_nullable::wire::StructWithNullableProtocol src) {
   return ::test_nullable::StructWithNullableProtocol(WireNaturalConversionTraits<::fidl::ClientEnd<::test_nullable::SimpleProtocol>, ::fidl::ClientEnd<::test_nullable::SimpleProtocol>>::ToNatural(std::move(src.val)));
@@ -81,7 +81,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::Int32Wrapper WireNaturalConversionTraits<::test_nullable::wire::Int32Wrapper, ::test_nullable::Int32Wrapper>::ToNatural(::test_nullable::wire::Int32Wrapper src) {
   return ::test_nullable::Int32Wrapper(WireNaturalConversionTraits<int32_t, int32_t>::ToNatural(std::move(src.val)));
@@ -133,7 +133,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_nullable::SimpleProtocol::Add> WireNaturalConversionTraits<::fidl::WireResponse<::test_nullable::SimpleProtocol::Add>, ::fidl::Response<::test_nullable::SimpleProtocol::Add>>::ToNatural(::fidl::WireResponse<::test_nullable::SimpleProtocol::Add> src) {
   return ::fidl::Response<::test_nullable::SimpleProtocol::Add>(
@@ -144,7 +144,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_nullable::wire::SimpleProtocolAddResponse, ::test_nullable::SimpleProtocolAddResponse>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

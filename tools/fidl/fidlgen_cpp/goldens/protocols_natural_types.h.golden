@@ -12,13 +12,13 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 #include <lib/zx/handle.h>
 #include <lib/zx/socket.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -722,7 +722,7 @@ class WithErrorSyntaxErrorAsEnumResult {
   static std::optional<::test_protocols::WithErrorSyntaxErrorAsEnumResult::Tag> IndexToTag(size_t index);
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class WithErrorSyntaxHandleInResultResponse {
  private:
@@ -815,7 +815,7 @@ class WithErrorSyntaxHandleInResultResult {
   static std::optional<::test_protocols::WithErrorSyntaxHandleInResultResult::Tag> IndexToTag(size_t index);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class ChannelProtocolMethodARequest {
  private:
@@ -1049,7 +1049,7 @@ class ChannelProtocolMethodBResponse {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ChannelProtocolTakeHandleRequest {
  private:
@@ -1180,7 +1180,7 @@ class ChannelProtocolMutateSocketResponse {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class SyscallProtocolMethodCRequest {
  private:
@@ -1243,7 +1243,7 @@ class SyscallProtocolMethodCRequest {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class HandleRightsProtocolNoResponseMethodRequest {
  private:
@@ -1752,7 +1752,7 @@ class WithProtocolEndsStructContainingEndsResponse {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class ManyParametersFifteenRequest {
  private:
@@ -2267,7 +2267,7 @@ struct IsStruct<::test_protocols::WithErrorSyntaxErrorAsEnumResponse> : public s
 template <>
 struct internal::NaturalCodingTraits<::test_protocols::WithErrorSyntaxErrorAsEnumResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalEmptyStructCodingTraits<::test_protocols::WithErrorSyntaxErrorAsEnumResponse> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_protocols::WithErrorSyntaxHandleInResultResponse> : public std::true_type {};
@@ -2290,7 +2290,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_protocols::WithErrorSyntaxHandleInResultResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_protocols::WithErrorSyntaxHandleInResultResponse, 4> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_protocols::ChannelProtocolMethodARequest> : public std::true_type {};
@@ -2364,7 +2364,7 @@ struct IsStruct<::test_protocols::ChannelProtocolMethodBResponse> : public std::
 template <>
 struct internal::NaturalCodingTraits<::test_protocols::ChannelProtocolMethodBResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_protocols::ChannelProtocolMethodBResponse, 8> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_protocols::ChannelProtocolTakeHandleRequest> : public std::true_type {};
@@ -2429,7 +2429,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_protocols::ChannelProtocolMutateSocketResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_protocols::ChannelProtocolMutateSocketResponse, 4> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_protocols::SyscallProtocolMethodCRequest> : public std::true_type {};
@@ -2449,7 +2449,7 @@ struct IsStruct<::test_protocols::SyscallProtocolMethodCRequest> : public std::t
 template <>
 struct internal::NaturalCodingTraits<::test_protocols::SyscallProtocolMethodCRequest, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_protocols::SyscallProtocolMethodCRequest, 16> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_protocols::HandleRightsProtocolNoResponseMethodRequest> : public std::true_type {};
@@ -2682,7 +2682,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_protocols::WithProtocolEndsStructContainingEndsResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_protocols::WithProtocolEndsStructContainingEndsResponse, 16> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_protocols::ManyParametersFifteenRequest> : public std::true_type {};
@@ -2793,7 +2793,7 @@ struct IsUnion<::test_protocols::WithErrorSyntaxErrorAsEnumResult> : public std:
 template <>
 struct internal::NaturalCodingTraits<::test_protocols::WithErrorSyntaxErrorAsEnumResult, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_protocols::WithErrorSyntaxErrorAsEnumResult> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_protocols::WithErrorSyntaxHandleInResultResult> : public std::true_type {};
@@ -2816,7 +2816,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_protocols::WithErrorSyntaxHandleInResultResult, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_protocols::WithErrorSyntaxHandleInResultResult> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_protocols::TheUnion> : public std::true_type {};

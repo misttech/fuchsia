@@ -6,15 +6,16 @@
 #define LIB_FIDL_CPP_NATURAL_CODING_TRAITS_H_
 
 #include <lib/fidl/cpp/box.h>
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/natural_decoder.h>
 #include <lib/fidl/cpp/natural_encoder.h>
 #include <lib/fidl/cpp/time.h>
 #include <lib/fidl/cpp/wire/traits.h>
 #include <lib/stdcompat/optional.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <algorithm>
 #include <array>
@@ -349,7 +350,7 @@ struct NaturalCodingTraits<::std::array<T, N>, Constraint> {
   }
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T, typename Constraint>
 struct NaturalCodingTraits<
     T, Constraint, typename std::enable_if<std::is_base_of<zx::object_base, T>::value>::type> {
@@ -378,7 +379,7 @@ struct NaturalCodingTraits<
   }
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <zx_clock_t ClockId>
 struct NaturalCodingTraits<fidl::basic_time<ClockId>, NaturalCodingConstraintEmpty> {
@@ -641,7 +642,7 @@ struct NaturalCodingTraits<std::optional<std::string>, Constraint> {
   }
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T, typename Constraint>
 struct NaturalCodingTraits<ClientEnd<T>, Constraint> {
   static constexpr size_t kInlineSize = sizeof(zx_handle_t);
@@ -697,7 +698,7 @@ struct NaturalCodingTraits<ServerEnd<T>, Constraint> {
     *value = ServerEnd<T>(zx::channel(handle));
   }
 };
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <typename Constraint, typename T>
 void NaturalEncode(NaturalEncoder* encoder, T* value, size_t offset, size_t recursion_depth) {

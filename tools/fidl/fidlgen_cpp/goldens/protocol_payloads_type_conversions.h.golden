@@ -7,11 +7,11 @@
 #include <fidl/test.protocolpayloads/cpp/markers.h>
 #include <fidl/test.protocolpayloads/cpp/natural_types.h>
 #include <fidl/test.protocolpayloads/cpp/wire_types.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.protocolpayloads/cpp/natural_messaging.h>
 #include <fidl/test.protocolpayloads/cpp/wire_messaging.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #include <fidl/test.protocolpayloads.imported/cpp/type_conversions.h>
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 #pragma clang diagnostic push
@@ -188,7 +188,7 @@ struct WireTypeForNaturalType<::test_protocolpayloads::MainProtocolTwoWayImportW
   using type = ::test_protocolpayloads::wire::MainProtocolTwoWayImportWithErrorResult;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct WireNaturalConversionTraits<::fidl::WireResponse<::test_protocolpayloads::MainProtocol::TwoWayComposed>, ::fidl::Response<::test_protocolpayloads::MainProtocol::TwoWayComposed>> {
@@ -310,7 +310,7 @@ struct WireTypeForNaturalType<::fidl::Response<::test_protocolpayloads::MainProt
   using type = ::fidl::WireResponse<::test_protocolpayloads::MainProtocol::TwoWayAnonWithError>;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

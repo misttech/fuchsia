@@ -5,21 +5,22 @@
 #ifndef LIB_FIDL_CPP_TESTS_CONFORMANCE_CONFORMANCE_UTILS_H_
 #define LIB_FIDL_CPP_TESTS_CONFORMANCE_CONFORMANCE_UTILS_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/natural_types.h>
 #include <lib/fidl/internal.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/transport_channel.h>
 #include <lib/zx/channel.h>
 #else
 #include <lib/fidl/cpp/wire/internal/transport_channel_host.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <zxtest/zxtest.h>
 
 namespace conformance_utils {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 inline zx_handle_t HandleReplace(zx_handle_t handle, zx_rights_t rights) {
   zx_handle_t replaced_handle;
   ZX_ASSERT(zx_handle_replace(handle, rights, &replaced_handle) == ZX_OK);
@@ -38,7 +39,7 @@ inline zx_handle_t CreateEvent(zx_rights_t rights) {
   ZX_ASSERT(zx_event_create(0, &e) == ZX_OK);
   return HandleReplace(e, rights);
 }
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 inline fidl::WireFormatMetadata CreateWireFormatMetadata(
     fidl::internal::WireFormatVersion wire_format_version) {

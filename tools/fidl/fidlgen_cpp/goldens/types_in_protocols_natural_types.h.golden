@@ -12,13 +12,13 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 #include <lib/zx/handle.h>
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -198,7 +198,7 @@ class Union {
   static std::optional<::test_typesinprotocols::Union::Tag> IndexToTag(size_t index);
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ResourceStruct {
  private:
@@ -309,7 +309,7 @@ class ResourceUnion {
   static std::optional<::test_typesinprotocols::ResourceUnion::Tag> IndexToTag(size_t index);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class Basic {
  private:
@@ -1377,7 +1377,7 @@ class ArrayVectorNested {
   });
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class Resource {
  private:
@@ -1716,7 +1716,7 @@ class Resource {
                                                    });
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class ProtocolErrorBasicResult {
  private:
@@ -2142,7 +2142,7 @@ class ProtocolErrorArrayVectorNestedResult {
   static std::optional<::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult::Tag> IndexToTag(size_t index);
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ProtocolErrorResourceResult {
  private:
@@ -2192,7 +2192,7 @@ class ProtocolErrorResourceResult {
   static std::optional<::test_typesinprotocols::ProtocolErrorResourceResult::Tag> IndexToTag(size_t index);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_typesinprotocols
 namespace fidl {
@@ -2215,7 +2215,7 @@ struct IsStruct<::test_typesinprotocols::Struct> : public std::true_type {};
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::Struct, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalEmptyStructCodingTraits<::test_typesinprotocols::Struct> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::ResourceStruct> : public std::true_type {};
@@ -2238,7 +2238,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::ResourceStruct, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalEmptyStructCodingTraits<::test_typesinprotocols::ResourceStruct> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_typesinprotocols::Basic> : public std::true_type {};
@@ -2384,7 +2384,7 @@ struct IsStruct<::test_typesinprotocols::ArrayVectorNested> : public std::true_t
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::ArrayVectorNested, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_typesinprotocols::ArrayVectorNested, 144> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::Resource> : public std::true_type {};
@@ -2407,7 +2407,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::Resource, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_typesinprotocols::Resource, 456> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_typesinprotocols::Table> : public std::true_type {};
@@ -2426,7 +2426,7 @@ struct IsTable<::test_typesinprotocols::Table> : public std::true_type {};
 
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::Table, ::fidl::internal::NaturalCodingConstraintEmpty> : public ::fidl::internal::NaturalTableCodingTraits<::test_typesinprotocols::Table> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::ResourceTable> : public std::true_type {};
@@ -2448,7 +2448,7 @@ struct IsTable<::test_typesinprotocols::ResourceTable> : public std::true_type {
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::ResourceTable, ::fidl::internal::NaturalCodingConstraintEmpty> : public ::fidl::internal::NaturalTableCodingTraits<::test_typesinprotocols::ResourceTable> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_typesinprotocols::Union> : public std::true_type {};
@@ -2468,7 +2468,7 @@ struct IsUnion<::test_typesinprotocols::Union> : public std::true_type {};
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::Union, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_typesinprotocols::Union> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::ResourceUnion> : public std::true_type {};
@@ -2491,7 +2491,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::ResourceUnion, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_typesinprotocols::ResourceUnion> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_typesinprotocols::ProtocolErrorBasicResult> : public std::true_type {};
@@ -2637,7 +2637,7 @@ struct IsUnion<::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult> : 
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::ProtocolErrorResourceResult> : public std::true_type {};
@@ -2660,7 +2660,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::ProtocolErrorResourceResult, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_typesinprotocols::ProtocolErrorResourceResult> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct internal::NaturalCodingTraits<::test_typesinprotocols::Bits, ::fidl::internal::NaturalCodingConstraintEmpty> {

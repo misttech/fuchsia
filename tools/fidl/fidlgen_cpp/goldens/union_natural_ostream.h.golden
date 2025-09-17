@@ -197,7 +197,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_union::EmptyFlexibleUnio
 
 }  // namespace test_union
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_union::TestProtocol>> {
@@ -213,6 +213,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_union:
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_union::TestProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

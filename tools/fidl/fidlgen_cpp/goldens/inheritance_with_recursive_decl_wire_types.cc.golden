@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_inheritancewithrecursivedecl::wire::ParentFirstRequest::_CloseHandles() {
   request.reset();
@@ -69,6 +69,6 @@ static_assert(std::is_standard_layout_v<::test_inheritancewithrecursivedecl::wir
 static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ChildSecondRequest, request) == 0);
 static_assert(sizeof(::test_inheritancewithrecursivedecl::wire::ChildSecondRequest) == ::fidl::TypeTraits<::test_inheritancewithrecursivedecl::wire::ChildSecondRequest>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

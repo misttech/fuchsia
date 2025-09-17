@@ -133,7 +133,7 @@ std::ostream& fidl::ostream::Formatter<::test_protocollayouts::MainProtocolOnAno
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_protocollayouts::MainProtocol>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_protocollayouts::MainProtocol>& value) {
   return os << "ClientEnd<" << "test_protocollayouts::MainProtocol" << ">(" << value.channel().get() << ")";
@@ -166,7 +166,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protoc
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_protocollayouts::OpenProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_protocollayouts {
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocollayouts::LocalTablePayload& value) {

@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_protocolrequest::ParentGetChildResponse::ParentGetChildResponse(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_protocolrequest::ParentGetChildResponse::ParentGetChildResponse(::fidl::ClientEnd<::test_protocolrequest::Child> c) noexcept
@@ -93,6 +93,6 @@ test_protocolrequest::ParentTakeChildRequestRequest::r() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

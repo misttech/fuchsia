@@ -35,7 +35,7 @@ std::ostream& fidl::ostream::Formatter<::test_versions::Bits>::Format(std::ostre
   os << ")";
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_versions::Struct>::Format(std::ostream& os, const ::test_versions::Struct& value) {
   os << "test_versions::Struct";
@@ -100,7 +100,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_versio
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_versions::Protocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_versions {
 
 std::ostream& operator<<(std::ostream& os, const ::test_versions::Bits& value) {
@@ -111,7 +111,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_versions::Enum& value) {
   return fidl::ostream::Formatter<::test_versions::Enum>::Format(os, value);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_versions::Struct& value) {
   return fidl::ostream::Formatter<::test_versions::Struct>::Format(os, value);
@@ -125,7 +125,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_versions::Union& value) 
   return fidl::ostream::Formatter<::test_versions::Union>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

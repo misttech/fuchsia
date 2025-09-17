@@ -250,7 +250,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> WireNaturalConversionTraits<::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>, ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>>::ToNatural(::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> src) {
   return ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>(
@@ -297,7 +297,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkallerResult, ::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenySyzkallerResponse>>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

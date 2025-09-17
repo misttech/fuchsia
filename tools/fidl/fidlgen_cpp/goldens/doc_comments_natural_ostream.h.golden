@@ -65,7 +65,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_doccomments::Table& valu
 
 }  // namespace test_doccomments
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_doccomments::Interface>> {
@@ -81,6 +81,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_doccom
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_doccomments::Interface>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

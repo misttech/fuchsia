@@ -68,7 +68,7 @@
       storage_.__reserved = std::move(value);
       return *this;
     }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
   ::test_typesinprotocols::ResourceStruct::ResourceStruct(Storage_ storage) noexcept : storage_(std::move(storage)) {}
     ::test_typesinprotocols::ResourceStruct::ResourceStruct(uint8_t __reserved) noexcept
@@ -93,7 +93,7 @@
       return *this;
     }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
   ::test_typesinprotocols::Basic::Basic(Storage_ storage) noexcept : storage_(std::move(storage)) {}
     ::test_typesinprotocols::Basic::Basic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::std::string string, ::std::optional<::std::string> opt_string) noexcept
@@ -1350,7 +1350,7 @@
       storage_.vector_vector_uint8 = std::move(value);
       return *this;
     }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
   ::test_typesinprotocols::Resource::Resource(Storage_ storage) noexcept : storage_(std::move(storage)) {}
     ::test_typesinprotocols::Resource::Resource(::zx::handle handle, ::zx::vmo vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol> client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol> server_end, ::test_typesinprotocols::ResourceStruct struct_, ::test_typesinprotocols::ResourceTable table, ::test_typesinprotocols::ResourceUnion union_, ::zx::handle opt_handle, ::zx::vmo opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol> opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol> opt_server_end, ::fidl::Box<::test_typesinprotocols::ResourceStruct> opt_struct, ::fidl::Box<::test_typesinprotocols::ResourceUnion> opt_union, ::std::array<::zx::handle, 5> array_handle, ::std::array<::zx::vmo, 5> array_vmo, ::std::array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5> array_client_end, ::std::array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5> array_server_end, ::std::array<::test_typesinprotocols::ResourceStruct, 5> array_struct, ::std::array<::test_typesinprotocols::ResourceTable, 5> array_table, ::std::array<::test_typesinprotocols::ResourceUnion, 5> array_union, ::std::vector<::zx::handle> vector_handle, ::std::vector<::zx::vmo> vector_vmo, ::std::vector<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::std::vector<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::std::vector<::test_typesinprotocols::ResourceStruct> vector_struct, ::std::vector<::test_typesinprotocols::ResourceTable> vector_table, ::std::vector<::test_typesinprotocols::ResourceUnion> vector_union) noexcept
@@ -1765,7 +1765,7 @@
       return *this;
     }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::Table::Table(::test_typesinprotocols::Table::Storage_ storage) noexcept : storage_(std::move(storage)) {}
 
@@ -1793,7 +1793,7 @@
 bool test_typesinprotocols::Table::IsEmpty() const {
     return true;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ResourceTable::ResourceTable(::test_typesinprotocols::ResourceTable::Storage_ storage) noexcept : storage_(std::move(storage)) {}
 
@@ -1803,7 +1803,7 @@ bool test_typesinprotocols::ResourceTable::IsEmpty() const {
     return true;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::Union::Union(Union&& other) noexcept : Union(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {
   *storage_ = std::move(*other.storage_);
@@ -1889,7 +1889,7 @@ std::optional<::test_typesinprotocols::Union::Tag> test_typesinprotocols::Union:
     storage_->emplace<1>(std::move(value));
     return *this;
   }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ResourceUnion::ResourceUnion(ResourceUnion&& other) noexcept : ResourceUnion(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {
   *storage_ = std::move(*other.storage_);
@@ -1949,7 +1949,7 @@ std::optional<::test_typesinprotocols::ResourceUnion::Tag> test_typesinprotocols
     return *this;
   }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ProtocolErrorBasicResult::ProtocolErrorBasicResult(ProtocolErrorBasicResult&& other) noexcept : ProtocolErrorBasicResult(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {
   *storage_ = std::move(*other.storage_);
@@ -2806,7 +2806,7 @@ std::optional<::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult::Tag
     storage_->emplace<2>(std::move(value));
     return *this;
   }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_typesinprotocols::ProtocolErrorResourceResult::ProtocolErrorResourceResult(ProtocolErrorResourceResult&& other) noexcept : ProtocolErrorResourceResult(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {
   *storage_ = std::move(*other.storage_);
@@ -2884,7 +2884,7 @@ std::optional<::test_typesinprotocols::ProtocolErrorResourceResult::Tag> test_ty
     return *this;
   }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

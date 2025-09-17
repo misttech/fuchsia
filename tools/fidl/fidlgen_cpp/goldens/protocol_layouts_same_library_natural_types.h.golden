@@ -12,11 +12,11 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"

@@ -5,8 +5,8 @@
 #pragma once
 
 #include <fidl/test.errorsyntax.parent/cpp/markers.h>
-
-#ifdef __Fuchsia__
+#include <lib/fidl/cpp/features.h>
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.errorsyntax/cpp/markers.h>
 #include <fidl/test.errorsyntax/cpp/natural_types.h>
@@ -231,4 +231,4 @@ struct ::fidl::internal::NaturalServerDispatcher<::test_errorsyntax::ExampleUseO
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

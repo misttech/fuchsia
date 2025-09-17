@@ -94,7 +94,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> WireNaturalConversionTraits<::fidl::WireResponse<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>, ::fidl::Response<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>>::ToNatural(::fidl::WireResponse<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> src) {
   return ::fidl::Response<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>(
@@ -114,7 +114,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_requestflexibleenvelope::wire::ProtocolRequestFlexibleResponseStrictResponse, ::test_requestflexibleenvelope::ProtocolRequestFlexibleResponseStrictResponse>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

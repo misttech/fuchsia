@@ -5,8 +5,8 @@
 #pragma once
 
 #include <fidl/test.protocolpayloads.imported/cpp/markers.h>
-
-#ifdef __Fuchsia__
+#include <lib/fidl/cpp/features.h>
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.protocolpayloads/cpp/markers.h>
 #include <fidl/test.protocolpayloads/cpp/natural_types.h>
@@ -640,4 +640,4 @@ struct ::fidl::internal::NaturalServerDispatcher<::test_protocolpayloads::MainPr
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

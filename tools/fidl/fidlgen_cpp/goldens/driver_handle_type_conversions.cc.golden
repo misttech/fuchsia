@@ -10,7 +10,7 @@
 namespace fidl {
 namespace internal {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_driverhandle::ClientEndWrapper WireNaturalConversionTraits<::test_driverhandle::wire::ClientEndWrapper, ::test_driverhandle::ClientEndWrapper>::ToNatural(::test_driverhandle::wire::ClientEndWrapper src) {
   return ::test_driverhandle::ClientEndWrapper(WireNaturalConversionTraits<::fdf::ClientEnd<::test_driverhandle::DriverProtocol>, ::fdf::ClientEnd<::test_driverhandle::DriverProtocol>>::ToNatural(std::move(src.value)));
@@ -65,7 +65,7 @@ namespace internal {
   return builder.Build();
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

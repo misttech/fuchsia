@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include <fidl/test.types/cpp/hlcpp_conversion.h>
+#include <lib/fidl/cpp/features.h>
 
 #include <gtest/gtest.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/event.h>
 #endif
 
@@ -25,7 +26,7 @@ TEST(StructConversion, CopyableToHLCPP) {
   EXPECT_EQ(hlcpp.x, 42);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 TEST(StructConversion, MoveOnlyToNatural) {
   zx::event event;

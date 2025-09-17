@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_handles::wire::Handles::_CloseHandles() {
   plain_handle.reset();
@@ -249,6 +249,6 @@ static_assert(offsetof(::test_handles::wire::FdfHandles, client_end_driver) == 4
 static_assert(offsetof(::test_handles::wire::FdfHandles, server_end_driver) == 8);
 static_assert(sizeof(::test_handles::wire::FdfHandles) == ::fidl::TypeTraits<::test_handles::wire::FdfHandles>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

@@ -1,5 +1,6 @@
+#include <lib/fidl/cpp/features.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.handles/cpp/driver/natural_messaging.h>
 #include <lib/fidl_driver/cpp/unknown_interactions.h>
@@ -34,4 +35,4 @@ void fdf::Server<::test_handles::DriverProtocol>::dispatch_message(
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

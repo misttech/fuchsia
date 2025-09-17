@@ -16,11 +16,11 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl_driver/cpp/wire_types.h>
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.driveroneway/cpp/common_types.h>
 #include <fidl/test.driveroneway/cpp/markers.h>

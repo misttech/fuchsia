@@ -10,7 +10,7 @@
 namespace fidl {
 namespace internal {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_handlesintypes::HandlesInTypes WireNaturalConversionTraits<::test_handlesintypes::wire::HandlesInTypes, ::test_handlesintypes::HandlesInTypes>::ToNatural(::test_handlesintypes::wire::HandlesInTypes src) {
   return ::test_handlesintypes::HandlesInTypes{{
@@ -102,7 +102,7 @@ namespace internal {
   }
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

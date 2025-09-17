@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/fidl_driver/cpp/natural_types.h>
 #include <lib/zx/bti.h>
@@ -45,7 +45,7 @@
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/fdf/cpp/natural_types.h>
 #pragma clang diagnostic push
@@ -57,7 +57,7 @@ class Handles;
 
 class FdfHandles;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 using AliasedPlainHandle = ::zx::handle;
 
 using AliasedSubtypeHandle = ::zx::vmo;
@@ -548,12 +548,12 @@ class FdfHandles {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_handles
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_handles::Handles> : public std::true_type {};
@@ -597,7 +597,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_handles::FdfHandles, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_handles::FdfHandles, 12> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

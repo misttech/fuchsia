@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_driverhandle::ClientEndWrapper>::Format(std::ostream& os, const ::test_driverhandle::ClientEndWrapper& value) {
   os << "test_driverhandle::ClientEndWrapper";
@@ -82,10 +82,10 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_driverh
   return fidl::ostream::Formatter<::fdf::ServerEnd<::test_driverhandle::HandlesInProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_driverhandle {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_driverhandle::ClientEndWrapper& value) {
   return fidl::ostream::Formatter<::test_driverhandle::ClientEndWrapper>::Format(os, value);
@@ -103,7 +103,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_driverhandle::HandlesInP
   return fidl::ostream::Formatter<::test_driverhandle::HandlesInProtocolSendHandlesRequest>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

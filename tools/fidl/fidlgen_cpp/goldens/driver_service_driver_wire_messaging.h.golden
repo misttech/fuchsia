@@ -6,8 +6,9 @@
 
 #include <fidl/test.driverservice/cpp/markers.h>
 #include <fidl/test.driverservice/cpp/wire_types.h>
+#include <lib/fidl/cpp/features.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/fidl/cpp/wire/server.h>
@@ -254,4 +255,4 @@ class ::fidl::internal::WireBufferEventSender<::test_driverservice::SomeDriverPr
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

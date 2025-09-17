@@ -32,7 +32,7 @@ template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::Union> {
   static std::ostream& Format(std::ostream& os, const ::test_typesinprotocols::Union& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::ResourceStruct> {
@@ -49,7 +49,7 @@ struct fidl::ostream::Formatter<::test_typesinprotocols::ResourceUnion> {
   static std::ostream& Format(std::ostream& os, const ::test_typesinprotocols::ResourceUnion& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::Basic> {
@@ -83,14 +83,14 @@ template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::ArrayVectorNested> {
   static std::ostream& Format(std::ostream& os, const ::test_typesinprotocols::ArrayVectorNested& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::Resource> {
   static std::ostream& Format(std::ostream& os, const ::test_typesinprotocols::Resource& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::ProtocolErrorBasicResult> {
@@ -124,14 +124,14 @@ template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult> {
   static std::ostream& Format(std::ostream& os, const ::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult& value);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_typesinprotocols::ProtocolErrorResourceResult> {
   static std::ostream& Format(std::ostream& os, const ::test_typesinprotocols::ProtocolErrorResourceResult& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace test_typesinprotocols {
 
@@ -145,7 +145,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Table&
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Union& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::ResourceStruct& value);
 
@@ -153,7 +153,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Resour
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::ResourceUnion& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Basic& value);
 
@@ -171,11 +171,11 @@ std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Vector
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::ArrayVectorNested& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Resource& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::ProtocolErrorBasicResult& value);
 
@@ -193,15 +193,15 @@ std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::Protoc
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult& value);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_typesinprotocols::ProtocolErrorResourceResult& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_typesinprotocols
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> {
@@ -217,6 +217,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_typesi
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_typesinprotocols::Protocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

@@ -16,10 +16,10 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.bottom/cpp/wire_types.h>
 #include <fidl/test.foreigntypeinresponseusedthroughcompose/cpp/common_types.h>

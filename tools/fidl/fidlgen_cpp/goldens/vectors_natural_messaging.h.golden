@@ -4,7 +4,8 @@
 
 #pragma once
 
-#ifdef __Fuchsia__
+#include <lib/fidl/cpp/features.h>
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.vectors/cpp/markers.h>
 #include <fidl/test.vectors/cpp/natural_types.h>
@@ -24,4 +25,4 @@ namespace fidl {
 
 }  // namespace fidl
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

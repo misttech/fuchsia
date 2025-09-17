@@ -78,7 +78,11 @@ func ifdefFuchsia() string {
 	namespaceStack = append(namespaceStack, currentNamespace)
 
 	if len(namespaceStack) == 1 {
-		return "\n#ifdef __Fuchsia__\n"
+		if currentVariant == hlcppVariant {
+			return "\n#ifdef __Fuchsia__\n"
+		} else {
+			return "\n#if __FIDL_SUPPORT_HANDLES\n"
+		}
 	}
 	return ""
 }
@@ -89,7 +93,11 @@ func endifFuchsia() string {
 	namespaceStack = namespaceStack[:last]
 	s := ensureNamespace(ns)
 	if len(namespaceStack) == 0 {
-		return s + "\n#endif  // __Fuchsia__\n"
+		if currentVariant == hlcppVariant {
+			return s + "\n#endif  // __Fuchsia__\n"
+		} else {
+			return s + "\n#endif  // __FIDL_SUPPORT_HANDLES\n"
+		}
 	}
 	return s
 }

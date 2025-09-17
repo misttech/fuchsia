@@ -1280,7 +1280,7 @@ std::ostream& fidl::ostream::Formatter<::test_unknowninteractions::UnknownIntera
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>& value) {
   return os << "ClientEnd<" << "test_unknowninteractions::UnknownInteractionsProtocol" << ">(" << value.channel().get() << ")";
@@ -1373,7 +1373,7 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_unknown
   return fidl::ostream::Formatter<::fdf::ServerEnd<::test_unknowninteractions::UnknownInteractionsClosedDriverProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_unknowninteractions {
 
 std::ostream& operator<<(std::ostream& os, const ::test_unknowninteractions::UnknownInteractionsProtocolStrictTwoWayFieldsResponse& value) {

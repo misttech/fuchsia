@@ -6,6 +6,7 @@
 #define LIB_FIDL_CPP_NATURAL_OSTREAM_H_
 
 #include <lib/fidl/cpp/box.h>
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/framework_err.h>
 #include <lib/fidl/cpp/time.h>
 #include <zircon/time.h>
@@ -14,7 +15,7 @@
 #include <optional>
 #include <vector>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/object.h>
 #endif
 
@@ -104,7 +105,7 @@ struct Formatter<std::optional<std::string>> {
   }
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T>
 struct Formatter<T, std::enable_if_t<std::is_base_of_v<zx::object_base, T>>> {
   static std::ostream& Format(std::ostream& os, const T& value) {

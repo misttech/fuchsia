@@ -12,11 +12,11 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -35,7 +35,7 @@ class UnionWithHandle;
 
 class EmptyResourceUnion;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class TableWithHandle {
  private:
@@ -319,12 +319,12 @@ class EmptyResourceUnion {
   static std::optional<::test_handlesintypes::EmptyResourceUnion::Tag> IndexToTag(size_t index);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_handlesintypes
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_handlesintypes::HandlesInTypes> : public std::true_type {};
@@ -450,7 +450,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_handlesintypes::EmptyResourceUnion, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_handlesintypes::EmptyResourceUnion> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct internal::NaturalCodingTraits<::test_handlesintypes::ObjType, ::fidl::internal::NaturalCodingConstraintEmpty> {

@@ -38,7 +38,7 @@ void fidl::internal::WireCodingTraits<::test_versions::wire::Enum, ::fidl::inter
 template struct ::fidl::internal::WireCodingTraits<::test_versions::wire::Enum, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_versions::wire::Enum, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_versions::wire::Struct::_CloseHandles() {
 }
@@ -418,6 +418,6 @@ template struct ::fidl::internal::WireCodingTraits<::test_versions::wire::Table,
 
 static_assert(std::is_standard_layout_v<::test_versions::wire::Table>);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

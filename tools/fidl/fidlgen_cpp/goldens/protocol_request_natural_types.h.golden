@@ -12,11 +12,11 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -31,7 +31,7 @@ class ParentTakeChildRequest;
 
 class ParentTakeChildRequestRequest;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ParentGetChildResponse {
  private:
@@ -205,12 +205,12 @@ class ParentTakeChildRequestRequest {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_protocolrequest
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_protocolrequest::ParentGetChildResponse> : public std::true_type {};
@@ -296,7 +296,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_protocolrequest::ParentTakeChildRequestRequest, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_protocolrequest::ParentTakeChildRequestRequest, 4> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

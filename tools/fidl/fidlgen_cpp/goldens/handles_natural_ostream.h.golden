@@ -14,7 +14,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_handles::Handles> {
@@ -26,21 +26,21 @@ struct fidl::ostream::Formatter<::test_handles::FdfHandles> {
   static std::ostream& Format(std::ostream& os, const ::test_handles::FdfHandles& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace test_handles {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_handles::Handles& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_handles::FdfHandles& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_handles
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_handles::SomeProtocol>> {
@@ -68,6 +68,6 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ClientEnd<::test_handles
 
 std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_handles::DriverProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

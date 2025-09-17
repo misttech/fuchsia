@@ -16,11 +16,11 @@
   #include <lib/fidl/cpp/wire/traits.h>
   #include <lib/fidl/cpp/wire/wire_types.h>
   #include <lib/stdcompat/optional.h>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
     #include <lib/fidl_driver/cpp/wire_types.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
   #include <fidl/test.unknowninteractions/cpp/markers.h>
   #include <fidl/test.unknowninteractions/cpp/common_types.h>

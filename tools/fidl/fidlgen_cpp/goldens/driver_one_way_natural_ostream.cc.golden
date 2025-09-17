@@ -23,7 +23,7 @@ std::ostream& fidl::ostream::Formatter<::test_driveroneway::OneWaySendRequest>::
   os << "}";
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fdf::ClientEnd<::test_driveroneway::OneWay>>::Format(std::ostream& os, const ::fdf::ClientEnd<::test_driveroneway::OneWay>& value) {
   return os << "ClientEnd<" << "test_driveroneway::OneWay" << ">(" << value.channel().get() << ")";
@@ -41,7 +41,7 @@ std::ostream& operator<<(std::ostream& os, const ::fdf::ServerEnd<::test_drivero
   return fidl::ostream::Formatter<::fdf::ServerEnd<::test_driveroneway::OneWay>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_driveroneway {
 
 std::ostream& operator<<(std::ostream& os, const ::test_driveroneway::Payload& value) {

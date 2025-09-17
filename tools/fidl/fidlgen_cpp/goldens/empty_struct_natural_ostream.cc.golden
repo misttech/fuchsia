@@ -47,7 +47,7 @@ std::ostream& fidl::ostream::Formatter<::test_emptystruct::EmptyProtocolSendAndR
   os << "}";
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_emptystruct::EmptyProtocol>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_emptystruct::EmptyProtocol>& value) {
   return os << "ClientEnd<" << "test_emptystruct::EmptyProtocol" << ">(" << value.channel().get() << ")";
@@ -65,7 +65,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_emptys
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_emptystruct::EmptyProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_emptystruct {
 
 std::ostream& operator<<(std::ostream& os, const ::test_emptystruct::Empty& value) {

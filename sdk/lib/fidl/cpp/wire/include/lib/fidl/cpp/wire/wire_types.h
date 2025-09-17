@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_WIRE_WIRE_TYPES_H_
 #define LIB_FIDL_CPP_WIRE_WIRE_TYPES_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/decoded_value.h>
 #include <lib/fidl/cpp/wire/envelope.h>
 #include <lib/fidl/cpp/wire/incoming_message.h>
@@ -30,11 +31,11 @@
 #include <utility>
 #include <vector>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/transport_channel.h>
 #else
 #include <lib/fidl/cpp/wire/internal/transport_channel_host.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 // # Wire domain objects
 //

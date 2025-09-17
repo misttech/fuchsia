@@ -131,7 +131,7 @@ static_assert(offsetof(::test_encapsulatedstructs::wire::StructPaddingTestStruct
 static_assert(offsetof(::test_encapsulatedstructs::wire::StructPaddingTestStruct, array) == 12);
 static_assert(sizeof(::test_encapsulatedstructs::wire::StructPaddingTestStruct) == ::fidl::TypeTraits<::test_encapsulatedstructs::wire::StructPaddingTestStruct>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_encapsulatedstructs::wire::NonInlineStructTestStruct::_CloseHandles() {
   h.reset();
@@ -203,6 +203,6 @@ static_assert(offsetof(::test_encapsulatedstructs::wire::TopLevelStruct, a) == 0
 static_assert(offsetof(::test_encapsulatedstructs::wire::TopLevelStruct, b) == 24);
 static_assert(sizeof(::test_encapsulatedstructs::wire::TopLevelStruct) == ::fidl::TypeTraits<::test_encapsulatedstructs::wire::TopLevelStruct>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

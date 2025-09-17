@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_inheritancewithrecursivedecl::ParentFirstRequest::ParentFirstRequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_inheritancewithrecursivedecl::ParentFirstRequest::ParentFirstRequest(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent> request) noexcept
@@ -51,6 +51,6 @@ test_inheritancewithrecursivedecl::ChildSecondRequest::request() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

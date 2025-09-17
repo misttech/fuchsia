@@ -86,7 +86,7 @@ test_nullable::StructWithNullableVector::val() const {
   storage_.val = std::move(value);
   return *this;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::StructWithNullableHandle::StructWithNullableHandle(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_nullable::StructWithNullableHandle::StructWithNullableHandle(::zx::vmo val) noexcept
@@ -109,7 +109,7 @@ test_nullable::StructWithNullableHandle::val() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::SimpleProtocolAddRequest::SimpleProtocolAddRequest(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_nullable::SimpleProtocolAddRequest::SimpleProtocolAddRequest(int32_t a, int32_t b) noexcept
@@ -206,7 +206,7 @@ int32_t& ::test_nullable::SimpleProtocolAddResponse::sum() {
   storage_.sum = std::move(value);
   return *this;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::StructWithNullableProtocol::StructWithNullableProtocol(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_nullable::StructWithNullableProtocol::StructWithNullableProtocol(::fidl::ClientEnd<::test_nullable::SimpleProtocol> val) noexcept
@@ -250,7 +250,7 @@ test_nullable::StructWithNullableRequest::val() const {
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 ::test_nullable::Int32Wrapper::Int32Wrapper(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_nullable::Int32Wrapper::Int32Wrapper(int32_t val) noexcept

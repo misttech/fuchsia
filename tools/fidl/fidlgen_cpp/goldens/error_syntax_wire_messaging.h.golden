@@ -6,8 +6,9 @@
 
 #include <fidl/test.errorsyntax/cpp/markers.h>
 #include <fidl/test.errorsyntax/cpp/wire_types.h>
+#include <lib/fidl/cpp/features.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.errorsyntax.parent/cpp/wire_messaging.h>
 #include <lib/fidl/cpp/wire/client.h>
@@ -676,4 +677,4 @@ class ::fidl::internal::WireBufferEventSender<::test_errorsyntax::ExampleUseOfEr
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

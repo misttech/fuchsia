@@ -12,7 +12,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::test_inheritancewithrecursivedecl::ParentFirstRequest> {
@@ -24,21 +24,21 @@ struct fidl::ostream::Formatter<::test_inheritancewithrecursivedecl::ChildSecond
   static std::ostream& Format(std::ostream& os, const ::test_inheritancewithrecursivedecl::ChildSecondRequest& value);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace test_inheritancewithrecursivedecl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_inheritancewithrecursivedecl::ParentFirstRequest& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_inheritancewithrecursivedecl::ChildSecondRequest& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_inheritancewithrecursivedecl
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_inheritancewithrecursivedecl::Parent>> {
@@ -66,6 +66,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_inheri
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Child>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

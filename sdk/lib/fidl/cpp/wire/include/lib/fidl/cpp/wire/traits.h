@@ -5,11 +5,12 @@
 #ifndef LIB_FIDL_CPP_WIRE_TRAITS_H_
 #define LIB_FIDL_CPP_WIRE_TRAITS_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/internal/transport.h>
 #include <lib/fidl/internal.h>
 #include <zircon/fidl.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/object.h>
 #endif
 
@@ -65,7 +66,7 @@ struct IsFidlTransactionalMessage : public std::false_type {};
 // A type trait that indicates whether the given type is allowed to appear in
 // generated binding APIs and can be encoded/decoded.
 // As a start, all handle types are supported.
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T>
 struct IsFidlType : public std::is_base_of<zx::object_base, T> {};
 #else
@@ -94,7 +95,7 @@ template <> struct IsFidlType<double> : public std::true_type {};
 
 // A type trait that indicates whether the given type is a resource type
 // i.e. can contain handles.
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T>
 struct IsResource : public std::is_base_of<zx::object_base, T> {
   static_assert(IsFidlType<T>::value, "IsResource only defined on FIDL types.");
@@ -232,7 +233,7 @@ template <> struct ContainsHandle<float> : public std::false_type {};
 template <> struct ContainsHandle<double> : public std::false_type {};
 // clang-format on
 
-#if __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T>
 struct ContainsHandle<T, typename std::enable_if<std::is_base_of<zx::object_base, T>::value>::type>
     : std::true_type {};

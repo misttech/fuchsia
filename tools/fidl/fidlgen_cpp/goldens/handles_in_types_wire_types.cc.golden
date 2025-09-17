@@ -38,7 +38,7 @@ void fidl::internal::WireCodingTraits<::test_handlesintypes::wire::ObjType, ::fi
 template struct ::fidl::internal::WireCodingTraits<::test_handlesintypes::wire::ObjType, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::test_handlesintypes::wire::ObjType, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_handlesintypes::wire::HandlesInTypes::_CloseHandles() {
   normal_handle.reset();
@@ -748,6 +748,6 @@ template struct ::fidl::internal::WireCodingTraits<::test_handlesintypes::wire::
 
 static_assert(std::is_standard_layout_v<::test_handlesintypes::wire::EmptyResourceTable>);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

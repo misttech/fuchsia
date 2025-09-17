@@ -78,7 +78,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_protocolpayloads::MainPr
 
 }  // namespace test_protocolpayloads
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_protocolpayloads::MainProtocol>> {
@@ -94,6 +94,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_protoc
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protocolpayloads::MainProtocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

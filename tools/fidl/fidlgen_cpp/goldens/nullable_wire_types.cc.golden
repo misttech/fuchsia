@@ -59,7 +59,7 @@ static_assert(std::is_standard_layout_v<::test_nullable::wire::StructWithNullabl
 static_assert(offsetof(::test_nullable::wire::StructWithNullableVector, val) == 0);
 static_assert(sizeof(::test_nullable::wire::StructWithNullableVector) == ::fidl::TypeTraits<::test_nullable::wire::StructWithNullableVector>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_nullable::wire::StructWithNullableHandle::_CloseHandles() {
   val.reset();
@@ -91,7 +91,7 @@ static_assert(std::is_standard_layout_v<::test_nullable::wire::StructWithNullabl
 static_assert(offsetof(::test_nullable::wire::StructWithNullableHandle, val) == 0);
 static_assert(sizeof(::test_nullable::wire::StructWithNullableHandle) == ::fidl::TypeTraits<::test_nullable::wire::StructWithNullableHandle>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <bool IsRecursive>
 void fidl::internal::WireCodingTraits<::test_nullable::wire::SimpleProtocolAddRequest, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>::Encode(
@@ -149,7 +149,7 @@ static_assert(std::is_standard_layout_v<::test_nullable::wire::SimpleProtocolAdd
 static_assert(offsetof(::test_nullable::wire::SimpleProtocolAddResponse, sum) == 0);
 static_assert(sizeof(::test_nullable::wire::SimpleProtocolAddResponse) == ::fidl::TypeTraits<::test_nullable::wire::SimpleProtocolAddResponse>::kPrimarySize);
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_nullable::wire::StructWithNullableProtocol::_CloseHandles() {
   val.reset();
@@ -211,7 +211,7 @@ static_assert(std::is_standard_layout_v<::test_nullable::wire::StructWithNullabl
 static_assert(offsetof(::test_nullable::wire::StructWithNullableRequest, val) == 0);
 static_assert(sizeof(::test_nullable::wire::StructWithNullableRequest) == ::fidl::TypeTraits<::test_nullable::wire::StructWithNullableRequest>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <bool IsRecursive>
 void fidl::internal::WireCodingTraits<::test_nullable::wire::Int32Wrapper, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>::Encode(

@@ -4,7 +4,8 @@
 
 #pragma once
 
-#ifdef __Fuchsia__
+#include <lib/fidl/cpp/features.h>
+#if __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.inheritance/cpp/markers.h>
 #include <fidl/test.inheritance/cpp/natural_types.h>
@@ -310,4 +311,4 @@ struct ::fidl::internal::NaturalServerDispatcher<::test_inheritance::Sub> final 
 
 #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES

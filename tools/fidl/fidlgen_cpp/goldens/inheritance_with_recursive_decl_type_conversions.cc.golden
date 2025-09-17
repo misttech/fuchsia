@@ -10,7 +10,7 @@
 namespace fidl {
 namespace internal {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_inheritancewithrecursivedecl::ParentFirstRequest WireNaturalConversionTraits<::test_inheritancewithrecursivedecl::wire::ParentFirstRequest, ::test_inheritancewithrecursivedecl::ParentFirstRequest>::ToNatural(::test_inheritancewithrecursivedecl::wire::ParentFirstRequest src) {
   return ::test_inheritancewithrecursivedecl::ParentFirstRequest(WireNaturalConversionTraits<::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>, ::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>>::ToNatural(std::move(src.request)));
@@ -30,7 +30,7 @@ namespace internal {
   };
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

@@ -608,7 +608,7 @@ namespace internal {
   }
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::fidl::Response<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> WireNaturalConversionTraits<::fidl::WireResponse<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>, ::fidl::Response<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>>::ToNatural(::fidl::WireResponse<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> src) {
   return ::fidl::Response<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>(
@@ -628,7 +628,7 @@ namespace internal {
       WireNaturalConversionTraits<::test_union::wire::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse, ::test_union::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse>::ToWire(arena, std::move(src)));
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 #pragma clang diagnostic pop
 
 }  // namespace internal

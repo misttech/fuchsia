@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fidl/cpp/features.h>
+
 #include <gtest/gtest.h>
 #include <src/lib/fidl/llcpp/tests/arena_checker.h>
 
-#if __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <fidl/test.types/cpp/fidl.h>
 #include <lib/zx/event.h>
 #else
@@ -53,7 +55,7 @@ TEST(NaturalToWireConversion, Bits) {
             fidl::ToWire(arena, test_types::FlexibleBits(100)));
 }
 
-#if __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 TEST(WireToNaturalConversion, Handle) {
   zx::event ev;
   ASSERT_EQ(ZX_OK, zx::event::create(0, &ev));
@@ -344,7 +346,7 @@ TEST(NaturalToWireConversion, Table) {
   EXPECT_TRUE(fidl_testing::ArenaChecker::IsPointerInArena(frame, arena));
 }
 
-#if __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 TEST(WireToNaturalConversion, MoveOnlyUnion) {
   test_types::wire::TestXUnion wire = test_types::wire::TestXUnion::WithH(zx::handle());
   test_types::TestXUnion natural =

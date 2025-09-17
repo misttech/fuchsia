@@ -12,11 +12,11 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.someotherlibrary/cpp/natural_types.h>
 #pragma clang diagnostic push
@@ -32,16 +32,16 @@ using VecOfStrings = ::std::vector<::std::string>;
 
 using VecOfStringsAtMost5 = ::std::vector<::std::string>;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 using Channel = ::zx::channel;
 
 using AliasOfChannel = ::zx::channel;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 using ReferenceMe = ::test_someotherlibrary::ReferenceMe;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ExampleOfUseOfAliases {
  private:
@@ -171,12 +171,12 @@ class ExampleOfUseOfAliases {
                                                    });
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_aliases
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_aliases::ExampleOfUseOfAliases> : public std::true_type {};
@@ -199,7 +199,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_aliases::ExampleOfUseOfAliases, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_aliases::ExampleOfUseOfAliases, 88> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct internal::NaturalCodingTraits<::test_aliases::ObjType, ::fidl::internal::NaturalCodingConstraintEmpty> {

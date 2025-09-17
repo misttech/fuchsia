@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_ANY_ERROR_IN_H_
 #define LIB_FIDL_CPP_ANY_ERROR_IN_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/unified_messaging.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/fit/function.h>
@@ -14,7 +15,7 @@
 #include <array>
 #include <string>
 
-#if __cplusplus >= 202002L
+#if __FIDL_SUPPORT_FORMAT
 #include <format>
 #endif
 
@@ -128,7 +129,7 @@ class ErrorsIn : public internal::ErrorsInImpl<internal::NaturalDomainError<Fidl
 
 }  // namespace fidl
 
-#if __cplusplus >= 202002L
+#if __FIDL_SUPPORT_FORMAT
 template <typename FidlMethod>
 struct std::formatter<fidl::ErrorsIn<FidlMethod>> : std::formatter<std::string_view> {
   auto format(const fidl::ErrorsIn<FidlMethod>& result, std::format_context& ctx) const {

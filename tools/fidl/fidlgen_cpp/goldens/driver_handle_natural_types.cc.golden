@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 ::test_driverhandle::ClientEndWrapper::ClientEndWrapper(Storage_ storage) noexcept : storage_(std::move(storage)) {}
 ::test_driverhandle::ClientEndWrapper::ClientEndWrapper(::fdf::ClientEnd<::test_driverhandle::DriverProtocol> value) noexcept
@@ -104,6 +104,6 @@ const std::optional<::fdf::ClientEnd<::test_driverhandle::DriverProtocol>>& test
   return *this;
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

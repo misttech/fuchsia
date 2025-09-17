@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_WIRE_BASE_WIRE_RESULT_H_
 #define LIB_FIDL_CPP_WIRE_BASE_WIRE_RESULT_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/internal/framework_err.h>
 #include <lib/fidl/cpp/wire/message.h>
 #include <lib/fidl/cpp/wire/status.h>
@@ -14,7 +15,7 @@
 
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 // Class template argument deduction (CTAD) guide.
 template <typename FidlProtocol, typename FidlMethod>
 WireResult(::fidl::UnownedClientEnd<FidlProtocol>,

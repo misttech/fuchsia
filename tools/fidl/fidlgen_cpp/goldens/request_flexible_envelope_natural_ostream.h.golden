@@ -53,7 +53,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_requestflexibleenvelope:
 
 }  // namespace test_requestflexibleenvelope
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_requestflexibleenvelope::Protocol>> {
@@ -69,6 +69,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_reques
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_requestflexibleenvelope::Protocol>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

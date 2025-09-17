@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_protocolrequest::wire::ParentGetChildResponse::_CloseHandles() {
   c.reset();
@@ -129,6 +129,6 @@ static_assert(std::is_standard_layout_v<::test_protocolrequest::wire::ParentTake
 static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestRequest, r) == 0);
 static_assert(sizeof(::test_protocolrequest::wire::ParentTakeChildRequestRequest) == ::fidl::TypeTraits<::test_protocolrequest::wire::ParentTakeChildRequestRequest>::kPrimarySize);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

@@ -16,12 +16,12 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 #include <lib/zx/handle.h>
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.typesinprotocols/cpp/common_types.h>
 #include <fidl/test.typesinprotocols/cpp/markers.h>
@@ -88,7 +88,7 @@ struct Struct {
   uint8_t __reserved = {};
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct ResourceStruct {
   uint8_t __reserved = {};
@@ -96,7 +96,7 @@ struct ResourceStruct {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_typesinprotocols
@@ -226,7 +226,7 @@ class ::fidl::WireTableExternalBuilder<::test_typesinprotocols::wire::Table> fin
 namespace test_typesinprotocols {
 namespace wire {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 }  // namespace wire
 }  // namespace test_typesinprotocols
 
@@ -356,7 +356,7 @@ class ::fidl::WireTableExternalBuilder<::test_typesinprotocols::wire::ResourceTa
 namespace test_typesinprotocols {
 namespace wire {
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class Union {
  public:
@@ -399,7 +399,7 @@ class Union {
   ::fidl::UntypedEnvelope envelope_;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ResourceUnion {
  public:
@@ -443,7 +443,7 @@ class ResourceUnion {
   ::fidl::UntypedEnvelope envelope_;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class ProtocolErrorBasicResult {
  public:
@@ -869,7 +869,7 @@ class ProtocolErrorArrayVectorNestedResult {
   ::fidl::UntypedEnvelope envelope_;
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class ProtocolErrorResourceResult {
  public:
@@ -925,7 +925,7 @@ class ProtocolErrorResourceResult {
   ::fidl::UntypedEnvelope envelope_;
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 struct Basic {
   uint8_t uint8 = {};
@@ -1073,7 +1073,7 @@ struct ArrayVectorNested {
   ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8 = {};
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct Resource {
   ::zx::handle handle = {};
@@ -1133,7 +1133,7 @@ struct Resource {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_typesinprotocols
@@ -1187,7 +1187,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Struct,
   static void Decode(
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::wire::ResourceStruct> : public std::true_type {};
@@ -1224,7 +1224,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Resourc
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct TypeTraits<::test_typesinprotocols::wire::Basic> {
@@ -1481,7 +1481,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ArrayVe
   static void Decode(
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::wire::Resource> : public std::true_type {};
@@ -1518,7 +1518,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Resourc
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct TypeTraits<::test_typesinprotocols::wire::Table> {
@@ -1548,7 +1548,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Table, 
   static void Encode(internal::WireEncoder* encoder, ::test_typesinprotocols::wire::Table* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
   static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::wire::ResourceTable> : public std::true_type {};
@@ -1582,7 +1582,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Resourc
   static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct TypeTraits<::test_typesinprotocols::wire::Union> {
@@ -1616,7 +1616,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Union, 
 template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Union, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Union, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::wire::ResourceUnion> : public std::true_type {};
@@ -1654,7 +1654,7 @@ template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ResourceUnion, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ResourceUnion, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct TypeTraits<::test_typesinprotocols::wire::ProtocolErrorBasicResult> {
@@ -1919,7 +1919,7 @@ struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::Protoco
 template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorArrayVectorNestedResult, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorArrayVectorNestedResult, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_typesinprotocols::wire::ProtocolErrorResourceResult> : public std::true_type {};
@@ -1957,7 +1957,7 @@ template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorResourceResult, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_typesinprotocols::wire::ProtocolErrorResourceResult, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

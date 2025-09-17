@@ -210,7 +210,7 @@ std::ostream& fidl::ostream::Formatter<::test_protocollayoutssamelibrary::MainPr
   }
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_protocollayoutssamelibrary::ComposedProtocol>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_protocollayoutssamelibrary::ComposedProtocol>& value) {
   return os << "ClientEnd<" << "test_protocollayoutssamelibrary::ComposedProtocol" << ">(" << value.channel().get() << ")";
@@ -243,7 +243,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_protoc
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_protocollayoutssamelibrary::MainProtocol>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_protocollayoutssamelibrary {
 
 std::ostream& operator<<(std::ostream& os, const ::test_protocollayoutssamelibrary::TablePayload& value) {

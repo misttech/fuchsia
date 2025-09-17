@@ -12,12 +12,12 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/channel.h>
 #include <lib/zx/vmo.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -144,7 +144,7 @@ class StructWithNullableVector {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class StructWithNullableHandle {
  private:
@@ -189,7 +189,7 @@ class StructWithNullableHandle {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class SimpleProtocolAddRequest {
  private:
@@ -301,7 +301,7 @@ class SimpleProtocolAddResponse {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class StructWithNullableProtocol {
  private:
@@ -389,7 +389,7 @@ class StructWithNullableRequest {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 class Int32Wrapper {
  private:
@@ -630,7 +630,7 @@ struct IsStruct<::test_nullable::StructWithNullableVector> : public std::true_ty
 template <>
 struct internal::NaturalCodingTraits<::test_nullable::StructWithNullableVector, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_nullable::StructWithNullableVector, 16> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_nullable::StructWithNullableHandle> : public std::true_type {};
@@ -653,7 +653,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_nullable::StructWithNullableHandle, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_nullable::StructWithNullableHandle, 4> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_nullable::SimpleProtocolAddRequest> : public std::true_type {};
@@ -691,7 +691,7 @@ struct IsStruct<::test_nullable::SimpleProtocolAddResponse> : public std::true_t
 template <>
 struct internal::NaturalCodingTraits<::test_nullable::SimpleProtocolAddResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_nullable::SimpleProtocolAddResponse, 4> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_nullable::StructWithNullableProtocol> : public std::true_type {};
@@ -735,7 +735,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_nullable::StructWithNullableRequest, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_nullable::StructWithNullableRequest, 4> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsFidlType<::test_nullable::Int32Wrapper> : public std::true_type {};

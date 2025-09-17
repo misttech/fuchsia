@@ -5,10 +5,11 @@
 #ifndef LIB_FIDL_CPP_NATURAL_DECODER_H_
 #define LIB_FIDL_CPP_NATURAL_DECODER_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/wire/message.h>
 #include <zircon/fidl.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/fidl/cpp/wire/internal/transport_channel.h>
 #include <lib/zx/handle.h>
 #include <lib/zx/object.h>

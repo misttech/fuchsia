@@ -5,6 +5,7 @@
 #ifndef LIB_FIDL_CPP_WIRE_WIRE_CODING_TRAITS_H_
 #define LIB_FIDL_CPP_WIRE_WIRE_CODING_TRAITS_H_
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/cpp/time.h>
 #include <lib/fidl/cpp/wire/coding_errors.h>
 #include <lib/fidl/cpp/wire/object_view.h>
@@ -18,9 +19,9 @@
 #include <lib/utf-utils/utf-utils.h>
 #include <zircon/types.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <limits>
 #include <type_traits>
@@ -343,7 +344,7 @@ struct WireCodingTraits<fidl::Array<T, N>, Constraint, IsRecursive> {
   }
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T, typename Constraint, bool IsRecursive>
 struct WireCodingTraits<T, Constraint, IsRecursive,
                         std::enable_if_t<std::is_base_of_v<zx::object_base, T>>> {
@@ -369,7 +370,7 @@ struct WireCodingTraits<T, Constraint, IsRecursive,
                           Constraint::is_optional);
   }
 };
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 template <zx_clock_t ClockId, bool IsRecursive>
 struct WireCodingTraits<fidl::basic_time<ClockId>, WireCodingConstraintEmpty, IsRecursive> {
@@ -471,7 +472,7 @@ struct WireCodingTraits<fidl::WireOptional<T>, Constraint, IsRecursive> {
   }
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 template <typename T, typename Constraint, bool IsRecursive>
 struct WireCodingTraits<ClientEnd<T>, Constraint, IsRecursive> {
   static constexpr bool kIsMemcpyCompatible = false;
@@ -523,7 +524,7 @@ struct WireCodingTraits<ServerEnd<T>, Constraint, IsRecursive> {
                           Constraint::is_optional);
   }
 };
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 struct TupleVisitor {
  public:

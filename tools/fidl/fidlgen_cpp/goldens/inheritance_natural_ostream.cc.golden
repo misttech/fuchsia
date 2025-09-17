@@ -23,7 +23,7 @@ std::ostream& fidl::ostream::Formatter<::test_inheritance::SuperFooResponse>::Fo
   os << "}";
   return os;
 }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::fidl::ClientEnd<::test_inheritance::Super>>::Format(std::ostream& os, const ::fidl::ClientEnd<::test_inheritance::Super>& value) {
   return os << "ClientEnd<" << "test_inheritance::Super" << ">(" << value.channel().get() << ")";
@@ -56,7 +56,7 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_inheri
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_inheritance::Sub>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_inheritance {
 
 std::ostream& operator<<(std::ostream& os, const ::test_inheritance::SuperFooRequest& value) {

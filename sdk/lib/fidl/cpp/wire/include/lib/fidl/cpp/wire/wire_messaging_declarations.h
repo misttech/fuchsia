@@ -5,6 +5,8 @@
 #ifndef LIB_FIDL_CPP_WIRE_WIRE_MESSAGING_DECLARATIONS_H_
 #define LIB_FIDL_CPP_WIRE_WIRE_MESSAGING_DECLARATIONS_H_
 
+#include <lib/fidl/cpp/features.h>
+
 // This header contains forward definitions that support sending and receiving
 // wire domain objects over Zircon channels for IPC. The code generator should
 // populate the implementation by generating template specializations for each
@@ -66,7 +68,7 @@ struct TransactionalEvent;
 template <typename FidlMethod>
 using WireResultUnwrapType = typename ::fidl::internal::WireResultUnwrap<FidlMethod>::Type;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 // WireSyncEventHandler is used by synchronous clients to handle events for the
 // given protocol.
 template <typename FidlProtocol>
@@ -100,7 +102,7 @@ class WireResult;
 template <typename FidlMethod>
 class WireUnownedResult;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 namespace internal {
 
@@ -156,7 +158,7 @@ struct IncomingEventsStorage;
 template <typename FidlProtocol>
 struct IncomingEventsHandleStorage;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 // |WireWeakEventSender| borrows the server endpoint from a binding object and
 // exposes methods for sending events using managed memory allocation.
@@ -263,7 +265,7 @@ class WireCompleterBase;
 template <typename FidlMethod>
 struct WireMethodTypes;
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace internal
 

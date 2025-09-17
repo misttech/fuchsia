@@ -16,10 +16,10 @@
 #include <lib/stdcompat/optional.h>
 
 #include <cstdint>
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/channel.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #include <fidl/test.inheritancewithrecursivedecl/cpp/common_types.h>
 #include <fidl/test.inheritancewithrecursivedecl/cpp/markers.h>
@@ -35,7 +35,7 @@ struct ParentFirstRequest;
 
 struct ChildSecondRequest;
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 struct ParentFirstRequest {
   ::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent> request = {};
@@ -49,13 +49,13 @@ struct ChildSecondRequest {
   void _CloseHandles();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace wire
 }  // namespace test_inheritancewithrecursivedecl
 namespace fidl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_inheritancewithrecursivedecl::wire::ParentFirstRequest> : public std::true_type {};
@@ -127,7 +127,7 @@ struct ::fidl::internal::WireCodingTraits<::test_inheritancewithrecursivedecl::w
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

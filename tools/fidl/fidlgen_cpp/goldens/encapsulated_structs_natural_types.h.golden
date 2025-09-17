@@ -12,11 +12,11 @@
 #include <cstdint>
 #include <string>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 #include <lib/zx/handle.h>
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
@@ -284,7 +284,7 @@ class StructPaddingTestStruct {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 class NonInlineStructTestStruct {
  private:
@@ -399,7 +399,7 @@ class TopLevelStruct {
   static constexpr auto kPadding = std::make_tuple();
 };
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 }  // namespace test_encapsulatedstructs
 namespace fidl {
@@ -476,7 +476,7 @@ struct IsStruct<::test_encapsulatedstructs::StructPaddingTestStruct> : public st
 template <>
 struct internal::NaturalCodingTraits<::test_encapsulatedstructs::StructPaddingTestStruct, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_encapsulatedstructs::StructPaddingTestStruct, 24> {};
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct IsResource<::test_encapsulatedstructs::NonInlineStructTestStruct> : public std::true_type {};
@@ -520,7 +520,7 @@ template <>
 struct internal::NaturalCodingTraits<::test_encapsulatedstructs::TopLevelStruct, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_encapsulatedstructs::TopLevelStruct, 40> {};
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 

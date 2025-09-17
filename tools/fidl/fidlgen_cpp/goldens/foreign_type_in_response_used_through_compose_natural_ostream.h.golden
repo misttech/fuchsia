@@ -14,7 +14,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top>> {
@@ -30,6 +30,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_foreig
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_foreigntypeinresponseusedthroughcompose::Top>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

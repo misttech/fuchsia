@@ -36,7 +36,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_errorsyntax::ExampleUseO
 
 }  // namespace test_errorsyntax
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 template <>
 struct fidl::ostream::Formatter<::fidl::ClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>> {
@@ -52,6 +52,6 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ClientEnd<::test_errors
 
 std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>& value);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

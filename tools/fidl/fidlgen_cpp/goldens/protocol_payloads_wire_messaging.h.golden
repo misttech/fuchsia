@@ -7,7 +7,9 @@
   #include <fidl/test.protocolpayloads/cpp/markers.h>
   #include <fidl/test.protocolpayloads/cpp/wire_types.h>
 
-#ifdef __Fuchsia__
+  #include <lib/fidl/cpp/features.h>
+
+#if __FIDL_SUPPORT_HANDLES
 
   #include <lib/fidl/cpp/wire/wire_messaging.h>
   #include <lib/fidl/cpp/wire/client.h>
@@ -2830,5 +2832,5 @@ class ::fidl::internal::WireBufferEventSender<::test_protocolpayloads::MainProto
 
   #pragma clang diagnostic pop
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 

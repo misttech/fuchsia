@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include <fidl/test.types/cpp/hlcpp_conversion.h>
+#include <lib/fidl/cpp/features.h>
 
 #include <gtest/gtest.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <lib/zx/event.h>
 #endif
 
@@ -36,7 +37,7 @@ TEST(UnionConversion, StrictToHLCPP) {
   EXPECT_EQ(copyable.copyable().x, 23);
 }
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 TEST(UnionConversion, FlexibleToNatural) {
   auto primitive = fidl::HLCPPToNatural(test::types::TestXUnion::WithPrimitive(42));

@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 void ::test_driverhandle::wire::ClientEndWrapper::_CloseHandles() {
   value.reset();
@@ -350,6 +350,6 @@ template struct ::fidl::internal::WireCodingTraits<::test_driverhandle::wire::T,
 
 static_assert(std::is_standard_layout_v<::test_driverhandle::wire::T>);
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop

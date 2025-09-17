@@ -7,7 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& fidl::ostream::Formatter<::test_inheritancewithrecursivedecl::ParentFirstRequest>::Format(std::ostream& os, const ::test_inheritancewithrecursivedecl::ParentFirstRequest& value) {
   os << "test_inheritancewithrecursivedecl::ParentFirstRequest";
@@ -58,10 +58,10 @@ std::ostream& operator<<(std::ostream& os, const ::fidl::ServerEnd<::test_inheri
   return fidl::ostream::Formatter<::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Child>>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 namespace test_inheritancewithrecursivedecl {
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 
 std::ostream& operator<<(std::ostream& os, const ::test_inheritancewithrecursivedecl::ParentFirstRequest& value) {
   return fidl::ostream::Formatter<::test_inheritancewithrecursivedecl::ParentFirstRequest>::Format(os, value);
@@ -71,7 +71,7 @@ std::ostream& operator<<(std::ostream& os, const ::test_inheritancewithrecursive
   return fidl::ostream::Formatter<::test_inheritancewithrecursivedecl::ChildSecondRequest>::Format(os, value);
 }
 
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 #pragma clang diagnostic pop
 
