@@ -96,6 +96,7 @@ rustc_library("fuchsia-async") {
     "src/handle/mod.rs",
     "src/lib.rs",
     "src/net/mod.rs",
+    "src/runtime/epoch.rs",
     "src/runtime/instrument.rs",
     "src/runtime/mod.rs",
     "src/runtime/scope.rs",
@@ -154,6 +155,7 @@ rustc_library("fuchsia-async") {
   with_unit_tests = true
   deps = []
   deps += [
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:pin-project-lite",
   ]
@@ -161,7 +163,6 @@ rustc_library("fuchsia-async") {
     deps += [
       "//sdk/lib/fdio",
       "//sdk/rust/zx",
-      "//src/lib/fuchsia-sync",
       "//third_party/rust_crates:crossbeam",
       "//third_party/rust_crates:libc",
       "//third_party/rust_crates:rustc-hash",

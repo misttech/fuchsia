@@ -20,11 +20,13 @@ pub use implementation::executor::{
     LocalExecutor, LocalExecutorBuilder, MonotonicDuration, MonotonicInstant, SendExecutor,
     SendExecutorBuilder, SpawnableFuture, TestExecutor, TestExecutorBuilder,
 };
-pub use implementation::task::{unblock, yield_now, JoinHandle, Task};
+pub use implementation::task::{JoinHandle, Task, unblock, yield_now};
 pub use implementation::timer::Timer;
 
 mod task_group;
 pub use task_group::*;
+
+pub mod epoch;
 
 // Fuchsia specific exports.
 #[cfg(target_os = "fuchsia")]
@@ -45,7 +47,7 @@ pub use scope::{Scope, ScopeHandle};
 use futures::prelude::*;
 use pin_project_lite::pin_project;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
 /// An extension trait to provide `after_now` on `zx::MonotonicDuration`.
 pub trait DurationExt {
@@ -326,8 +328,8 @@ mod timer_tests {
 
     #[test]
     fn can_detect_stalls() {
-        use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::Duration;
         let runs = Arc::new(AtomicU64::new(0));
         assert_eq!(

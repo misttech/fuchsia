@@ -20,8 +20,8 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::task::Context;
 
 pub(crate) const TASK_READY_WAKEUP_ID: u64 = u64::MAX - 1;
@@ -322,7 +322,9 @@ impl Executor {
     pub fn set_fake_boot_to_mono_offset(&self, offset: BootDuration) {
         let mono_now_ns = match &self.time {
             ExecutorTime::RealTime => {
-                panic!("Error: called `set_fake_boot_to_mono_offset` on an executor using actual time.")
+                panic!(
+                    "Error: called `set_fake_boot_to_mono_offset` on an executor using actual time."
+                )
             }
             ExecutorTime::FakeTime { mono_reading_ns: t, mono_to_boot_offset_ns: b } => {
                 // We ignore the non-atomic update between b and t, it is likely
@@ -802,11 +804,10 @@ impl TaskHandle {
 
 #[cfg(test)]
 mod tests {
-    use super::{EHandle, ACTIVE_EXECUTORS};
+    use super::{ACTIVE_EXECUTORS, EHandle};
     use crate::SendExecutorBuilder;
-    use crossbeam::epoch;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
     fn test_no_leaks() {
@@ -814,10 +815,7 @@ mod tests {
             .join()
             .unwrap();
 
-        // This seems like the only way to force crossbeam to do a collection.
-        while ACTIVE_EXECUTORS.load(Ordering::Relaxed) != 0 {
-            epoch::pin().defer(|| {});
-        }
+        assert_eq!(ACTIVE_EXECUTORS.load(Ordering::Relaxed), 0);
     }
 
     #[test]

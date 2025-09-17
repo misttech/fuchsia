@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::common::Executor;
-use crossbeam::epoch;
+use crate::epoch::Epoch;
 use fuchsia_sync::{RwLock, RwLockReadGuard};
 use rustc_hash::FxHashMap as HashMap;
 use std::fmt;
@@ -102,7 +102,7 @@ impl PacketReceiverMap {
                     // We want to drop the guard so that the receiver can be deregistered if
                     // necessary.  To make that safe, we use an epoch based garbage collector: when
                     // deregistered, the deallocation will be deferred until it's safe.
-                    let _epoch_guard = epoch::pin();
+                    let _epoch_guard = Epoch::global().guard();
                     drop(guard);
 
                     // SAFETY: We are holding a guard on the epoch which will prevent the receiver
@@ -294,7 +294,7 @@ impl<T: Send + 'static> Drop for ReceiverRegistration<T> {
         let inner = unsafe { ManuallyDrop::take(&mut self.0) };
 
         // We must defer the deallocation of inner as threads might currently be referencing inner.
-        epoch::pin().defer(|| inner);
+        Epoch::global().defer(|| drop(inner));
     }
 }
 

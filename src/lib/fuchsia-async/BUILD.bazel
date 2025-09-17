@@ -13,6 +13,7 @@ rustc_library(
         "src/handle/mod.rs",
         "src/lib.rs",
         "src/net/mod.rs",
+        "src/runtime/epoch.rs",
         "src/runtime/instrument.rs",
         "src/runtime/mod.rs",
         "src/runtime/scope.rs",
@@ -69,13 +70,13 @@ rustc_library(
     }),
     with_unit_tests = True,
     deps = [
+        "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:pin-project-lite",
     ] + select({
         "@platforms//os:fuchsia": [
             "//sdk/lib/fdio",
             "//sdk/rust/zx",
-            "//src/lib/fuchsia-sync",
             "//third_party/rust_crates/vendor:crossbeam",
             "//third_party/rust_crates/vendor:libc",
             "//third_party/rust_crates/vendor:rustc-hash",
