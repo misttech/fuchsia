@@ -106,24 +106,29 @@ mod fuchsia {
         let (dir, filename) = split_path(parent, path).await?;
         let dir = dir.as_ref().unwrap_or(parent);
         let tmp_filename = format!("{filename}.__tmp");
-        eprintln!("Got {tmp_filename}");
         // Clean up `tmp_filename` in case it still existed from a previous attempt.  Safe to ignore
         // errors.
         let _ = dir.unlink(&tmp_filename, &fio::UnlinkOptions::default()).await?;
-        let flags = fio::Flags::FLAG_SEND_REPRESENTATION
-            | fio::Flags::PROTOCOL_FILE
-            | fio::PERM_READABLE
-            | fio::PERM_WRITABLE
-            | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY;
-        let tmp = open_file_async(dir, ".", flags).map_err(WriteError::Open)?;
-        crate::file::write_file_with_on_open_event(&tmp, contents).await?;
-        let (status, token) = dir.get_token().await.map_err(WriteError::Fidl)?;
-        zx::ok(status).map_err(WriteError::Link)?;
-        let token = zx::Event::from(token.unwrap());
-        tmp.link_into(token, &tmp_filename)
-            .await
-            .map_err(WriteError::Fidl)?
-            .map_err(|s| WriteError::Link(zx::Status::from_raw(s)))?;
+        {
+            let flags = fio::Flags::FLAG_SEND_REPRESENTATION
+                | fio::Flags::PROTOCOL_FILE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY;
+            let tmp = open_file_async(dir, ".", flags).map_err(WriteError::Open)?;
+            crate::file::write_file_with_on_open_event(&tmp, contents).await?;
+            tmp.sync()
+                .await
+                .map_err(WriteError::Fidl)?
+                .map_err(|s| WriteError::WriteError(zx::Status::from_raw(s)))?;
+            let (status, token) = dir.get_token().await.map_err(WriteError::Fidl)?;
+            zx::ok(status).map_err(WriteError::Link)?;
+            let token = zx::Event::from(token.unwrap());
+            tmp.link_into(token, &tmp_filename)
+                .await
+                .map_err(WriteError::Fidl)?
+                .map_err(|s| WriteError::Link(zx::Status::from_raw(s)))?;
+        }
         rename(dir, &tmp_filename, filename).await.map_err(|err| WriteError::Rename(err))
     }
 }
