@@ -369,6 +369,10 @@ fn create_map_impl(
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_SK_STORAGE");
             Ok(Box::pin(array::Array::new(&MapSchema { max_entries: 1, ..*schema }, vmo)?))
         }
+        bpf_map_type_BPF_MAP_TYPE_LRU_HASH => {
+            track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_LRU_HASH");
+            Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?))
+        }
 
         // Unimplemented types
         bpf_map_type_BPF_MAP_TYPE_UNSPEC => {
@@ -389,10 +393,6 @@ fn create_map_impl(
         }
         bpf_map_type_BPF_MAP_TYPE_CGROUP_ARRAY => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_CGROUP_ARRAY");
-            Err(MapError::InvalidParam)
-        }
-        bpf_map_type_BPF_MAP_TYPE_LRU_HASH => {
-            track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_LRU_HASH");
             Err(MapError::InvalidParam)
         }
         bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH => {
