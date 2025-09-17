@@ -578,7 +578,7 @@ mod tests {
             assert_eq!(s4.range(), base + 2048..base + 4096);
             assert_eq!(s1.as_slice(), vec![0xaa; 1]);
             assert_eq!(s2.as_slice(), vec![0xaa; 2047]);
-            assert_eq!(s3.as_slice(), vec![]);
+            assert_eq!(s3.as_slice(), &[] as &[u8]);
             assert_eq!(s4.as_slice(), vec![0xbb; 2048]);
         }
     }
