@@ -329,7 +329,7 @@ def create_model_from_file(file: TextIO) -> trace_model.Model:
         A Model object.
     """
 
-    return create_model_from_json(json.load(file))
+    return consume_json_to_create_model(json.load(file))
 
 
 def create_model_from_string(json_string: str) -> trace_model.Model:
@@ -342,15 +342,18 @@ def create_model_from_string(json_string: str) -> trace_model.Model:
         A Model object.
     """
 
-    json_object: Dict[str, Any] = json.loads(json_string)
-    return create_model_from_json(json_object)
+    return consume_json_to_create_model(json.loads(json_string))
 
 
-def create_model_from_json(root_object: Dict[str, Any]) -> trace_model.Model:
-    """Creates a Model from a JSON dictionary.
+def consume_json_to_create_model(
+    root_object: dict[str, Any]
+) -> trace_model.Model:
+    """Destructively creates a Model from a JSON dictionary.
 
     Args:
-        root_object: A JSON dictionary representing the trace data.
+        root_object: A JSON dictionary representing the trace data. This function takes ownership of
+                     the provided JSON object.
+
 
     Returns:
         A Model object.

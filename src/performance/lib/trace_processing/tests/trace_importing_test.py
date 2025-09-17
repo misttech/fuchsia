@@ -269,9 +269,7 @@ class TraceImportingTest(unittest.TestCase):
                 }
             )
 
-        model: trace_model.Model = trace_importing.create_model_from_json(
-            trace_json
-        )
+        model = trace_importing.consume_json_to_create_model(trace_json)
         self.assertNotEqual(len(list(model.all_events())), 0)
 
     def test_preserve_ordering_same_start_time(self) -> None:
@@ -319,9 +317,7 @@ class TraceImportingTest(unittest.TestCase):
             expected_names.append(event_name)
 
         # Check that the events are imported with the expected ordering.
-        model: trace_model.Model = trace_importing.create_model_from_json(
-            trace_json
-        )
+        model = trace_importing.consume_json_to_create_model(trace_json)
         self.assertEqual(
             [event.name for event in model.all_events()], expected_names
         )
