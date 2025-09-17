@@ -67,6 +67,7 @@ See //BUILD.gn for more about the rust_target_mapping.json.
 import json
 import os
 import shutil
+import sys
 from argparse import (
     SUPPRESS,
     ArgumentParser,
@@ -90,6 +91,7 @@ from rustdoc_link_actions import (
     CopyAction,
     RustdocAction,
     TargetAction,
+    VerifyAction,
     ZipAction,
 )
 
@@ -357,11 +359,38 @@ def execute_zip_action(zip_action: ZipAction) -> None:
     ).is_file(), "should have created .zip with our intended name"
 
 
+def execute_verify_action(
+    verify_action: VerifyAction, build_dir: Path, fuchsia_dir: Path
+) -> None:
+    child_env = os.environ.copy()
+    child_env["FUCHSIA_BUILD_DIR"] = str(Path(build_dir).resolve())
+    child_env["FUCHSIA_DIR"] = str(Path(fuchsia_dir).resolve())
+    result = run(
+        [verify_action.executable, *verify_action.args],
+        cwd=build_dir,
+        env=child_env,
+    )
+    try:
+        result.check_returncode()
+    except CalledProcessError as e:
+        print(
+            "fx rustdoc-link: The generated documentation appears broken.",
+            file=stderr,
+        )
+        print(
+            "fx rustdoc-link: Check stderr of the above command for more.",
+            file=stderr,
+        )
+        print(f"fx rustdoc-link: see: {e}", file=stderr)
+        sys.exit(1)
+
+
 def execute_action(
     action: Action,
     build_executable: Path,
     rustdoc_executable: Path,
     build_dir: Path,
+    fuchsia_dir: Path,
     use_xargs: bool,
     merge_parallelism: int,
     quiet: bool,
@@ -388,7 +417,13 @@ def execute_action(
         if not quiet:
             zip_to = action.zip_action.zip_to
             print("fx rustdoc-link: zipping docs to", zip_to, file=stderr)
+
         execute_zip_action(action.zip_action)
+    execute_verify_action(
+        verify_action=action.verify_action,
+        build_dir=build_dir,
+        fuchsia_dir=fuchsia_dir,
+    )
 
 
 def set_arg_defaults(args: Namespace) -> None:
@@ -474,10 +509,23 @@ def generate_action(meta: list[Metadata], args: Namespace) -> Action:
         if args.zip_to
         else None
     )
+
+    sys_executable = os.path.relpath(sys.executable, start=args.build_dir)
+    executable = "tools/devshell/contrib/lib/rust/rustdoc_link_verify.py"
+    executable = Path(args.fuchsia_dir, executable)
+    executable = os.path.relpath(executable, start=args.build_dir)
+    verify_action = VerifyAction(
+        executable=ActionPath(sys_executable),
+        args=[
+            ActionPath(executable),
+            ActionPath(args.destination.relative_to(args.build_dir)),
+        ],
+    )
     return Action(
         host_action=host_action,
         fuchsia_action=fuchsia_action,
         zip_action=zip_action,
+        verify_action=verify_action,
     )
 
 
@@ -523,6 +571,7 @@ def main(args: Namespace) -> None:
                 build_executable=args.build_executable,
                 rustdoc_executable=args.rustdoc_executable,
                 build_dir=args.build_dir,
+                fuchsia_dir=args.fuchsia_dir,
                 use_xargs=args.use_xargs,
                 merge_parallelism=args.merge_parallelism,
                 quiet=args.quiet,

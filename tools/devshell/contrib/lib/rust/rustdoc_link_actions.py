@@ -93,6 +93,21 @@ class ZipAction:
 
 
 @dataclass
+class VerifyAction:
+    """To execute this, run `{executable} {...args}`.
+
+    If this verification action exits unsuccessfully, then the docs should be
+    presumed to be broken.
+
+    Make sure to run this script with FUCHSIA_BUILD_DIR and FUCHSIA_DIR set.
+    Run it with the FUCHSIA_BUILD_DIR as the current working directory.
+    """
+
+    executable: ActionPath
+    args: list[str]
+
+
+@dataclass
 class Action:
     """Execute the host_action, the fuchsia_action, and the zip_action (if any), in
     sequence.
@@ -101,3 +116,4 @@ class Action:
     host_action: TargetAction
     fuchsia_action: TargetAction
     zip_action: ZipAction | None
+    verify_action: VerifyAction
