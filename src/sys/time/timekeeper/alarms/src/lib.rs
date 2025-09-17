@@ -818,6 +818,10 @@ pub(crate) struct TimerConfig {
     /// The resolutions supported by this timer. Each entry is one possible
     /// duration for on timer "tick".  The resolution is picked when a timer
     /// request is sent.
+    ///
+    /// The resolutions MUST be sorted from finest (index 0) to coarsest.
+    ///
+    /// There MUST be at least one resolution.
     resolutions: Vec<zx::BootDuration>,
     /// The maximum count of "ticks" that the timer supports. The timer usually
     /// has a register that counts up or down based on a clock signal with
@@ -857,6 +861,14 @@ impl TimerConfig {
     // If the available menu of resolutions is such that we can wake only after
     // the intended deadline, begrudgingly return that option.
     fn pick_setting(&self, duration: zx::BootDuration) -> TimerDuration {
+        assert!(self.resolutions.len() > 0, "there must be at least one supported resolution");
+
+        // Driver does not support zero ticks, so we must accept the finest resolution duration
+        // instead.
+        if duration <= zx::BootDuration::ZERO {
+            return TimerDuration::new(self.resolutions[0], 1);
+        }
+
         //  0         |-------------->|<---------------|
         //  |---------+---------------+----------------+---->
         //  |---------^               |                |
@@ -1696,7 +1708,7 @@ mod tests {
         vec![zx::BootDuration::from_nanos(1)],
         100,
         zx::BootDuration::from_nanos(0),
-        TimerDuration::new(zx::BootDuration::from_nanos(1), 0) ; "Exact at 0x1ns"
+        TimerDuration::new(zx::BootDuration::from_nanos(1), 1) ; "0ns becomes 1ns"
     )]
     #[test_case(
         vec![zx::BootDuration::from_nanos(1)],
@@ -1767,6 +1779,28 @@ mod tests {
         zx::BootDuration::from_micros(6000),
         TimerDuration::new(zx::BootDuration::from_millis(1), 6) ;
         "Coarser exact unit wins"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(1),
+            zx::BootDuration::from_millis(10),
+            zx::BootDuration::from_millis(100),
+        ],
+        1000,
+        zx::BootDuration::from_micros(-10),
+        TimerDuration::new(zx::BootDuration::from_millis(1), 1) ;
+        "Negative duration gets the smallest timer duration"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(1),
+            zx::BootDuration::from_millis(10),
+            zx::BootDuration::from_millis(100),
+        ],
+        1000,
+        zx::BootDuration::ZERO,
+        TimerDuration::new(zx::BootDuration::from_millis(1), 1) ;
+        "Zero duration gets the smallest timer duration"
     )]
     fn test_pick_setting(
         resolutions: Vec<zx::BootDuration>,
