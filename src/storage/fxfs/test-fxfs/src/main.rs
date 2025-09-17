@@ -33,7 +33,7 @@ use storage_device::fake_device::FakeDevice;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 
-const BLOCK_SIZE: u32 = 4096; // 8KiB
+const BLOCK_SIZE: u32 = 4096; // 4KiB
 const USER_VOLUME_NAME: &str = "test_fxfs_user_volume";
 
 pub const DATA_KEY: [u8; 32] = [
