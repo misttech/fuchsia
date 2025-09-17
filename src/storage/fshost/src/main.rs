@@ -154,14 +154,21 @@ async fn main() -> Result<(), Error> {
         export.add_entry("gpt", remote_dir(env.partition_manager_exposed_dir()?)).unwrap();
     }
     let env: Arc<Mutex<dyn Environment>> = Arc::new(Mutex::new(env));
+    // Guard to prevent concurrent access to the system container (or the partition backing it).
+    // TODO(https://fxbug.dev/444486641): Using a shared lock like this is not ideal, as we could
+    // forget to lock it when adding new FIDL methods to these protocols. We should leverage our
+    // Environment trait and FshostEnvironment type to support guarded access.
+    let system_partition_lock = Arc::new(Mutex::new(()));
     let svc_dir = vfs::pseudo_directory! {
         fshost::AdminMarker::PROTOCOL_NAME =>
             service::fshost_admin(
+                system_partition_lock.clone(),
                 env.clone(),
                 config.clone(),
             ),
         fshost::RecoveryMarker::PROTOCOL_NAME =>
             service::fshost_recovery(
+                system_partition_lock.clone(),
                 env.clone(),
                 config.clone(),
                 ramdisk_device.as_ref().map(|d| d.topological_path().to_string()),

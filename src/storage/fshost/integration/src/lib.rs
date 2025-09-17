@@ -30,7 +30,7 @@ pub mod disk_builder;
 pub mod fshost_builder;
 mod mocks;
 
-pub use disk_builder::write_test_blob;
+pub use disk_builder::write_blob;
 pub use fshost_assembly_config::{BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent};
 
 pub const VFS_TYPE_BLOBFS: u32 = 0x9e694d21;
@@ -313,7 +313,7 @@ impl TestFixture {
     }
 
     pub async fn check_test_blob(&self, use_fxblob: bool) {
-        let expected_blob_hash = fuchsia_merkle::from_slice(&disk_builder::BLOB_CONTENTS).root();
+        let expected_blob_hash = disk_builder::test_blob_hash();
         if use_fxblob {
             let reader = connect_to_protocol_at_dir_root::<BlobReaderMarker>(
                 self.realm.root.get_exposed_dir(),

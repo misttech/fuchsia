@@ -32,8 +32,16 @@ closed protocol Admin {
     });
 };
 
-/// Special functionality that is only intended to be used in recovery and device bringup.  All
-/// methods require fuchsia.fshost.Netboot to be set, unless otherwise indicated.
+/// Special functionality that is only intended to be used in recovery and device bringup.
+///
+/// *WARNING*: The methods in this protocol are highly specialized and can result in unintended
+/// data loss if used improperly. Most methods in this protocol assume exclusive access to the
+/// underlying block device, and it is the responsibility of callers to mediate the use of this
+/// protocol across components.
+// TODO(https://fxbug.dev/444486641): Determine if we should add a way to synchronize clients that
+// use this protocol to unintended concurrent usage. Right now consumers of the protocol are
+// required to manage shared access to the underlying system container and unmount filesystems
+// manually.
 @discoverable
 closed protocol Recovery {
     /// Wipes and re-initializes the system partition table.  This is a destructive operation!
@@ -74,6 +82,22 @@ closed protocol Recovery {
     strict WipeStorage(resource struct {
         blobfs_root server_end:<fuchsia.io.Directory, optional>;
         blob_creator server_end:<fuchsia.fxfs.BlobCreator, optional>;
+    }) -> () error zx.Status;
+
+
+    /// Formats the blob volume in the system container. If the system container does not have a
+    /// blob volume, a new one will be created. All existing blobs will be deleted. If the system
+    /// container is corrupt or unmountable, this function will have no effect and will leave the
+    /// disk intact.
+    ///
+    /// **WARNING**: This can cause irreversible data loss and can render a device unbootable.
+    strict FormatSystemBlobVolume() -> () error zx.Status;
+
+    /// Mounts the system container's blob volume, and returns a handle to the blob volume's
+    /// exposed directory to facilitate writing a new system. The system container will remain
+    /// mounted as long as `blob_exposed_dir` is kept open. Only the blob volume will be mounted.
+    strict MountSystemBlobVolume(resource struct {
+        blob_exposed_dir server_end:<fuchsia.io.Directory>;
     }) -> () error zx.Status;
 };
 

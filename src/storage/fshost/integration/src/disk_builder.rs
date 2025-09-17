@@ -74,7 +74,11 @@ const KEY_BAG_CONTENTS: &'static str = "\
     }
 }";
 
-pub const BLOB_CONTENTS: [u8; 1000] = [1; 1000];
+pub const TEST_BLOB_CONTENTS: [u8; 1000] = [1; 1000];
+
+pub fn test_blob_hash() -> fuchsia_merkle::Hash {
+    fuchsia_merkle::from_slice(&TEST_BLOB_CONTENTS).root()
+}
 
 const DATA_KEY: Aes256Key = Aes256Key::create([
     0xcf, 0x9e, 0x45, 0x2a, 0x22, 0xa5, 0x70, 0x31, 0x33, 0x3b, 0x4d, 0x6b, 0x6f, 0x78, 0x58, 0x29,
@@ -147,7 +151,7 @@ async fn create_hermetic_crypt_service(
 }
 
 /// Write a blob to the blob volume to ensure that on format, the blob volume does not get wiped.
-pub async fn write_test_blob(blob_creator: BlobCreatorProxy, data: &[u8]) -> Hash {
+pub async fn write_blob(blob_creator: BlobCreatorProxy, data: &[u8]) -> Hash {
     let hash = fuchsia_merkle::from_slice(data).root();
     let compressed_data = Type1Blob::generate(&data, CompressionMode::Always);
 
@@ -449,7 +453,7 @@ impl DiskBuilder {
             blob_volume.exposed_dir(),
         )
         .expect("failed to connect to the Blob service");
-        self.blob_hash = Some(write_test_blob(blob_creator, &BLOB_CONTENTS).await);
+        self.blob_hash = Some(write_blob(blob_creator, &TEST_BLOB_CONTENTS).await);
 
         for volume in &self.extra_volumes {
             fs.create_volume(volume, CreateOptions::default(), MountOptions::default())
@@ -494,7 +498,7 @@ impl DiskBuilder {
                     blob_volume.exposed_dir(),
                 )
                 .expect("failed to connect to the Blob service");
-            self.blob_hash = Some(write_test_blob(blob_creator, &BLOB_CONTENTS).await);
+            self.blob_hash = Some(write_blob(blob_creator, &TEST_BLOB_CONTENTS).await);
 
             blob_volume.shutdown().await.unwrap();
         }
@@ -617,7 +621,7 @@ impl DiskBuilder {
             .unwrap();
             let mut key_bag = KEY_BAG_CONTENTS.as_bytes();
             if self.corrupt_data && fxblob {
-                key_bag = &BLOB_CONTENTS;
+                key_bag = &TEST_BLOB_CONTENTS;
             }
             fuchsia_fs::file::write(&keys_file, key_bag).await.unwrap();
             fuchsia_fs::file::close(keys_file).await.unwrap();

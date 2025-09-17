@@ -12,7 +12,7 @@ use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_hardware_block_partition::PartitionMarker;
 use fs_management::partition::{PartitionMatcher, find_partition_in};
 use fshost_test_fixture::disk_builder::VolumesSpec;
-use fshost_test_fixture::write_test_blob;
+use fshost_test_fixture::write_blob;
 use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};
 
 #[cfg(feature = "fxblob")]
@@ -52,7 +52,7 @@ async fn no_fvm_device() {
 
 // Demonstrate high level usage of the fuchsia.fshost.Recovery/WipeStorage method.
 #[fuchsia::test]
-async fn write_blob() {
+async fn test_wipe_storage() {
     let mut builder = new_builder();
     builder.fshost().set_config_value("ramdisk_image", true);
     // We need to use a GPT as WipeStorage relies on the reported partition type GUID, rather than
@@ -98,7 +98,7 @@ async fn write_blob() {
         .expect("WipeStorage unexpectedly failed");
 
     // Ensure that we can write a blob into the new Blobfs instance.
-    write_test_blob(blob_creator_proxy, &TEST_BLOB_DATA).await;
+    write_blob(blob_creator_proxy, &TEST_BLOB_DATA).await;
 
     fixture.tear_down().await;
 }
@@ -250,7 +250,7 @@ async fn write_blob_no_existing_data_partition() {
         .expect("WipeStorage unexpectedly failed");
 
     // Ensure that we can write a blob into the new Blobfs instance.
-    write_test_blob(blob_creator_proxy, &TEST_BLOB_DATA).await;
+    write_blob(blob_creator_proxy, &TEST_BLOB_DATA).await;
 
     fixture.tear_down().await;
 }

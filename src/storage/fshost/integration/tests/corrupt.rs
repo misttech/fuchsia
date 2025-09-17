@@ -7,7 +7,7 @@
 
 use device_watcher::recursive_wait;
 use fidl::endpoints::{ServiceMarker as _, create_proxy};
-use fshost_test_fixture::write_test_blob;
+use fshost_test_fixture::write_blob;
 use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};
 
 pub mod config;
@@ -90,7 +90,7 @@ async fn wipe_storage_handles_corrupt_fvm() {
         .expect("WipeStorage unexpectedly failed");
 
     // Ensure that we can write a blob into the new Blobfs instance.
-    write_test_blob(blob_creator_proxy, &TEST_BLOB_DATA).await;
+    write_blob(blob_creator_proxy, &TEST_BLOB_DATA).await;
 
     fixture.tear_down().await;
 }
