@@ -98,7 +98,9 @@ async fn add_remove_rules<I: FidlRuleAdminIpExt + FidlRouteAdminIpExt + FidlRout
             RuleIndex::from(1),
             RuleMatcher {
                 locally_generated: Some(false),
-                bound_device: Some(fnet_matchers_ext::BoundInterface::DeviceName("lo".into())),
+                bound_device: Some(fnet_matchers_ext::BoundInterface::Bound(
+                    fnet_matchers_ext::Interface::Name("lo".into())
+                )),
                 ..Default::default()
             },
             RuleAction::Unreachable,

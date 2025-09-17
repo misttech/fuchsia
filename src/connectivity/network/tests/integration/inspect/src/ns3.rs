@@ -1023,8 +1023,8 @@ async fn inspect_rules(name: &str) {
         3.into(),
         fnet_routes_ext::rules::RuleMatcher::<Ipv4> {
             locally_generated: Some(true),
-            bound_device: Some(fnet_matchers_ext::BoundInterface::DeviceName(
-                "device-name".to_owned(),
+            bound_device: Some(fnet_matchers_ext::BoundInterface::Bound(
+                fnet_matchers_ext::Interface::Name("device-name".to_owned()),
             )),
             ..Default::default()
         },
@@ -1109,7 +1109,7 @@ async fn inspect_rules(name: &str) {
                     "3": {
                         Matchers: {
                             LocalOrigin: {
-                                BoundDevice: "device-name",
+                                BoundDevice: "Name(device-name)",
                             }
                         },
                         Action: "Unreachable",

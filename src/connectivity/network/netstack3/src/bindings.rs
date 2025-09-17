@@ -108,7 +108,7 @@ use netstack3_core::device::{
     TransmitQueueBindingsContext, WeakDeviceId,
 };
 use netstack3_core::error::ExistsError;
-use netstack3_core::filter::{FilterBindingsTypes, SocketOpsFilter, SocketOpsFilterBindingContext};
+use netstack3_core::filter::{SocketOpsFilter, SocketOpsFilterBindingContext};
 use netstack3_core::icmp::{
     IcmpEchoBindingsContext, IcmpEchoBindingsTypes, IcmpSocketId, ReceiveIcmpEchoError,
 };
@@ -125,8 +125,8 @@ use netstack3_core::udp::{
 };
 use netstack3_core::{
     CoreTxMetadata, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes,
-    InstantContext, IpExt, RngContext, StackState, StackStateBuilder, TimerBindingsTypes,
-    TimerContext, TimerId, TxMetadataBindingsTypes, neighbor,
+    InstantContext, IpExt, MatcherBindingsTypes, RngContext, StackState, StackStateBuilder,
+    TimerBindingsTypes, TimerContext, TimerId, TxMetadataBindingsTypes, neighbor,
 };
 
 pub(crate) use inspect::InspectPublisher;
@@ -458,7 +458,7 @@ impl InstantContext for BindingsCtx {
     }
 }
 
-impl FilterBindingsTypes for BindingsCtx {
+impl MatcherBindingsTypes for BindingsCtx {
     type DeviceClass = fidl_fuchsia_net_interfaces::PortClass;
 }
 

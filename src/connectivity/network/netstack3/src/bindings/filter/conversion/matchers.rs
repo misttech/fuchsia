@@ -4,7 +4,6 @@
 
 use fidl_fuchsia_net_ext::IntoExt as _;
 use net_types::ip::{GenericOverIp, Ip};
-use netstack3_core::device::DeviceNameMatcher;
 use netstack3_core::ip::SubnetMatcher;
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 use {
@@ -76,19 +75,17 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
 }
 
 impl TryConvertToCoreState for fnet_matchers_ext::Interface {
-    type CoreState<I: IpExt> = netstack3_core::filter::InterfaceMatcher<fnet_interfaces::PortClass>;
+    type CoreState<I: IpExt> = netstack3_core::device::InterfaceMatcher<fnet_interfaces::PortClass>;
 
     fn try_convert<I: IpExt>(
         self,
         _ip_version_strictness: IpVersionStrictness,
     ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
         let matcher = match self {
-            Self::Id(id) => netstack3_core::filter::InterfaceMatcher::Id(id),
-            Self::Name(name) => {
-                netstack3_core::filter::InterfaceMatcher::Name(DeviceNameMatcher(name))
-            }
+            Self::Id(id) => netstack3_core::device::InterfaceMatcher::Id(id),
+            Self::Name(name) => netstack3_core::device::InterfaceMatcher::Name(name),
             Self::PortClass(port_class) => {
-                netstack3_core::filter::InterfaceMatcher::DeviceClass(port_class.into())
+                netstack3_core::device::InterfaceMatcher::DeviceClass(port_class.into())
             }
         };
         Ok(ConversionResult::State(matcher))

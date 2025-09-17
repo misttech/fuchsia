@@ -77,12 +77,14 @@ impl TryFrom<fnet_matchers::Interface> for Interface {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BoundInterface {
     Unbound,
-    DeviceName(String),
+    Bound(Interface),
 }
 
 /// Errors when creating an [`BoundInterface`].
 #[derive(Debug, Error, PartialEq)]
 pub enum BoundInterfaceError {
+    #[error(transparent)]
+    Interface(InterfaceError),
     #[error("interface union is of an unknown variant")]
     UnknownUnionVariant(u64),
 }
@@ -93,7 +95,9 @@ impl From<BoundInterface> for fnet_matchers::BoundInterface {
             BoundInterface::Unbound => {
                 fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound)
             }
-            BoundInterface::DeviceName(name) => fnet_matchers::BoundInterface::DeviceName(name),
+            BoundInterface::Bound(interface) => {
+                fnet_matchers::BoundInterface::Bound(interface.into())
+            }
         }
     }
 }
@@ -106,7 +110,9 @@ impl TryFrom<fnet_matchers::BoundInterface> for BoundInterface {
             fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound) => {
                 Ok(BoundInterface::Unbound)
             }
-            fnet_matchers::BoundInterface::DeviceName(name) => Ok(BoundInterface::DeviceName(name)),
+            fnet_matchers::BoundInterface::Bound(interface) => Ok(BoundInterface::Bound(
+                interface.try_into().map_err(|e| BoundInterfaceError::Interface(e))?,
+            )),
             fnet_matchers::BoundInterface::__SourceBreaking { unknown_ordinal } => {
                 Err(BoundInterfaceError::UnknownUnionVariant(unknown_ordinal))
             }

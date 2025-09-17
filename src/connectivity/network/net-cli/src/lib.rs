@@ -1164,7 +1164,15 @@ async fn do_rule_list<C: NetCliDepsConnector>(
             let from = from.map(|from| from.to_string());
             let locally_generated = locally_generated.map(|x| x.to_string());
             let bound_device = bound_device.map(|matcher| match matcher {
-                fnet_matchers_ext::BoundInterface::DeviceName(name) => name,
+                fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name(
+                    name,
+                )) => format!("name:{name}"),
+                fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Id(id)) => {
+                    format!("id:{id}")
+                }
+                fnet_matchers_ext::BoundInterface::Bound(
+                    fnet_matchers_ext::Interface::PortClass(class),
+                ) => format!("class:{class:?}"),
                 fnet_matchers_ext::BoundInterface::Unbound => "unbound".into(),
             });
             let mark_1 = mark_1.map(format_matcher);

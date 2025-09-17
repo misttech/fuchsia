@@ -23,7 +23,7 @@ use super::*;
 struct IpFakeCoreCtx<I: IpLayerIpExt> {
     stack_wide_counters: IpCounters<I>,
     per_device_counters: MultipleDevicesIdState<IpCounters<I>>,
-    rules_table: Rc<RefCell<RulesTable<I, MultipleDevicesId>>>,
+    rules_table: Rc<RefCell<RulesTable<I, MultipleDevicesId, ()>>>,
     main_table_id: RoutingTableId<I, MultipleDevicesId>,
     routing_tables: Rc<
         RefCell<
@@ -198,12 +198,12 @@ impl<I: IpLayerIpExt> IpDeviceContext<I> for FakeCoreCtx<I> {
     }
 }
 
-impl<I: IpLayerIpExt> IpStateContext<I> for FakeCoreCtx<I> {
+impl<I: IpLayerIpExt> IpStateContext<I, FakeBindingsCtx> for FakeCoreCtx<I> {
     type IpRouteTablesCtx<'a> = Self;
 
     fn with_rules_table<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &RulesTable<I, Self::DeviceId>) -> O,
+        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &RulesTable<I, Self::DeviceId, ()>) -> O,
     >(
         &mut self,
         cb: F,
@@ -215,7 +215,7 @@ impl<I: IpLayerIpExt> IpStateContext<I> for FakeCoreCtx<I> {
 
     fn with_rules_table_mut<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &mut RulesTable<I, Self::DeviceId>) -> O,
+        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &mut RulesTable<I, Self::DeviceId, ()>) -> O,
     >(
         &mut self,
         cb: F,

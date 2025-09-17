@@ -29,11 +29,11 @@ use netstack3_base::socket::SocketIpAddrExt as _;
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Counter, CounterCollectionSpec, CounterContext,
-    DeviceIdContext, DeviceIdentifier as _, DeviceWithName, ErrorAndSerializer, EventContext,
-    FrameDestination, HandleableTimer, InstantContext, IpAddressId, IpDeviceAddr,
-    IpDeviceAddressIdContext, IpExt, MarkDomain, Marks, Matcher as _, NestedIntoCoreTimerCtx,
-    NotFoundError, ResourceCounterContext, RngContext, SendFrameErrorReason,
-    StrongDeviceIdentifier, TimerBindingsTypes, TimerContext, TimerHandler,
+    DeviceIdContext, DeviceIdentifier as _, ErrorAndSerializer, EventContext, FrameDestination,
+    HandleableTimer, InstantContext, InterfaceProperties, IpAddressId, IpDeviceAddr,
+    IpDeviceAddressIdContext, IpExt, MarkDomain, Marks, Matcher as _, MatcherBindingsTypes,
+    NestedIntoCoreTimerCtx, NotFoundError, ResourceCounterContext, RngContext,
+    SendFrameErrorReason, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext, TimerHandler,
     TxMetadataBindingsTypes, WeakIpAddressId, WrapBroadcastMarker,
 };
 use netstack3_filter::{
@@ -574,7 +574,7 @@ impl<
     BC: FilterBindingsContext + TxMetadataBindingsTypes,
     CC: IpDeviceContext<I>
         + IpSocketHandler<I, BC>
-        + IpStateContext<I>
+        + IpStateContext<I, BC>
         + FilterIpContext<I, BC>
         + UseTransportIpContextBlanket,
 > BaseTransportIpContext<I, BC> for CC
@@ -820,8 +820,8 @@ impl IpLayerIpExt for Ipv6 {
 }
 
 /// The state context provided to the IP layer.
-pub trait IpStateContext<I: IpLayerIpExt>:
-    IpRouteTablesContext<I, DeviceId: DeviceWithName>
+pub trait IpStateContext<I: IpLayerIpExt, BT: MatcherBindingsTypes>:
+    IpRouteTablesContext<I, DeviceId: InterfaceProperties<BT::DeviceClass>>
 {
     /// The context that provides access to the IP routing tables.
     type IpRouteTablesCtx<'a>: IpRouteTablesContext<I, DeviceId = Self::DeviceId>;
@@ -829,7 +829,10 @@ pub trait IpStateContext<I: IpLayerIpExt>:
     /// Gets an immutable reference to the rules table.
     fn with_rules_table<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &RulesTable<I, Self::DeviceId>) -> O,
+        F: FnOnce(
+            &mut Self::IpRouteTablesCtx<'_>,
+            &RulesTable<I, Self::DeviceId, BT::DeviceClass>,
+        ) -> O,
     >(
         &mut self,
         cb: F,
@@ -838,7 +841,10 @@ pub trait IpStateContext<I: IpLayerIpExt>:
     /// Gets a mutable reference to the rules table.
     fn with_rules_table_mut<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &mut RulesTable<I, Self::DeviceId>) -> O,
+        F: FnOnce(
+            &mut Self::IpRouteTablesCtx<'_>,
+            &mut RulesTable<I, Self::DeviceId, BT::DeviceClass>,
+        ) -> O,
     >(
         &mut self,
         cb: F,
@@ -1122,7 +1128,7 @@ pub trait IpLayerContext<
     I: IpLayerIpExt,
     BC: IpLayerBindingsContext<I, <Self as DeviceIdContext<AnyDevice>>::DeviceId>,
 >:
-    IpStateContext<I>
+    IpStateContext<I, BC>
     + IpDeviceContext<I>
     + IpDeviceMtuContext<I>
     + IpDeviceSendContext<I, BC>
@@ -1137,7 +1143,7 @@ pub trait IpLayerContext<
 impl<
     I: IpLayerIpExt,
     BC: IpLayerBindingsContext<I, <CC as DeviceIdContext<AnyDevice>>::DeviceId>,
-    CC: IpStateContext<I>
+    CC: IpStateContext<I, BC>
         + IpDeviceContext<I>
         + IpDeviceMtuContext<I>
         + IpDeviceSendContext<I, BC>
@@ -1295,9 +1301,10 @@ struct RuleWalkInfo<O> {
 ///   result.
 fn walk_rules<
     I: IpLayerIpExt,
-    CC: IpRouteTablesContext<I, DeviceId: DeviceWithName>,
+    CC: IpRouteTablesContext<I, DeviceId: InterfaceProperties<DeviceClass>>,
     O,
     State,
+    DeviceClass,
     F: FnMut(
         State,
         &mut CC::IpDeviceIdCtx<'_>,
@@ -1305,7 +1312,7 @@ fn walk_rules<
     ) -> ControlFlow<O, State>,
 >(
     core_ctx: &mut CC,
-    rules: &RulesTable<I, CC::DeviceId>,
+    rules: &RulesTable<I, CC::DeviceId, DeviceClass>,
     init: State,
     rule_input: &RuleInput<'_, I, CC::DeviceId>,
     mut lookup_table: F,
@@ -1357,7 +1364,7 @@ fn walk_rules<
 pub fn resolve_output_route_to_destination<
     I: Ip + IpDeviceStateIpExt + IpDeviceIpExt + IpLayerIpExt,
     BC: IpDeviceBindingsContext<I, CC::DeviceId> + IpLayerBindingsContext<I, CC::DeviceId>,
-    CC: IpStateContext<I> + IpDeviceContext<I> + device::IpDeviceConfigurationContext<I, BC>,
+    CC: IpStateContext<I, BC> + IpDeviceContext<I> + device::IpDeviceConfigurationContext<I, BC>,
 >(
     core_ctx: &mut CC,
     device: Option<&CC::DeviceId>,
@@ -1447,7 +1454,7 @@ pub fn resolve_output_route_to_destination<
         packet_origin: PacketOrigin::Local { bound_address, bound_device: device },
         marks,
     };
-    core_ctx.with_rules_table(|core_ctx, rules| {
+    core_ctx.with_rules_table(|core_ctx, rules: &RulesTable<_, _, BC::DeviceClass>| {
         let mut walk_rules = |rule_input, src_ip_and_policy| {
             walk_rules(
                 core_ctx,
@@ -1575,7 +1582,7 @@ impl<
         + IpLayerBindingsContext<I, CC::DeviceId>
         + IpSocketBindingsContext<CC::DeviceId>,
     CC: IpLayerEgressContext<I, BC>
-        + IpStateContext<I>
+        + IpStateContext<I, BC>
         + IpDeviceContext<I>
         + IpDeviceConfirmReachableContext<I, BC>
         + IpDeviceMtuContext<I>
@@ -1696,8 +1703,11 @@ pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDe
 
 /// A marker trait for all the contexts required for IP ingress.
 pub trait IpLayerIngressContext<I: IpLayerIpExt, BC: IpLayerBindingsContext<I, Self::DeviceId>>:
-    IpTransportDispatchContext<I, BC, DeviceId: filter::InterfaceProperties<BC::DeviceClass>>
-    + IpDeviceIngressStateContext<I>
+    IpTransportDispatchContext<
+        I,
+        BC,
+        DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>,
+    > + IpDeviceIngressStateContext<I>
     + IpDeviceMtuContext<I>
     + IpDeviceSendContext<I, BC>
     + IcmpErrorHandler<I, BC>
@@ -1711,8 +1721,11 @@ pub trait IpLayerIngressContext<I: IpLayerIpExt, BC: IpLayerBindingsContext<I, S
 impl<
     I: IpLayerIpExt,
     BC: IpLayerBindingsContext<I, CC::DeviceId>,
-    CC: IpTransportDispatchContext<I, BC, DeviceId: filter::InterfaceProperties<BC::DeviceClass>>
-        + IpDeviceIngressStateContext<I>
+    CC: IpTransportDispatchContext<
+            I,
+            BC,
+            DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>,
+        > + IpDeviceIngressStateContext<I>
         + IpDeviceMtuContext<I>
         + IpDeviceSendContext<I, BC>
         + IcmpErrorHandler<I, BC>
@@ -1726,7 +1739,7 @@ impl<
 
 /// A marker trait for all the contexts required for IP egress.
 pub trait IpLayerEgressContext<I, BC>:
-    IpDeviceSendContext<I, BC, DeviceId: filter::InterfaceProperties<BC::DeviceClass>>
+    IpDeviceSendContext<I, BC, DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>>
     + FilterHandlerProvider<I, BC>
     + ResourceCounterContext<Self::DeviceId, IpCounters<I>>
 where
@@ -1739,7 +1752,7 @@ impl<I, BC, CC> IpLayerEgressContext<I, BC> for CC
 where
     I: IpLayerIpExt,
     BC: FilterBindingsContext + TxMetadataBindingsTypes,
-    CC: IpDeviceSendContext<I, BC, DeviceId: filter::InterfaceProperties<BC::DeviceClass>>
+    CC: IpDeviceSendContext<I, BC, DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>>
         + FilterHandlerProvider<I, BC>
         + ResourceCounterContext<Self::DeviceId, IpCounters<I>>,
 {
@@ -1921,9 +1934,9 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 }
 
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
-    OrderedLockAccess<RulesTable<I, D>> for IpStateInner<I, D, BT>
+    OrderedLockAccess<RulesTable<I, D, BT::DeviceClass>> for IpStateInner<I, D, BT>
 {
-    type Lock = RwLock<RulesTable<I, D>>;
+    type Lock = RwLock<RulesTable<I, D, BT::DeviceClass>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.rules_table)
     }
@@ -2048,7 +2061,7 @@ impl<I: Ip, D> Debug for WeakRoutingTableId<I, D> {
 #[derive(GenericOverIp)]
 #[generic_over_ip(I, Ip)]
 pub struct IpStateInner<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> {
-    rules_table: RwLock<RulesTable<I, D>>,
+    rules_table: RwLock<RulesTable<I, D, BT::DeviceClass>>,
     // TODO(https://fxbug.dev/355059838): Explore the option to let Bindings create the main table.
     main_table_id: RoutingTableId<I, D>,
     multicast_forwarding: RwLock<MulticastForwardingState<I, D, BT>>,
@@ -4382,7 +4395,11 @@ fn receive_ip_packet_action_common<
 }
 
 // Look up the route to a host.
-fn lookup_route_table<I: IpLayerIpExt, CC: IpStateContext<I>>(
+fn lookup_route_table<
+    I: IpLayerIpExt,
+    BC: IpLayerBindingsContext<I, CC::DeviceId>,
+    CC: IpStateContext<I, BC>,
+>(
     core_ctx: &mut CC,
     dst_ip: I::Addr,
     rule_input: RuleInput<'_, I, CC::DeviceId>,
@@ -4391,13 +4408,17 @@ fn lookup_route_table<I: IpLayerIpExt, CC: IpStateContext<I>>(
         PacketOrigin::Local { bound_address: _, bound_device } => bound_device,
         PacketOrigin::NonLocal { source_address: _, incoming_device: _ } => None,
     };
-    core_ctx.with_rules_table(|core_ctx, rules| {
-        match walk_rules(core_ctx, rules, (), &rule_input, |(), core_ctx, table| {
-            match table.lookup(core_ctx, bound_device, dst_ip) {
+    core_ctx.with_rules_table(
+        |core_ctx, rules: &RulesTable<_, _, BC::DeviceClass>| match walk_rules(
+            core_ctx,
+            rules,
+            (),
+            &rule_input,
+            |(), core_ctx, table| match table.lookup(core_ctx, bound_device, dst_ip) {
                 Some(dst) => ControlFlow::Break(Some(dst)),
                 None => ControlFlow::Continue(()),
-            }
-        }) {
+            },
+        ) {
             ControlFlow::Break(RuleAction::Lookup(RuleWalkInfo {
                 inner: dst,
                 observed_source_address_matcher: _,
@@ -4407,8 +4428,8 @@ fn lookup_route_table<I: IpLayerIpExt, CC: IpStateContext<I>>(
                 inner: (),
                 observed_source_address_matcher: _,
             }) => None,
-        }
-    })
+        },
+    )
 }
 
 /// Packed destination passed to [`IpDeviceSendContext::send_ip_frame`].
@@ -4641,7 +4662,7 @@ where
 
 /// Abstracts access to a [`filter::FilterHandler`] for core contexts.
 pub trait FilterHandlerProvider<I: FilterIpExt, BT: FilterBindingsTypes>:
-    IpDeviceAddressIdContext<I, DeviceId: filter::InterfaceProperties<BT::DeviceClass>>
+    IpDeviceAddressIdContext<I, DeviceId: netstack3_base::InterfaceProperties<BT::DeviceClass>>
 {
     /// The filter handler.
     type Handler<'a>: filter::FilterHandler<I, BT, DeviceId = Self::DeviceId, WeakAddressId = Self::WeakAddressId>
@@ -4743,7 +4764,7 @@ pub(crate) mod testutil {
     where
         I: AssignedAddrIpExt + FilterIpExt,
         BC: FilterBindingsContext,
-        DeviceId: FakeStrongDeviceId + filter::InterfaceProperties<BC::DeviceClass>,
+        DeviceId: FakeStrongDeviceId + netstack3_base::InterfaceProperties<BC::DeviceClass>,
     {
         type Handler<'a>
             = filter::testutil::NoopImpl<DeviceId>

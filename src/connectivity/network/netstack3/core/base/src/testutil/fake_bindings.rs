@@ -15,7 +15,8 @@ use crate::testutil::{
 };
 use crate::{
     ContextProvider, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes,
-    InstantContext, ReferenceNotifiers, RngContext, TimerBindingsTypes, TimerContext,
+    InstantContext, MatcherBindingsTypes, ReferenceNotifiers, RngContext, TimerBindingsTypes,
+    TimerContext,
 };
 
 /// A test helper used to provide an implementation of a bindings context.
@@ -186,4 +187,10 @@ impl<TimerId, Event: Debug, State, FrameMeta> WithFakeTimerContext<TimerId>
 impl<TimerId, Event: Debug, State, FrameMeta> AlwaysDefaultsSettingsContext
     for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
 {
+}
+
+impl<TimerId: Debug, Event: Debug, State, FrameMeta> MatcherBindingsTypes
+    for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
+{
+    type DeviceClass = ();
 }

@@ -4,12 +4,25 @@
 
 //! Trait definition for matchers.
 
+use alloc::format;
 use alloc::string::String;
 use core::fmt::Debug;
+use core::num::NonZeroU64;
 
+use derivative::Derivative;
 use net_types::ip::{IpAddress, Subnet};
 
-use crate::DeviceWithName;
+use crate::{InspectableValue, Inspector};
+
+/// Trait defining required types for matchers provided by bindings.
+///
+/// Allows rules that match on device class to be installed, storing the
+/// [`MatcherBindingsTypes::DeviceClass`] type at rest, while allowing Netstack3
+/// Core to have Bindings provide the type since it is platform-specific.
+pub trait MatcherBindingsTypes {
+    /// The device class type for devices installed in the netstack.
+    type DeviceClass: Clone + Debug;
+}
 
 /// Common pattern to define a matcher for a metadata input `T`.
 ///
@@ -50,14 +63,88 @@ impl<A: IpAddress> Matcher<A> for SubnetMatcher<A> {
     }
 }
 
-/// Matcher that matches devices with the name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeviceNameMatcher(pub String);
+/// A matcher for network interfaces.
+#[derive(Clone, Derivative, PartialEq, Eq)]
+#[derivative(Debug)]
+pub enum InterfaceMatcher<DeviceClass> {
+    /// The ID of the interface as assigned by the netstack.
+    Id(NonZeroU64),
+    /// Match based on name.
+    Name(String),
+    /// The device class of the interface.
+    DeviceClass(DeviceClass),
+}
 
-impl<D: DeviceWithName> Matcher<D> for DeviceNameMatcher {
-    fn matches(&self, actual: &D) -> bool {
-        let Self(name) = self;
-        actual.name_matches(name)
+impl<DeviceClass: Debug> InspectableValue for InterfaceMatcher<DeviceClass> {
+    fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
+        match self {
+            InterfaceMatcher::Id(id) => inspector.record_string(name, format!("Id({})", id.get())),
+            InterfaceMatcher::Name(iface_name) => {
+                inspector.record_string(name, format!("Name({iface_name})"))
+            }
+            InterfaceMatcher::DeviceClass(class) => {
+                inspector.record_debug(name, format!("Class({class:?})"))
+            }
+        };
+    }
+}
+
+/// Allows code to match on properties of an interface (ID, name, and device
+/// class) without Netstack3 Core (or Bindings, in the case of the device class)
+/// having to specifically expose that state.
+pub trait InterfaceProperties<DeviceClass> {
+    /// Returns whether the provided ID matches the interface.
+    fn id_matches(&self, id: &NonZeroU64) -> bool;
+
+    /// Returns whether the provided name matches the interface.
+    fn name_matches(&self, name: &str) -> bool;
+
+    /// Returns whether the provided device class matches the interface.
+    fn device_class_matches(&self, device_class: &DeviceClass) -> bool;
+}
+
+impl<DeviceClass, I: InterfaceProperties<DeviceClass>> Matcher<I>
+    for InterfaceMatcher<DeviceClass>
+{
+    fn matches(&self, actual: &I) -> bool {
+        match self {
+            InterfaceMatcher::Id(id) => actual.id_matches(id),
+            InterfaceMatcher::Name(name) => actual.name_matches(name),
+            InterfaceMatcher::DeviceClass(device_class) => {
+                actual.device_class_matches(device_class)
+            }
+        }
+    }
+}
+
+/// Matcher for the bound device of locally generated traffic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundDeviceMatcher<DeviceClass> {
+    /// The packet is bound to a device which is matched by the matcher.
+    Bound(InterfaceMatcher<DeviceClass>),
+    /// There is no bound device.
+    Unbound,
+}
+
+impl<'a, DeviceClass, D: InterfaceProperties<DeviceClass>> Matcher<Option<&'a D>>
+    for BoundDeviceMatcher<DeviceClass>
+{
+    fn matches(&self, actual: &Option<&'a D>) -> bool {
+        match self {
+            BoundDeviceMatcher::Bound(matcher) => matcher.required_matches(actual.as_deref()),
+            BoundDeviceMatcher::Unbound => actual.is_none(),
+        }
+    }
+}
+
+impl<DeviceClass: Debug> InspectableValue for BoundDeviceMatcher<DeviceClass> {
+    fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
+        match self {
+            BoundDeviceMatcher::Unbound => inspector.record_str(name, "Unbound"),
+            BoundDeviceMatcher::Bound(interface) => {
+                inspector.record_inspectable_value(name, interface)
+            }
+        }
     }
 }
 
@@ -69,7 +156,6 @@ mod tests {
     use net_types::ip::Ip;
 
     use super::*;
-    use crate::DeviceNameMatcher;
     use crate::testutil::{FakeDeviceId, TestIpExt};
 
     /// Only matches `true`.
@@ -107,8 +193,9 @@ mod tests {
     #[test]
     fn device_name_matcher() {
         let device = FakeDeviceId;
-        let positive_matcher = DeviceNameMatcher(FakeDeviceId::FAKE_NAME.into());
-        let negative_matcher = DeviceNameMatcher(format!("DONTMATCH-{}", FakeDeviceId::FAKE_NAME));
+        let positive_matcher = InterfaceMatcher::Name(FakeDeviceId::FAKE_NAME.into());
+        let negative_matcher =
+            InterfaceMatcher::Name(format!("DONTMATCH-{}", FakeDeviceId::FAKE_NAME));
         assert!(positive_matcher.matches(&device));
         assert!(!negative_matcher.matches(&device));
     }

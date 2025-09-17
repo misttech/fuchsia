@@ -57,7 +57,9 @@ pub mod device {
     }
 
     // Re-exported types.
-    pub use netstack3_base::{DeviceNameMatcher, StrongDeviceIdentifier};
+    pub use netstack3_base::{
+        BoundDeviceMatcher, InterfaceMatcher, InterfaceProperties, StrongDeviceIdentifier,
+    };
     pub use netstack3_device::blackhole::{BlackholeDevice, BlackholeDeviceId};
     pub use netstack3_device::ethernet::{
         EthernetCreationProperties, EthernetDeviceEvent, EthernetDeviceId, EthernetLinkDevice,
@@ -106,11 +108,11 @@ pub mod filter {
 
     pub use netstack3_filter::{
         Action, AddressMatcher, AddressMatcherType, FilterApi, FilterBindingsContext,
-        FilterBindingsTypes, FilterIpExt, Hook, InterfaceMatcher, InterfaceProperties, IpPacket,
-        IpRoutines, MarkAction, NatRoutines, PacketMatcher, PortMatcher, ProofOfEgressCheck,
-        Routine, Routines, Rule, SocketEgressFilterResult, SocketIngressFilterResult,
-        SocketOpsFilter, SocketOpsFilterBindingContext, TransparentProxy, TransportProtocolMatcher,
-        Tuple, UninstalledRoutine, ValidationError,
+        FilterBindingsTypes, FilterIpExt, Hook, IpPacket, IpRoutines, MarkAction, NatRoutines,
+        PacketMatcher, PortMatcher, ProofOfEgressCheck, Routine, Routines, Rule,
+        SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
+        SocketOpsFilterBindingContext, TransparentProxy, TransportProtocolMatcher, Tuple,
+        UninstalledRoutine, ValidationError,
     };
 }
 
@@ -184,10 +186,10 @@ pub mod routes {
     // Re-exported types.
     pub use netstack3_base::{Marks, WrapBroadcastMarker};
     pub use netstack3_ip::{
-        AddRouteError, AddableEntry, AddableEntryEither, AddableMetric, BoundDeviceMatcher, Entry,
-        EntryEither, Generation, MarkMatcher, MarkMatchers, Metric, NextHop, RawMetric,
-        ResolvedRoute, RoutableIpAddr, RouteResolveOptions, RoutingTableId, Rule, RuleAction,
-        RuleMatcher, TrafficOriginMatcher,
+        AddRouteError, AddableEntry, AddableEntryEither, AddableMetric, Entry, EntryEither,
+        Generation, MarkMatcher, MarkMatchers, Metric, NextHop, RawMetric, ResolvedRoute,
+        RoutableIpAddr, RouteResolveOptions, RoutingTableId, Rule, RuleAction, RuleMatcher,
+        TrafficOriginMatcher,
     };
 }
 
@@ -258,8 +260,9 @@ pub use inspect::Inspector;
 pub use marker::{BindingsContext, BindingsTypes, CoreContext, IpBindingsContext, IpExt};
 pub use netstack3_base::{
     CtxPair, DataNotifier, DataNotifierTypes, DeferredResourceRemovalContext, EventContext,
-    InstantBindingsTypes, InstantContext, MapDerefExt, ReferenceNotifiers, RngContext,
-    SettingsContext, TimerBindingsTypes, TimerContext, TxMetadata, TxMetadataBindingsTypes,
+    InstantBindingsTypes, InstantContext, MapDerefExt, MatcherBindingsTypes, ReferenceNotifiers,
+    RngContext, SettingsContext, TimerBindingsTypes, TimerContext, TxMetadata,
+    TxMetadataBindingsTypes,
 };
 pub use state::{StackState, StackStateBuilder};
 pub use time::{AtomicInstant, Instant, TimerId};

@@ -24,27 +24,43 @@ use {
 };
 
 use crate::bindings::util::{IntoCore as _, ScopeExt as _, TryFromFidl, TryIntoCore as _};
-use crate::bindings::{Ctx, routes};
+use crate::bindings::{BindingsCtx, Ctx, MatcherBindingsTypes, routes};
 pub(super) use witness::AddableMatcher;
 
-impl TryFromFidl<fnet_matchers_ext::BoundInterface> for netstack3_core::routes::BoundDeviceMatcher {
+impl TryFromFidl<fnet_matchers_ext::BoundInterface>
+    for netstack3_core::device::BoundDeviceMatcher<
+        <BindingsCtx as MatcherBindingsTypes>::DeviceClass,
+    >
+{
     type Error = std::convert::Infallible;
 
     fn try_from_fidl(fidl: fnet_matchers_ext::BoundInterface) -> Result<Self, Self::Error> {
         match fidl {
-            fnet_matchers_ext::BoundInterface::DeviceName(name) => {
-                Ok(netstack3_core::routes::BoundDeviceMatcher::DeviceName(
-                    netstack3_core::device::DeviceNameMatcher(name),
+            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name(name)) => {
+                Ok(netstack3_core::device::BoundDeviceMatcher::Bound(
+                    netstack3_core::device::InterfaceMatcher::Name(name),
                 ))
             }
+            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Id(id)) => {
+                Ok(netstack3_core::device::BoundDeviceMatcher::Bound(
+                    netstack3_core::device::InterfaceMatcher::Id(id),
+                ))
+            }
+            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::PortClass(
+                class,
+            )) => Ok(netstack3_core::device::BoundDeviceMatcher::Bound(
+                netstack3_core::device::InterfaceMatcher::DeviceClass(class.into()),
+            )),
             fnet_matchers_ext::BoundInterface::Unbound => {
-                Ok(netstack3_core::routes::BoundDeviceMatcher::Unbound)
+                Ok(netstack3_core::device::BoundDeviceMatcher::Unbound)
             }
         }
     }
 }
 
-impl<I: Ip> TryFromFidl<RuleMatcher<I>> for netstack3_core::routes::RuleMatcher<I> {
+impl<I: Ip> TryFromFidl<RuleMatcher<I>>
+    for netstack3_core::routes::RuleMatcher<I, <BindingsCtx as MatcherBindingsTypes>::DeviceClass>
+{
     type Error = fnet_routes_admin::RuleSetError;
 
     fn try_from_fidl(matcher: RuleMatcher<I>) -> Result<Self, Self::Error> {
@@ -471,7 +487,10 @@ mod witness {
     /// to FIDL requests.
     #[derive(Debug, Clone)]
     pub(in crate::bindings::routes) struct AddableMatcher<I: Ip> {
-        core: netstack3_core::routes::RuleMatcher<I>,
+        core: netstack3_core::routes::RuleMatcher<
+            I,
+            <BindingsCtx as MatcherBindingsTypes>::DeviceClass,
+        >,
         fidl: RuleMatcher<I>,
     }
 
@@ -500,7 +519,12 @@ mod witness {
         }
     }
 
-    impl<I: Ip> From<AddableMatcher<I>> for netstack3_core::routes::RuleMatcher<I> {
+    impl<I: Ip> From<AddableMatcher<I>>
+        for netstack3_core::routes::RuleMatcher<
+            I,
+            <BindingsCtx as MatcherBindingsTypes>::DeviceClass,
+        >
+    {
         fn from(matcher: AddableMatcher<I>) -> Self {
             let AddableMatcher { core, fidl: _ } = matcher;
             core
@@ -511,10 +535,8 @@ mod witness {
 #[cfg(test)]
 mod tests {
     use net_types::ip::Ipv4;
-    use netstack3_core::device::DeviceNameMatcher;
-    use netstack3_core::routes::{
-        BoundDeviceMatcher, RuleMatcher as CoreRuleMatcher, TrafficOriginMatcher,
-    };
+    use netstack3_core::device::{BoundDeviceMatcher, InterfaceMatcher};
+    use netstack3_core::routes::{RuleMatcher as CoreRuleMatcher, TrafficOriginMatcher};
     use test_case::test_case;
 
     use super::*;
@@ -526,7 +548,7 @@ mod tests {
     #[test_case(None, true => Ok(CoreRuleMatcher {
         traffic_origin_matcher: Some(TrafficOriginMatcher::Local {
             bound_device_matcher: Some(
-                BoundDeviceMatcher::DeviceName(DeviceNameMatcher("lo".into()))
+                BoundDeviceMatcher::Bound(InterfaceMatcher::Name("lo".into()))
             ),
         }),
         ..CoreRuleMatcher::match_all_packets()
@@ -534,7 +556,7 @@ mod tests {
     #[test_case(Some(true), true => Ok(CoreRuleMatcher {
         traffic_origin_matcher: Some(TrafficOriginMatcher::Local {
             bound_device_matcher: Some(
-                BoundDeviceMatcher::DeviceName(DeviceNameMatcher("lo".into()))
+                BoundDeviceMatcher::Bound(InterfaceMatcher::Name("lo".into()))
             ),
         }),
         ..CoreRuleMatcher::match_all_packets()
@@ -553,11 +575,17 @@ mod tests {
     fn convert_to_core_matcher(
         locally_generated: Option<bool>,
         has_bound_device_matcher: bool,
-    ) -> Result<CoreRuleMatcher<Ipv4>, fnet_routes_admin::RuleSetError> {
+    ) -> Result<
+        CoreRuleMatcher<Ipv4, <BindingsCtx as MatcherBindingsTypes>::DeviceClass>,
+        fnet_routes_admin::RuleSetError,
+    > {
         let fidl = RuleMatcher {
             locally_generated,
-            bound_device: has_bound_device_matcher
-                .then_some(fnet_matchers_ext::BoundInterface::DeviceName("lo".into())),
+            bound_device: has_bound_device_matcher.then_some(
+                fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name(
+                    "lo".into(),
+                )),
+            ),
             ..Default::default()
         };
         fidl.try_into_core()

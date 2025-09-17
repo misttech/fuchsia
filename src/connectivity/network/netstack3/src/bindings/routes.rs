@@ -39,7 +39,7 @@ use {fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fn
 use crate::bindings::util::{
     EntryAndTableId, RemoveResourceResultExt as _, ResultExt as _, TryIntoFidlWithContext,
 };
-use crate::bindings::{BindingsCtx, Ctx, DeviceIdExt, IpExt};
+use crate::bindings::{BindingsCtx, Ctx, DeviceIdExt, IpExt, MatcherBindingsTypes};
 
 pub(crate) mod admin;
 pub(crate) mod interface_local;
@@ -827,7 +827,10 @@ fn to_core_rule<I: netstack3_core::IpExt>(
     ctx: &mut Ctx,
     rule: &rules_admin::Rule<I>,
     tables: &HashMap<TableId<I>, Table<I>>,
-) -> Result<netstack3_core::routes::Rule<I, DeviceId>, InvalidTableError> {
+) -> Result<
+    netstack3_core::routes::Rule<I, DeviceId, <BindingsCtx as MatcherBindingsTypes>::DeviceClass>,
+    InvalidTableError,
+> {
     let rules_admin::Rule { matcher, action } = rule;
     let action = match action {
         RuleAction::Unreachable => netstack3_core::routes::RuleAction::Unreachable,

@@ -22,15 +22,11 @@ type Interface = flexible union {
 /// A matcher for network interfaces where it might be unbound (`BindToDevice`
 /// has not been called).
 type BoundInterface = flexible union {
-    /// Matches the device iff the names match.
-    ///
-    /// The name is not a pattern or regex, it needs to be an exact match for
-    /// the rule to be chosen.
-    1: device_name fuchsia.net.interfaces.Name;
+    /// Matches iff the socket is bound to a matching interface (see
+    /// [`Interface`] for matching criteria).
+    1: bound Interface;
     /// Matches iff the outgoing traffic is not bound to a device.
     2: unbound struct {};
-    // TODO(https://fxbug.dev/351015513): Nest `Interface` inside of here to allow matching on all
-    // interface types.
 };
 
 /// A matcher for IP addresses.

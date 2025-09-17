@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use core::fmt::Debug;
-use core::num::NonZeroU64;
 use core::ops::RangeInclusive;
-use netstack3_base::{DeviceNameMatcher, DeviceWithName, InspectableValue, Matcher, SubnetMatcher};
+use netstack3_base::{
+    InspectableValue, InterfaceMatcher, InterfaceProperties, Matcher, SubnetMatcher,
+};
 
 use derivative::Derivative;
 use net_types::ip::IpAddress;
@@ -13,50 +14,6 @@ use packet_formats::ip::IpExt;
 
 use crate::logic::Interfaces;
 use crate::packets::{FilterIpExt, IpPacket, MaybeTransportPacket, TransportPacketData};
-
-/// A matcher for network interfaces.
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
-pub enum InterfaceMatcher<DeviceClass> {
-    /// The ID of the interface as assigned by the netstack.
-    Id(NonZeroU64),
-    /// Match based on name.
-    #[derivative(Debug = "transparent")]
-    Name(DeviceNameMatcher),
-    /// The device class of the interface.
-    DeviceClass(DeviceClass),
-}
-
-impl<DeviceClass: Debug> InspectableValue for InterfaceMatcher<DeviceClass> {
-    fn record<I: netstack3_base::Inspector>(&self, name: &str, inspector: &mut I) {
-        inspector.record_debug(name, self);
-    }
-}
-
-/// Allows filtering code to match on properties of an interface (ID, name, and
-/// device class) without Netstack3 Core (or Bindings, in the case of the device
-/// class) having to specifically expose that state.
-pub trait InterfaceProperties<DeviceClass>: DeviceWithName {
-    /// Returns whether the provided ID matches the interface.
-    fn id_matches(&self, id: &NonZeroU64) -> bool;
-
-    /// Returns whether the provided device class matches the interface.
-    fn device_class_matches(&self, device_class: &DeviceClass) -> bool;
-}
-
-impl<DeviceClass, I: InterfaceProperties<DeviceClass>> Matcher<I>
-    for InterfaceMatcher<DeviceClass>
-{
-    fn matches(&self, actual: &I) -> bool {
-        match self {
-            InterfaceMatcher::Id(id) => actual.id_matches(id),
-            InterfaceMatcher::Name(name_matcher) => name_matcher.matches(actual),
-            InterfaceMatcher::DeviceClass(device_class) => {
-                actual.device_class_matches(device_class)
-            }
-        }
-    }
-}
 
 /// A matcher for IP addresses.
 #[derive(Clone, Derivative)]
@@ -205,7 +162,7 @@ pub(crate) mod testutil {
     use core::num::NonZeroU64;
 
     use netstack3_base::testutil::{FakeStrongDeviceId, FakeWeakDeviceId};
-    use netstack3_base::{DeviceIdentifier, DeviceWithName, StrongDeviceIdentifier};
+    use netstack3_base::{DeviceIdentifier, StrongDeviceIdentifier};
 
     use super::*;
     use crate::context::testutil::FakeDeviceClass;
@@ -243,15 +200,13 @@ pub(crate) mod testutil {
         }
     }
 
-    impl DeviceWithName for FakeDeviceId {
-        fn name_matches(&self, name: &str) -> bool {
-            &self.name == name
-        }
-    }
-
     impl InterfaceProperties<FakeDeviceClass> for FakeDeviceId {
         fn id_matches(&self, id: &NonZeroU64) -> bool {
             &self.id == id
+        }
+
+        fn name_matches(&self, name: &str) -> bool {
+            &self.name == name
         }
 
         fn device_class_matches(&self, class: &FakeDeviceClass) -> bool {
@@ -276,42 +231,6 @@ pub(crate) mod testutil {
     }
 }
 
-/// Test utilities implementations for base crate test types.
-#[cfg(feature = "testutils")]
-mod base_testutil {
-    use super::*;
-
-    impl InterfaceProperties<()> for netstack3_base::testutil::FakeDeviceId {
-        fn id_matches(&self, _: &core::num::NonZeroU64) -> bool {
-            unimplemented!()
-        }
-
-        fn device_class_matches(&self, _: &()) -> bool {
-            unimplemented!()
-        }
-    }
-
-    impl InterfaceProperties<()> for netstack3_base::testutil::FakeReferencyDeviceId {
-        fn id_matches(&self, _: &core::num::NonZeroU64) -> bool {
-            unimplemented!()
-        }
-
-        fn device_class_matches(&self, _: &()) -> bool {
-            unimplemented!()
-        }
-    }
-
-    impl InterfaceProperties<()> for netstack3_base::testutil::MultipleDevicesId {
-        fn id_matches(&self, _: &core::num::NonZeroU64) -> bool {
-            unimplemented!()
-        }
-
-        fn device_class_matches(&self, _: &()) -> bool {
-            unimplemented!()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use ip_test_macro::ip_test;
@@ -330,7 +249,7 @@ mod tests {
     };
 
     #[test_case(InterfaceMatcher::Id(wlan_interface().id))]
-    #[test_case(InterfaceMatcher::Name(DeviceNameMatcher(wlan_interface().name)))]
+    #[test_case(InterfaceMatcher::Name(wlan_interface().name))]
     #[test_case(InterfaceMatcher::DeviceClass(wlan_interface().class))]
     fn match_on_interface_properties(matcher: InterfaceMatcher<FakeDeviceClass>) {
         let matcher = PacketMatcher {
@@ -359,7 +278,7 @@ mod tests {
     }
 
     #[test_case(InterfaceMatcher::Id(wlan_interface().id))]
-    #[test_case(InterfaceMatcher::Name(DeviceNameMatcher(wlan_interface().name)))]
+    #[test_case(InterfaceMatcher::Name(wlan_interface().name))]
     #[test_case(InterfaceMatcher::DeviceClass(wlan_interface().class))]
     fn interface_matcher_specified_but_not_available_in_hook_does_not_match(
         matcher: InterfaceMatcher<FakeDeviceClass>,

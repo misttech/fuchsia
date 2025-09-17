@@ -11,9 +11,10 @@ use net_types::{SpecifiedAddr, Witness as _};
 
 use netstack3_base::sync::{PrimaryRc, RwLock};
 use netstack3_base::{
-    AnyDevice, ContextPair, DeferredResourceRemovalContext, DeviceIdContext, DeviceNameMatcher,
-    InspectableValue, Inspector, InspectorDeviceExt, MarkDomain, Marks, ReferenceNotifiersExt as _,
-    RemoveResourceResultWithContext, StrongDeviceIdentifier, SubnetMatcher, WrapBroadcastMarker,
+    AnyDevice, ContextPair, DeferredResourceRemovalContext, DeviceIdContext, InspectableValue,
+    Inspector, InspectorDeviceExt, MarkDomain, Marks, MatcherBindingsTypes,
+    ReferenceNotifiersExt as _, RemoveResourceResultWithContext, StrongDeviceIdentifier,
+    SubnetMatcher, WrapBroadcastMarker,
 };
 
 use crate::internal::base::{
@@ -25,7 +26,7 @@ use crate::internal::device::{
 };
 use crate::internal::routing::RoutingTable;
 use crate::internal::routing::rules::{
-    BoundDeviceMatcher, MarkMatcher, Rule, RuleAction, RuleMatcher, TrafficOriginMatcher,
+    MarkMatcher, Rule, RuleAction, RuleMatcher, RulesTable, TrafficOriginMatcher,
 };
 use crate::internal::types::{
     Destination, Entry, EntryAndGeneration, Metric, NextHop, OrderedEntry, ResolvedRoute,
@@ -207,7 +208,13 @@ where
 
     /// Writes rules table information to the provided `inspector`.
     pub fn inspect_rules<N: Inspector>(&mut self, inspector: &mut N, main_table_id: u32) {
-        self.core_ctx().with_rules_table(|core_ctx, rule_table| {
+        self.core_ctx().with_rules_table(
+        |core_ctx,
+         rule_table: &RulesTable<
+            _,
+            _,
+            <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+        >| {
             for Rule {
                 matcher:
                     RuleMatcher { source_address_matcher, traffic_origin_matcher, mark_matchers },
@@ -332,7 +339,13 @@ where
     /// Replaces the entire rule table atomically.
     pub fn set_rules(
         &mut self,
-        rules: Vec<Rule<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>>,
+        rules: Vec<
+            Rule<
+                I,
+                <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId,
+                <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+            >,
+        >,
     ) {
         self.core_ctx().with_rules_table_mut(|_core_ctx, rule_table| {
             rule_table.replace(rules);
@@ -345,17 +358,6 @@ where
         &mut self,
     ) -> Vec<RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>> {
         self.core_ctx().with_ip_routing_tables(|_ctx, tables| tables.keys().cloned().collect())
-    }
-}
-
-impl InspectableValue for BoundDeviceMatcher {
-    fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
-        match self {
-            BoundDeviceMatcher::Unbound => inspector.record_str(name, "Unbound"),
-            BoundDeviceMatcher::DeviceName(DeviceNameMatcher(device)) => {
-                inspector.record_str(name, device)
-            }
-        }
     }
 }
 

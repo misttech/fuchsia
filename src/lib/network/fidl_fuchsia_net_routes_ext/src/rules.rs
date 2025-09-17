@@ -369,6 +369,9 @@ pub enum RuleFidlConversionError {
     /// Destination Subnet conversion failed.
     #[error("failed to convert `destination` to net_types subnet: {0:?}")]
     DestinationSubnet(net_types::ip::SubnetError),
+    /// Bound interface conversion failed.
+    #[error("failed to convert `bound_device`: {0:?}")]
+    Interface(fnet_matchers_ext::InterfaceError),
     /// Unknown union variant.
     #[error("unexpected union variant for {name}, got ordinal = ({unknown_ordinal})")]
     #[allow(missing_docs)]
@@ -380,6 +383,9 @@ impl From<fnet_matchers_ext::BoundInterfaceError> for RuleFidlConversionError {
         match value {
             fnet_matchers_ext::BoundInterfaceError::UnknownUnionVariant(unknown_ordinal) => {
                 RuleFidlConversionError::UnknownOrdinal { name: "BoundInterface", unknown_ordinal }
+            }
+            fnet_matchers_ext::BoundInterfaceError::Interface(interface) => {
+                RuleFidlConversionError::Interface(interface)
             }
         }
     }

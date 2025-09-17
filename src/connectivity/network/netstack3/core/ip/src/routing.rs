@@ -379,9 +379,13 @@ pub(crate) mod testutil {
     }
 
     /// Install and replace any existing rules.
-    pub fn set_rules<I: IpLayerIpExt, CC: IpStateContext<I>>(
+    pub fn set_rules<
+        I: IpLayerIpExt,
+        BC: IpLayerBindingsContext<I, CC::DeviceId>,
+        CC: IpStateContext<I, BC>,
+    >(
         core_ctx: &mut CC,
-        rules: Vec<Rule<I, CC::DeviceId>>,
+        rules: Vec<Rule<I, CC::DeviceId, BC::DeviceClass>>,
     ) {
         core_ctx.with_rules_table_mut(|_core_ctx, rules_table| {
             *rules_table.rules_mut() = rules;

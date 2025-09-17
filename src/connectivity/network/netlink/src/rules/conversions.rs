@@ -211,7 +211,11 @@ pub(super) fn fidl_rule_from_rule_message<I: Ip>(
         },
     };
     let bound_device = oifname
-        .map(|name| fnet_matchers_ext::BoundInterface::DeviceName(name.to_owned()))
+        .map(|name| {
+            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name(
+                name.to_owned(),
+            ))
+        })
         .or_else(||
             // If the action is `Unreachable`, we want to allow traffic with SO_BINDTODEVICE to
             // sidestep the unreachable rule and look into the main table. In most cases, Linux
@@ -549,9 +553,9 @@ mod test {
 
     #[ip_test(I)]
     #[test_case(Some("device-name"), RuleAction::Unreachable
-        => Some(fnet_matchers_ext::BoundInterface::DeviceName("device-name".to_owned())))]
+        => Some(fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name("device-name".to_owned()))))]
     #[test_case(Some("device-name"), RuleAction::ToTable
-        => Some(fnet_matchers_ext::BoundInterface::DeviceName("device-name".to_owned())))]
+        => Some(fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name("device-name".to_owned()))))]
     #[test_case(None, RuleAction::Unreachable => Some(fnet_matchers_ext::BoundInterface::Unbound))]
     #[test_case(None, RuleAction::ToTable => None)]
     fn bound_device<I: Ip>(
@@ -734,8 +738,8 @@ mod test {
                 matcher: RuleMatcher {
                     from: Some(expected_source_subnet),
                     locally_generated: Some(true),
-                    bound_device: Some(fnet_matchers_ext::BoundInterface::DeviceName(
-                        "eth0".to_owned()
+                    bound_device: Some(fnet_matchers_ext::BoundInterface::Bound(
+                        fnet_matchers_ext::Interface::Name("eth0".to_owned())
                     )),
                     mark_1: Some(fnet_matchers_ext::Mark::Marked {
                         mask: 0xBEEFDEAD,

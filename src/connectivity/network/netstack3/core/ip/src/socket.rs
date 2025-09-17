@@ -14,13 +14,13 @@ use net_types::{MulticastAddress, ScopeableAddress, SpecifiedAddr};
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AnyDevice, CounterContext, DeviceIdContext, DeviceIdentifier, EitherDeviceId, InstantContext,
-    IpDeviceAddr, IpExt, Marks, Mms, SendFrameErrorReason, StrongDeviceIdentifier, TxMetadata as _,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    InterfaceProperties, IpDeviceAddr, IpExt, Marks, Mms, SendFrameErrorReason,
+    StrongDeviceIdentifier, TxMetadata as _, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_filter::{
     self as filter, DynTransportSerializer, DynamicTransportSerializer, FilterBindingsContext,
-    FilterHandler as _, FilterIpExt, InterfaceProperties, RawIpBody, SocketEgressFilterResult,
-    SocketOpsFilter, SocketOpsFilterBindingContext, TransportPacketSerializer,
+    FilterHandler as _, FilterIpExt, RawIpBody, SocketEgressFilterResult, SocketOpsFilter,
+    SocketOpsFilterBindingContext, TransportPacketSerializer,
 };
 use netstack3_trace::trace_duration;
 use packet::{BufferMut, PacketConstraints, SerializeError};
@@ -503,7 +503,7 @@ where
     I: IpLayerIpExt + IpDeviceStateIpExt,
     BC: IpSocketBindingsContext<Self::DeviceId>,
     CC: IpSocketContext<I, BC> + CounterContext<IpCounters<I>> + UseIpSocketHandlerBlanket,
-    CC::DeviceId: filter::InterfaceProperties<BC::DeviceClass>,
+    CC::DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>,
 {
     fn new_ip_socket<O>(
         &mut self,
@@ -858,7 +858,7 @@ where
     S::Buffer: BufferMut,
     BC: IpSocketBindingsContext<CC::DeviceId>,
     CC: IpSocketContext<I, BC> + CounterContext<IpCounters<I>>,
-    CC::DeviceId: filter::InterfaceProperties<BC::DeviceClass>,
+    CC::DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>,
     O: SendOptions<I> + RouteResolutionOptions<I>,
 {
     trace_duration!(c"ip::send_packet");

@@ -56,8 +56,8 @@ pub use device::address::{
 };
 pub use device::link::{LinkAddress, LinkDevice, LinkUnicastAddress};
 pub use device::{
-    AnyDevice, Device, DeviceIdAnyCompatContext, DeviceIdContext, DeviceIdentifier, DeviceWithName,
-    EitherDeviceId, StrongDeviceIdentifier, WeakDeviceIdentifier,
+    AnyDevice, Device, DeviceIdAnyCompatContext, DeviceIdContext, DeviceIdentifier, EitherDeviceId,
+    StrongDeviceIdentifier, WeakDeviceIdentifier,
 };
 pub use error::{
     AddressResolutionFailed, ErrorAndSerializer, ExistsError, LocalAddressError, NotFoundError,
@@ -75,7 +75,10 @@ pub use ip::{
     IpTypesIpExt, Mark, MarkDomain, MarkStorage, Marks, Mms, WrapBroadcastMarker,
 };
 pub use map_deref::{MapDeref, MapDerefExt};
-pub use matchers::{DeviceNameMatcher, Matcher, SubnetMatcher};
+pub use matchers::{
+    BoundDeviceMatcher, InterfaceMatcher, InterfaceProperties, Matcher, MatcherBindingsTypes,
+    SubnetMatcher,
+};
 pub use num::PositiveIsize;
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
 pub use resource_references::{

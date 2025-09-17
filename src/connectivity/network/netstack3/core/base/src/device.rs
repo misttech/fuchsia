@@ -178,12 +178,6 @@ impl<S: StrongDeviceIdentifier<Weak = W>, W: WeakDeviceIdentifier<Strong = S>>
     }
 }
 
-/// Allows the user to match a device with a name.
-pub trait DeviceWithName {
-    /// Returns whether the provided name matches the interface.
-    fn name_matches(&self, name: &str) -> bool;
-}
-
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) mod testutil {
     use alloc::sync::Arc;
@@ -191,6 +185,7 @@ pub(crate) mod testutil {
 
     use super::*;
 
+    use crate::InterfaceProperties;
     use crate::testutil::FakeCoreCtx;
 
     /// A fake weak device id.
@@ -243,12 +238,6 @@ pub(crate) mod testutil {
         }
     }
 
-    impl DeviceWithName for FakeDeviceId {
-        fn name_matches(&self, name: &str) -> bool {
-            name == Self::FAKE_NAME
-        }
-    }
-
     impl FakeStrongDeviceId for FakeDeviceId {
         fn is_alive(&self) -> bool {
             true
@@ -258,6 +247,20 @@ pub(crate) mod testutil {
     impl PartialEq<FakeWeakDeviceId<FakeDeviceId>> for FakeDeviceId {
         fn eq(&self, FakeWeakDeviceId(other): &FakeWeakDeviceId<FakeDeviceId>) -> bool {
             self == other
+        }
+    }
+
+    impl InterfaceProperties<()> for FakeDeviceId {
+        fn id_matches(&self, _: &core::num::NonZeroU64) -> bool {
+            unimplemented!()
+        }
+
+        fn name_matches(&self, name: &str) -> bool {
+            name == Self::FAKE_NAME
+        }
+
+        fn device_class_matches(&self, _: &()) -> bool {
+            unimplemented!()
         }
     }
 
@@ -323,12 +326,6 @@ pub(crate) mod testutil {
         }
     }
 
-    impl DeviceWithName for FakeReferencyDeviceId {
-        fn name_matches(&self, name: &str) -> bool {
-            name == Self::FAKE_NAME
-        }
-    }
-
     impl FakeStrongDeviceId for FakeReferencyDeviceId {
         fn is_alive(&self) -> bool {
             !self.removed.load(core::sync::atomic::Ordering::Relaxed)
@@ -338,6 +335,20 @@ pub(crate) mod testutil {
     impl PartialEq<FakeWeakDeviceId<FakeReferencyDeviceId>> for FakeReferencyDeviceId {
         fn eq(&self, FakeWeakDeviceId(other): &FakeWeakDeviceId<FakeReferencyDeviceId>) -> bool {
             self == other
+        }
+    }
+
+    impl InterfaceProperties<()> for FakeReferencyDeviceId {
+        fn id_matches(&self, _: &core::num::NonZeroU64) -> bool {
+            unimplemented!()
+        }
+
+        fn name_matches(&self, name: &str) -> bool {
+            name == Self::FAKE_NAME
+        }
+
+        fn device_class_matches(&self, _: &()) -> bool {
+            unimplemented!()
         }
     }
 
@@ -383,12 +394,6 @@ pub(crate) mod testutil {
         }
     }
 
-    impl DeviceWithName for MultipleDevicesId {
-        fn name_matches(&self, name: &str) -> bool {
-            self.fake_name() == name
-        }
-    }
-
     impl StrongDeviceIdentifier for MultipleDevicesId {
         type Weak = FakeWeakDeviceId<Self>;
 
@@ -400,6 +405,20 @@ pub(crate) mod testutil {
     impl FakeStrongDeviceId for MultipleDevicesId {
         fn is_alive(&self) -> bool {
             true
+        }
+    }
+
+    impl InterfaceProperties<()> for MultipleDevicesId {
+        fn id_matches(&self, _: &core::num::NonZeroU64) -> bool {
+            unimplemented!()
+        }
+
+        fn name_matches(&self, name: &str) -> bool {
+            self.fake_name() == name
+        }
+
+        fn device_class_matches(&self, _: &()) -> bool {
+            unimplemented!()
         }
     }
 

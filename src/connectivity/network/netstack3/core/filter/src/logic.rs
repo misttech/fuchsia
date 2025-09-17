@@ -9,12 +9,13 @@ use core::ops::RangeInclusive;
 
 use log::error;
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
-use netstack3_base::{AnyDevice, DeviceIdContext, HandleableTimer, IpDeviceAddressIdContext};
+use netstack3_base::{
+    AnyDevice, DeviceIdContext, HandleableTimer, InterfaceProperties, IpDeviceAddressIdContext,
+};
 use packet_formats::ip::IpExt;
 
 use crate::conntrack::{Connection, FinalizeConnectionError, GetConnectionError};
 use crate::context::{FilterBindingsContext, FilterBindingsTypes, FilterIpContext};
-use crate::matchers::InterfaceProperties;
 use crate::packets::{FilterIpExt, IpPacket, MaybeTransportPacket};
 use crate::state::{
     Action, FilterIpMetadata, FilterMarkMetadata, Hook, Routine, Rule, TransparentProxy,
@@ -825,7 +826,7 @@ mod tests {
     use derivative::Derivative;
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
-    use netstack3_base::{AssignedAddrIpExt, MarkDomain, Marks, SegmentHeader};
+    use netstack3_base::{AssignedAddrIpExt, InterfaceMatcher, MarkDomain, Marks, SegmentHeader};
     use netstack3_hashmap::HashMap;
     use test_case::test_case;
 
@@ -836,8 +837,7 @@ mod tests {
     use crate::logic::nat::NatConfig;
     use crate::matchers::testutil::{FakeDeviceId, ethernet_interface, wlan_interface};
     use crate::matchers::{
-        AddressMatcher, AddressMatcherType, InterfaceMatcher, PacketMatcher, PortMatcher,
-        TransportProtocolMatcher,
+        AddressMatcher, AddressMatcherType, PacketMatcher, PortMatcher, TransportProtocolMatcher,
     };
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeTcpSegment, FakeUdpPacket, TransportPacketExt,

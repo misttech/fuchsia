@@ -37,8 +37,9 @@ use netstack3_base::testutil::{
 use netstack3_base::{
     AddressResolutionFailed, CtxPair, DataNotifierTypes, DeferredResourceRemovalContext,
     EventContext, FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice,
-    Marks, NotFoundError, ReferenceNotifiers, RemoveResourceResult, RngContext, TimerBindingsTypes,
-    TimerContext, TimerHandler, TxMetadataBindingsTypes, WorkQueueReport,
+    Marks, MatcherBindingsTypes, NotFoundError, ReferenceNotifiers, RemoveResourceResult,
+    RngContext, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
+    WorkQueueReport,
 };
 use netstack3_device::ethernet::{
     EthernetCreationProperties, EthernetDeviceEvent, EthernetDeviceId, EthernetLinkDevice,
@@ -54,9 +55,7 @@ use netstack3_device::{
     DeviceProvider, DeviceSendFrameError, WeakDeviceId, for_any_device_id,
 };
 use netstack3_filter::testutil::NoOpSocketOpsFilter;
-use netstack3_filter::{
-    FilterBindingsTypes, FilterTimerId, SocketOpsFilter, SocketOpsFilterBindingContext,
-};
+use netstack3_filter::{FilterTimerId, SocketOpsFilter, SocketOpsFilterBindingContext};
 use netstack3_hashmap::HashMap;
 use netstack3_icmp_echo::{
     IcmpEchoBindingsContext, IcmpEchoBindingsTypes, IcmpSocketId, ReceiveIcmpEchoError,
@@ -337,7 +336,10 @@ where
 
     /// Install rules, these rules will replace the rules currently installed.
     #[netstack3_macros::context_ip_bounds(I, BC, crate)]
-    pub fn set_rules<I: IpExt>(&mut self, rules: Vec<netstack3_ip::Rule<I, DeviceId<BC>>>) {
+    pub fn set_rules<I: IpExt>(
+        &mut self,
+        rules: Vec<netstack3_ip::Rule<I, DeviceId<BC>, BC::DeviceClass>>,
+    ) {
         let (core_ctx, _bindings_ctx) = self.contexts();
         ip::testutil::set_rules(core_ctx, rules)
     }
@@ -764,7 +766,7 @@ impl FakeBindingsCtx {
     }
 }
 
-impl FilterBindingsTypes for FakeBindingsCtx {
+impl MatcherBindingsTypes for FakeBindingsCtx {
     type DeviceClass = ();
 }
 

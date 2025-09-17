@@ -8,24 +8,25 @@ use net_types::SpecifiedAddr;
 use net_types::ip::{IpVersion, Ipv4, Ipv6};
 use netstack3_base::socket::SocketCookie;
 use netstack3_base::{
-    InstantBindingsTypes, IpDeviceAddr, IpDeviceAddressIdContext, Marks, RngContext,
-    StrongDeviceIdentifier, TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes,
+    InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext, Marks,
+    MatcherBindingsTypes, RngContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
+    TxMetadataBindingsTypes,
 };
 use packet::{FragmentedByteSlice, PartialSerializer};
 use packet_formats::ip::IpExt;
 
-use crate::matchers::InterfaceProperties;
 use crate::state::State;
 use crate::{FilterIpExt, IpPacket};
 
 /// Trait defining required types for filtering provided by bindings.
-///
-/// Allows rules that match on device class to be installed, storing the
-/// [`FilterBindingsTypes::DeviceClass`] type at rest, while allowing Netstack3
-/// Core to have Bindings provide the type since it is platform-specific.
-pub trait FilterBindingsTypes: InstantBindingsTypes + TimerBindingsTypes + 'static {
-    /// The device class type for devices installed in the netstack.
-    type DeviceClass: Clone + Debug;
+pub trait FilterBindingsTypes:
+    InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static
+{
+}
+
+impl<BT: InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static>
+    FilterBindingsTypes for BT
+{
 }
 
 /// Trait aggregating functionality required from bindings.
@@ -159,18 +160,6 @@ pub trait SocketOpsFilterBindingContext<D: StrongDeviceIdentifier>:
 {
     /// Returns the filter that should be called for socket ops.
     fn socket_ops_filter(&self) -> impl SocketOpsFilter<D>;
-}
-
-#[cfg(any(test, feature = "testutils"))]
-impl<
-    TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
-    Event: Debug + 'static,
-    State: 'static,
-    FrameMeta: 'static,
-> FilterBindingsTypes
-    for netstack3_base::testutil::FakeBindingsCtx<TimerId, Event, State, FrameMeta>
-{
-    type DeviceClass = ();
 }
 
 #[cfg(any(test, feature = "testutils"))]
@@ -482,7 +471,7 @@ pub(crate) mod testutil {
         type AtomicInstant = FakeAtomicInstant;
     }
 
-    impl<I: Ip> FilterBindingsTypes for FakeBindingsCtx<I> {
+    impl<I: Ip> MatcherBindingsTypes for FakeBindingsCtx<I> {
         type DeviceClass = FakeDeviceClass;
     }
 

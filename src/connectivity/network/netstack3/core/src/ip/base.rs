@@ -86,7 +86,7 @@ impl<
     L: LockBefore<crate::lock_ordering::IpState<I>>,
 > MulticastMembershipHandler<I, BC> for CoreCtx<'_, BC, L>
 where
-    Self: device::IpDeviceConfigurationContext<I, BC> + IpStateContext<I> + IpDeviceContext<I>,
+    Self: device::IpDeviceConfigurationContext<I, BC> + IpStateContext<I, BC> + IpDeviceContext<I>,
 {
     fn join_multicast_group(
         &mut self,
@@ -269,7 +269,7 @@ impl<BT: BindingsTypes, D: DeviceStateSpec, I: IpLayerIpExt, L>
 }
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
-impl<I, BC, L> IpStateContext<I> for CoreCtx<'_, BC, L>
+impl<I, BC, L> IpStateContext<I, BC> for CoreCtx<'_, BC, L>
 where
     I: IpLayerIpExt,
     BC: BindingsContext,
@@ -280,7 +280,10 @@ where
 
     fn with_rules_table<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &RulesTable<I, Self::DeviceId>) -> O,
+        F: FnOnce(
+            &mut Self::IpRouteTablesCtx<'_>,
+            &RulesTable<I, Self::DeviceId, BC::DeviceClass>,
+        ) -> O,
     >(
         &mut self,
         cb: F,
@@ -292,7 +295,10 @@ where
 
     fn with_rules_table_mut<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &mut RulesTable<I, Self::DeviceId>) -> O,
+        F: FnOnce(
+            &mut Self::IpRouteTablesCtx<'_>,
+            &mut RulesTable<I, Self::DeviceId, BC::DeviceClass>,
+        ) -> O,
     >(
         &mut self,
         cb: F,
@@ -805,11 +811,11 @@ impl<I: IpLayerIpExt, BT: BindingsTypes> DelegatedOrderedLockAccess<PmtuCache<I,
 impl<I: IpLayerIpExt, BT: BindingsTypes> LockLevelFor<StackState<BT>>
     for crate::lock_ordering::IpStateRulesTable<I>
 {
-    type Data = RulesTable<I, DeviceId<BT>>;
+    type Data = RulesTable<I, DeviceId<BT>, BT::DeviceClass>;
 }
 
-impl<I: IpLayerIpExt, BT: BindingsTypes> DelegatedOrderedLockAccess<RulesTable<I, DeviceId<BT>>>
-    for StackState<BT>
+impl<I: IpLayerIpExt, BT: BindingsTypes>
+    DelegatedOrderedLockAccess<RulesTable<I, DeviceId<BT>, BT::DeviceClass>> for StackState<BT>
 {
     type Inner = IpStateInner<I, DeviceId<BT>, BT>;
     fn delegate_ordered_lock_access(&self) -> &Self::Inner {

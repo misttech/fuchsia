@@ -10,19 +10,20 @@ use core::ops::Deref as _;
 
 use net_types::ip::Ip;
 use netstack3_base::{
-    DeviceNameMatcher, DeviceWithName, Mark, MarkDomain, MarkStorage, Marks, Matcher, SubnetMatcher,
+    BoundDeviceMatcher, InterfaceProperties, Mark, MarkDomain, MarkStorage, Marks, Matcher,
+    SubnetMatcher,
 };
 
 use crate::RoutingTableId;
 use crate::internal::routing::PacketOrigin;
 
 /// Table that contains routing rules.
-pub struct RulesTable<I: Ip, D> {
+pub struct RulesTable<I: Ip, D, DeviceClass> {
     /// Rules of the table.
-    rules: Vec<Rule<I, D>>,
+    rules: Vec<Rule<I, D, DeviceClass>>,
 }
 
-impl<I: Ip, D> RulesTable<I, D> {
+impl<I: Ip, D, DeviceClass> RulesTable<I, D, DeviceClass> {
     pub(crate) fn new(main_table_id: RoutingTableId<I, D>) -> Self {
         // TODO(https://fxbug.dev/355059790): If bindings is installing the main table, we should
         // also let the bindings install this default rule.
@@ -34,26 +35,26 @@ impl<I: Ip, D> RulesTable<I, D> {
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &'_ Rule<I, D>> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &'_ Rule<I, D, DeviceClass>> {
         self.rules.iter()
     }
 
     /// Gets the mutable reference to the rules vector.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn rules_mut(&mut self) -> &mut Vec<Rule<I, D>> {
+    pub fn rules_mut(&mut self) -> &mut Vec<Rule<I, D, DeviceClass>> {
         &mut self.rules
     }
 
     /// Replaces the rules inside this table.
-    pub fn replace(&mut self, new_rules: Vec<Rule<I, D>>) {
+    pub fn replace(&mut self, new_rules: Vec<Rule<I, D, DeviceClass>>) {
         self.rules = new_rules;
     }
 }
 
 /// A routing rule.
-pub struct Rule<I: Ip, D> {
+pub struct Rule<I: Ip, D, DeviceClass> {
     /// The matcher of the rule.
-    pub matcher: RuleMatcher<I>,
+    pub matcher: RuleMatcher<I, DeviceClass>,
     /// The action of the rule.
     pub action: RuleAction<RoutingTableId<I, D>>,
 }
@@ -67,44 +68,26 @@ pub enum RuleAction<Lookup> {
     Lookup(Lookup),
 }
 
-/// Matcher for the bound device of locally generated traffic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BoundDeviceMatcher {
-    /// The packet is bound to a device which is matched by the matcher.
-    DeviceName(DeviceNameMatcher),
-    /// There is no bound device.
-    Unbound,
-}
-
-impl<'a, D: DeviceWithName> Matcher<Option<&'a D>> for BoundDeviceMatcher {
-    fn matches(&self, actual: &Option<&'a D>) -> bool {
-        match self {
-            BoundDeviceMatcher::DeviceName(name_matcher) => {
-                name_matcher.required_matches(actual.as_deref())
-            }
-            BoundDeviceMatcher::Unbound => actual.is_none(),
-        }
-    }
-}
-
 /// Matches with [`PacketOrigin`].
 ///
 /// Note that this matcher doesn't specify the source address/bound address like [`PacketOrigin`]
 /// because the user can specify a source address matcher without specifying the direction of the
 /// traffic.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TrafficOriginMatcher {
+pub enum TrafficOriginMatcher<DeviceClass> {
     /// This only matches packets that are generated locally; the optional interface matcher
     /// can be used to match what device is bound to by `SO_BINDTODEVICE`.
     Local {
         /// The matcher for the bound device.
-        bound_device_matcher: Option<BoundDeviceMatcher>,
+        // TODO(https://fxbug.dev/441124570): Support referencey semantics for
+        // ID matchers.
+        bound_device_matcher: Option<BoundDeviceMatcher<DeviceClass>>,
     },
     /// This only matches non-local packets. The packets must be received from the network.
     NonLocal,
 }
 
-impl<'a, I: Ip, D: DeviceWithName> Matcher<PacketOrigin<I, &'a D>> for SubnetMatcher<I::Addr> {
+impl<'a, I: Ip, D> Matcher<PacketOrigin<I, &'a D>> for SubnetMatcher<I::Addr> {
     fn matches(&self, actual: &PacketOrigin<I, &'a D>) -> bool {
         match actual {
             PacketOrigin::Local { bound_address, bound_device: _ } => {
@@ -117,7 +100,9 @@ impl<'a, I: Ip, D: DeviceWithName> Matcher<PacketOrigin<I, &'a D>> for SubnetMat
     }
 }
 
-impl<'a, I: Ip, D: DeviceWithName> Matcher<PacketOrigin<I, &'a D>> for TrafficOriginMatcher {
+impl<'a, DeviceClass, I: Ip, D: InterfaceProperties<DeviceClass>> Matcher<PacketOrigin<I, &'a D>>
+    for TrafficOriginMatcher<DeviceClass>
+{
     fn matches(&self, actual: &PacketOrigin<I, &'a D>) -> bool {
         match (self, actual) {
             (
@@ -195,7 +180,7 @@ impl Matcher<Marks> for MarkMatchers {
 ///
 /// `None` fields match all packets.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuleMatcher<I: Ip> {
+pub struct RuleMatcher<I: Ip, DeviceClass> {
     /// Matches on [`PacketOrigin`]'s bound address for a locally generated packet or the source
     /// address of an incoming packet.
     ///
@@ -204,12 +189,12 @@ pub struct RuleMatcher<I: Ip> {
     pub source_address_matcher: Option<SubnetMatcher<I::Addr>>,
     /// Matches on [`PacketOrigin`]'s bound device for a locally generated packets or the receiving
     /// device of an incoming packet.
-    pub traffic_origin_matcher: Option<TrafficOriginMatcher>,
+    pub traffic_origin_matcher: Option<TrafficOriginMatcher<DeviceClass>>,
     /// Matches on [`RuleInput`]'s marks.
     pub mark_matchers: MarkMatchers,
 }
 
-impl<I: Ip> RuleMatcher<I> {
+impl<I: Ip, DeviceClass> RuleMatcher<I, DeviceClass> {
     /// Creates a rule matcher that matches all packets.
     pub fn match_all_packets() -> Self {
         RuleMatcher {
@@ -226,7 +211,9 @@ pub struct RuleInput<'a, I: Ip, D> {
     pub(crate) marks: &'a Marks,
 }
 
-impl<'a, I: Ip, D: DeviceWithName> Matcher<RuleInput<'a, I, D>> for RuleMatcher<I> {
+impl<'a, I: Ip, D: InterfaceProperties<DeviceClass>, DeviceClass> Matcher<RuleInput<'a, I, D>>
+    for RuleMatcher<I, DeviceClass>
+{
     fn matches(&self, actual: &RuleInput<'a, I, D>) -> bool {
         let Self { source_address_matcher, traffic_origin_matcher, mark_matchers } = self;
         let RuleInput { packet_origin, marks } = actual;
@@ -241,6 +228,7 @@ mod test {
     use ip_test_macro::ip_test;
     use net_types::SpecifiedAddr;
     use net_types::ip::Subnet;
+    use netstack3_base::InterfaceMatcher;
     use netstack3_base::testutil::{FakeDeviceId, MultipleDevicesId, TestIpExt};
     use test_case::test_case;
 
@@ -256,19 +244,19 @@ mod test {
         Some(BoundDeviceMatcher::Unbound),
         Some(MultipleDevicesId::A) => false)]
     #[test_case(
-        Some(BoundDeviceMatcher::DeviceName(DeviceNameMatcher("A".into()))),
+        Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
         None => false)]
     #[test_case(
-        Some(BoundDeviceMatcher::DeviceName(DeviceNameMatcher("A".into()))),
+        Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
         Some(MultipleDevicesId::A) => true)]
     #[test_case(
-        Some(BoundDeviceMatcher::DeviceName(DeviceNameMatcher("A".into()))),
+        Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
         Some(MultipleDevicesId::B) => false)]
     fn rule_matcher_matches_bound_device<I: TestIpExt>(
-        bound_device_matcher: Option<BoundDeviceMatcher>,
+        bound_device_matcher: Option<BoundDeviceMatcher<()>>,
         bound_device: Option<MultipleDevicesId>,
     ) -> bool {
-        let matcher = RuleMatcher::<I> {
+        let matcher = RuleMatcher::<I, ()> {
             traffic_origin_matcher: Some(TrafficOriginMatcher::Local { bound_device_matcher }),
             ..RuleMatcher::match_all_packets()
         };
@@ -298,7 +286,7 @@ mod test {
         source_address_subnet: Option<Subnet<I::Addr>>,
         bound_address: Option<SpecifiedAddr<I::Addr>>,
     ) -> bool {
-        let matcher = RuleMatcher::<I> {
+        let matcher = RuleMatcher::<I, ()> {
             source_address_matcher: source_address_subnet.map(SubnetMatcher),
             ..RuleMatcher::match_all_packets()
         };
@@ -341,11 +329,11 @@ mod test {
             bound_device: None
         } => false)]
     fn rule_matcher_matches_locally_generated<I: TestIpExt>(
-        traffic_origin_matcher: Option<TrafficOriginMatcher>,
+        traffic_origin_matcher: Option<TrafficOriginMatcher<()>>,
         packet_origin: PacketOrigin<I, &'static FakeDeviceId>,
     ) -> bool {
         let matcher =
-            RuleMatcher::<I> { traffic_origin_matcher, ..RuleMatcher::match_all_packets() };
+            RuleMatcher::<I, ()> { traffic_origin_matcher, ..RuleMatcher::match_all_packets() };
         let marks = Default::default();
         let input = RuleInput::<'_, _, FakeDeviceId> { packet_origin, marks: &marks };
         matcher.matches(&input)
@@ -371,10 +359,10 @@ mod test {
         device: Option<&'static MultipleDevicesId>,
         locally_generated: bool,
     ) {
-        let matcher = RuleMatcher::<I> {
+        let matcher = RuleMatcher::<I, ()> {
             source_address_matcher: Some(SubnetMatcher(I::TEST_ADDRS.subnet)),
             traffic_origin_matcher: Some(TrafficOriginMatcher::Local {
-                bound_device_matcher: Some(BoundDeviceMatcher::DeviceName(DeviceNameMatcher(
+                bound_device_matcher: Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name(
                     "A".into(),
                 ))),
             }),
