@@ -3276,35 +3276,38 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
     REGISTER_ADMIN_TEST(GetDelayInfoAfterDroppingFirstRingBuffer, device_entry);
     REGISTER_ADMIN_TEST(SetActiveChannelsAfterDroppingFirstRingBuffer, device_entry);
   } else if (device_entry.isStreamConfig()) {
-    REGISTER_ADMIN_TEST(GetRingBufferProperties, device_entry);
-    REGISTER_ADMIN_TEST(GetBuffer, device_entry);
-    REGISTER_ADMIN_TEST(DriverReservesRingBufferSpace, device_entry);
+    // TODO(https://fxbug.dev/445731230): reenable once `core.vim3-vg-hwasan` timing issue is fixed
+    if (!device_entry.isVirtual()) {
+      REGISTER_ADMIN_TEST(GetRingBufferProperties, device_entry);
+      REGISTER_ADMIN_TEST(GetBuffer, device_entry);
+      REGISTER_ADMIN_TEST(DriverReservesRingBufferSpace, device_entry);
 
-    REGISTER_ADMIN_TEST(InternalDelayIsValid, device_entry);
-    REGISTER_ADMIN_TEST(ExternalDelayIsValid, device_entry);
-    REGISTER_ADMIN_TEST(GetDelayInfoSecondTimeNoResponse, device_entry);
+      REGISTER_ADMIN_TEST(InternalDelayIsValid, device_entry);
+      REGISTER_ADMIN_TEST(ExternalDelayIsValid, device_entry);
+      REGISTER_ADMIN_TEST(GetDelayInfoSecondTimeNoResponse, device_entry);
 
-    REGISTER_ADMIN_TEST(SetActiveChannelsChange, device_entry);
-    REGISTER_ADMIN_TEST(SetActiveChannelsTooHigh, device_entry);
-    REGISTER_ADMIN_TEST(SetActiveChannelsNoChange, device_entry);
+      REGISTER_ADMIN_TEST(SetActiveChannelsChange, device_entry);
+      REGISTER_ADMIN_TEST(SetActiveChannelsTooHigh, device_entry);
+      REGISTER_ADMIN_TEST(SetActiveChannelsNoChange, device_entry);
 
-    REGISTER_ADMIN_TEST(PositionNotifyBeforeStart, device_entry);
-    REGISTER_ADMIN_TEST(PositionNotifyNone, device_entry);
-    REGISTER_ADMIN_TEST(PositionNotifyAfterStop, device_entry);
+      REGISTER_ADMIN_TEST(PositionNotifyBeforeStart, device_entry);
+      REGISTER_ADMIN_TEST(PositionNotifyNone, device_entry);
+      REGISTER_ADMIN_TEST(PositionNotifyAfterStop, device_entry);
 
-    REGISTER_ADMIN_TEST(RingBufferStart, device_entry);
-    REGISTER_ADMIN_TEST(RingBufferStartBeforeGetVmoShouldDisconnect, device_entry);
-    REGISTER_ADMIN_TEST(RingBufferStartWhileStartingShouldDisconnect, device_entry);
-    REGISTER_ADMIN_TEST(RingBufferStartWhileStartedShouldDisconnect, device_entry);
-    REGISTER_ADMIN_TEST(GetDelayInfoAfterStart, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStart, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStartBeforeGetVmoShouldDisconnect, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStartWhileStartingShouldDisconnect, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStartWhileStartedShouldDisconnect, device_entry);
+      REGISTER_ADMIN_TEST(GetDelayInfoAfterStart, device_entry);
 
-    REGISTER_ADMIN_TEST(RingBufferStop, device_entry);
-    REGISTER_ADMIN_TEST(RingBufferStopBeforeGetVmoShouldDisconnect, device_entry);
-    REGISTER_ADMIN_TEST(RingBufferStopWhileStoppedIsPermitted, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStop, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStopBeforeGetVmoShouldDisconnect, device_entry);
+      REGISTER_ADMIN_TEST(RingBufferStopWhileStoppedIsPermitted, device_entry);
 
-    REGISTER_ADMIN_TEST(GetRingBufferPropertiesAfterDroppingFirstRingBuffer, device_entry);
-    REGISTER_ADMIN_TEST(GetDelayInfoAfterDroppingFirstRingBuffer, device_entry);
-    REGISTER_ADMIN_TEST(SetActiveChannelsAfterDroppingFirstRingBuffer, device_entry);
+      REGISTER_ADMIN_TEST(GetRingBufferPropertiesAfterDroppingFirstRingBuffer, device_entry);
+      REGISTER_ADMIN_TEST(GetDelayInfoAfterDroppingFirstRingBuffer, device_entry);
+      REGISTER_ADMIN_TEST(SetActiveChannelsAfterDroppingFirstRingBuffer, device_entry);
+    }
   } else {
     FAIL() << "Unknown device type";
   }
