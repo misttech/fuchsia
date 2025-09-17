@@ -84,16 +84,17 @@ impl ReadMessageState {
         // SAFETY: The caller is responsible for ensuring that the handle is a correct channel handle
         // and that the handle will outlive the created [`ReadMessageState`].
         let channel = unsafe { channel.get_raw() };
+        let op = Arc::new(ReadMessageStateOp {
+            read_op: fdf_channel_read {
+                channel: channel.get(),
+                handler: Some(ReadMessageStateOp::handler),
+                ..Default::default()
+            },
+            waker: Mutex::new(None),
+            cancelled: AtomicBool::new(false),
+        });
         Self {
-            op: Arc::new(ReadMessageStateOp {
-                read_op: fdf_channel_read {
-                    channel: channel.get(),
-                    handler: Some(ReadMessageStateOp::handler),
-                    ..Default::default()
-                },
-                waker: Mutex::new(None),
-                cancelled: AtomicBool::new(false),
-            }),
+            op,
             // SAFETY: We know this is a valid driver handle by construction and we are
             // storing this handle in a [`ManuallyDrop`] to prevent it from being double-dropped.
             // The caller is responsible for ensuring that the handle outlives this object.
@@ -125,7 +126,7 @@ impl ReadMessageState {
             Err(Status::SHOULD_WAIT) => {
                 // if we haven't yet set a waker, that means we haven't started the wait operation
                 // yet.
-                if waker_lock.replace(cx.waker().clone()).is_none() {
+                if waker_lock.is_none() {
                     // increment the reference count of the read op to account for the copy that will be given to
                     // `fdf_channel_wait_async`.
                     let op = Arc::into_raw(self.op.clone());
@@ -139,14 +140,27 @@ impl ReadMessageState {
                                 0,
                             )
                         });
+                        if res.is_ok() {
+                            // only replace the waker if we succeeded, so we'll try again next time
+                            // otherwise.
+                            waker_lock.replace(cx.waker().clone());
+                        } else {
+                            // reconstitute the arc we made for the callback so it can be dropped
+                            // since the async wait didn't succeed.
+                            drop(unsafe { Arc::from_raw(op) });
+                        }
                         // if the dispatcher we're waiting on is unsynchronized, the callback
                         // will drop the Arc and we need to indicate to our own Drop impl
                         // that it should not.
-                        let callback_drops_arc = res.is_ok() && dispatcher.is_unsynchronized();
-                        Ok(callback_drops_arc)
+                        res.map(|_| dispatcher.is_unsynchronized())
                     });
 
+                    // the default state should be that `drop` will free the arc.
+                    self.callback_drops_arc = false;
                     match res {
+                        Err(Status::BAD_STATE) => {
+                            return Poll::Pending; // a pending await is being cancelled
+                        }
                         Ok(callback_drops_arc) => {
                             self.callback_drops_arc = callback_drops_arc;
                         }
@@ -181,14 +195,15 @@ impl Drop for ReadMessageState {
             }
             Err(e) => panic!("Unexpected error {e:?} cancelling driver channel read wait"),
         }
-        // steal the waker so it doesn't get called, if there is one.
-        waker_lock.take();
         // SAFETY: if the channel was waited on by a synchronized dispatcher, and the cancel was
         // successful, the callback will not be called and we will have to free the `Arc` that the
         // callback would have consumed.
         if !self.callback_drops_arc {
+            // steal the waker so it doesn't get called, if there is one.
+            waker_lock.take();
             unsafe { Arc::decrement_strong_count(Arc::as_ptr(&self.op)) };
         }
+        drop(waker_lock);
     }
 }
 
@@ -282,5 +297,25 @@ mod test {
 
         // check that there are no more owners of the inner op for the unsynchronized dispatcher.
         assert_strong_count(&unsync_op, 0);
+    }
+
+    #[test]
+    fn unsynchronized_early_cancel_state_drops_repeatedly_correctly() {
+        // the channel needs to outlive the dispatcher for this test because the channel shouldn't
+        // be closed before the read wait has been cancelled.
+        let (mut a, _b) = Channel::<[u8]>::create();
+        let _a =
+            spawn_in_driver_etc("early cancellation drop correctness", false, true, async move {
+                for _ in 0..10000 {
+                    let mut fut = read_raw(&mut a.0, CurrentDispatcher);
+                    let op_arc = Arc::downgrade(&fut.raw_fut.op);
+                    assert_strong_count(&op_arc, 1);
+                    let Poll::Pending = futures::poll!(&mut fut) else {
+                        panic!("expected pending state after polling channel read once");
+                    };
+                    drop(fut);
+                }
+                a
+            });
     }
 }

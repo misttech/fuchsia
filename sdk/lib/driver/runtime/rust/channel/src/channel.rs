@@ -274,12 +274,17 @@ impl<D: OnDispatcher> Future for ReadMessageRawFut<D> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Write, stdout};
     use std::pin::pin;
-    use std::sync::mpsc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, mpsc};
 
-    use fdf_core::dispatcher::{CurrentDispatcher, Dispatcher, DispatcherBuilder, OnDispatcher};
+    use fdf_core::dispatcher::{
+        CurrentDispatcher, Dispatcher, DispatcherBuilder, DispatcherRef, OnDispatcher,
+    };
     use fdf_core::handle::MixedHandleType;
     use fdf_env::test::spawn_in_driver;
+    use futures::channel::oneshot;
     use futures::poll;
 
     use super::*;
@@ -431,5 +436,111 @@ mod tests {
 
             pong(pong_chan).await
         });
+    }
+
+    async fn recv_lots_of_bytes_with_cancellations(
+        mut rx: Channel<[u8]>,
+        fin_tx: oneshot::Sender<Channel<[u8]>>,
+        pending_count: Arc<AtomicU64>,
+    ) {
+        let mut immediate_count = 0;
+        let mut count = 0;
+        loop {
+            // try to read as fast as we can, but any time we get a pending drop the future
+            // and then re-try with a proper await so we re-read and get it. This tests
+            // the reliability of the channel read's drop cancellation.
+            let mut next_fut = Box::pin(rx.read_bytes(CurrentDispatcher));
+            let next = match futures::poll!(&mut next_fut) {
+                Poll::Pending => {
+                    pending_count.fetch_add(1, Ordering::Relaxed);
+                    drop(next_fut);
+                    rx.read_bytes(CurrentDispatcher).await
+                }
+                Poll::Ready(r) => {
+                    immediate_count += 1;
+                    r
+                }
+            };
+            match next {
+                Err(Status::PEER_CLOSED) | Ok(None) => break,
+                Err(_) => {
+                    next.unwrap();
+                }
+                Ok(Some(msg)) => {
+                    assert_eq!(msg.data().unwrap(), &[count as u8; 100]);
+                    count += 1;
+                }
+            }
+        }
+        println!("read total: {count}, immediate: {immediate_count}, pending: {pending_count:?}");
+        // send the channel out as well so that the cancellation can finish
+        fin_tx.send(rx).unwrap();
+    }
+
+    async fn send_lots_of_bytes(
+        tx: Channel<[u8]>,
+        fin_rx: oneshot::Receiver<Channel<[u8]>>,
+        pending_count: Arc<AtomicU64>,
+    ) {
+        // The potential failure modes here are not entirely deterministic, so we want to
+        // make sure that we get enough runs through the danger path (a pending read that is
+        // dropped) so that we exercise it thoroughly. To that end, we will do up to 10,000
+        // writes but stop early if we have 500 pending events.
+        let arena = Arena::new();
+        print!("writing: ");
+        for i in 0..10000 {
+            tx.write_with_data(arena.clone(), |arena| arena.insert_slice(&[i as u8; 100])).unwrap();
+            // the following print and flush is not just aesthetic. It helps slow down the
+            // writes a bit so that the reader dispatcher is more likely to have to wait for
+            // further data.
+            print!(".");
+            stdout().flush().unwrap();
+            if pending_count.load(Ordering::Relaxed) > 500 {
+                break;
+            }
+        }
+        drop(tx);
+        fin_rx.await.unwrap();
+    }
+
+    async fn send_and_recv_lots_of_bytes_with_cancellations(dispatcher: DispatcherRef<'static>) {
+        let (tx, rx) = Channel::create();
+        let (fin_tx, fin_rx) = oneshot::channel();
+        let pending_count = Arc::new(AtomicU64::new(0));
+        dispatcher
+            .spawn_task(recv_lots_of_bytes_with_cancellations(rx, fin_tx, pending_count.clone()))
+            .unwrap();
+
+        send_lots_of_bytes(tx, fin_rx, pending_count).await;
+    }
+
+    #[test]
+    fn send_and_recv_lots_of_bytes_with_cancellations_on_synchronized_dispatcher() {
+        spawn_in_driver(
+            "lots of bytes and with some cancellations on a synchronized dispatcher",
+            async {
+                let dispatcher =
+                    DispatcherBuilder::new().name("fdf-synchronized").create().unwrap().release();
+
+                send_and_recv_lots_of_bytes_with_cancellations(dispatcher).await;
+            },
+        );
+    }
+
+    #[test]
+    fn send_and_recv_lots_of_bytes_with_cancellations_on_unsynchronized_dispatcher() {
+        spawn_in_driver(
+            "lots of bytes and with some cancellations on an unsynchronized dispatcher",
+            async {
+                let dispatcher = DispatcherBuilder::new()
+                    .name("fdf-unsynchronized")
+                    .unsynchronized()
+                    .create()
+                    .unwrap()
+                    .release();
+
+                send_and_recv_lots_of_bytes_with_cancellations(dispatcher).await;
+            },
+        );
     }
 }
