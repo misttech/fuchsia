@@ -67,7 +67,10 @@ ffx("ffx") {
     "src/main.rs",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:serde_json",
+  ]
 }
 
 _ffx_e2e_config = [

@@ -314,10 +314,18 @@ fn get_mac_deprecation_warning(is_machine: bool) -> Option<&'static str> {
 mod test {
     use super::*;
     use ffx_command::{FlagInfo, FlagKind, PositionalInfo, SubCommandInfo};
+    use ffx_config::ConfigLevel;
+    use serde_json::json;
 
     #[fuchsia::test]
     async fn test_try_runner_from_name() {
         let env = ffx_config::test_init().await.expect("test env");
+        env.context
+            .query("ffx.subtool-search-paths")
+            .level(Some(ConfigLevel::User))
+            .set(json!([&"/"]))
+            .expect("set subtool search paths");
+
         let suite = FfxSuite::from_env(&env.context).expect("ffx suite");
 
         let cmd = FfxCommandLine::new(None, &["ffx", "target", "list"]).expect("ffx cmdline");
