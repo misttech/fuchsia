@@ -883,7 +883,7 @@ TEST_F(ProcSelfFdTest, PerfEventFdName) {
   perf_event_attr attr{};
   attr.type = PERF_TYPE_SOFTWARE;
   attr.size = sizeof(attr);
-  attr.config = PERF_COUNT_SW_DUMMY;
+  attr.config = PERF_COUNT_SW_CPU_CLOCK;
   attr.sample_type = PERF_SAMPLE_IP;
   attr.disabled = true;
   attr.exclude_kernel = true;

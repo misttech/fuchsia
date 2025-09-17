@@ -532,7 +532,10 @@ perf_event_attr example_sampling_attr(uint64_t sample_type) {
   attr.type = PERF_TYPE_HARDWARE;
   attr.size = sizeof(attr);
   attr.config = PERF_COUNT_HW_INSTRUCTIONS;
-  attr.sample_period = 10;  // Elects sampling instead of counting. "1 sample per 10 events".
+  // Elects sampling instead of counting. Since right here one
+  // event is 1 nanoseconds. It represent take one sample every
+  // 250'000 nanoseconds
+  attr.sample_period = 250'000;
   attr.sample_type = sample_type;
   attr.disabled = 1;      // Initiate as DISABLED as per Perfetto code use-case.
   attr.exclude_user = 0;  // Necessary otherwise we get zeros for sampling.
@@ -593,7 +596,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
   if (test_helper::HasSysAdmin()) {
     perf_event_attr attr =
         example_sampling_attr(PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_IP | PERF_SAMPLE_TID |
-                              PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID);
+                              PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID | PERF_SAMPLE_PERIOD);
     int32_t file_descriptor =
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
 
@@ -680,6 +683,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         uint32_t pid;
         uint32_t tid;
         uint64_t id;
+        uint64_t sample_period;
         uint64_t nr;
       };
       struct perf_record_sample* record_details = (struct perf_record_sample*)record_details_start;
@@ -688,6 +692,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
       EXPECT_GE(record_details->pid, (uint64_t)0);
       EXPECT_GE(record_details->tid, (uint64_t)1);
       EXPECT_GE(record_details->id, (uint64_t)1);
+      EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
       // On average we are getting ~100 samples for 100ms hardcoded sample duration.
       EXPECT_GE(record_details->nr, (uint64_t)1);
       EXPECT_LT(record_details->nr, (uint64_t)200);

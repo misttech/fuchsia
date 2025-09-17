@@ -24,7 +24,8 @@ use starnix_uapi::arch32::{
     PERF_EVENT_IOC_SET_FILTER, PERF_EVENT_IOC_SET_OUTPUT, PERF_RECORD_MISC_KERNEL,
     perf_event_sample_format_PERF_SAMPLE_CALLCHAIN, perf_event_sample_format_PERF_SAMPLE_ID,
     perf_event_sample_format_PERF_SAMPLE_IDENTIFIER, perf_event_sample_format_PERF_SAMPLE_IP,
-    perf_event_sample_format_PERF_SAMPLE_TID, perf_event_type_PERF_RECORD_SAMPLE,
+    perf_event_sample_format_PERF_SAMPLE_PERIOD, perf_event_sample_format_PERF_SAMPLE_TID,
+    perf_event_type_PERF_RECORD_SAMPLE,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -61,8 +62,6 @@ fn get_perf_state(kernel: &Arc<Kernel>) -> Arc<PerfState> {
     kernel.expando.get_or_init(PerfState::default)
 }
 
-// Default sample period of one sample per millisecond.
-static DEFAULT_SAMPLE_PERIOD: u64 = 1000000;
 // Default buffer size to read from socket (for sampling data).
 static DEFAULT_CHUNK_SIZE: usize = 4096;
 static ESTIMATED_MMAP_BUFFER_SIZE: u64 = 16384; // 4096 * 4, page size * 4.
@@ -276,9 +275,9 @@ impl FileOps for PerfEventFile {
                     clippy::undocumented_unsafe_blocks,
                     reason = "Force documented unsafe blocks in Starnix"
                 )]
-                if perf_event_file.attr.freq() == 0
-                    && unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period != 0 }
-                {
+                let sample_period_in_tick =
+                    unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period };
+                if perf_event_file.attr.freq() == 0 && sample_period_in_tick != 0 {
                     let vmo_handle_copy = perf_event_file
                         .perf_data_vmo
                         .as_handle_ref()
@@ -290,7 +289,11 @@ impl FileOps for PerfEventFile {
                     );
                     let mut executor = fuchsia_async::LocalExecutor::new();
                     executor.run_singlethreaded(async {
-                        match set_up_profiler().await {
+                        // The sample period from the PERF_COUNT_SW_CPU_CLOCK is
+                        // 1 nanosecond per tick. Convert this duration into zx::duration.
+                        let zx_sample_period =
+                            zx::MonotonicDuration::from_nanos(sample_period_in_tick as i64);
+                        match set_up_profiler(zx_sample_period).await {
                             Ok((session_proxy, client)) => {
                                 track_stub!(
                                     TODO("https://fxbug.dev/422502681"),
@@ -303,6 +306,7 @@ impl FileOps for PerfEventFile {
                                     &zx::Vmo::from(vmo_handle_copy.unwrap()),
                                     perf_event_file.sample_type,
                                     perf_event_file.sample_id,
+                                    sample_period_in_tick,
                                     perf_event_file.vmo_write_offset,
                                 )
                                 .await;
@@ -470,6 +474,7 @@ fn write_record_to_vmo(
     perf_data_vmo: &zx::Vmo,
     sample_type: u64,
     sample_id: u64,
+    sample_period: u64,
     offset: u64,
 ) -> () {
     track_stub!(
@@ -517,6 +522,11 @@ fn write_record_to_vmo(
     // id
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_ID as u64) != 0 {
         sample.extend(sample_id.to_ne_bytes());
+    }
+
+    // sample period
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_PERIOD as u64) != 0 {
+        sample.extend(sample_period.to_ne_bytes());
     }
 
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64) != 0 {
@@ -600,7 +610,9 @@ fn parse_perf_record_sample_format(backtrace: &str) -> Option<PerfRecordSample> 
     }
 }
 
-async fn set_up_profiler() -> Result<(profiler::SessionProxy, fidl::AsyncSocket), Errno> {
+async fn set_up_profiler(
+    sample_period: zx::MonotonicDuration,
+) -> Result<(profiler::SessionProxy, fidl::AsyncSocket), Errno> {
     // Configuration for how we want to sample.
     let sample = profiler::Sample {
         callgraph: Some(profiler::CallgraphConfig {
@@ -611,7 +623,7 @@ async fn set_up_profiler() -> Result<(profiler::SessionProxy, fidl::AsyncSocket)
     };
 
     let sampling_config = profiler::SamplingConfig {
-        period: Some(DEFAULT_SAMPLE_PERIOD),
+        period: Some(sample_period.into_nanos() as u64),
         timebase: Some(profiler::Counter::PlatformIndependent(profiler::CounterId::Nanoseconds)),
         sample: Some(sample),
         ..Default::default()
@@ -661,6 +673,7 @@ async fn collect_sample(
     perf_data_vmo: &zx::Vmo,
     sample_type: u64,
     sample_id: u64,
+    sample_period: u64,
     offset: u64,
 ) -> Result<(), Errno> {
     let start_request = profiler::SessionStartRequest {
@@ -716,6 +729,7 @@ async fn collect_sample(
                         perf_data_vmo,
                         sample_type,
                         sample_id,
+                        sample_period,
                         offset,
                     );
                 }
@@ -744,6 +758,11 @@ pub fn sys_perf_event_open(
     group_fd: FdNumber,
     _flags: u64,
 ) -> Result<SyscallResult, Errno> {
+    // So far, the implementation only sets the read_data_format according to the "Reading results"
+    // section of https://man7.org/linux/man-pages/man2/perf_event_open.2.html for a single event.
+    // Other features will be added in the future (see below track_stubs).
+    let perf_event_attrs: perf_event_attr = current_task.read_object(attr)?;
+
     if tid == -1 && cpu == -1 {
         return error!(EINVAL);
     }
@@ -752,11 +771,6 @@ pub fn sys_perf_event_open(
         track_stub!(TODO("https://fxbug.dev/409621963"), "[perf_event_open] implement tid > 0");
         return error!(ENOSYS);
     }
-
-    // So far, the implementation only sets the read_data_format according to the "Reading results"
-    // section of https://man7.org/linux/man-pages/man2/perf_event_open.2.html for a single event.
-    // Other features will be added in the future (see below track_stubs).
-    let perf_event_attrs: perf_event_attr = current_task.read_object(attr)?;
 
     // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
     // says it cannot fail, but rust compiler needs it.
