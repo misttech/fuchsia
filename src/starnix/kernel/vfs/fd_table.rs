@@ -237,7 +237,7 @@ impl FdTable {
     /// Ensures that this FD table is not shared by any other `FdTable` instance(s).
     pub fn unshare(&self) {
         let unshared = self.inner.read().unshare();
-        self.inner.set_sync(unshared);
+        self.inner.update_sync(unshared);
     }
 
     /// Trims close-on-exec FDs from the table.
@@ -455,7 +455,7 @@ impl ReleasableByRef for FdTable {
     type Context<'a> = ();
     /// Drop the fd table, closing any files opened exclusively by this table.
     fn release<'a>(&self, _context: ()) {
-        self.inner.set_sync(Default::default());
+        self.inner.update_sync(Default::default());
     }
 }
 

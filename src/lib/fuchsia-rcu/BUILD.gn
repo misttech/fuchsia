@@ -18,6 +18,7 @@ rustc_library("fuchsia-rcu") {
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:lock_api",
   ]
 
   sources = [
@@ -25,6 +26,7 @@ rustc_library("fuchsia-rcu") {
     "src/lib.rs",
     "src/rcu_arc.rs",
     "src/rcu_cell.rs",
+    "src/rcu_lock.rs",
     "src/rcu_ptr.rs",
     "src/rcu_read_scope.rs",
     "src/rcu_write_scope.rs",

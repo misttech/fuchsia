@@ -34,7 +34,9 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     /// Write the value of the RCU Arc.
     ///
     /// Blocks until all concurrent readers have dropped their read guards.
-    pub fn set_sync(&self, data: Arc<T>) {
+    ///
+    /// Cannot be called while this thread holds an RCU read guard.
+    pub fn update_sync(&self, data: Arc<T>) {
         self.replace_sync(Self::into_ptr(data));
     }
 
@@ -42,7 +44,7 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     ///
     /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn set_deferred(&self, scope: &RcuWriteScope, data: Arc<T>) {
+    pub fn update_deferred(&self, scope: &RcuWriteScope, data: Arc<T>) {
         let ptr = Self::into_ptr(data);
         // SAFETY: `scope.drop` defers the drop of the object until the RCU state machine has made
         // sufficient progress to ensure that no concurrent readers are holding read guards.
@@ -151,7 +153,7 @@ mod tests {
         assert_eq!(arc.read().value, 42);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
         let scope = RcuWriteScope::default();
-        arc.set_deferred(&scope, DropCounter::new(43));
+        arc.update_deferred(&scope, DropCounter::new(43));
         assert_eq!(arc.read().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
 
@@ -167,7 +169,7 @@ mod tests {
         let arc = RcuArc::from(object);
         assert_eq!(arc.read().value, 42);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
-        arc.set_sync(DropCounter::new(43));
+        arc.update_sync(DropCounter::new(43));
         assert_eq!(arc.read().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }

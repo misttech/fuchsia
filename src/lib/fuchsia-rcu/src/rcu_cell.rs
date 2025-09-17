@@ -32,7 +32,9 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
     /// Write the value of the RCU Cell.
     ///
     /// Blocks until all concurrent readers have dropped their read guards.
-    pub fn set_sync(&self, data: T) {
+    ///
+    /// Cannot be called while this thread holds an RCU read guard.
+    pub fn update_sync(&self, data: T) {
         self.replace_sync(Box::into_raw(Box::new(data)));
     }
 
@@ -40,7 +42,7 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
     ///
     /// Concurrent readers may continue to see the old value of the Cell until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn set_deferred(&self, scope: &RcuWriteScope, data: T) {
+    pub fn update_deferred(&self, scope: &RcuWriteScope, data: T) {
         let new_ptr = Box::into_raw(Box::new(data));
         // SAFETY: `scope.drop` defers the drop of the object until the RCU state machine has made
         // sufficient progress to ensure that no concurrent readers are holding read guards.
@@ -48,17 +50,31 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
         scope.drop(value);
     }
 
+    /// Write the value of the RCU Cell.
+    ///
+    /// SAFETY: The caller must defer the drop of the returned object until the RCU state machine has
+    /// made sufficient progress to ensure that no concurrent readers are holding read guards.
+    pub(crate) unsafe fn update(&self, data: T) -> Box<T> {
+        let ptr = Box::into_raw(Box::new(data));
+        self.replace(ptr)
+    }
+
     #[must_use]
     /// Replace the pointer in the RCU Cell with a new pointer.
     ///
-    /// SAFETY: The caller must defer the drop of the object until the RCU state machine has made
-    /// sufficient progress to ensure that no concurrent readers are holding read guards.
+    /// SAFETY: The caller must defer the drop of the returned object until the RCU state machine has
+    /// made sufficient progress to ensure that no concurrent readers are holding read guards.
     unsafe fn replace(&self, ptr: *mut T) -> Box<T> {
         let old_ptr = self.ptr.replace(ptr);
         Box::from_raw(old_ptr)
     }
 
+    /// Replace the pointer in the RCU Cell with a new pointer.
+    ///
+    /// Blocks until all concurrent readers have dropped their read guards.
     fn replace_sync(&self, ptr: *mut T) {
+        // SAFETY: We call `rcu_synchronize` before dropping the old value to ensure that no
+        // concurrent readers are holding read guards.
         let value = unsafe { self.replace(ptr) };
         rcu_synchronize();
         std::mem::drop(value);
@@ -92,14 +108,14 @@ mod tests {
     fn test_rcu_cell_set_deferred() {
         let value = RcuCell::new(42);
         let scope = RcuWriteScope::default();
-        value.set_deferred(&scope, 43);
+        value.update_deferred(&scope, 43);
         assert_eq!(value.read().deref(), &43);
     }
 
     #[test]
     fn test_rcu_cell_set_sync() {
         let value = RcuCell::new(42);
-        value.set_sync(43);
+        value.update_sync(43);
         assert_eq!(value.read().deref(), &43);
     }
 
