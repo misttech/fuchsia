@@ -1080,14 +1080,19 @@ impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundSt
             }
         };
 
-        let id = echo_request.message().id();
+        // The netstack will never generate an ID of 0, so we can just throw
+        // this away for being invalid.
+        let Some(id) = NonZeroU16::new(echo_request.message().id()) else {
+            debug!(
+                "ICMP received ICMP error {:?} from {:?}, to {:?} with an ID of 0",
+                err, original_dst_ip, original_src_ip,
+            );
+            return;
+        };
 
         core_ctx.with_icmp_ctx_and_sockets_mut(|core_ctx, sockets| {
             if let Some(conn) = sockets.socket_map.conns().get_by_addr(&ConnAddr {
-                ip: ConnIpAddr {
-                    local: (original_src_ip, NonZeroU16::new(id).unwrap()),
-                    remote: (original_dst_ip, ()),
-                },
+                ip: ConnIpAddr { local: (original_src_ip, id), remote: (original_dst_ip, ()) },
                 device: None,
             }) {
                 // NB: At the moment bindings has no need to consume ICMP
@@ -1234,16 +1239,19 @@ mod tests {
     use net_declare::net_ip_v6;
     use net_types::Witness;
     use net_types::ip::Ipv6;
-    use netstack3_base::CtxPair;
     use netstack3_base::socket::StrictlyZonedAddr;
     use netstack3_base::testutil::{
         FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSocketWritableListener, FakeWeakDeviceId,
         TestIpExt,
     };
+    use netstack3_base::{CtxPair, Icmpv4ErrorCode, Icmpv6ErrorCode};
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeIpSocketCtx, InnerFakeIpSocketCtx};
     use netstack3_ip::{LocalDeliveryPacketInfo, SendIpPacketMeta};
     use packet::{Buf, EmptyBuf, Serializer};
-    use packet_formats::icmp::{IcmpPacket, IcmpParseArgs, IcmpZeroCode};
+    use packet_formats::icmp::{
+        IcmpDestUnreachable, IcmpPacket, IcmpParseArgs, IcmpZeroCode, Icmpv4DestUnreachableCode,
+        Icmpv6DestUnreachableCode,
+    };
 
     use super::*;
 
@@ -1699,5 +1707,51 @@ mod tests {
         // We can set and get back the mark.
         api.set_mark(&socket, domain, mark);
         assert_eq!(api.get_mark(&socket, domain), mark);
+    }
+
+    /// A test for the crash seen in https://fxbug.dev/445389479.
+    ///
+    /// Because the netstack assumes it could never send an ICMP echo request
+    /// with an ID of 0, that it would never see an echo request inside an ICMP
+    /// error with an ID of 0.
+    #[ip_test(I)]
+    fn icmp_error_with_inner_icmp_echo_with_id_0<I: TestIpExt + IpExt>() {
+        let mut ctx = FakeIcmpCtx::<I>::default();
+
+        let src_ip = I::TEST_ADDRS.remote_ip;
+        let dst_ip = I::TEST_ADDRS.local_ip;
+
+        let original_body = Buf::new([1, 2, 3, 4], ..)
+            .wrap_in(IcmpPacketBuilder::<I, _>::new(
+                *src_ip,
+                *dst_ip,
+                IcmpZeroCode,
+                // The zero below is sorta invalid because we'd never send an
+                // ICMP echo with an ID of 0.
+                IcmpEchoRequest::new(0, 1),
+            ))
+            .serialize_vec_outer()
+            .unwrap()
+            .unwrap_b();
+
+        let CtxPair { core_ctx, bindings_ctx } = &mut ctx;
+        <IcmpEchoIpTransportContext as IpTransportContext<I, _, _>>::receive_icmp_error(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            Some(src_ip),
+            dst_ip,
+            original_body.as_ref(),
+            I::map_ip_out(
+                (),
+                |()| {
+                    Icmpv4ErrorCode::DestUnreachable(
+                        Icmpv4DestUnreachableCode::DestNetworkUnreachable,
+                        IcmpDestUnreachable::default(),
+                    )
+                },
+                |()| Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::AddrUnreachable),
+            ),
+        )
     }
 }
