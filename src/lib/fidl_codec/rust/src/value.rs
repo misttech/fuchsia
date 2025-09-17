@@ -505,7 +505,5 @@ macro_rules! vobject {
 /// Helper macro for constructing `Value::Union` values.
 #[macro_export]
 macro_rules! vunion {
-    ($name:expr, $variant:expr, $value:expr) => {{
-        $crate::value::Value::Union($name.to_owned(), $variant.to_owned(), Box::new($value.into()))
-    }};
+    ($name:expr, $variant:expr, $value:expr) => {{ $crate::value::Value::Union($name.to_owned(), $variant.to_owned(), Box::new($value.into())) }};
 }

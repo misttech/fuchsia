@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::encoding::{TransactionHeader, ALLOC_PRESENT_U32, ALLOC_PRESENT_U64};
+use fidl::encoding::{ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, TransactionHeader};
 use nom::bytes::complete::take;
 use nom::combinator::{map, value, verify};
 use nom::multi::count;
@@ -253,23 +253,23 @@ fn decode_type<'t>(
             Type::F64 => value_f64(b),
             Type::Array(ty, size) => return decode_array(ns, ty, *size).parse(b),
             Type::Vector { ty, nullable, element_count } => {
-                return decode_vector(ns, ty, *nullable, *element_count).parse(b)
+                return decode_vector(ns, ty, *nullable, *element_count).parse(b);
             }
             Type::String { nullable, byte_count } => {
-                return decode_string(*nullable, *byte_count).parse(b)
+                return decode_string(*nullable, *byte_count).parse(b);
             }
             Type::Identifier { name, nullable } => {
-                return decode_identifier(ns, name, *nullable).parse(b)
+                return decode_identifier(ns, name, *nullable).parse(b);
             }
             Type::Handle { object_type, nullable, rights } => {
-                return decode_handle(*object_type, *nullable, *rights).parse(b)
+                return decode_handle(*object_type, *nullable, *rights).parse(b);
             }
             Type::Endpoint { protocol, rights, nullable, role } => match role {
                 library::EndpointRole::Client => {
-                    return decode_client_end(protocol.clone(), *nullable, *rights).parse(b)
+                    return decode_client_end(protocol.clone(), *nullable, *rights).parse(b);
                 }
                 library::EndpointRole::Server => {
-                    return decode_server_end(protocol.clone(), *nullable, *rights).parse(b)
+                    return decode_server_end(protocol.clone(), *nullable, *rights).parse(b);
                 }
             },
             Type::UnknownString(s) => {
@@ -280,7 +280,7 @@ fn decode_type<'t>(
                     "Unresolved Type: {}",
                     s.as_ref().map_or("<unidentified>", String::as_str)
                 ))
-                .into())
+                .into());
             }
             Type::FrameworkError => map(take_u32, |_| Value::Null).parse(b),
         }

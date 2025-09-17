@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::encoding::{
-    AtRestFlags, DynamicFlags, ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, MAGIC_NUMBER_INITIAL,
-};
 use fidl::AsHandleRef as _;
+use fidl::encoding::{
+    ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, AtRestFlags, DynamicFlags, MAGIC_NUMBER_INITIAL,
+};
 
 use std::collections::HashMap;
 
@@ -167,7 +167,7 @@ impl<'n> EncodeBuffer<'n> {
 
         match ty {
             Unknown(_) | UnknownString(_) => {
-                return Err(Error::LibraryError("Unknown type".to_owned()))
+                return Err(Error::LibraryError("Unknown type".to_owned()));
             }
             Bool => self.encode_raw(if bool::try_from(value)? { &[1u8] } else { &[0u8] }),
             U8 => self.encode_raw(&u8::try_from(value)?.to_le_bytes()),
