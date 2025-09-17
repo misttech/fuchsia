@@ -4,8 +4,6 @@
 
 #include <lib/fidl/cpp/wire/arena.h>
 
-#include <iostream>
-
 namespace fidl {
 
 ArenaBase::~ArenaBase() { Clean(); }
