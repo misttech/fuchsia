@@ -10,6 +10,7 @@ debug and testing.
 
 Products and boards can only add kernel commandline options indirectly, via
 product assembly:
+
 - As part of an [Assembly Input Bundle](/bundles/assembly/BUILD.gn).
 - As part of the [platform configuration rules](/src/lib/assembly/platform_configuration/src/subsystems/)
   in assembly.
@@ -68,9 +69,12 @@ done using a wildcard-based pattern-match:
 ```posix-terminal
 fx set ... --assembly-override '//build/images/zedboot/*=//local:custom_kernel_args'
 ```
+
 or
+
 ```posix-terminal
 fx set ... --assembly-override '//products/microfuchsia/*=//local:custom_kernel_args'
+```
 
 When dealing with multiple product assemblies, it's easier to specify this
 directly in `args.gn`:
