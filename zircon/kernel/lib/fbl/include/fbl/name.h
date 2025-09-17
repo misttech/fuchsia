@@ -12,18 +12,25 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <kernel/null_lock.h>
 #include <kernel/spinlock.h>
 #include <ktl/algorithm.h>
 
 namespace fbl {
 
+// As names are often used for diagnostic purposes they might be accessed under various other
+// existing locks and to simplify usage they default to being thread safe by use of an internal
+// spinlock. Users can override this if they are already providing external synchronization.
+enum class ThreadSafe : bool { No, Yes };
+
 // A class for managing names of kernel objects. Since we don't want
 // unbounded lengths, the constructor and setter perform
 // truncation. Names include the trailing NUL as part of their
 // Size-sized buffer.
-template <size_t Size>
+template <size_t Size, ThreadSafe IsThreadSafe = ThreadSafe::Yes>
 class Name {
  public:
+  using LockType = ktl::conditional_t<IsThreadSafe == ThreadSafe::Yes, SpinLock, NullLock>;
   // Need room for at least one character and a NUL to be useful.
   static_assert(Size >= 1u, "Names must have size > 1");
 
@@ -42,7 +49,7 @@ class Name {
   void get(size_t out_len, char* out_name) const __NONNULL((3)) {
     memset(out_name, 0, out_len);
     if (out_len > 0u) {
-      Guard<SpinLock, IrqSave> lock(&lock_);
+      Guard<LockType, IrqSave> lock(&lock_);
       strlcpy(out_name, name_, ktl::min(out_len, Size));
     }
   }
@@ -56,13 +63,13 @@ class Name {
     if (len >= Size)
       len = Size - 1;
 
-    Guard<SpinLock, IrqSave> lock(&lock_);
+    Guard<LockType, IrqSave> lock(&lock_);
     memcpy(name_, name, len);
     memset(name_ + len, 0, Size - len);
     return ZX_OK;
   }
 
-  Name& operator=(const Name<Size>& other) {
+  Name& operator=(const Name<Size, IsThreadSafe>& other) {
     if (this != &other) {
       char buffer[Size];
       other.get(Size, buffer);
@@ -72,10 +79,7 @@ class Name {
   }
 
  private:
-  // These Names are often included for diagnostic purposes, and
-  // access to the Name might be made under various other locks or
-  // in interrupt context. So we use a spinlock to serialize.
-  mutable DECLARE_SPINLOCK(Name) lock_;
+  [[no_unique_address]] mutable LOCK_DEP_INSTRUMENT(Name, LockType) lock_;
   // This includes the trailing NUL.
   char name_[Size] TA_GUARDED(lock_) = {};
 };
