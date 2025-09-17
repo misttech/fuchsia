@@ -2221,6 +2221,10 @@ fn reject_connect_requests(
                     Some(Ok(fidl_sme::ClientSmeRequest::Disconnect { responder, .. })) => {
                         responder.send().expect("failed to send disconnect response");
                     }
+                    None => {
+                        // If the SME channel closes, then this interface has been destroyed.
+                        continue;
+                    }
                     other => panic!("Unexpected SME operation: {other:?}"),
                 }
                 *state_machine_sme_stream = Some(sme_stream);
@@ -2301,11 +2305,35 @@ fn test_connect_failure_recovery() {
 
     // Inform the internals that the interface was removed.  The internals will then recreate the
     // interface.
-    let _ = inform_watcher_of_client_iface_removal_and_expect_iface_recovery(
+    iface_manager_sme_stream = inform_watcher_of_client_iface_removal_and_expect_iface_recovery(
         &mut exec,
         &mut test_values,
         TEST_PHY_ID,
         TEST_CLIENT_IFACE_ID,
+    );
+
+    // Expect another network selection, disconnect, connect sequence.
+    reject_connect_requests(
+        &mut exec,
+        &mut test_values,
+        &mut iface_manager_sme_stream,
+        &mut state_machine_sme_stream,
+        scan_results.clone(),
+        1,
+    );
+
+    // The next connection failure should trigger PHY recovery.
+    let phy_reset_req = run_while(
+        &mut exec,
+        &mut test_values.internal_objects.internal_futures,
+        test_values.external_interfaces.monitor_service_stream.next(),
+    );
+    assert_matches!(
+        phy_reset_req,
+        Some(Ok(fidl_fuchsia_wlan_device_service::DeviceMonitorRequest::Reset {
+            phy_id: TEST_PHY_ID,
+            ..
+        }))
     );
 }
 
