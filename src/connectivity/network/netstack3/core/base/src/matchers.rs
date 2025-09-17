@@ -119,7 +119,7 @@ impl<DeviceClass, I: InterfaceProperties<DeviceClass>> Matcher<I>
 
 /// Matcher for the bound device of locally generated traffic.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BoundDeviceMatcher<DeviceClass> {
+pub enum BoundInterfaceMatcher<DeviceClass> {
     /// The packet is bound to a device which is matched by the matcher.
     Bound(InterfaceMatcher<DeviceClass>),
     /// There is no bound device.
@@ -127,21 +127,21 @@ pub enum BoundDeviceMatcher<DeviceClass> {
 }
 
 impl<'a, DeviceClass, D: InterfaceProperties<DeviceClass>> Matcher<Option<&'a D>>
-    for BoundDeviceMatcher<DeviceClass>
+    for BoundInterfaceMatcher<DeviceClass>
 {
     fn matches(&self, actual: &Option<&'a D>) -> bool {
         match self {
-            BoundDeviceMatcher::Bound(matcher) => matcher.required_matches(actual.as_deref()),
-            BoundDeviceMatcher::Unbound => actual.is_none(),
+            BoundInterfaceMatcher::Bound(matcher) => matcher.required_matches(actual.as_deref()),
+            BoundInterfaceMatcher::Unbound => actual.is_none(),
         }
     }
 }
 
-impl<DeviceClass: Debug> InspectableValue for BoundDeviceMatcher<DeviceClass> {
+impl<DeviceClass: Debug> InspectableValue for BoundInterfaceMatcher<DeviceClass> {
     fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
         match self {
-            BoundDeviceMatcher::Unbound => inspector.record_str(name, "Unbound"),
-            BoundDeviceMatcher::Bound(interface) => {
+            BoundInterfaceMatcher::Unbound => inspector.record_str(name, "Unbound"),
+            BoundInterfaceMatcher::Bound(interface) => {
                 inspector.record_inspectable_value(name, interface)
             }
         }

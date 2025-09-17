@@ -76,7 +76,7 @@ pub use ip::{
 };
 pub use map_deref::{MapDeref, MapDerefExt};
 pub use matchers::{
-    BoundDeviceMatcher, InterfaceMatcher, InterfaceProperties, Matcher, MatcherBindingsTypes,
+    BoundInterfaceMatcher, InterfaceMatcher, InterfaceProperties, Matcher, MatcherBindingsTypes,
     SubnetMatcher,
 };
 pub use num::PositiveIsize;

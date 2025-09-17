@@ -28,7 +28,7 @@ use crate::bindings::{BindingsCtx, Ctx, MatcherBindingsTypes, routes};
 pub(super) use witness::AddableMatcher;
 
 impl TryFromFidl<fnet_matchers_ext::BoundInterface>
-    for netstack3_core::device::BoundDeviceMatcher<
+    for netstack3_core::device::BoundInterfaceMatcher<
         <BindingsCtx as MatcherBindingsTypes>::DeviceClass,
     >
 {
@@ -37,22 +37,22 @@ impl TryFromFidl<fnet_matchers_ext::BoundInterface>
     fn try_from_fidl(fidl: fnet_matchers_ext::BoundInterface) -> Result<Self, Self::Error> {
         match fidl {
             fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name(name)) => {
-                Ok(netstack3_core::device::BoundDeviceMatcher::Bound(
+                Ok(netstack3_core::device::BoundInterfaceMatcher::Bound(
                     netstack3_core::device::InterfaceMatcher::Name(name),
                 ))
             }
             fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Id(id)) => {
-                Ok(netstack3_core::device::BoundDeviceMatcher::Bound(
+                Ok(netstack3_core::device::BoundInterfaceMatcher::Bound(
                     netstack3_core::device::InterfaceMatcher::Id(id),
                 ))
             }
             fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::PortClass(
                 class,
-            )) => Ok(netstack3_core::device::BoundDeviceMatcher::Bound(
+            )) => Ok(netstack3_core::device::BoundInterfaceMatcher::Bound(
                 netstack3_core::device::InterfaceMatcher::DeviceClass(class.into()),
             )),
             fnet_matchers_ext::BoundInterface::Unbound => {
-                Ok(netstack3_core::device::BoundDeviceMatcher::Unbound)
+                Ok(netstack3_core::device::BoundInterfaceMatcher::Unbound)
             }
         }
     }
@@ -535,7 +535,7 @@ mod witness {
 #[cfg(test)]
 mod tests {
     use net_types::ip::Ipv4;
-    use netstack3_core::device::{BoundDeviceMatcher, InterfaceMatcher};
+    use netstack3_core::device::{BoundInterfaceMatcher, InterfaceMatcher};
     use netstack3_core::routes::{RuleMatcher as CoreRuleMatcher, TrafficOriginMatcher};
     use test_case::test_case;
 
@@ -548,7 +548,7 @@ mod tests {
     #[test_case(None, true => Ok(CoreRuleMatcher {
         traffic_origin_matcher: Some(TrafficOriginMatcher::Local {
             bound_device_matcher: Some(
-                BoundDeviceMatcher::Bound(InterfaceMatcher::Name("lo".into()))
+                BoundInterfaceMatcher::Bound(InterfaceMatcher::Name("lo".into()))
             ),
         }),
         ..CoreRuleMatcher::match_all_packets()
@@ -556,7 +556,7 @@ mod tests {
     #[test_case(Some(true), true => Ok(CoreRuleMatcher {
         traffic_origin_matcher: Some(TrafficOriginMatcher::Local {
             bound_device_matcher: Some(
-                BoundDeviceMatcher::Bound(InterfaceMatcher::Name("lo".into()))
+                BoundInterfaceMatcher::Bound(InterfaceMatcher::Name("lo".into()))
             ),
         }),
         ..CoreRuleMatcher::match_all_packets()

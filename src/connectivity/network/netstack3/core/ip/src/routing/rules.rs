@@ -10,7 +10,7 @@ use core::ops::Deref as _;
 
 use net_types::ip::Ip;
 use netstack3_base::{
-    BoundDeviceMatcher, InterfaceProperties, Mark, MarkDomain, MarkStorage, Marks, Matcher,
+    BoundInterfaceMatcher, InterfaceProperties, Mark, MarkDomain, MarkStorage, Marks, Matcher,
     SubnetMatcher,
 };
 
@@ -81,7 +81,7 @@ pub enum TrafficOriginMatcher<DeviceClass> {
         /// The matcher for the bound device.
         // TODO(https://fxbug.dev/441124570): Support referencey semantics for
         // ID matchers.
-        bound_device_matcher: Option<BoundDeviceMatcher<DeviceClass>>,
+        bound_device_matcher: Option<BoundInterfaceMatcher<DeviceClass>>,
     },
     /// This only matches non-local packets. The packets must be received from the network.
     NonLocal,
@@ -238,22 +238,22 @@ mod test {
     #[test_case(None, None => true)]
     #[test_case(None, Some(MultipleDevicesId::A) => true)]
     #[test_case(
-        Some(BoundDeviceMatcher::Unbound),
+        Some(BoundInterfaceMatcher::Unbound),
         None => true)]
     #[test_case(
-        Some(BoundDeviceMatcher::Unbound),
+        Some(BoundInterfaceMatcher::Unbound),
         Some(MultipleDevicesId::A) => false)]
     #[test_case(
-        Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
+        Some(BoundInterfaceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
         None => false)]
     #[test_case(
-        Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
+        Some(BoundInterfaceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
         Some(MultipleDevicesId::A) => true)]
     #[test_case(
-        Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
+        Some(BoundInterfaceMatcher::Bound(InterfaceMatcher::Name("A".into()))),
         Some(MultipleDevicesId::B) => false)]
     fn rule_matcher_matches_bound_device<I: TestIpExt>(
-        bound_device_matcher: Option<BoundDeviceMatcher<()>>,
+        bound_device_matcher: Option<BoundInterfaceMatcher<()>>,
         bound_device: Option<MultipleDevicesId>,
     ) -> bool {
         let matcher = RuleMatcher::<I, ()> {
@@ -362,7 +362,7 @@ mod test {
         let matcher = RuleMatcher::<I, ()> {
             source_address_matcher: Some(SubnetMatcher(I::TEST_ADDRS.subnet)),
             traffic_origin_matcher: Some(TrafficOriginMatcher::Local {
-                bound_device_matcher: Some(BoundDeviceMatcher::Bound(InterfaceMatcher::Name(
+                bound_device_matcher: Some(BoundInterfaceMatcher::Bound(InterfaceMatcher::Name(
                     "A".into(),
                 ))),
             }),

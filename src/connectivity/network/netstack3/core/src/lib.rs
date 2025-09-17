@@ -58,7 +58,7 @@ pub mod device {
 
     // Re-exported types.
     pub use netstack3_base::{
-        BoundDeviceMatcher, InterfaceMatcher, InterfaceProperties, StrongDeviceIdentifier,
+        BoundInterfaceMatcher, InterfaceMatcher, InterfaceProperties, StrongDeviceIdentifier,
     };
     pub use netstack3_device::blackhole::{BlackholeDevice, BlackholeDeviceId};
     pub use netstack3_device::ethernet::{
