@@ -1012,9 +1012,11 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
   ClearFunctions();
   usb_monitor_.Stop();
 
-  zx_signals_t observed = 0;
-  listener_.channel().wait_one(ZX_CHANNEL_PEER_CLOSED | __ZX_OBJECT_HANDLE_CLOSED,
-                               zx::time::infinite(), &observed);
+  if (listener_.is_valid()) {
+    zx_signals_t observed = 0;
+    listener_.channel().wait_one(ZX_CHANNEL_PEER_CLOSED | __ZX_OBJECT_HANDLE_CLOSED,
+                                 zx::time::infinite(), &observed);
+  }
   completer(zx::ok());
 }
 
