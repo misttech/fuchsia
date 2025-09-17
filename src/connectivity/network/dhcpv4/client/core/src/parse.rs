@@ -15,17 +15,17 @@ use crate::inspect::Counter;
 
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum ParseError {
-    #[error("parsing IPv4 packet")]
+    #[error("parsing IPv4 packet: {0}")]
     Ipv4(packet_formats::error::IpParseError<net_types::ip::Ipv4>),
     #[error("IPv4 packet protocol was not UDP")]
     NotUdp,
-    #[error("parsing UDP datagram")]
+    #[error("parsing UDP datagram: {0}")]
     Udp(packet_formats::error::ParseError),
-    #[error("incoming packet destined for wrong port")]
+    #[error("incoming packet destined for wrong port: {0}")]
     WrongPort(NonZeroU16),
-    #[error("incoming packet has wrong source address")]
+    #[error("incoming packet has wrong source address: {0}")]
     WrongSource(std::net::SocketAddr),
-    #[error("parsing DHCP message")]
+    #[error("parsing DHCP message: {0}")]
     Dhcp(dhcp_protocol::ProtocolError),
 }
 
