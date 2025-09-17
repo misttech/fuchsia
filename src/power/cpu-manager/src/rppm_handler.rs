@@ -9,10 +9,9 @@ use anyhow::{Error, Result};
 use async_trait::async_trait;
 use energy_model_config::{EnergyModel, PowerLevelDomain};
 use fidl::AsHandleRef;
-use fuchsia_async::{self as fasync, PacketReceiver, ReceiverRegistration};
 use fuchsia_inspect::ArrayProperty;
 use futures::StreamExt;
-use futures::channel::mpsc;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
@@ -20,6 +19,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 use zx::sys;
 use {fuchsia_inspect as inspect, serde_json as json};
 
@@ -36,18 +36,6 @@ use {fuchsia_inspect as inspect, serde_json as json};
 ///   - GetOperatingPoint
 ///
 /// FIDL dependencies: No direct dependencies
-
-/// Forwards incoming port packets into a channel. This will prevent the port wait blocking the
-/// single thread.
-struct PortForwarder {
-    channel: mpsc::UnboundedSender<zx::Packet>,
-}
-
-impl PacketReceiver for PortForwarder {
-    fn receive_packet(&self, packet: zx::Packet) {
-        self.channel.unbounded_send(packet).unwrap();
-    }
-}
 
 pub struct RppmHandlerBuilder<'a> {
     // Name of the node, specified in config file.
@@ -151,9 +139,9 @@ impl<'a> RppmHandlerBuilder<'a> {
             }
         };
 
-        let (tx, rx) = mpsc::unbounded();
-        let receiver_registration =
-            fasync::EHandle::local().register_receiver(PortForwarder { channel: tx });
+        let (sender, receiver) = mpsc::unbounded();
+        // TODO(https://fxbug.dev/375533194): Add unit tests for handling port messages.
+        let port = zx::Port::create();
 
         // Optionally use the default inspect root node
         let inspect_root =
@@ -165,8 +153,9 @@ impl<'a> RppmHandlerBuilder<'a> {
             energy_model,
             syscall_handler: self.syscall_handler,
             power_domain_handlers: self.power_domain_handlers,
-            receiver: RefCell::new(rx),
-            receiver_registration,
+            port: Arc::new(port),
+            sender: Arc::new(sender),
+            receiver: RefCell::new(receiver),
             _inspect: inspect_data,
         });
 
@@ -180,19 +169,35 @@ pub struct RppmHandler {
     energy_model: EnergyModel,
     syscall_handler: Rc<dyn Node>,
     power_domain_handlers: HashMap<u32, Rc<dyn Node>>,
-    receiver: RefCell<mpsc::UnboundedReceiver<zx::Packet>>,
-    receiver_registration: ReceiverRegistration<PortForwarder>,
+    port: Arc<zx::Port>,
+    sender: Arc<UnboundedSender<zx::Packet>>,
+    receiver: RefCell<UnboundedReceiver<zx::Packet>>,
     _inspect: InspectData,
 }
 
 impl RppmHandler {
     fn run<'a>(self: Rc<Self>) -> LocalBoxFuture<'a, ()> {
         async move {
-            // TODO(https://fxbug.dev/375533194): Add unit tests for handling port messages.
-            let port = self.receiver_registration.port();
+            let sender = self.sender.clone();
+            let port = self.port.clone();
+            let port_handle = self.port.raw_handle();
+            // Detach a thread to forward the packet from the registered port to an async channel.
+            let _ = std::thread::spawn(move || {
+                loop {
+                    match port.wait(zx::MonotonicInstant::INFINITE) {
+                        Ok(p) => {
+                            if let Err(e) = sender.unbounded_send(p) {
+                                log::error!("packet forward failed with error: {}", e);
+                            }
+                        }
+                        Err(e) => log::error!("zx_port_wait failed with error: {}", e),
+                    }
+                }
+            });
+
             for power_level_domain in self.energy_model.0.clone() {
                 // Register energy model with kernel.
-                self.register_energy_model(port.raw_handle(), power_level_domain.clone()).await;
+                self.register_energy_model(port_handle, power_level_domain.clone()).await;
                 let domain_id = power_level_domain.power_domain.domain_id;
 
                 // Query initial pstate from CPU driver and send it to kernel.
@@ -212,7 +217,7 @@ impl RppmHandler {
                             control_argument: opp as u64,
                             options: 0,
                         };
-                        self.set_processor_power_state(port.raw_handle(), pstate).await;
+                        self.set_processor_power_state(port_handle, pstate).await;
                     }
                     result => {
                         log::error!("Unexpected result from GetOperatingPoint: {:?}", result);
@@ -248,7 +253,7 @@ impl RppmHandler {
                                     control_argument,
                                     options: 0,
                                 };
-                                self.set_processor_power_state(port.raw_handle(), pstate).await;
+                                self.set_processor_power_state(port_handle, pstate).await;
                             }
                             Ok(other) => {
                                 panic!("Unexpected SetOperatingPoint result: {:?}", other)
