@@ -170,6 +170,7 @@ def convert_trace_file_to_json(
     compressed_input: bool = False,
     compressed_output: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
+    patterns: set[str] | None = None,
     timer_cmd: list[str] | None = None,
 ) -> str:
     """Converts the specified trace file to JSON.
@@ -192,6 +193,7 @@ def convert_trace_file_to_json(
         compressed_input,
         compressed_output,
         trace2json_path,
+        patterns,
         timer_cmd,
     )
     return converted_path
@@ -202,6 +204,7 @@ def time_convert_trace_file_to_json(
     compressed_input: bool = False,
     compressed_output: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
+    patterns: set[str] | None = None,
     timer_cmd: list[str] | None = None,
 ) -> tuple[str, str]:
     """Converts the specified trace file to JSON.
@@ -246,6 +249,8 @@ def time_convert_trace_file_to_json(
         ]
         if compressed_input or trace_path.suffix == compressed_ext:
             args.append("--compressed-input")
+        if patterns and r".*" not in patterns:
+            args.extend([f"--pattern={pattern}" for pattern in patterns])
 
         _LOGGER.info(f"Running {args}")
         conversion_output = subprocess.check_output(

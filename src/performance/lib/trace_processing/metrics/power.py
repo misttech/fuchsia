@@ -157,6 +157,10 @@ class PowerMetricsProcessor(trace_metrics.MetricsProcessor):
         """
         self._good_suspend_pred = good_suspend_pred
 
+    @property
+    def event_patterns(self) -> set[str]:
+        return suspend_metrics.EVENT_PATTERNS
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[trace_metrics.TestCaseResult]:

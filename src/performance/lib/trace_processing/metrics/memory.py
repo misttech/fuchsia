@@ -83,6 +83,11 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
     }
     """
 
+    @property
+    def event_patterns(self) -> set[str]:
+        """Patterns describing the trace events needed to generate these metrics."""
+        return set(KERNEL_EVENT_NAMES)
+
     FREEFORM_METRICS_FILENAME = "memory"
 
     def process_freeform_metrics(

@@ -6,7 +6,7 @@
 
 import logging
 import statistics
-from typing import Iterator, MutableSequence, Tuple
+from typing import MutableSequence, Tuple
 
 from trace_processing import trace_metrics, trace_model, trace_utils
 
@@ -15,6 +15,8 @@ _EVENT_CATEGORY: str = "gfx"
 _SCENIC_START_EVENT_NAME: str = "ApplyScheduledSessionUpdates"
 _SCENIC_RENDER_EVENT_NAME: str = "RenderFrame"
 _DISPLAY_VSYNC_READY_EVENT_NAME: str = "Flatland::DisplayCompositor::OnVsync"
+_PREP_AND_RENDER_FLOW_NAME: str = "scenic_frame"
+_RENDER_FLOW_NAME: str = "render_frame_to_vsync"
 
 
 class _ScenicTracingEvent:
@@ -56,6 +58,17 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
         """
         self.aggregates_only: bool = aggregates_only
 
+    @property
+    def event_patterns(self) -> set[str]:
+        """Patterns describing the trace events needed to generate these metrics."""
+        return {
+            _SCENIC_START_EVENT_NAME,
+            _SCENIC_RENDER_EVENT_NAME,
+            _DISPLAY_VSYNC_READY_EVENT_NAME,
+            _PREP_AND_RENDER_FLOW_NAME,
+            _RENDER_FLOW_NAME,
+        }
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[trace_metrics.TestCaseResult]:
@@ -68,12 +81,11 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
             type=trace_model.DurationEvent,
         )
 
-        all_events: Iterator[trace_model.Event] = model.all_events()
-        # Since `filter_events()` returns an Iterator, make a local copy so we can iterate over the
+        # Since `filter_events()` returns a Generator, make a local copy so we can iterate over the
         # events more than once.
         scenic_start_events = list(
             trace_utils.filter_events(
-                all_events,
+                model.all_events(),
                 category=_EVENT_CATEGORY,
                 name=_SCENIC_START_EVENT_NAME,
                 type=trace_model.DurationEvent,
@@ -99,7 +111,7 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
             )
 
         if len(tracing_events) < 1:
-            _LOGGER.info(
+            _LOGGER.warning(
                 "No render or vsync events are present. Perhaps the trace "
                 "duration is too short to provide scenic render information"
             )

@@ -51,6 +51,10 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
         self.aggregates_only: bool = aggregates_only
         self._percent_cutoff = percent_cutoff
 
+    @property
+    def event_patterns(self) -> set[str]:
+        return {_CPU_USAGE_EVENT_NAME}
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[trace_metrics.TestCaseResult]:

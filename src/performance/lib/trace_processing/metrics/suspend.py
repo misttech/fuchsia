@@ -34,9 +34,21 @@ _SAG_EVENT_NAME = "system-activity-governor:suspend"
 _SUSPEND_EVENT_NAME = "generic-suspend:suspend"
 # LINT.ThenChange(//src/devices/suspend/drivers/generic-suspend/generic-suspend.cc)
 
+EVENT_PATTERNS = {
+    _SYSFS_EVENT_NAME,
+    _STARNIX_RUNNER_SUSPEND_EVENT_NAME,
+    _STARNIX_RUNNER_RESUME_EVENT_NAME,
+    _SAG_EVENT_NAME,
+    _SUSPEND_EVENT_NAME,
+}
+
 
 class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
     """Computes suspend/resume metrics."""
+
+    @property
+    def event_patterns(self) -> set[str]:
+        return EVENT_PATTERNS
 
     def process_metrics(
         self, model: trace_model.Model

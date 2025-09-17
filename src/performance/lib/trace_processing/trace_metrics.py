@@ -165,6 +165,21 @@ class MetricsProcessor:
     def name(self) -> str:
         return self.__class__.__name__
 
+    @property
+    def event_patterns(self) -> set[str]:
+        """Patterns describing the trace events needed to generate these metrics.
+
+        Metrics may be calculated from kernel scheduler records, named trace events or a combination
+        of the two. In order to reduce processing time and memory usage, an implementation must
+        provide a set of patterns that describe all the events required to generate metrics. This
+        can be as simple as a list of event names, or a full regexp. If your metrics processor
+        requires no events, return {""}.
+
+        Scheduler records cannot be filtered out and will always be present in the traces provided
+        for metrics processing.
+        """
+        return {r".*"}  # Default to requesting all events.
+
     def process_metrics_with_fxt(
         self, fxt_path: str
     ) -> MutableSequence[TestCaseResult]:
