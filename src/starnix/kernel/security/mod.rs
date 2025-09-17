@@ -75,7 +75,7 @@ impl FsNodeState {
     }
 }
 
-/// Opaque structure holding security state for a [`crate::vfs::Socket`].
+/// Opaque structure holding security state for a [`crate::vfs::socket::Socket`].
 #[derive(Debug, Default)]
 pub struct SocketState {
     state: selinux_hooks::SocketState,
@@ -87,7 +87,7 @@ pub struct FileObjectState {
     state: selinux_hooks::FileObjectState,
 }
 
-/// Opaque structure holding security state for a [`crate::vfs::Filesystem`].
+/// Opaque structure holding security state for a [`crate::vfs::FileSystem`].
 #[derive(Debug)]
 pub struct FileSystemState {
     state: selinux_hooks::FileSystemState,
@@ -99,7 +99,7 @@ pub struct BpfMapState {
     state: selinux_hooks::BpfMapState,
 }
 
-/// Opaque structure holding security state for a bpf [`starnix_core::bpf::program::Program`].
+/// Opaque structure holding security state for a bpf [`crate::bpf::program::Program`].
 #[derive(Debug)]
 pub struct BpfProgState {
     state: selinux_hooks::BpfProgState,
