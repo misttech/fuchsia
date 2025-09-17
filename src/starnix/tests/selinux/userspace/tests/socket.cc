@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include <netinet/ip.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -12,6 +13,7 @@
 
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 extern std::string DoPrePolicyLoadWork() { return "socket_policy.pp"; }
 

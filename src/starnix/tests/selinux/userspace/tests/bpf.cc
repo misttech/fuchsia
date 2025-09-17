@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 namespace {
 

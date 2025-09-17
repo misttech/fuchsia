@@ -132,16 +132,15 @@ fit::result<int, bool> IsSameInode(int fd_1, int fd_2) {
   return fit::ok(fd_1_info.st_dev == fd_2_info.st_dev && fd_1_info.st_ino == fd_2_info.st_ino);
 }
 
-pid_t RunInForkedProcessWithLabel(test_helper::ForkHelper& fork_helper, std::string label,
+pid_t RunInForkedProcessWithLabel(test_helper::ForkHelper& fork_helper, std::string_view label,
                                   fit::function<void()> action) {
-  auto wrapped_action = [&]() {
+  return fork_helper.RunInForkedProcess([label = std::string(label), action = std::move(action)] {
     if (auto result = WriteTaskAttr("current", label); result.is_error()) {
       FAIL() << "Could not write \"" << label
              << "\" to \"current\" (error: " << result.error_value() << ")";
     }
     action();
-  };
-  return fork_helper.RunInForkedProcess(wrapped_action);
+  });
 }
 
 ScopedEnforcement ScopedEnforcement::SetEnforcing() {

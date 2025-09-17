@@ -10,8 +10,8 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 extern std::string DoPrePolicyLoadWork() { return "inherit_policy.pp"; }

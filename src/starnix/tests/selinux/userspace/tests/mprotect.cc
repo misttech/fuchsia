@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include <fcntl.h>
 #include <lib/fit/defer.h>
 #include <sys/mman.h>
@@ -8,13 +9,13 @@
 #include <unistd.h>
 
 #include <string>
-#include <thread>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 extern std::string DoPrePolicyLoadWork() { return "mprotect.pp"; }

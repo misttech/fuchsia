@@ -10,6 +10,7 @@
 
 #include "src/starnix/tests/selinux/userspace/base_initial_sids.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 extern std::string DoPrePolicyLoadWork() { return "file_transition_policy.pp"; }
 

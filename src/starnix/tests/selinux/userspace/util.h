@@ -13,11 +13,7 @@
 
 #include <gmock/gmock.h>
 
-#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
-
-namespace test_helper {
-class ForkHelper;
-}  // namespace test_helper
+#include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 /// Writes `data` to the file at `path`, returning the `errno` if any part of that process fails.
 fit::result<int> WriteExistingFile(const std::string& path, std::string_view data);
@@ -53,8 +49,8 @@ fit::result<int, bool> IsSameInode(int fd_1, int fd_2);
 /// them the `test_a` attribute from `test_policy.conf` is sufficient.
 template <typename T>
 ::testing::AssertionResult RunSubprocessAs(std::string_view label, T action) {
-  pid_t pid;
-  if ((pid = fork()) == 0) {
+  pid_t pid = fork();
+  if (pid == 0) {
     if (WriteTaskAttr("current", label).is_error()) {
       _exit(1);
     }
@@ -80,7 +76,7 @@ template <typename T>
 
 /// Runs in a child process the given `action` after transitioning to `label`.
 /// The process belongs to `fork_helper`.
-pid_t RunInForkedProcessWithLabel(test_helper::ForkHelper& fork_helper, std::string label,
+pid_t RunInForkedProcessWithLabel(test_helper::ForkHelper& fork_helper, std::string_view label,
                                   fit::function<void()> action);
 
 /// Enables (or disables) enforcement while in scope, then restores enforcement to the previous

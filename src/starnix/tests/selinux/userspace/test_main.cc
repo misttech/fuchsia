@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 /// Returns the path to the policy that should be loaded for use by the test-suite.
 /// This hook may also perform pre-policy-load work, e.g. creating kernel objects for later
