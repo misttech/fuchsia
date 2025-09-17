@@ -8,6 +8,7 @@ Runs rustdoc to document a crate; executed as part of the .rustdoc subtarget.
 
 import json
 import re
+import shutil
 from argparse import ArgumentParser, BooleanOptionalAction, Namespace
 from os import walk
 from pathlib import Path
@@ -80,12 +81,17 @@ def main(args: Namespace, rustdoc_invocation: list[str]) -> int:
     )
     flags = [
         *rustdoc_invocation,
+        "--out-dir",
+        args.out_dir,
         *extern,
         *extern_html_root_urls,
     ]
 
     stdout = None if args.stdout_path is None else args.stdout_path.open("w")
     stderr = None if args.stderr_path is None else args.stderr_path.open("w")
+
+    # remove output to ensure that we document into a clean directory
+    shutil.rmtree(args.out_dir, ignore_errors=True)
 
     completed = run(flags, stdout=stdout, stderr=stderr)
 
@@ -150,6 +156,12 @@ def _main_arg_parser() -> ArgumentParser:
         type=str,
         required=True,
         help="use this as the --extern-html-root-url",
+    )
+    parser.add_argument(
+        "--out-dir",
+        required=True,
+        type=Path,
+        help="directory to place documentation",
     )
     parser.add_argument(
         "--aliased-deps-map",

@@ -436,6 +436,11 @@ def make_output_directories(args: Namespace) -> None:
     # make argfiles directory for `rustdoc @argfiles` invocations
     Path(args.build_dir, "docs", "rust", "argfiles").mkdir(exist_ok=True)
 
+    if not args.dry_run:
+        # remove the destination to ensure that we always document into a fresh
+        # directory
+        shutil.rmtree(args.destination, ignore_errors=True)
+
     # make destination for fuchsia-side docs
     args.destination.mkdir(parents=True, exist_ok=True)
 

@@ -379,7 +379,12 @@ template("rust_auxiliary") {
         _extern_html_root_url = "${rustdoc_extern_html_root_url_base}/host"
       }
 
+      # arguments for rustdoc_wrapper.py
       args = [
+        # The wrapper wants to know about the --out-dir so it can clean it
+        # prior to building docs.
+        "--out-dir",
+        rebase_path(_rustdoc_out_dir, root_build_dir),
         "--touch",
         rebase_path(_rustdoc_stamp_output, root_build_dir),
         "@" + rebase_path(_deps_rmeta_output, root_build_dir),
@@ -431,8 +436,6 @@ template("rust_auxiliary") {
         # Output information to be consumed by `fx rustdoc-link`.
         "--parts-out-dir",
         rebase_path(_rustdoc_parts_dir, root_build_dir),
-        "--out-dir",
-        rebase_path(_rustdoc_out_dir, root_build_dir),
         "@" + rebase_path(_transdeps_output, root_build_dir),
         "--sysroot=${rebased_rustc_prefix}",
         "--crate-type=${crate_type}",
