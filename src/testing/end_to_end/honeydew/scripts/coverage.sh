@@ -41,7 +41,7 @@ else
 fi
 
 echo "Configuring environment..."
-NEW_PATH=$($FUCHSIA_DIR/src/testing/end_to_end/honeydew/scripts/conformance_paths.py --python-path-json "$FUCHSIA_DIR/$BUILD_DIR/fidl_python_dirs.json" --fuchsia-dir "$FUCHSIA_DIR" --build-dir "$FUCHSIA_DIR/$BUILD_DIR")
+NEW_PATH=$($FUCHSIA_DIR/src/testing/end_to_end/honeydew/scripts/conformance_paths.py --python-path-json "$FUCHSIA_DIR/$BUILD_DIR/extra_python_dirs.json" --fuchsia-dir "$FUCHSIA_DIR" --build-dir "$FUCHSIA_DIR/$BUILD_DIR")
 if [[ $? -ne 0 ]]; then
     echo "Failed to get PYTHONPATH"
     echo "$NEW_PATH"
