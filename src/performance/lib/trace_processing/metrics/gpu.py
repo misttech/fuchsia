@@ -32,6 +32,10 @@ class GpuMetricsProcessor(trace_metrics.MetricsProcessor):
         """
         self.aggregates_only: bool = aggregates_only
 
+    @property
+    def event_patterns(self) -> set[str]:
+        return {_GPU_USAGE_EVENT_NAME}
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[trace_metrics.TestCaseResult]:

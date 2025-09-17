@@ -39,6 +39,11 @@ class _MemoryProfileMetrics(trace_metrics.MetricsProcessor):
         if len(self.freeform) != 1:
             raise ValueError
 
+    @property
+    def event_patterns(self) -> set[str]:
+        """This processor doesn't use the imported trace model, so it requires no events."""
+        return set()
+
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[trace_metrics.TestCaseResult]:
