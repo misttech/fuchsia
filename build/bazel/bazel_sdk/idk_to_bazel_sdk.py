@@ -582,6 +582,13 @@ def main() -> int:
             manifests,
         )
 
+        # We need to iterate over the bazel_rules_fuchsia code to
+        # add all the files to the depfile to ensure that any changes
+        # there are tracked.
+        for file in args.bazel_rules_fuchsia.rglob("*"):
+            if file.is_file():
+                bazel_repository_ctx._add_depfile_input(file)
+
         if args.depfile:
             args.depfile.write_text(
                 "%s: %s"
