@@ -4,7 +4,7 @@
 
 #include "aml-gpu.h"
 
-#include <fidl/fuchsia.hardware.gpu.amlogic/cpp/wire.h>
+#include <fidl/fuchsia.hardware.gpu.amlogic/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/compat/cpp/metadata.h>
@@ -16,7 +16,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <zircon/errors.h>
 #include <zircon/process.h>
@@ -318,24 +317,24 @@ zx::result<> AmlGpu::Start() {
   current_protected_mode_property_ = root_.CreateInt("current_protected_mode", -1);
   auto builder = fuchsia_hardware_gpu_mali::wire::MaliProperties::Builder(arena_);
 
-  zx::result metadata = compat::GetMetadata<fuchsia_hardware_gpu_amlogic::wire::Metadata>(
-      incoming(), arena_, fuchsia_hardware_gpu_amlogic::wire::kMaliMetadata);
-  if (metadata.is_error()) {
-    if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
-      return metadata.take_error();
-    }
-  } else {
-    builder.supports_protected_mode(metadata->has_supports_protected_mode() &&
-                                    metadata->supports_protected_mode());
-  }
-
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
     return pdev_client_end.take_error();
   }
-  fdf::PDev pdev{std::move(pdev_client_end.value())};
+  fdf::PDev pdev(std::move(pdev_client_end.value()));
+
+  zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_gpu_amlogic::Metadata>();
+  if (metadata.is_error()) {
+    if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
+      FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+      return metadata.take_error();
+    }
+  } else {
+    builder.supports_protected_mode(metadata->supports_protected_mode().has_value() &&
+                                    metadata->supports_protected_mode().value());
+  }
 
   zx::result gpu_buffer = pdev.MapMmio(kMmioGpuIndex);
   if (gpu_buffer.is_error()) {

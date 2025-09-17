@@ -4,8 +4,7 @@
 @available(added=HEAD)
 library fuchsia.hardware.gpu.amlogic;
 
-/// "AMM"
-const MALI_METADATA uint32 = 0x414d4d64; // 0x414d4d00 | DEVICE_METADATA_PRIVATE
+@serializable
 type Metadata = table {
     1: supports_protected_mode bool;
 };

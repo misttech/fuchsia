@@ -29,7 +29,7 @@ driver_bind_rules("aml_gpu_bind") {
   ]
 }
 
-source_set("sources") {
+source_set("common") {
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
@@ -70,7 +70,7 @@ source_set("sources") {
 
 fuchsia_cc_driver("aml-gpu-driver") {
   output_name = "aml-gpu"
-  deps = [ ":sources" ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("aml-gpu") {
@@ -90,7 +90,7 @@ cc_test_executable("aml-gpu-test-bin") {
   output_name = "aml-gpu-test"
   sources = [ "aml-gpu-test.cc" ]
   deps = [
-    ":sources",
+    ":common",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async_patterns/testing/cpp",

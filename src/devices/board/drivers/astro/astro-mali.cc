@@ -89,7 +89,7 @@ zx_status_t Astro::MaliInit() {
     std::vector<uint8_t>& encoded_metadata_bytes = encoded_metadata.value();
     std::vector<fpbus::Metadata> mali_metadata_list{
         {{
-            .id = std::to_string(fuchsia_hardware_gpu_amlogic::wire::kMaliMetadata),
+            .id = fuchsia_hardware_gpu_amlogic::wire::Metadata::kSerializableName,
             .data = std::move(encoded_metadata_bytes),
         }},
     };
