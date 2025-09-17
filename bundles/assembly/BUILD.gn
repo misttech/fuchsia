@@ -551,6 +551,11 @@ assembly_input_bundle("interconnect_driver") {
   ]
 }
 
+# AIB for the Vulkan Loader
+assembly_input_bundle("vulkan_loader") {
+  base_packages = [ "//src/graphics/bin/vulkan_loader" ]
+}
+
 # Trusted execution environment.
 assembly_input_bundle("trusted_execution_environment") {
   bootfs_packages = [

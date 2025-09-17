@@ -98,6 +98,7 @@ system-update-committer
 ?virtual_keyboard_manager
 ?vmm_launcher
 ?vsock_service
+?vulkan_loader
 ?wlancfg
 ?wlandevicemonitor
 ?wlanif

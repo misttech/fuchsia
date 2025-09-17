@@ -31,6 +31,12 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
             builder.platform_bundle("virtcon");
         }
 
+        if *context.feature_set_level == FeatureSetLevel::Standard
+            && context.board_config.provides_feature("fuchsia::vulkan_gpu")
+        {
+            builder.platform_bundle("vulkan_loader");
+        }
+
         builder.set_config_capability("fuchsia.virtcon.BootAnimation", Config::new_void())?;
         builder.set_config_capability("fuchsia.virtcon.BufferCount", Config::new_void())?;
 
