@@ -32,9 +32,9 @@ pub struct PlatformStarnixConfig {
 #[serde(rename_all = "snake_case")]
 pub enum SocketMarkTreatment {
     /// Marks are tracked internally in starnix.
-    #[derivative(Default)]
     StarnixOnly,
     /// Marks are propagated to the networking stack.
+    #[derivative(Default)]
     SharedWithNetstack,
 }
 
@@ -44,8 +44,8 @@ pub enum SocketMarkTreatment {
 #[serde(rename_all = "snake_case")]
 pub enum NetworkManagerTreatment {
     /// Do not include the network manager feature.
-    #[derivative(Default)]
     Disabled,
     /// Include the network manager feature.
+    #[derivative(Default)]
     Enabled,
 }
