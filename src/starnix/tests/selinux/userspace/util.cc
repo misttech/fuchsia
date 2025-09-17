@@ -135,8 +135,9 @@ fit::result<int, bool> IsSameInode(int fd_1, int fd_2) {
 pid_t RunInForkedProcessWithLabel(test_helper::ForkHelper& fork_helper, std::string label,
                                   fit::function<void()> action) {
   auto wrapped_action = [&]() {
-    if (WriteTaskAttr("current", label).is_error()) {
-      _exit(1);
+    if (auto result = WriteTaskAttr("current", label); result.is_error()) {
+      FAIL() << "Could not write \"" << label
+             << "\" to \"current\" (error: " << result.error_value() << ")";
     }
     action();
   };
