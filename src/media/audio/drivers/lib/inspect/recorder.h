@@ -10,6 +10,8 @@
 
 #include <format>
 
+#include "task-metrics.h"
+
 namespace audio {
 
 //
@@ -77,8 +79,15 @@ class ActiveChannelsCall {
   inspect::IntProperty completed_at_;
 };
 
+// Record diagnostic info about this streaming session. This includes:
+// - the first 5 data-transport tasks: wall, cpu, queue, page, kernel lock times, plus s2s and e2e;
+// - the last 25 data-transport tasks: same (s2s / e2e are start-to-start / end-to-end durations);
+// - the min and max and sum values for the above as well (except s2s and e2e for sum values);
+// - underruns (read too close to the producer): total count/duration, longest single underrun;
+// - overruns (read too far ahead of the producer): total count/duration, longest single overrun.
 class TaskRecords {
  public:
+  // TODO(https://fxbug.dev/440209644): Remove (not needed with RecordTaskMetrics()).
   enum class Type {
     Startup,
     Final,
@@ -87,12 +96,21 @@ class TaskRecords {
     Sum,
   };
 
-  TaskRecords(inspect::Node node, Type type) : node_(std::move(node)), type_(type) {}
+  TaskRecords(inspect::Node node, Type type, size_t max_entry_count)
+      : node_(std::move(node)), type_(type), max_entry_count_(max_entry_count) {
+    task_times_entries_ = std::vector<TaskTimes>(max_entry_count_);
+  }
 
+  // TODO(https://fxbug.dev/440209644): Remove in favour of RecordTaskMetrics().
   void RecordTaskRecords(std::string_view name, int64_t start_to_start_us, int64_t end_to_end_us,
                          int64_t wall_time_us, int64_t cpu_time_us, int64_t queue_time_us,
                          int64_t page_fault_time_us, int64_t kernel_lock_contention_time_us) {
-    auto& task_times = task_times_entries_.emplace_back();
+    if (task_times_entries_.size() == 0) {
+      return;
+    }
+    auto& task_times = task_times_entries_[next_entry_index_];
+    next_entry_index_ = (next_entry_index_ + 1) % max_entry_count_;
+
     task_times.node = node_.CreateChild(name);
     if (type_ != Type::Sum) {
       task_times.start_to_start_us =
@@ -108,6 +126,34 @@ class TaskRecords {
         task_times.node.CreateInt("kernel_lock_contention_time_us", kernel_lock_contention_time_us);
   }
 
+  void RecordTaskMetrics(const Subtask::Metrics& metrics,
+                         std::optional<zx::duration> start_to_start = std::nullopt,
+                         std::optional<zx::duration> end_to_end = std::nullopt) {
+    if (task_times_entries_.size() == 0) {
+      return;
+    }
+    auto& task_times = task_times_entries_[next_entry_index_];
+    next_entry_index_ = (next_entry_index_ + 1) % max_entry_count_;
+
+    task_times.node = node_.CreateChild(metrics.name);
+    if (start_to_start.has_value()) {
+      task_times.start_to_start_us =
+          task_times.node.CreateInt("start_to_start_us", start_to_start->to_usecs());
+    }
+    if (end_to_end.has_value()) {
+      task_times.end_to_end_us = task_times.node.CreateInt("end_to_end_us", end_to_end->to_usecs());
+    }
+    task_times.wall_time_us =
+        task_times.node.CreateInt("wall_time_us", metrics.wall_time.to_usecs());
+    task_times.cpu_time_us = task_times.node.CreateInt("cpu_time_us", metrics.cpu_time.to_usecs());
+    task_times.queue_time_us =
+        task_times.node.CreateInt("queue_time_us", metrics.queue_time.to_usecs());
+    task_times.page_fault_time_us =
+        task_times.node.CreateInt("page_fault_time_us", metrics.page_fault_time.to_usecs());
+    task_times.kernel_lock_contention_time_us = task_times.node.CreateInt(
+        "kernel_lock_contention_time_us", metrics.kernel_lock_contention_time.to_usecs());
+  }
+
  private:
   struct TaskTimes {
     inspect::Node node;
@@ -121,8 +167,54 @@ class TaskRecords {
   };
 
   inspect::Node node_;
-  const Type type_;
+  Type type_;
+  size_t max_entry_count_;
+  size_t next_entry_index_ = 0;
   std::vector<TaskTimes> task_times_entries_;
+};
+
+class MinMaxSumRecords {
+ public:
+  MinMaxSumRecords(inspect::Node& node);
+
+  void RecordTaskMetrics(const Subtask::Metrics& metrics,
+                         std::optional<zx::duration> start_to_start = std::nullopt,
+                         std::optional<zx::duration> end_to_end = std::nullopt);
+
+  void RecordTaskUnderrun(int64_t underrun_frames) {
+    task_underrun_count_.Add(1);
+    worst_underrun_frames_ = std::max(worst_underrun_frames_, underrun_frames);
+    worst_underrun_frames_property_.Set(worst_underrun_frames_);
+  }
+
+  void RecordTaskOverrun(int64_t overrun_frames) {
+    task_overrun_count_.Add(1);
+    worst_overrun_frames_ = std::max(worst_overrun_frames_, overrun_frames);
+    worst_overrun_frames_property_.Set(worst_overrun_frames_);
+  }
+
+  void RecordDroppedTransfer() { dropped_transfer_count_.Add(1); }
+
+ private:
+  TaskRecords min_task_records_;
+  TaskRecords max_task_records_;
+  TaskRecords sum_task_records_;
+  inspect::UintProperty worst_underrun_frames_property_;
+  inspect::UintProperty worst_overrun_frames_property_;
+  inspect::UintProperty task_count_;
+  inspect::UintProperty task_underrun_count_;
+  inspect::UintProperty task_overrun_count_;
+  inspect::UintProperty dropped_transfer_count_;
+
+  Subtask::Metrics min_metrics_;
+  Subtask::Metrics max_metrics_;
+  Subtask::Metrics sum_metrics_;
+  zx::duration min_start_to_start_ = zx::duration::infinite();
+  zx::duration min_end_to_end_ = zx::duration::infinite();
+  zx::duration max_start_to_start_ = zx::duration::infinite_past();
+  zx::duration max_end_to_end_ = zx::duration::infinite_past();
+  int64_t worst_underrun_frames_ = 0;
+  int64_t worst_overrun_frames_ = 0;
 };
 
 // Represents an interval during which a RingBuffer instance is started.
@@ -132,15 +224,14 @@ class RunningInterval {
 
   void RecordStopTime(const zx::time& stopped_at);
 
+  // TODO(https://fxbug.dev/440209644): Remove in favour of RecordTaskMetrics().
   TaskRecords& CreateTaskRecords(TaskRecords::Type type, std::string_view name) {
     std::optional<TaskRecords>* task_records;
     switch (type) {
       case TaskRecords::Type::Startup:
-        task_records = &startup_task_records_;
-        break;
+        return startup_task_records_;
       case TaskRecords::Type::Final:
-        task_records = &final_task_records_;
-        break;
+        return final_task_records_;
       case TaskRecords::Type::Min:
         task_records = &min_task_records_;
         break;
@@ -151,31 +242,49 @@ class RunningInterval {
         task_records = &sum_task_records_;
         break;
     }
-    return task_records->emplace(node_.CreateChild(name), type);
+    return task_records->emplace(node_.CreateChild(name), type, 1);
   }
 
+  void RecordTaskMetrics(const Subtask::Metrics& metrics,
+                         std::optional<zx::duration> start_to_start,
+                         std::optional<zx::duration> end_to_end);
+
+  MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
+
  private:
+  static constexpr size_t kMaxStartupTaskRecords = 5;
+  static constexpr size_t kMaxFinalTaskRecords = 25;
+
   inspect::Node node_;
   inspect::IntProperty started_at_;
   inspect::IntProperty stopped_at_;
-  std::optional<TaskRecords> startup_task_records_;
-  std::optional<TaskRecords> final_task_records_;
+  TaskRecords startup_task_records_;
+  TaskRecords final_task_records_;
+
+  // TODO(https://fxbug.dev/440209644): Remove in favour of min_max_sum_records_.
   std::optional<TaskRecords> min_task_records_;
   std::optional<TaskRecords> max_task_records_;
   std::optional<TaskRecords> sum_task_records_;
+
+  MinMaxSumRecords min_max_sum_records_;  // min/max/sum for this RunningInterval.
+
+  size_t record_count_ = 0;
 };
 
 // One of the primary classes used by an outside class.
 // Records info about a ring buffer instance, such as lifetime, start/stop, SetActiveChannels.
+class RingBufferSpecification;
 class RingBufferRecorder {
  public:
-  RingBufferRecorder(inspect::Node node, const zx::time& created_at);
+  RingBufferRecorder(RingBufferSpecification* ring_buffer_spec, inspect::Node node,
+                     const zx::time& created_at);
 
   void RecordDestructionTime(const zx::time& destroyed_at);
 
   void RecordStartTime(const zx::time& started_at);
   void RecordStopTime(const zx::time& stopped_at);
 
+  // TODO(https://fxbug.dev/440209644): Remove in favour of RecordTaskMetrics().
   TaskRecords* CreateTaskRecords(TaskRecords::Type type, std::string_view name) {
     if (!running_intervals_.empty()) {
       return &running_intervals_.rbegin()->CreateTaskRecords(type, name);
@@ -183,10 +292,16 @@ class RingBufferRecorder {
     return nullptr;
   }
 
+  void RecordTaskMetrics(const Subtask::Metrics& metrics);
+  void RecordTaskUnderrun(int64_t underrun_frames);
+  void RecordTaskOverrun(int64_t overrun_frames);
+  void RecordDroppedTransfer();
+
   void RecordActiveChannelsCall(uint64_t active_channels_bitmask, const zx::time& called_at,
                                 const zx::time& completed_at);
 
  private:
+  RingBufferSpecification* ring_buffer_spec_;
   inspect::Node instance_node_;
   inspect::IntProperty created_at_;
   inspect::IntProperty destroyed_at_;
@@ -196,6 +311,9 @@ class RingBufferRecorder {
 
   inspect::Node running_intervals_root_;
   std::vector<RunningInterval> running_intervals_;
+
+  std::optional<zx::time> prev_start_time_;
+  std::optional<zx::duration> prev_wall_time_;
 };
 
 // Represents the specification (unchanging information) of a RingBuffer element.
@@ -206,7 +324,8 @@ class RingBufferSpecification {
 
   RingBufferRecorder& CreateRingBufferInspectInstance(const zx::time& created_at) {
     RingBufferRecorder instance(
-        node_.CreateChild(std::format("instance {}", ring_buffer_instance_count_++)), created_at);
+        this, node_.CreateChild(std::format("instance_{}", ring_buffer_instance_count_++)),
+        created_at);
 
     if (ring_buffer_instance_count_ <= kMaxRingBufferInspectInstances) {
       return ring_buffer_inspect_instances_.emplace_back(std::move(instance));
@@ -220,6 +339,8 @@ class RingBufferSpecification {
     return existing_slot;
   }
 
+  MinMaxSumRecords& min_max_sum_records() { return min_max_sum_records_; }
+
  private:
   static constexpr size_t kMaxRingBufferInspectInstances = 20;
 
@@ -229,6 +350,8 @@ class RingBufferSpecification {
   inspect::BoolProperty outgoing_;
   std::vector<RingBufferRecorder> ring_buffer_inspect_instances_;
   size_t ring_buffer_instance_count_ = 0;
+
+  MinMaxSumRecords min_max_sum_records_;  // min/max/sum for this RingBuffer.
 };
 
 // One of the primary classes used by an outside class.

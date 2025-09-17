@@ -6,9 +6,12 @@ cc_library(
     name = "recorder",
     srcs = [
         "recorder.cc",
+        "task-metrics.cc",
     ],
     hdrs = [
         "recorder.h",
+        "string_buffer.h",
+        "task-metrics.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
