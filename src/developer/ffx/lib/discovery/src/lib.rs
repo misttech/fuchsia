@@ -398,26 +398,32 @@ impl Discovery {
             .take_until(single_target_rx))
     }
 
-    pub async fn discover_devices(&self, query: TargetInfoQuery) -> Result<Vec<TargetHandle>> {
-        let mut stream = self.discovery_stream(query)?;
+    async fn build_devices_from_stream(
+        &self,
+        mut stream: impl Stream<Item = TargetEvent> + std::marker::Unpin,
+    ) -> Vec<TargetHandle> {
         let mut target_set = merge::TargetSet::new();
         while let Some(ev) = stream.next().await {
             target_set.process_event(ev);
         }
-        Ok(target_set.into_targets())
+        target_set.into_targets()
     }
 
-    pub async fn create_cache(&self) -> Result<()> {
+    pub async fn discover_devices(&self, query: TargetInfoQuery) -> Result<Vec<TargetHandle>> {
+        let stream = self.discovery_stream(query)?;
+        Ok(self.build_devices_from_stream(stream).await)
+    }
+
+    pub async fn create_cache(&self) -> Result<Vec<TargetHandle>> {
         let Some(cache_file) = self.cache_file.as_ref() else {
             return Err(CacheError::Unspecified.into());
         };
-        let mut stream = self.create_raw_stream()?;
-        let mut target_set = merge::TargetSet::new();
-        while let Some(ev) = stream.next().await {
-            target_set.process_event(ev);
-        }
-        let cache = Cache::new(target_set.into_targets());
-        cache.save(cache_file).map_err(|e| e.into())
+        // Don't read from the existing cache
+        let stream = self.create_raw_stream()?;
+        let devices = self.build_devices_from_stream(stream).await;
+        let cache = Cache::new(devices.clone());
+        cache.save(cache_file).map_err(|e| error::Error::from(e))?;
+        Ok(devices)
     }
 }
 
@@ -744,7 +750,9 @@ pub mod test {
             .set_source(DiscoverySources::empty())
             .build_with_stream(stream);
 
-        discovery.create_cache().await.unwrap();
+        let devices = discovery.create_cache().await.unwrap();
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0], handle);
 
         let loaded_cache = Cache::load(&cache_path).unwrap();
         assert_eq!(loaded_cache.targets.len(), 1);
