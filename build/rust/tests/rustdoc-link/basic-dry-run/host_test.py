@@ -24,6 +24,39 @@ class Test(unittest.TestCase):
         found_actions_string = self._rustdoc_actions.read_text()
         found_actions_json = json.loads(found_actions_string)
 
+        # output should look like this:
+        intended_output_string = """
+{
+    "host_action": {
+        "build_action": null,
+        "rustdoc_action": {
+            "argfile": "docs/rust/argfiles/host.args"
+        },
+        "copy_action": {
+            "srcs": [
+                "host_x64/gen/build/rust/tests/rustdoc-link/basic-dry-run/bar.aux.doc/."
+            ],
+            "dst": "docs/rust/doc/host"
+        }
+    },
+    "fuchsia_action": {
+        "build_action": null,
+        "rustdoc_action": {
+            "argfile": "docs/rust/argfiles/fuchsia.args"
+        },
+        "copy_action": {
+            "srcs": [
+                "gen/build/rust/tests/rustdoc-link/basic-dry-run/foo.aux.doc/."
+            ],
+            "dst": "docs/rust/doc"
+        }
+    },
+    "zip_action": null
+}
+"""
+
+        intended_output_json = json.loads(intended_output_string)
+
         # assertEquals is fine here because all arrays above have length one,
         # and python checks objects for equality. We should be strict with
         # asserting exact equality here. This test helps ensure that changes
@@ -32,47 +65,4 @@ class Test(unittest.TestCase):
         # With that being said, if you have to change the above, you should
         # make a corresponding change in infra!
 
-        self.assertEquals(
-            found_actions_json["host_action"],
-            {
-                "build_action": None,
-                "rustdoc_action": {"argfile": "docs/rust/argfiles/host.args"},
-                "copy_action": {
-                    "srcs": [
-                        "host_x64/gen/build/rust/tests/rustdoc-link/basic-dry-run/bar.aux.doc/."
-                    ],
-                    "dst": "docs/rust/doc/host",
-                },
-            },
-        )
-
-        self.assertEquals(
-            found_actions_json["fuchsia_action"],
-            {
-                "build_action": None,
-                "rustdoc_action": {
-                    "argfile": "docs/rust/argfiles/fuchsia.args"
-                },
-                "copy_action": {
-                    "srcs": [
-                        "gen/build/rust/tests/rustdoc-link/basic-dry-run/foo.aux.doc/."
-                    ],
-                    "dst": "docs/rust/doc",
-                },
-            },
-        )
-
-        self.assertEquals(found_actions_json["zip_action"], None)
-
-        self.assertIn("executable", found_actions_json["verify_action"])
-        self.assertIn(
-            "python", found_actions_json["verify_action"]["executable"]
-        )
-
-        self.assertEquals(
-            found_actions_json["verify_action"]["args"],
-            [
-                "../../tools/devshell/contrib/lib/rust/rustdoc_link_verify.py",
-                "docs/rust/doc",
-            ],
-        )
+        self.assertEquals(intended_output_json, found_actions_json)
