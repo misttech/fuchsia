@@ -116,7 +116,14 @@ class Queue {
 
   // Attempts to upload all reports in |ready_reports_|. Reports are retired if they're uploaded or
   // throttled and re-added to the queue if the upload fails.
-  void Upload();
+  //
+  // If |set_network_reachable_on_success| is true, a successful upload will unblock all reports.
+  // Non-eager uploads should NOT set |set_network_reachable_on_success| to true because it could
+  // result in the same report failing to upload many times if the network reachability is
+  // transient. For example, imagine the queue has 20 blocked reports. If 1 upload succeeds, but 19
+  // fail, all 19 would retry. If, on the next try, just 1 succeeds again, then all 18 remaining
+  // would retry, etc.
+  void Upload(bool set_network_reachable_on_success);
 
   // Make all reports blocked.
   void BlockAll();

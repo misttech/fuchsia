@@ -771,6 +771,83 @@ TEST_F(QueueTest, UploadOnNetworkReachable) {
               }));
 }
 
+TEST_F(QueueTest, UnblockAllAfterSuccessfulEagerUpload) {
+  SetUpQueue({
+      kUploadFailed,
+      kUploadSuccessful,
+      kUploadSuccessful,
+  });
+  reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
+
+  std::optional<FilingResult> result_1;
+  const std::optional<ReportId> report_id_1 = AddNewReportWithStatus(
+      /*is_hourly_report=*/false,
+      [&result_1](const FilingResult& new_result, const std::string& server_report_id) {
+        result_1 = new_result;
+      });
+
+  RunLoopFor(kUploadResponseDelay);
+  ASSERT_TRUE(report_id_1);
+  EXPECT_TRUE(queue_->Contains(*report_id_1));
+  EXPECT_EQ(result_1, FilingResult::kReportOnDisk);
+
+  std::optional<FilingResult> result_2;
+  const std::optional<ReportId> report_id_2 = AddNewReportWithStatus(
+      /*is_hourly_report=*/false,
+      [&result_2](const FilingResult& new_result, const std::string& server_report_id) {
+        result_2 = new_result;
+      });
+
+  RunLoopFor(kUploadResponseDelay);
+  ASSERT_TRUE(report_id_2);
+  EXPECT_FALSE(queue_->Contains(*report_id_2));
+  EXPECT_EQ(result_2, FilingResult::kReportUploaded);
+
+  RunLoopFor(kUploadResponseDelay);
+  EXPECT_FALSE(queue_->Contains(*report_id_1));
+}
+
+TEST_F(QueueTest, DoNotUnblockAllAfterSuccessfulUneagerUpload) {
+  // Add 2 blocked reports to the queue, then trigger the 15 minute periodic upload. The 2nd report
+  // being successfully uploaded should not result in the 1st retrying again.
+  SetUpQueue({
+      kUploadFailed,
+      kUploadFailed,
+      kUploadFailed,
+      kUploadSuccessful,
+  });
+  reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
+
+  std::optional<FilingResult> result_1;
+  const std::optional<ReportId> report_id_1 = AddNewReportWithStatus(
+      /*is_hourly_report=*/false,
+      [&result_1](const FilingResult& new_result, const std::string& server_report_id) {
+        result_1 = new_result;
+      });
+
+  RunLoopFor(kUploadResponseDelay);
+  ASSERT_TRUE(report_id_1);
+  EXPECT_TRUE(queue_->Contains(*report_id_1));
+  EXPECT_EQ(result_1, FilingResult::kReportOnDisk);
+
+  std::optional<FilingResult> result_2;
+  const std::optional<ReportId> report_id_2 = AddNewReportWithStatus(
+      /*is_hourly_report=*/false,
+      [&result_2](const FilingResult& new_result, const std::string& server_report_id) {
+        result_2 = new_result;
+      });
+
+  RunLoopFor(kUploadResponseDelay);
+  ASSERT_TRUE(report_id_2);
+  EXPECT_TRUE(queue_->Contains(*report_id_2));
+  EXPECT_EQ(result_2, FilingResult::kReportOnDisk);
+
+  RunLoopFor(kPeriodicUploadDuration);
+  RunLoopFor(2 * kUploadResponseDelay);
+  EXPECT_TRUE(queue_->Contains(*report_id_1));
+  EXPECT_FALSE(queue_->Contains(*report_id_2));
+}
+
 TEST_F(QueueTest, UploadThrottled) {
   SetUpQueue({kUploadThrottled, kUploadFailed, kUploadThrottled});
 

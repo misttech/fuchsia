@@ -166,7 +166,7 @@ bool Queue::Add(PendingReport pending_report, const bool consider_eager_upload,
 
   if (consider_eager_upload && reporting_policy_ == ReportingPolicy::kUpload && !stop_uploading_) {
     ready_reports_.push_back(std::move(pending_report));
-    Upload();
+    Upload(/*set_network_reachable_on_success=*/true);
     return true;
   }
 
@@ -239,7 +239,7 @@ std::optional<ItemLocation> Queue::AddToStore(Report report) {
   return location;
 }
 
-void Queue::Upload() {
+void Queue::Upload(const bool set_network_reachable_on_success) {
   // Don't upload if the queue isn't allow to upload.
   if (stop_uploading_ || reporting_policy_ != ReportingPolicy::kUpload) {
     return;
@@ -260,7 +260,7 @@ void Queue::Upload() {
     if (!report.has_value()) {
       Retire(std::move(*active_report_), RetireReason::kGarbageCollected);
       active_report_ = std::nullopt;
-      Upload();
+      Upload(/*set_network_reachable_on_success=*/false);
       return;
     }
 
@@ -273,7 +273,7 @@ void Queue::Upload() {
         << "Dropping report with empty annotations";
     Retire(std::move(*active_report_), RetireReason::kGarbageCollected);
     active_report_ = std::nullopt;
-    Upload();
+    Upload(/*set_network_reachable_on_success=*/false);
     return;
   }
 
@@ -295,12 +295,17 @@ void Queue::Upload() {
 
   crash_server_->MakeRequest(
       *active_report_->report, snapshot,
-      [this, add_to_store](CrashServer::UploadStatus status, std::string server_report_id) mutable {
+      [this, add_to_store, set_network_reachable_on_success](CrashServer::UploadStatus status,
+                                                             std::string server_report_id) mutable {
         switch (status) {
-          case CrashServer::UploadStatus::kSuccess:
+          case CrashServer::UploadStatus::kSuccess: {
             Retire(std::move(*active_report_), RetireReason::kUpload, FilingResult::kReportUploaded,
                    server_report_id);
+            if (set_network_reachable_on_success) {
+              SetNetworkIsReachable(true);
+            }
             break;
+          }
           case CrashServer::UploadStatus::kThrottled:
             Retire(std::move(*active_report_), RetireReason::kThrottled,
                    FilingResult::kServerError);
@@ -323,7 +328,7 @@ void Queue::Upload() {
             break;
         }
         active_report_ = std::nullopt;
-        Upload();
+        Upload(/*set_network_reachable_on_success=*/false);
       });
 
   // Clear the report from memory if it won't be added to the store. Don't yet clear
@@ -460,7 +465,7 @@ void Queue::UnblockAll() {
   ready_reports_.insert(ready_reports_.end(), std::make_move_iterator(blocked_reports_.begin()),
                         std::make_move_iterator(blocked_reports_.end()));
   blocked_reports_.clear();
-  Upload();
+  Upload(/*set_network_reachable_on_success=*/false);
 }
 
 void Queue::DeleteAll() {
