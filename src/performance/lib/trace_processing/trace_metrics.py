@@ -173,7 +173,7 @@ class MetricsProcessor:
         of the two. In order to reduce processing time and memory usage, an implementation must
         provide a set of patterns that describe all the events required to generate metrics. This
         can be as simple as a list of event names, or a full regexp. If your metrics processor
-        requires no events, return {""}.
+        requires no events, return the empty set.
 
         Scheduler records cannot be filtered out and will always be present in the traces provided
         for metrics processing.

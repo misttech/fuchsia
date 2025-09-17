@@ -171,7 +171,6 @@ def convert_trace_file_to_json(
     compressed_output: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
-    timer_cmd: list[str] | None = None,
 ) -> str:
     """Converts the specified trace file to JSON.
 
@@ -181,6 +180,10 @@ def convert_trace_file_to_json(
           at a runtime_deps/trace2json location in a parent directory.
       compressed_input: Whether the input file is compressed.
       compressed_output: Whether the output file should be compressed.
+      patterns: Regexps to match against event names. Only events that match one or more of these
+                patterns will be included in the converted trace file.
+                Pass None to include all events.
+                Pass the empty set to discard all events.
 
     Raises:
       subprocess.CalledProcessError: The trace2json process returned an error.
@@ -194,7 +197,6 @@ def convert_trace_file_to_json(
         compressed_output,
         trace2json_path,
         patterns,
-        timer_cmd,
     )
     return converted_path
 
@@ -215,6 +217,10 @@ def time_convert_trace_file_to_json(
           at a runtime_deps/trace2json location in a parent directory.
       compressed_input: Whether the input file is compressed.
       compressed_output: Whether the output file should be compressed.
+      patterns: Regexps to match against event names. Only events that match one or more of these
+                patterns will be included in the converted trace file.
+                Pass None to include all events.
+                Pass the empty set to discard all events.
       timer_cmd: Command (e.g. `/usr/bin/time -v`) to wrap conversion process in
 
     Raises:
@@ -249,8 +255,18 @@ def time_convert_trace_file_to_json(
         ]
         if compressed_input or trace_path.suffix == compressed_ext:
             args.append("--compressed-input")
-        if patterns and r".*" not in patterns:
-            args.extend([f"--pattern={pattern}" for pattern in patterns])
+
+        # patterns can be None, the empty set, or a set containing some patterns.
+        # If the caller specified None (or one of their patterns is ".*"), they want all events.
+        # If the caller explicitly asked for the empty set, trace2json must drop all events.
+        #   We can achieve this by using an "impossible pattern", a pattern which can't match
+        #   anything, like "[^\d\D]" which only matches if characters both are and are not digits.
+        # Otherwise, use their provided patterns as filters.
+        if patterns is None or r".*" in patterns:
+            patterns = set()
+        elif len(patterns) == 0:
+            patterns = {r"[^\d\D]"}
+        args.extend([f"--pattern={pattern}" for pattern in patterns])
 
         _LOGGER.info(f"Running {args}")
         conversion_output = subprocess.check_output(
