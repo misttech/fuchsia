@@ -64,7 +64,7 @@ if (is_host) {
     sources = [ "crates/d/lib.rs" ]
   }
 
-  _rust_target_mapping = "$target_gen_dir/rust_target_mapping.json"
+  _rust_target_mapping = "${target_gen_dir}/rust_target_mapping.json"
 
   # Create a version of //${build_dir}/rust_target_mapping.json which has
   # this test's "universe", which consists of only the crates defined here.
@@ -82,10 +82,10 @@ if (is_host) {
     ]
   }
 
-  _rustdoc_link_output = "$target_gen_dir/doc.zip"
+  _rustdoc_link_output = "${target_gen_dir}/doc.zip"
   action("rustdoc-link") {
     testonly = true
-    public_deps = [
+    deps = [
       ":a.rustdoc($default_toolchain)",
       ":b.rustdoc($default_toolchain)",
       ":c.rustdoc($default_toolchain)",
@@ -95,19 +95,22 @@ if (is_host) {
     hermetic_deps = false
 
     script = "//tools/devshell/contrib/lib/rust/rustdoc-link.py"
-    inputs = [ "${rustc_prefix}/bin/rustdoc" ]
+    inputs = [
+      "${rustc_prefix}/bin/rustdoc",
+      "//tools/devshell/contrib/lib/rust/rustdoc_link_verify.py",
+    ]
     outputs = [ _rustdoc_link_output ]
     args = [
       "--quiet",
       "--no-build",
       "--rustdoc-executable",
       "${rebased_rustc_prefix}/bin/rustdoc",
-      "--destination",
-      rebase_path("$target_gen_dir/doc", root_build_dir),
+      "--output-base",
+      rebase_path("${target_gen_dir}/output_base", root_build_dir),
       "--zip-to",
-      rebase_path("$_rustdoc_link_output", root_build_dir),
+      rebase_path("${_rustdoc_link_output}", root_build_dir),
       "--rust-target-mapping",
-      rebase_path("$_rust_target_mapping", root_build_dir),
+      rebase_path("${_rust_target_mapping}", root_build_dir),
       "--fuchsia-dir",  # typically provided by devshell
       rebase_path("//", root_build_dir),
       "--build-dir",  # typically provided by devshell

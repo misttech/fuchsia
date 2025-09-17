@@ -67,6 +67,7 @@ See //BUILD.gn for more about the rust_target_mapping.json.
 import json
 import os
 import shutil
+import sys
 from argparse import (
     SUPPRESS,
     ArgumentParser,
@@ -90,6 +91,7 @@ from rustdoc_link_actions import (
     CopyAction,
     RustdocAction,
     TargetAction,
+    VerifyAction,
     ZipAction,
 )
 
@@ -357,11 +359,35 @@ def execute_zip_action(zip_action: ZipAction) -> None:
     ).is_file(), "should have created .zip with our intended name"
 
 
+def execute_verify_action(
+    verify_action: VerifyAction,
+    build_dir: Path,
+) -> None:
+    result = run(
+        [verify_action.executable, *verify_action.args],
+        cwd=build_dir,
+    )
+    try:
+        result.check_returncode()
+    except CalledProcessError as e:
+        print(
+            "fx rustdoc-link: The generated documentation appears broken.",
+            file=stderr,
+        )
+        print(
+            "fx rustdoc-link: Check stderr of the above command for more.",
+            file=stderr,
+        )
+        print(f"fx rustdoc-link: see: {e}", file=stderr)
+        sys.exit(1)
+
+
 def execute_action(
     action: Action,
     build_executable: Path,
     rustdoc_executable: Path,
     build_dir: Path,
+    fuchsia_dir: Path,
     use_xargs: bool,
     merge_parallelism: int,
     quiet: bool,
@@ -388,7 +414,12 @@ def execute_action(
         if not quiet:
             zip_to = action.zip_action.zip_to
             print("fx rustdoc-link: zipping docs to", zip_to, file=stderr)
+
         execute_zip_action(action.zip_action)
+    execute_verify_action(
+        verify_action=action.verify_action,
+        build_dir=build_dir,
+    )
 
 
 def set_arg_defaults(args: Namespace) -> None:
@@ -406,9 +437,8 @@ def set_arg_defaults(args: Namespace) -> None:
         args.rust_target_mapping = Path(
             args.build_dir, "rust_target_mapping.json"
         )
-    if args.destination is None:
-        args.destination = Path("docs/rust/doc")
-    args.destination = Path(args.build_dir, args.destination)
+    if args.output_base is None:
+        args.output_base = Path(args.build_dir) / "docs" / "rust"
     if args.zip_to is not None:
         args.zip_to = Path(args.build_dir, args.zip_to)
     if args.rustdoc_executable is None:
@@ -428,31 +458,34 @@ def make_output_directories(args: Namespace) -> None:
     """This type of operation is often done by the build system, but since
     we are running outside of that we have to do it manually.
     """
-    # make $FUCHSIA_BUILD_DIR/docs/rust directory to store:
-    # * actions.json
-    # * argfiles directory
-    Path(args.build_dir, "docs", "rust").mkdir(exist_ok=True, parents=True)
-
-    # make argfiles directory for `rustdoc @argfiles` invocations
-    Path(args.build_dir, "docs", "rust", "argfiles").mkdir(exist_ok=True)
-
     if not args.dry_run:
         # remove the destination to ensure that we always document into a fresh
         # directory
-        shutil.rmtree(args.destination, ignore_errors=True)
+        shutil.rmtree(args.output_base, ignore_errors=True)
 
-    # make destination for fuchsia-side docs
-    args.destination.mkdir(parents=True, exist_ok=True)
+    # In addition to rustdocs, extra files are stored in output_base:
+    #
+    #   * actions.json
+    #   * argfiles directory
+    #
+    args.output_base.mkdir(parents=True, exist_ok=True)
 
-    # make destination for host-side docs
-    Path(args.destination, "host").mkdir(parents=True, exist_ok=True)
+    # Make argfiles directory for `rustdoc @argfiles` invocations.
+    (args.output_base / "argfiles").mkdir(exist_ok=True)
+
+    # Make destination for fuchsia-side docs.
+    (args.output_base / "doc").mkdir(exist_ok=True)
+
+    # Make destination for host-side docs.
+    (args.output_base / "doc" / "host").mkdir(exist_ok=True)
 
 
 def generate_action(meta: list[Metadata], args: Namespace) -> Action:
-    argfiles_dir = Path(args.build_dir, "docs", "rust", "argfiles")
+    argfiles_dir = args.output_base / "argfiles"
+    doc_out_dir = args.output_base / "doc"
     host_action = generate_target_action(
         meta=[m for m in meta if not m.target_is_fuchsia],
-        dst=Path(args.destination, "host"),
+        dst=doc_out_dir / "host",
         argfile=Path(argfiles_dir, "host.args"),
         extra_rustdoc_args=args.extra_rustdoc_arg,
         build=args.build,
@@ -460,7 +493,7 @@ def generate_action(meta: list[Metadata], args: Namespace) -> Action:
     )
     fuchsia_action = generate_target_action(
         meta=[m for m in meta if m.target_is_fuchsia],
-        dst=args.destination,
+        dst=doc_out_dir,
         argfile=Path(argfiles_dir, "fuchsia.args"),
         extra_rustdoc_args=args.extra_rustdoc_arg,
         build=args.build,
@@ -468,16 +501,36 @@ def generate_action(meta: list[Metadata], args: Namespace) -> Action:
     )
     zip_action = (
         ZipAction(
-            zip_from=ActionPath(args.destination.relative_to(args.build_dir)),
+            zip_from=ActionPath(doc_out_dir.relative_to(args.build_dir)),
             zip_to=ActionPath(args.zip_to.relative_to(args.build_dir)),
         )
         if args.zip_to
         else None
     )
+
+    executable = (
+        Path(args.fuchsia_dir)
+        / "tools"
+        / "devshell"
+        / "contrib"
+        / "lib"
+        / "rust"
+        / "rustdoc_link_verify.py"
+    )
+    verify_action = VerifyAction(
+        executable=ActionPath(
+            os.path.relpath(sys.executable, start=args.build_dir)
+        ),
+        args=[
+            ActionPath(executable.relative_to(args.build_dir)),
+            ActionPath(doc_out_dir.relative_to(args.build_dir)),
+        ],
+    )
     return Action(
         host_action=host_action,
         fuchsia_action=fuchsia_action,
         zip_action=zip_action,
+        verify_action=verify_action,
     )
 
 
@@ -523,6 +576,7 @@ def main(args: Namespace) -> None:
                 build_executable=args.build_executable,
                 rustdoc_executable=args.rustdoc_executable,
                 build_dir=args.build_dir,
+                fuchsia_dir=args.fuchsia_dir,
                 use_xargs=args.use_xargs,
                 merge_parallelism=args.merge_parallelism,
                 quiet=args.quiet,
@@ -612,17 +666,17 @@ def _main_arg_parser() -> ArgumentParser:
     parser.add_argument(
         "--rust-target-mapping",
         type=Path,
-        help="test only. read this file instead of $FUCHSIA_BUILD_DIR/rust_target_mapping.json",
+        help="Path to rust_target_mapping.json, defaults to arg.build_dir/rust_target_mapping.json",
     )
     parser.add_argument(
-        "--destination",
+        "--output-base",
         type=Path,
-        help="test only. place merged docs here instead of $FUCHSIA_BUILD_DIR/docs/rust/doc. Path must be relative to $FUCSHIA_BUILD_DIR",
+        help="Base output directory for writing merged doc and an optional zip, defaults to arg.build_dir.",
     )
     parser.add_argument(
         "--zip-to",
         type=Path,
-        help="test only. creates a .zip file with generated docs at the specified location. must be relative to $FUCHSIA_BUILD_DIR",
+        help="When set, creates a zip file at the specified location.",
     )
     parser.add_argument(
         "--fuchsia-dir",

@@ -60,6 +60,8 @@ if (is_host) {
       "--no-build",
       "--rustdoc-executable",
       "${rebased_rustc_prefix}/bin/rustdoc",
+      "--output-base",  # Set output base to avoid writing to global argfiles.
+      rebase_path("${target_gen_dir}/output_base", root_build_dir),
       "--dry-run",
       "--rust-target-mapping",
       rebase_path("$_rust_target_mapping", root_build_dir),
