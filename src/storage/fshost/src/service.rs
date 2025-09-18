@@ -1065,7 +1065,6 @@ async fn format_system_blob_volume_impl(
 
     log::info!("Mounting Fxfs.");
     let mut fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    fxfs.serve_multi_volume().await.context("Failed to mount/serve fxfs")?;
     let mut serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
 
     if serving_fxfs.has_volume(BLOB_VOLUME_LABEL).await.context("checking for blob volume")? {
@@ -1073,7 +1072,7 @@ async fn format_system_blob_volume_impl(
         serving_fxfs.remove_volume(BLOB_VOLUME_LABEL).await.context("removing blob volume")?;
     }
     log::info!("Creating new blob volume.");
-    serving_fxfs
+    let blob_volume = serving_fxfs
         .create_volume(
             BLOB_VOLUME_LABEL,
             CreateOptions::default(),
@@ -1081,6 +1080,9 @@ async fn format_system_blob_volume_impl(
         )
         .await
         .context("creating blob volume")?;
+
+    blob_volume.shutdown().await.context("unmounting blob volume")?;
+    serving_fxfs.shutdown().await.context("unmounting fxfs")?;
     Ok(())
 }
 
@@ -1098,10 +1100,15 @@ async fn mount_system_blob_volume_impl(
 
     log::info!("Mounting Fxfs.");
     let mut fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    fxfs.serve_multi_volume().await.context("Failed to mount/serve fxfs")?;
-    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
+    let mut serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
 
     log::info!("Mounting blob volume.");
+    if !serving_fxfs.has_volume(BLOB_VOLUME_LABEL).await.context("checking for blob volume")? {
+        log::error!(
+            "Blob volume missing! Use fuchsia.fshost/Recovery.FormatSystemBlobVolume to create one."
+        );
+        return Err(zx::Status::NOT_FOUND).context("missing blob volume");
+    }
     let blob_volume = serving_fxfs
         .open_volume(BLOB_VOLUME_LABEL, MountOptions { as_blob: Some(true), ..Default::default() })
         .await
@@ -1134,10 +1141,14 @@ async fn mount_system_blob_volume_impl(
     fasync::Task::spawn(async move {
         let _guard = guard;
         scope.wait().await;
-        log::info!("Last handle to exposed directory closed, shutting filesystem down.");
-        if let Err(e) = serving_fxfs.shutdown().await {
-            log::error!("Failed to shutdown system container filesystem: {e:?}");
+        log::info!("All handles to system container closed, unmounting...");
+        if let Err(e) = blob_volume.shutdown().await {
+            log::error!("Failed to unmount blob volume: {e:?}");
         }
+        if let Err(e) = serving_fxfs.shutdown().await {
+            log::error!("Failed to shutdown fxfs: {e:?}");
+        }
+        log::info!("System container unmounted.");
     })
     .detach();
 
