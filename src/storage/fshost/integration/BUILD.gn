@@ -174,9 +174,6 @@ template("fshost_integration_test_component") {
 #   enable_migration_tests (default: true)
 #     [bool] Include migration tests in the integration test package.
 #
-#   enable_wipe_storage_tests (default: true)
-#     [bool] Include wipe storage tests in the integration test package.
-#
 #   enable_corruption_tests (default: true)
 #     [bool] Include corruption tests in the integration test package.
 #
@@ -207,9 +204,6 @@ template("fshost_integration_test_package") {
   }
   if (!defined(invoker.enable_migration_tests)) {
     invoker.enable_migration_tests = true
-  }
-  if (!defined(invoker.enable_wipe_storage_tests)) {
-    invoker.enable_wipe_storage_tests = true
   }
   if (!defined(invoker.enable_corruption_tests)) {
     invoker.enable_corruption_tests = true
@@ -304,34 +298,6 @@ template("fshost_integration_test_package") {
   }
 
   #
-  # Wipe Storage Tests
-  #
-  if (invoker.enable_wipe_storage_tests) {
-    _wipe_storage_component_target = "${target_name}_wipe_storage"
-    _test_components += [ ":$_wipe_storage_component_target" ]
-    fshost_integration_test_component(_wipe_storage_component_target) {
-      fshost_target = _fshost_target
-      data_filesystem_format = fshost_options.data_filesystem_format
-      data_filesystem_variant = invoker.data_filesystem_variant
-      extra_features = _extra_features
-      source_root = "tests/wipe_storage.rs"
-      deps = [
-        "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
-        "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
-        "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-        "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
-        "//sdk/lib/device-watcher/rust",
-        "//sdk/rust/zx",
-        "//src/lib/fidl/rust/fidl",
-        "//src/lib/fuchsia-fs",
-        "//src/storage/lib/block_client/rust",
-        "//src/storage/lib/fs_management/rust:fs_management",
-      ]
-    }
-  }
-
-  #
   # Mount System Blob Volume Tests
   #
   if (invoker.enable_mount_system_blob_volume_tests) {
@@ -409,14 +375,6 @@ template("fshost_integration_test_package") {
       data_filesystem_variant = invoker.data_filesystem_variant
       extra_features = _extra_features
       source_root = "tests/corrupt.rs"
-      deps = [
-        "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-        "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
-        "//sdk/lib/device-watcher/rust",
-        "//sdk/rust/zx",
-        "//src/lib/fidl/rust/fidl",
-      ]
     }
 
     # Corruption tests get their own package so we can give them separate test specs
@@ -544,7 +502,6 @@ fshost_integration_test_package(
     "fshost_integration_tests_storage_host_fvm_minfs") {
   # TODO(https://fxbug.dev/339491886): Support these components in storage-host
   enable_migration_tests = false
-  enable_wipe_storage_tests = false
 
   options = {
     data_filesystem_format = "minfs"
@@ -562,7 +519,6 @@ fshost_integration_test_package(
     "fshost_integration_tests_storage_host_fvm_minfs_no_zxcrypt") {
   # TODO(https://fxbug.dev/339491886): Support these components in storage-host
   enable_migration_tests = false
-  enable_wipe_storage_tests = false
 
   data_filesystem_variant = "minfs-no-zxcrypt"
   options = {

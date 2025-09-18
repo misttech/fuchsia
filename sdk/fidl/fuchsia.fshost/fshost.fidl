@@ -60,31 +60,6 @@ closed protocol Recovery {
         payload zx.Handle:VMO;
     }) -> () error zx.Status;
 
-    /// Reprovision the first non-ramdisk FVM volume, and format/mount the blob partition.
-    /// The formatted Blobfs instance can be accessed via the client end of `blobfs_root`; if no
-    /// handle is provided, then blobfs won't be formatted.
-    ///
-    /// If fxblob is configured, blob_creator will be connected with the fxfs BlobCreator protocol,
-    /// which should be used instead of creating blobs in the `blobfs_root`. `blobfs_root` will
-    /// still be connected and can be used to read blobs. If fxblob is configured, but no handle is
-    /// provided for blob_creator or for blobfs_root, the blob volume won't be formatted. If a
-    /// handle is provided for blob_creator but fxblob is not configured, the channel will be
-    /// closed.
-    ///
-    /// This function will pause the fshost block watcher regardless of success or failure.
-    /// Requires fshost to be started with the `ramdisk_image` config option set to true.
-    ///
-    /// **WARNING**: This will cause irreversible data loss. Use with caution.
-    ///
-    /// TODO(https://fxbug.dev/42063480): This function unbinds all child drivers of the volume to be wiped.
-    /// This can race with the fshost block device manager, which attempts to bind the FVM driver
-    /// and unseal the zxcrypt volume.
-    strict WipeStorage(resource struct {
-        blobfs_root server_end:<fuchsia.io.Directory, optional>;
-        blob_creator server_end:<fuchsia.fxfs.BlobCreator, optional>;
-    }) -> () error zx.Status;
-
-
     /// Formats the blob volume in the system container. If the system container does not have a
     /// blob volume, a new one will be created. All existing blobs will be deleted. If the system
     /// container is corrupt or unmountable, this function will have no effect and will leave the

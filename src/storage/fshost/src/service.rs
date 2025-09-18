@@ -9,44 +9,34 @@ use crate::device::constants::{
 };
 use crate::device::{BlockDevice, Device, DeviceTag};
 use crate::environment::{
-    self, Container, Environment, FilesystemLauncher, FvmContainer, FxfsContainer,
-    ServeFilesystemStatus,
+    Container, Environment, FilesystemLauncher, FvmContainer, FxfsContainer, ServeFilesystemStatus,
 };
 use anyhow::{Context, Error, anyhow, ensure};
 use device_watcher::recursive_wait_and_open;
-use fidl::endpoints::{
-    ClientEnd, DiscoverableProtocolMarker as _, Proxy, RequestStream, ServerEnd,
-};
+use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::CryptMarker;
-use fidl_fuchsia_hardware_block::{BlockMarker, BlockProxy};
 use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
 use fidl_fuchsia_io::{self as fio, DirectoryMarker};
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::{DiskFormat, detect_disk_format};
-use fs_management::partition::{
-    PartitionMatcher, find_partition, fvm_allocate_partition, partition_matches_with_proxy,
-};
-use fs_management::{Blobfs, F2fs, Fvm, Fxfs, Minfs, filesystem};
+use fs_management::partition::{PartitionMatcher, find_partition, partition_matches_with_proxy};
+use fs_management::{F2fs, Fvm, Fxfs, Minfs, filesystem};
 use fuchsia_async::TimeoutExt as _;
-use fuchsia_component::client::{SVC_DIR, connect_to_protocol_at_dir_root};
-use fuchsia_fs::directory::clone_onto;
+use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_fs::file::write;
 use fuchsia_runtime::HandleType;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _};
-use std::collections::HashSet;
 use std::sync::Arc;
-use uuid::Uuid;
 use vfs::service;
-use zx::sys::{zx_handle_t, zx_status_t};
-use zx::{self as zx, AsHandleRef, MonotonicDuration};
+use zx::{self as zx, MonotonicDuration};
 use {
-    fidl_fuchsia_fshost as fshost, fidl_fuchsia_fxfs as ffxfs,
-    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
+    fidl_fuchsia_fshost as fshost, fidl_fuchsia_storage_partitions as fpartitions,
+    fuchsia_async as fasync,
 };
 
 pub enum FshostShutdownResponder {
@@ -227,209 +217,6 @@ async fn create_starnix_volume(
     };
 
     create_starnix_volume_impl(environment, volume_name, crypt, exposed_dir).await
-}
-
-// TODO(https://fxbug.dev/395155386): Remove WipeStorage as it has been superceded by other recovery
-// functionality.
-async fn wipe_storage(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-    launcher: &FilesystemLauncher,
-    matcher_lock: &Arc<Mutex<HashSet<String>>>,
-    blobfs_root: Option<ServerEnd<DirectoryMarker>>,
-    blob_creator: Option<ServerEnd<fidl_fuchsia_fxfs::BlobCreatorMarker>>,
-) -> Result<(), Error> {
-    ensure!(config.ramdisk_image, "wipe_storage called in a non-Recovery build");
-    let guard = system_partition_lock.lock().await;
-    if config.fxfs_blob {
-        // For fxblob, we skip several of the arguments that the fvm one needs. For config and
-        // launcher, there currently aren't any options that modify how fxblob works, so we don't
-        // need access (that will probably change eventually, at which point those will need to be
-        // threaded through). For ignored_paths, fxblob launching doesn't generate any new block
-        // devices that we need to mark as accounted for for the block watcher.
-        wipe_storage_fxblob(environment, blobfs_root, blob_creator).await?;
-    } else {
-        wipe_storage_fvm(config, environment, launcher, matcher_lock, blobfs_root, blob_creator)
-            .await?;
-    }
-
-    // On success, fshost will manage the lifecycle of the mounted filesystem. The expectation is
-    // that it will remain mounted until we reboot. To prevent unintended consequences of concurrent
-    // access to the system container (e.g. from other recovery methods), we leave the guard locked
-    // indefinitely.
-    // TODO(https://fxbug.dev/444486641): We need to come up with a better way of managing the state
-    // of the system partition and guarding concurrent access to it.
-    std::mem::forget(guard);
-    Ok(())
-}
-
-async fn wipe_storage_fxblob(
-    environment: &Arc<Mutex<dyn Environment>>,
-    blobfs_root: Option<ServerEnd<DirectoryMarker>>,
-    blob_creator: Option<ServerEnd<fidl_fuchsia_fxfs::BlobCreatorMarker>>,
-) -> Result<(), Error> {
-    let (device, _) = get_system_container_for_recovery(environment).await?;
-    log::info!("Reformatting Fxfs.");
-    let mut fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    fxfs.format().await.context("Failed to format fxfs")?;
-
-    let blobfs_root = match blobfs_root {
-        Some(handle) => handle,
-        None => {
-            log::info!("Not provisioning fxblob: missing blobfs root handle");
-            return Ok(());
-        }
-    };
-
-    let blob_creator = match blob_creator {
-        Some(handle) => handle,
-        None => {
-            log::info!("Not provisioning fxblob: missing blob creator handle");
-            return Ok(());
-        }
-    };
-
-    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
-    let blob_volume = serving_fxfs
-        .create_volume(
-            BLOB_VOLUME_LABEL,
-            CreateOptions::default(),
-            MountOptions { as_blob: Some(true), ..Default::default() },
-        )
-        .await
-        .context("making blob volume")?;
-    clone_onto(blob_volume.root(), blobfs_root)?;
-    blob_volume.exposed_dir().open(
-        &format!("{}/{}", SVC_DIR, ffxfs::BlobCreatorMarker::PROTOCOL_NAME),
-        fio::Flags::PROTOCOL_SERVICE,
-        &fio::Options::default(),
-        blob_creator.into_channel(),
-    )?;
-    environment.lock().await.register_filesystem(environment::Filesystem::ServingMultiVolume(
-        None,
-        serving_fxfs,
-        None,
-    ));
-    Ok(())
-}
-
-extern "C" {
-    // This function initializes FVM on a fuchsia.hardware.block.Block device
-    // with a given slice size.
-    fn fvm_init(device: zx_handle_t, slice_size: usize) -> zx_status_t;
-}
-
-fn initialize_fvm(fvm_slice_size: u64, device: &BlockProxy) -> Result<(), Error> {
-    let device_raw = device.as_channel().raw_handle();
-    let status = unsafe { fvm_init(device_raw, fvm_slice_size as usize) };
-    zx::Status::ok(status).context("fvm_init failed")?;
-    Ok(())
-}
-
-async fn wipe_storage_fvm(
-    config: &fshost_config::Config,
-    environment: &Arc<Mutex<dyn Environment>>,
-    launcher: &FilesystemLauncher,
-    matcher_lock: &Arc<Mutex<HashSet<String>>>,
-    blobfs_root: Option<ServerEnd<DirectoryMarker>>,
-    blob_creator: Option<ServerEnd<fidl_fuchsia_fxfs::BlobCreatorMarker>>,
-) -> Result<(), Error> {
-    log::info!("Searching for FVM block device");
-    // TODO(https://fxbug.dev/339491886): Support storage-host based systems.
-    let (_, fvm_path) = get_system_container_for_recovery(environment).await?;
-
-    // Ensure that the matcher doesn't pick up devices while we're reformatting.
-    let mut ignored_paths = matcher_lock.lock().await;
-
-    log::info!(device_path:? = fvm_path; "Wiping storage");
-    log::info!("Unbinding child drivers (FVM/zxcrypt).");
-
-    let fvm_controller = fuchsia_component::client::connect_to_protocol_at_path::<ControllerMarker>(
-        format!("{}/device_controller", &fvm_path),
-    )?;
-    fvm_controller.unbind_children().await?.map_err(zx::Status::from_raw)?;
-
-    log::info!(slice_size = config.fvm_slice_size; "Initializing FVM");
-    let (block_proxy, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
-    fvm_controller
-        .connect_to_device_fidl(server_end.into_channel())
-        .context("connecting to block protocol")?;
-    initialize_fvm(config.fvm_slice_size, &block_proxy)?;
-
-    log::info!("Binding and waiting for FVM driver.");
-    fvm_controller.bind(constants::FVM_DRIVER_PATH).await?.map_err(zx::Status::from_raw)?;
-
-    let fvm_dir = fuchsia_fs::directory::open_in_namespace(&fvm_path, fio::Flags::empty())
-        .context("Failed to open the fvm directory")?;
-
-    let fvm_volume_manager_proxy =
-        device_watcher::recursive_wait_and_open::<VolumeManagerMarker>(&fvm_dir, "fvm")
-            .await
-            .context("waiting for FVM driver")?;
-
-    let blobfs_root = match blobfs_root {
-        Some(handle) => handle,
-        None => {
-            log::info!("Not provisioning blobfs");
-            return Ok(());
-        }
-    };
-
-    log::info!("Allocating new partitions");
-    // Volumes will be dynamically resized.
-    const INITIAL_SLICE_COUNT: u64 = 1;
-
-    // Generate FVM layouts and new GUIDs for the blob/data volumes.
-    let blobfs_controller = fvm_allocate_partition(
-        &fvm_volume_manager_proxy,
-        constants::BLOBFS_TYPE_GUID,
-        *Uuid::new_v4().as_bytes(),
-        constants::BLOBFS_PARTITION_LABEL,
-        0,
-        INITIAL_SLICE_COUNT,
-    )
-    .await
-    .context("Failed to allocate blobfs fvm partition")?;
-
-    let device_path =
-        blobfs_controller.get_topological_path().await?.map_err(zx::Status::from_raw)?;
-    ignored_paths.insert(device_path.clone());
-
-    fvm_allocate_partition(
-        &fvm_volume_manager_proxy,
-        constants::DATA_TYPE_GUID,
-        *Uuid::new_v4().as_bytes(),
-        constants::DATA_PARTITION_LABEL,
-        0,
-        INITIAL_SLICE_COUNT,
-    )
-    .await
-    .context("Failed to allocate fvm data partition")?;
-
-    log::info!("Formatting Blobfs.");
-    let mut blobfs_config = Blobfs {
-        deprecated_padded_blobfs_format: config.blobfs_use_deprecated_padded_format,
-        ..launcher.get_blobfs_config()
-    };
-    if config.blobfs_initial_inodes > 0 {
-        blobfs_config.num_inodes = config.blobfs_initial_inodes;
-    }
-
-    let mut blobfs = filesystem::Filesystem::new(blobfs_controller, blobfs_config);
-    blobfs.format().await.context("Failed to format blobfs")?;
-    let started_blobfs = blobfs.serve().await.context("serving blobfs")?;
-    clone_onto(started_blobfs.root(), blobfs_root)?;
-    if let Some(blob_creator) = blob_creator {
-        started_blobfs.exposed_dir().open(
-            ffxfs::BlobCreatorMarker::PROTOCOL_NAME,
-            fio::Flags::PROTOCOL_SERVICE,
-            &fio::Options::default(),
-            blob_creator.into_channel(),
-        )?;
-    }
-    environment.lock().await.register_filesystem(environment::Filesystem::Serving(started_blobfs));
-    Ok(())
 }
 
 async fn write_data_file(
@@ -869,7 +656,6 @@ pub fn fshost_recovery(
     config: Arc<fshost_config::Config>,
     ramdisk_prefix: Option<String>,
     launcher: Arc<FilesystemLauncher>,
-    matcher_lock: Arc<Mutex<HashSet<String>>>,
 ) -> Arc<service::Service> {
     service::host(move |mut stream: fshost::RecoveryRequestStream| {
         let system_partition_lock = system_partition_lock.clone();
@@ -877,7 +663,6 @@ pub fn fshost_recovery(
         let config = config.clone();
         let ramdisk_prefix = ramdisk_prefix.clone();
         let launcher = launcher.clone();
-        let matcher_lock = matcher_lock.clone();
         async move {
             while let Some(request) = stream.next().await {
                 match request {
@@ -902,41 +687,6 @@ pub fn fshost_recovery(
                         };
                         responder.send(res).unwrap_or_else(|e| {
                             log::error!("failed to send WriteDataFile response. error: {:?}", e);
-                        });
-                    }
-                    Ok(fshost::RecoveryRequest::WipeStorage {
-                        responder,
-                        blobfs_root,
-                        blob_creator,
-                    }) => {
-                        log::info!("recovery wipe storage called");
-                        let res = if !config.ramdisk_image {
-                            log::warn!(
-                                "Can't WipeStorage from a non-recovery build; \
-                                ramdisk_image must be set."
-                            );
-                            Err(zx::Status::NOT_SUPPORTED.into_raw())
-                        } else {
-                            match wipe_storage(
-                                &system_partition_lock,
-                                &env,
-                                &config,
-                                &launcher,
-                                &matcher_lock,
-                                blobfs_root,
-                                blob_creator,
-                            )
-                            .await
-                            {
-                                Ok(()) => Ok(()),
-                                Err(e) => {
-                                    log::warn!(e:?; "recovery service: wipe_storage failed");
-                                    Err(zx::Status::INTERNAL.into_raw())
-                                }
-                            }
-                        };
-                        responder.send(res).unwrap_or_else(|e| {
-                            log::error!(e:?; "failed to send WipeStorage response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::InitSystemPartitionTable {

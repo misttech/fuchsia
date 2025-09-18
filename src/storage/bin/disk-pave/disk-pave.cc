@@ -64,9 +64,7 @@ void PrintUsage() {
 }
 
 // Unless noted specifically, these all map to the equivalent command in fuchsia.paver.
-enum class Command {
-  // fuchsia.fshost.Recovery.WipeStorage
-  kWipe,
+enum class Command : uint8_t {
   kWipePartitionTables,
   kInitPartitionTables,
   kAsset,
@@ -136,8 +134,6 @@ bool ParseFlags(int argc, char** argv, Flags* flags) {
     flags->cmd = Command::kDataFile;
   } else if (!strcmp(argv[0], "install-fvm")) {
     flags->cmd = Command::kFvm;
-  } else if (!strcmp(argv[0], "wipe")) {
-    flags->cmd = Command::kWipe;
   } else if (!strcmp(argv[0], "init-partition-tables")) {
     flags->cmd = Command::kInitPartitionTables;
   } else if (!strcmp(argv[0], "wipe-partition-tables")) {
@@ -266,21 +262,6 @@ zx_status_t RealMain(Flags flags) {
       zx_status_t status = result.ok() ? result.value().status : result.status();
       if (status != ZX_OK) {
         ERROR("Failed to write volumes: %s\n", zx_status_get_string(status));
-        return status;
-      }
-
-      return ZX_OK;
-    }
-    case Command::kWipe: {
-      fidl::WireResult result = fshost_client->WipeStorage({}, {});
-      zx_status_t status;
-      if (!result.ok()) {
-        status = result.status();
-      } else {
-        status = !result->is_ok() ? ZX_OK : result->error_value();
-      }
-      if (status != ZX_OK) {
-        ERROR("Failed to wipe block device: %s\n", zx_status_get_string(status));
         return status;
       }
 

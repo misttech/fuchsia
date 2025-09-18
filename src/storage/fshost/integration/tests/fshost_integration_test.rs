@@ -4,7 +4,7 @@
 
 use assert_matches::assert_matches;
 use delivery_blob::{CompressionMode, Type1Blob, delivery_blob_path};
-use fidl::endpoints::{DiscoverableProtocolMarker as _, create_proxy};
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_fs_startup::VolumeMarker as FsStartupVolumeMarker;
 use fidl_fuchsia_fshost::AdminProxy;
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker};
@@ -22,7 +22,7 @@ use fshost_test_fixture::{
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use futures::FutureExt as _;
 use regex::Regex;
-use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[cfg(feature = "fxblob")]
 use {
@@ -35,7 +35,8 @@ use {
 
 #[cfg(feature = "storage-host")]
 use {
-    fidl::endpoints::ServiceMarker as _, fidl_fuchsia_hardware_block_partition as fpartition,
+    fidl::endpoints::ServiceMarker as _, fidl_fuchsia_fshost::RecoveryProxy,
+    fidl_fuchsia_hardware_block_partition as fpartition,
     fidl_fuchsia_storage_partitions as fpartitions,
 };
 
@@ -160,28 +161,6 @@ async fn data_formatted_with_small_initial_volume_big_target() {
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-
-    fixture.tear_down().await;
-}
-
-// Ensure WipeStorage is not supported in the normal mode of operation (i.e. when the
-// `ramdisk_image` option is false). WipeStorage should only function within a recovery context.
-#[fuchsia::test]
-async fn wipe_storage_not_supported() {
-    let builder = new_builder();
-    let fixture = builder.build().await;
-
-    let recovery: fshost::RecoveryProxy =
-        fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
-
-    let (_, blobfs_server) = create_proxy::<fio::DirectoryMarker>();
-
-    let result = recovery
-        .wipe_storage(Some(blobfs_server), None)
-        .await
-        .unwrap()
-        .expect_err("WipeStorage unexpectedly succeeded");
-    assert_eq!(zx::Status::from_raw(result), zx::Status::NOT_SUPPORTED);
 
     fixture.tear_down().await;
 }
@@ -387,7 +366,7 @@ async fn set_volume_limit() {
 
 #[cfg(feature = "fxblob")]
 async fn shutdown_starnix_volume(exposed_dir: fio::DirectoryProxy) {
-    let (proxy, server_end) = create_proxy::<fidl_fuchsia_fs::AdminMarker>();
+    let (proxy, server_end) = fidl::endpoints::create_proxy::<fidl_fuchsia_fs::AdminMarker>();
     exposed_dir
         .open(
             &format!("svc/{}", fidl_fuchsia_fs::AdminMarker::PROTOCOL_NAME),
@@ -1472,8 +1451,7 @@ async fn reset_uninitialized_gpt() {
 
     assert_eq!(gpt_num_partitions(&fixture).await, 0);
 
-    let recovery: fshost::RecoveryProxy =
-        fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
+    let recovery: RecoveryProxy = fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
     recovery
         .init_system_partition_table(&[fpartitions::PartitionInfo {
             name: "part".to_string(),
@@ -1504,8 +1482,7 @@ async fn reset_initialized_gpt() {
 
     assert_eq!(gpt_num_partitions(&fixture).await, 1);
 
-    let recovery: fshost::RecoveryProxy =
-        fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
+    let recovery: RecoveryProxy = fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
     recovery
         .init_system_partition_table(&[
             fpartitions::PartitionInfo {

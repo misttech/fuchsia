@@ -173,7 +173,6 @@ async fn main() -> Result<(), Error> {
                 config.clone(),
                 ramdisk_device.as_ref().map(|d| d.topological_path().to_string()),
                 launcher,
-                matcher_lock.clone(),
             ),
     };
     if config.fxfs_blob {
