@@ -894,7 +894,7 @@ mod tests {
                 .await
                 .expect("fidl call failed")
                 .expect_err("unexpected success");
-            assert_eq!(err, fcomponent::Error::InvalidArguments);
+            assert_eq!(err, fcomponent::Error::DependencyCycle);
         }
     }
 

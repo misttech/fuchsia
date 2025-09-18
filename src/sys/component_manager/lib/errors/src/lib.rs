@@ -38,7 +38,7 @@ pub enum ModelError {
         err: RoutingError,
     },
     #[error(
-        "opening path `{path}`, in storage directory for `{moniker}` backed by `{source_moniker}`: {err}",
+        "opening path `{path}`, in storage directory for `{moniker}` backed by `{source_moniker}`: {err}"
     )]
     OpenStorageFailed {
         source_moniker: ExtendedMoniker,
@@ -305,7 +305,7 @@ impl Into<fcomponent::Error> for AddDynamicChildError {
             AddDynamicChildError::AddChildError {
                 err:
                     AddChildError::DynamicCapabilityError { err: DynamicCapabilityError::Cycle { .. } },
-            } => fcomponent::Error::InvalidArguments,
+            } => fcomponent::Error::DependencyCycle,
             AddDynamicChildError::AddChildError {
                 err: AddChildError::DynamicCapabilityError { .. },
             } => fcomponent::Error::InvalidArguments,
@@ -1037,9 +1037,7 @@ pub enum CreateNamespaceError {
         err: fuchsia_fs::node::CloneError,
     },
 
-    #[error(
-        "use decl without path cannot be installed into the namespace for {moniker}: {decl:?}"
-    )]
+    #[error("use decl without path cannot be installed into the namespace for {moniker}: {decl:?}")]
     UseDeclWithoutPath { moniker: Moniker, decl: UseDecl },
 
     #[error("instance not in index: {0}")]
@@ -1142,7 +1140,7 @@ pub enum StorageError {
         err: ClonableError,
     },
     #[error(
-        "opening isolated storage from `{dir_source_moniker:?}`'s for `{moniker}` at `{dir_source_path}` (instance_id={instance_id:?}):\n\t{err}",
+        "opening isolated storage from `{dir_source_moniker:?}`'s for `{moniker}` at `{dir_source_path}` (instance_id={instance_id:?}):\n\t{err}"
     )]
     Open {
         dir_source_moniker: Option<Moniker>,

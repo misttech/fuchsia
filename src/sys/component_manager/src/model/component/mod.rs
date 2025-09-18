@@ -2058,7 +2058,7 @@ pub mod tests {
                 },
             )
             .await;
-        assert_matches!(res, Err(fcomponent::Error::InvalidArguments));
+        assert_matches!(res, Err(fcomponent::Error::DependencyCycle));
     }
 
     #[fuchsia::test]
@@ -2106,7 +2106,7 @@ pub mod tests {
                 },
             )
             .await;
-        assert_matches!(cycle_res, Err(fcomponent::Error::InvalidArguments));
+        assert_matches!(cycle_res, Err(fcomponent::Error::DependencyCycle));
     }
 
     #[fuchsia::test]

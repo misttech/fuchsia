@@ -98,10 +98,11 @@ async fn has_running_child(
             | fcomponent::Error::ResourceNotFound
             | fcomponent::Error::ResourceUnavailable
             | fcomponent::Error::Unsupported
+            | fcomponent::Error::DependencyCycle
             | fcomponent::ErrorUnknown!()
                 => {
                 Err(anyhow!("failed to list children: {:?}", error))
-            }
+                }
         },
     }
 }

@@ -159,6 +159,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.component/Error.DEPENDENCY_CYCLE",
+        "value": "15"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.component/Error.INSTANCE_ALREADY_EXISTS",
         "value": "6"
     },
