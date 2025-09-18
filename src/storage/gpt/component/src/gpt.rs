@@ -220,6 +220,8 @@ struct PendingTransaction {
 struct Inner {
     gpt: gpt::Gpt,
     partitions: BTreeMap<u32, Arc<BlockServer<SessionManager<PartitionBackend>>>>,
+    // We track these separately so that we do not update them during transaction commit.
+    overlay_partitions: BTreeMap<u32, Arc<BlockServer<SessionManager<PartitionBackend>>>>,
     // Exposes all partitions for discovery by other components.  Should be kept in sync with
     // `partitions`.
     partitions_dir: PartitionsDirectory,
@@ -264,6 +266,7 @@ impl Inner {
                 Arc::downgrade(parent),
                 overlay_indexes,
             );
+            self.overlay_partitions.insert(index, block_server);
         } else {
             self.partitions_dir.add_partition(
                 &partition_directory_entry_name(index),
@@ -271,8 +274,8 @@ impl Inner {
                 Arc::downgrade(parent),
                 index as usize,
             );
+            self.partitions.insert(index, block_server);
         }
-        self.partitions.insert(index, block_server);
         Ok(())
     }
 
@@ -307,6 +310,7 @@ impl Inner {
 
     async fn bind_all_partitions(&mut self, parent: &Arc<GptManager>) -> Result<(), Error> {
         self.partitions.clear();
+        self.overlay_partitions.clear();
         self.partitions_dir.clear();
 
         let mut partitions = self.gpt.partitions().clone();
@@ -406,6 +410,7 @@ impl GptManager {
             inner: futures::lock::Mutex::new(Inner {
                 gpt,
                 partitions: BTreeMap::new(),
+                overlay_partitions: BTreeMap::new(),
                 partitions_dir: PartitionsDirectory::new(partitions_dir),
                 pending_transaction: None,
             }),
@@ -454,57 +459,36 @@ impl GptManager {
         self: &Arc<Self>,
         transaction: zx::EventPair,
     ) -> Result<(), zx::Status> {
-        if let Err((status, old_infos)) = self.commit_transaction_inner(transaction).await {
-            let inner = self.inner.lock().await;
-            for (idx, info) in old_infos {
-                if let Some(part) = inner.partitions.get(&idx) {
-                    part.session_manager().interface().update_info(info);
-                }
-            }
-            Err(status)
-        } else {
-            Ok(())
-        }
-    }
-
-    // On error, returns a vector of state which was modified that needs to be restored.  Scopeguard
-    // doesn't work here because `inner` requires an async lock.
-    async fn commit_transaction_inner(
-        self: &Arc<Self>,
-        transaction: zx::EventPair,
-    ) -> Result<(), (zx::Status, Vec<(u32, gpt::PartitionInfo)>)> {
         let mut inner = self.inner.lock().await;
-        inner.ensure_transaction_matches(&transaction).map_err(|status| (status, vec![]))?;
+        inner.ensure_transaction_matches(&transaction)?;
         let pending = std::mem::take(&mut inner.pending_transaction).unwrap();
-        let mut old_infos = vec![];
-        for (info, idx) in pending
-            .transaction
-            .partitions
+        let partitions = pending.transaction.partitions.clone();
+        if let Err(err) = inner.gpt.commit_transaction(pending.transaction).await {
+            log::warn!(err:?; "Failed to commit transaction");
+            return Err(zx::Status::IO);
+        }
+        // Everything after this point should be infallible.
+        for (info, idx) in partitions
             .iter()
             .zip(0u32..)
             .filter(|(info, idx)| !info.is_nil() && !pending.added_partitions.contains(idx))
         {
-            let part = inner.partitions.get(&idx).ok_or_else(|| {
-                log::warn!("Failed to find part {idx}");
-                (zx::Status::BAD_STATE, old_infos.clone())
-            })?;
-            old_infos.push((idx, part.session_manager().interface().update_info(info.clone())));
-        }
-        if let Err(err) = inner.gpt.commit_transaction(pending.transaction).await {
-            log::warn!(err:?; "Failed to commit transaction");
-            return Err((zx::Status::IO, old_infos.clone()));
+            // Some physical partitions are not tracked in `inner.partitions` (e.g. when we use an
+            // overlay partition to combine two physical partitions).  In this case, we still need
+            // to propagate the info in the underlying transaction, but there's no need to update
+            // the in-memory info.
+            // Note that overlay partitions can't be changed by transactions anyways, so the info
+            // we propagate should be exactly what it was when we created the transaction.
+            if let Some(part) = inner.partitions.get(&idx) {
+                part.session_manager().interface().update_info(info.clone());
+            }
         }
         for idx in pending.added_partitions {
-            let info = inner
-                .gpt
-                .partitions()
-                .get(&idx)
-                .ok_or_else(|| (zx::Status::BAD_STATE, old_infos.clone()))?
-                .clone();
-            inner.bind_partition(self, idx, info, vec![]).await.map_err(|err| {
-                log::error!(err:?; "Failed to bind partition");
-                (zx::Status::BAD_STATE, old_infos.clone())
-            })?;
+            if let Some(info) = inner.gpt.partitions().get(&idx).cloned() {
+                if let Err(err) = inner.bind_partition(self, idx, info, vec![]).await {
+                    log::error!(err:?; "Failed to bind partition");
+                }
+            }
         }
         Ok(())
     }
@@ -669,6 +653,7 @@ impl GptManager {
         let mut inner = self.inner.lock().await;
         inner.partitions_dir.clear();
         inner.partitions.clear();
+        inner.overlay_partitions.clear();
         self.shutdown.store(true, Ordering::Relaxed);
         log::info!("Shutting down gpt OK");
     }

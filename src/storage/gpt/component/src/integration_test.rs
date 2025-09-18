@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use block_client::{BlockClient as _, MutableBufferSlice, RemoteBlockClient};
+use fidl::HandleBased as _;
 use fidl::endpoints::ServiceMarker as _;
 use fuchsia_component::client::connect::connect_to_protocol_at_dir_root;
 use test_case::test_case;
@@ -273,6 +274,204 @@ async fn test_overlay(overlay_enabled: bool) {
         ]
     } else {
         initial_partitions.clone()
+    };
+    assert_eq!(found_partitions, expected_partitions);
+}
+
+#[test_case(true; "overlay_enabled")]
+#[test_case(false; "overlay_disabled")]
+#[fuchsia::test]
+async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
+    const NUM_BLOCKS: u64 = 1024;
+    const BLOCK_SIZE: u32 = 512;
+    let vmo = zx::Vmo::create(NUM_BLOCKS * BLOCK_SIZE as u64).unwrap();
+    // Write a known pattern into "super" and "userdata" for detection later.  (The offsets match
+    // the ones set below in initial_partitions)
+    vmo.write(b"super", 50 * BLOCK_SIZE as u64).unwrap();
+    vmo.write(b"userdata", 150 * BLOCK_SIZE as u64).unwrap();
+    let block_server = Arc::new(
+        VmoBackedServerOptions {
+            initial_contents: InitialContents::FromVmo(vmo),
+            block_size: BLOCK_SIZE,
+            ..Default::default()
+        }
+        .build()
+        .unwrap(),
+    );
+
+    let gpt = {
+        let mut filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
+            Box::new(move |server_end| Ok(block_server.connect_server(server_end))),
+            Box::new(fs_management::Gpt {
+                merge_super_and_userdata: overlay_enabled,
+                ..fs_management::Gpt::dynamic_child()
+            }),
+        );
+        filesystem.serve_multi_volume().await.expect("Failed to start GPT")
+    };
+
+    let initial_partitions = vec![
+        fpartitions::PartitionInfo {
+            name: "other1".to_string(),
+            type_guid: fpartition::Guid { value: [1u8; 16] },
+            instance_guid: fpartition::Guid { value: [1u8; 16] },
+            start_block: 40,
+            num_blocks: 10,
+            flags: 0,
+        },
+        fpartitions::PartitionInfo {
+            name: "super".to_string(),
+            type_guid: fpartition::Guid { value: [2u8; 16] },
+            instance_guid: fpartition::Guid { value: [2u8; 16] },
+            start_block: 50,
+            num_blocks: 100,
+            flags: 0,
+        },
+        fpartitions::PartitionInfo {
+            name: "userdata".to_string(),
+            type_guid: fpartition::Guid { value: [3u8; 16] },
+            instance_guid: fpartition::Guid { value: [3u8; 16] },
+            start_block: 150,
+            num_blocks: 50,
+            flags: 0,
+        },
+    ];
+
+    let partitions_admin =
+        connect_to_protocol_at_dir_root::<fpartitions::PartitionsAdminProxy>(gpt.exposed_dir())
+            .unwrap();
+    partitions_admin
+        .reset_partition_table(&initial_partitions[..])
+        .await
+        .expect("FIDL error")
+        .expect("Failed to reset");
+
+    let partition_service_dir = fuchsia_fs::directory::open_directory(
+        gpt.exposed_dir(),
+        fpartitions::PartitionServiceMarker::SERVICE_NAME,
+        fio::PERM_READABLE,
+    )
+    .await
+    .unwrap();
+
+    let partitions = fuchsia_fs::directory::readdir(&partition_service_dir)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<Vec<_>>();
+
+    let mut found_partitions = vec![];
+    // Find the "other1" partition and make a change to it.
+    for partition in partitions {
+        let volume = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+            fvolume::VolumeMarker,
+        >(&partition_service_dir, &format!("{}/volume", partition))
+        .unwrap();
+
+        let metadata =
+            volume.get_metadata().await.expect("FIDL error").expect("Failed to GetMetadata");
+        let mut partition_info = fpartitions::PartitionInfo {
+            name: metadata.name.unwrap(),
+            type_guid: metadata.type_guid.unwrap(),
+            instance_guid: metadata.instance_guid.unwrap(),
+            start_block: metadata.start_block_offset.unwrap(),
+            num_blocks: metadata.num_blocks.unwrap(),
+            flags: metadata.flags.unwrap(),
+        };
+        eprintln!("{partition}: {partition_info:?}");
+
+        if partition_info.name == "other1" {
+            let partitions_manager = connect_to_protocol_at_dir_root::<
+                fpartitions::PartitionsManagerProxy,
+            >(gpt.exposed_dir())
+            .unwrap();
+            let transaction = partitions_manager
+                .create_transaction()
+                .await
+                .expect("FIDL error")
+                .expect("Failed to create transaction");
+
+            let part = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+                fpartitions::PartitionMarker,
+            >(&partition_service_dir, &format!("{}/partition", partition))
+            .unwrap();
+            part.update_metadata(fpartitions::PartitionUpdateMetadataRequest {
+                transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                flags: Some(1234),
+                ..Default::default()
+            })
+            .await
+            .expect("FIDL error")
+            .expect("Failed to update_metadata");
+
+            partitions_manager
+                .commit_transaction(transaction)
+                .await
+                .expect("FIDL error")
+                .expect("Failed to commit");
+            let metadata =
+                volume.get_metadata().await.expect("FIDL error").expect("Failed to GetMetadata");
+            partition_info = fpartitions::PartitionInfo {
+                name: metadata.name.unwrap(),
+                type_guid: metadata.type_guid.unwrap(),
+                instance_guid: metadata.instance_guid.unwrap(),
+                start_block: metadata.start_block_offset.unwrap(),
+                num_blocks: metadata.num_blocks.unwrap(),
+                flags: metadata.flags.unwrap(),
+            };
+        }
+
+        found_partitions.push(partition_info);
+    }
+    found_partitions.sort_by_key(|a| a.start_block);
+
+    let expected_partitions = if overlay_enabled {
+        vec![
+            fpartitions::PartitionInfo {
+                name: "other1".to_string(),
+                type_guid: fpartition::Guid { value: [1u8; 16] },
+                instance_guid: fpartition::Guid { value: [1u8; 16] },
+                start_block: 40,
+                num_blocks: 10,
+                flags: 1234,
+            },
+            fpartitions::PartitionInfo {
+                name: "super_and_userdata".to_string(),
+                type_guid: fpartition::Guid { value: [2u8; 16] },
+                instance_guid: fpartition::Guid { value: [2u8; 16] },
+                start_block: 50,
+                num_blocks: 150,
+                flags: 0,
+            },
+        ]
+    } else {
+        vec![
+            fpartitions::PartitionInfo {
+                name: "other1".to_string(),
+                type_guid: fpartition::Guid { value: [1u8; 16] },
+                instance_guid: fpartition::Guid { value: [1u8; 16] },
+                start_block: 40,
+                num_blocks: 10,
+                flags: 1234,
+            },
+            fpartitions::PartitionInfo {
+                name: "super".to_string(),
+                type_guid: fpartition::Guid { value: [2u8; 16] },
+                instance_guid: fpartition::Guid { value: [2u8; 16] },
+                start_block: 50,
+                num_blocks: 100,
+                flags: 0,
+            },
+            fpartitions::PartitionInfo {
+                name: "userdata".to_string(),
+                type_guid: fpartition::Guid { value: [3u8; 16] },
+                instance_guid: fpartition::Guid { value: [3u8; 16] },
+                start_block: 150,
+                num_blocks: 50,
+                flags: 0,
+            },
+        ]
     };
     assert_eq!(found_partitions, expected_partitions);
 }
