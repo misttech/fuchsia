@@ -226,6 +226,7 @@ zx_status_t Channel::WaitAsync(struct fdf_dispatcher* dispatcher, fdf_channel_re
     }
     dispatcher_ = fbl::RefPtr<Dispatcher>(dispatcher);
     channel_read_ = channel_read;
+    wait_options_ = options;
 
     auto callback_request =
         dispatcher_->RegisterCallbackWithoutQueueing(TakeCallbackRequestLocked());
@@ -235,6 +236,7 @@ zx_status_t Channel::WaitAsync(struct fdf_dispatcher* dispatcher, fdf_channel_re
     if (callback_request) {
       dispatcher_ = nullptr;
       channel_read_ = nullptr;
+      wait_options_ = 0;
       ResetCallbackRequestStateLocked(std::move(callback_request));
       return ZX_ERR_UNAVAILABLE;
     }
@@ -382,7 +384,8 @@ zx_status_t Channel::CancelWait() {
     if (!IsWaitAsyncRegisteredLocked()) {
       return ZX_ERR_NOT_FOUND;
     }
-    if (dispatcher_->unsynchronized()) {
+    if ((wait_options_ & FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL) ||
+        dispatcher_->unsynchronized()) {
       bool queue_callback = false;
       // Check if we need to queue the registered callback.
       std::swap(queue_callback, callback_request_pending_queue_);

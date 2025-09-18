@@ -27,7 +27,7 @@ namespace fdf {
 // Concrete implementations: |fdf::ChannelRead|.
 class ChannelReadBase {
  protected:
-  explicit ChannelReadBase(fdf_handle_t channel, uint32_t options,
+  explicit ChannelReadBase(fdf_handle_t channel, uint32_t read_options, uint32_t wait_options,
                            fdf_channel_read_handler_t* handler);
 
   ~ChannelReadBase();
@@ -44,6 +44,9 @@ class ChannelReadBase {
 
   uint32_t options() const { return channel_read_.options; }
   void set_options(uint32_t options) { channel_read_.options = options; }
+
+  uint32_t wait_options() const { return wait_options_; }
+  void set_wait_options(uint32_t wait_options) { wait_options_ = wait_options; }
 
   // Returns true if the wait has begun and not yet completed or been canceled.
   bool is_pending() {
@@ -63,7 +66,8 @@ class ChannelReadBase {
   // # Errors
   //
   // ZX_ERR_INVALID_ARGS: |dispatcher| is an invalid pointer or NULL,
-  // or |options| is any value other than 0.
+  // |read_options| is any value other than 0, or |wait_options| is an unknown
+  // value.
   //
   // ZX_ERR_PEER_CLOSED: There are no available messages and the other
   // side of the channel is closed.
@@ -75,14 +79,17 @@ class ChannelReadBase {
 
   // Cancels the wait.
   //
-  // Whether the wait handler will run depends on whether the dispatcher it
-  // was registered with is synchronized.
+  // Whether the wait handler will run depends on whether the dispatcher it was registered with is
+  // synchronized or |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| was passed with in
+  // to the constructor's |wait_options| argument.
   //
-  // If the dispatcher is synchronized, this must only be called from a dispatcher
-  // thread, and any pending callback will be canceled synchronously.
+  // If the dispatcher is synchronized and |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| was not
+  // passed, this must only be called from a dispatcher thread, and any pending callback will be
+  // canceled synchronously.
   //
-  // If the dispatcher is unsynchronized, the callback will be scheduled to be called
-  // with status |ZX_ERR_CANCELED|.
+  // If the dispatcher is unsynchronized or |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| was passed,
+  // the callback will be scheduled to be called with status |ZX_ERR_CANCELED|.
+  //
   //
   // # Errors
   //
@@ -105,6 +112,7 @@ class ChannelReadBase {
 
  private:
   fdf_channel_read_t channel_read_;
+  uint32_t wait_options_;
 
   std::mutex lock_;
   fdf_dispatcher_t* dispatcher_ __TA_GUARDED(lock_) = nullptr;
@@ -121,8 +129,10 @@ class ChannelRead final : public ChannelReadBase {
   using Handler = fit::function<void(fdf_dispatcher_t* dispatcher, fdf::ChannelRead* channel_read,
                                      zx_status_t status)>;
 
-  explicit ChannelRead(fdf_handle_t channel = ZX_HANDLE_INVALID, uint32_t options = 0,
-                       Handler handler = nullptr);
+  explicit ChannelRead(fdf_handle_t channel, uint32_t read_options, Handler handler)
+      : ChannelRead(channel, read_options, 0, std::move(handler)) {}
+  explicit ChannelRead(fdf_handle_t channel = ZX_HANDLE_INVALID, uint32_t read_options = 0,
+                       uint32_t wait_options = 0, Handler handler = nullptr);
 
   ~ChannelRead();
 

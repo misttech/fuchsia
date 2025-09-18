@@ -36,15 +36,21 @@ typedef struct fdf_channel_call_args {
 // Dispatcher creation options
 
 // This flag disallows parallel calls into callbacks set in the dispatcher.
-#define FDF_DISPATCHER_OPTION_SYNCHRONIZED ((uint32_t)0u << 0)
+static const uint32_t FDF_DISPATCHER_OPTION_SYNCHRONIZED = 0u << 0;
 // This flag allows parallel calls into callbacks set in the dispatcher.
 // Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
-#define FDF_DISPATCHER_OPTION_UNSYNCHRONIZED ((uint32_t)1u << 0)
+static const uint32_t FDF_DISPATCHER_OPTION_UNSYNCHRONIZED = 1u << 0;
 // This flag indicates that the dispatcher may not share zircon threads with other drivers.
 // Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED`.
-#define FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS ((uint32_t)1u << 1)
+static const uint32_t FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS = 1u << 1;
 
-#define FDF_DISPATCHER_OPTION_SYNCHRONIZATION_MASK ((uint32_t)1u << 0)
+static const uint32_t FDF_DISPATCHER_OPTION_SYNCHRONIZATION_MASK = 1u << 0;
+
+// This flag forces a channel wait to call its callback on cancellation,
+// even if the wait starts on a synchronized dispatcher. This allows
+// for safe cancellation of the wait from a different dispatcher than the one
+// it started on.
+static const uint32_t FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL = 1u << 0;
 
 __END_CDECLS
 

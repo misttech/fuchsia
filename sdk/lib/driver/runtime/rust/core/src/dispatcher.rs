@@ -41,9 +41,9 @@ pub struct DispatcherBuilder {
 
 impl DispatcherBuilder {
     /// See `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED` in the C API
-    pub(crate) const UNSYNCHRONIZED: u32 = 0b01;
+    pub(crate) const UNSYNCHRONIZED: u32 = fdf_sys::FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
     /// See `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS` in the C API
-    pub(crate) const ALLOW_THREAD_BLOCKING: u32 = 0b10;
+    pub(crate) const ALLOW_THREAD_BLOCKING: u32 = fdf_sys::FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
 
     /// Creates a new [`DispatcherBuilder`] that can be used to configure a new dispatcher.
     /// For more information on the threading-related flags for the dispatcher, see

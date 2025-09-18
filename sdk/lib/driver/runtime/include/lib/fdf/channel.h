@@ -158,10 +158,15 @@ zx_status_t fdf_channel_read(fdf_handle_t channel, uint32_t options, fdf_arena_t
 // shutting down (being destroyed), the handlers of any remaining wait
 // may be invoked with a status of |ZX_ERR_CANCELED|.
 //
+// If |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| is passed in |options|, a call
+// to |fdf_channel_cancel_wait| will always call the callback rather than
+// cancelling synchronously, even if the wait was started on a synchronized
+// dispatcher.
+//
 // # Errors
 //
 // ZX_ERR_INVALID_ARGS: |dispatcher| or |channel_read| is an invalid pointer or NULL
-// or |options| is any value other than 0.
+// or |options| is an unknown option.
 //
 // ZX_ERR_PEER_CLOSED: There are no available messages and the other
 // side of the channel is closed.
@@ -176,20 +181,21 @@ zx_status_t fdf_channel_wait_async(struct fdf_dispatcher* dispatcher,
 
 // Cancels any pending callback registered via |fdf_channel_wait_async|.
 //
-// Whether the wait handler will run depends on whether the dispatcher it
-// was registered with is synchronized.
+// Whether the wait handler will run depends on whether the dispatcher it was registered with is
+// synchronized or |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| was passed with in
+// |fdf_channel_wait_async|.
 //
-// If the dispatcher is synchronized, this must only be called from a dispatcher
-// thread, and any pending callback will be canceled synchronously.
+// If the dispatcher is synchronized and |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| was not
+// passed, this must only be called from a dispatcher thread, and any pending callback will be
+// canceled synchronously.
 //
-// If the dispatcher is unsynchronized, the callback will be scheduled to be called
-// with status |ZX_ERR_CANCELED|.
+// If the dispatcher is unsynchronized or |FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL| was passed,
+// the callback will be scheduled to be called with status |ZX_ERR_CANCELED|.
 //
 // # Errors
 //
-// ZX_ERR_NOT_FOUND: There was no pending wait either because it is currently running
-// (perhaps in a different thread), already scheduled to be run, already completed,
-// or had not been started.
+// ZX_ERR_NOT_FOUND: There was no pending wait either because it is currently running (perhaps in a
+// different thread), already scheduled to be run, already completed, or had not been started.
 zx_status_t fdf_channel_cancel_wait(fdf_handle_t handle);
 
 // fdf_channel_call() is like a combined fdf_channel_write(), fdf_channel_wait_async(),

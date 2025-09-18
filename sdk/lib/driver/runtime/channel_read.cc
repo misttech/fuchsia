@@ -7,9 +7,10 @@
 
 namespace fdf {
 
-ChannelReadBase::ChannelReadBase(fdf_handle_t channel, uint32_t options,
+ChannelReadBase::ChannelReadBase(fdf_handle_t channel, uint32_t read_options, uint32_t wait_options,
                                  fdf_channel_read_handler_t* handler)
-    : channel_read_{{ASYNC_STATE_INIT}, handler, channel, options} {}
+    : channel_read_{{ASYNC_STATE_INIT}, handler, channel, read_options},
+      wait_options_(wait_options) {}
 
 ChannelReadBase::~ChannelReadBase() { ZX_DEBUG_ASSERT(!dispatcher_); }
 
@@ -24,7 +25,7 @@ zx_status_t ChannelReadBase::Begin(fdf_dispatcher_t* dispatcher) {
     dispatcher_ = dispatcher;
   }
 
-  zx_status_t status = fdf_channel_wait_async(dispatcher, &channel_read_, channel_read_.options);
+  zx_status_t status = fdf_channel_wait_async(dispatcher, &channel_read_, wait_options_);
   if (status != ZX_OK) {
     std::lock_guard<std::mutex> lock(lock_);
     dispatcher_ = nullptr;
@@ -46,14 +47,17 @@ zx_status_t ChannelReadBase::Cancel() {
 
   // Check if we are expecting a callback (in the case of unsynchronized dispatchers),
   // in which case we will not clear |dispatcher_| until the callback is dispatched.
-  if (!(fdf_dispatcher_get_options(dispatcher_) & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED)) {
+  if (!(wait_options_ & FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL) &&
+      !(fdf_dispatcher_get_options(dispatcher_) & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED)) {
     dispatcher_ = nullptr;
   }
   return status;
 }
 
-ChannelRead::ChannelRead(fdf_handle_t channel, uint32_t options, Handler handler)
-    : ChannelReadBase(channel, options, &ChannelRead::CallHandler), handler_(std::move(handler)) {}
+ChannelRead::ChannelRead(fdf_handle_t channel, uint32_t read_options, uint32_t wait_options,
+                         Handler handler)
+    : ChannelReadBase(channel, read_options, wait_options, &ChannelRead::CallHandler),
+      handler_(std::move(handler)) {}
 
 ChannelRead::~ChannelRead() {
   // We do not auto cancel on destruction, as it is possible that on cancellation

@@ -76,7 +76,7 @@ zx_status_t fdf_channel_read(fdf_handle_t channel_handle, uint32_t options, fdf_
 __EXPORT
 zx_status_t fdf_channel_wait_async(struct fdf_dispatcher* dispatcher,
                                    fdf_channel_read_t* channel_read, uint32_t options) {
-  if (!channel_read) {
+  if (!channel_read || (options != 0 && options != FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL)) {
     return ZX_ERR_INVALID_ARGS;
   }
   fbl::RefPtr<driver_runtime::Channel> channel;

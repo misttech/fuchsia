@@ -175,10 +175,11 @@ struct Channel : public Object {
   // Messages written to this end of the channel.
   fbl::DoublyLinkedList<MessagePacketOwner> msg_queue_ __TA_GUARDED(get_lock());
 
-  // Dispatcher and channel_read registered via |WaitAsync|.
+  // Dispatcher, channel_read, and wait_options registered via |WaitAsync|.
   // These are cleared before calling a read callback.
   fbl::RefPtr<Dispatcher> dispatcher_ __TA_GUARDED(get_lock()) = nullptr;
   fdf_channel_read_t* channel_read_ __TA_GUARDED(get_lock()) = nullptr;
+  uint32_t wait_options_ __TA_GUARDED(get_lock()) = 0;
 
   // The next id that can be used to allocate a txid for a call transaction.
   uint32_t next_id_ __TA_GUARDED(get_lock()) = 0;
@@ -188,4 +189,4 @@ struct Channel : public Object {
 
 }  // namespace driver_runtime
 
-#endif  //  SRC_DEVICES_BIN_DRIVER_RUNTIME_CHANNEL_H_
+#endif  // SRC_DEVICES_BIN_DRIVER_RUNTIME_CHANNEL_H_

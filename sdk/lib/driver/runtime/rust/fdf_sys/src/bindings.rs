@@ -527,6 +527,11 @@ impl Default for fdf_channel_call_args {
     }
 }
 pub type fdf_channel_call_args_t = fdf_channel_call_args;
+pub const FDF_DISPATCHER_OPTION_SYNCHRONIZED: u32 = 0;
+pub const FDF_DISPATCHER_OPTION_UNSYNCHRONIZED: u32 = 1;
+pub const FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS: u32 = 2;
+pub const FDF_DISPATCHER_OPTION_SYNCHRONIZATION_MASK: u32 = 1;
+pub const FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL: u32 = 1;
 pub type fdf_arena_t = fdf_arena;
 pub type fdf_arena_tag_t = u32;
 unsafe extern "C" {
