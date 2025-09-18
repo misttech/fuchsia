@@ -409,7 +409,7 @@ impl Kernel {
             weak_self: kernel.clone(),
             kthreads: KernelThreads::new(kernel.clone()),
             features,
-            pids: RwLock::new(PidTable::new()),
+            pids: Default::default(),
             pid_to_koid_mapping: Arc::new(RwLock::new(None)),
             expando: Default::default(),
             default_abstract_socket_namespace: AbstractUnixSocketNamespace::new(unix_address_maker),

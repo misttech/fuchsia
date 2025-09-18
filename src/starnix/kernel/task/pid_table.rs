@@ -66,10 +66,6 @@ pub struct PidTable {
 }
 
 impl PidTable {
-    pub fn new() -> PidTable {
-        Self::default()
-    }
-
     fn get_entry(&self, pid: pid_t) -> Option<&PidEntry> {
         self.table.get(&pid)
     }
