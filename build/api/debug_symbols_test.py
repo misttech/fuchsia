@@ -513,15 +513,28 @@ class DebugSymbolExporterTest(unittest.TestCase):
         for n in range(16):
             debug_symbol_filename = f"debug_{n + 1}.so"
             build_id = bytes.fromhex("4200000000%02x" % n)
-            self._manifest_entries.append(
-                {
-                    "debug": debug_symbol_filename,
-                    "stripped": f"stripped_{n + 1}.so" if n in (1, 5) else "",
-                    "elf_build_id": build_id.hex(),
-                    "label": f"//some:label_{n + 1}",
-                    "os": "fuchsia" if n not in (3, 4) else "linux",
-                }
-            )
+            # entries 1 and 4 have a stripped value.
+            entry = {
+                "debug": debug_symbol_filename,
+                "elf_build_id": build_id.hex(),
+                "label": f"//some:label_{n + 1}",
+                "os": "fuchsia",
+            }
+            # As a special case, entries 1 and 5 have a "stripped" file path/
+            if n in (1, 5):
+                entry["stripped"] = f"stripped_{n + 1}.so"
+            # As a special case, entries 3 and 4 are Linux binaries, not Fuchsia ones.
+            if n in (3, 4):
+                entry["os"] = "linux"
+            # As a special case, entry 2 has a breakpad file path.
+            if n in (2,):
+                entry["breakpad"] = f"breakpad_{n + 1}.sym"
+                (self._root / entry["breakpad"]).write_text(f"BK{n + 1}")
+            # As a special case, entry 6 has a GSYM file path.
+            if n in (6,):
+                entry["gsym"] = f"gsym_{n + 1}.gsym"
+                (self._root / entry["gsym"]).write_text(f"G{n + 1}")
+            self._manifest_entries.append(entry)
             (self._root / debug_symbol_filename).write_bytes(
                 generate_elf_with_build_id(build_id)
             )
@@ -547,27 +560,49 @@ print(args.debug_symbol_file)
         )
         self._dump_syms.chmod(0o755)
 
+        # Create a fake llvm-gsymutil tool that writes the path of
+        # the input debug symbol file to the output.
+        self._gsymutil = self._root / "gsymutil"
+        self._gsymutil.write_text(
+            f"""#!{sys.executable}
+import argparse
+import os
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--convert", required=True, help="Input debug binary")
+parser.add_argument("--out-file", required=True, help="Output file path")
+args = parser.parse_args()
+
+os.makedirs(os.path.dirname(args.out_file), exist_ok=True)
+with open(args.out_file, "wt") as f:
+    f.write(args.convert)
+    f.write("\\n")
+"""
+        )
+        self._gsymutil.chmod(0o755)
+
+        # Custom logging hooks to capture logs and errors.
+        self._log_lines: list[str] = []
+        self._err_lines: list[str] = []
+
+        def log(msg: str) -> None:
+            self._log_lines.append(msg)
+
+        def log_error(msg: str) -> None:
+            self._err_lines.append(msg)
+
+        self._log = log
+        self._log_error = log_error
+
     def tearDown(self) -> None:
         self._td.cleanup()
 
     def test_export_debug_symbols_no_breakpad(self) -> None:
-        log_lines: list[str] = []
-
-        def log(msg: str) -> None:
-            nonlocal log_lines
-            log_lines.append(msg)
-
-        err_lines: list[str] = []
-
-        def log_error(msg: str) -> None:
-            nonlocal err_lines
-            err_lines.append(msg)
-
         exporter = DebugSymbolExporter(
             build_dir=self._root,
             dump_syms_tool=None,
-            log=log,
-            log_error=log_error,
+            log=self._log,
+            log_error=self._log_error,
         )
 
         exporter.parse_debug_symbols(self._manifest_entries)
@@ -591,14 +626,15 @@ print(args.debug_symbol_file)
                 debug_file.readlink(), self._root / symbol_filename
             )
 
-        self.assertListEqual(err_lines, [])
+        self.assertListEqual(self._err_lines, [])
 
         self.assertListEqual(
-            log_lines,
+            self._log_lines,
             [
                 f"Creating {output_dir}/build-ids.json",
                 f"Creating {output_dir}/build-ids.txt",
-                f"Creating 18 symlinks in {output_dir}",
+                f"Creating 20 symlinks in {output_dir}",
+                "Done!",
             ],
         )
 
@@ -724,23 +760,11 @@ print(args.debug_symbol_file)
         )
 
     def test_export_debug_symbols_with_breakpad(self) -> None:
-        log_lines: list[str] = []
-
-        def log(msg: str) -> None:
-            nonlocal log_lines
-            log_lines.append(msg)
-
-        err_lines: list[str] = []
-
-        def log_error(msg: str) -> None:
-            nonlocal err_lines
-            err_lines.append(msg)
-
         exporter = DebugSymbolExporter(
             build_dir=self._root,
             dump_syms_tool=self._dump_syms,
-            log=log,
-            log_error=log_error,
+            log=self._log,
+            log_error=self._log_error,
         )
 
         exporter.parse_debug_symbols(self._manifest_entries)
@@ -763,23 +787,20 @@ print(args.debug_symbol_file)
                 debug_file.readlink(), self._root / symbol_filename
             )
 
-        self.assertListEqual(err_lines, [])
+        self.assertListEqual(self._err_lines, [])
 
         rel_root = os.path.relpath(self._root)
 
         self.maxDiff = None
         self.assertListEqual(
-            log_lines,
+            self._log_lines,
             [
                 f"Creating {output_dir}/build-ids.json",
                 f"Creating {output_dir}/build-ids.txt",
-                f"Creating 18 symlinks in {output_dir}",
-                f"Generating 16 breakpad symbols in {output_dir}",
+                f"Creating 20 symlinks in {output_dir}",
+                f"Generating 13 breakpad symbols in {output_dir}",
                 f"  - Creating .build-id/42/0000000000.sym FROM {rel_root}/debug_1.so",
                 f"  - Creating .build-id/42/0000000001.sym FROM {rel_root}/debug_2.so",
-                f"  - Creating .build-id/42/0000000002.sym FROM {rel_root}/debug_3.so",
-                f"  - Creating .build-id/42/0000000003.sym FROM {rel_root}/debug_4.so",
-                f"  - Creating .build-id/42/0000000004.sym FROM {rel_root}/debug_5.so",
                 f"  - Creating .build-id/42/0000000005.sym FROM {rel_root}/debug_6.so",
                 f"  - Creating .build-id/42/0000000006.sym FROM {rel_root}/debug_7.so",
                 f"  - Creating .build-id/42/0000000007.sym FROM {rel_root}/debug_8.so",
@@ -794,6 +815,33 @@ print(args.debug_symbol_file)
                 "Done!",
             ],
         )
+
+        for bin_index in range(16):
+            dst_file = output_dir / (
+                ".build-id/42/00000000%02x.sym" % bin_index
+            )
+            src_file = self._root / f"debug_{bin_index + 1}.so"
+            if bin_index in (3, 4):
+                # No breakpad file for non-Fuchsia binaries and for pre-existing one.
+                self.assertFalse(
+                    dst_file.exists(), msg=f"breakpad_file={dst_file}"
+                )
+            else:
+                self.assertTrue(
+                    dst_file.exists(), msg=f"breakpad_file={dst_file}"
+                )
+                if bin_index in (2,):
+                    self.assertEqual(
+                        dst_file.read_text().strip(),
+                        "BK3",
+                        msg=f"bin_index={bin_index} src_file={src_file} dst_file={dst_file}",
+                    )
+                else:
+                    self.assertEqual(
+                        dst_file.read_text().strip(),
+                        str(src_file),
+                        msg=f"bin_index={bin_index} src_file={src_file} dst_file={dst_file}",
+                    )
 
         build_ids_txt = output_dir / "build-ids.txt"
         self.assertTrue(build_ids_txt.is_file())
@@ -841,24 +889,91 @@ print(args.debug_symbol_file)
             },
         )
 
+    def test_export_debug_symbols_with_gsymutil(self) -> None:
+        exporter = DebugSymbolExporter(
+            build_dir=self._root,
+            gsymutil_tool=self._gsymutil,
+            log=self._log,
+            log_error=self._log_error,
+        )
+
+        exporter.parse_debug_symbols(self._manifest_entries)
+
+        output_dir = self._root / "out"
+        self.assertTrue(exporter.export_debug_symbols(output_dir))
+
+        self.assertTrue((output_dir / ".build-id").is_dir())
+
+        for build_id, symbol_filename in self._debug_symbol_files.items():
+            debug_file = (
+                output_dir
+                / ".build-id"
+                / build_id[0:2]
+                / f"{build_id[2:]}.debug"
+            )
+            self.assertTrue(debug_file.exists(), msg=f"For {debug_file}")
+            self.assertTrue(debug_file.is_symlink(), msg=f"For {debug_file}")
+            self.assertEqual(
+                debug_file.readlink(), self._root / symbol_filename
+            )
+
+        self.assertListEqual(self._err_lines, [])
+
+        rel_root = os.path.relpath(self._root)
+
+        self.maxDiff = None
+        self.assertListEqual(
+            self._log_lines,
+            [
+                f"Creating {output_dir}/build-ids.json",
+                f"Creating {output_dir}/build-ids.txt",
+                f"Creating 20 symlinks in {output_dir}",
+                f"Generating 13 GSYM symbols in {output_dir}",
+                f"  - Creating .build-id/42/0000000000.gsym FROM {rel_root}/debug_1.so",
+                f"  - Creating .build-id/42/0000000001.gsym FROM {rel_root}/debug_2.so",
+                f"  - Creating .build-id/42/0000000002.gsym FROM {rel_root}/debug_3.so",
+                f"  - Creating .build-id/42/0000000005.gsym FROM {rel_root}/debug_6.so",
+                f"  - Creating .build-id/42/0000000007.gsym FROM {rel_root}/debug_8.so",
+                f"  - Creating .build-id/42/0000000008.gsym FROM {rel_root}/debug_9.so",
+                f"  - Creating .build-id/42/0000000009.gsym FROM {rel_root}/debug_10.so",
+                f"  - Creating .build-id/42/000000000a.gsym FROM {rel_root}/debug_11.so",
+                f"  - Creating .build-id/42/000000000b.gsym FROM {rel_root}/debug_12.so",
+                f"  - Creating .build-id/42/000000000c.gsym FROM {rel_root}/debug_13.so",
+                f"  - Creating .build-id/42/000000000d.gsym FROM {rel_root}/debug_14.so",
+                f"  - Creating .build-id/42/000000000e.gsym FROM {rel_root}/debug_15.so",
+                f"  - Creating .build-id/42/000000000f.gsym FROM {rel_root}/debug_16.so",
+                "Done!",
+            ],
+        )
+        for bin_index in range(16):
+            dst_file = output_dir / (
+                ".build-id/42/00000000%02x.gsym" % bin_index
+            )
+            src_file = self._root / f"debug_{bin_index + 1}.so"
+            if bin_index in (3, 4):
+                # No GSYM symbols for non-Fuchsia binaries.
+                self.assertFalse(dst_file.exists(), msg=f"gsym_file={dst_file}")
+            else:
+                self.assertTrue(dst_file.exists(), msg=f"gsym_file={dst_file}")
+                if bin_index in (6,):
+                    self.assertEqual(
+                        dst_file.read_text().strip(),
+                        "G7",
+                        msg=f"bin_index={bin_index} src_file={src_file} dst_file={dst_file}",
+                    )
+                else:
+                    self.assertEqual(
+                        dst_file.read_text().strip(),
+                        str(src_file),
+                        msg=f"bin_index={bin_index} src_file={src_file} dst_file={dst_file}",
+                    )
+
     def test_get_debug_symbols_to_build_id_copies(self) -> None:
-        log_lines: list[str] = []
-
-        def log(msg: str) -> None:
-            nonlocal log_lines
-            log_lines.append(msg)
-
-        err_lines: list[str] = []
-
-        def log_error(msg: str) -> None:
-            nonlocal err_lines
-            err_lines.append(msg)
-
         exporter = DebugSymbolExporter(
             build_dir=self._root,
             dump_syms_tool=None,
-            log=log,
-            log_error=log_error,
+            log=self._log,
+            log_error=self._log_error,
         )
 
         exporter.parse_debug_symbols(self._manifest_entries)
@@ -945,23 +1060,11 @@ print(args.debug_symbol_file)
         )
 
     def test_copy_debug_symbols_to_build_id(self) -> None:
-        log_lines: list[str] = []
-
-        def log(msg: str) -> None:
-            nonlocal log_lines
-            log_lines.append(msg)
-
-        err_lines: list[str] = []
-
-        def log_error(msg: str) -> None:
-            nonlocal err_lines
-            err_lines.append(msg)
-
         exporter = DebugSymbolExporter(
             build_dir=self._root,
             dump_syms_tool=None,
-            log=log,
-            log_error=log_error,
+            log=self._log,
+            log_error=self._log_error,
         )
 
         exporter.parse_debug_symbols(self._manifest_entries)
