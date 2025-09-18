@@ -1,6 +1,6 @@
 # Troubleshoot network connectivity: Device discovery
 
-Once it's verified that the network interface is configured correctly, you can begin probing for
+Once the network interface is properly configured, you can begin probing for
 the presence of the Fuchsia target device.
 
 Note: The Fuchsia emulator (both AEMU and QEMU) uses different discovery mechanisms, which are out
