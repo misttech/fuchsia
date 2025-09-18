@@ -3569,3 +3569,22 @@
   reviewers: ['abarth@google.com', 'maniscalco@google.com', 'mcgrathr@google.com']
   submitted: '2025-05-19'
   reviewed: '2025-07-08'
+
+- name: 'RFC-0274'
+  title: 'Kernel Assisted CPU Profiling'
+  short_description: 'A time-based, single-session CPU profiler that utilizes frame pointers to obtain backtraces from user threads'
+  authors: ['gmtr@google.com', 'rudymathu@google.com']
+  file: '0274_kernel_assisted_cpu_profiling.md'
+  area: ['Kernel', 'Performance']
+  issue: ['377907138']
+  gerrit_change_id: ['1277455']
+  status: 'Accepted'
+  reviewers: [
+    'adamperry@google.com',
+    'eep@google.com',
+    'eieio@google.com',
+    'mcgrathr@google.com',
+    'wilkinsonclay@google.com',
+  ]
+  submitted: '2025-05-29'
+  reviewed: '2025-09-15'

@@ -564,3 +564,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0272_wake_source_reporting.md
   - title: "RFC-0273: Handle specific information calls"
     path: /docs/contribute/governance/rfcs/0273_handle_information_calls.md
+  - title: "RFC-0274: Kernel Assisted CPU Profiling"
+    path: /docs/contribute/governance/rfcs/0274_kernel_assisted_cpu_profiling.md
