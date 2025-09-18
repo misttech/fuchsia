@@ -24,6 +24,7 @@ use fxfs::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, Timestamp
 use linked_hash_map::LinkedHashMap;
 use scopeguard::ScopeGuard;
 use std::cmp::{Eq, PartialEq};
+use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -128,10 +129,15 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
         receiver: async_channel::Receiver<Vec<Self::MessageType>>,
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
         async move {
-            let mut recording = LinkedHashMap::<Self::MessageType, ()>::new();
+            let mut recorded_offsets = LinkedHashMap::<Self::MessageType, ()>::new();
+            let mut recorded_opens = BTreeSet::<Self::IdType>::new();
             while let Ok(buffer) = receiver.recv().await {
                 for message in buffer {
-                    recording.insert(message, ());
+                    if message.is_open_marker() {
+                        recorded_opens.insert(message.id());
+                    } else {
+                        recorded_offsets.insert(message, ());
+                    }
                 }
             }
 
@@ -159,12 +165,10 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
             let mut offset = 0;
             let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
             let mut next_block = block_size;
-            for (message, _) in &recording {
+            while let Some((message, _)) = recorded_offsets.pop_front() {
                 // If this is a file opening marker or a file opening was never recorded, drop the
                 // message.
-                if message.is_open_marker()
-                    || !recording.contains_key(&message.open_marker_for_id())
-                {
+                if !recorded_opens.contains(&message.id()) {
                     continue;
                 }
 
@@ -319,7 +323,6 @@ trait Message: Eq + PartialEq + Sized + Send + Sync + std::hash::Hash + 'static 
     fn decode_from(src: &[u8]) -> Self;
     fn is_zeroes(&self) -> bool;
     fn from_node_request(node: Arc<dyn FxNode>, offset: u64) -> Result<Self, Error>;
-    fn open_marker_for_id(&self) -> Self;
     fn is_open_marker(&self) -> bool;
 }
 
@@ -372,10 +375,6 @@ impl Message for BlobMessage {
             Ok(blob) => Ok(Self { id: blob.root(), offset }),
             Err(_) => Err(anyhow!("Cannot record non-blob entry.")),
         }
-    }
-
-    fn open_marker_for_id(&self) -> Self {
-        Self { id: self.id, offset: FILE_OPEN_MARKER }
     }
 
     fn is_open_marker(&self) -> bool {
@@ -432,10 +431,6 @@ impl Message for FileMessage {
             Ok(file) => Ok(Self { id: file.object_id(), offset }),
             Err(_) => Err(anyhow!("Cannot record non-file entry")),
         }
-    }
-
-    fn open_marker_for_id(&self) -> Self {
-        Self { id: self.id, offset: FILE_OPEN_MARKER }
     }
 
     fn is_open_marker(&self) -> bool {
