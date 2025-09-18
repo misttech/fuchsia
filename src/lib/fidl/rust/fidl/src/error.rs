@@ -50,7 +50,7 @@ pub enum Error {
     Invalid,
 
     #[error(
-        "The FIDL object of size {actual} could not fit within the provided \
+        "The FIDL object of size {expected} could not fit within the provided \
         buffer range of size {actual}."
     )]
     OutOfRange { expected: usize, actual: usize },
