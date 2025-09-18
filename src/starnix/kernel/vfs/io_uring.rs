@@ -6,7 +6,8 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{
-    DesiredAddress, IOVecPtr, MappingName, MappingOptions, ProtectionFlags, read_to_object_as_bytes,
+    DesiredAddress, IOVecPtr, MappingName, MappingOptions, PAGE_SIZE, ProtectionFlags,
+    read_to_object_as_bytes,
 };
 use crate::task::CurrentTask;
 use crate::vfs::socket::syscalls::{MsgHdrPtr, sys_recvfrom, sys_recvmsg, sys_sendmsg, sys_sendto};
@@ -19,7 +20,7 @@ use crate::vfs::{
 };
 use bitflags::bitflags;
 use starnix_logging::{set_zx_name, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, OrderedMutex, TerminalLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffers;
 use starnix_uapi::errors::Errno;
@@ -597,8 +598,14 @@ impl IoUringQueue {
 
 pub struct IoUringFileObject {
     queue: IoUringQueue,
-    registered_buffers: Mutex<UserBuffers>,
+    state: OrderedMutex<IoUringFileMutableState, TerminalLock>,
     _flags: IoRingSetupFlags,
+}
+
+#[derive(Default, Debug)]
+pub struct IoUringFileMutableState {
+    registered_buffers: UserBuffers,
+    registered_iobuffers: Vec<uapi::io_uring_buf_reg>,
 }
 
 impl IoUringFileObject {
@@ -660,24 +667,61 @@ impl IoUringFileObject {
             ..Default::default()
         };
 
-        let object = Box::new(IoUringFileObject {
-            queue,
-            registered_buffers: Default::default(),
-            _flags: flags,
-        });
+        let object =
+            Box::new(IoUringFileObject { queue, state: Default::default(), _flags: flags });
         Ok(Anon::new_file(locked, current_task, object, OpenFlags::RDWR, "[io_uring]"))
     }
 
-    pub fn register_buffers(&self, buffers: UserBuffers) {
+    pub fn register_buffers(&self, locked: &mut Locked<Unlocked>, buffers: UserBuffers) {
         // The docs for io_uring_register imply that the kernel should actually map this memory
         // into its own address space when these buffers are registered. That's probably observable
         // if the client changes the mappings for these addresses between the time they are
         // registered and they are used. For now, we just store the addresses.
-        *self.registered_buffers.lock() = buffers;
+        self.state.lock(locked).registered_buffers = buffers;
     }
 
-    pub fn unregister_buffers(&self) {
-        self.registered_buffers.lock().clear();
+    pub fn unregister_buffers(&self, locked: &mut Locked<Unlocked>) {
+        self.state.lock(locked).registered_buffers.clear();
+    }
+
+    pub fn register_ring_buffers(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        buffer_definition: uapi::io_uring_buf_reg,
+    ) -> Result<(), Errno> {
+        track_stub!(
+            TODO("https://fxbug.dev/297431387"),
+            "IoUringFileObject::register_ring_buffers"
+        );
+        if !buffer_definition.ring_addr.is_multiple_of(*PAGE_SIZE) {
+            return error!(EINVAL);
+        }
+        if !buffer_definition.ring_entries.is_power_of_two() {
+            return error!(EINVAL);
+        }
+        if buffer_definition.ring_entries > IORING_MAX_ENTRIES {
+            return error!(EINVAL);
+        }
+        self.state.lock(locked).registered_iobuffers.push(buffer_definition);
+        Ok(())
+    }
+
+    pub fn unregister_ring_buffers(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        buffer_definition: uapi::io_uring_buf_reg,
+    ) -> Result<(), Errno> {
+        if self
+            .state
+            .lock(locked)
+            .registered_iobuffers
+            .extract_if(.., |buffer| buffer.bgid == buffer_definition.bgid)
+            .next()
+            .is_none()
+        {
+            return error!(EINVAL);
+        }
+        Ok(())
     }
 
     pub fn enter(
@@ -702,13 +746,14 @@ impl IoUringFileObject {
         Ok(submitted)
     }
 
-    fn has_registered_buffers(&self) -> bool {
-        !self.registered_buffers.lock().is_empty()
+    fn has_registered_buffers(&self, locked: &mut Locked<Unlocked>) -> bool {
+        !self.state.lock(locked).registered_buffers.is_empty()
     }
 
-    fn check_buffer(&self, entry: &SqEntry) -> Result<(), Errno> {
+    fn check_buffer(&self, locked: &mut Locked<Unlocked>, entry: &SqEntry) -> Result<(), Errno> {
         let index = entry.buf_index();
-        let buffers = self.registered_buffers.lock();
+        let state = self.state.lock(locked);
+        let buffers = &state.registered_buffers;
         if buffers.is_empty() {
             return error!(EFAULT);
         }
@@ -763,7 +808,7 @@ impl IoUringFileObject {
                 // TODO(https://fxbug.dev/297431387): We're supposed to make a kernel mapping
                 // when the buffers are registered and we should be performing this operation using
                 // those kernel mappings rather than using the userspace mappings.
-                self.check_buffer(entry)?;
+                self.check_buffer(locked, entry)?;
                 do_read(locked, current_task, entry)
             }
             Op::WriteFixed => {
@@ -773,17 +818,17 @@ impl IoUringFileObject {
                 // TODO(https://fxbug.dev/297431387): We're supposed to make a kernel mapping
                 // when the buffers are registered and we should be performing this operation using
                 // those kernel mappings rather than using the userspace mappings.
-                self.check_buffer(entry)?;
+                self.check_buffer(locked, entry)?;
                 do_write(locked, current_task, entry)
             }
             Op::Read => {
-                if self.has_registered_buffers() {
+                if self.has_registered_buffers(locked) {
                     return error!(EINVAL);
                 }
                 do_read(locked, current_task, entry)
             }
             Op::Write => {
-                if self.has_registered_buffers() {
+                if self.has_registered_buffers(locked) {
                     return error!(EINVAL);
                 }
                 do_write(locked, current_task, entry)

@@ -75,6 +75,7 @@ use starnix_uapi::{
     io_uring_register_op_IORING_REGISTER_PBUF_RING as IORING_REGISTER_PBUF_RING,
     io_uring_register_op_IORING_REGISTER_RING_FDS as IORING_REGISTER_RING_FDS,
     io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS,
+    io_uring_register_op_IORING_UNREGISTER_PBUF_RING as IORING_UNREGISTER_PBUF_RING,
     io_uring_register_op_IORING_UNREGISTER_RING_FDS as IORING_UNREGISTER_RING_FDS, iocb, off_t,
     pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
 };
@@ -189,6 +190,14 @@ uapi::check_arch_independent_layout! {
         offset,
         resv,
         data,
+    }
+
+    io_uring_buf_reg {
+        ring_addr,
+        ring_entries,
+        bgid,
+        flags,
+        resv,
     }
 }
 
@@ -3259,7 +3268,7 @@ pub fn sys_io_uring_enter(
 }
 
 pub fn sys_io_uring_register(
-    _locked: &mut Locked<Unlocked>,
+    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     opcode: u32,
@@ -3276,14 +3285,14 @@ pub fn sys_io_uring_register(
             // TODO(https://fxbug.dev/297431387): Check nr_args for zero and return EINVAL here.
             let iovec = IOVecPtr::new(current_task, arg);
             let buffers = current_task.read_iovec(iovec, nr_args)?;
-            io_uring.register_buffers(buffers);
+            io_uring.register_buffers(locked, buffers);
             return Ok(SUCCESS);
         }
         IORING_UNREGISTER_BUFFERS => {
             if !arg.is_null() {
                 return error!(EINVAL);
             }
-            io_uring.unregister_buffers();
+            io_uring.unregister_buffers(locked);
             return Ok(SUCCESS);
         }
         IORING_REGISTER_IOWQ_MAX_WORKERS => {
@@ -3331,12 +3340,23 @@ pub fn sys_io_uring_register(
             return Ok(SUCCESS);
         }
         IORING_REGISTER_PBUF_RING => {
-            track_stub!(
-                TODO("https://fxbug.dev/297431387"),
-                "io_uring_register IORING_REGISTER_PBUF_RING",
-                opcode
-            );
-            return error!(EINVAL);
+            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
+            if nr_args != 1 {
+                return error!(EINVAL);
+            }
+            let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
+            io_uring.register_ring_buffers(locked, buffer_definition)?;
+            return Ok(SUCCESS);
+        }
+
+        IORING_UNREGISTER_PBUF_RING => {
+            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
+            if nr_args != 1 {
+                return error!(EINVAL);
+            }
+            let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
+            io_uring.unregister_ring_buffers(locked, buffer_definition)?;
+            return Ok(SUCCESS);
         }
 
         _ => {
