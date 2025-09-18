@@ -114,13 +114,6 @@ fuchsia_package("omaha-client-unconfigured") {
   package_name = "omaha-client"
 }
 
-fuchsia_package("omaha-client") {
-  deps = [
-    ":component",
-    ":omaha-client-structured-config",
-  ]
-}
-
 fuchsia_component("omaha-client-service-bin-tests-test-driver") {
   testonly = true
   component_name = "test-driver"
@@ -139,7 +132,6 @@ fuchsia_unittest_package("omaha-client-service-bin-tests") {
   deps = [
     ":omaha-client-channels-test-config",
     ":omaha-client-service-bin-tests-test-driver",
-    ":omaha-client-structured-config",
     "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
     "//src/power/shutdown-shim/tests:shutdown_shim_component",
@@ -171,20 +163,15 @@ group("hermetic_tests") {
   ]
 }
 
-fuchsia_structured_config_values("omaha-client-structured-config") {
+fuchsia_structured_config_values("omaha-client-structured-config-test") {
   cm_label = ":manifest"
-  values_source = "configs/default.json5"
-}
-
-fuchsia_structured_config_values("omaha-client-structured-config-no-restart") {
-  cm_label = ":manifest"
-  values_source = "configs/no-restart.json5"
-}
-
-fuchsia_structured_config_values(
-    "omaha-client-structured-config-delayed-start") {
-  cm_label = ":manifest"
-  values_source = "configs/delayed-start.json5"
+  values = {
+    allow_reboot_when_idle = true
+    fuzz_percentage_range = 25
+    periodic_interval_minutes = 60
+    retry_delay_seconds = 300
+    startup_delay_seconds = 60
+  }
 }
 
 fuchsia_structured_config_rust_lib("omaha-client-structured-config-lib") {
