@@ -63,14 +63,16 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             time.sleep(4)
 
         model = trace_importing.create_model_from_trace_file_path(trace_path)
-        event_names = {
-            event.name
-            for event in trace_utils.filter_events(
+        events = list(
+            trace_utils.filter_events(
                 model.all_events(),
                 category=CATEGORY,
                 type=trace_model.Event,
             )
-        }
+        )
+        asserts.assert_greater(len(events), 0)
+
+        event_names = {event.name for event in events}
         asserts.assert_equal(
             event_names,
             {
@@ -81,6 +83,10 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
                 "memory_stall",
             },
         )
+
+        for event in events:
+            if event.name == "memory_stall":
+                asserts.assert_in("page_refaults", event.args.keys())
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ pub struct ServiceTask {
 pub fn start_service(
     attribution_data_service: Arc<impl AttributionDataProvider + 'static>,
     kernel_stats_proxy: fkernel::StatsProxy,
-    stall_provider: Arc<impl StallProvider>,
+    stall_provider: impl StallProvider,
     memory_monitor2_config: Config,
     memorypressure_proxy: fpressure::ProviderProxy,
     bucket_definitions: Arc<[BucketDefinition]>,
@@ -84,7 +84,7 @@ pub fn start_service(
 
 fn build_inspect_tree(
     kernel_stats_proxy: fkernel::StatsProxy,
-    stall_provider: Arc<impl StallProvider>,
+    stall_provider: impl StallProvider,
     inspector: &Inspector,
     config: &Config,
 ) {
@@ -235,7 +235,7 @@ fn pressure_to_deadline(level: fpressure::Level, config: &Config) -> MonotonicIn
 fn digest_service(
     memory_monitor2_config: Config,
     attribution_data_service: Arc<impl AttributionDataProvider + 'static>,
-    stall_provider: Arc<impl StallProvider>,
+    stall_provider: impl StallProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     memorypressure_proxy: fpressure::ProviderProxy,
     bucket_definitions: Arc<[BucketDefinition]>,
@@ -477,6 +477,7 @@ mod tests {
         Ok(())
     }
 
+    #[derive(Clone)]
     struct FakeStallProvider {}
     impl StallProvider for FakeStallProvider {
         fn get_stall_info(&self) -> Result<MemoryStallMetrics, anyhow::Error> {
@@ -502,7 +503,7 @@ mod tests {
 
         build_inspect_tree(
             stats_provider,
-            Arc::new(FakeStallProvider {}),
+            FakeStallProvider {},
             &inspector,
             &Config {
                 capture_on_pressure_change: true,
@@ -594,7 +595,7 @@ mod tests {
                 normal_capture_delay_s: 10,
             },
             get_attribution_data_provider(),
-            Arc::new(FakeStallProvider {}),
+            FakeStallProvider {},
             stats_provider,
             pressure_provider,
             Default::default(),
@@ -734,7 +735,7 @@ mod tests {
                 normal_capture_delay_s: 10,
             },
             get_attribution_data_provider(),
-            Arc::new(FakeStallProvider {}),
+            FakeStallProvider {},
             stats_provider,
             pressure_provider,
             Default::default(),
@@ -849,7 +850,7 @@ mod tests {
                 normal_capture_delay_s: 100,
             },
             get_attribution_data_provider(),
-            Arc::new(FakeStallProvider {}),
+            FakeStallProvider {},
             stats_provider,
             pressure_provider,
             Default::default(),
@@ -984,7 +985,7 @@ mod tests {
                 normal_capture_delay_s: 10,
             },
             get_attribution_data_provider(),
-            Arc::new(FakeStallProvider {}),
+            FakeStallProvider {},
             stats_provider,
             pressure_provider,
             Default::default(),
@@ -1038,7 +1039,7 @@ mod tests {
                 normal_capture_delay_s: 10,
             },
             get_attribution_data_provider(),
-            Arc::new(FakeStallProvider {}),
+            FakeStallProvider {},
             stats_provider,
             pressure_provider,
             Default::default(),

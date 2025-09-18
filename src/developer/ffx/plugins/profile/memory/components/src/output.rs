@@ -187,7 +187,12 @@ fn write_summary_kernel_stats(
         w,
         "  Memory stalls (full): {}",
         format_nanoseconds(performance_metrics.full_memory_stalls_ns.unwrap() as f64)
-    )
+    )?;
+    // Page refaults are the total number of page faults of user-pager backed pages, for pages that
+    // were previously loaded, then unloaded due to memory pressure. This is reported by user
+    // pagers directly, so may underestimate the true count on the whole system (due to some user
+    // pagers not integrating with the reporting protocol).
+    writeln!(w, "  Page refaults: {}", performance_metrics.page_refaults.unwrap())
 }
 
 fn write_summary_principal_csv<W: std::io::Write>(
@@ -420,6 +425,7 @@ mod tests {
         let performance_metrics = fplugin::PerformanceImpactMetrics {
             some_memory_stalls_ns: Some(1000 * 1000 * 2048),
             full_memory_stalls_ns: Some(1000 * 1000 * 512),
+            page_refaults: Some(256),
             ..Default::default()
         };
 
@@ -451,6 +457,7 @@ Kernel:    18.00 KiB
     vmo_discardable_unlocked_bytes: 18.00 KiB
   Memory stalls (some): 2.048 s
   Memory stalls (full): 512.00 ms
+  Page refaults: 256
 "#;
         pretty_assertions::assert_eq!(actual_output, expected_output);
     }

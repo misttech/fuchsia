@@ -18,7 +18,7 @@ use memory_monitor2_config::Config;
 use resources::Job;
 use snapshot::AttributionSnapshot;
 use stalls::StallProvider;
-use stalls::refaults::RefaultTracker;
+use stalls::refaults::RefaultProvider;
 use std::sync::Arc;
 use traces::CATEGORY_MEMORY_CAPTURE;
 use zx::{BootInstant, MonotonicInstant};
@@ -80,9 +80,11 @@ async fn main() -> Result<(), Error> {
     let kernel_stats = connect_to_protocol::<fkernel::StatsMarker>()
         .context("Failed to connect to the kernel stats provider")?;
 
-    let stall_provider = Arc::new(stalls::StallProviderImpl::new(Arc::new(
+    let stall_provider = stalls::StallProviderImpl::new(Arc::new(
         connect_to_protocol::<fkernel::StallResourceMarker>()?.get().await?,
-    ))?);
+    ))?;
+
+    let page_refault_tracker = stalls::refaults::RefaultProviderImpl::default();
 
     // Serves Fuchsia performance trace system.
     // https://fuchsia.dev/fuchsia-src/concepts/kernel/tracing-system
@@ -90,6 +92,7 @@ async fn main() -> Result<(), Error> {
     let _kernel_trace_service = fuchsia_async::Task::spawn(traces::kernel::serve_forever(
         kernel_stats.clone(),
         stall_provider.clone(),
+        page_refault_tracker.clone(),
     ));
 
     let attribution_data_provider = AttributionDataProviderImpl::new(attribution_client, root_job);
@@ -118,8 +121,6 @@ async fn main() -> Result<(), Error> {
         stall_provider.clone(),
         create_metric_event_logger(metric_event_logger_factory).await?,
     ));
-
-    let page_refault_tracker = stalls::refaults::RefaultTracker::default();
 
     service_fs
         .for_each_concurrent(None, |stream| async {
@@ -155,8 +156,8 @@ async fn serve_client_stream(
     bucket_definitions: Arc<[BucketDefinition]>,
     attribution_data_provider: Arc<AttributionDataProviderImpl>,
     kernel_stats_proxy: fkernel::StatsProxy,
-    stall_provider: Arc<impl StallProvider>,
-    refault_tracker: RefaultTracker,
+    stall_provider: impl StallProvider,
+    refault_tracker: impl RefaultProvider,
 ) -> Result<(), Error> {
     while let Some(request) = stream.next().await.transpose()? {
         match request {
@@ -199,7 +200,7 @@ async fn serve_client_stream(
 async fn provide_snapshot(
     attribution_data_provider: Arc<AttributionDataProviderImpl>,
     kernel_stats_proxy: fkernel::StatsProxy,
-    stall_provider: Arc<impl StallProvider>,
+    stall_provider: impl StallProvider,
     bucket_definitions: Arc<[BucketDefinition]>,
     snapshot: zx::Socket,
 ) -> Result<(), Error> {
@@ -242,8 +243,8 @@ fn read_bucket_definitions() -> Vec<BucketDefinition> {
 
 async fn provide_statistics(
     kernel_stats_proxy: fkernel::StatsProxy,
-    stall_provider: Arc<impl StallProvider>,
-    refault_tracker: RefaultTracker,
+    stall_provider: impl StallProvider,
+    refault_tracker: impl RefaultProvider,
     responder: fattribution_plugin::MemoryMonitorGetSystemStatisticsResponder,
 ) -> Result<(), anyhow::Error> {
     let kernel_stats = fattribution_plugin::KernelStatistics {

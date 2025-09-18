@@ -24,11 +24,12 @@ impl TryFrom<zx::MemoryStall> for MemoryStallMetrics {
     }
 }
 
-pub trait StallProvider: Sync + Send + 'static {
+pub trait StallProvider: Clone + Sync + Send + 'static {
     /// Return the current memory stall values from the kernel.
     fn get_stall_info(&self) -> Result<MemoryStallMetrics, anyhow::Error>;
 }
 
+#[derive(Clone)]
 pub struct StallProviderImpl {
     /// Memory stall kernel resource, for issuing queries.
     stall_resource: Arc<dyn StallResource>,

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Arc;
-
 use cobalt_client::traits::AsEventCode;
 use futures::StreamExt;
 use memory_metrics_registry::cobalt_registry;
@@ -15,7 +13,7 @@ use crate::error_from_metrics_error;
 
 /// Collect and publish to Cobalt memory stall increase rate, every hour.
 pub async fn collect_stalls_forever(
-    stalls_provider: Arc<impl StallProvider + 'static>,
+    stalls_provider: impl StallProvider + 'static,
     metric_event_logger: fmetrics::MetricEventLoggerProxy,
 ) -> Result<(), anyhow::Error> {
     let mut last_stall = MemoryStallMetrics::default();
@@ -34,14 +32,18 @@ pub async fn collect_stalls_forever(
             payload: fmetrics::MetricEventPayload::IntegerValue(i64::try_from(
                 (new_stall.some - last_stall.some).as_millis(),
             )?),
-            event_codes: vec![cobalt_registry::MemoryMetricDimensionStallType::Some.as_event_code()],
+            event_codes: vec![
+                cobalt_registry::MemoryMetricDimensionStallType::Some.as_event_code(),
+            ],
         };
         let stall_full_event = fmetrics::MetricEvent {
             metric_id: cobalt_registry::MEMORY_STALLS_PER_HOUR_METRIC_ID,
             payload: fmetrics::MetricEventPayload::IntegerValue(i64::try_from(
                 (new_stall.full - last_stall.full).as_millis(),
             )?),
-            event_codes: vec![cobalt_registry::MemoryMetricDimensionStallType::Full.as_event_code()],
+            event_codes: vec![
+                cobalt_registry::MemoryMetricDimensionStallType::Full.as_event_code(),
+            ],
         };
 
         last_stall = new_stall;
@@ -58,17 +60,19 @@ mod tests {
     use anyhow::anyhow;
     use fuchsia_async as fasync;
     use futures::task::Poll;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
-    fn get_stall_provider() -> Arc<impl StallProvider + 'static> {
+    fn get_stall_provider() -> impl StallProvider + 'static {
+        #[derive(Clone)]
         struct FakeStallProvider {
-            count: AtomicU32,
+            count: Arc<AtomicU32>,
         }
 
         impl Default for FakeStallProvider {
             fn default() -> Self {
-                Self { count: AtomicU32::new(1) }
+                Self { count: Arc::new(AtomicU32::new(1)) }
             }
         }
 
@@ -83,7 +87,7 @@ mod tests {
             }
         }
 
-        Arc::new(FakeStallProvider::default())
+        FakeStallProvider::default()
     }
 
     #[test]
@@ -214,9 +218,9 @@ mod tests {
             _ => panic!("Unexpected metric event"),
         }
 
-        assert!(exec
-            .run_until_stalled(&mut metric_event_request_stream.into_future())
-            .is_pending());
+        assert!(
+            exec.run_until_stalled(&mut metric_event_request_stream.into_future()).is_pending()
+        );
 
         Ok(())
     }

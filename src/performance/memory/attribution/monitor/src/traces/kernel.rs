@@ -5,11 +5,11 @@ use anyhow::Result;
 use fuchsia_async::{Interval, MonotonicDuration};
 use fuchsia_trace::{category_enabled, counter};
 use fuchsia_trace_observer::TraceObserver;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::debug;
 use stalls::StallProvider;
+use stalls::refaults::RefaultProvider;
 use std::ffi::CStr;
-use std::sync::Arc;
 const CATEGORY_MEMORY_KERNEL: &'static CStr = c"memory:kernel";
 use futures::future::FutureExt;
 
@@ -18,7 +18,8 @@ use futures::future::FutureExt;
 // This function runs indefinitely
 pub async fn serve_forever(
     kernel_stats: impl fidl_fuchsia_kernel::StatsProxyInterface,
-    stall_provider: Arc<impl StallProvider>,
+    stall_provider: impl StallProvider,
+    page_refault_tracker: impl RefaultProvider,
 ) {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
     fuchsia_trace_provider::trace_provider_wait_for_init();
@@ -29,7 +30,13 @@ pub async fn serve_forever(
         let delay_in_secs = 1;
         let mut interval = Interval::new(MonotonicDuration::from_seconds(1));
         while category_enabled(CATEGORY_MEMORY_KERNEL) {
-            if let Err(err) = publish_one_sample(&kernel_stats, stall_provider.clone()).await {
+            if let Err(err) = publish_one_sample(
+                &kernel_stats,
+                stall_provider.clone(),
+                page_refault_tracker.clone(),
+            )
+            .await
+            {
                 log::warn!("Failed to trace on category {:?} : {:?}", CATEGORY_MEMORY_KERNEL, err);
             }
             debug!("Wait for {} second(s)", delay_in_secs);
@@ -46,7 +53,8 @@ pub async fn serve_forever(
 
 async fn publish_one_sample(
     kernel_stats: &impl fidl_fuchsia_kernel::StatsProxyInterface,
-    stall_provider: Arc<impl StallProvider>,
+    stall_provider: impl StallProvider,
+    page_refault_tracker: impl RefaultProvider,
 ) -> Result<()> {
     debug!("Publish trace records for category {:?}", CATEGORY_MEMORY_KERNEL);
     let mem_stats = kernel_stats.get_memory_stats().await?;
@@ -111,7 +119,8 @@ async fn publish_one_sample(
         CATEGORY_MEMORY_KERNEL,
         c"memory_stall",0,
         "stall_time_some_ns"=>u64::try_from(stall_info.some.as_nanos())?,
-        "stall_time_full_ns"=>u64::try_from(stall_info.full.as_nanos())?
+        "stall_time_full_ns"=>u64::try_from(stall_info.full.as_nanos())?,
+        "page_refaults"=>page_refault_tracker.get_count()
     );
 
     Ok(())

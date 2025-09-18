@@ -10,12 +10,17 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use zx::Status;
 
+pub trait RefaultProvider: Clone {
+    // Returns the current number of page refaults of the system, since its start.
+    fn get_count(&self) -> u64;
+}
+
 #[derive(Default, Clone)]
-pub struct RefaultTracker {
+pub struct RefaultProviderImpl {
     inner: Arc<Mutex<Inner>>,
 }
 
-impl RefaultTracker {
+impl RefaultProviderImpl {
     pub async fn listen_to_page_refaults(
         &self,
         mut stream: fattribution::PageRefaultSinkRequestStream,
@@ -40,8 +45,10 @@ impl RefaultTracker {
             }
         }
     }
+}
 
-    pub fn get_count(&self) -> u64 {
+impl RefaultProvider for RefaultProviderImpl {
+    fn get_count(&self) -> u64 {
         self.inner.lock().unwrap().get_count()
     }
 }
