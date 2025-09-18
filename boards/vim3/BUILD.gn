@@ -25,7 +25,6 @@ group("bazel_inputs") {
 }
 
 board_input_bundle("main_bundle") {
-  base_packages = [ "//src/graphics/bin/vulkan_loader" ]
   drivers = [
     {
       package_target =

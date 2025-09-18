@@ -24,6 +24,7 @@ board_configuration("arm64") {
     "fuchsia::input",
     "fuchsia::usb_host",
     "fuchsia::usb_peripheral_support",
+    "fuchsia::vulkan_gpu",
     "fuchsia::xhci",
   ]
 
@@ -65,7 +66,6 @@ board_input_bundle("main_bundle") {
     power_manager =
         "//src/power/power-manager/node_config/base_node_config.json5"
   }
-  base_packages = [ "//src/graphics/bin/vulkan_loader" ]
 
   drivers = [
     {
