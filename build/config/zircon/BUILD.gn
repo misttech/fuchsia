@@ -446,4 +446,7 @@ config("hermetic_source_set.config") {
     "-static",
     "-Wl,-T," + rebase_path(inputs[0], root_build_dir),
   ]
+
+  # TODO(https://fxbug.dev/445786243): work around reloc rewriting bug in lld
+  ldflags += [ "-Wl,--discard-none" ]
 }
