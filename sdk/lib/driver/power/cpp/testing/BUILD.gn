@@ -16,7 +16,6 @@ source_set("fakes") {
   testonly = true
   public = [
     "fake_activity_governor.h",
-    "fake_current_level.h",
     "fake_element_control.h",
     "fake_topology.h",
   ]
