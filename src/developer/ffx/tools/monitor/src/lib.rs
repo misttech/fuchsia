@@ -34,6 +34,7 @@ const LOCAL_SERVER_IP_ADDRESS: &str = "127.0.0.1";
 const LOCAL_SERVER_IP_ADDRESS_ARRAY: [u8; 4] = [127, 0, 0, 1];
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct MonitorTool {
     #[command]
     cmd: MonitorCommand,
