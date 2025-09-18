@@ -349,6 +349,7 @@ Symbols:
   - { Name: dlinfo, Type: Func }
   - { Name: dlopen, Type: Func }
   - { Name: dlopen_vmo, Type: Func }
+  - { Name: dlopen_vmo_vmar, Type: Func }
   - { Name: dlsym, Type: Func }
   - { Name: dn_comp, Type: Func, Weak: true }
   - { Name: dn_expand, Type: Func, Weak: true }

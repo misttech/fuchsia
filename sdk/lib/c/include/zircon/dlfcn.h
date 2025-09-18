@@ -18,6 +18,14 @@ __BEGIN_CDECLS
 // Does not take ownership of the input vmo.
 void* dlopen_vmo(zx_handle_t vmo, int mode);
 
+// Loads a dynamic shared object stored in |vmo| into a subregion
+// of the address space represented by vmar.
+// Acts identically to dlopen_vmo, but uses the given vmar in place
+// of zx_vmar_root_self().
+//
+// Does not take ownership of the input vmo or vmar.
+void* dlopen_vmo_vmar(zx_handle_t vmo, zx_handle_t vmar, int mode);
+
 // Replace the handle to the "loader service" used to map names
 // to VM objects for dlopen et al.  This takes ownership of the
 // given handle, and gives the caller ownership of the old handle

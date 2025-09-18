@@ -161,7 +161,7 @@
   "include/zircon/boot/crash-reason.h": "8bc53e5d654937ec3c2f0473640b3963",
   "include/zircon/compiler.h": "b2a038f9b69f78dbe7c529bfaf8d6dc5",
   "include/zircon/device/audio.h": "1834f962b6e98a453cf2d1f8835097bb",
-  "include/zircon/dlfcn.h": "685741ed270128b9b02a47663a89b28c",
+  "include/zircon/dlfcn.h": "0221f23efcf53789638ff2770adb817a",
   "include/zircon/errors.h": "2cedd2f5229af61131f107330cbd3181",
   "include/zircon/exception.h": "425c558088583172dc860b894ac6ea0a",
   "include/zircon/features.h": "9c82eeb06f24488c8dca8f0930cbf43a",

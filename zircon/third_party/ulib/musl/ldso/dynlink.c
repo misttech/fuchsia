@@ -267,7 +267,8 @@ union allocated_types {
 
 static uintptr_t alloc_base, alloc_limit, alloc_ptr;
 
-LIBC_NO_SAFESTACK NO_ASAN __attribute__((malloc)) static void* dl_alloc(size_t size) {
+LIBC_NO_SAFESTACK NO_ASAN __attribute__((malloc)) static void* dl_alloc(size_t size,
+                                                                        zx_handle_t vmar) {
   // Round the size up so the allocation pointer always stays aligned.
   size = (size + DL_ALLOC_ALIGN - 1) & -DL_ALLOC_ALIGN;
 
@@ -281,8 +282,7 @@ LIBC_NO_SAFESTACK NO_ASAN __attribute__((malloc)) static void* dl_alloc(size_t s
       return NULL;
     _zx_object_set_property(vmo, ZX_PROP_NAME, VMO_NAME_DL_ALLOC, sizeof(VMO_NAME_DL_ALLOC));
     uintptr_t chunk;
-    status = _zx_vmar_map(_zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
-                          chunk_size, &chunk);
+    status = _zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, chunk_size, &chunk);
     _zx_handle_close(vmo);
     if (status != ZX_OK)
       return NULL;
@@ -521,8 +521,8 @@ LIBC_NO_SAFESTACK NO_ASAN static struct symdef find_sym(struct dso* dso, const c
 
 __attribute__((__visibility__("hidden"))) ptrdiff_t __tlsdesc_static(void), __tlsdesc_dynamic(void);
 
-LIBC_NO_SAFESTACK NO_ASAN static void do_relocs(struct dso* dso, size_t* rel, size_t rel_size,
-                                                size_t stride) {
+LIBC_NO_SAFESTACK NO_ASAN static void do_relocs(struct dso* dso, zx_handle_t vmar, size_t* rel,
+                                                size_t rel_size, size_t stride) {
   ElfW(Addr) base = dso->l_map.l_addr;
   Sym* syms = dso->syms;
   char* strings = dso->strings;
@@ -654,7 +654,7 @@ LIBC_NO_SAFESTACK NO_ASAN static void do_relocs(struct dso* dso, size_t* rel, si
           *reloc_addr = (uintptr_t)(addend == 0 ? _ld_tlsdesc_runtime_undefined_weak
                                                 : _ld_tlsdesc_runtime_undefined_weak_addend);
         } else if (runtime && def.dso->tls_id >= static_tls_cnt) {
-          size_t* new = dl_alloc(2 * sizeof(size_t));
+          size_t* new = dl_alloc(2 * sizeof(size_t), vmar);
           if (!new) {
             error("Error relocating %s: cannot allocate TLSDESC for %s", dso->l_map.l_name, name);
             longjmp(*rtld_fail, 1);
@@ -912,7 +912,8 @@ LIBC_NO_SAFESTACK NO_ASAN static bool is_valid(const Ehdr* eh) {
          valid_version(eh) && valid_size(eh);
 }
 
-LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, struct dso* dso) {
+LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, zx_handle_t vmar,
+                                                         struct dso* dso) {
   struct {
     Ehdr ehdr;
     // A typical ELF file has 7 or 8 phdrs, so in practice
@@ -1015,7 +1016,7 @@ LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, struct
   // we need it to adjust page protections for RELRO.
   uintptr_t vmar_base;
   status = _zx_vmar_allocate(
-      __zircon_vmar_root_self,
+      vmar,
       ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_CAN_MAP_EXECUTE | ZX_VM_CAN_MAP_SPECIFIC, 0,
       map_len, &dso->vmar, &vmar_base);
   if (status != ZX_OK) {
@@ -1312,9 +1313,9 @@ LIBC_NO_SAFESTACK static void do_tls_layout(struct dso* p, char* tls_buffer, int
   tls_tail = &p->tls;
 }
 
-LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, const char* name,
-                                                      int rtld_mode, struct dso* needed_by,
-                                                      struct dso** loaded) {
+LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, zx_handle_t vmar,
+                                                      const char* name, int rtld_mode,
+                                                      struct dso* needed_by, struct dso** loaded) {
   struct dso *p, temp_dso = {};
   size_t alloc_size;
   int n_th = 0;
@@ -1324,7 +1325,7 @@ LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, const cha
     return ZX_OK;
   }
 
-  zx_status_t status = map_library(vmo, &temp_dso);
+  zx_status_t status = map_library(vmo, vmar, &temp_dso);
   if (status != ZX_OK)
     return status;
 
@@ -1386,7 +1387,7 @@ LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, const cha
     else
       alloc_size += n_th * per_th;
   }
-  p = dl_alloc(alloc_size);
+  p = dl_alloc(alloc_size, vmar);
   if (!p) {
     unmap_library(&temp_dso);
     return ZX_ERR_NO_MEMORY;
@@ -1409,7 +1410,7 @@ LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, const cha
   return ZX_OK;
 }
 
-LIBC_NO_SAFESTACK static zx_status_t load_library(const char* name, int rtld_mode,
+LIBC_NO_SAFESTACK static zx_status_t load_library(const char* name, zx_handle_t vmar, int rtld_mode,
                                                   struct dso* needed_by, struct dso** loaded) {
   if (!*name)
     return ZX_ERR_INVALID_ARGS;
@@ -1428,14 +1429,14 @@ LIBC_NO_SAFESTACK static zx_status_t load_library(const char* name, int rtld_mod
   zx_handle_t vmo;
   zx_status_t status = get_library_vmo(name, &vmo);
   if (status == ZX_OK) {
-    status = load_library_vmo(vmo, name, rtld_mode, needed_by, loaded);
+    status = load_library_vmo(vmo, vmar, name, rtld_mode, needed_by, loaded);
     _zx_handle_close(vmo);
   }
 
   return status;
 }
 
-LIBC_NO_SAFESTACK static void load_deps(struct dso* p) {
+LIBC_NO_SAFESTACK static void load_deps(struct dso* p, zx_handle_t vmar) {
   for (; p; p = dso_next(p)) {
     struct dso** deps = NULL;
     // The two preallocated DSOs don't get space allocated for ->deps.
@@ -1446,7 +1447,7 @@ LIBC_NO_SAFESTACK static void load_deps(struct dso* p) {
         continue;
       const char* name = p->strings + p->l_map.l_ld[i].d_un.d_val;
       struct dso* dep;
-      zx_status_t status = load_library(name, 0, p, &dep);
+      zx_status_t status = load_library(name, vmar, 0, p, &dep);
       if (status != ZX_OK) {
         error("Error loading shared library %s: %s (needed by %s)", name,
               _zx_status_get_string(status), p->l_map.l_name);
@@ -1459,7 +1460,7 @@ LIBC_NO_SAFESTACK static void load_deps(struct dso* p) {
   }
 }
 
-LIBC_NO_SAFESTACK NO_ASAN static void reloc_all(struct dso* p) {
+LIBC_NO_SAFESTACK NO_ASAN static void reloc_all(struct dso* p, zx_handle_t vmar) {
   size_t dyn[DT_NUM];
   for (; p; p = dso_next(p)) {
     if (p->relocated)
@@ -1469,9 +1470,9 @@ LIBC_NO_SAFESTACK NO_ASAN static void reloc_all(struct dso* p) {
     if (p != &ldso) {
       apply_relr(p->l_map.l_addr, laddr(p, dyn[DT_RELR]), dyn[DT_RELRSZ]);
     }
-    do_relocs(p, laddr(p, dyn[DT_JMPREL]), dyn[DT_PLTRELSZ], 2 + (dyn[DT_PLTREL] == DT_RELA));
-    do_relocs(p, laddr(p, dyn[DT_REL]), dyn[DT_RELSZ], 2);
-    do_relocs(p, laddr(p, dyn[DT_RELA]), dyn[DT_RELASZ], 3);
+    do_relocs(p, vmar, laddr(p, dyn[DT_JMPREL]), dyn[DT_PLTRELSZ], 2 + (dyn[DT_PLTREL] == DT_RELA));
+    do_relocs(p, vmar, laddr(p, dyn[DT_REL]), dyn[DT_RELSZ], 2);
+    do_relocs(p, vmar, laddr(p, dyn[DT_RELA]), dyn[DT_RELASZ], 3);
 
     // _dl_locked_report_globals needs the precise relro bounds so those are
     // what get stored.  But actually applying them requires page truncation.
@@ -1783,7 +1784,7 @@ __dls2(void* start_arg, void* vdso_map) {
 
 static LIBC_NO_SAFESTACK NO_ASAN dl_start_return_t __dls2tail(void* start_arg) {
   head = &ldso;
-  reloc_all(&ldso);
+  reloc_all(&ldso, _zx_vmar_root_self());
 
   ldso.relocated = 0;
 
@@ -1825,14 +1826,14 @@ LIBC_NO_SAFESTACK static void scan_env_strings(const char* strings, const char* 
  * process dependencies and relocations for the main application and
  * transfer control to its entry point. */
 
-LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, const char* argv0,
+LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, zx_handle_t vmar, const char* argv0,
                                     const char* env_strings, const char* env_strings_limit,
                                     uint32_t env_strings_count) {
   // First load our own dependencies.  Usually this will be just the
   // vDSO, which is already loaded, so there will be nothing to do.
   // In a sanitized build, we'll depend on the sanitizer runtime DSO
   // and load that now (and its dependencies, such as the unwinder).
-  load_deps(&ldso);
+  load_deps(&ldso, vmar);
 
   // Now reorder the list so that we appear last, after all our
   // dependencies.  This ensures that e.g. the sanitizer runtime's
@@ -1850,7 +1851,7 @@ LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, const char* argv0,
 
   scan_env_strings(env_strings, env_strings_limit, env_strings_count);
 
-  zx_status_t status = map_library(exec_vmo, &app);
+  zx_status_t status = map_library(exec_vmo, vmar, &app);
   _zx_handle_close(exec_vmo);
   if (status != ZX_OK) {
     debugmsg("%s: %s: Not a valid dynamic program (%s)\n", ldso.l_map.l_name, argv0,
@@ -1890,7 +1891,7 @@ LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, const char* argv0,
   // some libraries (sanitizer runtime) before that, so we don't do
   // each library's TLS setup directly in load_library_vmo.
 
-  load_deps(&app);
+  load_deps(&app, vmar);
 
   app.global = 1;
   for (struct dso* p = dso_next(&app); p != NULL; p = dso_next(p)) {
@@ -1909,8 +1910,8 @@ LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, const char* argv0,
 
   /* The main program must be relocated LAST since it may contin
    * copy relocations which depend on libraries' relocations. */
-  reloc_all(dso_next(&app));
-  reloc_all(&app);
+  reloc_all(dso_next(&app), vmar);
+  reloc_all(&app, vmar);
 
   update_tls_size();
   static_tls_cnt = tls_cnt;
@@ -2057,10 +2058,10 @@ LIBC_NO_SAFESTACK NO_ASAN NO_UBSAN_RISCV64 static dl_start_return_t __dls3(void*
 
   // The initial processargs message may not pass the application
   // name or any other arguments, so we check that condition.
-  void* entry =
-      dls3(exec_vmo, procargs->args_num == 0 ? "" : (const char*)&buffer[procargs->args_off],
-           (const char*)&buffer[procargs->environ_off], (const char*)&buffer[nbytes],
-           procargs->environ_num);
+  void* entry = dls3(exec_vmo, _zx_vmar_root_self(),
+                     procargs->args_num == 0 ? "" : (const char*)&buffer[procargs->args_off],
+                     (const char*)&buffer[procargs->environ_off], (const char*)&buffer[nbytes],
+                     procargs->environ_num);
 
   if (vdso.global <= 0) {
     // Nothing linked against the vDSO.  Ideally we would unmap the
@@ -2305,7 +2306,7 @@ __attribute__((visibility("hidden"))) void _dl_iterate_loaded_libs(void) {
   }
 }
 
-static void* dlopen_internal(zx_handle_t vmo, const char* file, int mode) {
+static void* dlopen_internal(zx_handle_t vmo, zx_handle_t vmar, const char* file, int mode) {
   // N.B. This lock order must be consistent with other uses such as
   // ThreadSuspender in the __sanitizer_memory_snapshot implementation.
   _dl_wrlock();
@@ -2314,8 +2315,8 @@ static void* dlopen_internal(zx_handle_t vmo, const char* file, int mode) {
   struct dso* orig_tail = tail;
 
   struct dso* p;
-  zx_status_t status = (vmo != ZX_HANDLE_INVALID ? load_library_vmo(vmo, file, mode, head, &p)
-                                                 : load_library(file, mode, head, &p));
+  zx_status_t status = (vmo != ZX_HANDLE_INVALID ? load_library_vmo(vmo, vmar, file, mode, head, &p)
+                                                 : load_library(file, vmar, mode, head, &p));
 
   if (status != ZX_OK) {
     error("Error loading shared library %s: %s", file, _zx_status_get_string(status));
@@ -2362,9 +2363,9 @@ static void* dlopen_internal(zx_handle_t vmo, const char* file, int mode) {
 
   /* First load handling */
   if (!p->deps) {
-    load_deps(p);
+    load_deps(p, vmar);
     set_global(p, -1);
-    reloc_all(p);
+    reloc_all(p, vmar);
     set_global(p, 0);
   }
 
@@ -2421,7 +2422,7 @@ static void* dlopen_internal(zx_handle_t vmo, const char* file, int mode) {
 void* dlopen(const char* file, int mode) {
   if (!file || file[0] == '\0')
     return head;
-  return dlopen_internal(ZX_HANDLE_INVALID, file, mode);
+  return dlopen_internal(ZX_HANDLE_INVALID, _zx_vmar_root_self(), file, mode);
 }
 
 void* dlopen_vmo(zx_handle_t vmo, int mode) {
@@ -2429,7 +2430,15 @@ void* dlopen_vmo(zx_handle_t vmo, int mode) {
     errno = EINVAL;
     return NULL;
   }
-  return dlopen_internal(vmo, NULL, mode);
+  return dlopen_internal(vmo, _zx_vmar_root_self(), NULL, mode);
+}
+
+void* dlopen_vmo_vmar(zx_handle_t vmo, zx_handle_t vmar, int mode) {
+  if (vmo == ZX_HANDLE_INVALID) {
+    errno = EINVAL;
+    return NULL;
+  }
+  return dlopen_internal(vmo, vmar, NULL, mode);
 }
 
 zx_handle_t dl_set_loader_service(zx_handle_t new_svc) {
