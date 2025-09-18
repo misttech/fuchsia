@@ -20,11 +20,12 @@ use fxfs::errors::FxfsError;
 use fxfs::log::*;
 use fxfs::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
-use fxfs::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, Timestamp, directory};
+use fxfs::object_store::{
+    HandleOptions, ObjectDescriptor, ObjectStore, Timestamp, VOLUME_DATA_KEY_ID, directory,
+};
 use linked_hash_map::LinkedHashMap;
 use scopeguard::ScopeGuard;
 use std::cmp::{Eq, PartialEq};
-use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -55,6 +56,12 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
         &self,
         id: Self::IdType,
     ) -> impl std::future::Future<Output = Result<Arc<Self::NodeType>, Error>> + Send;
+
+    /// Filters out open markers for files that may not be usable in the profile.
+    fn file_is_replayable(
+        &self,
+        id: &Self::IdType,
+    ) -> impl std::future::Future<Output = bool> + Send;
 
     fn read_and_queue(
         &self,
@@ -130,11 +137,14 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
         async move {
             let mut recorded_offsets = LinkedHashMap::<Self::MessageType, ()>::new();
-            let mut recorded_opens = BTreeSet::<Self::IdType>::new();
+            let mut recorded_opens = BTreeMap::<Self::IdType, bool>::new();
             while let Ok(buffer) = receiver.recv().await {
                 for message in buffer {
                     if message.is_open_marker() {
-                        recorded_opens.insert(message.id());
+                        if let Entry::Vacant(entry) = recorded_opens.entry(message.id()) {
+                            let usable = self.file_is_replayable(entry.key()).await;
+                            entry.insert(usable);
+                        }
                     } else {
                         recorded_offsets.insert(message, ());
                     }
@@ -166,9 +176,8 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
             let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
             let mut next_block = block_size;
             while let Some((message, _)) = recorded_offsets.pop_front() {
-                // If this is a file opening marker or a file opening was never recorded, drop the
-                // message.
-                if !recorded_opens.contains(&message.id()) {
+                // If a file opening was never recorded, or it is not usable drop the message.
+                if !recorded_opens.get(&message.id()).copied().unwrap_or(false) {
                     continue;
                 }
 
@@ -285,6 +294,11 @@ impl RecordedVolume for BlobVolume {
         };
         root_dir.as_ref().unwrap().lookup_blob(id).await
     }
+
+    async fn file_is_replayable(&self, _id: &Self::IdType) -> bool {
+        // There is nothing is filter out in blob volumes.
+        true
+    }
 }
 
 struct FileVolume {
@@ -311,6 +325,20 @@ impl RecordedVolume for FileVolume {
             .into_any()
             .downcast::<FxFile>()
             .map_err(|_| anyhow!("Non-file opened"))
+    }
+
+    async fn file_is_replayable(&self, id: &Self::IdType) -> bool {
+        match self.volume.store().get_keys(*id).await {
+            // If any keys are not the volume key id, then the file may not be readable later.
+            // If there's more than one, then at least one is not the volume key.
+            Ok(keys)
+                if keys.is_empty()
+                    || (keys.len() == 1 && keys.first().unwrap().0 == VOLUME_DATA_KEY_ID) =>
+            {
+                true
+            }
+            _ => false,
+        }
     }
 }
 

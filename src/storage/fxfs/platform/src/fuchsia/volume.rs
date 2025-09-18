@@ -2593,8 +2593,47 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_profile_file() {
         let mut hashes = Vec::new();
+        let crypt_file_id;
         let device = {
             let fixture = TestFixture::new().await;
+            // Include a crypt file to access during the recording. It should not be added.
+            {
+                let crypt_dir = open_dir_checked(
+                    fixture.root(),
+                    "crypt_dir",
+                    fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                    Default::default(),
+                )
+                .await;
+                let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+                let wrapping_key_id = 2;
+                crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+                crypt_dir
+                    .update_attributes(&fio::MutableNodeAttributes {
+                        wrapping_key_id: Some(wrapping_key_id.to_le_bytes()),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("update_attributes wire call failed")
+                    .expect("update_attributes failed");
+                let crypt_file = open_file_checked(
+                    &crypt_dir,
+                    "crypt_file",
+                    fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                    &Default::default(),
+                )
+                .await;
+                crypt_file.write("asdf".as_bytes()).await.unwrap().expect("Writing crypt file");
+                crypt_file_id = crypt_file
+                    .get_attributes(fio::NodeAttributesQuery::ID)
+                    .await
+                    .unwrap()
+                    .expect("Get id")
+                    .1
+                    .id
+                    .expect("Reading id in response");
+            }
+
             for i in 0..3u64 {
                 let file_proxy = open_file_checked(
                     fixture.root(),
@@ -2632,6 +2671,19 @@ mod tests {
                 .await
                 .expect("Recording");
 
+            {
+                let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+                let wrapping_key_id = 2;
+                crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+                let crypt_file = open_file_checked(
+                    fixture.root(),
+                    "crypt_dir/crypt_file",
+                    fio::PERM_READABLE,
+                    &Default::default(),
+                )
+                .await;
+                crypt_file.read(1).await.unwrap().expect("Reading crypt file");
+            }
             // Page in the zero offsets only to avoid readahead strangeness.
             for (i, _) in &hashes {
                 let file_proxy = open_file_checked(
@@ -2660,6 +2712,16 @@ mod tests {
                 // Need to get the root vmo to check committed bytes.
                 let volume = fixture.volume().volume().clone();
                 // Ensure that nothing is paged in right now.
+                {
+                    let crypt_file = volume
+                        .get_or_load_node(crypt_file_id, ObjectDescriptor::File, None)
+                        .await
+                        .expect("Opening file internally")
+                        .into_any()
+                        .downcast::<FxFile>()
+                        .expect("Should be file");
+                    assert_eq!(crypt_file.vmo().info().unwrap().committed_bytes, 0);
+                }
                 for (_, id) in &hashes {
                     let file = volume
                         .get_or_load_node(*id, ObjectDescriptor::File, None)
@@ -2717,6 +2779,17 @@ mod tests {
                     while file.vmo().info().unwrap().committed_bytes == 0 {
                         fasync::Timer::new(Duration::from_millis(25)).await;
                     }
+                }
+                // The crypt file access should not have been recorded or replayed.
+                {
+                    let crypt_file = volume
+                        .get_or_load_node(crypt_file_id, ObjectDescriptor::File, None)
+                        .await
+                        .expect("Opening file internally")
+                        .into_any()
+                        .downcast::<FxFile>()
+                        .expect("Should be file");
+                    assert_eq!(crypt_file.vmo().info().unwrap().committed_bytes, 0);
                 }
 
                 // Open all the files to show that they have been used.

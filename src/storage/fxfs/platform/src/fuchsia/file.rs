@@ -143,6 +143,12 @@ impl FxFile {
         flags: impl ProtocolsExt,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), zx::Status> {
+        {
+            let mut guard = this.pager().recorder();
+            if let Some(recorder) = &mut (*guard) {
+                let _ = recorder.record_open(this.0.clone() as Arc<dyn FxNode>);
+            }
+        }
         if let Some(rights) = flags.rights() {
             if rights.intersects(fio::Operations::READ_BYTES | fio::Operations::WRITE_BYTES) {
                 if let Some(fut) = this.handle.pre_fetch_keys() {
