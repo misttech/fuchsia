@@ -375,9 +375,33 @@ async fn add_route_in_table_and_await_installed_with_main_table_wanted<I: Ip>(
             ))
         );
     }
+    let receiver = &mut client.receiver;
     // We then receive notification of the route being added to the table we actually requested.
-    let SentNetlinkMessage { message: received_msg, group } =
-        client.receiver.next().await.expect("should not be disconnected");
+    let SentNetlinkMessage { message: received_msg, group } = receiver
+        .filter_map(|received| {
+            let got_table_id = match &received.message.payload {
+                NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewRoute(r)) => {
+                    Some(if u32::from(r.header.table) == rt_class_t_RT_TABLE_COMPAT {
+                        r.attributes
+                            .iter()
+                            .filter_map(|attr| match attr {
+                                RouteAttribute::Table(id) => Some(*id),
+                                _ => None,
+                            })
+                            .next()
+                            .expect("must have a table ID")
+                    } else {
+                        u32::from(r.header.table)
+                    })
+                }
+                _ => None,
+            };
+            let same_table_id = got_table_id.is_some_and(|got| got == table_id);
+            futures::future::ready(same_table_id.then_some(received))
+        })
+        .next()
+        .await
+        .expect("should not be disconnected");
     assert_eq!(group, Some(route_group::<I>()));
     let received_route_message =
         assert_matches!(received_msg.payload, NetlinkPayload::InnerMessage(message) => message);
