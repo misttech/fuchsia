@@ -309,11 +309,6 @@ class AmlSdmmc : public fdf::DriverBase,
       const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client,
       fidl::ClientEnd<fuchsia_power_broker::LeaseControl>& lease_control_client_end);
 
-  // Informs Power Broker of the updated |power_level| via the supplied |current_level_client|.
-  void UpdatePowerLevel(
-      const fidl::WireSyncClient<fuchsia_power_broker::CurrentLevel>& current_level_client,
-      fuchsia_power_broker::PowerLevel power_level);
-
   // Implement fuchsia.power.broker.ElementRunner, allowing Power Broker
   // to set this device's power level.
   void SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
