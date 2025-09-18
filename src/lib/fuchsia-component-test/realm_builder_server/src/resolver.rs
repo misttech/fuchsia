@@ -5,10 +5,11 @@
 use crate::ConfigOverridePolicy;
 use anyhow::{Context, Error};
 use cm_rust::NativeIntoFidl;
-use fidl::endpoints::{create_endpoints, ServerEnd};
+use directed_graph::DirectedGraph;
 use fidl::Vmo;
-use futures::lock::{Mutex, MutexGuard};
+use fidl::endpoints::{ServerEnd, create_endpoints};
 use futures::TryStreamExt;
+use futures::lock::{Mutex, MutexGuard};
 use log::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -76,7 +77,7 @@ impl Registry {
         config_value_replacements: HashMap<usize, cm_rust::ConfigValueSpec>,
         config_override_policy: ConfigOverridePolicy,
     ) -> Result<String, cm_fidl_validator::error::ErrorList> {
-        cm_fidl_validator::validate(decl)?;
+        cm_fidl_validator::validate(decl, &mut DirectedGraph::new())?;
 
         let mut next_unique_component_id_guard = self.next_unique_component_id.lock().await;
         let mut component_decls_guard = self.component_decls.lock().await;
@@ -215,7 +216,10 @@ impl Registry {
                     context,
                     responder,
                 } => {
-                    warn!("The RealmBuilder resolver does not resolve relative path component URLs with a context. Cannot resolve {} with context {:?}.", component_url, context);
+                    warn!(
+                        "The RealmBuilder resolver does not resolve relative path component URLs with a context. Cannot resolve {} with context {:?}.",
+                        component_url, context
+                    );
                     responder.send(Err(fresolution::ResolverError::InvalidArgs))?;
                 }
                 fresolution::ResolverRequest::_UnknownMethod { ordinal, .. } => {
@@ -332,7 +336,7 @@ impl Registry {
             fuchsia_fs::file::read_fidl(&manifest_file)
                 .await
                 .map_err(|_| fresolution::ResolverError::ManifestNotFound)?;
-        cm_fidl_validator::validate(&component_decl)
+        cm_fidl_validator::validate(&component_decl, &mut DirectedGraph::new())
             .map_err(|_| fresolution::ResolverError::ManifestNotFound)?;
         let (client_end, server_end) = create_endpoints::<fio::DirectoryMarker>();
         component

@@ -7,6 +7,7 @@ use cm_rust_derive::{
     OfferDeclCommonNoAvailability, UseDeclCommon,
 };
 use cm_types::{AllowedOffers, BorrowedSeparatedPath, LongName, Name, Path, RelativePath, Url};
+use directed_graph::DirectedGraph;
 use from_enum::FromEnum;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
@@ -2717,7 +2718,8 @@ impl TryFrom<fdecl::Component> for ComponentDecl {
     type Error = Error;
 
     fn try_from(decl: fdecl::Component) -> Result<Self, Self::Error> {
-        cm_fidl_validator::validate(&decl).map_err(|err| Error::Validate { err })?;
+        cm_fidl_validator::validate(&decl, &mut DirectedGraph::new())
+            .map_err(|err| Error::Validate { err })?;
         Ok(decl.fidl_into_native())
     }
 }

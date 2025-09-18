@@ -99,8 +99,8 @@ struct ShutdownJob {
     instance: Arc<ComponentInstance>,
     /// A map of the live children of the `instance`.
     children: HashMap<ChildName, WeakComponentInstance>,
-    /// Dynamic offers from a parent to a collection that this instance may be a part of.
-    dynamic_offers: Vec<(DependencyNode, DependencyNode)>,
+    /// The component's capability graph, which determines the shutdown order.
+    dependencies: DirectedGraph<DependencyNode>,
 }
 
 /// ShutdownJob encapsulates the logic and state require to shutdown a component.
@@ -114,7 +114,7 @@ impl ShutdownJob {
         shutdown_type: ShutdownType,
     ) -> ShutdownJob {
         let component_decl: fdecl::Component = state.decl().to_owned().into();
-        let dynamic_offers = state.dynamic_offers.iter().cloned().collect();
+        let dependencies = state.resolved_component.dependencies.clone();
         let children = state
             .children
             .iter()
@@ -125,24 +125,22 @@ impl ShutdownJob {
             component_decl,
             instance: instance.clone(),
             children,
-            dynamic_offers,
+            dependencies,
         };
         return new_job;
     }
 
     /// Perform shutdown of the Component that was used to create this ShutdownJob.
-    pub async fn execute(&mut self) -> Result<(), ActionError> {
-        let mut dynamic_children = vec![];
-        dynamic_children.extend(
-            self.children.keys().filter_map(|key| {
-                key.collection().map(|coll| (key.name().as_str(), coll.as_str()))
-            }),
-        );
+    pub async fn execute(mut self) -> Result<(), ActionError> {
+        let dynamic_children: Box<[_]> = self
+            .children
+            .keys()
+            .filter_map(|key| key.collection().map(|coll| (key.name().as_str(), coll.as_str())))
+            .collect();
+        process_deps(&self.component_decl, &dynamic_children, &mut self.dependencies);
 
-        let deps = process_deps(&self.component_decl, &dynamic_children, &self.dynamic_offers);
-
-        let sorted_map = deps.topological_sort().map_err(|_| ActionError::ShutdownError {
-            err: ShutdownActionError::CyclesDetected {},
+        let sorted_map = self.dependencies.topological_sort().map_err(|_| {
+            ActionError::ShutdownError { err: ShutdownActionError::CyclesDetected {} }
         })?;
 
         for dependency_node in sorted_map.into_iter() {
@@ -198,7 +196,7 @@ pub async fn do_shutdown(
                 if matches!(shutdown_type, ShutdownType::System) {
                     info!("=RS {}", component.moniker);
                 }
-                let mut shutdown_job = ShutdownJob::new(component, s, shutdown_type).await;
+                let shutdown_job = ShutdownJob::new(component, s, shutdown_type).await;
                 drop(state);
                 Box::pin(shutdown_job.execute()).await.map_err(|err| {
                     warn!("=ES {}", component.moniker);
@@ -242,19 +240,11 @@ pub async fn do_shutdown(
 /// For a given component `decl`, identify capability dependencies between the
 /// component itself and its children. A directed graph of these dependencies is
 /// returned.
-pub fn process_deps(
+fn process_deps(
     decl: &fdecl::Component,
-    dynamic_children: &Vec<(&str, &str)>,
-    dynamic_offers: &Vec<(DependencyNode, DependencyNode)>,
-) -> directed_graph::DirectedGraph<DependencyNode> {
-    let mut strong_dependencies: DirectedGraph<DependencyNode> =
-        directed_graph::DirectedGraph::new();
-    cm_graph::generate_dependency_graph(
-        &mut strong_dependencies,
-        decl,
-        dynamic_children,
-        dynamic_offers.clone(),
-    );
+    dynamic_children: &[(&str, &str)],
+    strong_dependencies: &mut DirectedGraph<DependencyNode>,
+) {
     let self_dep_closure = strong_dependencies.get_closure(&DependencyNode::Self_);
 
     let mut edges_to_add = vec![];
@@ -282,19 +272,18 @@ pub fn process_deps(
         strong_dependencies.add_edge(a, b);
     }
     strong_dependencies.add_node(DependencyNode::Self_);
-    strong_dependencies
 }
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
-    use crate::model::actions::test_utils::MockAction;
     use crate::model::actions::StopAction;
+    use crate::model::actions::test_utils::MockAction;
     use crate::model::component::StartReason;
     use crate::model::testing::out_dir::OutDir;
     use crate::model::testing::test_helpers::{
-        component_decl_with_test_runner, execution_is_shut_down, has_child, ActionsTest,
-        ComponentInfo,
+        ActionsTest, ComponentInfo, component_decl_with_test_runner, execution_is_shut_down,
+        has_child,
     };
     use crate::model::testing::test_hook::Lifecycle;
     use async_utils::PollExt;
@@ -315,6 +304,17 @@ mod tests {
         fidl_fuchsia_component_runner as fcrunner, fuchsia_async as fasync,
     };
 
+    fn process_deps_test(
+        decl: &fdecl::Component,
+        dynamic_children: &[(&str, &str)],
+        dynamic_offers: &[(DependencyNode, DependencyNode)],
+    ) -> DirectedGraph<DependencyNode> {
+        let mut dependencies = dynamic_offers.iter().cloned().collect::<Box<[_]>>().into();
+        cm_graph::generate_dependency_graph(&mut dependencies, decl, dynamic_children);
+        process_deps(decl, dynamic_children, &mut dependencies);
+        dependencies
+    }
+
     #[fuchsia::test]
     fn test_service_from_self() {
         let fidl_decl = ComponentDeclBuilder::new()
@@ -329,7 +329,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -356,7 +356,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -382,7 +382,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -416,7 +416,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -461,7 +461,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -492,7 +492,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -523,7 +523,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -553,7 +553,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -583,13 +583,16 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
-                .topological_sort()
-                .unwrap()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
+        let sorted_map = process_deps_test(
+            &fidl_decl,
+            &vec![("dyn1", "coll"), ("dyn2", "coll")],
+            &dynamic_offers,
+        )
+        .topological_sort()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
         let ans: Vec<DependencyNode> = vec![
             DependencyNode::Child("dyn1".into(), Some("coll".into())),
             DependencyNode::Child("dyn2".into(), Some("coll".into())),
@@ -624,7 +627,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -664,7 +667,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -695,7 +698,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -725,7 +728,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -765,7 +768,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -805,7 +808,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -836,13 +839,16 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
-                .topological_sort()
-                .unwrap()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
+        let sorted_map = process_deps_test(
+            &fidl_decl,
+            &vec![("dyn1", "coll"), ("dyn2", "coll")],
+            &dynamic_offers,
+        )
+        .topological_sort()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
         let ans: Vec<DependencyNode> = vec![
             DependencyNode::Child("dyn1".into(), Some("coll".into())),
             DependencyNode::Child("dyn2".into(), Some("coll".into())),
@@ -899,7 +905,7 @@ mod tests {
         });
 
         let dynamic_offers = vec![make_dep(offer_1), make_dep(offer_2)];
-        let sorted_map = process_deps(
+        let sorted_map = process_deps_test(
             &fidl_decl,
             &vec![("dyn1", "coll"), ("dyn2", "coll"), ("dyn3", "coll"), ("dyn4", "coll")],
             &dynamic_offers,
@@ -957,7 +963,7 @@ mod tests {
         });
 
         let dynamic_offers = vec![make_dep(offer_1), make_dep(offer_2)];
-        let sorted_map = process_deps(
+        let sorted_map = process_deps_test(
             &fidl_decl,
             &vec![("dyn1", "coll1"), ("dyn2", "coll1"), ("dyn1", "coll2"), ("dyn2", "coll2")],
             &dynamic_offers,
@@ -982,13 +988,16 @@ mod tests {
         let fidl_decl = ComponentDeclBuilder::new().collection_default("coll").build().into();
         // parent does not generate a dependency node
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
-                .topological_sort()
-                .unwrap()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
+        let sorted_map = process_deps_test(
+            &fidl_decl,
+            &vec![("dyn1", "coll"), ("dyn2", "coll")],
+            &dynamic_offers,
+        )
+        .topological_sort()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
         let ans: Vec<DependencyNode> = vec![
             DependencyNode::Child("dyn1".into(), Some("coll".into())),
             DependencyNode::Child("dyn2".into(), Some("coll".into())),
@@ -1002,13 +1011,16 @@ mod tests {
         let fidl_decl = ComponentDeclBuilder::new().collection_default("coll").build().into();
         // An offer from Self -> Child does not generate a dependency
         let dynamic_offers = vec![];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
-                .topological_sort()
-                .unwrap()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
+        let sorted_map = process_deps_test(
+            &fidl_decl,
+            &vec![("dyn1", "coll"), ("dyn2", "coll")],
+            &dynamic_offers,
+        )
+        .topological_sort()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
         let ans: Vec<DependencyNode> = vec![
             DependencyNode::Child("dyn1".into(), Some("coll".into())),
             DependencyNode::Child("dyn2".into(), Some("coll".into())),
@@ -1039,13 +1051,16 @@ mod tests {
             ..Default::default()
         });
         let dynamic_offers = vec![make_dep(offer_1)];
-        let sorted_map =
-            process_deps(&fidl_decl, &vec![("dyn1", "coll"), ("dyn2", "coll")], &dynamic_offers)
-                .topological_sort()
-                .unwrap()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
+        let sorted_map = process_deps_test(
+            &fidl_decl,
+            &vec![("dyn1", "coll"), ("dyn2", "coll")],
+            &dynamic_offers,
+        )
+        .topological_sort()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
         let ans: Vec<DependencyNode> = vec![
             DependencyNode::Child("dyn1".into(), Some("coll".into())),
             DependencyNode::Child("childA".into(), None),
@@ -1080,7 +1095,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1123,7 +1138,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1161,7 +1176,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1208,7 +1223,7 @@ mod tests {
             .into();
 
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1246,7 +1261,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1311,7 +1326,7 @@ mod tests {
             .build()
             .into();
         let dynamic_offers = vec![];
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1344,7 +1359,7 @@ mod tests {
         let dynamic_offers = vec![];
 
         let sorted_map =
-            process_deps(&fidl_decl, &vec![("dynamic_child", "coll")], &dynamic_offers)
+            process_deps_test(&fidl_decl, &vec![("dynamic_child", "coll")], &dynamic_offers)
                 .topological_sort()
                 .unwrap()
                 .into_iter()
@@ -1372,7 +1387,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(
+        let sorted_map = process_deps_test(
             &fidl_decl,
             &vec![("dynamic_child1", "coll"), ("dynamic_child2", "coll")],
             &dynamic_offers,
@@ -1405,7 +1420,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(
+        let sorted_map = process_deps_test(
             &fidl_decl,
             &vec![("dynamic_child1", "coll"), ("dynamic_child2", "coll")],
             &dynamic_offers,
@@ -1440,7 +1455,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(
+        let sorted_map = process_deps_test(
             &fidl_decl,
             &vec![
                 ("target_child1", "coll2"),
@@ -1483,7 +1498,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1522,7 +1537,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1546,7 +1561,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1574,7 +1589,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1622,7 +1637,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1659,7 +1674,7 @@ mod tests {
 
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1693,7 +1708,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()
@@ -1722,7 +1737,7 @@ mod tests {
             .into();
         let dynamic_offers = vec![];
 
-        let sorted_map = process_deps(&fidl_decl, &vec![], &dynamic_offers)
+        let sorted_map = process_deps_test(&fidl_decl, &vec![], &dynamic_offers)
             .topological_sort()
             .unwrap()
             .into_iter()

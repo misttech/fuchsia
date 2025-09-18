@@ -678,6 +678,7 @@ mod tests {
     use async_trait::async_trait;
     use cm_rust::push_box;
     use cm_rust_testing::{ChildBuilder, ComponentDeclBuilder};
+    use directed_graph::DirectedGraph;
     use errors::ModelError;
     use fuchsia_async as fasync;
     use futures::channel::mpsc;
@@ -1087,6 +1088,7 @@ mod tests {
             package: None,
             config: None,
             abi_revision: None,
+            dependencies: DirectedGraph::new(),
         };
         let ris = ResolvedInstanceState::new(
             &child,

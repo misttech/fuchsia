@@ -33,6 +33,7 @@ rustc_binary("realm_builder_server_bin") {
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//sdk/rust/zx",
     "//sdk/rust/zx-status",
+    "//src/lib/directed_graph",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

@@ -120,6 +120,7 @@ mod tests {
     use cm_rust::{UseDecl, UseProtocolDecl, UseSource};
     use cm_rust_testing::ComponentDeclBuilder;
     use cm_types::{BoundedName, Path, Url};
+    use directed_graph::DirectedGraph;
     use fidl::endpoints::DiscoverableProtocolMarker;
     use fidl_fuchsia_component_decl::{self as fdecl, OnTerminate};
     use fidl_fuchsia_logger as flogger;
@@ -158,6 +159,7 @@ mod tests {
             package: None,
             config: None,
             abi_revision: None,
+            dependencies: DirectedGraph::new(),
         };
         let resolved_state = ResolvedInstanceState::new(
             &instance,

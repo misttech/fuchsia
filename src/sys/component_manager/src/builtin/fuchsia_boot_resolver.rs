@@ -5,8 +5,9 @@
 use crate::capability::{BuiltinCapability, CapabilityProvider, InternalCapabilityProvider};
 use crate::model::component::WeakComponentInstance;
 use crate::model::resolver::Resolver;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
+use directed_graph::DirectedGraph;
 use fidl::endpoints::{ClientEnd, Proxy, ServerEnd};
 use fuchsia_url::boot_url::BootUrl;
 use futures::TryStreamExt;
@@ -141,7 +142,8 @@ impl FuchsiaBootResolver {
             _ => {
                 log::warn!(
                     "Encountered a packaged bootfs component, but bootfs has no package index: {:?}",
-                    canonicalized_package_path);
+                    canonicalized_package_path
+                );
                 return Err(fresolution::ResolverError::PackageNotFound);
             }
         }
@@ -466,7 +468,8 @@ impl Resolver for FuchsiaBootResolver {
                 anyhow!("missing manifest from resolved component").into(),
             )
         })?;
-        let decl = resolving::read_and_validate_manifest(&decl)?;
+        let mut dependencies = DirectedGraph::new();
+        let decl = resolving::read_and_validate_manifest(&decl, &mut dependencies)?;
         let config_values = if let Some(cv) = config_values {
             Some(resolving::read_and_validate_config_values(&cv)?)
         } else {
@@ -478,6 +481,7 @@ impl Resolver for FuchsiaBootResolver {
             package: package.map(|p| p.try_into()).transpose()?,
             config_values,
             abi_revision: abi_revision.map(Into::into),
+            dependencies,
         })
     }
 }
@@ -519,7 +523,7 @@ mod tests {
     use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::read_only;
     use vfs::path::Path as VfsPath;
-    use vfs::{pseudo_directory, ToObjectRequest};
+    use vfs::{ToObjectRequest, pseudo_directory};
     use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata};
 
     fn serve_vfs_dir(root: Arc<impl Directory>) -> (Task<()>, fio::DirectoryProxy) {

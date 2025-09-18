@@ -13,6 +13,7 @@ use ::routing::policy::ScopedPolicyChecker;
 use ::routing::resolving::{self, ComponentAddress, ResolvedComponent, ResolverError};
 use anyhow::Error;
 use async_trait::async_trait;
+use directed_graph::DirectedGraph;
 use fuchsia_component::client as fclient;
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
@@ -85,7 +86,8 @@ impl Resolver for RealmBuilderResolver {
             .resolve_async(component_url, some_context.map(|context| context.into()).as_ref())
             .await?;
         let context_to_resolve_children = resolution_context.map(Into::into);
-        let decl = resolving::read_and_validate_manifest(&decl.unwrap())?;
+        let mut dependencies = DirectedGraph::new();
+        let decl = resolving::read_and_validate_manifest(&decl.unwrap(), &mut dependencies)?;
         let config_values = if let Some(data) = config_values {
             Some(resolving::read_and_validate_config_values(&data)?)
         } else {
@@ -97,6 +99,7 @@ impl Resolver for RealmBuilderResolver {
             package: package.map(|p| p.try_into()).transpose()?,
             config_values,
             abi_revision: abi_revision.map(Into::into),
+            dependencies,
         })
     }
 }

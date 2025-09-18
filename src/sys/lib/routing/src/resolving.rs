@@ -6,6 +6,8 @@ use crate::component_instance::{ComponentInstanceInterface, ExtendedInstanceInte
 use crate::error::ComponentInstanceError;
 use anyhow::Error;
 use clonable_error::ClonableError;
+use cm_graph::DependencyNode;
+use directed_graph::DirectedGraph;
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use url::Url;
@@ -34,6 +36,7 @@ pub struct ResolvedComponent {
     pub package: Option<ResolvedPackage>,
     pub config_values: Option<cm_rust::ConfigValuesData>,
     pub abi_revision: Option<AbiRevision>,
+    pub dependencies: DirectedGraph<DependencyNode>,
 }
 
 // This block and others in this file only build on target, because these functions rely on
@@ -46,7 +49,8 @@ impl TryFrom<fresolution::Component> for ResolvedComponent {
     fn try_from(component: fresolution::Component) -> Result<Self, Self::Error> {
         let decl_buffer: fidl_fuchsia_mem::Data =
             component.decl.ok_or(ResolverError::RemoteInvalidData)?;
-        let decl = read_and_validate_manifest(&decl_buffer)?;
+        let mut dependencies = DirectedGraph::new();
+        let decl = read_and_validate_manifest(&decl_buffer, &mut dependencies)?;
         let config_values = match &decl.config {
             Some(config) => match config.value_source {
                 cm_rust::ConfigValueSource::PackagePath(_) => {
@@ -66,6 +70,7 @@ impl TryFrom<fresolution::Component> for ResolvedComponent {
             package: component.package.map(TryInto::try_into).transpose()?,
             config_values,
             abi_revision,
+            dependencies,
         })
     }
 }
@@ -79,6 +84,7 @@ impl From<ResolvedComponent> for fresolution::Component {
             package,
             config_values,
             abi_revision,
+            dependencies: _,
         } = component;
         let decl_bytes = fidl::persist(&decl.native_into_fidl())
             .expect("failed to serialize validated manifest");
@@ -116,18 +122,21 @@ impl From<ResolvedComponent> for fresolution::Component {
 #[cfg(target_os = "fuchsia")]
 pub fn read_and_validate_manifest(
     data: &fidl_fuchsia_mem::Data,
+    dependencies: &mut DirectedGraph<DependencyNode>,
 ) -> Result<cm_rust::ComponentDecl, ResolverError> {
     let bytes = mem_util::bytes_from_data(data).map_err(ResolverError::manifest_invalid)?;
-    read_and_validate_manifest_bytes(&bytes)
+    read_and_validate_manifest_bytes(&bytes, dependencies)
 }
 
 #[cfg(target_os = "fuchsia")]
 pub fn read_and_validate_manifest_bytes(
     bytes: &[u8],
+    dependencies: &mut DirectedGraph<DependencyNode>,
 ) -> Result<cm_rust::ComponentDecl, ResolverError> {
     let component_decl: fidl_fuchsia_component_decl::Component =
         fidl::unpersist(bytes).map_err(ResolverError::manifest_invalid)?;
-    cm_fidl_validator::validate(&component_decl).map_err(ResolverError::manifest_invalid)?;
+    cm_fidl_validator::validate(&component_decl, dependencies)
+        .map_err(ResolverError::manifest_invalid)?;
     Ok(component_decl.fidl_into_native())
 }
 

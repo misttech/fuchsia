@@ -11,6 +11,7 @@ use anyhow::{Context, Result, anyhow};
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use cm_fidl_analyzer::{PkgUrlMatch, match_absolute_pkg_urls};
+use directed_graph::DirectedGraph;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_merkle::Hash;
@@ -210,7 +211,9 @@ impl PackageDataCollector {
                     let mut cvf_bytes = None;
 
                     if let Ok(cm_decl) = unpersist::<fdecl::Component>(&decl_bytes) {
-                        if let Err(err) = cm_fidl_validator::validate(&cm_decl) {
+                        if let Err(err) =
+                            cm_fidl_validator::validate(&cm_decl, &mut DirectedGraph::new())
+                        {
                             warn!(err:%, url:%; "Invalid cm");
                         } else {
                             if let Some(schema) = cm_decl.config {
@@ -373,7 +376,7 @@ impl PackageDataCollector {
         info!(file_name:%; "Extracting bootfs manifest");
         let cm_base64 = BASE64_STANDARD.encode(&file_data);
         if let Ok(cm_decl) = unpersist::<fdecl::Component>(&file_data) {
-            if let Err(err) = cm_fidl_validator::validate(&cm_decl) {
+            if let Err(err) = cm_fidl_validator::validate(&cm_decl, &mut DirectedGraph::new()) {
                 warn!(file_name:%, err:%; "Invalid cm");
             } else {
                 // Retrieve this component's config values, if any.

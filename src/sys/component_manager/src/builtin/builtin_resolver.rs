@@ -4,6 +4,7 @@
 
 use ::routing::resolving;
 use async_trait::async_trait;
+use directed_graph::DirectedGraph;
 use fuchsia_url::builtin_url::BuiltinUrl;
 use include_bytes_from_working_dir::include_bytes_from_working_dir_env;
 use routing::resolving::{ComponentAddress, ResolvedComponent, ResolverError};
@@ -38,9 +39,14 @@ impl Resolver for BuiltinResolver {
         let Some(resource) = url.resource() else {
             return Err(ResolverError::manifest_not_found(ManifestNotFoundError(url)));
         };
+        let mut dependencies = DirectedGraph::new();
         let decl = match resource {
-            "elf_runner.cm" => resolving::read_and_validate_manifest_bytes(ELF_RUNNER_CM_BYTES)?,
-            "dispatcher.cm" => resolving::read_and_validate_manifest_bytes(DISPATCHER_CM_BYTES)?,
+            "elf_runner.cm" => {
+                resolving::read_and_validate_manifest_bytes(ELF_RUNNER_CM_BYTES, &mut dependencies)?
+            }
+            "dispatcher.cm" => {
+                resolving::read_and_validate_manifest_bytes(DISPATCHER_CM_BYTES, &mut dependencies)?
+            }
             _ => return Err(ResolverError::manifest_not_found(ManifestNotFoundError(url.clone()))),
         };
 
@@ -54,6 +60,7 @@ impl Resolver for BuiltinResolver {
             package: None,
             config_values: None,
             abi_revision: Some(abi_revision),
+            dependencies,
         })
     }
 }
@@ -67,7 +74,9 @@ static DISPATCHER_CM_BYTES: &'static [u8] =
     include_bytes_from_working_dir_env!("DISPATCHER_CM_PATH");
 
 #[derive(Error, Debug, Clone)]
-#[error("{0} does not reference a known manifest. Try fuchsia-builtin://#elf_runner.cm or fuchsia-builtin://#dispatcher.cm")]
+#[error(
+    "{0} does not reference a known manifest. Try fuchsia-builtin://#elf_runner.cm or fuchsia-builtin://#dispatcher.cm"
+)]
 struct ManifestNotFoundError(pub BuiltinUrl);
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
@@ -76,7 +85,11 @@ mod tests {
 
     #[fuchsia::test]
     fn elf_runner_cm_smoke_test() {
-        let decl = resolving::read_and_validate_manifest_bytes(ELF_RUNNER_CM_BYTES).unwrap();
+        let decl = resolving::read_and_validate_manifest_bytes(
+            ELF_RUNNER_CM_BYTES,
+            &mut DirectedGraph::new(),
+        )
+        .unwrap();
         let program = decl.program.unwrap();
         assert_eq!(program.runner.unwrap().as_str(), "builtin_elf_runner");
     }

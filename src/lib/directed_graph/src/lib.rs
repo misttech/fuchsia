@@ -6,8 +6,10 @@ use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
+use std::iter;
 
 /// A directed graph, whose nodes contain an identifier of type `T`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectedGraph<T: Clone + PartialEq + Hash + Ord + Debug + Display>(
     HashMap<T, DirectedNode<T>>,
 );
@@ -16,6 +18,30 @@ impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> DirectedGraph<T> {
     /// Created a new empty `DirectedGraph`.
     pub fn new() -> Self {
         Self(HashMap::new())
+    }
+
+    /// Remove all edges that don't match the given predicate.
+    pub fn retain(&mut self, predicate: impl Fn(&T, &T) -> bool) {
+        let mut dangling_nodes = HashSet::new();
+        for (k, set) in &mut self.0 {
+            set.0.retain(|v| predicate(k, v));
+            if set.0.is_empty() {
+                dangling_nodes.insert(k.clone());
+            }
+        }
+        // Prune empty nodes that are no longer a target of another node
+        for (_, set) in &self.0 {
+            for v in &set.0 {
+                let _ = dangling_nodes.remove(v);
+            }
+        }
+        self.0.retain(|k, _| !dangling_nodes.contains(k));
+    }
+
+    pub fn extend(&mut self, other: impl IntoIterator<Item = (T, T)>) {
+        for (a, b) in other.into_iter() {
+            self.add_edge(a, b);
+        }
     }
 
     /// Add an edge to the graph, adding nodes if necessary.
@@ -133,6 +159,44 @@ impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> DirectedGraph<T> {
     }
 }
 
+impl<T: Clone + PartialEq + Hash + Ord + Debug + Display, const N: usize> From<[(T, T); N]>
+    for DirectedGraph<T>
+{
+    fn from(items: [(T, T); N]) -> Self {
+        let mut this = Self::new();
+        for (a, b) in IntoIterator::into_iter(items) {
+            this.add_edge(a, b);
+        }
+        this
+    }
+}
+
+impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> From<Box<[(T, T)]>> for DirectedGraph<T> {
+    fn from(items: Box<[(T, T)]>) -> Self {
+        let mut this = Self::new();
+        for (a, b) in IntoIterator::into_iter(items) {
+            this.add_edge(a, b);
+        }
+        this
+    }
+}
+
+impl<T: Clone + PartialEq + Hash + Ord + Debug + Display + 'static> IntoIterator
+    for DirectedGraph<T>
+{
+    type Item = (T, T);
+    type IntoIter = Box<dyn Iterator<Item = (T, T)>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(
+            self.0
+                .into_iter()
+                .map(|(k, set)| iter::zip(iter::repeat(k), set.0.into_iter()))
+                .flatten(),
+        )
+    }
+}
+
 impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> Default for DirectedGraph<T> {
     fn default() -> Self {
         Self(HashMap::new())
@@ -140,7 +204,7 @@ impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> Default for DirectedGr
 }
 
 /// A graph node. Contents contain the nodes mapped by edges from this node.
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DirectedNode<T: Clone + PartialEq + Hash + Ord + Debug + Display>(HashSet<T>);
 
 impl<T: Clone + PartialEq + Hash + Ord + Debug + Display> DirectedNode<T> {
@@ -444,6 +508,36 @@ mod tests {
         let expected_shortest_path =
             expected_shortest_path.map(|path| path.iter().collect::<Vec<_>>());
         assert_eq!(actual_shortest_path, expected_shortest_path);
+    }
+
+    #[test]
+    fn operations() {
+        fn assert_elements(
+            graph: &DirectedGraph<&'static str>,
+            expected: &[(&'static str, &'static str)],
+        ) {
+            let mut elements: Vec<_> = graph.clone().into_iter().collect();
+            elements.sort_unstable();
+            assert_eq!(&elements, expected);
+        }
+
+        let mut graph = DirectedGraph::new();
+        graph.add_edge("a", "b");
+        assert_elements(&graph, &[("a", "b")]);
+
+        graph.extend(vec![("c", "b"), ("a", "e")]);
+        assert_elements(&graph, &[("a", "b"), ("a", "e"), ("c", "b")]);
+
+        graph.retain(|k, v| *k == "c" || *v != "e");
+        assert_elements(&graph, &[("a", "b"), ("c", "b")]);
+
+        graph.retain(|k, _| *k != "a");
+        assert_elements(&graph, &[("c", "b")]);
+        // This confirms that the now empty target set for "a" was removed by the last call to
+        // retain().
+        let mut expected = DirectedGraph::new();
+        expected.add_edge("c", "b");
+        assert_eq!(graph, expected);
     }
 
     // Tests with no cycles

@@ -5,6 +5,7 @@
 use crate::io::{Directory, RemoteDirectory};
 use anyhow::Context;
 use cm_rust::{ComponentDecl, FidlIntoNative};
+use directed_graph::DirectedGraph;
 use flex_client::ProxyHasDomain;
 use fuchsia_async::TimeoutExt;
 use futures::TryFutureExt;
@@ -286,7 +287,7 @@ impl TryFrom<fcdecl::ResolvedConfigField> for ConfigField {
             _ => {
                 return Err(ParseError::UnknownEnumValue {
                     struct_name: "fuchsia.component.config.Value",
-                })
+                });
             }
         };
         Ok(ConfigField { key: field.key, value })
@@ -338,7 +339,7 @@ pub async fn get_all_instances(
     let iterator = match result {
         Ok(iterator) => iterator,
         Err(fsys::GetAllInstancesError::InstanceNotFound) => {
-            return Err(GetAllInstancesError::InstanceNotFound)
+            return Err(GetAllInstancesError::InstanceNotFound);
         }
         Err(_) => return Err(GetAllInstancesError::UnknownError),
     };
@@ -430,7 +431,7 @@ pub async fn resolve_declaration(
 
     let bytes = drain_manifest_bytes_iterator(iterator.into_proxy()).await?;
     let manifest = fidl::unpersist::<fcdecl::Component>(&bytes)?;
-    cm_fidl_validator::validate(&manifest)?;
+    cm_fidl_validator::validate(&manifest, &mut DirectedGraph::new())?;
     let manifest = manifest.fidl_into_native();
     Ok(manifest)
 }

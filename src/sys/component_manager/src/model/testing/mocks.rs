@@ -10,6 +10,7 @@ use ::routing::resolving::{ComponentAddress, ResolvedComponent, ResolvedPackage,
 use anyhow::format_err;
 use async_trait::async_trait;
 use cm_rust::{ComponentDecl, ConfigValuesData};
+use directed_graph::DirectedGraph;
 use fidl::endpoints::{Proxy, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
 use fidl_fuchsia_component_runner::{
@@ -111,6 +112,7 @@ impl MockResolver {
                     .get_example_supported_version_for_tests()
                     .abi_revision,
             ),
+            dependencies: DirectedGraph::new(),
         })
     }
 

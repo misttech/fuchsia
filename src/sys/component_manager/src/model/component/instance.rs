@@ -53,6 +53,7 @@ use cm_rust::{
 use cm_types::{Name, Path, RelativePath};
 use config_encoder::ConfigFields;
 use derivative::Derivative;
+use directed_graph::DirectedGraph;
 use errors::{
     AddChildError, AddDynamicChildError, CapabilityProviderError, ComponentProviderError,
     CreateNamespaceError, DynamicCapabilityError, OpenError, OpenOutgoingDirError,
@@ -72,8 +73,8 @@ use sandbox::{
     Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::sync::Arc;
+use std::{fmt, mem};
 use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest, SubNode};
 use vfs::directory::immutable::simple as pfs;
@@ -298,10 +299,6 @@ pub struct ResolvedInstanceState {
     /// Created on demand.
     exposed_dir: Once<Arc<dyn DirectoryEntry>>,
 
-    /// Dynamic offers targeting this component's dynamic children. For efficiency, this contains
-    /// just the edges needed to perform dependency calculations.
-    pub dynamic_offers: HashSet<(DependencyNode, DependencyNode)>,
-
     /// The as-resolved location of the component: either an absolute component
     /// URL, or (with a package context) a relative path URL.
     address: ComponentDomain,
@@ -439,7 +436,6 @@ impl ResolvedInstanceState {
             namespace_dir: Once::default(),
             exposed_dict: Once::default(),
             exposed_dir: Once::default(),
-            dynamic_offers: Default::default(),
             address,
             sandbox: Default::default(),
             program_escrow,
@@ -921,8 +917,9 @@ impl ResolvedInstanceState {
         }
 
         // Delete any dynamic offers whose source or target matches the component we're deleting.
-        self.dynamic_offers
-            .retain(|offer| !matches(&offer.0, moniker) && !matches(&offer.1, moniker))
+        self.resolved_component
+            .dependencies
+            .retain(|a, b| !matches(a, moniker) && !matches(b, moniker))
     }
 
     /// Creates a set of Environments instantiated from their EnvironmentDecls.
@@ -1063,7 +1060,7 @@ impl ResolvedInstanceState {
         .await;
         self.children.insert(child_name, child.clone());
 
-        self.dynamic_offers.extend(
+        self.resolved_component.dependencies.extend(
             dynamic_offers.into_iter().map(NativeIntoFidl::native_into_fidl).filter_map(|o| {
                 let (a, b) = cm_graph::get_dependency_from_offer(&o);
                 let a = a?;
@@ -1078,7 +1075,7 @@ impl ResolvedInstanceState {
     fn add_target_dynamic_offers(
         mut dynamic_offers: Vec<fdecl::Offer>,
         child: &ChildDecl,
-        collection: Option<&CollectionDecl>,
+        collection: &CollectionDecl,
     ) -> Result<Vec<fdecl::Offer>, DynamicCapabilityError> {
         for offer in &mut dynamic_offers {
             match offer {
@@ -1119,7 +1116,7 @@ impl ResolvedInstanceState {
             *offer_target_mut(offer).expect("validation should have found unknown enum type") =
                 Some(fdecl::Ref::Child(fdecl::ChildRef {
                     name: child.name.clone().into(),
-                    collection: Some(collection.unwrap().name.clone().into()),
+                    collection: Some(collection.name.clone().into()),
                 }));
         }
         Ok(dynamic_offers)
@@ -1128,13 +1125,14 @@ impl ResolvedInstanceState {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     fn validate_dynamic_component(
         &self,
+        dependencies: &mut DirectedGraph<DependencyNode>,
         all_dynamic_children: Vec<(&str, &str)>,
         new_dynamic_offers: Vec<fdecl::Offer>,
     ) -> Result<(), AddChildError> {
         // Validate!
         cm_fidl_validator::validate_dynamic_offers(
             all_dynamic_children,
-            &self.dynamic_offers,
+            dependencies,
             &new_dynamic_offers,
             &self.resolved_component.decl.clone().native_into_fidl(),
         )
@@ -1160,34 +1158,42 @@ impl ResolvedInstanceState {
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     pub fn validate_and_convert_dynamic_component(
-        &self,
+        &mut self,
         dynamic_offers: Option<Vec<fdecl::Offer>>,
         child: &ChildDecl,
         collection: Option<&CollectionDecl>,
     ) -> Result<Vec<cm_rust::OfferDecl>, AddChildError> {
-        let dynamic_offers = dynamic_offers.unwrap_or_default();
-
-        let dynamic_offers = Self::add_target_dynamic_offers(dynamic_offers, child, collection)?;
-        if !dynamic_offers.is_empty() {
-            let mut all_dynamic_children: Vec<_> = self
-                .children()
-                .filter_map(|(n, _)| {
-                    if let Some(collection) = n.collection() {
-                        Some((n.name().as_str(), collection.as_str()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            all_dynamic_children.push((
-                child.name.as_str(),
-                collection
-                    .expect("child must be dynamic if there were dynamic offers")
-                    .name
-                    .as_str(),
-            ));
-            self.validate_dynamic_component(all_dynamic_children, dynamic_offers.clone())?;
+        if collection.is_none() {
+            return Ok(vec![]);
         }
+
+        let collection = collection.unwrap();
+        let dynamic_offers =
+            Self::add_target_dynamic_offers(dynamic_offers.unwrap_or_default(), child, collection)?;
+        // TODO: This shifting around of the DirectedGraph is here to work around a lifetime
+        // error, but it's slightly awkward. See if there's a better way -- can we decouple
+        // `validate_dynamic_component` from having to depend on `self`?
+        let mut dependencies =
+            mem::replace(&mut self.resolved_component.dependencies, DirectedGraph::new());
+
+        let mut all_dynamic_children: Vec<_> = self
+            .children()
+            .filter_map(|(n, _)| {
+                if let Some(collection) = n.collection() {
+                    Some((n.name().as_str(), collection.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        all_dynamic_children.push((child.name.as_str(), collection.name.as_str()));
+        self.validate_dynamic_component(
+            &mut dependencies,
+            all_dynamic_children,
+            dynamic_offers.clone(),
+        )?;
+
+        _ = mem::replace(&mut self.resolved_component.dependencies, dependencies);
         Ok(dynamic_offers.into_iter().map(|o| o.fidl_into_native()).collect())
     }
 

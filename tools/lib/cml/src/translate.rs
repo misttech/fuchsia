@@ -15,6 +15,7 @@ use crate::{
 };
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name};
+use directed_graph::DirectedGraph;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::{Map, Value};
@@ -140,7 +141,8 @@ pub fn compile(
         ..Default::default()
     };
 
-    cm_fidl_validator::validate(&component).map_err(Error::fidl_validator)?;
+    let mut deps = DirectedGraph::new();
+    cm_fidl_validator::validate(&component, &mut deps).map_err(Error::fidl_validator)?;
 
     Ok(component)
 }

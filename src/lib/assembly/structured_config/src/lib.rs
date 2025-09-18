@@ -7,6 +7,7 @@
 use assembly_validate_util::PkgNamespace;
 use camino::Utf8PathBuf;
 use cm_rust::{FidlIntoNative, NativeIntoFidl};
+use directed_graph::DirectedGraph;
 use fidl::{Persistable, unpersist};
 use fuchsia_pkg::{PackageBuilder, PackageManifest, RelativeTo};
 use std::collections::BTreeMap;
@@ -65,9 +66,10 @@ fn config_for_manifest(
     manifest_bytes: Vec<u8>,
     values: BTreeMap<String, serde_json::Value>,
 ) -> Result<(Vec<u8>, Option<String>), RepackageError> {
-    let manifest: cm_rust::ComponentDecl =
-        read_and_validate_fidl(&manifest_bytes, cm_fidl_validator::validate)
-            .map_err(RepackageError::ParseManifest)?;
+    let manifest: cm_rust::ComponentDecl = read_and_validate_fidl(&manifest_bytes, |d| {
+        cm_fidl_validator::validate(d, &mut DirectedGraph::new())
+    })
+    .map_err(RepackageError::ParseManifest)?;
 
     let Some(config_decl) = manifest.config else {
         return Err(RepackageError::MissingConfigDecl);
@@ -135,9 +137,10 @@ pub fn validate_component(
     // get the manifest and validate it
     let manifest_bytes =
         reader.read_file(manifest_path).map_err(ValidationError::ManifestMissing)?;
-    let manifest: cm_rust::ComponentDecl =
-        read_and_validate_fidl(&manifest_bytes, cm_fidl_validator::validate)
-            .map_err(ValidationError::ParseManifest)?;
+    let manifest: cm_rust::ComponentDecl = read_and_validate_fidl(&manifest_bytes, |d| {
+        cm_fidl_validator::validate(d, &mut DirectedGraph::new())
+    })
+    .map_err(ValidationError::ParseManifest)?;
 
     let Some(config_decl) = manifest.config else {
         return Ok(());

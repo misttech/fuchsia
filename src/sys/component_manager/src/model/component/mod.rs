@@ -30,6 +30,7 @@ use ::routing::resolving::{
     ComponentAddress, ComponentResolutionContext, ResolvedComponent, ResolvedPackage, ResolverError,
 };
 use async_trait::async_trait;
+use cm_graph::DependencyNode;
 use cm_rust::{
     CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, NativeIntoFidl, UseDecl,
     UseStorageDecl,
@@ -38,6 +39,7 @@ use cm_types::{Name, Url};
 use cm_util::TaskGroup;
 use component_id_index::InstanceId;
 use config_encoder::ConfigFields;
+use directed_graph::DirectedGraph;
 use errors::{
     ActionError, AddDynamicChildError, DestroyActionError, ModelError, OpenExposedDirError,
     OpenOutgoingDirError, ResolveActionError, StartActionError, StopActionError,
@@ -149,6 +151,10 @@ pub struct Component {
     pub config: Option<ConfigFields>,
     /// The component's target ABI revision, if available.
     pub abi_revision: Option<AbiRevision>,
+    /// Dependency graph for the component. This is not part of the fidl type, but is derived
+    /// from `decl`. As part of a component's resolved state, this should be kept up to date to
+    /// reflect any dynamic offers.
+    pub dependencies: DirectedGraph<DependencyNode>,
 }
 
 impl Component {
@@ -160,6 +166,7 @@ impl Component {
             package,
             config_values,
             abi_revision,
+            dependencies,
         }: ResolvedComponent,
         config_parent_overrides: Option<&[cm_rust::ConfigOverride]>,
     ) -> Result<Self, ResolveActionError> {
@@ -181,7 +188,7 @@ impl Component {
         };
 
         let package = package.map(|p| p.try_into()).transpose()?;
-        Ok(Self { context_to_resolve_children, decl, package, config, abi_revision })
+        Ok(Self { context_to_resolve_children, decl, package, config, abi_revision, dependencies })
     }
 }
 
@@ -1559,7 +1566,6 @@ pub mod tests {
     };
     use ::routing::bedrock::structured_dict::ComponentInput;
     use assert_matches::assert_matches;
-    use cm_graph::DependencyNode;
     use cm_rust::{
         Availability, ChildRef, DependencyType, ExposeSource, OfferDecl, OfferProtocolDecl,
         OfferSource, OfferTarget,
@@ -1890,11 +1896,6 @@ pub mod tests {
         .expect("failed to create child");
         test.create_dynamic_child("coll_2", "a").await;
 
-        let offer_dep = (
-            DependencyNode::Child("a".into(), Some("coll_1".into())),
-            DependencyNode::Child("b".into(), Some("coll_1".into())),
-        );
-
         OfferBuilder::service()
             .name("n0")
             .source(OfferSource::Child(ChildRef {
@@ -1928,8 +1929,32 @@ pub mod tests {
                 ],
                 &*children
             );
+
+            let expected_deps = DirectedGraph::from([
+                (
+                    DependencyNode::Environment("env_a".into()),
+                    DependencyNode::Child("a".into(), None),
+                ),
+                (
+                    DependencyNode::Environment("env_b".into()),
+                    DependencyNode::Collection("coll_2".into()),
+                ),
+                (
+                    DependencyNode::Environment("env_b".into()),
+                    DependencyNode::Child("a".into(), Some("coll_2".into())),
+                ),
+                (DependencyNode::Child("a".into(), None), DependencyNode::Child("b".into(), None)),
+                (
+                    DependencyNode::Child("a".into(), Some("coll_1".into())),
+                    DependencyNode::Child("b".into(), Some("coll_1".into())),
+                ),
+            ]);
+
             pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
-            pretty_assertions::assert_eq!(root_resolved.dynamic_offers, HashSet::from([offer_dep]));
+            pretty_assertions::assert_eq!(
+                root_resolved.resolved_component.dependencies,
+                expected_deps
+            );
         }
 
         // Destroy `coll_1:b`. It should not be listed. The dynamic offer should be deleted.
@@ -1956,8 +1981,27 @@ pub mod tests {
                 &*children
             );
 
+            let expected_deps = DirectedGraph::from([
+                (
+                    DependencyNode::Environment("env_a".into()),
+                    DependencyNode::Child("a".into(), None),
+                ),
+                (
+                    DependencyNode::Environment("env_b".into()),
+                    DependencyNode::Collection("coll_2".into()),
+                ),
+                (
+                    DependencyNode::Environment("env_b".into()),
+                    DependencyNode::Child("a".into(), Some("coll_2".into())),
+                ),
+                (DependencyNode::Child("a".into(), None), DependencyNode::Child("b".into(), None)),
+            ]);
+
             pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
-            pretty_assertions::assert_eq!(root_resolved.dynamic_offers, HashSet::from([]));
+            pretty_assertions::assert_eq!(
+                root_resolved.resolved_component.dependencies,
+                expected_deps,
+            );
         }
 
         // Recreate `coll_1:b`, this time with a dynamic offer from `a` in the other
@@ -1982,11 +2026,6 @@ pub mod tests {
         .await
         .expect("failed to create child");
 
-        let offer_dep2 = (
-            DependencyNode::Child("a".into(), Some("coll_2".into())),
-            DependencyNode::Child("b".into(), Some("coll_1".into())),
-        );
-
         {
             let root_resolved = root_component.lock_resolved_state().await.expect("resolving");
 
@@ -2006,10 +2045,30 @@ pub mod tests {
                 &*children
             );
 
+            let expected_deps = DirectedGraph::from([
+                (
+                    DependencyNode::Environment("env_a".into()),
+                    DependencyNode::Child("a".into(), None),
+                ),
+                (
+                    DependencyNode::Environment("env_b".into()),
+                    DependencyNode::Child("a".into(), Some("coll_2".into())),
+                ),
+                (
+                    DependencyNode::Environment("env_b".into()),
+                    DependencyNode::Collection("coll_2".into()),
+                ),
+                (DependencyNode::Child("a".into(), None), DependencyNode::Child("b".into(), None)),
+                (
+                    DependencyNode::Child("a".into(), Some("coll_2".into())),
+                    DependencyNode::Child("b".into(), Some("coll_1".into())),
+                ),
+            ]);
+
             pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
             pretty_assertions::assert_eq!(
-                root_resolved.dynamic_offers,
-                HashSet::from([offer_dep2])
+                root_resolved.resolved_component.dependencies,
+                expected_deps,
             );
         }
     }
@@ -2210,6 +2269,7 @@ pub mod tests {
             package: None,
             config: None,
             abi_revision: None,
+            dependencies: DirectedGraph::new(),
         };
         let ris = ResolvedInstanceState::new(
             &comp,

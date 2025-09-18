@@ -139,10 +139,16 @@ enum RefKey<'a> {
 /// - That only weak-dependency capabilities may be offered back to the
 ///   component that exposed them.
 ///
+/// `dependencies` is an output parameter that captures the capability dependency graph derived
+/// from `decl`. Callers may use this to traverse the capability graph in topological order.
+///
 /// All checks are local to this Component.
-pub fn validate(decl: &fdecl::Component) -> Result<(), ErrorList> {
-    let ctx = ValidationContext::default();
-    ctx.validate(decl, &HashSet::new(), &vec![]).map_err(|errs| ErrorList::new(errs))
+pub fn validate<'a>(
+    decl: &'a fdecl::Component,
+    dependencies: &'a mut DirectedGraph<DependencyNode>,
+) -> Result<(), ErrorList> {
+    let ctx = ValidationContext::new(dependencies);
+    ctx.validate(decl, &[]).map_err(|errs| ErrorList::new(errs))
 }
 
 /// Validates a list of namespace or builtin Capabilities.
@@ -150,7 +156,8 @@ fn validate_capabilities(
     capabilities: &[fdecl::Capability],
     as_builtin: bool,
 ) -> Result<(), ErrorList> {
-    let mut ctx = ValidationContext::default();
+    let mut deps = DirectedGraph::new();
+    let mut ctx = ValidationContext::new(&mut deps);
 
     ctx.load_dictionary_names(capabilities.iter().filter_map(|capability| match capability {
         fdecl::Capability::Dictionary(dictionary_decl) => Some(dictionary_decl),
@@ -220,16 +227,19 @@ fn validate_child(
 /// 3. since this crate isn't really designed to handle dynamic children, we
 ///    disable the checks that ensure that the source/target exist, and that the
 ///    offers don't introduce any cycles.
+///
+/// `dependencies` is an output parameter that captures new dependencies from `new_dynamic_offers`.
+/// Any existing dependency edges are preserved. The input may be non empty and is normally the
+/// output of the previous [`validate`] or [`validate_dynamic_offers`].
 pub fn validate_dynamic_offers<'a>(
     dynamic_children: Vec<(&'a str, &'a str)>,
-    existing_dynamic_offers: &HashSet<(DependencyNode, DependencyNode)>,
-    new_dynamic_offers: &'a Vec<fdecl::Offer>,
+    dependencies: &mut DirectedGraph<DependencyNode>,
+    new_dynamic_offers: &'a [fdecl::Offer],
     decl: &'a fdecl::Component,
 ) -> Result<(), ErrorList> {
-    let mut ctx = ValidationContext::default();
+    let mut ctx = ValidationContext::new(dependencies);
     ctx.dynamic_children = dynamic_children;
-    ctx.validate(decl, existing_dynamic_offers, new_dynamic_offers)
-        .map_err(|errs| ErrorList::new(errs))
+    ctx.validate(decl, new_dynamic_offers).map_err(|errs| ErrorList::new(errs))
 }
 
 fn check_offer_name(
@@ -246,7 +256,6 @@ fn check_offer_name(
     }
 }
 
-#[derive(Default)]
 struct ValidationContext<'a> {
     all_children: HashMap<&'a str, &'a fdecl::Child>,
     all_collections: HashSet<&'a str>,
@@ -264,7 +273,7 @@ struct ValidationContext<'a> {
 
     all_environment_names: HashSet<&'a str>,
     dynamic_children: Vec<(&'a str, &'a str)>,
-    strong_dependencies: DirectedGraph<DependencyNode>,
+    strong_dependencies: &'a mut DirectedGraph<DependencyNode>,
     target_ids: IdMap<'a>,
     errors: Vec<Error>,
 }
@@ -289,11 +298,34 @@ impl<'a, T> Container for HashMap<&'a str, T> {
 }
 
 impl<'a> ValidationContext<'a> {
+    fn new(strong_dependencies: &'a mut DirectedGraph<DependencyNode>) -> Self {
+        Self {
+            strong_dependencies,
+            all_children: Default::default(),
+            all_collections: Default::default(),
+            all_capability_ids: Default::default(),
+            all_storages: Default::default(),
+            all_services: Default::default(),
+            all_protocols: Default::default(),
+            all_directories: Default::default(),
+            all_runners: Default::default(),
+            all_resolvers: Default::default(),
+            all_dictionaries: Default::default(),
+
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            all_configs: Default::default(),
+
+            all_environment_names: Default::default(),
+            dynamic_children: Default::default(),
+            target_ids: Default::default(),
+            errors: Default::default(),
+        }
+    }
+
     fn validate(
         mut self,
         decl: &'a fdecl::Component,
-        existing_dynamic_offers: &HashSet<(DependencyNode, DependencyNode)>,
-        new_dynamic_offers: &'a Vec<fdecl::Offer>,
+        new_dynamic_offers: &'a [fdecl::Offer],
     ) -> Result<(), Vec<Error>> {
         // Collect all environment names first, so that references to them can be checked.
         if let Some(envs) = &decl.environments {
@@ -384,7 +416,6 @@ impl<'a> ValidationContext<'a> {
             &mut self.strong_dependencies,
             &decl,
             &self.dynamic_children,
-            existing_dynamic_offers.clone(),
         );
         if let Err(e) = self.strong_dependencies.topological_sort() {
             self.errors.push(Error::dependency_cycle(e.format_cycle()));
@@ -1612,7 +1643,7 @@ impl<'a> ValidationContext<'a> {
 
     // Checks a group of expose decls to confirm that any duplicate exposes are
     // valid aggregate expose declarations.
-    fn validate_expose_group(&mut self, exposes: &'a Vec<fdecl::Expose>) {
+    fn validate_expose_group(&mut self, exposes: &'a [fdecl::Expose]) {
         let mut expose_groups: HashMap<_, Vec<fdecl::ExposeService>> = HashMap::new();
         let service_exposes = exposes
             .into_iter()
@@ -1880,7 +1911,7 @@ impl<'a> ValidationContext<'a> {
 
     // Checks a group of offer decls to confirm that any duplicate offers are
     // valid aggregate offer declarations.
-    fn validate_offer_group(&mut self, offers: &'a Vec<fdecl::Offer>, offer_type: OfferType) {
+    fn validate_offer_group(&mut self, offers: &'a [fdecl::Offer], offer_type: OfferType) {
         let mut offer_groups: HashMap<_, Vec<fdecl::OfferService>> = HashMap::new();
         let service_offers = offers
             .into_iter()
@@ -2754,13 +2785,13 @@ mod tests {
 
     #[track_caller]
     fn validate_test(input: fdecl::Component, expected_res: Result<(), ErrorList>) {
-        let res = validate(&input);
+        let res = validate(&input, &mut DirectedGraph::new());
         assert_eq!(res, expected_res);
     }
 
     #[track_caller]
     fn validate_test_any_result(input: fdecl::Component, expected_res: Vec<Result<(), ErrorList>>) {
-        let res = format!("{:?}", validate(&input));
+        let res = format!("{:?}", validate(&input, &mut DirectedGraph::new()));
         let expected_res_debug = format!("{:?}", expected_res);
 
         let matched_exp =
@@ -10063,7 +10094,12 @@ mod tests {
     #[test]
     fn test_validate_dynamic_offers_empty() {
         assert_eq!(
-            validate_dynamic_offers(vec![], &HashSet::new(), &vec![], &fdecl::Component::default()),
+            validate_dynamic_offers(
+                vec![],
+                &mut DirectedGraph::new(),
+                &vec![],
+                &fdecl::Component::default()
+            ),
             Ok(())
         );
     }
@@ -10073,7 +10109,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
                         dependency_type: Some(fdecl::DependencyType::Strong),
@@ -10156,7 +10192,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef {
@@ -10235,7 +10271,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef {
@@ -10310,7 +10346,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
                         dependency_type: Some(fdecl::DependencyType::Strong),
@@ -10376,7 +10412,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     dependency_type: Some(fdecl::DependencyType::Strong),
                     source: Some(fdecl::Ref::Parent(fdecl::ParentRef)),
@@ -10420,7 +10456,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll")],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source_name: Some("bar".to_string()),
                     target_name: Some("bar".to_string()),
@@ -10473,7 +10509,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
                         source_name: Some("foo".to_string()),
@@ -10529,7 +10565,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
-                &HashSet::from([(
+                &mut DirectedGraph::from([(
                     DependencyNode::Child("dyn".into(), Some("coll1".into())),
                     DependencyNode::Child("dyn".into(), Some("coll2".into())),
                 )]),
@@ -10572,7 +10608,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source_name: Some("bar".to_string()),
                     target_name: Some("bar".to_string()),
@@ -10655,7 +10691,7 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
-                &HashSet::new(),
+                &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol::default()),
                     fdecl::Offer::Service(fdecl::OfferService::default()),

@@ -59,7 +59,7 @@ fn ref_to_dependency_node(ref_: Option<&fdecl::Ref>) -> Option<DependencyNode> {
 fn add_dependencies_from_uses(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
-    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_children: &[(&str, &str)],
 ) {
     if let Some(uses) = decl.uses.as_ref() {
         for use_ in uses.iter() {
@@ -226,7 +226,7 @@ fn add_dependencies_from_children(
 fn add_dependencies_from_collections(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
-    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_children: &[(&str, &str)],
 ) {
     if let Some(collections) = decl.collections.as_ref() {
         for collection in collections {
@@ -290,7 +290,7 @@ fn find_offer_node(
 }
 
 fn dynamic_children_in_collection(
-    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_children: &[(&str, &str)],
     collection: &str,
 ) -> Vec<FlyStr> {
     dynamic_children
@@ -303,7 +303,7 @@ fn add_offer_edges(
     source_node: Option<DependencyNode>,
     target_node: Option<DependencyNode>,
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
-    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_children: &[(&str, &str)],
 ) {
     if source_node.is_none() {
         return;
@@ -340,7 +340,7 @@ fn add_offer_edges(
 fn add_dependencies_from_offers(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
-    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_children: &[(&str, &str)],
 ) {
     for offer in decl.offers.as_ref().map(|o| &*o as &[fdecl::Offer]).unwrap_or(&[]) {
         add_dependencies_from_offer(strong_dependencies, offer, dynamic_children);
@@ -350,7 +350,7 @@ fn add_dependencies_from_offers(
 pub fn add_dependencies_from_offer(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     offer: &fdecl::Offer,
-    dynamic_children: &Vec<(&str, &str)>,
+    dynamic_children: &[(&str, &str)],
 ) {
     let (source_node, target_node) = get_dependency_from_offer(offer);
     add_offer_edges(source_node, target_node, strong_dependencies, dynamic_children);
@@ -488,8 +488,7 @@ pub fn get_dependency_from_offer(
 pub fn generate_dependency_graph(
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
     decl: &fdecl::Component,
-    dynamic_children: &Vec<(&str, &str)>,
-    dynamic_offers: impl IntoIterator<Item = (DependencyNode, DependencyNode)>,
+    dynamic_children: &[(&str, &str)],
 ) {
     add_dependencies_from_uses(strong_dependencies, decl, dynamic_children);
     add_dependencies_from_offers(strong_dependencies, decl, dynamic_children);
@@ -497,7 +496,4 @@ pub fn generate_dependency_graph(
     add_dependencies_from_environments(strong_dependencies, decl);
     add_dependencies_from_children(strong_dependencies, decl);
     add_dependencies_from_collections(strong_dependencies, decl, dynamic_children);
-    for (source, target) in dynamic_offers.into_iter() {
-        add_offer_edges(Some(source), Some(target), strong_dependencies, dynamic_children);
-    }
 }

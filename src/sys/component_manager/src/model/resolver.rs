@@ -78,6 +78,7 @@ mod tests {
     use async_trait::async_trait;
     use cm_rust::NativeIntoFidl;
     use cm_rust_testing::new_decl_from_json;
+    use directed_graph::DirectedGraph;
     use hooks::Hooks;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
@@ -113,6 +114,7 @@ mod tests {
                         .get_example_supported_version_for_tests()
                         .abi_revision,
                 ),
+                dependencies: DirectedGraph::new(),
             })
         }
     }
@@ -191,6 +193,7 @@ mod tests {
                         .get_example_supported_version_for_tests()
                         .abi_revision,
                 ),
+                dependencies: DirectedGraph::new(),
             })
         }
     }
@@ -402,7 +405,8 @@ mod tests {
             fidl::persist(&COMPONENT_DECL.clone().native_into_fidl())
                 .expect("failed to encode manifest"),
         );
-        let actual = read_and_validate_manifest(&manifest).expect("failed to decode manifest");
+        let actual = read_and_validate_manifest(&manifest, &mut DirectedGraph::new())
+            .expect("failed to decode manifest");
         assert_eq!(actual, COMPONENT_DECL.clone());
     }
 

@@ -10,6 +10,7 @@ use cm_rust::{
     SourceName, UseDecl, UseProtocolDecl, UseSource, append_box, push_box,
 };
 use cm_types::{LongName, Path, RelativePath};
+use directed_graph::DirectedGraph;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy, ServerEnd};
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fidl_fuchsia_logger::LogSinkMarker;
@@ -782,7 +783,7 @@ impl Realm {
         options: ftest::ChildOptions,
     ) -> Result<(), RealmBuilderError> {
         let name: LongName = name.parse().map_err(|_| RealmBuilderError::ChildNameInvalid)?;
-        if let Err(e) = cm_fidl_validator::validate(&component_decl) {
+        if let Err(e) = cm_fidl_validator::validate(&component_decl, &mut DirectedGraph::new()) {
             return Err(RealmBuilderError::InvalidComponentDeclWithName(
                 name.to_string(),
                 to_tabulated_string(e),
@@ -843,7 +844,7 @@ impl Realm {
         options: ftest::ChildOptions,
         child_realm_server_end: ServerEnd<ftest::RealmMarker>,
     ) -> Result<(), RealmBuilderError> {
-        if let Err(e) = cm_fidl_validator::validate(&decl) {
+        if let Err(e) = cm_fidl_validator::validate(&decl, &mut DirectedGraph::new()) {
             return Err(RealmBuilderError::InvalidComponentDeclWithName(
                 name,
                 to_tabulated_string(e),
@@ -1368,7 +1369,7 @@ impl RealmNodeState {
                 ..Default::default()
             });
         decl.children.get_or_insert(vec![]).extend(child_decls);
-        if let Err(e) = cm_fidl_validator::validate(&decl) {
+        if let Err(e) = cm_fidl_validator::validate(&decl, &mut DirectedGraph::new()) {
             return Err(RealmBuilderError::InvalidComponentDecl(to_tabulated_string(e)));
         }
         Ok(())
@@ -1493,7 +1494,7 @@ impl RealmNode2 {
             let fidl_decl = fuchsia_fs::file::read_fidl::<fcdecl::Component>(&file_proxy)
                 .await
                 .map_err(|e| RealmBuilderError::DeclReadError(fragment_only_url.into(), e))?;
-            cm_fidl_validator::validate(&fidl_decl).map_err(|e| {
+            cm_fidl_validator::validate(&fidl_decl, &mut DirectedGraph::new()).map_err(|e| {
                 RealmBuilderError::InvalidComponentDeclWithName(
                     fragment_only_url.into(),
                     to_tabulated_string(e),
