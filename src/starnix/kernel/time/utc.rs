@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use crate::vdso::vdso_loader::MemoryMappedVvar;
+use fidl_fuchsia_time as fftime;
+use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_runtime::{
     UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant, zx_utc_reference_get,
 };
@@ -11,12 +13,41 @@ use starnix_sync::Mutex;
 use std::sync::LazyLock;
 use zx::{self as zx, AsHandleRef, HandleBased, Unowned};
 
+// Stores a vendored handle from a test fixture. In normal operation the value here must be
+// `None`. In some Starnix container tests, we inject a custom UTC clock that the tests
+// manipulate. This is a very special circumstance, so we log warnings accordingly.
+static VENDORED_UTC_HANDLE_FOR_TESTS: LazyLock<Option<UtcClockHandle>> = LazyLock::new(|| {
+    connect_to_protocol_sync::<fftime::MaintenanceMarker>()
+        .inspect_err(|err| {
+            log_info!("could not connect to fuchsia.time.Maintenance, this is expected to work only in special test code: {err:?}");
+        })
+        .map(|proxy: fftime::MaintenanceSynchronousProxy| {
+            // Even in test code, the handle we obtain here will typically not be writable. The
+            // test fixture will ensure this is the case.
+            proxy.get_writable_utc_clock(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(30)))
+            .inspect_err(|err| {log_warn!("while getting UTC clock: {err:?}");})
+            .map(|handle: zx::Clock| {
+                log_warn!("Starnix kernel is using a vendored UTC handle. This is acceptable ONLY in tests.");
+                // Make sure to remove unneeded rights, even if we know that the test fixture will
+                // give us proper handle rights.
+                 handle.replace_handle(
+                    zx::Rights::READ | zx::Rights::INSPECT| zx::Rights::TRANSFER | zx::Rights::DUPLICATE | zx::Rights::MAP)
+                    .map(|handle| handle.cast())
+                    .inspect_err(|err| {
+                        panic!("Could not replace UTC handle for vendored UTC clock: {err:?}");
+                    }).ok()
+            }).unwrap_or(None)
+        }).unwrap_or(None)
+});
+
 fn utc_clock() -> Unowned<'static, UtcClockHandle> {
-    // SAFETY: basic FFI call which returns either a valid handle or ZX_HANDLE_INVALID.
-    unsafe {
-        let handle = zx_utc_reference_get();
-        Unowned::from_raw_handle(handle)
-    }
+    VENDORED_UTC_HANDLE_FOR_TESTS.as_ref().map(|handle| Unowned::new(handle)).unwrap_or_else(|| {
+        // SAFETY: basic FFI call which returns either a valid handle or ZX_HANDLE_INVALID.
+        unsafe {
+            let handle = zx_utc_reference_get();
+            Unowned::from_raw_handle(handle)
+        }
+    })
 }
 fn duplicate_utc_clock_handle(rights: zx::Rights) -> Result<UtcClockHandle, zx::Status> {
     utc_clock().duplicate(rights)

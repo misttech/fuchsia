@@ -335,6 +335,7 @@ rustc_library("starnix_core") {
     "//sdk/fidl/fuchsia.session.power:fuchsia.session.power_rust",
     "//sdk/fidl/fuchsia.starnix.binder:fuchsia.starnix.binder_rust",
     "//sdk/fidl/fuchsia.starnix.runner:fuchsia.starnix.runner_rust",
+    "//sdk/fidl/fuchsia.time:fuchsia.time_rust",
     "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms_rust",
     "//sdk/fidl/fuchsia.time.external:fuchsia.time.external_rust",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_rust",

@@ -48,6 +48,9 @@
 
                 // Requires AIB starnix_runner_settable_utc_time.
                 "fuchsia.time.external.Adjust",
+
+                // Only used in tests for injecting a custom UTC clock handle.
+                "fuchsia.time.Maintenance",
             ],
             availability: "optional",
         },
