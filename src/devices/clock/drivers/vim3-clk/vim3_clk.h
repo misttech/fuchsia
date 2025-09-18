@@ -56,6 +56,7 @@ class Vim3Clock final : public fdf::DriverBase,
                     fdf::Arena& arena, GetNumInputsCompleter::Sync& completer) override;
   void GetInput(fuchsia_hardware_clockimpl::wire::ClockImplGetInputRequest* request,
                 fdf::Arena& arena, GetInputCompleter::Sync& completer) override;
+  void GetClockProperties(fdf::Arena& arena, GetClockPropertiesCompleter::Sync& completer) override;
 
  private:
   zx_status_t ClkToggle(uint32_t clk, bool enable);

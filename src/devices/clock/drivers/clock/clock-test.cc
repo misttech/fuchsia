@@ -106,6 +106,11 @@ class FakeClockImpl : public fdf::WireServer<fuchsia_hardware_clockimpl::ClockIm
     completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
+  void GetClockProperties(fdf::Arena& arena,
+                          GetClockPropertiesCompleter::Sync& completer) override {
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
   std::array<FakeClock, 6> clocks_;
 
   fdf::ServerBindingGroup<fuchsia_hardware_clockimpl::ClockImpl> bindings_;

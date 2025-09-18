@@ -71,6 +71,7 @@ class AmlClock : public fdf::DriverBase,
                     GetNumInputsCompleter::Sync& completer) override;
   void GetInput(GetInputRequestView request, fdf::Arena& arena,
                 GetInputCompleter::Sync& completer) override;
+  void GetClockProperties(fdf::Arena& arena, GetClockPropertiesCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_clockimpl::ClockImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {

@@ -21,6 +21,15 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.hardware.clockimpl/ClockImpl.GetClockProperties",
+        "strictness": "flexible",
+        "ordinal": "1711886934154024338",
+        "direction": "two_way",
+        "response": "fuchsia.hardware.clockimpl/ClockImpl_GetClockProperties_Response",
+        "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.hardware.clockimpl/ClockImpl.GetInput",
         "strictness": "flexible",
         "ordinal": "7817708838856790305",
@@ -205,6 +214,16 @@
     },
     {
         "kind": "struct/member",
+        "name": "fuchsia.hardware.clockimpl/ClockImpl_GetClockProperties_Response.clock_properties",
+        "ordinal": "1",
+        "type": "vector<fuchsia.hardware.clockimpl/ClockProperties>:200"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.hardware.clockimpl/ClockImpl_GetClockProperties_Response"
+    },
+    {
+        "kind": "struct/member",
         "name": "fuchsia.hardware.clockimpl/ClockImpl_GetInput_Response.index",
         "ordinal": "1",
         "type": "uint32"
@@ -252,6 +271,22 @@
     {
         "kind": "struct",
         "name": "fuchsia.hardware.clockimpl/ClockImpl_QuerySupportedRate_Response"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.clockimpl/ClockProperties.clock_id",
+        "ordinal": "1",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.clockimpl/ClockProperties.clock_name",
+        "ordinal": "2",
+        "type": "string:256"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.hardware.clockimpl/ClockProperties"
     },
     {
         "kind": "struct",
@@ -321,6 +356,18 @@
     {
         "kind": "table",
         "name": "fuchsia.hardware.clockimpl/InitStep"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.hardware.clockimpl/MAX_CLOCKS",
+        "type": "uint32",
+        "value": "200"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.hardware.clockimpl/MAX_NAME_LEN",
+        "type": "uint32",
+        "value": "256"
     },
     {
         "kind": "library",

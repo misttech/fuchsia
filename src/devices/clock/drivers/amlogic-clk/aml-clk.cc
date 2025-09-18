@@ -649,6 +649,19 @@ void AmlClock::GetInput(GetInputRequestView request, fdf::Arena& arena,
   completer.buffer(arena).ReplySuccess(result);
 }
 
+void AmlClock::GetClockProperties(fdf::Arena& arena, GetClockPropertiesCompleter::Sync& completer) {
+  fidl::VectorView<fuchsia_hardware_clockimpl::wire::ClockProperties> result(arena,
+                                                                             clk_table_count_);
+  for (size_t i = 0; i < clk_table_count_; i++) {
+    result[i] = fuchsia_hardware_clockimpl::wire::ClockProperties::Builder(arena)
+                    .clock_id(static_cast<uint32_t>(i))
+                    .clock_name(fidl::StringView::FromExternal(clk_table_[i]))
+                    .Build();
+  }
+
+  completer.buffer(arena).ReplySuccess(result);
+}
+
 // Note: The clock index taken here are the index of clock
 // from the clock table and not the clock_gates index.
 // This API measures the clk frequency for clk.

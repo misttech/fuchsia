@@ -6,6 +6,12 @@ library fuchsia.hardware.clockimpl;
 
 using zx;
 
+@available(added=NEXT)
+const MAX_NAME_LEN uint32 = 256;
+
+@available(added=NEXT)
+const MAX_CLOCKS uint32 = 200;
+
 @available(added=HEAD)
 type ClockNodeDescriptor = table {
     // The hardware clock id. May be duplicated if multiple clients have a reference to this clock.
@@ -21,6 +27,12 @@ type ClockNodeDescriptor = table {
 @serializable
 type ClockIdsMetadata = table {
     1: clock_nodes vector<ClockNodeDescriptor>:MAX;
+};
+
+@available(added=NEXT)
+type ClockProperties = table {
+    1: clock_id uint32;
+    2: clock_name string:MAX_NAME_LEN;
 };
 
 /// Each method in this protocol has a corresponding method in clock.fidl
@@ -76,6 +88,11 @@ open protocol ClockImpl {
         id uint32;
     }) -> (struct {
         index uint32;
+    }) error zx.Status;
+
+    @available(added=NEXT)
+    flexible GetClockProperties() -> (struct {
+        clock_properties vector<ClockProperties>:MAX_CLOCKS;
     }) error zx.Status;
 };
 

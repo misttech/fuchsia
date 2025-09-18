@@ -262,6 +262,12 @@ void Vim3Clock::GetInput(fuchsia_hardware_clockimpl::wire::ClockImplGetInputRequ
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void Vim3Clock::GetClockProperties(fdf::Arena& arena,
+                                   GetClockPropertiesCompleter::Sync& completer) {
+  FDF_LOG(TRACE, "GetClockProperties");
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 zx_status_t Vim3Clock::ClkToggle(uint32_t clk, bool enable) {
   if (clk >= gates_.size()) {
     return ZX_ERR_OUT_OF_RANGE;
