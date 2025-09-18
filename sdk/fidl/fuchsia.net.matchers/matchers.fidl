@@ -12,6 +12,10 @@ using fuchsia.net.interfaces;
 /// A matcher for network interfaces.
 type Interface = flexible union {
     /// The ID of the interface as assigned by the netstack.
+    // TODO(https://fxbug.dev/351015513): We may want to make interface ID
+    // matchers referency for routes matchers (ensuring they reference an
+    // installed interface and removing any matchers when the interface is
+    // removed). We do *not* want this for filtering.
     1: id fuchsia.net.InterfaceId;
     /// The name of the interface.
     2: name fuchsia.net.interfaces.Name;
