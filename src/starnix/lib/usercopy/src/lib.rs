@@ -1086,7 +1086,7 @@ mod test {
 
         let (read_bytes, unread_bytes) =
             usercopy.copyin_until_null_byte(addr, slice_to_maybe_uninit_mut(&mut dest));
-        assert_eq!(read_bytes, &[]);
+        assert_eq!(read_bytes, &[] as &[u8]);
         assert_eq!(unread_bytes.len(), dest.len());
         assert_eq!(dest, [0]);
     }
@@ -1108,7 +1108,7 @@ mod test {
 
         let (read_bytes, unread_bytes) =
             usercopy.copyin(addr, slice_to_maybe_uninit_mut(&mut dest));
-        assert_eq!(read_bytes, &[]);
+        assert_eq!(read_bytes, &[] as &[u8]);
         assert_eq!(unread_bytes.len(), dest.len());
         assert_eq!(dest, [0]);
     }
