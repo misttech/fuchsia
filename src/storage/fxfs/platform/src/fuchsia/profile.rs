@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use fuchsia_async as fasync;
 use fuchsia_hash::Hash;
 use futures::future::{self, BoxFuture, RemoteHandle, join_all};
+use futures::lock::Mutex;
 use futures::{FutureExt, select};
 use fxfs::errors::FxfsError;
 use fxfs::log::*;
@@ -44,20 +45,269 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
     type IdType: std::fmt::Display + Ord + Send + Sized;
     type NodeType: PagerBacked;
     type MessageType: Message<IdType = Self::IdType>;
-    type OpenerType: Opener<Self> + Send + Sized + Sync;
 
-    fn new_opener(
-        volume: Arc<FxVolume>,
-    ) -> impl std::future::Future<Output = Result<Self::OpenerType, Error>> + Send;
-}
+    fn new(volume: Arc<FxVolume>) -> Self;
 
-/// Creates an object opener for the volume. Allows opening either `FxFile`s or `FxBlob`s through a
-/// generic interface.
-trait Opener<T: RecordedVolume> {
+    fn volume(&self) -> &Arc<FxVolume>;
+
     fn open(
         &self,
-        id: T::IdType,
-    ) -> impl std::future::Future<Output = Result<Arc<T::NodeType>, Error>> + Send;
+        id: Self::IdType,
+    ) -> impl std::future::Future<Output = Result<Arc<Self::NodeType>, Error>> + Send;
+
+    fn read_and_queue(
+        &self,
+        handle: Box<dyn ReadObjectHandle>,
+        sender: &async_channel::Sender<Request<Self::NodeType>>,
+        local_cache: &mut BTreeMap<Self::IdType, Option<Arc<Self::NodeType>>>,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
+        async move {
+            let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
+            let block_size = handle.block_size() as usize;
+            let file_size = handle.get_size() as usize;
+            let mut offset = 0;
+            while offset < file_size {
+                let actual = handle
+                    .read(offset as u64, io_buf.as_mut())
+                    .await
+                    .map_err(|e| e.context(format!("Failed to read at offset: {}", offset)))?;
+                offset += actual;
+                let mut local_offset = 0;
+                let mut next_block = block_size;
+                let mut next_offset = size_of::<Self::MessageType>();
+                while next_offset <= actual {
+                    let msg = Self::MessageType::decode_from(
+                        &io_buf.as_slice()[local_offset..next_offset],
+                    );
+
+                    local_offset = next_offset;
+                    next_offset = local_offset + size_of::<Self::MessageType>();
+                    // Messages don't overlap block boundaries.
+                    if next_offset > next_block {
+                        local_offset = next_block;
+                        next_offset = local_offset + size_of::<Self::MessageType>();
+                        next_block += block_size;
+                    }
+
+                    // Ignore trailing zeroes. This is technically a valid entry but extremely
+                    // unlikely and will only break an optimization.
+                    if msg.is_zeroes() {
+                        break;
+                    }
+
+                    let file = match local_cache.entry(msg.id()) {
+                        Entry::Occupied(entry) => match entry.get() {
+                            Some(file) => file.clone(),
+                            // Found a cached error.
+                            None => continue,
+                        },
+                        Entry::Vacant(entry) => match self.open(msg.id()).await {
+                            Err(e) => {
+                                debug!("Failed to open object {} from profile: {:?}", msg.id(), e);
+                                // Cache the error.
+                                entry.insert(None);
+                                continue;
+                            }
+                            Ok(file) => {
+                                entry.insert(Some(file.clone()));
+                                file
+                            }
+                        },
+                    };
+
+                    sender.send(Request { file, offset: msg.offset() }).await?;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn record(
+        &self,
+        name: &str,
+        receiver: async_channel::Receiver<Vec<Self::MessageType>>,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
+        async move {
+            let mut recording = LinkedHashMap::<Self::MessageType, ()>::new();
+            while let Ok(buffer) = receiver.recv().await {
+                for message in buffer {
+                    recording.insert(message, ());
+                }
+            }
+
+            // Start a recording handle. Put it in the graveyard in case we can't properly complete
+            // it.
+            let store = self.volume().store();
+            let fs = store.filesystem();
+            let mut transaction =
+                fs.clone().new_transaction(lock_keys![], Options::default()).await?;
+            let handle = ObjectStore::create_object(
+                self.volume(),
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+            )
+            .await?;
+            store.add_to_graveyard(&mut transaction, handle.object_id());
+            transaction.commit().await?;
+
+            let clean_up = scopeguard::guard((), |_| {
+                fs.graveyard().queue_tombstone_object(store.store_object_id(), handle.object_id())
+            });
+
+            let block_size = handle.block_size() as usize;
+            let mut offset = 0;
+            let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
+            let mut next_block = block_size;
+            for (message, _) in &recording {
+                // If this is a file opening marker or a file opening was never recorded, drop the
+                // message.
+                if message.is_open_marker()
+                    || !recording.contains_key(&message.open_marker_for_id())
+                {
+                    continue;
+                }
+
+                let mut next_offset = offset + size_of::<Self::MessageType>();
+                if next_offset > next_block {
+                    // Zero the remainder of the block. Stopping on block boundaries allows us to
+                    // resize the I/O without supporting reading/writing half messages to a buffer.
+                    io_buf.as_mut_slice()[offset..next_block].fill(0);
+                    if next_block >= IO_SIZE {
+                        // The buffer is full.  Write it out.
+                        handle
+                            .write_or_append(None, io_buf.as_ref())
+                            .await
+                            .context("Failed to write profile block")?;
+                        offset = 0;
+                        next_offset = size_of::<Self::MessageType>();
+                        next_block = block_size;
+                    } else {
+                        offset = next_block;
+                        next_offset = offset + size_of::<Self::MessageType>();
+                        next_block += block_size;
+                    }
+                }
+                message.encode_to(&mut io_buf.as_mut_slice()[offset..next_offset]);
+                offset = next_offset;
+            }
+            if offset > 0 {
+                io_buf.as_mut_slice()[offset..next_block].fill(0);
+                handle
+                    .write_or_append(None, io_buf.subslice(0..next_block))
+                    .await
+                    .context("Failed to write profile block")?;
+            }
+
+            let profile_dir = self.volume().get_profile_directory().await?;
+
+            let mut lock_keys =
+                lock_keys![LockKey::object(store.store_object_id(), profile_dir.object_id())];
+            let mut old_id = INVALID_OBJECT_ID;
+            let mut transaction = loop {
+                let transaction = fs.clone().new_transaction(lock_keys, Options::default()).await?;
+                if let Some((id, descriptor, _)) = profile_dir.lookup(name).await? {
+                    ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
+                    if id == old_id {
+                        break transaction;
+                    }
+                    lock_keys = lock_keys![
+                        LockKey::object(store.store_object_id(), profile_dir.object_id()),
+                        LockKey::object(store.store_object_id(), id)
+                    ];
+                    old_id = id;
+                } else {
+                    old_id = INVALID_OBJECT_ID;
+                    break transaction;
+                }
+            };
+
+            store.remove_from_graveyard(&mut transaction, handle.object_id());
+            directory::replace_child_with_object(
+                &mut transaction,
+                Some((handle.object_id(), ObjectDescriptor::File)),
+                (&profile_dir, name),
+                0,
+                Timestamp::now(),
+            )
+            .await?;
+            transaction.commit().await?;
+
+            ScopeGuard::into_inner(clean_up);
+            if old_id != INVALID_OBJECT_ID {
+                fs.graveyard().queue_tombstone_object(store.store_object_id(), old_id);
+            }
+
+            Ok(())
+        }
+    }
+}
+
+struct BlobVolume {
+    volume: Arc<FxVolume>,
+    // Cache the open blob directory here. The Mutex is just to make this Send, but it is not
+    // actually used concurrently.
+    root_dir: Mutex<Option<Arc<BlobDirectory>>>,
+}
+
+impl RecordedVolume for BlobVolume {
+    type IdType = Hash;
+    type NodeType = FxBlob;
+    type MessageType = BlobMessage;
+
+    fn new(volume: Arc<FxVolume>) -> Self {
+        Self { volume, root_dir: Mutex::new(None) }
+    }
+
+    fn volume(&self) -> &Arc<FxVolume> {
+        &self.volume
+    }
+
+    async fn open(&self, id: Self::IdType) -> Result<Arc<Self::NodeType>, Error> {
+        let mut root_dir = self.root_dir.lock().await;
+        if root_dir.is_none() {
+            *root_dir = Some(
+                self.volume
+                    .get_or_load_node(
+                        self.volume.store().root_directory_object_id(),
+                        ObjectDescriptor::Directory,
+                        None,
+                    )
+                    .await?
+                    .into_any()
+                    .downcast::<BlobDirectory>()
+                    .map_err(|_| FxfsError::Inconsistent)?,
+            );
+        };
+        root_dir.as_ref().unwrap().lookup_blob(id).await
+    }
+}
+
+struct FileVolume {
+    volume: Arc<FxVolume>,
+}
+
+impl RecordedVolume for FileVolume {
+    type IdType = u64;
+    type NodeType = FxFile;
+    type MessageType = FileMessage;
+
+    fn new(volume: Arc<FxVolume>) -> Self {
+        Self { volume }
+    }
+
+    fn volume(&self) -> &Arc<FxVolume> {
+        &self.volume
+    }
+
+    async fn open(&self, id: Self::IdType) -> Result<Arc<Self::NodeType>, Error> {
+        self.volume
+            .get_or_load_node(id, ObjectDescriptor::File, None)
+            .await?
+            .into_any()
+            .downcast::<FxFile>()
+            .map_err(|_| anyhow!("Non-file opened"))
+    }
 }
 
 trait Message: Eq + PartialEq + Sized + Send + Sync + std::hash::Hash + 'static {
@@ -71,41 +321,6 @@ trait Message: Eq + PartialEq + Sized + Send + Sync + std::hash::Hash + 'static 
     fn from_node_request(node: Arc<dyn FxNode>, offset: u64) -> Result<Self, Error>;
     fn open_marker_for_id(&self) -> Self;
     fn is_open_marker(&self) -> bool;
-}
-
-struct BlobVolume;
-impl RecordedVolume for BlobVolume {
-    type IdType = Hash;
-    type NodeType = FxBlob;
-    type MessageType = BlobMessage;
-    type OpenerType = BlobOpener;
-
-    async fn new_opener(volume: Arc<FxVolume>) -> Result<Self::OpenerType, Error> {
-        Ok(Self::OpenerType {
-            dir: volume
-                .get_or_load_node(
-                    volume.store().root_directory_object_id(),
-                    ObjectDescriptor::Directory,
-                    None,
-                )
-                .await?
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .map_err(|_| FxfsError::Inconsistent)?,
-        })
-    }
-}
-
-struct FileVolume;
-impl RecordedVolume for FileVolume {
-    type IdType = u64;
-    type NodeType = FxFile;
-    type MessageType = FileMessage;
-    type OpenerType = FileOpener;
-
-    async fn new_opener(volume: Arc<FxVolume>) -> Result<Self::OpenerType, Error> {
-        Ok(Self::OpenerType { volume })
-    }
 }
 
 #[derive(Debug, Eq, std::hash::Hash, PartialEq)]
@@ -165,16 +380,6 @@ impl Message for BlobMessage {
 
     fn is_open_marker(&self) -> bool {
         self.offset == FILE_OPEN_MARKER
-    }
-}
-
-struct BlobOpener {
-    dir: Arc<BlobDirectory>,
-}
-
-impl Opener<BlobVolume> for BlobOpener {
-    async fn open(&self, id: Hash) -> Result<Arc<FxBlob>, Error> {
-        self.dir.lookup_blob(id).await
     }
 }
 
@@ -238,21 +443,6 @@ impl Message for FileMessage {
     }
 }
 
-struct FileOpener {
-    volume: Arc<FxVolume>,
-}
-
-impl Opener<FileVolume> for FileOpener {
-    async fn open(&self, id: u64) -> Result<Arc<FxFile>, Error> {
-        self.volume
-            .get_or_load_node(id, ObjectDescriptor::File, None)
-            .await?
-            .into_any()
-            .downcast::<FxFile>()
-            .map_err(|_| anyhow!("Non-file opened"))
-    }
-}
-
 /// Takes messages to be written into the current profile. This should be dropped before the
 /// recording is stopped to ensure that all messages have been flushed to the writer thread.
 pub trait Recorder: Send + Sync {
@@ -302,116 +492,6 @@ impl<T: Message> Drop for RecorderImpl<T> {
             let _ = self.sender.try_send(buffer);
         }
     }
-}
-
-async fn record<T: RecordedVolume>(
-    volume: Arc<FxVolume>,
-    name: &str,
-    receiver: async_channel::Receiver<Vec<T::MessageType>>,
-) -> Result<(), Error> {
-    let mut recording = LinkedHashMap::<T::MessageType, ()>::new();
-    while let Ok(buffer) = receiver.recv().await {
-        for message in buffer {
-            recording.insert(message, ());
-        }
-    }
-
-    // Start a recording handle. Put it in the graveyard in case we can't properly complete it.
-    let store = volume.store();
-    let fs = store.filesystem();
-    let mut transaction = fs.clone().new_transaction(lock_keys![], Options::default()).await?;
-    let handle =
-        ObjectStore::create_object(&volume, &mut transaction, HandleOptions::default(), None)
-            .await?;
-    store.add_to_graveyard(&mut transaction, handle.object_id());
-    transaction.commit().await?;
-
-    let clean_up = scopeguard::guard((), |_| {
-        fs.graveyard().queue_tombstone_object(store.store_object_id(), handle.object_id())
-    });
-
-    let block_size = handle.block_size() as usize;
-    let mut offset = 0;
-    let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
-    let mut next_block = block_size;
-    for (message, _) in &recording {
-        // If this is a file opening marker or a file opening was never recorded, drop the
-        // message.
-        if message.is_open_marker() || !recording.contains_key(&message.open_marker_for_id()) {
-            continue;
-        }
-
-        let mut next_offset = offset + size_of::<T::MessageType>();
-        if next_offset > next_block {
-            // Zero the remainder of the block. Stopping on block boundaries allows us to
-            // resize the I/O without supporting reading/writing half messages to a buffer.
-            io_buf.as_mut_slice()[offset..next_block].fill(0);
-            if next_block >= IO_SIZE {
-                // The buffer is full.  Write it out.
-                handle
-                    .write_or_append(None, io_buf.as_ref())
-                    .await
-                    .context("Failed to write profile block")?;
-                offset = 0;
-                next_offset = size_of::<T::MessageType>();
-                next_block = block_size;
-            } else {
-                offset = next_block;
-                next_offset = offset + size_of::<T::MessageType>();
-                next_block += block_size;
-            }
-        }
-        message.encode_to(&mut io_buf.as_mut_slice()[offset..next_offset]);
-        offset = next_offset;
-    }
-    if offset > 0 {
-        io_buf.as_mut_slice()[offset..next_block].fill(0);
-        handle
-            .write_or_append(None, io_buf.subslice(0..next_block))
-            .await
-            .context("Failed to write profile block")?;
-    }
-
-    let profile_dir = volume.get_profile_directory().await?;
-
-    let mut lock_keys =
-        lock_keys![LockKey::object(store.store_object_id(), profile_dir.object_id())];
-    let mut old_id = INVALID_OBJECT_ID;
-    let mut transaction = loop {
-        let transaction = fs.clone().new_transaction(lock_keys, Options::default()).await?;
-        if let Some((id, descriptor, _)) = profile_dir.lookup(name).await? {
-            ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
-            if id == old_id {
-                break transaction;
-            }
-            lock_keys = lock_keys![
-                LockKey::object(store.store_object_id(), profile_dir.object_id()),
-                LockKey::object(store.store_object_id(), id)
-            ];
-            old_id = id;
-        } else {
-            old_id = INVALID_OBJECT_ID;
-            break transaction;
-        }
-    };
-
-    store.remove_from_graveyard(&mut transaction, handle.object_id());
-    directory::replace_child_with_object(
-        &mut transaction,
-        Some((handle.object_id(), ObjectDescriptor::File)),
-        (&profile_dir, name),
-        0,
-        Timestamp::now(),
-    )
-    .await?;
-    transaction.commit().await?;
-
-    ScopeGuard::into_inner(clean_up);
-    if old_id != INVALID_OBJECT_ID {
-        fs.graveyard().queue_tombstone_object(store.store_object_id(), old_id);
-    }
-
-    Ok(())
 }
 
 struct Request<P: PagerBacked> {
@@ -465,9 +545,9 @@ impl<T: RecordedVolume> ReplayState<T> {
 
                             let volume_id = volume.id();
 
-                            if let Err(error) =
-                                Self::read_and_queue(handle, volume, &sender, &mut local_cache)
-                                    .await
+                            if let Err(error) = T::new(volume)
+                                .read_and_queue(handle, &sender, &mut local_cache)
+                                .await
                             {
                                 error!(error:?; "Failed to read back profile");
                             }
@@ -509,71 +589,6 @@ impl<T: RecordedVolume> ReplayState<T> {
                 return;
             }
         }
-    }
-
-    async fn read_and_queue(
-        handle: Box<dyn ReadObjectHandle>,
-        volume: Arc<FxVolume>,
-        sender: &async_channel::Sender<Request<T::NodeType>>,
-        local_cache: &mut BTreeMap<T::IdType, Option<Arc<T::NodeType>>>,
-    ) -> Result<(), Error> {
-        let opener = T::new_opener(volume).await?;
-        let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
-        let block_size = handle.block_size() as usize;
-        let file_size = handle.get_size() as usize;
-        let mut offset = 0;
-        while offset < file_size {
-            let actual = handle
-                .read(offset as u64, io_buf.as_mut())
-                .await
-                .map_err(|e| e.context(format!("Failed to read at offset: {}", offset)))?;
-            offset += actual;
-            let mut local_offset = 0;
-            let mut next_block = block_size;
-            let mut next_offset = size_of::<T::MessageType>();
-            while next_offset <= actual {
-                let msg =
-                    T::MessageType::decode_from(&io_buf.as_slice()[local_offset..next_offset]);
-
-                local_offset = next_offset;
-                next_offset = local_offset + size_of::<T::MessageType>();
-                // Messages don't overlap block boundaries.
-                if next_offset > next_block {
-                    local_offset = next_block;
-                    next_offset = local_offset + size_of::<T::MessageType>();
-                    next_block += block_size;
-                }
-
-                // Ignore trailing zeroes. This is technically a valid entry but extremely unlikely
-                // and will only break an optimization.
-                if msg.is_zeroes() {
-                    break;
-                }
-
-                let file = match local_cache.entry(msg.id()) {
-                    Entry::Occupied(entry) => match entry.get() {
-                        Some(file) => file.clone(),
-                        // Found a cached error.
-                        None => continue,
-                    },
-                    Entry::Vacant(entry) => match opener.open(msg.id()).await {
-                        Err(e) => {
-                            debug!("Failed to open object {} from profile: {:?}", msg.id(), e);
-                            // Cache the error.
-                            entry.insert(None);
-                            continue;
-                        }
-                        Ok(file) => {
-                            entry.insert(Some(file.clone()));
-                            file
-                        }
-                    },
-                };
-
-                sender.send(Request { file, offset: msg.offset() }).await?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -632,7 +647,9 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
         self.recording = None;
         let scope = volume.scope().clone();
         let (task, remote_handle) = async move {
-            record::<T>(volume, &name, receiver)
+            let recording = T::new(volume);
+            recording
+                .record(&name, receiver)
                 .await
                 .inspect_err(|error| warn!(error:?; "Profile recording '{name}' failed"))
         }
@@ -665,8 +682,8 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlobMessage, BlobVolume, FileMessage, FileVolume, IO_SIZE, Message, ReplayState, Request,
-        new_profile_state,
+        BlobMessage, BlobVolume, FileMessage, FileVolume, IO_SIZE, Message, RecordedVolume,
+        Request, new_profile_state,
     };
     use crate::fuchsia::file::FxFile;
     use crate::fuchsia::fxblob::BlobDirectory;
@@ -982,14 +999,9 @@ mod tests {
 
         let volume = fixture.volume().volume().clone();
         let task = fasync::Task::spawn(async move {
-            ReplayState::<BlobVolume>::read_and_queue(
-                Box::new(get_test_profile_handle(&volume).await),
-                volume,
-                &sender,
-                &mut local_cache,
-            )
-            .await
-            .unwrap();
+            let handle = Box::new(get_test_profile_handle(&volume).await);
+            let blob = BlobVolume::new(volume);
+            blob.read_and_queue(handle, &sender, &mut local_cache).await.unwrap();
         });
 
         let mut recv_count = 0;
@@ -1035,14 +1047,9 @@ mod tests {
 
         let volume = fixture.volume().volume().clone();
         let task = fasync::Task::spawn(async move {
-            ReplayState::<FileVolume>::read_and_queue(
-                Box::new(get_test_profile_handle(&volume).await),
-                volume,
-                &sender,
-                &mut local_cache,
-            )
-            .await
-            .unwrap();
+            let handle = Box::new(get_test_profile_handle(&volume).await);
+            let file = FileVolume::new(volume);
+            file.read_and_queue(handle, &sender, &mut local_cache).await.unwrap();
         });
 
         let mut recv_count = 0;
@@ -1091,14 +1098,9 @@ mod tests {
 
             let volume = volume.clone();
             let task = fasync::Task::spawn(async move {
-                ReplayState::<BlobVolume>::read_and_queue(
-                    Box::new(get_test_profile_handle(&volume).await),
-                    volume.clone(),
-                    &sender,
-                    &mut local_cache,
-                )
-                .await
-                .unwrap();
+                let handle = Box::new(get_test_profile_handle(&volume).await);
+                let blob = BlobVolume::new(volume);
+                blob.read_and_queue(handle, &sender, &mut local_cache).await.unwrap();
             });
 
             let mut recv_count = 0;
