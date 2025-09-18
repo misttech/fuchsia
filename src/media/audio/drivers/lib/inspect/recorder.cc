@@ -30,9 +30,9 @@ ActiveChannelsCall::ActiveChannelsCall(inspect::Node node, uint64_t channel_mask
 }
 
 MinMaxSumRecords::MinMaxSumRecords(inspect::Node& node)
-    : min_task_records_(node.CreateChild("min_task_records"), TaskRecords::Type::Min, 1),
-      max_task_records_(node.CreateChild("max_task_records"), TaskRecords::Type::Max, 1),
-      sum_task_records_(node.CreateChild("sum_task_records"), TaskRecords::Type::Sum, 1) {
+    : min_task_records_(node.CreateChild("min_task_records"), 1),
+      max_task_records_(node.CreateChild("max_task_records"), 1),
+      sum_task_records_(node.CreateChild("sum_task_records"), 1) {
   worst_underrun_frames_property_ = node.CreateUint("worst_underrun_frames", 0);
   worst_overrun_frames_property_ = node.CreateUint("worst_overrun_frames", 0);
   task_count_ = node.CreateUint("task_count", 0);
@@ -94,10 +94,8 @@ void MinMaxSumRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
 
 RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at)
     : node_(std::move(node)),
-      startup_task_records_(node_.CreateChild("startup_task_records"), TaskRecords::Type::Startup,
-                            kMaxStartupTaskRecords),
-      final_task_records_(node_.CreateChild("final_task_records"), TaskRecords::Type::Final,
-                          kMaxFinalTaskRecords),
+      startup_task_records_(node_.CreateChild("startup_task_records"), kMaxStartupTaskRecords),
+      final_task_records_(node_.CreateChild("final_task_records"), kMaxFinalTaskRecords),
       min_max_sum_records_(node_) {
   started_at_ = node_.CreateInt(kStartedAt, started_at.get());
 }

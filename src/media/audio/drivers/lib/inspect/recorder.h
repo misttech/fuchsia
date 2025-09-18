@@ -87,43 +87,9 @@ class ActiveChannelsCall {
 // - overruns (read too far ahead of the producer): total count/duration, longest single overrun.
 class TaskRecords {
  public:
-  // TODO(https://fxbug.dev/440209644): Remove (not needed with RecordTaskMetrics()).
-  enum class Type {
-    Startup,
-    Final,
-    Min,
-    Max,
-    Sum,
-  };
-
-  TaskRecords(inspect::Node node, Type type, size_t max_entry_count)
-      : node_(std::move(node)), type_(type), max_entry_count_(max_entry_count) {
+  TaskRecords(inspect::Node node, size_t max_entry_count)
+      : node_(std::move(node)), max_entry_count_(max_entry_count) {
     task_times_entries_ = std::vector<TaskTimes>(max_entry_count_);
-  }
-
-  // TODO(https://fxbug.dev/440209644): Remove in favour of RecordTaskMetrics().
-  void RecordTaskRecords(std::string_view name, int64_t start_to_start_us, int64_t end_to_end_us,
-                         int64_t wall_time_us, int64_t cpu_time_us, int64_t queue_time_us,
-                         int64_t page_fault_time_us, int64_t kernel_lock_contention_time_us) {
-    if (task_times_entries_.size() == 0) {
-      return;
-    }
-    auto& task_times = task_times_entries_[next_entry_index_];
-    next_entry_index_ = (next_entry_index_ + 1) % max_entry_count_;
-
-    task_times.node = node_.CreateChild(name);
-    if (type_ != Type::Sum) {
-      task_times.start_to_start_us =
-          task_times.node.CreateInt("start_to_start_us", start_to_start_us);
-      task_times.end_to_end_us = task_times.node.CreateInt("end_to_end_us", end_to_end_us);
-    }
-    task_times.wall_time_us = task_times.node.CreateInt("wall_time_us", wall_time_us);
-    task_times.cpu_time_us = task_times.node.CreateInt("cpu_time_us", cpu_time_us);
-    task_times.queue_time_us = task_times.node.CreateInt("queue_time_us", queue_time_us);
-    task_times.page_fault_time_us =
-        task_times.node.CreateInt("page_fault_time_us", page_fault_time_us);
-    task_times.kernel_lock_contention_time_us =
-        task_times.node.CreateInt("kernel_lock_contention_time_us", kernel_lock_contention_time_us);
   }
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
@@ -167,7 +133,6 @@ class TaskRecords {
   };
 
   inspect::Node node_;
-  Type type_;
   size_t max_entry_count_;
   size_t next_entry_index_ = 0;
   std::vector<TaskTimes> task_times_entries_;
@@ -224,27 +189,6 @@ class RunningInterval {
 
   void RecordStopTime(const zx::time& stopped_at);
 
-  // TODO(https://fxbug.dev/440209644): Remove in favour of RecordTaskMetrics().
-  TaskRecords& CreateTaskRecords(TaskRecords::Type type, std::string_view name) {
-    std::optional<TaskRecords>* task_records;
-    switch (type) {
-      case TaskRecords::Type::Startup:
-        return startup_task_records_;
-      case TaskRecords::Type::Final:
-        return final_task_records_;
-      case TaskRecords::Type::Min:
-        task_records = &min_task_records_;
-        break;
-      case TaskRecords::Type::Max:
-        task_records = &max_task_records_;
-        break;
-      case TaskRecords::Type::Sum:
-        task_records = &sum_task_records_;
-        break;
-    }
-    return task_records->emplace(node_.CreateChild(name), type, 1);
-  }
-
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
                          std::optional<zx::duration> start_to_start,
                          std::optional<zx::duration> end_to_end);
@@ -260,12 +204,6 @@ class RunningInterval {
   inspect::IntProperty stopped_at_;
   TaskRecords startup_task_records_;
   TaskRecords final_task_records_;
-
-  // TODO(https://fxbug.dev/440209644): Remove in favour of min_max_sum_records_.
-  std::optional<TaskRecords> min_task_records_;
-  std::optional<TaskRecords> max_task_records_;
-  std::optional<TaskRecords> sum_task_records_;
-
   MinMaxSumRecords min_max_sum_records_;  // min/max/sum for this RunningInterval.
 
   size_t record_count_ = 0;
@@ -283,14 +221,6 @@ class RingBufferRecorder {
 
   void RecordStartTime(const zx::time& started_at);
   void RecordStopTime(const zx::time& stopped_at);
-
-  // TODO(https://fxbug.dev/440209644): Remove in favour of RecordTaskMetrics().
-  TaskRecords* CreateTaskRecords(TaskRecords::Type type, std::string_view name) {
-    if (!running_intervals_.empty()) {
-      return &running_intervals_.rbegin()->CreateTaskRecords(type, name);
-    }
-    return nullptr;
-  }
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics);
   void RecordTaskUnderrun(int64_t underrun_frames);
