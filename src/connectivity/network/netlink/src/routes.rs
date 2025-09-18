@@ -1484,6 +1484,7 @@ mod tests {
     use netlink_packet_core::NetlinkPayload;
     use test_case::test_case;
 
+    use crate::FeatureFlags;
     use crate::client::AsyncWorkItem;
     use crate::eventloop::{EventLoopComponent, Optional, Required};
     use crate::interfaces::testutil::FakeInterfacesHandler;
@@ -2303,7 +2304,7 @@ mod tests {
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
-            feature_flags: Default::default(),
+            feature_flags: FeatureFlags { copy_routes_to_main_table: false },
         };
 
         let (IpInvariant(inputs), server_ends) = I::map_ip_out(
@@ -2714,9 +2715,6 @@ mod tests {
                 // received prior to handling the next requests. The messages for
                 // these requests are not needed by the callers, so drop them.
                 for _ in 0..count_initial_new_routes {
-                    // Drop two messages: once for adding the route to the managed table,
-                    // and another for the double-writing of the route to the main table.
-                    let _ = route_sink.next_message().await;
                     let _ = route_sink.next_message().await;
                 }
                 assert_eq!(route_sink.next_message().now_or_never(), None);
@@ -2939,14 +2937,6 @@ mod tests {
         let mut watcher_stream = std::pin::pin!(watcher_stream);
 
         {
-            // TODO(https://fxbug.dev/337297829): Cleanup - add these `RouteSetResult`s to the
-            // `RouteSetResult` iterator instead of prepending them here.
-            // Handle the add requests for the initial two routes added to the route stream
-            // from `get_test_route_events_new_route_args`.
-            let queue = route_set_results.entry(MAIN_FIDL_TABLE_ID).or_default();
-            queue.push_front(RouteSetResult::AddResult(Ok(true)));
-            queue.push_front(RouteSetResult::AddResult(Ok(true)));
-
             let queue = route_set_results.entry(OTHER_FIDL_TABLE_ID).or_default();
             queue.push_front(RouteSetResult::AddResult(Ok(true)));
             queue.push_front(RouteSetResult::AddResult(Ok(true)));
@@ -3256,20 +3246,17 @@ mod tests {
         Del,
     }
 
-    fn both_main_table_and_other_table(
+    fn route_set_for_table_id(
         results: Vec<RouteSetResult>,
         table_id: fnet_routes_ext::TableId,
     ) -> HashMap<fnet_routes_ext::TableId, VecDeque<RouteSetResult>> {
-        HashMap::from_iter([
-            (MAIN_FIDL_TABLE_ID, results.clone().into()),
-            (table_id, results.into()),
-        ])
+        HashMap::from_iter([(table_id, results.into())])
     }
 
-    fn both_main_table_and_first_new_table(
+    fn route_set_for_first_new_table(
         results: Vec<RouteSetResult>,
     ) -> HashMap<fnet_routes_ext::TableId, VecDeque<RouteSetResult>> {
-        both_main_table_and_other_table(results, OTHER_FIDL_TABLE_ID)
+        route_set_for_table_id(results, OTHER_FIDL_TABLE_ID)
     }
 
     // Tests RTM_NEWROUTE with all interesting responses to add a route.
@@ -3637,10 +3624,7 @@ mod tests {
 
                 let route_message_in_managed_table = build_message(MANAGED_ROUTE_TABLE_INDEX);
 
-                // TODO(https://fxbug.dev/418849362): Remove this "double-written" route once rules
-                // are properly supported.
-                let route_message_in_unmanaged_table = build_message(MAIN_ROUTE_TABLE_INDEX);
-                vec![route_message_in_unmanaged_table, route_message_in_managed_table]
+                vec![route_message_in_managed_table]
             }
             Err(_) => Vec::new(),
         };
@@ -3648,7 +3632,7 @@ mod tests {
         test_route_requests_helper(
             [RequestArgs::Route(route_req_args)],
             messages,
-            both_main_table_and_first_new_table(route_set_results),
+            route_set_for_first_new_table(route_set_results),
             vec![waiter_result],
             subnet,
         )
@@ -3733,7 +3717,7 @@ mod tests {
         test_route_requests_helper(
             [RequestArgs::Route(route_req_args)],
             Vec::new(),
-            both_main_table_and_first_new_table(route_set_results),
+            route_set_for_first_new_table(route_set_results),
             vec![waiter_result],
             subnet,
         )
@@ -3817,20 +3801,11 @@ mod tests {
         let unicast_route_args =
             create_unicast_new_route_args(subnet, next_hop1, DEV1.into(), METRIC3, table);
 
-        // We expect to see two multicast message, representing the route that was added to
-        // a managed table and double-written to the main table.
+        // We expect to see 1 multicast message, representing the route that was added to
+        // a managed table.
         // Then, three unicast messages, representing the two routes that existed already in the
         // route set, and the one new route that was added.
         let messages = vec![
-            SentMessage::multicast(
-                create_netlink_route_message::<A::Version>(
-                    subnet.prefix(),
-                    MAIN_ROUTE_TABLE_INDEX,
-                    create_nlas::<A::Version>(Some(subnet), Some(next_hop1), DEV1, METRIC3, None),
-                )
-                .into_rtnl_new_route(UNSPECIFIED_SEQUENCE_NUMBER, false),
-                group,
-            ),
             SentMessage::multicast(
                 create_netlink_route_message::<A::Version>(
                     subnet.prefix(),
@@ -3898,7 +3873,7 @@ mod tests {
                 RequestArgs::Route(RouteRequestArgs::Get(GetRouteArgs::Dump)),
             ],
             messages,
-            both_main_table_and_other_table(
+            route_set_for_table_id(
                 vec![RouteSetResult::AddResult(Ok(true))],
                 if table == MANAGED_ROUTE_TABLE_INDEX {
                     OTHER_FIDL_TABLE_ID
@@ -4088,20 +4063,10 @@ mod tests {
             MANAGED_ROUTE_TABLE_INDEX,
         );
 
-        // We expect to see four multicast messages, the first two representing the route that was
-        // added (primarily to the managed table and double-written to the main table), and the
-        // other two representing the same route being removed. Then, two unicast messages,
-        // representing the two routes that existed already in the route set.
+        // We expect to see 2 multicast messages, the first representing the route that was
+        // added and the other representing the same route being removed. Then, two unicast
+        // messages, representing the two routes that existed already in the route set.
         let messages = vec![
-            SentMessage::multicast(
-                create_netlink_route_message::<A::Version>(
-                    subnet.prefix(),
-                    MAIN_ROUTE_TABLE_INDEX,
-                    create_nlas::<A::Version>(Some(subnet), Some(next_hop1), DEV1, METRIC3, None),
-                )
-                .into_rtnl_new_route(UNSPECIFIED_SEQUENCE_NUMBER, false),
-                group,
-            ),
             SentMessage::multicast(
                 create_netlink_route_message::<A::Version>(
                     subnet.prefix(),
@@ -4115,15 +4080,6 @@ mod tests {
                     ),
                 )
                 .into_rtnl_new_route(UNSPECIFIED_SEQUENCE_NUMBER, false),
-                group,
-            ),
-            SentMessage::multicast(
-                create_netlink_route_message::<A::Version>(
-                    subnet.prefix(),
-                    MAIN_ROUTE_TABLE_INDEX,
-                    create_nlas::<A::Version>(Some(subnet), Some(next_hop1), DEV1, METRIC3, None),
-                )
-                .into_rtnl_del_route(),
                 group,
             ),
             SentMessage::multicast(
@@ -4178,7 +4134,7 @@ mod tests {
                 RequestArgs::Route(RouteRequestArgs::Get(GetRouteArgs::Dump)),
             ],
             messages,
-            both_main_table_and_first_new_table(vec![
+            route_set_for_first_new_table(vec![
                 RouteSetResult::AddResult(Ok(true)),
                 RouteSetResult::DelResult(Ok(true)),
             ]),
@@ -4266,7 +4222,7 @@ mod tests {
                         })
                         .await
                 },
-                both_main_table_and_first_new_table(vec![route_set_result]),
+                route_set_for_first_new_table(vec![route_set_result]),
                 subnet,
                 next_hop1,
                 next_hop2,

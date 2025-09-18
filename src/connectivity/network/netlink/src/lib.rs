@@ -27,7 +27,6 @@ pub(crate) mod util;
 
 use std::num::NonZeroU64;
 
-use derivative::Derivative;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
@@ -84,14 +83,12 @@ pub struct Netlink<P: SenderReceiverProvider> {
 }
 
 /// Flags to enable/disable certain features to allow for convenient rollbacks.
-#[derive(Copy, Clone, Debug, Derivative)]
-#[derivative(Default)]
+#[derive(Copy, Clone, Debug)]
 pub struct FeatureFlags {
     /// When this feature is enabled, the routes installed by netlink will also
     /// be copied into the main table as a backup.
     // TODO(https://fxbug.dev/410631890): Remove this once `netstack_mark` is
     // enabled in starnix by default.
-    #[derivative(Default(value = "true"))]
     pub copy_routes_to_main_table: bool,
 }
 

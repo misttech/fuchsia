@@ -52,6 +52,10 @@ use {
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
 
+fn test_feature_flags() -> netlink::FeatureFlags {
+    netlink::FeatureFlags { copy_routes_to_main_table: false }
+}
+
 fn connect_to_netlink_protocols_in_realm(
     realm: &TestRealm<'_>,
 ) -> netlink::NetlinkWorkerDiscoverableProtocols {
@@ -330,23 +334,6 @@ async fn add_route_in_table_and_await_installed<I: Ip>(
     interface_id: u32,
     table_id: u32,
 ) {
-    add_route_in_table_and_await_installed_with_main_table_wanted::<I>(
-        client,
-        test_subnet,
-        interface_id,
-        table_id,
-        true,
-    )
-    .await
-}
-
-async fn add_route_in_table_and_await_installed_with_main_table_wanted<I: Ip>(
-    client: &mut NetlinkClient,
-    test_subnet: TestSubnet,
-    interface_id: u32,
-    table_id: u32,
-    main_table_wanted: bool,
-) {
     let new_route_message = RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
         table_id,
         test_subnet,
@@ -356,25 +343,6 @@ async fn add_route_in_table_and_await_installed_with_main_table_wanted<I: Ip>(
     message.finalize();
     client.sender.0.unbounded_send(message).expect("should not be disconnected");
 
-    // We first receive notification of the route being added to the main table
-    // (as a temporary hack while PBR support is being rolled out).
-    // TODO(https://fxbug.dev/418849362): Remove this once PBR is completely supported.
-    if main_table_wanted {
-        let SentNetlinkMessage { message: received_msg, group } =
-            client.receiver.next().await.expect("should not be disconnected");
-        assert_eq!(group, Some(route_group::<I>()));
-        let received_route_message =
-            assert_matches!(received_msg.payload, NetlinkPayload::InnerMessage(message) => message);
-
-        assert_eq!(
-            received_route_message,
-            RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
-                rt_class_t_RT_TABLE_MAIN,
-                test_subnet,
-                interface_id
-            ))
-        );
-    }
     let receiver = &mut client.receiver;
     // We then receive notification of the route being added to the table we actually requested.
     let SentNetlinkMessage { message: received_msg, group } = receiver
@@ -445,7 +413,7 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -673,7 +641,7 @@ async fn successfully_installs_rule_referencing_main_table<
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -795,7 +763,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1017,7 +985,7 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1094,21 +1062,6 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
 
         client.sender.0.unbounded_send(netlink_route_message).expect("should not be disconnected");
         async move {
-            // We first receive notification of the route being added to the main table
-            // (as a temporary hack while PBR support is being rolled out).
-            // TODO(https://fxbug.dev/418849362): Remove this once PBR is completely supported.
-            let SentNetlinkMessage { message, group } =
-                client.receiver.next().await.expect("should not be disconnected");
-            assert_eq!(group, Some(route_group::<I>()));
-            let received_route_message =
-                assert_matches!(message.payload, NetlinkPayload::InnerMessage(message) => message);
-            assert_eq!(
-                received_route_message,
-                RouteNetlinkMessage::NewRoute(create_route_in_table(
-                    rt_class_t_RT_TABLE_MAIN as u8
-                ))
-            );
-
             // We then receive notification of the route being added to the table we actually
             // requested.
             let SentNetlinkMessage { message: received_msg, group } =
@@ -1135,21 +1088,6 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
 
         client.sender.0.unbounded_send(netlink_route_message).expect("should not be disconnected");
         async move {
-            // We first receive notification of the route being added to the main table
-            // (as a temporary hack while PBR support is being rolled out).
-            // TODO(https://fxbug.dev/418849362): Remove this once PBR is completely supported.
-            let SentNetlinkMessage { message, group } =
-                client.receiver.next().await.expect("should not be disconnected");
-            assert_eq!(group, Some(route_group::<I>()));
-            let received_route_message =
-                assert_matches!(message.payload, NetlinkPayload::InnerMessage(message) => message);
-            assert_eq!(
-                received_route_message,
-                RouteNetlinkMessage::DelRoute(create_route_in_table(
-                    rt_class_t_RT_TABLE_MAIN as u8
-                ))
-            );
-
             // We then receive notification of the route being added to the table we actually
             // requested.
             let SentNetlinkMessage { message: received_msg, group } =
@@ -1234,24 +1172,6 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     }
 
     // Check that this agrees with the routes-watchers view of which table things were installed in.
-
-    // First we expect things to be added to the main table due to the main-table-hack.
-    // TODO(https://fxbug.dev/418849362): Remove this once PBR is completely supported.
-    let route_event: fnet_routes_ext::Event<I> = routes_event_stream
-        .next()
-        .await
-        .expect("should not get FIDL error")
-        .expect("should not get watcher error");
-    let added_route = assert_matches!(route_event, fnet_routes_ext::Event::Added(route) => route);
-    let route_destination = net_types::ip::SubnetEither::from(added_route.route.destination);
-    assert_eq!(
-        route_destination,
-        net_types::ip::SubnetEither::new(destination::<I>().into(), TEST_SUBNET_LENGTH).unwrap()
-    );
-    let main_table = added_route.table_id;
-
-    // The main table is always a lower ID number than any subsequently-created tables.
-    assert!(main_table.get() < table.get());
 
     // Now we can check for the insertion into the "real" table.
     let route_event: fnet_routes_ext::Event<I> = routes_event_stream
@@ -1346,23 +1266,6 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     }
 
     // Check for the route removal(s).
-    // First from the main table.
-    // TODO(https://fxbug.dev/418849362): Remove this once PBR is completely supported.
-    let route_event: fnet_routes_ext::Event<I> = routes_event_stream
-        .next()
-        .await
-        .expect("should not get FIDL error")
-        .expect("should not get watcher error");
-    let removed_route =
-        assert_matches!(route_event, fnet_routes_ext::Event::Removed(route) => route);
-    let route_destination = net_types::ip::SubnetEither::from(removed_route.route.destination);
-    assert_eq!(
-        route_destination,
-        net_types::ip::SubnetEither::new(destination::<I>().into(), TEST_SUBNET_LENGTH).unwrap()
-    );
-    assert_eq!(removed_route.table_id, main_table);
-
-    // Now we can check for the removal from the "real" table.
     let route_event: fnet_routes_ext::Event<I> = routes_event_stream
         .next()
         .await
@@ -1410,7 +1313,7 @@ async fn join_leave_nduseropt_multicast_group() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1479,126 +1382,6 @@ async fn join_leave_nduseropt_multicast_group() {
         .expect("del group should succeed");
 }
 
-// TODO(https://fxbug.dev/418849362): This test will no longer be relevant when we don't
-// copy routes into the main table.
-#[ip_test(I, test = false)]
-#[fuchsia::test]
-async fn backup_route_does_not_override_interface_metric<I: Ip + FidlRouteIpExt>() {
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm =
-        sandbox.create_netstack_realm::<Netstack3, _>("main-netstack").expect("create realm");
-
-    let protocols = connect_to_netlink_protocols_in_realm(&realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            Default::default(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
-
-    let network = sandbox.create_network("network").await.expect("create network");
-
-    const SUBNET: TestSubnet = TestSubnet::A;
-    const TABLE_A: u32 = 1;
-    const TABLE_B: u32 = 2;
-
-    let new_test_iface = |name: &'static str, metric: u32, subnet: fnet::Subnet| {
-        let network = &network;
-        let realm = &realm;
-        async move {
-            let ep = realm
-                .join_network_with_if_config(
-                    network,
-                    format!("ep-{}", name),
-                    netemul::InterfaceConfig { metric: Some(metric), ..Default::default() },
-                )
-                .await
-                .expect("failed to create the interface");
-            ep.add_address_and_subnet_route(subnet).await.expect("failed to add address");
-            realm
-                .add_neighbor_entry(ep.id(), SUBNET.subnet::<I>(), MAC)
-                .await
-                .expect("failed to add neighbor entry");
-            ep
-        }
-    };
-
-    // Create two interfaces within the same subnet and prioritize B over A by giving it a
-    // better metric.
-    let ep_a = new_test_iface(
-        "A",
-        100,
-        fnet::Subnet { prefix_len: TEST_SUBNET_LENGTH, addr: SUBNET.main_address::<I>() },
-    )
-    .await;
-    let ep_b = new_test_iface(
-        "B",
-        90,
-        fnet::Subnet { prefix_len: TEST_SUBNET_LENGTH, addr: SUBNET.peer_address::<I>() },
-    )
-    .await;
-
-    // Make sure the route resolution will resolve to the better interface B.
-    let state = realm
-        .connect_to_protocol::<fidl_fuchsia_net_routes::StateMarker>()
-        .expect("connect to fuchsia.net.routes.State");
-    let resolve_result = state
-        .resolve2(&SUBNET.subnet::<I>(), &Default::default())
-        .await
-        .expect("fidl")
-        .expect("reachable");
-
-    assert_matches!(
-        resolve_result,
-        fidl_fuchsia_net_routes::ResolveResult::Direct(direct) => {
-            assert_eq!(direct.interface_id, Some(ep_b.id()));
-        }
-    );
-
-    let mut client = add_route_client(&netlink);
-    assert!(
-        client
-            .client
-            .add_membership(route_group::<I>())
-            .expect("should add membership successfully")
-            .is_noop(),
-        "should not produce blocking work"
-    );
-
-    // Add two subnet routes through the two interfaces with a low metric (ROUTE_PRIORITY=1).
-    add_route_in_table_and_await_installed::<I>(
-        &mut client,
-        SUBNET,
-        ep_a.id().try_into().unwrap(),
-        TABLE_A,
-    )
-    .await;
-    add_route_in_table_and_await_installed::<I>(
-        &mut client,
-        SUBNET,
-        ep_b.id().try_into().unwrap(),
-        TABLE_B,
-    )
-    .await;
-
-    // The backup routes should not change the outcome where we favor B over A.
-    let resolve_result = state
-        .resolve2(&SUBNET.subnet::<I>(), &Default::default())
-        .await
-        .expect("fidl")
-        .expect("reachable");
-    assert_matches!(
-        resolve_result,
-        fidl_fuchsia_net_routes::ResolveResult::Direct(direct) => {
-            assert_eq!(direct.interface_id, Some(ep_b.id()));
-        }
-    );
-}
-
 #[fuchsia::test]
 async fn netlink_uses_local_route_table() {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -1611,7 +1394,7 @@ async fn netlink_uses_local_route_table() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1720,7 +1503,7 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            Default::default(),
+            test_feature_flags(),
         );
     let join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1770,12 +1553,11 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
         "should not produce blocking work"
     );
     const SUBNET_TO_ADD: TestSubnet = TestSubnet::B;
-    add_route_in_table_and_await_installed_with_main_table_wanted::<I>(
+    add_route_in_table_and_await_installed::<I>(
         &mut client,
         SUBNET_TO_ADD,
         ep.id().try_into().unwrap(),
         expected_table_id.try_into().unwrap(),
-        false,
     )
     .await;
 
@@ -1840,7 +1622,7 @@ async fn no_backup_routes<I: Ip + FidlRouteIpExt>() {
             NoopInterfacesHandler,
             protocols,
             on_initialized,
-            netlink::FeatureFlags { copy_routes_to_main_table: false },
+            test_feature_flags(),
         );
     let _join_handle = fasync::Task::spawn(worker_fut);
     initialized.await.expect("should not be dropped");
@@ -1864,12 +1646,11 @@ async fn no_backup_routes<I: Ip + FidlRouteIpExt>() {
         "should not produce blocking work"
     );
 
-    add_route_in_table_and_await_installed_with_main_table_wanted::<I>(
+    add_route_in_table_and_await_installed::<I>(
         &mut client,
         SUBNET,
         ep.id().try_into().unwrap(),
         SUBNET.table_index().into(),
-        false, /* main_table_wanted */
     )
     .await;
 }
