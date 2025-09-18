@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::TargetInfoQueryHolder;
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use std::ops::Deref;
 
+use discovery::query::TargetInfoQuery;
 use ffx_command_error::{Result, user_error};
 use fho::{FfxContext, FhoEnvironment, TryFromEnv, return_user_error};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
@@ -60,6 +62,7 @@ async fn resolve_target_query_to_info(
         Err(e) => return_user_error!(e),
     }
 }
+
 #[async_trait(?Send)]
 impl TryFromEnv for TargetInfoHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
@@ -68,7 +71,17 @@ impl TryFromEnv for TargetInfoHolder {
 
         match info_list.len() {
             1 => Ok(info_list.into_iter().next().unwrap()),
-            0 => return Err(user_error!("Matched no targets.")),
+            0 => {
+                let target_info_query_holder = TargetInfoQueryHolder::try_from_env(env).await?;
+                if *target_info_query_holder == TargetInfoQuery::First {
+                    return Err(user_error!("No targets discovered."));
+                } else {
+                    return Err(user_error!(
+                        "Discovered no Targets matching specification: {}. Check your default target with `ffx target default get` and available targets with `ffx target list`",
+                        String::from(&(*target_info_query_holder))
+                    ));
+                }
+            }
             _ => return Err(user_error!("Ambiguous target query. Matched multiple targets.")),
         }
     }
