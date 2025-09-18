@@ -30,6 +30,7 @@ _bin_common = {
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
+    "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/devices/lib/driver-host-passive-abi",
     "//src/lib/diagnostics/inspect/runtime/rust",

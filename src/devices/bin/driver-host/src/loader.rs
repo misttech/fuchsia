@@ -15,7 +15,11 @@ use zx::Status;
 
 unsafe extern "C" {
     fn dl_set_loader_service(new_svc: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
-    fn dlopen_vmo(handle: zx::sys::zx_handle_t, flag: c_int) -> *mut c_void;
+    fn dlopen_vmo_vmar(
+        vmo: zx::sys::zx_handle_t,
+        vmar: zx::sys::zx_handle_t,
+        flag: c_int,
+    ) -> *mut c_void;
 }
 
 #[derive(Debug)]
@@ -27,10 +31,17 @@ pub(crate) struct Library {
 unsafe impl Send for Library {}
 
 impl Library {
-    fn try_load(vmo: zx::Vmo) -> Result<Self, Status> {
+    fn try_load(vmo: zx::Vmo, vmar: Option<zx::Vmar>) -> Result<Self, Status> {
         // SAFETY: By checking it's not null and placing in the Library wrapper, we ensure it's a
         // valid pointer and we will close it after it's no longer used.
-        let library = unsafe { dlopen_vmo(vmo.into_raw(), libc::RTLD_NOW) };
+        let library = unsafe {
+            dlopen_vmo_vmar(
+                vmo.into_raw(),
+                vmar.map(|h| h.into_raw())
+                    .unwrap_or_else(|| fuchsia_runtime::vmar_root_self().raw_handle()),
+                libc::RTLD_NOW,
+            )
+        };
         if library.is_null() {
             log::error!("Failed to dlopen driver");
         }
@@ -58,9 +69,9 @@ impl LoaderService {
         Loader::install(LOADER_SERVICE.lock.lock().await, overrides)
     }
 
-    pub(crate) async fn try_load(vmo: zx::Vmo) -> Result<Library, Status> {
+    pub(crate) async fn try_load(vmo: zx::Vmo, vmar: Option<zx::Vmar>) -> Result<Library, Status> {
         LOADER_SERVICE.lock.lock().await;
-        Library::try_load(vmo)
+        Library::try_load(vmo, vmar)
     }
 }
 
@@ -95,10 +106,14 @@ impl Loader {
         loader
     }
 
-    pub(crate) async fn try_load(&self, vmo: zx::Vmo) -> Result<Library, Status> {
+    pub(crate) async fn try_load(
+        &self,
+        vmo: zx::Vmo,
+        vmar: Option<zx::Vmar>,
+    ) -> Result<Library, Status> {
         // This needs to be done on another thread because it makes sync calls back into the
         // loader service we just installed.
-        fuchsia_async::unblock(move || Library::try_load(vmo)).await
+        fuchsia_async::unblock(move || Library::try_load(vmo, vmar)).await
     }
 
     fn load_object(&self, object_name: &str) -> Result<zx::Vmo, Status> {

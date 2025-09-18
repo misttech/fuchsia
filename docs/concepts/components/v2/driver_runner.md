@@ -119,6 +119,24 @@ scheduler_role when creating new dispatchers, for example:
 This would allow the driver to create a new dispatcher at runtime and specify the
 `"fuchsia.graphics.display.driver"` scheduler_role.
 
+### VMAR scheduler role
+
+The `vmar_scheduler_role` field provides the options that are used when
+allocating the vmar the driver is mapped into, for example:
+
+```json5 {:.devsite-disable-click-to-copy}
+{
+    program: {
+        runner: "driver",
+        binary: "driver/example.so",
+        bind: "meta/bind/example.bindbc",
+        {{ '<strong>' }}vmar_scheduler_role: "fuchsia.graphics.display.driver.vmar"{{ '</strong>' }}
+    }
+}
+```
+
+Make sure that the scheduler roles that you specify match what a component would send through the `fuchsia.scheduler/RoleManager.SetRole` FIDL API.
+
 ### Fallback
 
 If the `fallback` field is set to the string `true`, this fallback driver will

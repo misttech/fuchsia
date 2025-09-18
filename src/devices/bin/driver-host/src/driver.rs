@@ -14,6 +14,7 @@ use fidl::endpoints::{RequestStream, ServerEnd};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::{FutureExt, TryStreamExt};
+use log::warn;
 use namespace::Namespace;
 use std::ffi::c_char;
 use std::ptr::NonNull;
@@ -235,6 +236,7 @@ impl Driver {
             .to_string();
         let allowed_scheduler_roles =
             get_program_strvec(program, "allowed_scheduler_roles")?.cloned();
+        let vmar_scheduler_role = get_program_string(program, "vmar_scheduler_role").unwrap_or("");
 
         // Read binary from incoming namespace into vmo.
         let incoming = start_args.incoming.take().ok_or(Status::INVALID_ARGS)?;
@@ -251,8 +253,23 @@ impl Driver {
                 return Err(Status::NOT_SUPPORTED);
             }
         }
+        let vmar = if !vmar_scheduler_role.is_empty() {
+            let flags = zx::VmarFlags::CAN_MAP_READ
+                | zx::VmarFlags::CAN_MAP_WRITE
+                | zx::VmarFlags::CAN_MAP_EXECUTE
+                | zx::VmarFlags::CAN_MAP_SPECIFIC;
+            // We choose 1GiB as the vmar size fairly arbitrarily. We aren't aware of any drivers
+            // that would be larger than that.
+            let vmar = fuchsia_runtime::vmar_root_self().allocate(0, 1_000_000_000, flags)?.0;
+            if let Err(e) = fuchsia_scheduler::set_role_for_vmar(&vmar, vmar_scheduler_role) {
+                warn!("Failed to set vmar to scheduler role {vmar_scheduler_role}: {e:?}");
+            }
+            Some(vmar)
+        } else {
+            None
+        };
 
-        let library = LoaderService::try_load(vmo).await?;
+        let library = LoaderService::try_load(vmo, vmar).await?;
         let hooks = Hooks::new_from_library(&library)?;
         let modules_and_symbols = ModulesAndSymbols::load(program, &incoming).await?;
         modules_and_symbols.copy_to_start_args(&mut start_args);
