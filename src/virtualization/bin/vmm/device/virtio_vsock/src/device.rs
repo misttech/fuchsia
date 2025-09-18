@@ -5,17 +5,17 @@
 use crate::connection::{VsockConnection, VsockConnectionKey, WantRxChainResult};
 use crate::connection_states::{StateAction, VsockConnectionState};
 use crate::port_manager::PortManager;
-use crate::wire::{OpType, VirtioVsockConfig, VirtioVsockHeader, VsockType, LE64};
-use anyhow::{anyhow, Error};
+use crate::wire::{LE64, OpType, VirtioVsockConfig, VirtioVsockHeader, VsockType};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_virtualization::{
-    HostVsockAcceptorProxy, HostVsockEndpointConnectResponder, HOST_CID,
+    HOST_CID, HostVsockAcceptorProxy, HostVsockEndpointConnectResponder,
 };
 use fuchsia_async as fasync;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::future::{self, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use machina_virtio_device::{GuestMem, WrappedDescChainStream};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -503,7 +503,7 @@ impl VsockDevice {
     // Validates the incoming header for the basic supported fields. When a connection handles
     // a specific OpType, it may enforce additional validation.
     fn validate_incoming_header(&self, header: &VirtioVsockHeader) -> Result<(), Error> {
-        if header.src_cid.get() != self.guest_cid().into() {
+        if header.src_cid.get() != u64::from(self.guest_cid()) {
             return Err(anyhow!(
                 "src_cid {} does not match guest cid {}",
                 header.src_cid.get(),
@@ -511,7 +511,7 @@ impl VsockDevice {
             ));
         }
 
-        if header.dst_cid.get() != HOST_CID.into() {
+        if header.dst_cid.get() != u64::from(HOST_CID) {
             return Err(anyhow!(
                 "dst_cid {} does not match host cid {}",
                 header.dst_cid.get(),
@@ -570,8 +570,8 @@ mod tests {
     use async_utils::PollExt;
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_virtualization::{
-        HostVsockAcceptorMarker, HostVsockEndpointMarker, HostVsockEndpointProxy,
-        HostVsockEndpointRequest, DEFAULT_GUEST_CID,
+        DEFAULT_GUEST_CID, HostVsockAcceptorMarker, HostVsockEndpointMarker,
+        HostVsockEndpointProxy, HostVsockEndpointRequest,
     };
     use futures::{FutureExt, TryStreamExt};
     use std::task::Poll;
@@ -768,8 +768,8 @@ mod tests {
 
         let header = VirtioVsockHeader::read_from_bytes(slice).unwrap();
 
-        assert_eq!(header.src_cid.get(), HOST_CID.into());
-        assert_eq!(header.dst_cid.get(), DEFAULT_GUEST_CID.into());
+        assert_eq!(header.src_cid.get(), u64::from(HOST_CID));
+        assert_eq!(header.dst_cid.get(), u64::from(DEFAULT_GUEST_CID));
         assert_eq!(header.dst_port.get(), guest_port);
         assert_eq!(VsockType::try_from(header.vsock_type.get()).unwrap(), VsockType::Stream);
         assert_eq!(OpType::try_from(header.op.get()).unwrap(), OpType::Request);
@@ -818,9 +818,9 @@ mod tests {
 
         let header = VirtioVsockHeader::read_from_bytes(slice).unwrap();
 
-        assert_eq!(header.src_cid.get(), HOST_CID.into());
-        assert_eq!(header.dst_cid.get(), DEFAULT_GUEST_CID.into());
-        assert_eq!(header.src_port.get(), host_port);
+        assert_eq!(header.src_cid.get(), u64::from(HOST_CID));
+        assert_eq!(header.dst_cid.get(), u64::from(DEFAULT_GUEST_CID));
+        assert_eq!(header.src_port.get(), u32::from(host_port));
         assert_eq!(header.dst_port.get(), guest_port);
         assert_eq!(VsockType::try_from(header.vsock_type.get()).unwrap(), VsockType::Stream);
         assert_eq!(OpType::try_from(header.op.get()).unwrap(), OpType::Reset);
@@ -1069,9 +1069,9 @@ mod tests {
             VirtioVsockHeader::read_from_bytes(slice).expect("failed to read header from slice");
 
         assert_eq!(header.src_port.get(), host_port);
-        assert_eq!(header.src_cid.get(), HOST_CID.into());
+        assert_eq!(header.src_cid.get(), u64::from(HOST_CID));
         assert_eq!(header.dst_port.get(), guest_port);
-        assert_eq!(header.dst_cid.get(), DEFAULT_GUEST_CID.into());
+        assert_eq!(header.dst_cid.get(), u64::from(DEFAULT_GUEST_CID));
         assert_eq!(header.len.get(), 0);
         assert_eq!(OpType::try_from(header.op.get()).unwrap(), OpType::Response);
     }

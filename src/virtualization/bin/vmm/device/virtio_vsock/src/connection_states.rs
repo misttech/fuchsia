@@ -56,8 +56,8 @@
 //! └───────────────┘
 
 use crate::connection::{ConnectionCredit, VsockConnectionKey};
-use crate::wire::{OpType, VirtioVsockFlags, VirtioVsockHeader, VsockType, LE16, LE32, LE64};
-use anyhow::{anyhow, Error};
+use crate::wire::{LE16, LE32, LE64, OpType, VirtioVsockFlags, VirtioVsockHeader, VsockType};
+use anyhow::{Error, anyhow};
 use fidl::client::QueryResponseFut;
 use fidl_fuchsia_virtualization::HostVsockEndpointConnectResponder;
 use fuchsia_async::{
@@ -68,7 +68,7 @@ use futures::future::{self, poll_fn};
 use futures::task::noop_waker_ref;
 use std::cell::{Cell, RefCell};
 use std::io::Write;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use virtio_device::chain::{ReadableChain, WritableChain};
 use virtio_device::mem::DriverMem;
 use virtio_device::queue::DriverNotify;
@@ -1066,13 +1066,13 @@ mod tests {
     use async_utils::PollExt;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_virtualization::{
-        HostVsockAcceptorMarker, HostVsockEndpointMarker, DEFAULT_GUEST_CID, HOST_CID,
+        DEFAULT_GUEST_CID, HOST_CID, HostVsockAcceptorMarker, HostVsockEndpointMarker,
     };
     use fuchsia_async::TestExecutor;
     use futures::channel::mpsc;
     use futures::{FutureExt, TryStreamExt};
-    use rand::distr::StandardUniform;
     use rand::Rng;
+    use rand::distr::StandardUniform;
     use std::collections::HashSet;
     use std::io::Read;
     use std::pin::Pin;
@@ -1357,8 +1357,8 @@ mod tests {
             .expect("expected control packet")
             .expect("control stream should not close");
 
-        assert_eq!(header.src_cid.get(), HOST_CID.into());
-        assert_eq!(header.dst_cid.get(), DEFAULT_GUEST_CID.into());
+        assert_eq!(header.src_cid.get(), u64::from(HOST_CID));
+        assert_eq!(header.dst_cid.get(), u64::from(DEFAULT_GUEST_CID));
         assert_eq!(header.src_port.get(), host_port);
         assert_eq!(header.dst_port.get(), guest_port);
         assert_eq!(VsockType::try_from(header.vsock_type.get()).unwrap(), VsockType::Stream);
@@ -1691,8 +1691,8 @@ mod tests {
             )
             .expect("failed to read header");
 
-            assert_eq!(header.src_cid.get(), key.host_cid.into());
-            assert_eq!(header.dst_cid.get(), key.guest_cid.into());
+            assert_eq!(header.src_cid.get(), u64::from(key.host_cid));
+            assert_eq!(header.dst_cid.get(), u64::from(key.guest_cid));
             assert_eq!(header.src_port.get(), key.host_port);
             assert_eq!(header.dst_port.get(), key.guest_port);
             assert_eq!(OpType::try_from(header.op.get()).unwrap(), OpType::ReadWrite);
