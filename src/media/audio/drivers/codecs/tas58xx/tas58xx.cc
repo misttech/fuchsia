@@ -96,11 +96,12 @@ Tas58xx::Tas58xx(zx_device_t* device, ddk::I2cChannel i2c,
   if (fault_gpio.is_valid()) {
     fault_gpio_.Bind(std::move(fault_gpio));
   }
-  size_t actual = 0;
-  auto status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &metadata_,
-                                    sizeof(metadata_), &actual);
-  if (status != ZX_OK) {
-    zxlogf(DEBUG, "device_get_metadata failed %d", status);
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_audio_ti::TasConfig>(
+      parent(), DEVICE_METADATA_PRIVATE);
+  if (metadata.is_ok()) {
+    metadata_ = std::move(metadata.value());
+  } else {
+    zxlogf(DEBUG, "Failed to get metadata: %s", metadata.status_string());
   }
 }
 
@@ -150,12 +151,12 @@ zx_status_t Tas58xx::Reset() {
   // Steps 4+ are execute below.
 
   // Run the first init sequence from metadata if available otherwise kDefaultsStart.
-  if (metadata_.number_of_writes1) {
-    for (size_t i = 0; i < metadata_.number_of_writes1; ++i) {
-      auto status =
-          WriteReg(metadata_.init_sequence1[i].address, metadata_.init_sequence1[i].value);
+  if (!metadata_.init_sequence1().empty()) {
+    for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+         metadata_.init_sequence1()) {
+      auto status = WriteReg(register_setting.address(), register_setting.value());
       if (status != ZX_OK) {
-        zxlogf(ERROR, "Failed to write I2C register 0x%02X", metadata_.init_sequence1[i].address);
+        zxlogf(ERROR, "Failed to write I2C register 0x%02X", register_setting.address());
         return status;
       }
     }
@@ -182,8 +183,9 @@ zx_status_t Tas58xx::Reset() {
   const uint8_t kDefaultsEnd[][2] = {
       {kRegSelectPage, 0x00},
       {kRegSelectBook, 0x00},
-      {kRegDeviceCtrl1, static_cast<uint8_t>((metadata_.bridged ? kRegDeviceCtrl1BitsPbtlMode : 0) |
-                                             kRegDeviceCtrl1Bits1SpwMode)},
+      {kRegDeviceCtrl1,
+       static_cast<uint8_t>((metadata_.bridged() ? kRegDeviceCtrl1BitsPbtlMode : 0) |
+                            kRegDeviceCtrl1Bits1SpwMode)},
 
       {kRegDeviceCtrl2, kRegDeviceCtrl2BitsPlay},
       {kRegSelectPage, 0x00},
@@ -264,7 +266,7 @@ zx::result<DriverIds> Tas58xx::Initialize() {
   return zx::ok(DriverIds{
       .vendor_id = PDEV_VID_TI,
       .device_id = PDEV_DID_TI_TAS58xx,
-      .instance_count = metadata_.instance_count,
+      .instance_count = metadata_.instance_count(),
   });
 }
 
@@ -373,7 +375,7 @@ void Tas58xx::GetElements(signal_fidl::SignalProcessing::GetElementsCallback cal
       signal_fidl::TypeSpecificElement::WithEqualizer(std::move(equalizer_parameters)));
 
   // Only advertise the EQ support for 1 channel configurations.
-  if (number_of_channels_ == 1 || metadata_.bridged) {
+  if (number_of_channels_ == 1 || metadata_.bridged()) {
     pes.emplace_back(std::move(pe_eq));
   }
   signal_fidl::Reader_GetElements_Response response(std::move(pes));
@@ -383,7 +385,7 @@ void Tas58xx::GetElements(signal_fidl::SignalProcessing::GetElementsCallback cal
 }
 
 zx_status_t Tas58xx::SetEqualizerElement(signal_fidl::SettableElementState state) {
-  if (number_of_channels_ != 1 && !metadata_.bridged) {
+  if (number_of_channels_ != 1 && !metadata_.bridged()) {
     return ZX_ERR_NOT_SUPPORTED;
   }
   bool has_valid_equalizer_specific_state = state.has_type_specific() &&
@@ -810,7 +812,7 @@ zx::result<CodecFormatInfo> Tas58xx::SetDaiFormat(const DaiFormat& format) {
 
   // In bridged, only the left is channel supported, from the datasheet:
   // "the input signal to the PBTL amplifier is left frame of I2S or TDM data".
-  if (metadata_.bridged &&
+  if (metadata_.bridged() &&
       (format.number_of_channels != 2 || (format.channels_to_use_bitmask != 1))) {
     zxlogf(ERROR, "DAI format channels not supported in bridged mode: %u-channel, mask 0x%lX",
            format.number_of_channels, format.channels_to_use_bitmask);
@@ -849,10 +851,12 @@ zx::result<CodecFormatInfo> Tas58xx::SetDaiFormat(const DaiFormat& format) {
   // Run the second initialization sequence from metadata if available.
   // This allows for initialization sequences that are affected by the DAI format to be applied
   // after the DAI format is set.
-  if (metadata_.number_of_writes2) {
-    for (size_t i = 0; i < metadata_.number_of_writes2; ++i) {
-      status = WriteReg(metadata_.init_sequence2[i].address, metadata_.init_sequence2[i].value);
+  if (!metadata_.init_sequence2().empty()) {
+    for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+         metadata_.init_sequence2()) {
+      auto status = WriteReg(register_setting.address(), register_setting.value());
       if (status != ZX_OK) {
+        zxlogf(ERROR, "Failed to write I2C register 0x%02X", register_setting.address());
         return zx::error(status);
       }
     }

@@ -51,11 +51,12 @@ Tas27xx::Tas27xx(zx_device_t* device, ddk::I2cChannel i2c,
       fault_gpio_(std::move(fault_gpio)),
       ena_vsens_(vsense),
       ena_isens_(isense) {
-  size_t actual = 0;
-  auto status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &metadata_,
-                                    sizeof(metadata_), &actual);
-  if (status != ZX_OK) {
-    zxlogf(DEBUG, "device_get_metadata failed %d", status);
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_audio_ti::TasConfig>(
+      parent(), DEVICE_METADATA_PRIVATE);
+  if (metadata.is_ok()) {
+    metadata_ = std::move(metadata.value());
+  } else {
+    zxlogf(DEBUG, "Failed to get metadata: %s", metadata.status_string());
   }
   driver_inspect_ = inspect().GetRoot().CreateChild("tas27xx");
   resets_count_ = driver_inspect_.CreateUint("resets_count", 0);
@@ -383,22 +384,22 @@ zx_status_t Tas27xx::Reset() {
     DelayMs(2);
     return status;
   }
-  if (metadata_.number_of_writes1) {
-    for (size_t i = 0; i < metadata_.number_of_writes1; ++i) {
-      auto status =
-          WriteReg(metadata_.init_sequence1[i].address, metadata_.init_sequence1[i].value);
-      if (status != ZX_OK) {
-        zxlogf(ERROR, "Failed to write I2C register 0x%02X", metadata_.init_sequence1[i].address);
-        return status;
-      }
+  for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+       metadata_.init_sequence1()) {
+    auto status = WriteReg(register_setting.address(), register_setting.value());
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Failed to write I2C register 0x%02X", register_setting.address());
+      return status;
     }
   }
+
   DelayMs(2);
   // Run the second init sequence from metadata if available.
-  for (size_t i = 0; i < metadata_.number_of_writes2; ++i) {
-    auto status = WriteReg(metadata_.init_sequence2[i].address, metadata_.init_sequence2[i].value);
+  for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+       metadata_.init_sequence2()) {
+    auto status = WriteReg(register_setting.address(), register_setting.value());
     if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to write I2C register 0x%02X", metadata_.init_sequence2[i].address);
+      zxlogf(ERROR, "Failed to write I2C register 0x%02X", register_setting.address());
       return status;
     }
   }

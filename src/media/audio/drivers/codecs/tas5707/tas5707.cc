@@ -4,6 +4,7 @@
 
 #include "tas5707.h"
 
+#include <fidl/fuchsia.hardware.audio.ti/cpp/fidl.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
@@ -64,15 +65,14 @@ static const audio::DaiSupportedFormats kSupportedDaiFormats = {
 zx_status_t Tas5707::Shutdown() { return ZX_OK; }
 
 zx::result<DriverIds> Tas5707::Initialize() {
-  size_t actual = 0;
-  auto status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &metadata_,
-                                    sizeof(metadata_), &actual);
-  if (status != ZX_OK || sizeof(metadata_) != actual) {
-    zxlogf(ERROR, "device_get_metadata failed %d", status);
-    return zx::error(status);
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_audio_ti::TasConfig>(
+      parent(), DEVICE_METADATA_PRIVATE);
+  if (metadata.is_error()) {
+    zxlogf(ERROR, "Failed to get metadata: %s", metadata.status_string());
+    return metadata.take_error();
   }
 
-  instance_count_ = metadata_.instance_count;
+  instance_count_ = metadata.value().instance_count();
 
   return zx::ok(DriverIds{
       .vendor_id = PDEV_VID_TI,

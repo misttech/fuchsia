@@ -5,6 +5,7 @@
 #ifndef SRC_MEDIA_AUDIO_DRIVERS_CODECS_TAS27XX_TAS27XX_H_
 #define SRC_MEDIA_AUDIO_DRIVERS_CODECS_TAS27XX_TAS27XX_H_
 
+#include <fidl/fuchsia.hardware.audio.ti/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/ddk/debug.h>
@@ -15,7 +16,6 @@
 #include <memory>
 
 #include <ddktl/device.h>
-#include <ti/ti-audio.h>
 
 #include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
 
@@ -130,7 +130,7 @@ class Tas27xx : public SimpleCodecServer {
   GainState gain_state_ = kDefaultGainState;
   std::optional<DaiFormat> format_;
   uint64_t errors_count_ = 0;
-  metadata::ti::TasConfig metadata_ = {};
+  fuchsia_hardware_audio_ti::TasConfig metadata_;
   async::IrqMethod<Tas27xx, &Tas27xx::HandleIrq> irq_handler_{this};
 
   uint8_t channels_to_use_bitmask_ = 2;  // Right channel if I2S.

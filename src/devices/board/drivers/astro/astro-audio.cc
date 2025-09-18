@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.audio.ti/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/binding.h>
@@ -23,7 +24,6 @@
 #include <soc/aml-meson/g12a-clk.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
-#include <ti/ti-audio.h>
 
 #include "astro-gpios.h"
 #include "astro.h"
@@ -260,19 +260,28 @@ zx_status_t Astro::AudioInit() {
 #endif
   // Add TDM OUT to the codec.
   {
-    metadata::ti::TasConfig metadata = {};
+    fuchsia_hardware_audio_ti::TasConfig metadata;
 #ifdef TAS2770_CONFIG_PATH
-    metadata.number_of_writes1 = sizeof(tas2770_init_sequence1) / sizeof(cfg_reg);
-    for (size_t i = 0; i < metadata.number_of_writes1; ++i) {
-      metadata.init_sequence1[i].address = tas2770_init_sequence1[i].offset;
-      metadata.init_sequence1[i].value = tas2770_init_sequence1[i].value;
+    const size_t number_of_writes1 = sizeof(tas2770_init_sequence1) / sizeof(cfg_reg);
+    metadata.init_sequence1().reserve(number_of_writes1);
+    for (const cfg_reg& reg : tas2770_init_sequence1) {
+      metadata.init_sequence1().emplace_back(
+          fuchsia_hardware_audio_ti::RegisterSetting({.address = reg.offset, .value = reg.value}));
     }
-    metadata.number_of_writes2 = sizeof(tas2770_init_sequence2) / sizeof(cfg_reg);
-    for (size_t i = 0; i < metadata.number_of_writes2; ++i) {
-      metadata.init_sequence2[i].address = tas2770_init_sequence2[i].offset;
-      metadata.init_sequence2[i].value = tas2770_init_sequence2[i].value;
+    const size_t number_of_writes2 = sizeof(tas2770_init_sequence2) / sizeof(cfg_reg);
+    metadata.init_sequence2().reserve(number_of_writes2);
+    for (const cfg_reg& reg : tas2770_init_sequence2) {
+      metadata.init_sequence2().emplace_back(
+          fuchsia_hardware_audio_ti::RegisterSetting({.address = reg.offset, .value = reg.value}));
     }
 #endif
+
+    fit::result persisted_metadata = fidl::Persist(metadata);
+    if (!persisted_metadata.is_ok()) {
+      zxlogf(ERROR, "Failed to persist metadata: %s",
+             persisted_metadata.error_value().FormatDescription().c_str());
+      return persisted_metadata.error_value().status();
+    }
 
     fpbus::Node dev;
     dev.name() = "audio_codec_tas27xx";
@@ -281,9 +290,7 @@ zx_status_t Astro::AudioInit() {
     dev.metadata() = std::vector<fpbus::Metadata>{
         {{
             .id = std::to_string(DEVICE_METADATA_PRIVATE),
-            .data = std::vector<uint8_t>(
-                reinterpret_cast<const uint8_t*>(&metadata),
-                reinterpret_cast<const uint8_t*>(&metadata) + sizeof(metadata)),
+            .data = std::move(persisted_metadata.value()),
         }},
     };
     auto parents = std::vector{

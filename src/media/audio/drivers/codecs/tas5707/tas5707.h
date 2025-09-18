@@ -13,7 +13,6 @@
 #include <optional>
 
 #include <ddktl/device.h>
-#include <ti/ti-audio.h>
 
 #include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
 
@@ -51,7 +50,6 @@ class Tas5707 : public SimpleCodecServer {
 
   ddk::I2cChannel i2c_;
   GainState gain_state_ = {};
-  metadata::ti::TasConfig metadata_ = {};
   uint32_t instance_count_ = 0;
 };
 }  // namespace audio
