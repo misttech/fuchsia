@@ -8,6 +8,7 @@ ffx/target/bootloader/unlock.golden
 ffx/target/clear-preferred-ssh-address.golden
 ffx/target/default.golden
 ffx/target/default/get.golden
+ffx/target/discover.golden
 ffx/target/echo.golden
 ffx/target/fastboot.golden
 ffx/target/fastboot/continue.golden

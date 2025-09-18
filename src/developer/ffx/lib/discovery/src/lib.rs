@@ -44,7 +44,9 @@ pub mod query;
 mod usb_vsock_watcher;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
-const CACHE_FILE_NAME: &str = "ffx-discovery.json";
+/// In general callers should not use this. But `ffx target discover` wants to watch this
+/// file, so we make it pub.
+pub const CACHE_FILE_NAME: &str = "ffx-discovery.json";
 
 #[allow(dead_code)]
 /// A stream of new devices as they appear on the bus. See [`wait_for_devices`].
@@ -163,6 +165,13 @@ impl TargetStream {
             queue,
         }
     }
+}
+
+/// Return the time to wait before updating the cache. Because writing the cache itself takes
+/// some time (due to the need to wait for discovery to complete), the recheck time is
+/// less than the cache TTL.
+pub fn get_cache_recheck_time() -> Duration {
+    Duration::from_secs(cache::CACHE_TTL_SECONDS) - DEFAULT_TIMEOUT
 }
 
 pub struct DiscoveryBuilder {

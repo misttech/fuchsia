@@ -15,7 +15,7 @@ pub type Result<T> = std::result::Result<T, crate::error::CacheError>;
 use crate::TargetHandle;
 
 const CACHE_VERSION: u32 = 1;
-const CACHE_TTL_SECONDS: i64 = 60;
+pub const CACHE_TTL_SECONDS: u64 = 60;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Cache {
@@ -28,7 +28,7 @@ impl Cache {
     pub(crate) fn new(targets: Vec<TargetHandle>) -> Self {
         Self {
             version: CACHE_VERSION,
-            expires: Utc::now() + chrono::Duration::seconds(CACHE_TTL_SECONDS),
+            expires: Utc::now() + chrono::Duration::seconds(CACHE_TTL_SECONDS as i64),
             targets,
         }
     }

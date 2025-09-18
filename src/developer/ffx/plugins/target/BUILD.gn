@@ -15,6 +15,7 @@ if (is_host) {
       "bootloader:ffx_bootloader",
       "clear-preferred-ssh-address:ffx_target_clear_preferred_ssh_address",
       "default:ffx_target_default",
+      "discover:ffx_target_discover",
       "echo:ffx_target_echo",
       "fastboot:ffx_fastboot_tool",
       "flash:ffx_flash",

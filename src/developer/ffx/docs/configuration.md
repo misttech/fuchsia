@@ -37,6 +37,11 @@ When updating, please add the value in alphabetical order.
     | `daemon.host_pipe_ssh_timeout`          | Time the daemon waits for an       |
     |                                         | initial response from ssh on the   |
     |                                         | target. Defaults to `50` seconds.  |
+    | `discovery.cache_dir`                   | Specifies the location of the      |
+    |                                         | discovery cache directory, in      |
+    |                                         | which the cache and pid files will |
+    |                                         | be stored. Defaults to             |
+    |                                         | `$CACHE/discovery`.                |
     | `discovery.expire_targets`              | Determines if targets discovered   |
     |                                         | should expire. Defaults to `true`  |
     | `discovery.mdns.autoconnect`            | Determines whether to connect      |
