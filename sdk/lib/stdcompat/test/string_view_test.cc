@@ -90,4 +90,27 @@ TEST(StringViewTest, EndsWith) {
   EXPECT_FALSE(cpp20::ends_with(kString, std::string_view{"longer than kString"}));
 }
 
+TEST(StringViewTest, Contains) {
+  constexpr std::string_view kString = "Foo is Bar and Baz is Foo Bar";
+
+  // string_view query.
+  constexpr std::string_view kSvQueryPresent = "Foo";
+  constexpr std::string_view kSvQueryMissing = "foobar";
+
+  EXPECT_TRUE(cpp23::contains(kString, kSvQueryPresent));
+  EXPECT_FALSE(cpp23::contains(kString, kSvQueryMissing));
+
+  // character
+  constexpr char kCharQueryPresent = 'F';
+  constexpr char kCharQueryMissing = 'Q';
+  EXPECT_TRUE(cpp23::contains(kString, kCharQueryPresent));
+  EXPECT_FALSE(cpp23::contains(kString, kCharQueryMissing));
+
+  // C-string
+  constexpr const char* kCstringQueryPresent = "Foo";
+  constexpr const char* kCstringQueryMissing = "foobar";
+  EXPECT_TRUE(cpp23::contains(kString, kCstringQueryPresent));
+  EXPECT_FALSE(cpp23::contains(kString, kCstringQueryMissing));
+}
+
 }  // namespace

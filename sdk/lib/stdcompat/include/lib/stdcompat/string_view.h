@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_STDCOMPAT_STRING_VIEW_H_
-#define LIB_STDCOMPAT_STRING_VIEW_H_
+#ifndef SDK_LIB_STDCOMPAT_INCLUDE_LIB_STDCOMPAT_STRING_VIEW_H_
+#define SDK_LIB_STDCOMPAT_INCLUDE_LIB_STDCOMPAT_STRING_VIEW_H_
 
 #include <cstddef>
 #include <stdexcept>
@@ -67,4 +67,47 @@ constexpr bool ends_with(std::basic_string_view<CharT, Traits> s, CharT c) {
 
 }  // namespace cpp20
 
-#endif  // LIB_STDCOMPAT_STRING_VIEW_H_
+namespace cpp23 {
+
+#if defined(__cpp_lib_string_contains) && __cpp_lib_string_contains >= 202011L && \
+    !defined(LIB_STDCOMPAT_USE_POLYFILLS)
+
+template <class CharT, class Traits = std::char_traits<CharT>>
+constexpr bool contains(std::basic_string_view<CharT, Traits> haystack, CharT needle) {
+  return haystack.contains(needle);
+}
+
+template <class CharT, class Traits = std::char_traits<CharT>>
+constexpr bool contains(std::basic_string_view<CharT, Traits> haystack,
+                        std::basic_string_view<CharT, Traits> needle) {
+  return haystack.contains(needle);
+}
+
+template <class CharT, class Traits = std::char_traits<CharT>>
+constexpr bool contains(std::basic_string_view<CharT, Traits> haystack, const CharT* needle) {
+  return haystack.contains(needle);
+}
+
+#else
+
+template <class CharT, class Traits = std::char_traits<CharT>>
+constexpr bool contains(std::basic_string_view<CharT, Traits> haystack, CharT needle) {
+  return haystack.find(needle) != std::basic_string_view<CharT, Traits>::npos;
+}
+
+template <class CharT, class Traits = std::char_traits<CharT>>
+constexpr bool contains(std::basic_string_view<CharT, Traits> haystack,
+                        std::basic_string_view<CharT, Traits> needle) {
+  return haystack.find(needle) != std::basic_string_view<CharT, Traits>::npos;
+}
+
+template <class CharT, class Traits = std::char_traits<CharT>>
+constexpr bool contains(std::basic_string_view<CharT, Traits> haystack, const CharT* needle) {
+  return haystack.find(needle) != std::basic_string_view<CharT, Traits>::npos;
+}
+
+#endif
+
+}  // namespace cpp23
+
+#endif  // SDK_LIB_STDCOMPAT_INCLUDE_LIB_STDCOMPAT_STRING_VIEW_H_
