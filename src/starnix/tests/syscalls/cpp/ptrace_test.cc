@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <elf.h>
+#include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
@@ -22,6 +23,8 @@
 
 #include <linux/prctl.h>
 #include <linux/sched.h>
+
+#include "src/lib/fxl/strings/string_printf.h"
 
 #if defined(__riscv)
 #include <asm/ptrace.h>
@@ -44,6 +47,8 @@ struct user_regs_struct {
   unsigned long regs[18];
 };
 #endif  // defined(__arm__)
+
+namespace {
 
 TEST(PtraceTest, SetSigInfo) {
   test_helper::ForkHelper helper;
@@ -1123,3 +1128,100 @@ TEST(PtraceTest, PtraceAttachesToParentThread) {
 
   EXPECT_TRUE(helper.WaitForChildren());
 }
+
+enum class BackingType {
+  ANONYMOUS,
+  MEMFD,
+  READ_ONLY_FILE,
+};
+
+template <int map_flags>
+class PokeInMappingTest : public testing::TestWithParam<BackingType> {
+ public:
+  void SetUp() override {
+    const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+    int flags = map_flags;
+    int fd = -1;
+    switch (GetParam()) {
+      case BackingType::ANONYMOUS:
+        flags |= MAP_ANONYMOUS;
+        break;
+      case BackingType::MEMFD:
+        fd = memfd_create("ptrace_test", 0);
+        SAFE_SYSCALL(ftruncate(fd, 2 * page_size));
+        ASSERT_NE(fd, -1) << strerror(errno);
+        break;
+      case BackingType::READ_ONLY_FILE:
+        fd = open("/proc/self/exe", O_RDONLY);
+        ASSERT_NE(fd, -1) << strerror(errno);
+        break;
+    }
+    mapping_ = mmap(nullptr, 2 * page_size, PROT_READ, flags, fd, 0);
+    ASSERT_NE(mapping_, MAP_FAILED) << strerror(errno);
+
+    if (fd != -1) {
+      close(fd);
+    }
+
+    helper_.OnlyWaitForForkedChildren();
+    child_pid_ = helper_.RunInForkedProcess([] {
+      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+      raise(SIGSTOP);
+      _exit(0);
+    });
+
+    // In parent process.
+    ASSERT_NE(child_pid_, 0);
+
+    // Wait for the process to hit SIGSTOP.
+    int status = 0;
+    SAFE_SYSCALL(waitpid(child_pid_, &status, 0));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << std::hex << status;
+
+    // The child process is now stopped and ptrace is attached.
+  }
+
+  void TearDown() override {
+    SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid_, 0, 0));
+    ASSERT_TRUE(helper_.WaitForChildren());
+  }
+
+ protected:
+  test_helper::ForkHelper helper_;
+  pid_t child_pid_ = 0;
+  void *mapping_ = nullptr;
+};
+
+// Poking in private memory should work, regardless of the backing.
+using PokeInPrivateMappingTest = PokeInMappingTest<MAP_PRIVATE>;
+
+TEST_P(PokeInPrivateMappingTest, Data) {
+  SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB));
+}
+
+TEST_P(PokeInPrivateMappingTest, Text) {
+  SAFE_SYSCALL(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB));
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokePrivateMemory, PokeInPrivateMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE));
+
+// Poking in shared memory doesn't work, regardless of the backing.
+using PokeInSharedMappingTest = PokeInMappingTest<MAP_SHARED>;
+
+TEST_P(PokeInSharedMappingTest, Data) {
+  EXPECT_EQ(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), -1);
+  EXPECT_EQ(errno, EIO);
+}
+
+TEST_P(PokeInSharedMappingTest, Text) {
+  EXPECT_EQ(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), -1);
+  EXPECT_EQ(errno, EIO);
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeSharedMemory, PokeInSharedMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE));
+
+}  // namespace

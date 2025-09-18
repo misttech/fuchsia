@@ -146,6 +146,11 @@
                 // Before marking this as passing, remove the timeout from the test and let the overall
                 // test timeout catch any future failures.
                 "PtraceTest.PtraceAttachSendSigstop",
+
+                // TODO(https://fxbug.dev/445790710)
+                // Implement PTRACE_POKEDATA and PTRACE_POKETEXT.
+                "PtracePokeSharedMemory*",
+                "PtracePokePrivateMemory*",
             ],
         },
     ],
