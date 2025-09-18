@@ -2,22 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/internal.h>
 #include <zircon/assert.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <zircon/syscalls.h>
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 
 zx_status_t FidlHandleCloseMany(const zx_handle_t* handles, size_t num_handles) {
   if (num_handles == 0) {
     return ZX_OK;
   }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
   return zx_handle_close_many(handles, num_handles);
 #else
   ZX_PANIC("handle closing not implemented on host");
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 }
 
 zx_status_t FidlHandleDispositionCloseMany(const zx_handle_disposition_t* handle_dispositions,
@@ -25,7 +26,7 @@ zx_status_t FidlHandleDispositionCloseMany(const zx_handle_disposition_t* handle
   if (num_handles == 0) {
     return ZX_OK;
   }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
   ZX_ASSERT_MSG(num_handles <= ZX_CHANNEL_MAX_MSG_HANDLES, " num_handles: %zu", num_handles);
   zx_handle_t handles[ZX_CHANNEL_MAX_MSG_HANDLES];
   for (size_t i = 0; i < num_handles; i++) {
@@ -34,14 +35,14 @@ zx_status_t FidlHandleDispositionCloseMany(const zx_handle_disposition_t* handle
   return zx_handle_close_many(handles, num_handles);
 #else
   ZX_PANIC("handle closing not implemented on host");
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 }
 
 zx_status_t FidlHandleInfoCloseMany(const zx_handle_info_t* handle_infos, size_t num_handles) {
   if (num_handles == 0) {
     return ZX_OK;
   }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
   ZX_ASSERT_MSG(num_handles <= ZX_CHANNEL_MAX_MSG_HANDLES, " num_handles: %zu", num_handles);
   zx_handle_t handles[ZX_CHANNEL_MAX_MSG_HANDLES];
   for (size_t i = 0; i < num_handles; i++) {
@@ -50,5 +51,5 @@ zx_status_t FidlHandleInfoCloseMany(const zx_handle_info_t* handle_infos, size_t
   return zx_handle_close_many(handles, num_handles);
 #else
   ZX_PANIC("handle closing not implemented on host");
-#endif  // __Fuchsia__
+#endif  // __FIDL_SUPPORT_HANDLES
 }

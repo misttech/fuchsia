@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/fidl/coding.h>
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/internal.h>
 #include <lib/fidl/visitor.h>
 #include <lib/fidl/walker.h>
@@ -15,9 +16,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <variant>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <zircon/syscalls.h>
 #endif
 

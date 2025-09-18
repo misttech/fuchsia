@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fidl/cpp/features.h>
 #include <lib/fidl/internal.h>
 
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
 #endif
@@ -65,7 +66,7 @@ zx_status_t FidlEnsureHandleRights(zx_handle_t* handle_ptr, zx_obj_type_t actual
   // some places.
   if (unlikely(required_object_type != actual_type && required_object_type != ZX_OBJ_TYPE_NONE &&
                actual_type != ZX_OBJ_TYPE_NONE)) {
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
     zx_handle_close(*handle_ptr);
 #endif
     *handle_ptr = ZX_HANDLE_INVALID;
@@ -85,7 +86,7 @@ zx_status_t FidlEnsureHandleRights(zx_handle_t* handle_ptr, zx_obj_type_t actual
 
   // Check that |actual_rights| contain all of the |required_rights|.
   if (unlikely(subtract_rights(required_rights, actual_rights) != 0)) {
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
     zx_handle_close(*handle_ptr);
 #endif
     *handle_ptr = ZX_HANDLE_INVALID;
@@ -98,7 +99,7 @@ zx_status_t FidlEnsureHandleRights(zx_handle_t* handle_ptr, zx_obj_type_t actual
   // Check if |actual_rights| has more rights than |required_rights|.
   // If so, the rights need to be reduced.
   if (unlikely(subtract_rights(actual_rights, required_rights))) {
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
     zx_status_t status = zx_handle_replace(*handle_ptr, required_rights, handle_ptr);
     if (unlikely(status != ZX_OK)) {
       if (error)
@@ -115,7 +116,7 @@ zx_status_t FidlEnsureHandleRights(zx_handle_t* handle_ptr, zx_obj_type_t actual
 zx_status_t FidlEnsureActualHandleRights(zx_handle_t* handle_ptr,
                                          zx_obj_type_t required_object_type,
                                          zx_rights_t required_rights, const char** error) {
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
   zx_info_handle_basic_t info;
   zx_status_t status =
       zx_object_get_info(*handle_ptr, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), NULL, NULL);
@@ -147,7 +148,7 @@ zx_status_t FidlHandleDispositionsToHandleInfos(zx_handle_disposition_t* handle_
       FidlHandleInfoCloseMany(handle_infos, i);
       return ZX_ERR_INVALID_ARGS;
     }
-#ifdef __Fuchsia__
+#if __FIDL_SUPPORT_HANDLES
     zx_status_t status = FidlEnsureActualHandleRights(
         &handle_disposition->handle, handle_disposition->type, handle_disposition->rights, NULL);
     if (status != ZX_OK) {
