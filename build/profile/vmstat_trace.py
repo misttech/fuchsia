@@ -14,6 +14,7 @@ Usage:
 import argparse
 import dataclasses
 import datetime
+import json
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
@@ -81,13 +82,15 @@ class VmstatEntry:
 
     def chrome_trace_events_json(
         self, start_time: datetime.datetime
-    ) -> Iterable[str]:
+    ) -> Iterable[trace_tools.TraceEvent]:
         """Yields a set of trace events at a single time."""
         tdelta_us = int(
             (self.timestamp - start_time) / datetime.timedelta(microseconds=1)
         )
 
-        def event(name: str, value_type: str, value: Any) -> str:
+        def event(
+            name: str, value_type: str, value: Any
+        ) -> trace_tools.TraceEvent:
             return trace_tools.event_json(
                 name, "system", tdelta_us, value_type, value
             )
@@ -195,9 +198,8 @@ def _parse_vmstat_output(lines: Iterable[str]) -> Iterator[VmstatEntry]:
 
 
 def print_chrome_trace_json(
-    formatter: trace_tools.Formatter,
     trace: Iterator[VmstatEntry],
-) -> Iterable[str]:
+) -> Iterable[trace_tools.TraceEvent]:
     try:
         first: VmstatEntry = next(trace)
     except StopIteration:
@@ -205,13 +207,11 @@ def print_chrome_trace_json(
         return
 
     start_time = first.timestamp
-    for line in first.chrome_trace_events_json(start_time):
-        yield f"{formatter.indent}{line}"
+    yield from first.chrome_trace_events_json(start_time)
 
     # The remainder
     for t in trace:
-        for line in t.chrome_trace_events_json(start_time):
-            yield f"{formatter.indent}{line}"
+        yield from t.chrome_trace_events_json(start_time)
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:
@@ -240,20 +240,14 @@ def main(argv: Sequence[str]) -> int:
     else:
         vmstat_lines = args.input.read_text().splitlines()
 
-    trace = _parse_vmstat_output(vmstat_lines)
+    metadata = trace_tools.metadata_arg_to_dict(args.metadata)
 
-    def event_generator(fmt: trace_tools.Formatter) -> Iterable[str]:
-        yield from print_chrome_trace_json(fmt, trace)
-
-    formatter = trace_tools.Formatter()
-    output = trace_tools.stream_trace(
-        formatter=formatter,
-        metadata=trace_tools.metadata_arg_to_dict(args.metadata),
-        event_generator=event_generator,
+    vmstat_entries = _parse_vmstat_output(vmstat_lines)
+    trace = trace_tools.complete_trace(
+        metadata, list(print_chrome_trace_json(vmstat_entries))
     )
 
-    for line in output:
-        print(line)
+    print(json.dumps(trace, indent=2))
 
     return 0
 

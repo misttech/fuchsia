@@ -8,7 +8,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import trace_tools
 import vmstat_trace
 
 _TEST_START_TIME = datetime.datetime(
@@ -85,18 +84,16 @@ class VmstatEntryTests(unittest.TestCase):
         self.assertEqual(entries, [_SAMPLE_VMSTAT_ENTRY])
 
     def test_print_chrome_trace_json_empty(self) -> None:
-        fmt = trace_tools.Formatter()
-        lines = list(vmstat_trace.print_chrome_trace_json(fmt, iter([])))
-        self.assertEqual(lines, [])
+        events = list(vmstat_trace.print_chrome_trace_json(iter([])))
+        self.assertEqual(events, [])
 
     def test_print_chrome_trace_json_nonempty(self) -> None:
-        fmt = trace_tools.Formatter()
-        lines = list(
+        events = list(
             vmstat_trace.print_chrome_trace_json(
-                fmt, iter([_SAMPLE_VMSTAT_ENTRY] * 2)
+                iter([_SAMPLE_VMSTAT_ENTRY] * 2)
             )
         )
-        self.assertEqual(len(lines), 18 * 2)  # one per field
+        self.assertEqual(len(events), 18 * 2)  # one per field
 
 
 class MainTests(unittest.TestCase):

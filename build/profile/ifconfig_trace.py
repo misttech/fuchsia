@@ -17,6 +17,7 @@ Usage:
 import argparse
 import dataclasses
 import datetime
+import json
 import sys
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, Sequence
@@ -37,14 +38,16 @@ class TransmissionData:
 
     def chrome_trace_events_json(
         self, start_time: datetime.datetime, prev: "TransmissionData"
-    ) -> Iterable[str]:
+    ) -> Iterable[trace_tools.TraceEvent]:
         """Yields a set of trace events at a single time."""
         assert self.interface_name == prev.interface_name
         tdelta_us = int(
             (self.timestamp - start_time) / datetime.timedelta(microseconds=1)
         )
 
-        def event(name: str, value_type: str, value: int) -> str:
+        def event(
+            name: str, value_type: str, value: int
+        ) -> trace_tools.TraceEvent:
             return trace_tools.event_json(
                 f"{self.interface_name}.{name}",
                 "network",
@@ -126,9 +129,8 @@ def _parse_ifconfig_loop_output(
 
 
 def print_chrome_trace_json(
-    formatter: trace_tools.Formatter,
     trace: Iterator[TransmissionData],
-) -> Iterable[str]:
+) -> Iterable[trace_tools.TraceEvent]:
     prev: Dict[str, TransmissionData] = {}
     try:
         first: TransmissionData = next(trace)
@@ -140,17 +142,15 @@ def print_chrome_trace_json(
     # numeric differences.
     prev[first.interface_name] = first
     start_time = first.timestamp
-    for line in first.chrome_trace_events_json(start_time, first):
-        yield f"{formatter.indent}{line}"
+    yield from first.chrome_trace_events_json(start_time, first)
 
     # Stream the remainder
     for t in trace:
         if t.interface_name not in prev:  # first occurrence
             prev[t.interface_name] = t
-        for line in t.chrome_trace_events_json(
+        yield from t.chrome_trace_events_json(
             start_time, prev[t.interface_name]
-        ):
-            yield f"{formatter.indent}{line}"
+        )
         prev[t.interface_name] = t
 
 
@@ -175,25 +175,20 @@ _MAIN_ARG_PARSER = _main_arg_parser()
 
 def main(argv: Sequence[str]) -> int:
     args = _MAIN_ARG_PARSER.parse_args(argv)
+
+    metadata = trace_tools.metadata_arg_to_dict(args.metadata)
+
     if args.input == Path("-"):
         ifconfig_lines = sys.stdin  # is Iterable[str]
     else:
         ifconfig_lines = args.input.read_text().splitlines()
 
-    trace = _parse_ifconfig_loop_output(ifconfig_lines)
-
-    def event_generator(fmt: trace_tools.Formatter) -> Iterable[str]:
-        yield from print_chrome_trace_json(fmt, trace)
-
-    formatter = trace_tools.Formatter()
-    output = trace_tools.stream_trace(
-        formatter=formatter,
-        metadata=trace_tools.metadata_arg_to_dict(args.metadata),
-        event_generator=event_generator,
+    transmission_data_entries = _parse_ifconfig_loop_output(ifconfig_lines)
+    trace = trace_tools.complete_trace(
+        metadata, list(print_chrome_trace_json(transmission_data_entries))
     )
 
-    for line in output:
-        print(line)
+    print(json.dumps(trace, indent=2))
 
     return 0
 

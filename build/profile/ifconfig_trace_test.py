@@ -120,20 +120,20 @@ class IfConfigEntryTests(unittest.TestCase):
         self.assertEqual(entries, _EXPECTED_IFCONFIG_DATA_STREAM)
 
     def test_print_chrome_trace_json_empty(self) -> None:
-        fmt = trace_tools.Formatter()
-        lines = list(ifconfig_trace.print_chrome_trace_json(fmt, iter([])))
+        lines = list(ifconfig_trace.print_chrome_trace_json(iter([])))
         self.assertEqual(lines, [])
 
     def test_print_chrome_trace_json_nonempty(self) -> None:
-        fmt = trace_tools.Formatter()
         lines = list(
             ifconfig_trace.print_chrome_trace_json(
-                fmt, iter(_EXPECTED_IFCONFIG_DATA_STREAM)
+                iter(_EXPECTED_IFCONFIG_DATA_STREAM)
             )
         )
 
-        def expected_event(name: str, time: int, value: int) -> str:
-            return f"""{{"name": "{name}", "cat": "network", "ph": "C", "pid": 1, "tid": 1, "ts": {time}, "args": {{"count": "{value}"}} }},"""
+        def expected_event(
+            name: str, time: int, value: int
+        ) -> trace_tools.TraceEvent:
+            return trace_tools.event_json(name, "network", time, "count", value)
 
         self.assertEqual(
             lines,
