@@ -88,10 +88,15 @@ class Tracer:
 
         return trace
 
-    def find_and_merge_subbuilds(self, main_build_dir: Path) -> None:
+    def find_and_merge_subbuilds(
+        self, main_build_dir: Path, main_build_traces: list[JsonTrace]
+    ) -> bool:
         """Given the main build dir and its trace, find any subbuilds referenced
         by that trace, build them, load them, and merge them into a single
-        trace file."""
+        trace file.
+
+        Returns True if the main build trace has been modified with the merged subbuild traces.
+        """
 
         # ninja_subbuilds.json is a build API module listing the set of
         # directories that _could_ contain subbuilds, but those subbuilds may
@@ -101,15 +106,10 @@ class Tracer:
                 Path(b["build_dir"]) for b in json.load(f)
             ]
 
-        # If there aren't any subbuilds possible, exit early so we don't spend the time
-        # to read in the main build trace and write it back out again.
+        # If there aren't any subbuilds possible, exit early so we don't spend any more time on
+        # processing the main traces to include the subbuilds.
         if not possible_subbuild_dirs:
-            return
-
-        # Load the main build traces
-        main_build_traces = load_compressed_trace(
-            main_build_dir / NINJATRACE_BASENAME
-        )
+            return False
 
         # Create a list of possible trace event names for the possible subbuilds
         # this is used to filter the main build trace events to find the any
@@ -128,10 +128,9 @@ class Tracer:
             if t["name"] in possible_subbuild_target_names
         }
 
-        # If there weren't any subbuilds in the last build, then exit early, leaving the
-        # existing trace file as-is:
+        # If there weren't any subbuilds in the last build, then exit early
         if not main_build_traces_by_subbuild_dir:
-            return
+            return False
 
         # Load the traces for each of the subbuild dirs in parallel
         with futures.ThreadPoolExecutor() as pool:
@@ -170,9 +169,17 @@ class Tracer:
                 ]
             )
 
-        write_compressed_trace(
-            main_build_dir / NINJATRACE_BASENAME, main_build_traces
-        )
+        # We've modified the traces, so return True to signal that the merged output
+        # needs to be written.
+        return True
+
+
+def merge_profile(profile: Path, main_build_traces: list[JsonTrace]) -> bool:
+    with open(profile) as f:
+        raw_trace: dict[str, Any] = json.load(f)
+
+    main_build_traces.extend(raw_trace["traceEvents"])
+    return True
 
 
 def main() -> None:
@@ -229,6 +236,16 @@ If set, merge traces from subbuilds with traces from the main build and
 include these traces in the main build's ninjatrace.json file. Must not be
 specified if --subbuilds-output-path is set.""",
     )
+    parser.add_argument(
+        "--vmstat-profile",
+        type=Path,
+        help="Path to a vmstat profiling log to incorporate into the merged build.",
+    )
+    parser.add_argument(
+        "--ifconfig-profile",
+        type=Path,
+        help="Path to an ifconfig profiling log to incorporate into the merged build.",
+    )
     args = parser.parse_args()
 
     tracer = Tracer(
@@ -244,8 +261,38 @@ specified if --subbuilds-output-path is set.""",
     # Convert the trace for the main build
     outpath: Path = tracer.trace_build_dir(fuchsia_build_dir)
 
-    if args.subbuilds_in_place:
-        tracer.find_and_merge_subbuilds(fuchsia_build_dir)
+    if args.subbuilds_in_place or args.vmstat_profile or args.ifconfig_profile:
+        # We are merging other trace files, so read in the converted trace
+        # for the main build.
+        main_build_traces = load_compressed_trace(
+            fuchsia_build_dir / NINJATRACE_BASENAME
+        )
+
+        traces_merged = False
+        if args.subbuilds_in_place:
+            traces_merged = (
+                tracer.find_and_merge_subbuilds(
+                    fuchsia_build_dir, main_build_traces
+                )
+                or traces_merged
+            )
+
+        if args.vmstat_profile:
+            traces_merged = (
+                merge_profile(args.vmstat_profile, main_build_traces)
+                or traces_merged
+            )
+
+        if args.ifconfig_profile:
+            traces_merged = (
+                merge_profile(args.ifconfig_profile, main_build_traces)
+                or traces_merged
+            )
+
+        if traces_merged:
+            write_compressed_trace(
+                fuchsia_build_dir / NINJATRACE_BASENAME, main_build_traces
+            )
 
     print(f"Now visit chrome://tracing and load {str(outpath)}")
 
