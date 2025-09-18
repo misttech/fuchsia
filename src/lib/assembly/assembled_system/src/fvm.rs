@@ -264,7 +264,7 @@ impl<'a> MultiFvmBuilder<'a> {
 
         match entry {
             // Return the already assembled info.
-            FilesystemEntry::Filesystem(ref filesystem) => Ok(filesystem.clone()),
+            FilesystemEntry::Filesystem(filesystem) => Ok(filesystem.clone()),
             // Build the filesystem and assemble the info.
             FilesystemEntry::Params(params) => {
                 info!("Creating FVM filesystem: {}", name);

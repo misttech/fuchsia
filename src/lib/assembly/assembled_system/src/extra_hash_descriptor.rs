@@ -89,12 +89,12 @@ where
     D: Deserializer<'de>,
 {
     let value = String::deserialize(value)?;
-    if let Ok(bytes) = hex::decode(value) {
-        if bytes.len() == 32 {
-            let mut buff = [0u8; 32];
-            buff[..].copy_from_slice(bytes.as_slice());
-            return Ok(Some(buff));
-        }
+    if let Ok(bytes) = hex::decode(value)
+        && bytes.len() == 32
+    {
+        let mut buff = [0u8; 32];
+        buff[..].copy_from_slice(bytes.as_slice());
+        return Ok(Some(buff));
     }
     Err(serde::de::Error::custom("not a valid value (32 bytes as hex characters)"))
 }
