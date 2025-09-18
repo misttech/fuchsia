@@ -18,6 +18,7 @@ import (
 type runCmd struct {
 	input        string
 	deviceConfig string
+	help         bool
 }
 
 func (*runCmd) Name() string {
@@ -35,9 +36,14 @@ func (*runCmd) Usage() string {
 func (r *runCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.deviceConfig, "device-config", "/etc/botanist/config.json", "File path for device config JSON file.")
 	f.StringVar(&r.input, "input", "", "File path for input JSON file.")
+	f.BoolVar(&r.help, "help", false, "Print usage for this command.")
 }
 
 func (r *runCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	if r.help {
+		fmt.Println(r.Usage())
+		return subcommands.ExitSuccess
+	}
 	if err := initTestArtifactsDir(); err != nil {
 		fmt.Printf("Failed to initialize test artifacts directory: %v\n", err)
 		return subcommands.ExitFailure
