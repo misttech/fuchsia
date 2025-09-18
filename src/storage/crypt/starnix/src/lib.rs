@@ -1,8 +1,7 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::EncryptionKeyId;
 use aes_gcm_siv::aead::Aead;
 use aes_gcm_siv::{Aes256GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::{Error, anyhow};
@@ -13,10 +12,26 @@ use fidl_fuchsia_fxfs::{
 use fuchsia_sync::Mutex;
 use futures::stream::StreamExt;
 use linux_uapi::FSCRYPT_KEY_IDENTIFIER_SIZE;
-use starnix_logging::log_error;
-use starnix_uapi::error;
+use log::error;
+use starnix_uapi::error as starnix_error;
 use starnix_uapi::errors::Errno;
 use std::collections::hash_map::{Entry, HashMap};
+
+/// Contains an fscrypt wrapping key id.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Copy)]
+pub struct EncryptionKeyId([u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize]);
+
+impl From<[u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize]> for EncryptionKeyId {
+    fn from(buf: [u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize]) -> Self {
+        Self(buf)
+    }
+}
+
+impl EncryptionKeyId {
+    pub fn as_raw(&self) -> [u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize] {
+        self.0.clone()
+    }
+}
 
 #[derive(Clone)]
 pub struct KeyInfo {
@@ -86,7 +101,7 @@ impl CryptService {
         rand::fill(&mut key[..]);
 
         let wrapped = cipher.encrypt(&nonce, &key[..]).map_err(|e| {
-            log_error!("Failed to wrap key error: {:?}", e);
+            error!("Failed to wrap key error: {:?}", e);
             zx::Status::INTERNAL.into_raw()
         })?;
 
@@ -111,7 +126,7 @@ impl CryptService {
         rand::fill(&mut key[..]);
 
         let wrapped = cipher.encrypt(&nonce, &key[..]).map_err(|error| {
-            log_error!("Failed to wrap key error: {:?}", error);
+            error!("Failed to wrap key error: {:?}", error);
             zx::Status::INTERNAL.into_raw()
         })?;
 
@@ -180,7 +195,7 @@ impl CryptService {
             Entry::Occupied(mut e) => {
                 let user_ids = &mut e.get_mut().users;
                 if !user_ids.contains(&uid) {
-                    return error!(ENOKEY);
+                    return starnix_error!(ENOKEY);
                 } else {
                     let index = user_ids.iter().position(|x: &u32| *x == uid).unwrap();
                     user_ids.remove(index);
@@ -190,7 +205,7 @@ impl CryptService {
                 }
             }
             Entry::Vacant(_) => {
-                return error!(ENOKEY);
+                return starnix_error!(ENOKEY);
             }
         }
         Ok(())
@@ -204,12 +219,12 @@ impl CryptService {
         let mut inner = self.inner.lock();
         let key_id = EncryptionKeyId::from(wrapping_key_id);
         if !inner.ciphers.contains_key(&key_id) {
-            return error!(ENOENT);
+            return starnix_error!(ENOENT);
         }
         match purpose {
             KeyPurpose::Data => inner.data_key = Some(key_id),
             KeyPurpose::Metadata => inner.metadata_key = Some(key_id),
-            _ => return error!(EINVAL),
+            _ => return starnix_error!(EINVAL),
         }
         Ok(())
     }
@@ -223,9 +238,7 @@ impl CryptService {
                             Ok((id, ref wrapped, ref key)) => Ok((id, wrapped, key)),
                             Err(e) => Err(*e),
                         })
-                        .unwrap_or_else(|e| {
-                            log_error!("Failed to send CreateKey response {:?}", e)
-                        });
+                        .unwrap_or_else(|e| error!("Failed to send CreateKey response {:?}", e));
                 }
                 Ok(CryptRequest::CreateKeyWithId { owner, wrapping_key_id, responder, .. }) => {
                     responder
@@ -238,7 +251,7 @@ impl CryptService {
                             },
                         )
                         .unwrap_or_else(|e| {
-                            log_error!("Failed to send CreateKeyWithId response {:?}", e)
+                            error!("Failed to send CreateKeyWithId response {:?}", e)
                         });
                 }
                 Ok(CryptRequest::UnwrapKey { owner, wrapped_key, responder }) => {
@@ -247,12 +260,10 @@ impl CryptService {
                             Ok(ref unwrapped) => Ok(unwrapped),
                             Err(e) => Err(e),
                         })
-                        .unwrap_or_else(|e| {
-                            log_error!("Failed to send UnwrapKey response {:?}", e)
-                        });
+                        .unwrap_or_else(|e| error!("Failed to send UnwrapKey response {:?}", e));
                 }
                 Err(e) => {
-                    log_error!("Error in CryptRequestStream: {:?}", e);
+                    error!("Error in CryptRequestStream: {:?}", e);
                     return Err(anyhow!(e));
                 }
             }
@@ -263,9 +274,7 @@ impl CryptService {
 
 #[cfg(test)]
 mod tests {
-    use crate::task::EncryptionKeyId;
-
-    use super::CryptService;
+    use super::{CryptService, EncryptionKeyId};
     use fidl_fuchsia_fxfs::{FxfsKey, KeyPurpose, WrappedKey};
     use starnix_uapi::errno;
 

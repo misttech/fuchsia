@@ -22,7 +22,6 @@ use crate::task::{
     UtsNamespaceHandle,
 };
 use crate::vdso::vdso_loader::Vdso;
-use crate::vfs::crypt_service::CryptService;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::socket::{
     GenericMessage, GenericNetlink, NetlinkSenderReceiverProvider, NetlinkToClientSender,
@@ -38,10 +37,10 @@ use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentS
 use fidl_fuchsia_feedback::CrashReporterProxy;
 use fidl_fuchsia_time_external::AdjustSynchronousProxy;
 use futures::FutureExt;
-use linux_uapi::FSCRYPT_KEY_IDENTIFIER_SIZE;
 use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
 use once_cell::sync::OnceCell;
+use starnix_crypt::CryptService;
 use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
@@ -125,22 +124,6 @@ pub struct KernelFeatures {
 pub struct ArgNameAndValue<'a> {
     pub name: &'a str,
     pub value: Option<&'a str>,
-}
-
-/// Contains an fscrypt wrapping key id.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct EncryptionKeyId([u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize]);
-
-impl From<[u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize]> for EncryptionKeyId {
-    fn from(buf: [u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize]) -> Self {
-        Self(buf)
-    }
-}
-
-impl EncryptionKeyId {
-    pub fn as_raw(&self) -> [u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize] {
-        self.0.clone()
-    }
 }
 
 /// The shared, mutable state for the entire Starnix kernel.

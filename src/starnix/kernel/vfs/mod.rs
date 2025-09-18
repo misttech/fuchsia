@@ -24,7 +24,6 @@ mod xattr;
 
 pub mod aio;
 pub mod buffers;
-pub mod crypt_service;
 pub mod eventfd;
 pub mod file_server;
 pub mod fs_args;

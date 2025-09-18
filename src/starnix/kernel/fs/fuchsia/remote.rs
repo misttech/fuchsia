@@ -8,7 +8,7 @@ use crate::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
-use crate::task::{CurrentTask, EncryptionKeyId, FullCredentials, Kernel};
+use crate::task::{CurrentTask, FullCredentials, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
@@ -26,6 +26,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
+use starnix_crypt::EncryptionKeyId;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration};
 use starnix_sync::{
     FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
