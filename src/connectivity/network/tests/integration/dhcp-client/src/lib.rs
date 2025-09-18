@@ -17,6 +17,7 @@ use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
 use fnet_dhcp_ext::ClientExt;
 use futures::future::ready;
 use futures::{FutureExt, StreamExt, TryStreamExt, join};
+use net_declare::std_ip_v4;
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{
@@ -1085,7 +1086,6 @@ async fn inspect_with_lease_acquired() {
                         Entered: 0u64,
                     },
                     Selecting: {
-                        DuplicateOption: 0u64,
                         Entered: 1u64,
                         IllegallyIncludedOption: 0u64,
                         MissingRequiredOption: 0u64,
@@ -1105,7 +1105,6 @@ async fn inspect_with_lease_acquired() {
                         UnspecifiedYiaddr: 0u64,
                     },
                     Requesting: {
-                        DuplicateOption: 0u64,
                         Entered: 1u64,
                         IllegallyIncludedOption: 0u64,
                         MissingRequiredOption: 0u64,
@@ -1131,7 +1130,6 @@ async fn inspect_with_lease_acquired() {
                         Assigned: 0u64,
                     },
                     Renewing: {
-                        DuplicateOption: 0u64,
                         Entered: 0u64,
                         IllegallyIncludedOption: 0u64,
                         MissingRequiredOption: 0u64,
@@ -1153,7 +1151,6 @@ async fn inspect_with_lease_acquired() {
                         UnspecifiedYiaddr: 0u64,
                     },
                     Rebinding: {
-                        DuplicateOption: 0u64,
                         Entered: 0u64,
                         IllegallyIncludedOption: 0u64,
                         MissingRequiredOption: 0u64,
@@ -1218,6 +1215,229 @@ async fn inspect_with_lease_acquired() {
             }
         }
     });
+
+    let mut address_state_provider = address_state_provider.into_stream();
+    swallow_watch_address_assignment_state_request(&mut address_state_provider).await;
+    assert_client_shutdown(client, address_state_provider).await;
+}
+
+/// A regression test for https://fxbug.dev/445178160.
+///
+/// Verify that if the DHCP server sends the `Router` or `DomainNameServer`
+/// option multiple times, the client will merge the routers into a single
+/// cohesive list.
+///
+/// Because Fuchsia's DHCP server implementation disallows sending the same
+/// option multiple times, we instead impersonate a DHCP server by writing
+/// messages directly to the network.
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn client_gracefully_handles_duplicate_options<N: Netstack>(name: &str) {
+    let sandbox: netemul::TestSandbox = netemul::TestSandbox::new().unwrap();
+    let DhcpTestRealm { client_realm, client_iface, server_realm, server_iface, _network: _ } =
+        &create_test_realm::<N>(&sandbox, name).await;
+
+    const SERVER_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.1");
+    const CLIENT_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.2");
+    const PREFIX_LEN: u8 = 24;
+    const ROUTER1_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.3");
+    const ROUTER2_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.4");
+    const ROUTER3_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.5");
+
+    // We're going to drive the DHCP protocol ourselves, so don't start the DHCP
+    // server. Instead add the address and create a socket.
+    server_iface
+        .add_address_and_subnet_route(fnet::Subnet {
+            addr: fnet_ext::IpAddress(SERVER_ADDR.into()).into(),
+            prefix_len: PREFIX_LEN,
+        })
+        .await
+        .expect("add address should succeed");
+    let server_sock = fuchsia_async::net::UdpSocket::bind_in_realm(
+        &server_realm,
+        std::net::SocketAddr::new(
+            std::net::Ipv4Addr::UNSPECIFIED.into(),
+            dhcp_protocol::SERVER_PORT.get(),
+        ),
+    )
+    .await
+    .expect("failed to create server socket");
+
+    // NB: The real DHCP server uses packet sockets to avoid neighbor resolution,
+    // but for the purpose of the test it's far easier to add a static neighbor
+    // entry.
+    server_realm
+        .add_neighbor_entry(
+            server_iface.id(),
+            fnet_ext::IpAddress(CLIENT_ADDR.into()).into(),
+            fnet::MacAddress { octets: MAC.bytes() },
+        )
+        .await
+        .expect("failed to add static neighbor entry");
+
+    // Now, start the client.
+    let provider =
+        client_realm.connect_to_protocol::<ClientProviderMarker>().expect("connect should succeed");
+
+    let client = provider.new_client_ext(
+        client_iface.id().try_into().expect("should be nonzero"),
+        fnet_dhcp_ext::default_new_client_params(),
+    );
+
+    let config_stream = fnet_dhcp_ext::configuration_stream(client.clone()).fuse();
+    let mut config_stream = pin!(config_stream);
+
+    // Wait to observe the DHCPDISCOVER from the client.
+    let mut buf = vec![0; 1024];
+    let (len, _from) = server_sock.recv_from(&mut buf).await.expect("server receive failed");
+    let discover =
+        dhcp_protocol::Message::from_buffer(&buf[..len]).expect("failed to parse DHCP message");
+    assert_eq!(discover.get_dhcp_type(), Ok(dhcp_protocol::MessageType::DHCPDISCOVER));
+
+    // Send a DHCPOffer to the client.
+    let offer = dhcp_protocol::Message {
+        op: dhcp_protocol::OpCode::BOOTREPLY,
+        xid: discover.xid,
+        secs: 0,
+        bdcast_flag: false,
+        ciaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        yiaddr: CLIENT_ADDR,
+        siaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        giaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        chaddr: MAC,
+        sname: String::new(),
+        file: String::new(),
+        options: vec![
+            // NB: these options are required.
+            dhcp_protocol::DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPOFFER),
+            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_ADDR),
+            dhcp_protocol::DhcpOption::SubnetMask(
+                net_types::ip::PrefixLength::new(PREFIX_LEN).unwrap(),
+            ),
+        ],
+    };
+    let offer = offer.serialize();
+    let sent_len = server_sock
+        .send_to(
+            &offer,
+            std::net::SocketAddr::new(CLIENT_ADDR.into(), dhcp_protocol::CLIENT_PORT.get()),
+        )
+        .await
+        .expect("failed to send DHCPOFFER");
+    assert_eq!(sent_len, offer.len());
+
+    // Wait to see a DHCPREQUEST from the client
+    let (len, _from) = server_sock.recv_from(&mut buf).await.expect("server receive failed");
+    let request =
+        dhcp_protocol::Message::from_buffer(&buf[..len]).expect("failed to parse DHCP message");
+    assert_eq!(request.get_dhcp_type(), Ok(dhcp_protocol::MessageType::DHCPREQUEST));
+
+    // Send a DHCPACK to the client.
+    let ack = dhcp_protocol::Message {
+        op: dhcp_protocol::OpCode::BOOTREPLY,
+        xid: request.xid,
+        secs: 0,
+        bdcast_flag: false,
+        ciaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        yiaddr: CLIENT_ADDR,
+        siaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        giaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        chaddr: MAC,
+        sname: String::new(),
+        file: String::new(),
+        options: vec![
+            // NB: these options are required.
+            dhcp_protocol::DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPACK),
+            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_ADDR),
+            dhcp_protocol::DhcpOption::SubnetMask(
+                net_types::ip::PrefixLength::new(PREFIX_LEN).unwrap(),
+            ),
+            dhcp_protocol::DhcpOption::IpAddressLeaseTime(3600),
+            // Send two sets of routers that overlap.
+            dhcp_protocol::DhcpOption::Router(
+                dhcp_protocol::AtLeast::try_from(
+                    dhcp_protocol::AtMostBytes::try_from(vec![ROUTER1_ADDR, ROUTER2_ADDR]).unwrap(),
+                )
+                .unwrap(),
+            ),
+            dhcp_protocol::DhcpOption::Router(
+                dhcp_protocol::AtLeast::try_from(
+                    dhcp_protocol::AtMostBytes::try_from(vec![ROUTER2_ADDR, ROUTER3_ADDR]).unwrap(),
+                )
+                .unwrap(),
+            ),
+            // Send two sets of DNS servers that overlap.
+            dhcp_protocol::DhcpOption::DomainNameServer(
+                dhcp_protocol::AtLeast::try_from(
+                    dhcp_protocol::AtMostBytes::try_from(vec![ROUTER3_ADDR, ROUTER2_ADDR]).unwrap(),
+                )
+                .unwrap(),
+            ),
+            dhcp_protocol::DhcpOption::DomainNameServer(
+                dhcp_protocol::AtLeast::try_from(
+                    dhcp_protocol::AtMostBytes::try_from(vec![ROUTER2_ADDR, ROUTER1_ADDR]).unwrap(),
+                )
+                .unwrap(),
+            ),
+        ],
+    };
+    let ack = ack.serialize();
+    let sent_len = server_sock
+        .send_to(
+            &ack,
+            std::net::SocketAddr::new(CLIENT_ADDR.into(), dhcp_protocol::CLIENT_PORT.get()),
+        )
+        .await
+        .expect("failed to send DHCPACK");
+    assert_eq!(sent_len, ack.len());
+
+    // Expect the client to produce a configuration.
+    let fnet_dhcp_ext::Configuration { address, dns_servers, routers } = config_stream
+        .try_next()
+        .await
+        .expect("watch configuration should succeed")
+        .expect("configuration stream should not have ended");
+
+    // The client should have consolidated the two lists of DNS servers.
+    assert_eq!(
+        dns_servers,
+        vec![
+            fnet_ext::Ipv4Address(ROUTER3_ADDR).into(),
+            fnet_ext::Ipv4Address(ROUTER2_ADDR).into(),
+            fnet_ext::Ipv4Address(ROUTER1_ADDR).into(),
+        ]
+    );
+
+    // The client should have consolidated the two lists of routers.
+    assert_eq!(
+        routers,
+        vec![
+            net_types::SpecifiedAddr::new(ROUTER1_ADDR.into()).unwrap(),
+            net_types::SpecifiedAddr::new(ROUTER2_ADDR.into()).unwrap(),
+            net_types::SpecifiedAddr::new(ROUTER3_ADDR.into()).unwrap(),
+        ]
+    );
+
+    let fnet_dhcp_ext::Address { address, address_parameters, address_state_provider } =
+        address.expect("address should be present in response");
+    assert_eq!(
+        address,
+        fnet::Ipv4AddressWithPrefix {
+            addr: fnet_ext::Ipv4Address(CLIENT_ADDR).into(),
+            prefix_len: PREFIX_LEN
+        }
+    );
+    let fnet_interfaces_admin::AddressParameters {
+        add_subnet_route,
+        perform_dad,
+        temporary: _,
+        initial_properties: _,
+        __source_breaking,
+    } = address_parameters;
+    // DHCP addresses should be added with the corresponding subnet route.
+    assert_eq!(add_subnet_route, Some(true));
+    // DHCP addresses should have DAD performed before being assigned.
+    assert_eq!(perform_dad, Some(true));
 
     let mut address_state_provider = address_state_provider.into_stream();
     swallow_watch_address_assignment_state_request(&mut address_state_provider).await;

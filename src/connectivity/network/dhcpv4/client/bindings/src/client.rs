@@ -16,6 +16,7 @@ use fidl_fuchsia_net_dhcp::{
 use fidl_fuchsia_net_ext::IntoExt as _;
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt as _};
+use indexmap::IndexSet;
 use net_types::ip::{Ipv4, Ipv4Addr, PrefixLength};
 use net_types::{SpecifiedAddr, Witness as _};
 use rand::SeedableRng as _;
@@ -267,8 +268,10 @@ impl Client {
             interface_id: _,
         } = self;
 
-        let mut dns_servers: Option<Vec<_>> = None;
-        let mut routers: Option<Vec<_>> = None;
+        // Store the DNS Servers & Routers in an `IndexSet` to preserve
+        // insertion order & guarantee uniqueness.
+        let mut dns_servers: Option<IndexSet<_>> = None;
+        let mut routers: Option<IndexSet<_>> = None;
         let mut prefix_len: Option<PrefixLength<Ipv4>> = None;
         let mut unrequested_options = Vec::new();
 
@@ -281,16 +284,14 @@ impl Client {
                     }
                 }
                 dhcp_protocol::DhcpOption::DomainNameServer(list) => {
-                    let previous_dns_servers = dns_servers.replace(list.into());
-                    if let Some(prev) = previous_dns_servers {
-                        log::warn!("expected previous_dns_servers to be None, got {prev:?}");
-                    }
+                    // Note: The DomainNameServer option may occur multiple
+                    // times. Merge the options into a single list.
+                    dns_servers.get_or_insert_default().extend(list);
                 }
                 dhcp_protocol::DhcpOption::Router(list) => {
-                    let previous_routers = routers.replace(list.into());
-                    if let Some(prev) = previous_routers {
-                        log::warn!("expected previous_routers to be None, got {prev:?}");
-                    }
+                    // Note: The Router option may occur multiple times. Merge
+                    // the options into a single list.
+                    routers.get_or_insert_default().extend(list);
                 }
                 _ => {
                     unrequested_options.push(option);
@@ -385,8 +386,10 @@ impl Client {
             interface_id: _,
         } = self;
 
-        let mut dns_servers: Option<Vec<_>> = None;
-        let mut routers: Option<Vec<_>> = None;
+        // Store the DNS Servers & Routers in an `IndexSet` to preserve
+        // insertion order & guarantee uniqueness.
+        let mut dns_servers: Option<IndexSet<_>> = None;
+        let mut routers: Option<IndexSet<_>> = None;
         let mut unrequested_options = Vec::new();
 
         for option in parameters {
@@ -398,16 +401,14 @@ impl Client {
                     );
                 }
                 dhcp_protocol::DhcpOption::DomainNameServer(list) => {
-                    let prev = dns_servers.replace(list.into());
-                    if let Some(prev) = prev {
-                        log::warn!("expected prev_dns_servers to be None, got {prev:?}");
-                    }
+                    // Note: The DomainNameServer option may occur multiple
+                    // times. Merge the options into a single list.
+                    dns_servers.get_or_insert_default().extend(list);
                 }
                 dhcp_protocol::DhcpOption::Router(list) => {
-                    let prev = routers.replace(list.into());
-                    if let Some(prev) = prev {
-                        log::warn!("expected prev_routers to be None, got {prev:?}");
-                    }
+                    // Note: The Router option may occur multiple times. Merge
+                    // the options into a single list.
+                    routers.get_or_insert_default().extend(list);
                 }
                 option => {
                     unrequested_options.push(option);
@@ -730,6 +731,8 @@ struct HandledWatchConfigurationStep {
     response_to_return: Option<ClientWatchConfigurationResponse>,
 }
 
-fn into_fidl_list(list: Vec<std::net::Ipv4Addr>) -> Vec<fidl_fuchsia_net::Ipv4Address> {
+fn into_fidl_list(
+    list: impl IntoIterator<Item = std::net::Ipv4Addr>,
+) -> Vec<fidl_fuchsia_net::Ipv4Address> {
     list.into_iter().map(|addr| net_types::ip::Ipv4Addr::from(addr).into_ext()).collect()
 }

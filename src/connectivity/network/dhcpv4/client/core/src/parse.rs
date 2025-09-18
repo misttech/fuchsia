@@ -142,8 +142,6 @@ pub(crate) enum CommonIncomingMessageError {
     UnspecifiedServerIdentifier,
     #[error("missing: {0}")]
     BuilderMissingField(&'static str),
-    #[error("duplicate option: {0:?}")]
-    DuplicateOption(dhcp_protocol::OptionCode),
     #[error("option's inclusion violates protocol: {0:?}")]
     IllegallyIncludedOption(dhcp_protocol::OptionCode),
 }
@@ -167,9 +165,6 @@ pub(crate) struct CommonIncomingMessageErrorCounters {
     /// The parser was unable to populate a required field while consuming the
     /// message.
     pub(crate) parser_missing_field: Counter,
-    /// The incoming message was discarded due to providing duplicate
-    /// definitions of an option.
-    pub(crate) duplicate_option: Counter,
     /// The incoming message included an option that was illegal to include
     /// according to spec.
     pub(crate) illegally_included_option: Counter,
@@ -182,13 +177,11 @@ impl CommonIncomingMessageErrorCounters {
             not_boot_reply,
             unspecified_server_identifier,
             parser_missing_field,
-            duplicate_option,
             illegally_included_option,
         } = self;
         inspector.record_usize("NotBootReply", not_boot_reply.load());
         inspector.record_usize("UnspecifiedServerIdentifier", unspecified_server_identifier.load());
         inspector.record_usize("ParserMissingField", parser_missing_field.load());
-        inspector.record_usize("DuplicateOption", duplicate_option.load());
         inspector.record_usize("IllegallyIncludedOption", illegally_included_option.load());
     }
 
@@ -198,7 +191,6 @@ impl CommonIncomingMessageErrorCounters {
             not_boot_reply,
             unspecified_server_identifier,
             parser_missing_field,
-            duplicate_option,
             illegally_included_option,
         } = self;
         match error {
@@ -207,7 +199,6 @@ impl CommonIncomingMessageErrorCounters {
                 unspecified_server_identifier.increment()
             }
             CommonIncomingMessageError::BuilderMissingField(_) => parser_missing_field.increment(),
-            CommonIncomingMessageError::DuplicateOption(_) => duplicate_option.increment(),
             CommonIncomingMessageError::IllegallyIncludedOption(_) => {
                 illegally_included_option.increment()
             }
@@ -402,9 +393,15 @@ fn collect_common_fields<T: Copy>(
     builder.yiaddr(yiaddr);
 
     for option in options {
-        let newly_seen = builder.add_seen_option_and_return_whether_newly_added(option.code());
-        if !newly_seen {
-            return Err(CommonIncomingMessageError::DuplicateOption(option.code()));
+        let code = option.code();
+        let newly_seen = builder.add_seen_option_and_return_whether_newly_added(code);
+        if !newly_seen && !option_can_be_duplicated(code) {
+            // Adhere to a principle of maximum conformance: ignore options
+            // that the server unexpectedly repeated rather than rejecting the
+            // message entirely. Should the multiple instance of this option
+            // have different values, we'll use the first instance's value.
+            log::warn!("DHCP option {code} was unexpectedly repeated: {option:?}");
+            continue;
         }
 
         // From RFC 2131 section 4.3.1:
@@ -531,6 +528,95 @@ fn collect_common_fields<T: Copy>(
         }
     }
     builder.build()
+}
+
+/// Returns whether the option is allowed to be specified multiple times.
+///
+/// Note: The DHCP RFC doesn't take a stance on whether options may or may not
+/// be repeated. We take a pragmatic approach and allow options to be repeated
+/// where appropriate (e.g. options that have list semantics). Repeats are
+/// rejected on options for which they are nonsensical (e.g. the
+/// DhcpMessageType).
+fn option_can_be_duplicated(code: dhcp_protocol::OptionCode) -> bool {
+    use dhcp_protocol::OptionCode::*;
+    match code {
+        SubnetMask
+        | TimeOffset
+        | HostName
+        | BootFileSize
+        | MeritDumpFile
+        | DomainName
+        | SwapServer
+        | RootPath
+        | ExtensionsPath
+        | IpForwarding
+        | NonLocalSourceRouting
+        | MaxDatagramReassemblySize
+        | DefaultIpTtl
+        | PathMtuAgingTimeout
+        | InterfaceMtu
+        | AllSubnetsLocal
+        | BroadcastAddress
+        | PerformMaskDiscovery
+        | MaskSupplier
+        | PerformRouterDiscovery
+        | RouterSolicitationAddress
+        | TrailerEncapsulation
+        | ArpCacheTimeout
+        | EthernetEncapsulation
+        | TcpDefaultTtl
+        | TcpKeepaliveInterval
+        | TcpKeepaliveGarbage
+        | NetworkInformationServiceDomain
+        | NetBiosOverTcpipNodeType
+        | NetBiosOverTcpipScope
+        | RequestedIpAddress
+        | IpAddressLeaseTime
+        | OptionOverload
+        | DhcpMessageType
+        | ServerIdentifier
+        | Message
+        | MaxDhcpMessageSize
+        | RenewalTimeValue
+        | RebindingTimeValue
+        | VendorClassIdentifier
+        | ClientIdentifier
+        | NetworkInformationServicePlusDomain
+        | TftpServerName
+        | BootfileName
+        | End => false,
+        Pad
+        | Router
+        | TimeServer
+        | NameServer
+        | DomainNameServer
+        | LogServer
+        | CookieServer
+        | LprServer
+        | ImpressServer
+        | ResourceLocationServer
+        | PolicyFilter
+        | PathMtuPlateauTable
+        | StaticRoute
+        | NetworkInformationServers
+        | NetworkTimeProtocolServers
+        | VendorSpecificInformation
+        | NetBiosOverTcpipNameServer
+        | NetBiosOverTcpipDatagramDistributionServer
+        | XWindowSystemFontServer
+        | XWindowSystemDisplayManager
+        | NetworkInformationServicePlusServers
+        | MobileIpHomeAgent
+        | SmtpServer
+        | Pop3Server
+        | NntpServer
+        | DefaultWwwServer
+        | DefaultFingerServer
+        | DefaultIrcServer
+        | StreetTalkServer
+        | StreetTalkDirectoryAssistanceServer
+        | ParameterRequestList => true,
+    }
 }
 
 /// Reasons that an incoming DHCP message might be discarded during Selecting
@@ -771,6 +857,7 @@ pub(crate) struct FieldsToRetainFromAck<ServerIdentifier> {
     pub(crate) ip_address_lease_time_secs: NonZeroU32,
     pub(crate) renewal_time_value_secs: Option<u32>,
     pub(crate) rebinding_time_value_secs: Option<u32>,
+    // Note: Options with list semantics may be repeated.
     pub(crate) parameters: Vec<dhcp_protocol::DhcpOption>,
 }
 
@@ -1133,11 +1220,15 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: true,
-    } => Err(SelectingIncomingMessageError::CommonError(
-        CommonIncomingMessageError::DuplicateOption(
-            dhcp_protocol::OptionCode::DomainName,
-        ),
-    )); "rejects offer with duplicate DHCP option")]
+    } => Ok(FieldsFromOfferToUseInRequest {
+        server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
+            .try_into()
+            .expect("should be specified"),
+        ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
+        ip_address_to_request: net_types::ip::Ipv4Addr::from(YIADDR)
+            .try_into()
+            .expect("should be specified"),
+    }); "accepts good offer with duplicate options")]
     fn fields_from_offer_to_use_in_request(
         offer_fields: VaryingOfferFields,
     ) -> Result<FieldsFromOfferToUseInRequest, SelectingIncomingMessageError> {
@@ -1430,21 +1521,33 @@ mod test {
         CommonIncomingMessageError::BuilderMissingField("message_type"),
     )) ; "rejects missing DHCP message type")]
     #[test_case( VaryingReplyToRequestFields {
-        op: dhcp_protocol::OpCode::BOOTREPLY,
-        yiaddr: YIADDR,
-        message_type: Some(dhcp_protocol::MessageType::DHCPACK),
-        server_identifier: Some(SERVER_IP),
-        subnet_mask: Some(TEST_SUBNET_MASK),
-        lease_length_secs: Some(LEASE_LENGTH_SECS),
-        renewal_time_secs: Some(RENEWAL_TIME_SECS),
-        rebinding_time_secs: Some(REBINDING_TIME_SECS),
-        message: None,
-        include_duplicate_option: true,
-    } => Err(IncomingResponseToRequestError::CommonError(
-        CommonIncomingMessageError::DuplicateOption(
-            dhcp_protocol::OptionCode::DomainName,
-        ),
-    )); "rejects duplicate option")]
+            op: dhcp_protocol::OpCode::BOOTREPLY,
+            yiaddr: YIADDR,
+            message_type: Some(dhcp_protocol::MessageType::DHCPACK),
+            server_identifier: Some(SERVER_IP),
+            subnet_mask: Some(TEST_SUBNET_MASK),
+            lease_length_secs: Some(LEASE_LENGTH_SECS),
+            renewal_time_secs: Some(RENEWAL_TIME_SECS),
+            rebinding_time_secs: Some(REBINDING_TIME_SECS),
+            message: None,
+            include_duplicate_option: true,
+        } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: Some(
+                net_types::ip::Ipv4Addr::from(SERVER_IP)
+                    .try_into()
+                    .expect("should be specified"),
+            ),
+            ip_address_lease_time_secs: LEASE_LENGTH_SECS_NONZERO,
+            parameters: vec![
+                dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
+                dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())
+            ],
+            renewal_time_value_secs: Some(RENEWAL_TIME_SECS),
+            rebinding_time_value_secs: Some(REBINDING_TIME_SECS),
+        })); "accepts good DHCPACK with duplicate option")]
     fn fields_to_retain_during_requesting(
         incoming_fields: VaryingReplyToRequestFields,
     ) -> Result<
