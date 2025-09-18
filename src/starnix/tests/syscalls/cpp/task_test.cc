@@ -317,7 +317,7 @@ TEST(Task, Clone3_PidFd) {
   ca.pidfd = reinterpret_cast<uint64_t>(pid_fd.reset_and_get_address());
 
   auto child_pid = ForkUsingClone3(&ca, sizeof(ca));
-  ASSERT_NE(child_pid, -1);
+  ASSERT_NE(child_pid, -1) << strerror(errno);
   if (child_pid == 0) {
     exit(kChildExpectedExitCode);
   } else {
@@ -326,8 +326,45 @@ TEST(Task, Clone3_PidFd) {
     // Wait for the child to terminate.
     int wait_status = 0;
     pid_t wait_result = waitpid(child_pid, &wait_status, 0);
-    EXPECT_EQ(wait_result, child_pid);
+    EXPECT_EQ(wait_result, child_pid) << strerror(errno);
   }
+}
+
+static int ClonePidFdFunctionExit(void*) { exit(kChildExpectedExitCode); }
+
+// Forks a child process using the "clone()" syscall and requests a PID-FD for it.
+TEST(Task, Clone_PidFd) {
+  constexpr size_t kStackSize = 1024 * 16;
+  void* stack_low = mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+  ASSERT_NE(stack_low, MAP_FAILED);
+  void* stack_high = static_cast<char*>(stack_low) + kStackSize;  // Pass in the top of the stack.
+
+  fbl::unique_fd pid_fd;
+  auto child_pid = clone(&ClonePidFdFunctionExit, stack_high, SIGCHLD | CLONE_PIDFD,
+                         /*arg=*/nullptr, pid_fd.reset_and_get_address());
+  ASSERT_NE(child_pid, -1) << strerror(errno);
+  EXPECT_TRUE(pid_fd.is_valid());
+
+  // Wait for the child to terminate.
+  int wait_status = 0;
+  pid_t wait_result = waitpid(child_pid, &wait_status, 0);
+  EXPECT_EQ(wait_result, child_pid) << strerror(errno);
+}
+
+// Forks a child process using the "clone()" syscall and requests both PID-FD and parent TID.
+TEST(Task, Clone_PidFdAndParentTid) {
+  constexpr size_t kStackSize = 1024 * 16;
+  void* stack_low = mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+  ASSERT_NE(stack_low, MAP_FAILED);
+  void* stack_high = static_cast<char*>(stack_low) + kStackSize;  // Pass in the top of the stack.
+
+  uintptr_t out_arg{};
+  auto child_pid =
+      clone(&ClonePidFdFunctionExit, stack_high, SIGCHLD | CLONE_PIDFD | CLONE_PARENT_SETTID,
+            /*arg=*/nullptr, &out_arg);
+  EXPECT_EQ(child_pid, -1);
 }
 
 TEST(Task, Clone3_InvalidSize) {

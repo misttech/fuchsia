@@ -105,7 +105,9 @@ pub fn do_clone(
         child_exit_signal,
         UserRef::<pid_t>::new(UserAddress::from(args.parent_tid)),
         UserRef::<pid_t>::new(UserAddress::from(args.child_tid)),
+        UserRef::<FdNumber>::new(UserAddress::from(args.pidfd)),
     )?;
+
     // Set the result register to 0 for the return value from clone in the
     // cloned process.
     new_task.thread_state.registers.set_return_register(0);
@@ -120,6 +122,7 @@ pub fn do_clone(
             .registers
             .set_stack_pointer_register(args.stack.wrapping_add(args.stack_size));
     }
+
     if args.flags & (CLONE_SETTLS as u64) != 0 {
         new_task.thread_state.registers.set_thread_pointer_register(args.tls);
     }
@@ -134,6 +137,7 @@ pub fn do_clone(
         current_task.wait_for_execve(task_ref)?;
         current_task.ptrace_event(locked, PtraceOptions::TRACEVFORKDONE, tid as u64);
     }
+
     Ok(tid)
 }
 

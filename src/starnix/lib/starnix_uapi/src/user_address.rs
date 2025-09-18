@@ -244,7 +244,7 @@ impl From<UserAddress32> for UserAddress {
     }
 }
 
-#[derive(Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct UserRef<T> {
     addr: UserAddress,
@@ -283,6 +283,12 @@ impl<T> Clone for UserRef<T> {
 }
 
 impl<T> Copy for UserRef<T> {}
+
+impl<T> Default for UserRef<T> {
+    fn default() -> Self {
+        Self::new(UserAddress::default())
+    }
+}
 
 impl<T> From<UserAddress> for UserRef<T> {
     fn from(user_address: UserAddress) -> Self {

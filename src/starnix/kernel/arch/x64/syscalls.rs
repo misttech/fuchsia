@@ -126,6 +126,7 @@ pub fn sys_clone(
             flags: flags & !(CSIGNAL as u64),
             child_tid: user_child_tid.addr().ptr() as u64,
             parent_tid: user_parent_tid.addr().ptr() as u64,
+            pidfd: user_parent_tid.addr().ptr() as u64,
             exit_signal: flags & (CSIGNAL as u64),
             stack: user_stack.ptr() as u64,
             tls: user_tls.ptr() as u64,

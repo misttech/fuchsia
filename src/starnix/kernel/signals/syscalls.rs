@@ -1875,7 +1875,14 @@ mod tests {
         let (_kernel, task, locked) = create_kernel_task_and_unlocked();
 
         let child = task
-            .clone_task(locked, 0, Some(SIGCHLD), UserRef::default(), UserRef::default())
+            .clone_task(
+                locked,
+                0,
+                Some(SIGCHLD),
+                UserRef::default(),
+                UserRef::default(),
+                UserRef::default(),
+            )
             .expect("clone_task");
 
         // No child is currently terminated.

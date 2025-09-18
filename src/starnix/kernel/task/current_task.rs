@@ -15,11 +15,12 @@ use crate::task::{
     StopState, Task, TaskFlags, Waiter,
 };
 use crate::vfs::{
-    CheckAccessReason, FdNumber, FileHandle, FsStr, LookupContext, MAX_SYMLINK_FOLLOWS,
-    NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget,
+    CheckAccessReason, FdFlags, FdNumber, FileHandle, FsStr, LookupContext, MAX_SYMLINK_FOLLOWS,
+    NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use extended_pstate::ExtendedPstateState;
 use fuchsia_inspect_contrib::profile_duration;
+use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, set_zx_name, track_file_not_found, track_stub};
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
@@ -1458,8 +1459,10 @@ impl CurrentTask {
         child_exit_signal: Option<Signal>,
         user_parent_tid: UserRef<pid_t>,
         user_child_tid: UserRef<pid_t>,
+        user_pidfd: UserRef<FdNumber>,
     ) -> Result<TaskBuilder, Errno>
     where
+        L: LockEqualOrBefore<FileOpsCore>,
         L: LockBefore<MmDumpable>,
         L: LockBefore<TaskRelease>,
         L: LockBefore<ProcessGroupState>,
@@ -1473,6 +1476,7 @@ impl CurrentTask {
             | CLONE_SETTLS
             | CLONE_PARENT
             | CLONE_PARENT_SETTID
+            | CLONE_PIDFD
             | CLONE_CHILD_CLEARTID
             | CLONE_CHILD_SETTID
             | CLONE_VFORK
@@ -1491,6 +1495,7 @@ impl CurrentTask {
         let clone_fs = flags & (CLONE_FS as u64) != 0;
         let clone_parent = flags & (CLONE_PARENT as u64) != 0;
         let clone_parent_settid = flags & (CLONE_PARENT_SETTID as u64) != 0;
+        let clone_pidfd = flags & (CLONE_PIDFD as u64) != 0;
         let clone_child_cleartid = flags & (CLONE_CHILD_CLEARTID as u64) != 0;
         let clone_child_settid = flags & (CLONE_CHILD_SETTID as u64) != 0;
         let clone_sysvsem = flags & (CLONE_SYSVSEM as u64) != 0;
@@ -1520,6 +1525,16 @@ impl CurrentTask {
         if clone_thread && !clone_sighand {
             return error!(EINVAL);
         }
+
+        if clone_pidfd && clone_thread {
+            return error!(EINVAL);
+        }
+        if clone_pidfd && clone_parent_settid && user_parent_tid.addr() == user_pidfd.addr() {
+            // `clone()` uses the same out-argument for these, so error out if they have the same
+            // user address.
+            return error!(EINVAL);
+        }
+
         if flags & !VALID_FLAGS != 0 {
             return error!(EINVAL);
         }
@@ -1746,6 +1761,12 @@ impl CurrentTask {
                 child.write_object(user_child_tid, &child.tid)?;
             }
 
+            if clone_pidfd {
+                let file = new_pidfd(locked, self, child.thread_group(), OpenFlags::empty());
+                let pidfd = self.add_file(locked, file, FdFlags::CLOEXEC)?;
+                self.write_object(user_pidfd, &pidfd)?;
+            }
+
             // TODO(https://fxbug.dev/42066087): We do not support running different processes with
             // the same MemoryManager. Instead, we implement a rough approximation of that behavior
             // by making a copy-on-write clone of the memory from the original process.
@@ -1756,6 +1777,7 @@ impl CurrentTask {
             child.thread_state = self.thread_state.snapshot();
             Ok(())
         });
+
         // Take the lock on thread group and task in the correct order to ensure any wrong ordering
         // will trigger the tracing-mutex at the right call site.
         #[cfg(any(test, debug_assertions))]
@@ -1936,12 +1958,20 @@ impl CurrentTask {
         exit_signal: Option<Signal>,
     ) -> crate::testing::AutoReleasableTask
     where
+        L: LockEqualOrBefore<FileOpsCore>,
         L: LockBefore<MmDumpable>,
         L: LockBefore<TaskRelease>,
         L: LockBefore<ProcessGroupState>,
     {
         let result = self
-            .clone_task(locked, flags, exit_signal, UserRef::default(), UserRef::default())
+            .clone_task(
+                locked,
+                flags,
+                exit_signal,
+                UserRef::default(),
+                UserRef::default(),
+                UserRef::default(),
+            )
             .expect("failed to create task in test");
 
         result.into()
