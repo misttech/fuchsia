@@ -29,6 +29,7 @@ use termion::{color, style};
 
 mod direct;
 mod process;
+mod progress_reader;
 use process::*;
 
 // LineWaiter abstracts waiting for the user to press enter.  It is needed

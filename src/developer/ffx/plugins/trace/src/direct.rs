@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::progress_reader::ProgressReader;
 use crate::{SessionManagerProxyType, TraceData};
 use anyhow::Result;
 use async_fs::File;
@@ -79,34 +80,17 @@ pub(crate) async fn stop_tracing(
             stop_result: task.stop_and_receive_data(output).await.map_err(|e| bug!(e))?,
         })
     } else {
-        let mut output = File::create(&output_file)
-            .await
-            .map_err(|e| bug!("Could not create output file: {e}"))?;
         let (client, server) = fidl::Socket::create_stream();
         let client = fidl::AsyncSocket::from_socket(client);
 
         if let SessionManagerProxyType::SessionManager(session_mgr_proxy) = trace_proxy {
-            let join_result = futures::try_join!(
-                async {
-                    log::info!("Starting local copy to {output_file}.");
-                    let r = futures::io::copy(client, &mut output)
-                        .await
-                        .map_err(Into::<anyhow::Error>::into);
-                    log::info!("Copy done");
-                    r
-                },
-                async {
-                    log::info!("Calling end_session.");
-                    // Always pass 0 for the session id, multiple sessions are not supported (yet).
-                    let r =
-                        session_mgr_proxy.end_trace_session(0, server).await.map_err(Into::into);
-                    if r.as_ref().ok().map(|r| r.is_ok()).unwrap_or(false) {
-                        eprintln!("Writing to {output_file}.");
-                    }
-                    log::debug!("Done.");
-                    r
-                }
-            );
+            let join_result = futures::try_join!(download_trace(client, output_file), async {
+                log::info!("Calling end_session.");
+                // Always pass 0 for the session id, multiple sessions are not supported (yet).
+                let r = session_mgr_proxy.end_trace_session(0, server).await.map_err(Into::into);
+                log::debug!("Done.");
+                r
+            });
             match join_result {
                 Ok((copy_res, end_res)) => {
                     log::debug!("Copy res is {copy_res:?}");
@@ -132,4 +116,32 @@ pub(crate) async fn stop_tracing(
             return_bug!("Unexpected state with no TraceTask, and no SessionManager?");
         }
     }
+}
+
+async fn download_trace(
+    read_socket: fidl::AsyncSocket,
+    output_file: &str,
+) -> Result<u64, anyhow::Error> {
+    let mut output =
+        File::create(&output_file).await.map_err(|e| bug!("Could not create output file: {e}"))?;
+    use futures::io;
+    use std::time::Instant;
+    log::info!("Starting local copy to {output_file}.");
+    let start_time = Instant::now();
+    let mut progress_reader = ProgressReader::new(read_socket);
+    let result = io::copy(&mut progress_reader, &mut output).await;
+
+    if let Ok(bytes) = &result {
+        let duration = start_time.elapsed();
+        let kbytes = *bytes / 1024;
+
+        let rate =
+            if duration.as_secs_f64() > 0. { kbytes as f64 / duration.as_secs_f64() } else { 0.0 };
+        progress_reader.status_update(
+            format!("Total size: {kbytes}kB, Duration: {duration:?}, Rate: {rate:.2} kB/s"),
+            true,
+        );
+    }
+    log::info!("Copy done");
+    result.map_err(Into::into)
 }

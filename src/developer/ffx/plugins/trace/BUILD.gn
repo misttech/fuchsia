@@ -19,6 +19,7 @@ ffx_plugin("ffx_trace") {
     "src/direct.rs",
     "src/lib.rs",
     "src/process.rs",
+    "src/progress_reader.rs",
   ]
 
   deps = [
