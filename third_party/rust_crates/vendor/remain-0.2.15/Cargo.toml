@@ -13,10 +13,11 @@
 edition = "2021"
 rust-version = "1.56"
 name = "remain"
-version = "0.2.14"
+version = "0.2.15"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 build = false
 exclude = ["build.rs"]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -33,7 +34,13 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/remain"
 
 [package.metadata.docs.rs]
-rustdoc-args = ["--generate-link-to-definition"]
+rustdoc-args = [
+    "--generate-link-to-definition",
+    "--extern-html-root-url=core=https://doc.rust-lang.org",
+    "--extern-html-root-url=alloc=https://doc.rust-lang.org",
+    "--extern-html-root-url=std=https://doc.rust-lang.org",
+    "--extern-html-root-url=proc_macro=https://doc.rust-lang.org",
+]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
@@ -42,16 +49,16 @@ path = "src/lib.rs"
 proc-macro = true
 
 [[test]]
-name = "stable"
-path = "tests/stable.rs"
+name = "compiletest"
+path = "tests/compiletest.rs"
 
 [[test]]
 name = "order"
 path = "tests/order.rs"
 
 [[test]]
-name = "compiletest"
-path = "tests/compiletest.rs"
+name = "stable"
+path = "tests/stable.rs"
 
 [[test]]
 name = "unstable"

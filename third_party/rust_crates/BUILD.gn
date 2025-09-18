@@ -14643,18 +14643,18 @@ rustc_library("regex-syntax-v0_8_5") {
   applicable_licenses = [ ":regex-syntax-v0_8_5.license" ]
 }
 
-license("remain-v0_2_14.license") {
+license("remain-v0_2_15.license") {
   public_package_name = "remain"
   license_files = [
-    "//third_party/rust_crates/vendor/remain-0.2.14/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/remain-0.2.14/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/remain-0.2.15/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/remain-0.2.15/LICENSE-MIT",
   ]
 }
 
-rustc_macro("remain-v0_2_14") {
+rustc_macro("remain-v0_2_15") {
   crate_name = "remain"
-  source_root = "//third_party/rust_crates/vendor/remain-0.2.14/src/lib.rs"
-  output_name = "remain-dd228906dd64ef77"
+  source_root = "//third_party/rust_crates/vendor/remain-0.2.15/src/lib.rs"
+  output_name = "remain-a5d825dde561d130"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -14669,13 +14669,13 @@ rustc_macro("remain-v0_2_14") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dd228906dd64ef77",
-    "-Cextra-filename=-dd228906dd64ef77",
+    "-Cmetadata=a5d825dde561d130",
+    "-Cextra-filename=-a5d825dde561d130",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":remain-v0_2_14.license" ]
+  applicable_licenses = [ ":remain-v0_2_15.license" ]
 }
 
 license("remove_dir_all-v0_5_3.license") {
@@ -15666,7 +15666,7 @@ rustc_library("rutabaga_gfx-v0_1_3") {
   deps += [ ":cfg-if-v1_0_0" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":log-v0_4_27" ]
-  deps += [ ":remain-v0_2_14($host_toolchain)" ]
+  deps += [ ":remain-v0_2_15($host_toolchain)" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":zerocopy-v0_7_35" ]
   if (false || current_os == "linux") {
