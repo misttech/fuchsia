@@ -386,8 +386,12 @@ class MoonflowerAbrClient : public abr::Client {
     if (transaction_.is_valid()) {
       fidl::WireResult result = partitions_manager_->CommitTransaction(std::move(transaction_));
       if (!result.ok()) {
-        ERROR("Failed to commit transaction: %s\n", result.status_string());
+        ERROR("Failed to commit transaction: %s\n", result.FormatDescription().c_str());
         return zx::error(result.status());
+      }
+      if (result->is_error()) {
+        ERROR("Failed to commit transaction: %s\n", zx_status_get_string(result->error_value()));
+        return zx::error(result->error_value());
       }
     }
     Discard();
@@ -437,15 +441,24 @@ class MoonflowerAbrClient : public abr::Client {
       ERROR("Failed to update metadata: %s\n", result.status_string());
       return zx::error(result.status());
     }
+    if (result->is_error()) {
+      ERROR("Failed to update metadata: %s\n", zx_status_get_string(result->error_value()));
+      return zx::error(result->error_value());
+    }
     return zx::ok();
   }
 
   zx::result<zx::eventpair> GetTransactionToken() {
     if (!transaction_.is_valid()) {
       fidl::WireResult result = partitions_manager_->CreateTransaction();
-      if (result->is_error()) {
+      if (!result.ok()) {
         ERROR("Failed to create A/B transaction: %s\n", zx_status_get_string(result.status()));
         return zx::error(result.status());
+      }
+      if (result->is_error()) {
+        ERROR("Failed to create A/B transaction: %s\n",
+              zx_status_get_string(result->error_value()));
+        return zx::error(result->error_value());
       }
       transaction_ = std::move(result->value()->transaction);
     }
