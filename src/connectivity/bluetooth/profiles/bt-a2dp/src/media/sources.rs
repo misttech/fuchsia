@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_media::{AudioDeviceEnumeratorMarker, PcmFormat};
 use fuchsia_audio_device::stream_config::SoftStreamConfig;
-use fuchsia_bluetooth::types::{peer_audio_stream_id, PeerId, Uuid};
+use fuchsia_bluetooth::types::{PeerId, Uuid, peer_audio_stream_id};
 use fuchsia_inspect_derive::Inspect;
 
+use futures::FutureExt;
 use futures::stream::{BoxStream, FusedStream};
 use futures::task::{Context, Poll};
-use futures::FutureExt;
 use std::pin::Pin;
 use {fidl_fuchsia_bluetooth_bredr as bredr, fuchsia_async as fasync, fuchsia_inspect as inspect};
 
@@ -107,7 +107,7 @@ impl BigBenStreamBuilder {
 struct AudioOutStream {}
 
 const LOCAL_MONOTONIC_CLOCK_DOMAIN: u32 = 0;
-const AUDIO_SOURCE_UUID: Uuid =
+pub const AUDIO_SOURCE_UUID: Uuid =
     Uuid::new16(bredr::ServiceClassProfileIdentifier::AudioSource.into_primitive());
 
 impl AudioOutStream {
@@ -139,6 +139,7 @@ impl AudioOutStream {
 pub enum AudioSourceType {
     AudioOut,
     BigBen,
+    Offload,
 }
 
 impl core::fmt::Display for AudioSourceType {
@@ -149,6 +150,7 @@ impl core::fmt::Display for AudioSourceType {
             match self {
                 AudioSourceType::AudioOut => "audio_out",
                 AudioSourceType::BigBen => "big_ben",
+                AudioSourceType::Offload => "offload",
             }
         )
     }
@@ -160,7 +162,10 @@ impl std::str::FromStr for AudioSourceType {
         match s {
             "audio_out" => Ok(AudioSourceType::AudioOut),
             "big_ben" => Ok(AudioSourceType::BigBen),
-            _ => Err(format_err!("Unrecognized audio source, use audio_out or big_ben")),
+            "offload" => Ok(AudioSourceType::Offload),
+            _ => Err(format_err!(
+                "Unrecognized audio source '{s}', use audio_out, big_ben, or offload"
+            )),
         }
     }
 }
@@ -196,6 +201,9 @@ impl AudioSourceType {
                 let mut stream = builder.build(peer_id, pcm_format, external_delay)?;
                 let _ = stream.iattach(inspect_parent, "audio_source");
                 Ok(Box::pin(stream))
+            }
+            &AudioSourceType::Offload => {
+                Err(format_err!("Offload can't build an on-device stream"))
             }
         }
     }

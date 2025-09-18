@@ -10,6 +10,7 @@ rustc_library("bt-avdtp") {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
     "//sdk/rust/zx",
     "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
     "//src/connectivity/bluetooth/lib/packet-encoding",
@@ -25,7 +26,6 @@ rustc_library("bt-avdtp") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
-    "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:assert_matches",
   ]

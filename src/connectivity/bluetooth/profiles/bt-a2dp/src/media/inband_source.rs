@@ -46,7 +46,7 @@ fn build_sbc_source() -> MediaCodecConfig {
         SbcSubBands::MANDATORY_SRC,
         SbcAllocation::MANDATORY_SRC,
         SbcCodecInfo::BITPOOL_MIN,
-        51, // Recommended bitpool value for 48khz Joint Stereo High Quality acccording to A2DP 1.4 Table 4.7
+        51, // Recommended bitpool value for 48khz Joint Stereo High Quality according to A2DP 1.4 Table 4.7
     )
     .unwrap();
 

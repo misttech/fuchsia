@@ -39,19 +39,24 @@
         {
             protocol: [
                 "fuchsia.bluetooth.bredr.Profile",
-                "fuchsia.mediacodec.CodecFactory",
                 "fuchsia.metrics.MetricEventLoggerFactory",
             ],
         },
         {
             protocol: [
+                // Used for offload source
+                "fuchsia.audio.device.Provider",
+
                 // Used if sink is enabled
                 "fuchsia.bluetooth.avrcp.PeerManager",
 
-                // Used if source is enabled
+                // Used for AudioOut source
                 "fuchsia.media.AudioDeviceEnumerator",
                 "fuchsia.media.SessionAudioConsumerFactory",
                 "fuchsia.media.sessions2.Publisher",
+
+                // Used for AudioOut or BigBen source (inband encoding)
+                "fuchsia.mediacodec.CodecFactory",
                 "fuchsia.power.battery.BatteryManager",
                 "fuchsia.settings.Audio",
                 "fuchsia.sysmem.Allocator",

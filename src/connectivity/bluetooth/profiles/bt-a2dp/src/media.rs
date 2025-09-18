@@ -10,6 +10,7 @@
 //!
 
 pub mod inband_source;
+pub mod offload_source;
 
 pub mod player_sink;
 

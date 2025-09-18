@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_bluetooth_bredr::AudioOffloadExtProxy;
 use fuchsia_async::{DurationExt, Task, TimeoutExt};
 use fuchsia_bluetooth::types::{A2dpDirection, Channel};
 use fuchsia_sync::Mutex;
 use futures::stream::{FusedStream, Stream};
-use futures::{io, FutureExt};
+use futures::{FutureExt, io};
 use log::warn;
 use std::fmt;
 use std::pin::Pin;
@@ -435,6 +436,11 @@ impl StreamEndpoint {
             Arc::downgrade(self.transport.as_ref().unwrap()),
         ))
     }
+
+    /// Get an AudioOffloadExtProxy if it exists in the transport channel
+    pub fn audio_offload(&self) -> Option<AudioOffloadExtProxy> {
+        self.transport.as_ref().and_then(|c| c.read().unwrap().audio_offload())
+    }
 }
 
 /// Represents a media transport stream.
@@ -515,7 +521,10 @@ impl io::AsyncWrite for MediaStream {
         };
         let lock = match arc_chan.try_write() {
             Err(_) => {
-                return Poll::Ready(Err(io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock")))
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "couldn't lock",
+                )));
             }
             Ok(lock) => lock,
         };
@@ -530,7 +539,10 @@ impl io::AsyncWrite for MediaStream {
         };
         let lock = match arc_chan.try_write() {
             Err(_) => {
-                return Poll::Ready(Err(io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock")))
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "couldn't lock",
+                )));
             }
             Ok(lock) => lock,
         };
@@ -545,7 +557,10 @@ impl io::AsyncWrite for MediaStream {
         };
         let lock = match arc_chan.try_write() {
             Err(_) => {
-                return Poll::Ready(Err(io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock")))
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "couldn't lock",
+                )));
             }
             Ok(lock) => lock,
         };
@@ -557,8 +572,8 @@ impl io::AsyncWrite for MediaStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{expect_remote_recv, setup_peer};
     use crate::Request;
+    use crate::tests::{expect_remote_recv, setup_peer};
 
     use assert_matches::assert_matches;
     use fidl::endpoints::create_request_stream;

@@ -62,5 +62,11 @@
             to: "#bt-a2dp",
             source_availability: "unknown",
         },
+        {
+            protocol: "fuchsia.audio.device.Provider",
+            from: "#audio_device_registry",
+            to: "#bt-a2dp",
+            source_availability: "unknown",
+        },
     ],
 }

@@ -207,7 +207,8 @@ impl Stream {
         };
         let transport = self.endpoint.take_transport().ok_or(ErrorCode::BadState)?;
         let _ = self.endpoint.start()?;
-        let mut task = match self.media_runner_ref()?.start(transport, None) {
+        let offload = self.endpoint.audio_offload();
+        let mut task = match self.media_runner_ref()?.start(transport, offload) {
             Ok(media_task) => media_task,
             Err(_e) => {
                 let _ = self.endpoint.suspend()?;

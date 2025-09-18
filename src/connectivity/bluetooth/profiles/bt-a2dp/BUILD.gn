@@ -7,12 +7,14 @@ import("//build/rust/rustc_binary.gni")
 
 shared_deps = [
   ":a2dp_profile_config",
+  "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
   "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
   "//sdk/fidl/fuchsia.bluetooth.a2dp:fuchsia.bluetooth.a2dp_rust",
   "//sdk/fidl/fuchsia.bluetooth.avrcp:fuchsia.bluetooth.avrcp_rust",
   "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
   "//sdk/fidl/fuchsia.bluetooth.internal.a2dp:fuchsia.bluetooth.internal.a2dp_rust",
   "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+  "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
   "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
   "//sdk/fidl/fuchsia.media.sessions2:fuchsia.media.sessions2_rust",
   "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
@@ -55,6 +57,7 @@ shared_sources = [
   "src/main.rs",
   "src/media.rs",
   "src/media/inband_source.rs",
+  "src/media/offload_source.rs",
   "src/media/player.rs",
   "src/media/player_sink.rs",
   "src/media/sources.rs",

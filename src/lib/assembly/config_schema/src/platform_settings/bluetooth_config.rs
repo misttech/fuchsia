@@ -127,6 +127,12 @@ pub enum A2dpSourceType {
     /// Audio will be encoded in-band similar to the AudioOut setting, but no output device or
     /// audio stack is necessary. The CodecFactory is still required to encode audio.
     BigBen,
+    /// Audio will take an offloaded path to the controller. This will register a Codec device
+    /// with the audio_registry for the audio subsystem to start/stop and configure the audio
+    /// stream, but audio will be delivered to the controller via a DAI interface that is defined
+    /// per-platform in the audio subsystem.
+    /// This uses the audio offload extension provided by the BT vendor driver.
+    Offload,
 }
 
 impl From<A2dpSourceType> for serde_json::Value {
@@ -135,6 +141,8 @@ impl From<A2dpSourceType> for serde_json::Value {
     }
 }
 
+/// Configuration options for Bluetooth media info and controls (bt-avrcp).
+// TODO(https://fxbug.dev/324894109): Add profile-specific arguments
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default)]
 pub struct AvrcpConfig {
@@ -601,7 +609,7 @@ mod tests {
             "type": "standard",
             "profiles": {
                 "a2dp": {
-                    "source": "big_ben",
+                    "source": "offload",
                 },
             },
         });
@@ -615,7 +623,7 @@ mod tests {
             },
             a2dp: A2dpConfig::Enabled(A2dpConfigEnabled {
                 sink_and_source: A2dpSinkAndSourceConfig::Source(A2dpSourceOnly {
-                    source: A2dpSourceType::BigBen,
+                    source: A2dpSourceType::Offload,
                 }),
             }),
             ..Default::default()

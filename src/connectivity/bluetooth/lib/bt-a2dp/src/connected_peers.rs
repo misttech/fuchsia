@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_bluetooth::ChannelParameters;
 use fidl_fuchsia_bluetooth_bredr::{self as bredr, ProfileDescriptor, ProfileProxy};
 use fuchsia_bluetooth::detachable_map::{DetachableMap, DetachableWeak};
@@ -334,12 +334,13 @@ impl ConnectedPeers {
         let entry = self.connected.lazy_entry(&id);
 
         info!(id:%; "peer connected");
+        let audio_offload = channel.audio_offload();
         let avdtp_peer = avdtp::Peer::new(channel);
 
         let mut peer = Peer::create(
             id,
             avdtp_peer,
-            self.streams_builder.peer_streams(&id, None).await?,
+            self.streams_builder.peer_streams(&id, audio_offload.clone()).await?,
             Some(self.permits.clone()),
             self.profile.clone(),
             self.metrics.clone(),
@@ -370,13 +371,14 @@ impl ConnectedPeers {
         if let Some(delay) = initiator_delay {
             let peer = peer.clone();
             let peer_id = peer.key().clone();
+
             // Bias the codec negotiation with the peer's preferred direction that was discovered
             // from the SDP service search.
             let negotiation = self
                 .streams_builder
                 .negotiation(
                     &id,
-                    None,
+                    audio_offload,
                     peer_preferred_direction.unwrap_or_else(|| self.preferred_peer_direction()),
                 )
                 .await?;
@@ -502,8 +504,8 @@ mod tests {
         };
     }
 
-    fn setup_connected_peer_test(
-    ) -> (fasync::TestExecutor, PeerId, ConnectedPeers, ProfileRequestStream) {
+    fn setup_connected_peer_test()
+    -> (fasync::TestExecutor, PeerId, ConnectedPeers, ProfileRequestStream) {
         let exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<ProfileMarker>();
         let id = PeerId(1);

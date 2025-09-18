@@ -4,7 +4,7 @@
 
 #![recursion_limit = "512"]
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use bt_a2dp::codec::MediaCodecConfig;
 use bt_a2dp::connected_peers::ConnectedPeers;
 use bt_a2dp::peer::ControllerPool;
@@ -43,7 +43,7 @@ mod volume_relay;
 use config::A2dpConfiguration;
 use media::player::Player;
 use pcm_audio::PcmAudio;
-use stream_controller::{add_stream_controller_capability, PermitsManager};
+use stream_controller::{PermitsManager, add_stream_controller_capability};
 
 /// Make the SDP definition for the A2DP service.
 pub(crate) fn make_profile_service_definition(service_uuid: Uuid) -> bredr::ServiceDefinition {
@@ -90,7 +90,7 @@ async fn streams_builder(
     if config.enable_sink {
         let sbc_config = MediaCodecConfig::min_sbc();
         if let Err(e) = Player::test_playable(&sbc_config).await {
-            warn!("Can't play required SBC audio: {}", e);
+            warn!("Can't play required SBC audio: {e}");
             return Err(e);
         }
     }
@@ -129,10 +129,22 @@ async fn streams_builder(
         return Ok(streams_builder);
     };
 
-    let inband_source_builder =
-        media::inband_source::Builder::new(source_type, aac_available).await?;
-
-    streams_builder.add_builder(inband_source_builder);
+    use media::sources::AudioSourceType::*;
+    match source_type {
+        AudioOut | BigBen => {
+            let inband_source_builder =
+                media::inband_source::Builder::new(source_type, aac_available).await?;
+            streams_builder.add_builder(inband_source_builder);
+        }
+        Offload => {
+            let svc = fuchsia_component::client::connect_to_protocol::<
+                fidl_fuchsia_audio_device::ProviderMarker,
+            >()
+            .context("Failed to connect to audio device Provider")?;
+            let offload_source_builder = media::offload_source::Builder::new(svc)?;
+            streams_builder.add_builder(offload_source_builder);
+        }
+    }
     Ok(streams_builder)
 }
 
