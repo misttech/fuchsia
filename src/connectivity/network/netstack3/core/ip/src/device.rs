@@ -838,7 +838,9 @@ pub trait IpDeviceHandler<I: IpDeviceIpExt, BC>: DeviceIdContext<AnyDevice> {
     /// there was one before any action was taken. That is, this method returns
     /// `IpAddressState::Tentative` when the address was tentatively assigned
     /// (and now removed), `IpAddressState::Assigned` if the address was
-    /// assigned (and possibly removed), otherwise `IpAddressState::Unassigned`.
+    /// assigned (and possibly removed), `IpAddressState::Unassigned` if the
+    /// address was uninitialized, and `None` if the address wasn't associated
+    /// with the interface
     ///
     /// For IPv4, a DAD packet is either an ARP request or response. For IPv6 a
     /// DAD packet is either a Neighbor Solicitation or a Neighbor
@@ -849,7 +851,7 @@ pub trait IpDeviceHandler<I: IpDeviceIpExt, BC>: DeviceIdContext<AnyDevice> {
         device_id: &Self::DeviceId,
         addr: SpecifiedAddr<I::Addr>,
         packet_data: I::ReceivedPacketData<'_>,
-    ) -> IpAddressState;
+    ) -> Option<IpAddressState>;
 }
 
 impl<
@@ -874,10 +876,10 @@ impl<
         device_id: &Self::DeviceId,
         addr: SpecifiedAddr<I::Addr>,
         packet_data: I::ReceivedPacketData<'_>,
-    ) -> IpAddressState {
+    ) -> Option<IpAddressState> {
         let addr_id = match self.get_address_id(device_id, addr) {
             Ok(o) => o,
-            Err(NotFoundError) => return IpAddressState::Unavailable,
+            Err(NotFoundError) => return None,
         };
 
         let orig_state =
@@ -887,7 +889,7 @@ impl<
                 DadIncomingPacketResult::Assigned { should_remove } => {
                     if !should_remove {
                         // Return `Assigned` without removing the address.
-                        return IpAddressState::Assigned;
+                        return Some(IpAddressState::Assigned);
                     } else {
                         // Otherwise fall through to address removal.
 
@@ -947,7 +949,7 @@ impl<
 
                         // Return `Tentative` without removing the address if the
                         // probe is looped back.
-                        return IpAddressState::Tentative;
+                        return Some(IpAddressState::Tentative);
                     } else {
                         // Otherwise fall through to address removal.
                         IpAddressState::Tentative
@@ -977,11 +979,11 @@ impl<
         ) {
             Ok(result) => {
                 bindings_ctx.defer_removal_result(result);
-                orig_state
+                Some(orig_state)
             }
             Err(NotFoundError) => {
                 // We may have raced with user removal of this address.
-                IpAddressState::Unavailable
+                None
             }
         }
     }
@@ -1886,6 +1888,7 @@ where
             Ipv4DadAddressInfo::SourceAddr,
         );
         match sender_addr_state {
+            None => {}
             // As Per RFC 5227 section 2.4:
             //   At any time, if a host receives an ARP packet (Request *or*
             //   Reply) where the 'sender IP address' is (one of) the host's own
@@ -1894,11 +1897,14 @@ where
             //   interface addresses, then this is a conflicting ARP packet,
             //   indicating some other host also thinks it is validly using this
             //   address.
-            IpAddressState::Assigned => {
+            Some(IpAddressState::Assigned) => {
                 info!("DAD received conflicting ARP packet for assigned addr=({sender_addr})");
             }
-            s @ IpAddressState::Tentative | s @ IpAddressState::Unavailable => {
-                debug!("DAD received conflicting ARP packet for addr=({sender_addr}), state={s:?}");
+            Some(IpAddressState::Tentative) => {
+                debug!("DAD received conflicting ARP packet for tentative addr=({sender_addr})");
+            }
+            Some(IpAddressState::Unavailable) => {
+                debug!("DAD received conflicting ARP packet for unavailable addr=({sender_addr})");
             }
         }
     }
@@ -1921,11 +1927,16 @@ where
             Ipv4DadAddressInfo::TargetAddr,
         );
         let assigned = match target_addr_state {
+            None => false,
             // Unlike the sender_addr, it's not concerning to receive an ARP
             // packet whose target_addr is assigned to us.
-            IpAddressState::Assigned => true,
-            s @ IpAddressState::Tentative | s @ IpAddressState::Unavailable => {
-                debug!("DAD received conflicting ARP packet for addr=({target_addr}), state={s:?}");
+            Some(IpAddressState::Assigned) => true,
+            Some(IpAddressState::Tentative) => {
+                debug!("DAD received conflicting ARP packet for tentative addr=({target_addr})");
+                false
+            }
+            Some(IpAddressState::Unavailable) => {
+                debug!("DAD received conflicting ARP packet for unavailable addr=({target_addr})");
                 false
             }
         };

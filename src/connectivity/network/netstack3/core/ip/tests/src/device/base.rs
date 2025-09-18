@@ -981,7 +981,7 @@ fn add_ipv4_addr_with_dad(order: Ipv4DadTestOrder) {
             ipv4_addr_subnet.addr(),
             Ipv4DadAddressInfo::SourceAddr
         ),
-        IpAddressState::Assigned,
+        Some(IpAddressState::Assigned),
     );
     assert_eq!(
         bindings_ctx.take_events()[..],
@@ -1424,7 +1424,7 @@ fn ipv4_dad_conflict_with_dad_disabled() {
             ipv4_addr_subnet.addr(),
             Ipv4DadAddressInfo::SourceAddr
         ),
-        IpAddressState::Assigned,
+        Some(IpAddressState::Assigned),
     );
     assert_eq!(bindings_ctx.take_events()[..], []);
 
@@ -1534,7 +1534,7 @@ fn notify_on_dad_failure_ipv6() {
             assigned_addr.addr(),
             None
         ),
-        IpAddressState::Tentative,
+        Some(IpAddressState::Tentative),
     );
 
     assert_eq!(

@@ -1346,7 +1346,7 @@ fn receive_ndp_packet<
                         target_address.into_specified(),
                         p.body().iter().find_map(|option| option.nonce()),
                     ) {
-                        IpAddressState::Assigned => {
+                        Some(IpAddressState::Assigned) => {
                             // Address is assigned to us to we let the
                             // remote node performing DAD that we own the
                             // address.
@@ -1359,11 +1359,11 @@ fn receive_ndp_packet<
                                 Ipv6::ALL_NODES_LINK_LOCAL_MULTICAST_ADDRESS.into_specified(),
                             );
                         }
-                        IpAddressState::Tentative => {
+                        Some(IpAddressState::Tentative) => {
                             // Nothing further to do in response to DAD
                             // messages.
                         }
-                        IpAddressState::Unavailable => {
+                        Some(IpAddressState::Unavailable) | None => {
                             // Nothing further to do for unassigned target
                             // addresses.
                         }
@@ -1450,7 +1450,7 @@ fn receive_ndp_packet<
                 target_address.into_specified(),
                 nonce,
             ) {
-                IpAddressState::Assigned => {
+                Some(IpAddressState::Assigned) => {
                     // A neighbor is advertising that it owns an address
                     // that we also have assigned. This is out of scope
                     // for DAD.
@@ -1473,12 +1473,12 @@ fn receive_ndp_packet<
                         assigned on device {device_id:?}",
                     );
                 }
-                IpAddressState::Tentative => {
+                Some(IpAddressState::Tentative) => {
                     // Nothing further to do for an NA from a neighbor that
                     // targets an address we also have assigned.
                     return;
                 }
-                IpAddressState::Unavailable => {
+                Some(IpAddressState::Unavailable) | None => {
                     // Address not targeting us so we know its for a neighbor.
                     //
                     // TODO(https://fxbug.dev/42182317): Move NUD to IP.
@@ -3641,7 +3641,7 @@ mod tests {
             _device_id: &Self::DeviceId,
             _addr: SpecifiedAddr<Ipv6Addr>,
             _probe_data: Option<NdpNonce<&'_ [u8]>>,
-        ) -> IpAddressState {
+        ) -> Option<IpAddressState> {
             unimplemented!()
         }
     }
