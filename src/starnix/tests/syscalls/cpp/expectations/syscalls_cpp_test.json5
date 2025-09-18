@@ -130,6 +130,9 @@
                 "MMapProcTest.SmapsRssSplitMappingsStrict",
                 "MlockProcTest.MlockOnePageIncreasesVmLck",
 
+                // TODO(https://fxbug.dev/445877381)
+                "Task.Clone3_PidFd",
+
                 // TODO(https://fxbug.dev/423010702)
                 "Task.KillZombieEPERM",
 

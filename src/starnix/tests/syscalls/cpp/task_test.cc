@@ -304,6 +304,32 @@ TEST(Task, Clone3_Fork) {
   }
 }
 
+// Forks a child process using the "clone3()" syscall and requests a PID-FD for it.
+TEST(Task, Clone3_PidFd) {
+  struct clone_args ca;
+  bzero(&ca, sizeof(ca));
+
+  ca.flags = CLONE_PIDFD;
+  ca.exit_signal = SIGCHLD;  // Needed in order to wait on the child.
+
+  // Ask for a PID FD through which the child process can be observed.
+  fbl::unique_fd pid_fd;
+  ca.pidfd = reinterpret_cast<uint64_t>(pid_fd.reset_and_get_address());
+
+  auto child_pid = ForkUsingClone3(&ca, sizeof(ca));
+  ASSERT_NE(child_pid, -1);
+  if (child_pid == 0) {
+    exit(kChildExpectedExitCode);
+  } else {
+    EXPECT_TRUE(pid_fd.is_valid());
+
+    // Wait for the child to terminate.
+    int wait_status = 0;
+    pid_t wait_result = waitpid(child_pid, &wait_status, 0);
+    EXPECT_EQ(wait_result, child_pid);
+  }
+}
+
 TEST(Task, Clone3_InvalidSize) {
   struct clone_args ca;
   bzero(&ca, sizeof(ca));
