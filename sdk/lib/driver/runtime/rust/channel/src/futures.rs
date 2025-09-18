@@ -131,13 +131,20 @@ impl ReadMessageState {
                     // `fdf_channel_wait_async`.
                     let op = Arc::into_raw(self.op.clone());
                     let res = dispatcher.on_maybe_dispatcher(|dispatcher| {
+                        // if we're not running on the same dispatcher as we're waiting from, we
+                        // want to force async cancellation
+                        let options = if !dispatcher.is_current_dispatcher() {
+                            FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL
+                        } else {
+                            0
+                        };
                         // SAFETY: the `ReadMessageStateOp` starts with an `fdf_channel_read` struct and
                         // has `repr(C)` layout, so is safe to be cast to the latter.
                         let res = Status::ok(unsafe {
                             fdf_channel_wait_async(
                                 dispatcher.inner().as_ptr(),
                                 op.cast_mut().cast(),
-                                0,
+                                options,
                             )
                         });
                         if res.is_ok() {
@@ -152,7 +159,10 @@ impl ReadMessageState {
                         // if the dispatcher we're waiting on is unsynchronized, the callback
                         // will drop the Arc and we need to indicate to our own Drop impl
                         // that it should not.
-                        res.map(|_| dispatcher.is_unsynchronized())
+                        res.map(|_| {
+                            options == FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL
+                                || dispatcher.is_unsynchronized()
+                        })
                     });
 
                     // the default state should be that `drop` will free the arc.

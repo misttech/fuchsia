@@ -543,4 +543,45 @@ mod tests {
             },
         );
     }
+
+    #[test]
+    fn send_and_recv_lots_of_bytes_with_cancellations_on_fuchsia_async_dispatcher() {
+        spawn_in_driver(
+            "lots of bytes and with some cancellations on a fuchsia-async overridden dispatcher",
+            async {
+                let fdf_dispatcher = DispatcherBuilder::new()
+                    .name("fdf-async")
+                    .create()
+                    .expect("failure creating non-blocking dispatcher for fdf operations on rust-async dispatcher")
+                    .release();
+
+                let dispatcher = DispatcherBuilder::new()
+                    .name("fdf-fuchsia-async")
+                    .allow_thread_blocking()
+                    .create()
+                    .expect("failure creating blocking dispatcher for rust async")
+                    .release();
+
+                let (tx, rx) = Channel::create();
+                let (fin_tx, fin_rx) = oneshot::channel();
+                let pending_count = Arc::new(AtomicU64::new(0));
+
+                let pending_count_clone = pending_count.clone();
+                dispatcher
+                    .post_task_sync(move |_| {
+                        Dispatcher::override_current(fdf_dispatcher, || {
+                            let mut executor = fuchsia_async::LocalExecutor::new();
+                            executor.run_singlethreaded(recv_lots_of_bytes_with_cancellations(
+                                rx,
+                                fin_tx,
+                                pending_count_clone,
+                            ));
+                        });
+                    })
+                    .unwrap();
+
+                send_lots_of_bytes(tx, fin_rx, pending_count).await;
+            },
+        );
+    }
 }

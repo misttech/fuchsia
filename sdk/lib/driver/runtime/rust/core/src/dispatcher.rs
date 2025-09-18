@@ -194,6 +194,13 @@ impl Dispatcher {
         (self.get_raw_flags() & DispatcherBuilder::ALLOW_THREAD_BLOCKING) != 0
     }
 
+    /// Whether this is the dispatcher the current thread is running on
+    pub fn is_current_dispatcher(&self) -> bool {
+        // SAFETY: we don't do anything with the dispatcher pointer, and NULL is returned if this
+        // isn't a dispatcher-managed thread.
+        self.0.as_ptr() == unsafe { fdf_dispatcher_get_current_dispatcher() }
+    }
+
     /// Schedules the callback [`p`] to be run on this dispatcher later.
     pub fn post_task_sync(&self, p: impl TaskCallback) -> Result<(), Status> {
         // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
