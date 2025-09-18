@@ -44,19 +44,21 @@ mod test {
     use crate::testing::*;
     use zx::HandleBased;
 
-    #[::fuchsia::test]
+    #[fuchsia::test]
     async fn test_create_from_invalid_handle() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        assert!(create_file_from_handle(locked, &current_task, zx::Handle::invalid()).is_err());
+        spawn_kernel_and_run(|locked, current_task| {
+            assert!(create_file_from_handle(locked, current_task, zx::Handle::invalid()).is_err());
+        });
     }
 
-    #[::fuchsia::test]
+    #[fuchsia::test]
     async fn test_create_pipe_from_handle() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (left_handle, right_handle) = zx::Socket::create_stream();
-        create_file_from_handle(locked, &current_task, left_handle.into_handle())
-            .expect("failed to create left FileHandle");
-        create_file_from_handle(locked, &current_task, right_handle.into_handle())
-            .expect("failed to create right FileHandle");
+        spawn_kernel_and_run(|locked, current_task| {
+            let (left_handle, right_handle) = zx::Socket::create_stream();
+            create_file_from_handle(locked, current_task, left_handle.into_handle())
+                .expect("failed to create left FileHandle");
+            create_file_from_handle(locked, current_task, right_handle.into_handle())
+                .expect("failed to create right FileHandle");
+        });
     }
 }
