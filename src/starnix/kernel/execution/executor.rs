@@ -838,86 +838,86 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_block_while_stopped_stop_and_continue() {
-        let (_kernel, mut task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, task| {
+            // block_while_stopped must immediately returned if the task is not stopped.
+            task.block_while_stopped(locked);
 
-        // block_while_stopped must immediately returned if the task is not stopped.
-        task.block_while_stopped(locked);
+            // Stop the task.
+            task.thread_group().set_stopped(
+                StopState::GroupStopping,
+                Some(SignalInfo::default(SIGSTOP)),
+                false,
+            );
 
-        // Stop the task.
-        task.thread_group().set_stopped(
-            StopState::GroupStopping,
-            Some(SignalInfo::default(SIGSTOP)),
-            false,
-        );
+            let thread = std::thread::spawn({
+                let task = task.weak_task();
+                move || {
+                    let task = task.upgrade().expect("task must be alive");
+                    // Wait for the task to have a waiter.
+                    while !task.read().is_blocked() {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
 
-        let thread = std::thread::spawn({
-            let task = task.weak_task();
-            move || {
-                let task = task.upgrade().expect("task must be alive");
-                // Wait for the task to have a waiter.
-                while !task.read().is_blocked() {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    // Continue the task.
+                    task.thread_group().set_stopped(
+                        StopState::Waking,
+                        Some(SignalInfo::default(SIGCONT)),
+                        false,
+                    );
                 }
+            });
 
-                // Continue the task.
-                task.thread_group().set_stopped(
-                    StopState::Waking,
-                    Some(SignalInfo::default(SIGCONT)),
-                    false,
-                );
-            }
+            // Block until continued.
+            task.block_while_stopped(locked);
+
+            // Join the thread, which will ensure set_stopped terminated.
+            thread.join().expect("joined");
+
+            // The task should not be blocked anymore.
+            task.block_while_stopped(locked);
         });
-
-        // Block until continued.
-        task.block_while_stopped(locked);
-
-        // Join the thread, which will ensure set_stopped terminated.
-        thread.join().expect("joined");
-
-        // The task should not be blocked anymore.
-        task.block_while_stopped(locked);
     }
 
     #[::fuchsia::test]
     async fn test_block_while_stopped_stop_and_exit() {
-        let (_kernel, mut task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, task| {
+            // block_while_stopped must immediately returned if the task is neither stopped nor exited.
+            task.block_while_stopped(locked);
 
-        // block_while_stopped must immediately returned if the task is neither stopped nor exited.
-        task.block_while_stopped(locked);
+            // Stop the task.
+            task.thread_group().set_stopped(
+                StopState::GroupStopping,
+                Some(SignalInfo::default(SIGSTOP)),
+                false,
+            );
 
-        // Stop the task.
-        task.thread_group().set_stopped(
-            StopState::GroupStopping,
-            Some(SignalInfo::default(SIGSTOP)),
-            false,
-        );
+            let thread = std::thread::spawn({
+                let task = task.weak_task();
+                move || {
+                    #[allow(
+                        clippy::undocumented_unsafe_blocks,
+                        reason = "Force documented unsafe blocks in Starnix"
+                    )]
+                    let locked = unsafe { Unlocked::new() };
+                    let task = task.upgrade().expect("task must be alive");
+                    // Wait for the task to have a waiter.
+                    while !task.read().is_blocked() {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
 
-        let thread = std::thread::spawn({
-            let task = task.weak_task();
-            move || {
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                let locked = unsafe { Unlocked::new() };
-                let task = task.upgrade().expect("task must be alive");
-                // Wait for the task to have a waiter.
-                while !task.read().is_blocked() {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    // exit the task.
+                    task.thread_group().exit(locked, ExitStatus::Exit(1), None);
                 }
+            });
 
-                // exit the task.
-                task.thread_group().exit(locked, ExitStatus::Exit(1), None);
-            }
+            // Block until continued.
+            task.block_while_stopped(locked);
+
+            // Join the task, which will ensure thread_group.exit terminated.
+            thread.join().expect("joined");
+
+            // The task should not be blocked because it is stopped.
+            task.block_while_stopped(locked);
         });
-
-        // Block until continued.
-        task.block_while_stopped(locked);
-
-        // Join the task, which will ensure thread_group.exit terminated.
-        thread.join().expect("joined");
-
-        // The task should not be blocked because it is stopped.
-        task.block_while_stopped(locked);
     }
 }
