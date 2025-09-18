@@ -135,6 +135,17 @@ variant("asan") {
   executable_deps = [ ":asan_default_options" ]
 }
 
+# Disable "stack malloc" code generation.
+config("asan-use-after-return-never") {
+  if (!is_gcc && toolchain_variant.tags + [ "asan" ] - [ "asan" ] !=
+                 toolchain_variant.tags) {
+    cflags = [
+      "-mllvm",
+      "-asan-use-after-return=never",
+    ]
+  }
+}
+
 sanitizer_rustflags("asan.rustflags") {
   variant = "asan"
   shared_runtime = is_fuchsia || is_mac

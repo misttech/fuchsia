@@ -51,6 +51,9 @@ source_set("ldso") {
       toolchain_variant.tags + [ "instrumented" ] - [ "instrumented" ] !=
       toolchain_variant.tags) {
     configs += [ "//build/config/riscv64:no-vector" ]
+
+    # The stack-malloc code generation winds up using _more_ stack itself too.
+    configs += [ "//build/config/sanitizers:asan-use-after-return-never" ]
   }
 }
 
