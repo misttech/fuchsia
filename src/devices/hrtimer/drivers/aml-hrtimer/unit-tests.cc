@@ -8,8 +8,6 @@
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/power/cpp/testing/fake_current_level.h>
-#include <lib/driver/power/cpp/testing/fake_element_control.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/fpromise/result.h>
@@ -23,9 +21,6 @@
 #include "src/devices/hrtimer/drivers/aml-hrtimer/aml_hrtimer_config.h"
 
 namespace hrtimer {
-
-using fdf_power::testing::FakeCurrentLevel;
-using fdf_power::testing::FakeElementControl;
 
 class FakePlatformDevice : public fidl::Server<fuchsia_hardware_platform_device::Device> {
  public:
