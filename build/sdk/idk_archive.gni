@@ -79,7 +79,7 @@ template("idk_archive") {
       rebase_path(inputs[0], root_build_dir),
       "--output",
       rebase_path(outputs[0], root_build_dir),
-      "--use-parallel-gzip=false",
+      "--use-parallel-gzip=true",
     ]
     deps = [
       ":${targets.tarmaker_manifest}",
