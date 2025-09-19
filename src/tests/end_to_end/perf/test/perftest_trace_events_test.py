@@ -40,8 +40,18 @@ class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
                 capture_output=False,
             )
 
+        expected_event_names = [
+            "test_group",
+            "test_setup",
+            "test_run",
+            "test_run",
+            "test_run",
+            "test_run",
+            "test_teardown",
+        ]
         model = trace_importing.create_model_from_trace_file_path(
-            os.path.join(self.log_path, "trace.fxt")
+            os.path.join(self.log_path, "trace.fxt"),
+            patterns=set(expected_event_names),
         )
         event_names = [
             event.name
@@ -51,18 +61,7 @@ class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
                 type=trace_model.Event,
             )
         ]
-        asserts.assert_equal(
-            event_names,
-            [
-                "test_group",
-                "test_setup",
-                "test_run",
-                "test_run",
-                "test_run",
-                "test_run",
-                "test_teardown",
-            ],
-        )
+        asserts.assert_equal(event_names, expected_event_names)
 
 
 if __name__ == "__main__":
