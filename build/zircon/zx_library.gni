@@ -435,4 +435,4 @@ template("zx_library") {
 set_defaults("zx_library") {
   configs = default_common_binary_configs
 }
-# LINT.ThenChange(//build/bazel/bazel_idk/defs.bzl)
+# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_source_library.bzl)
