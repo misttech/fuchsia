@@ -8,7 +8,7 @@ import("//sdk/config.gni")
 
 # Calling this template generates a set of action() targets, each one building
 # the atoms of a given sdk_collection() for a specific CPU architecture and API
-# levels. This is used by the idk() template.
+# level. This is used by the idk() template.
 #
 # The generated actions are named as follows:
 #
@@ -33,28 +33,27 @@ import("//sdk/config.gni")
 # they need directly.
 #
 # Args:
-#    target_cpus: (required)
+#    target_cpus (required)
 #      List of target CPU architectures for which to generate sub-builds.
 #      This must include the default target_cpu value for the current build
 #      configuration.
 #
-#    api_levels: (required)
-#      List of API levels, as strings for which to generate sub-builds.
+#    api_levels (required)
+#      List of API levels, as strings, for which to generate sub-builds.
 #
-#    sdk_collection_label  (required)
+#    sdk_collection_label (required)
 #      [GN Label] Label of sdk_collection() target to generate sub-builds for.
 #
-#    subbuild_prefix  (optional)
-#      [string] A name prefix for all sub-build directories. Default is
-#          "idk_subbuild.<name>"  where <name> is the name of the sdk_collection_label
-#          target. This is useful to differentiate idk_subbuilds() instances that
+#    subbuild_prefix (required)
+#      [string] A name prefix for all sub-build directories.
+#          This is useful to differentiate idk_subbuilds() instances that
 #          reference collections with the same name, but different directories
 #          (e.g. `//sdk:partner` and `//vendor/acme/sdk:partner`).
 #
-#   sdk_collection_name (optional)
-#     The name of the collection specified by `sdk_collection_label`.
-#     Should match the name of the collection if it is overridden.
-#     Defaults to the name portion of the `sdk_collection_label`.
+#   sdk_collection_name (required)
+#     The name of the collection for which sub-builds are being generated.
+#     This is the name of the directory under `sdk/exported/` and might not
+#     match the name of `sdk_collection_label`.
 #
 template("idk_subbuilds") {
   assert(defined(invoker.target_cpus),
@@ -63,25 +62,18 @@ template("idk_subbuilds") {
          "api_levels must be defined for $target_name")
   assert(defined(invoker.sdk_collection_label),
          "sdk_collection_label must be defined for $target_name")
+  assert(defined(invoker.subbuild_prefix),
+         "subbuild_prefix must be defined for $target_name")
+  assert(defined(invoker.sdk_collection_name),
+         "sdk_collection_name must be defined for $target_name")
 
   main_target_name = target_name
 
-  if (defined(invoker.subbuild_prefix)) {
-    subbuild_prefix = invoker.subbuild_prefix
-  } else {
-    subbuild_prefix =
-        "idk_subbuild." + get_label_info(invoker.sdk_collection_label, "name")
-  }
-
-  _api_levels = invoker.api_levels
   _target_cpus = invoker.target_cpus
+  _api_levels = invoker.api_levels
 
-  if (defined(invoker.sdk_collection_name)) {
-    _sdk_collection_dir_name = invoker.sdk_collection_name
-  } else {
-    _sdk_collection_dir_name =
-        get_label_info(invoker.sdk_collection_label, "name")
-  }
+  subbuild_prefix = invoker.subbuild_prefix
+  _sdk_collection_dir_path = "/sdk/exported/${invoker.sdk_collection_name}"
 
   # Include the main collection build.
   all_subbuild_targets = [ invoker.sdk_collection_label ]
@@ -96,10 +88,10 @@ template("idk_subbuilds") {
       use_idk_tools_only = true
 
       _collection_dir_manifest =
-          "/sdk/exported/${_sdk_collection_dir_name}/meta/manifest.json"
+          "${_sdk_collection_dir_path}/meta/manifest.json"
       outputs = [ _collection_dir_manifest ]
 
-      api_level_path = "/sdk/exported/${_sdk_collection_dir_name}/api_level"
+      api_level_path = "${_sdk_collection_dir_path}/api_level"
 
       target_cpu = target_cpu
       api_level = "PLATFORM"
@@ -135,10 +127,10 @@ template("idk_subbuilds") {
         use_idk_tools_only = true
 
         _collection_dir_manifest =
-            "/sdk/exported/${_sdk_collection_dir_name}/meta/manifest.json"
+            "${_sdk_collection_dir_path}/meta/manifest.json"
         outputs = [ _collection_dir_manifest ]
 
-        api_level_path = "/sdk/exported/${_sdk_collection_dir_name}/api_level"
+        api_level_path = "${_sdk_collection_dir_path}/api_level"
 
         target_cpu = target_cpu
         api_level = "$api_level"
