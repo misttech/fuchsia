@@ -9,7 +9,11 @@ library_headers("headers") {
   public_deps = [ "//zircon/kernel/lib/ktl" ]
 }
 
-source_set("spsc_buffer") {
+group("spsc_buffer") {
   public_deps = [ ":headers" ]
-  deps = [ "//zircon/kernel/lib/ktl" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }

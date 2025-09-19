@@ -4,16 +4,21 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("suspend_wakeup_timer") {
-  sources = [ "suspend_wakeup_timer.cc" ]
-  deps = [ "//zircon/system/ulib/fbl" ]
+library_headers("headers") {
+  headers = [ "lib/suspend_wakeup_timer.h" ]
   public_deps = [
     "//sdk/lib/fit",
     "//zircon/kernel/lib/ktl",
   ]
-  include_dirs = [ "include" ]
+}
+
+static_library("suspend_wakeup_timer") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "suspend_wakeup_timer.cc" ]
+  deps = [ "//zircon/system/ulib/fbl" ]
 
   if (current_cpu == "arm64") {
     deps += [ "//zircon/kernel/dev/timer/armv7_mmio_timer" ]

@@ -4,21 +4,19 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
+import("//build/toolchain/toolchain_environment.gni")
 
-zx_library("unittest") {
-  sources = [ "unittest.cc" ]
-  deps = [ "//zircon/system/ulib/pretty" ]
+library_headers("headers") {
+  headers = [
+    "lib/unittest/unittest.h",
+    "lib/unittest/user_memory.h",
+  ]
   public_deps = [
     # <lib/unittest/unittest.h> has #include <lib/special-sections/special-sections.h>.
     "//zircon/kernel/lib/special-sections:headers",
   ]
   if (toolchain_environment == "kernel") {
-    sources += [
-      "console.cc",
-      "user_memory.cc",
-      "user_memory_tests.cc",
-    ]
     public_deps += [
       # <lib/unittest/user_memory.h> has #include <lib/crypto/prng.h>.
       "//zircon/kernel/vm:headers",
@@ -28,6 +26,20 @@ zx_library("unittest") {
 
       # <lib/unittest/user_memory.h> has #include <ktl/utility.h>.
       "//zircon/kernel/lib/ktl:headers",
+    ]
+  }
+}
+
+source_set("unittest") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "unittest.cc" ]
+  deps = [ "//zircon/system/ulib/pretty" ]
+  if (toolchain_environment == "kernel") {
+    sources += [
+      "console.cc",
+      "user_memory.cc",
+      "user_memory_tests.cc",
     ]
     deps += [ "//zircon/kernel/lib/console" ]
   } else {

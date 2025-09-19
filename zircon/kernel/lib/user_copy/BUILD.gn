@@ -4,22 +4,29 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("user_copy") {
-  sources = [ "internal.cc" ]
-  deps = [ ":tests" ]
+library_headers("headers") {
+  headers = [
+    "lib/user_copy/user_ptr.h",
+    "lib/user_copy/user_iovec.h",
+  ]
   public_deps = [
     # <lib/user_copy/user_ptr.h> has #include <ktl/type_traits.h>.
     "//zircon/kernel/lib/ktl:headers",
   ]
 }
 
-source_set("tests") {
-  #TODO: testonly = true
-  visibility = [ ":*" ]
-  sources = [ "user_copy_tests.cc" ]
+static_library("user_copy") {
+  public_deps = [ ":headers" ]
 
+  sources = [ "internal.cc" ]
+}
+
+source_set("kernel-tests") {
+  #TODO: testonly = true
+
+  sources = [ "user_copy_tests.cc" ]
   deps = [
     ":headers",
     "//zircon/kernel/lib/unittest",

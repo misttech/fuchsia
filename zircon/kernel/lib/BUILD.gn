@@ -8,6 +8,7 @@ import("//build/toolchain/toolchain_environment.gni")
 
 group("tests") {
   testonly = true
+  deps = [ "power-management:tests" ]
 }
 
 # This reaches tests built for both phys and kernel proper.
@@ -38,8 +39,10 @@ group("kernel-tests") {
     "page_cache:kernel-tests",
     "persistent-debuglog:kernel-tests",
     "pow2_range_allocator:kernel-tests",
-    "power-management:tests",
-    "spsc_buffer/tests",
-    "thread_sampler/tests",
+    "power-management:kernel-tests",
+    "spsc_buffer:kernel-tests",
+    "thread_sampler:kernel-tests",
+    "topology:kernel-tests",
+    "user_copy:kernel-tests",
   ]
 }

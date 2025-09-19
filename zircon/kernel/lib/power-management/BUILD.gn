@@ -47,16 +47,13 @@ source_set("power-management") {
 }
 
 group("tests") {
-  if (is_kernel) {
-    deps = [ ":power-management-kunittests" ]
-  } else {
-    testonly = true
-    deps = [ ":power-management-unittests-package" ]
-  }
+  testonly = true
+  deps = [ ":power-management-unittests-package" ]
 }
 
 if (is_kernel) {
-  source_set("power-management-kunittests") {
+  source_set("kernel-tests") {
+    # TODO: testonly = true
     sources = [ "power-management-tests.cc" ]
     deps = [
       ":power-management",

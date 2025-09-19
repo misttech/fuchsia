@@ -4,13 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("stall") {
+library_headers("headers") {
+  headers = [ "lib/stall.h" ]
+}
+
+source_set("stall") {
+  public_deps = [ ":headers" ]
+
   sources = [ "stall.cc" ]
-  deps = [
-    "tests",
-    "//zircon/kernel/lib/init",
-  ]
-  public_deps = [ "//zircon/kernel/lib/ktl:headers" ]
+  deps = [ "//zircon/kernel/lib/init" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }

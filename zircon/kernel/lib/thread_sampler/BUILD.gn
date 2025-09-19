@@ -4,9 +4,19 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("thread_sampler") {
+library_headers("headers") {
+  headers = []
+  public_deps = [
+    "//src/performance/lib/fxt:headers",
+    "//zircon/kernel/object:headers",
+  ]
+}
+
+static_library("thread_sampler") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "buffer_writer.cc",
     "per_cpu_state.cc",
@@ -18,8 +28,9 @@ zx_library("thread_sampler") {
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/init",
   ]
-  public_deps = [
-    "//src/performance/lib/fxt:headers",
-    "//zircon/kernel/object:headers",
-  ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }
