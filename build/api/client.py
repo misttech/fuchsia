@@ -449,10 +449,9 @@ def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
 
     state.parse_manifest(last_build_only=True)
 
-    dump_syms_tool = None
-    gsymutil_tool = None
-
-    if args.with_breakpad_symbols:
+    if args.no_breakpad_symbols_generation:
+        dump_syms_tool = None
+    else:
         dump_syms_tool = args.dump_syms
         if not dump_syms_tool:
             dump_syms_tool = (
@@ -462,18 +461,6 @@ def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
             if not dump_syms_tool.exists():
                 print(
                     f"ERROR: Missing breakpad tool, use --dump_syms=TOOL: {dump_syms_tool}"
-                )
-
-    if args.with_gsym_symbols:
-        gsymutil_tool = args.gsymutil
-        if not gsymutil_tool:
-            gsymutil_tool = (
-                args.fuchsia_dir
-                / f"prebuilt/third_party/clang/{args.host_tag}/bin/llvm-gsymutil"
-            )
-            if not gsymutil_tool.exists():
-                print(
-                    f"ERROR: Missing gsymutil tool, use --gsymutil=TOOL: {gsymutil_tool}"
                 )
 
     def log_error(error: str) -> None:
@@ -486,13 +473,12 @@ def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
     exporter = debug_symbols.DebugSymbolExporter(
         args.build_dir,
         dump_syms_tool=dump_syms_tool,
-        gsymutil_tool=gsymutil_tool,
         log=log,
         log_error=log_error,
     )
     exporter.parse_debug_symbols(state.debug_symbol_entries)
 
-    if not exporter.export_debug_symbols(args.output_dir, depth=args.jobs):
+    if not exporter.export_debug_symbols(args.output_dir):
         return 1
 
     return 0
@@ -829,31 +815,14 @@ def main(main_args: T.Sequence[str]) -> int:
         help="Output directory, this will be cleaned before generation.",
     )
     export_last_build_debug_symbols_parser.add_argument(
-        "--with-breakpad-symbols",
+        "--no-breakpad-symbols-generation",
         action="store_true",
-        help="Generate breakpad symbols in the output.",
+        help="Do not try to generate breakpad symbol files in the output. Ignores --dump_syms.",
     )
     export_last_build_debug_symbols_parser.add_argument(
         "--dump_syms",
         type=Path,
         help="Path to Breakpad dump_syms binary (auto-detected), used by --with-breakpad-symbols.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--with-gsym-symbols",
-        action="store_true",
-        help="Generate GSYM symbols in the output.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "--gsymutil",
-        type=Path,
-        help="Path to gsymutil tool binary (auto-detected), used by --with-gsym-symbols.",
-    )
-    export_last_build_debug_symbols_parser.add_argument(
-        "-j",
-        "--jobs",
-        type=int,
-        default=0,
-        help="Specify max concurrent processes to perform symbol generation (default is 0, meaning current core count).",
     )
     export_last_build_debug_symbols_parser.add_argument(
         "--quiet",
