@@ -1,0 +1,27 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+
+source_set("state_recorder") {
+  sources = [ "state_recorder.h" ]
+
+  public_deps = [
+    "//sdk/lib/fit",
+    "//sdk/lib/inspect/component/cpp",
+    "//sdk/lib/syslog/cpp",
+    "//zircon/system/ulib/inspect",
+    "//zircon/system/ulib/trace",
+  ]
+}
+
+group("example") {
+  testonly = true
+  deps = [ "example" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}

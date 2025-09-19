@@ -163,7 +163,7 @@ impl StateRecorder {
     ///   - StateRecorderError::InvalidName: Either `metadata.name` or a state name contain
     ///     invalid UTF-8 and thus cannot be converted to a str.
     ///   - StateRecorderError::DuplicateName: `metadata.name` is already in use by a StateRecorder
-    ///     in this process, returns
+    ///     in this process.
     pub fn new(
         metadata: DiscreteStateMetadata,
         initial_state: u32,

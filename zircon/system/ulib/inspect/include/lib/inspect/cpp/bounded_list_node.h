@@ -48,6 +48,7 @@ class BoundedListNode {
   BoundedListNode(inspect::Node&& n, uint64_t max_capacity)
       : inner_(new Inner(std::move(n), max_capacity)) {}
 
+  BoundedListNode& operator=(BoundedListNode&& other) = default;
   BoundedListNode(BoundedListNode&& n) noexcept = default;
 
   // Copying inspect::Node is not allowed

@@ -23,7 +23,8 @@ inspector's root. Each recorded state will be given a distinct node.
 
 The key elements of the data are:
     - The name of the entity. This must be unique per-component to avoid data
-      collisions.
+      collisions. (TODO(b/444757040): Update to per-inspector once the Rust
+      API is consistent with the C++ API.)
     - Metadata that describes a mapping of enumerated state values to state
       names.
     - Transition history, which records timestamped state transitions. Because
@@ -90,3 +91,37 @@ Trace data is recorded to a global track named according to the entity name and
 PID, as seen here:
 
 ![Sample trace output for a stateful entity called "fan_speed"](trace_example.png)
+
+# Building and running the examples
+
+First, build and set up an emulator and server as follows:
+```
+fx set workbench_eng.x64 --with-test //src/power/observability:tests
+fx build
+ffx emu start --headless
+fx serve --background
+```
+
+If you need to rebuild and rerun, be sure to OTA:
+```
+fx build && fx ota
+```
+
+To run one of the examples, define this function:
+```
+function run_example() {
+  LANG=$1  # "rust" or "cpp"
+  EXAMPLE="state_recorder_${LANG}_example"
+  if ffx component list 2>/dev/null | grep -q ${EXAMPLE}$; then
+    ffx component destroy /core/ffx-laboratory:${EXAMPLE}
+  fi
+  ffx trace start --categories kernel:meta,power_example --duration 10 &
+  sleep 0.2
+  ffx component run \
+    /core/ffx-laboratory:${EXAMPLE} \
+    "fuchsia-pkg://fuchsia.com/${EXAMPLE}#meta/${EXAMPLE}.cm"
+  wait %1
+}
+```
+Then run the example for the language of interest with either `run_example cpp`
+or `run_example rust`.

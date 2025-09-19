@@ -3,10 +3,26 @@
 # found in the LICENSE file.
 
 group("observability") {
-  deps = [ "rust" ]
+  deps = [
+    "cpp",
+    "rust",
+  ]
+}
+
+# TODO(b/444757040): Move examples to //examples/power.
+group("examples") {
+  testonly = true
+  deps = [
+    "cpp:example",
+    "rust:example",
+  ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ "rust:tests" ]
+  deps = [
+    ":examples",  # Ensure that this gets built in CI/CQ
+    "cpp:tests",
+    "rust:tests",
+  ]
 }

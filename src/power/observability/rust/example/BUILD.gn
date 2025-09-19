@@ -40,8 +40,3 @@ group("example") {
   testonly = true
   deps = [ ":package" ]
 }
-
-group("tests") {
-  testonly = true
-  deps = [ ":package" ]
-}
