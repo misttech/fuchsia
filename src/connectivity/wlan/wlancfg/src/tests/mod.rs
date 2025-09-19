@@ -6,4 +6,5 @@
 // special-cases the tests/ directory for use as integration tests. However, our build system
 // doesn't do so.
 
+mod access_point_e2e;
 mod client_e2e;
