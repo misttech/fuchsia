@@ -395,12 +395,11 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
     def _get_cpu_results(
         self, path: str | os.PathLike[str]
     ) -> list[trace_metrics.TestCaseResult]:
-        model = trace_importing.create_model_from_trace_file_path(path)
-        return list(
-            cpu.CpuMetricsProcessor(aggregates_only=False).process_metrics(
-                model
-            )
+        processor = cpu.CpuMetricsProcessor(aggregates_only=False)
+        model = trace_importing.create_model_from_trace_file_path(
+            path, patterns=processor.event_patterns
         )
+        return list(processor.process_metrics(model))
 
     async def _start_iperf3_server(self) -> IperfServer:
         server = IperfServer(self._device.ffx)
