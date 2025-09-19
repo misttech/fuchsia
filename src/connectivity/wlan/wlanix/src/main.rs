@@ -1943,7 +1943,7 @@ mod tests {
         .expect("Failed to deserialize genetlink message")
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_maybe_run_callback() {
         let _exec = fasync::TestExecutor::new_with_fake_time();
         let (callback_proxy, server_end) = create_proxy::<fidl_wlanix::WifiEventCallbackMarker>();
@@ -1966,7 +1966,7 @@ mod tests {
         assert!(callback.is_none());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_get_state_is_started() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -1981,7 +1981,7 @@ mod tests {
         assert_eq!(response.is_started, Some(false));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_start() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2014,7 +2014,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_already_started() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2049,7 +2049,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_start_stop_start() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2101,7 +2101,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_start_fails() {
         let (mut test_helper, mut test_fut) =
             setup_wifi_test_with_iface_manager(TestIfaceManager::new().mock_power_up_failure());
@@ -2148,7 +2148,7 @@ mod tests {
         assert_matches!(&calls[3], ifaces::test_utils::IfaceManagerCall::PowerDown(_));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_stop() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2198,7 +2198,7 @@ mod tests {
         assert!(test_helper.telemetry_receiver.try_next().is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_stop_fails_to_destroy_iface() {
         let (mut test_helper, mut test_fut) = setup_wifi_test_with_iface_manager(
             TestIfaceManager::new().mock_destroy_client_iface_failure(),
@@ -2229,7 +2229,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_get_chip_ids() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2244,7 +2244,7 @@ mod tests {
         assert_eq!(response.chip_ids, Some(vec![1]));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_set_country_code() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
         const COUNTRY_CODE: [u8; 2] = *b"WW";
@@ -2268,7 +2268,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_create_sta_iface_fails() {
         // Set up
         let mut exec = fasync::TestExecutor::new_with_fake_time();
@@ -2324,7 +2324,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_remove_sta_iface_fails() {
         let (mut test_helper, mut test_fut) = setup_wifi_test_with_iface_manager(
             TestIfaceManager::new().mock_destroy_client_iface_failure(),
@@ -2350,7 +2350,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_available_modes() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2383,7 +2383,7 @@ mod tests {
         assert_eq!(response, expected_response);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_id() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2395,7 +2395,7 @@ mod tests {
         assert_eq!(response.id, Some(CHIP_ID));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_mode() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2407,7 +2407,7 @@ mod tests {
         assert_eq!(response.mode, Some(0));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_capabilities() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2424,7 +2424,7 @@ mod tests {
         assert_eq!(response.capabilities_mask, Some(0));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_trigger_subsystem_restart() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2443,7 +2443,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_remove_sta_iface() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2472,7 +2472,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_sta_iface_names() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2484,7 +2484,7 @@ mod tests {
         assert_eq!(result.iface_names, Some(vec![IFACE_NAME.to_string()]));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_sta_iface_names_no_ifaces() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2499,7 +2499,7 @@ mod tests {
         assert_eq!(result.iface_names, Some(vec![]));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_sta_iface() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2527,7 +2527,7 @@ mod tests {
         assert_eq!(response.iface_name, Some(IFACE_NAME.to_string()));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_chip_get_sta_iface_no_iface() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
         let _ = test_helper.iface_manager.client_iface.lock().take();
@@ -2546,7 +2546,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_wifi_sta_iface_get_name() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
@@ -2644,7 +2644,7 @@ mod tests {
         (test_helper, test_fut)
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_remove_interface() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2661,7 +2661,7 @@ mod tests {
         assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::Disconnect);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_iface_disconnect() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2676,7 +2676,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_iface_get_mac_address() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2694,7 +2694,7 @@ mod tests {
         assert_eq!(response.mac_addr.unwrap(), [13u8, 37, 13, 37, 13, 37]);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_iface_get_mac_address_after_iface_restart() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2716,7 +2716,7 @@ mod tests {
         assert_eq!(response.mac_addr.unwrap(), [13u8, 37, 13, 37, 13, 37]);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_iface_set_sta_country_code() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
         const COUNTRY_CODE: [u8; 2] = *b"WW";
@@ -2736,7 +2736,7 @@ mod tests {
         assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::SetCountry(country) => assert_eq!(*country, COUNTRY_CODE));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_open_network_connect_flow() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2792,7 +2792,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_protected_network_connect_flow() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2844,7 +2844,7 @@ mod tests {
         assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::Connect);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_wep_network_connect_flow() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2922,7 +2922,7 @@ mod tests {
         assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::Connect);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_network_connect_flow_with_bssid_set() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -2975,7 +2975,7 @@ mod tests {
         assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::Connect);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_network_connect_flow_with_bssid_set_and_cleared() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -3056,7 +3056,7 @@ mod tests {
         assert_eq!(on_state_changed.new_state, Some(fidl_wlanix::StaIfaceCallbackState::Completed));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_network_connect_flow_failure() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -3095,7 +3095,7 @@ mod tests {
         assert_eq!(reject.timed_out, Some(false));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_disconnect_signal() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
         let mut mcast_stream = get_nl80211_mcast(&test_helper.nl80211_proxy, "mlme");
@@ -3292,7 +3292,7 @@ mod tests {
         assert_matches!(test_helper.telemetry_receiver.try_next(), Err(_));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_supplicant_sta_signal_report() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
         let mut mcast_stream = get_nl80211_mcast(&test_helper.nl80211_proxy, "mlme");
@@ -3478,7 +3478,7 @@ mod tests {
         expect_nl80211_message(&mcast_msg)
     }
 
-    #[test]
+    #[fuchsia::test]
     fn get_nl80211() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::WlanixMarker>();
@@ -3499,7 +3499,7 @@ mod tests {
         assert!(!nl_proxy.is_closed());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn unsupported_mcast_group() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3524,7 +3524,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Ready(()));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn unsupported_nl80211_command() {
         #[derive(Debug)]
         struct TestNl80211 {
@@ -3585,7 +3585,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn get_interface() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3619,7 +3619,7 @@ mod tests {
         assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn get_station() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3646,7 +3646,7 @@ mod tests {
         assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Message));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn trigger_scan() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3695,7 +3695,7 @@ mod tests {
         assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::NewScanResults);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn trigger_scan_no_iface_arg() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3718,7 +3718,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn trigger_scan_invalid_iface() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3792,7 +3792,7 @@ mod tests {
         assert_eq!(scan_result, expected_telemetry_result);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn abort_scan_sends_telemetry() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3828,7 +3828,7 @@ mod tests {
         assert_eq!(scan_result, wlan_telemetry::ScanResult::Cancelled);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn get_scan_results() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3856,7 +3856,7 @@ mod tests {
         assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn get_scan_results_no_iface_args() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
@@ -3884,7 +3884,7 @@ mod tests {
         fidl::unpersist::<fidl_wlanix::Nl80211MessageArray>(&value).unwrap().messages
     }
 
-    #[test]
+    #[fuchsia::test]
     fn get_reg() {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();

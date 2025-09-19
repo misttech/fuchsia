@@ -100,4 +100,10 @@ fuchsia_package("wlanix") {
 
 fuchsia_unittest_package("wlanix-tests") {
   deps = [ ":wlanix_bin_test" ]
+  test_specs = {
+    log_settings = {
+      # This allows tests to pass even when there's an error log.
+      max_severity = "ERROR"
+    }
+  }
 }
