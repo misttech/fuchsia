@@ -8,6 +8,13 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load(":cpp_verification.bzl", "create_verify_no_duplicate_files_target", "create_verify_pragma_once_target")
+load(
+    "//build/bazel/bazel_idk/private:idk_common.bzl",
+    "get_allowlist_target",
+    "get_atom_visibility",
+    "get_idk_deps",
+    "json_encode_dict_values",
+)
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
@@ -64,44 +71,6 @@ FuchsiaIdkMoleculeInfo = provider(
         "atoms_depset": "depset[FuchsiaIdkAtomInfo] The full set atoms that make up the molecule",
     },
 )
-
-def _json_encode_dict_values(dict):
-    """Returns the dictionary with each top-level value encoded as a JSON string.
-
-This allows the dictionary to be passed to a `string_dict` attribute.
-    """
-    return {k: json.encode(v) for k, v in dict.items()}
-
-def _get_idk_label(label_str):
-    # Ensure the label is relative to the `BUILD` file, not this `.bzl` file
-    # in cases where `label_str` omits the package (e.g., ":target_name").
-    label = native.package_relative_label(label_str)
-
-    # Build the label to handle cases where `label_str` omits the target name
-    # (e.g., "//path/to/package").
-    return "//{}:{}_idk".format(label.package, label.name)
-
-def _get_idk_deps(underlying_deps):
-    return [_get_idk_label(dep) for dep in underlying_deps]
-
-def _get_allowlist_target(type, category, stable):
-    """Returns the allowlist target for the combination of parameters.
-
-    All atoms must be in an allowlist.
-    """
-    if type == "cc_source_library":
-        if category == "partner":
-            if stable:
-                return "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist"
-            else:
-                return "//build/bazel/bazel_idk:partner_idk_unstable_cc_source_library_allowlist"
-    elif type == "data":
-        if category == "partner" and stable:
-            return "//build/bazel/bazel_idk:partner_idk_data_allowlist"
-    else:
-        fail("Unhandled atom type: %s" % type)
-
-    fail("Create a separate allowlist when adding support for other categories or stability.")
 
 def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
@@ -325,7 +294,7 @@ Atoms will be checked for category and API area violations when generating the I
         fail("All atoms with types ('%s') requiring compatibility must specify an `api_file_path` unless explicitly unstable." % type)
 
     # Ensure the atom is in the appropriate allowlist.
-    atom_build_deps.append(_get_allowlist_target(type, category, stable))
+    atom_build_deps.append(get_allowlist_target(type, category, stable))
 
     _verify_api = api_file_path != None
     if _verify_api:
@@ -418,27 +387,6 @@ idk_molecule = rule(
         ),
     },
 )
-
-def _get_atom_visibility(target_visibility):
-    """Returns the visibility to use for an atom target.
-
-    The atom's visibility should allow IDK contents/definition rules to depend
-    on the atom in addition to the visibility specified to the macro.
-    The built-in visibility labels cannot be used in combination with other
-    labels so handle them specifically.
-    """
-
-    # TODO(https://fxbug.dev/431287514): Support package `default_visibility`.
-    if "//visibility:public" in target_visibility:
-        return target_visibility
-
-    # All atoms must be visible to the targets defining the IDK.
-    atom_visibility = ["//sdk:__pkg__"]
-
-    if "//visibility:private" not in target_visibility:
-        atom_visibility += target_visibility
-
-    return atom_visibility
 
 # LINT.IfChange(idk_cc_source_library)
 # TODO(https://fxbug.dev/417305295): Make this a symbolic macro after updating
@@ -609,7 +557,7 @@ def idk_cc_source_library(
         srcs = srcs_for_bazel_library,
         # Add a deps on the allowlist to catch cases where the macro is used but
         # there is no dependency on the atom target.
-        data = [_get_allowlist_target(atom_type, category, stable)],
+        data = [get_allowlist_target(atom_type, category, stable)],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select({
             "@platforms//os:fuchsia": fuchsia_deps,
@@ -651,8 +599,8 @@ def idk_cc_source_library(
         idk_files_map |= {source_dest_path: source}
 
     # Deps strings must be modified before being added to a `select()` statement.
-    idk_deps = _get_idk_deps(deps) + _get_idk_deps(implementation_deps) + select({
-        "@platforms//os:fuchsia": _get_idk_deps(fuchsia_deps),
+    idk_deps = get_idk_deps(deps) + get_idk_deps(implementation_deps) + select({
+        "@platforms//os:fuchsia": get_idk_deps(fuchsia_deps),
         "//conditions:default": [],
     })
 
@@ -720,9 +668,9 @@ def idk_cc_source_library(
         files_map = idk_files_map,
         idk_deps = idk_deps,
         atom_build_deps = atom_build_deps,
-        additional_prebuild_info = _json_encode_dict_values(additional_prebuild_info_values),
+        additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         testonly = testonly,
-        visibility = _get_atom_visibility(visibility),
+        visibility = get_atom_visibility(visibility),
     )
 
     # TODO(https://fxbug.dev/417305295):Implement the //sdk:sdk_source_set_list
