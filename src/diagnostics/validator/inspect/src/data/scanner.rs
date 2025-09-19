@@ -809,38 +809,36 @@ mod tests {
         let previous = buffer[location];
         buffer[location] = value;
         let actual = data::Scanner::try_from(buffer as &[u8]).map(|d| d.data().to_string());
-        if predicted.is_none() {
-            if actual.is_err() {
+
+        match (&predicted, &actual) {
+            (None, Err(actual)) => {
                 println!("With ({index},{offset}) -> {value}, got expected error {actual:?}");
-            } else {
+            }
+            (None, Ok(actual)) => {
                 println!(
                     "BAD: With ({},{}) -> {}, expected error but got string {:?}",
-                    index,
-                    offset,
-                    value,
-                    actual.as_ref().unwrap()
+                    index, offset, value, actual
                 );
             }
-        } else if actual.is_err() {
-            println!("BAD: With ({index},{offset}) -> {value}, got unexpected error {actual:?}");
-        } else if actual.as_ref().ok().map(|s| &s[..]) == predicted {
-            println!(
-                "With ({},{}) -> {}, got expected string {:?}",
-                index,
-                offset,
-                value,
-                predicted.unwrap()
-            );
-        } else {
-            println!(
-                "BAD: With ({},{}) -> {}, expected string {:?} but got {:?}",
-                index,
-                offset,
-                value,
-                predicted.unwrap(),
-                actual.as_ref().unwrap()
-            );
-            println!("Raw data: {:?}", data::Scanner::try_from(buffer as &[u8]))
+            (Some(_), Err(actual)) => {
+                println!(
+                    "BAD: With ({index},{offset}) -> {value}, got unexpected error {actual:?}"
+                );
+            }
+            (Some(predicted), Ok(actual)) => {
+                if predicted == actual {
+                    println!(
+                        "With ({},{}) -> {}, got expected string {:?}",
+                        index, offset, value, predicted
+                    );
+                } else {
+                    println!(
+                        "BAD: With ({},{}) -> {}, expected string {:?} but got {:?}",
+                        index, offset, value, predicted, actual
+                    );
+                    println!("Raw data: {:?}", data::Scanner::try_from(buffer as &[u8]))
+                }
+            }
         }
         assert_eq!(predicted, actual.as_ref().ok().map(|s| &s[..]));
         buffer[location] = previous;
