@@ -25,6 +25,7 @@ class MemoryTest(unittest.TestCase):
                         "total_memory": 1000 + i,
                         "free_bytes": 200 + i,
                         "stall_time_some_ns": 10 + i,
+                        "page_refaults": 100 + i,
                     },
                 }
             )
@@ -90,6 +91,10 @@ class MemoryTest(unittest.TestCase):
                         "Delta": 99,
                         "Rate": 0.001,
                     },
+                    "page_refaults": {
+                        "Delta": 99,
+                        "Rate": 0.001,
+                    },
                 }
             },
         )
@@ -126,6 +131,7 @@ class MemoryTest(unittest.TestCase):
                         "Average": 200,
                     },
                     "stall_time_some_ns": {"Delta": 0, "Rate": None},
+                    "page_refaults": {"Delta": 0, "Rate": None},
                 }
             },
         )

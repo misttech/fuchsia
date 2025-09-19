@@ -21,6 +21,7 @@ CUMULATIVE_METRIC_NAMES = {
     "decompression_time",
     "stall_time_some_ns",
     "stall_time_full_ns",
+    "page_refaults",
 }
 
 
