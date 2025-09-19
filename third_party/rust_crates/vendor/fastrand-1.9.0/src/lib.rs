@@ -1,9 +1,7 @@
 //! A simple and fast random number generator.
 //!
-//! The implementation uses [PCG XSH RR 64/32][paper], a simple and fast generator but **not**
-//! cryptographically secure.
-//!
-//! [paper]: https://www.pcg-random.org/pdf/hmc-cs-2014-0905.pdf
+//! The implementation uses [Wyrand](https://github.com/wangyi-fudan/wyhash), a simple and fast
+//! generator but **not** cryptographically secure.
 //!
 //! # Examples
 //!
@@ -72,17 +70,18 @@
 
 use std::cell::Cell;
 use std::collections::hash_map::DefaultHasher;
+use std::convert::TryInto;
 use std::hash::{Hash, Hasher};
 use std::ops::{Bound, RangeBounds};
 use std::thread;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", not(target_os = "wasi")))]
 use instant::Instant;
+#[cfg(not(all(target_arch = "wasm32", not(target_os = "wasi"))))]
+use std::time::Instant;
 
 /// A random number generator.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Rng(Cell<u64>);
 
 impl Default for Rng {
@@ -122,25 +121,22 @@ impl Rng {
     /// Generates a random `u32`.
     #[inline]
     fn gen_u32(&self) -> u32 {
-        // Adapted from: https://en.wikipedia.org/wiki/Permuted_congruential_generator
-        let s = self.0.get();
-        self.0.set(
-            s.wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407),
-        );
-        (((s ^ (s >> 18)) >> 27) as u32).rotate_right((s >> 59) as u32)
+        self.gen_u64() as u32
     }
 
     /// Generates a random `u64`.
     #[inline]
     fn gen_u64(&self) -> u64 {
-        ((self.gen_u32() as u64) << 32) | (self.gen_u32() as u64)
+        let s = self.0.get().wrapping_add(0xA0761D6478BD642F);
+        self.0.set(s);
+        let t = u128::from(s) * u128::from(s ^ 0xE7037ED1A0B428DB);
+        (t as u64) ^ (t >> 64) as u64
     }
 
     /// Generates a random `u128`.
     #[inline]
     fn gen_u128(&self) -> u128 {
-        ((self.gen_u64() as u128) << 64) | (self.gen_u64() as u128)
+        (u128::from(self.gen_u64()) << 64) | u128::from(self.gen_u64())
     }
 
     /// Generates a random `u32` in `0..n`.
@@ -234,7 +230,7 @@ fn mul_high_u128(a: u128, b: u128) -> u128 {
 }
 
 macro_rules! rng_integer {
-    ($t:tt, $gen:tt, $mod:tt, $doc:tt) => {
+    ($t:tt, $unsigned_t:tt, $gen:tt, $mod:tt, $doc:tt) => {
         #[doc = $doc]
         ///
         /// Panics if the range is empty.
@@ -268,7 +264,7 @@ macro_rules! rng_integer {
                 self.$gen() as $t
             } else {
                 let len = high.wrapping_sub(low).wrapping_add(1);
-                low.wrapping_add(self.$mod(len as _) as $t)
+                low.wrapping_add(self.$mod(len as $unsigned_t as _) as $t)
             }
         }
     };
@@ -286,6 +282,7 @@ impl Rng {
 
     /// Creates a new random number generator with the initial seed.
     #[inline]
+    #[must_use = "this creates a new instance of `Rng`; if you want to initialize the thread-local generator, use `fastrand::seed()` instead"]
     pub fn with_seed(seed: u64) -> Self {
         let rng = Rng(Cell::new(0));
 
@@ -354,6 +351,7 @@ impl Rng {
 
     rng_integer!(
         i8,
+        u8,
         gen_u32,
         gen_mod_u32,
         "Generates a random `i8` in the given range."
@@ -361,6 +359,7 @@ impl Rng {
 
     rng_integer!(
         i16,
+        u16,
         gen_u32,
         gen_mod_u32,
         "Generates a random `i16` in the given range."
@@ -368,6 +367,7 @@ impl Rng {
 
     rng_integer!(
         i32,
+        u32,
         gen_u32,
         gen_mod_u32,
         "Generates a random `i32` in the given range."
@@ -375,6 +375,7 @@ impl Rng {
 
     rng_integer!(
         i64,
+        u64,
         gen_u64,
         gen_mod_u64,
         "Generates a random `i64` in the given range."
@@ -382,6 +383,7 @@ impl Rng {
 
     rng_integer!(
         i128,
+        u128,
         gen_u128,
         gen_mod_u128,
         "Generates a random `i128` in the given range."
@@ -390,6 +392,7 @@ impl Rng {
     #[cfg(target_pointer_width = "16")]
     rng_integer!(
         isize,
+        usize,
         gen_u32,
         gen_mod_u32,
         "Generates a random `isize` in the given range."
@@ -397,6 +400,7 @@ impl Rng {
     #[cfg(target_pointer_width = "32")]
     rng_integer!(
         isize,
+        usize,
         gen_u32,
         gen_mod_u32,
         "Generates a random `isize` in the given range."
@@ -404,6 +408,7 @@ impl Rng {
     #[cfg(target_pointer_width = "64")]
     rng_integer!(
         isize,
+        usize,
         gen_u64,
         gen_mod_u64,
         "Generates a random `isize` in the given range."
@@ -421,8 +426,13 @@ impl Rng {
     /// Initializes this generator with the given seed.
     #[inline]
     pub fn seed(&self, seed: u64) {
-        self.0.set(seed.wrapping_add(1442695040888963407));
-        self.gen_u32();
+        self.0.set(seed);
+    }
+
+    /// Gives back **current** seed that is being held by this generator.
+    #[inline]
+    pub fn get_seed(&self) -> u64 {
+        self.0.get()
     }
 
     /// Shuffles a slice randomly.
@@ -433,7 +443,32 @@ impl Rng {
         }
     }
 
+    /// Fill a byte slice with random data.
+    #[inline]
+    pub fn fill(&self, slice: &mut [u8]) {
+        // We fill the slice by chunks of 8 bytes, or one block of
+        // WyRand output per new state.
+        let mut chunks = slice.chunks_exact_mut(core::mem::size_of::<u64>());
+        for chunk in chunks.by_ref() {
+            let n = self.gen_u64().to_ne_bytes();
+            // Safe because the chunks are always 8 bytes exactly.
+            chunk.copy_from_slice(&n);
+        }
+
+        let remainder = chunks.into_remainder();
+
+        // Any remainder will always be less than 8 bytes.
+        if !remainder.is_empty() {
+            // Generate one last block of 8 bytes of entropy
+            let n = self.gen_u64().to_ne_bytes();
+
+            // Use the remaining length to copy from block
+            remainder.copy_from_slice(&n[..remainder.len()]);
+        }
+    }
+
     rng_integer!(
+        u8,
         u8,
         gen_u32,
         gen_mod_u32,
@@ -442,12 +477,14 @@ impl Rng {
 
     rng_integer!(
         u16,
+        u16,
         gen_u32,
         gen_mod_u32,
         "Generates a random `u16` in the given range."
     );
 
     rng_integer!(
+        u32,
         u32,
         gen_u32,
         gen_mod_u32,
@@ -456,12 +493,14 @@ impl Rng {
 
     rng_integer!(
         u64,
+        u64,
         gen_u64,
         gen_mod_u64,
         "Generates a random `u64` in the given range."
     );
 
     rng_integer!(
+        u128,
         u128,
         gen_u128,
         gen_mod_u128,
@@ -471,12 +510,14 @@ impl Rng {
     #[cfg(target_pointer_width = "16")]
     rng_integer!(
         usize,
+        usize,
         gen_u32,
         gen_mod_u32,
         "Generates a random `usize` in the given range."
     );
     #[cfg(target_pointer_width = "32")]
     rng_integer!(
+        usize,
         usize,
         gen_u32,
         gen_mod_u32,
@@ -485,12 +526,14 @@ impl Rng {
     #[cfg(target_pointer_width = "64")]
     rng_integer!(
         usize,
+        usize,
         gen_u64,
         gen_mod_u64,
         "Generates a random `usize` in the given range."
     );
     #[cfg(target_pointer_width = "128")]
     rng_integer!(
+        usize,
         usize,
         gen_u128,
         gen_mod_u128,
@@ -505,12 +548,79 @@ impl Rng {
         let i = self.u8(..len);
         CHARS[i as usize] as char
     }
+
+    /// Generates a random `char` in the given range.
+    ///
+    /// Panics if the range is empty.
+    #[inline]
+    pub fn char(&self, range: impl RangeBounds<char>) -> char {
+        use std::convert::TryFrom;
+
+        let panic_empty_range = || {
+            panic!(
+                "empty range: {:?}..{:?}",
+                range.start_bound(),
+                range.end_bound()
+            )
+        };
+
+        let surrogate_start = 0xd800u32;
+        let surrogate_len = 0x800u32;
+
+        let low = match range.start_bound() {
+            Bound::Unbounded => 0u8 as char,
+            Bound::Included(&x) => x,
+            Bound::Excluded(&x) => {
+                let scalar = if x as u32 == surrogate_start - 1 {
+                    surrogate_start + surrogate_len
+                } else {
+                    x as u32 + 1
+                };
+                char::try_from(scalar).unwrap_or_else(|_| panic_empty_range())
+            }
+        };
+
+        let high = match range.end_bound() {
+            Bound::Unbounded => std::char::MAX,
+            Bound::Included(&x) => x,
+            Bound::Excluded(&x) => {
+                let scalar = if x as u32 == surrogate_start + surrogate_len {
+                    surrogate_start - 1
+                } else {
+                    (x as u32).wrapping_sub(1)
+                };
+                char::try_from(scalar).unwrap_or_else(|_| panic_empty_range())
+            }
+        };
+
+        if low > high {
+            panic_empty_range();
+        }
+
+        let gap = if (low as u32) < surrogate_start && (high as u32) >= surrogate_start {
+            surrogate_len
+        } else {
+            0
+        };
+        let range = high as u32 - low as u32 - gap;
+        let mut val = self.u32(0..=range) + low as u32;
+        if val >= surrogate_start {
+            val += gap;
+        }
+        val.try_into().unwrap()
+    }
 }
 
 /// Initializes the thread-local generator with the given seed.
 #[inline]
 pub fn seed(seed: u64) {
     RNG.with(|rng| rng.seed(seed))
+}
+
+/// Gives back **current** seed that is being held by the thread-local generator.
+#[inline]
+pub fn get_seed() -> u64 {
+    RNG.with(|rng| rng.get_seed())
 }
 
 /// Generates a random `bool`.
@@ -583,6 +693,7 @@ integer!(u128, "Generates a random `u128` in the given range.");
 integer!(i128, "Generates a random `i128` in the given range.");
 integer!(usize, "Generates a random `usize` in the given range.");
 integer!(isize, "Generates a random `isize` in the given range.");
+integer!(char, "Generates a random `char` in the given range.");
 
 /// Generates a random `f32` in range `0..1`.
 pub fn f32() -> f32 {

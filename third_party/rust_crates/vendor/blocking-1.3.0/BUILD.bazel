@@ -78,7 +78,7 @@ rust_library(
         "//third_party/rust_crates/vendor/async-lock-2.6.0:async_lock",
         "//third_party/rust_crates/vendor/async-task-4.0.3:async_task",
         "//third_party/rust_crates/vendor/atomic-waker-1.1.2:atomic_waker",
-        "//third_party/rust_crates/vendor/fastrand-1.4.0:fastrand",
+        "//third_party/rust_crates/vendor/fastrand-1.9.0:fastrand",
         "//third_party/rust_crates/vendor/futures-lite-1.11.3:futures_lite",
     ],
 )

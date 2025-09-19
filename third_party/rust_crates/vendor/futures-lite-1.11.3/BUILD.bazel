@@ -84,7 +84,7 @@ rust_library(
     version = "1.11.3",
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
-        "//third_party/rust_crates/vendor/fastrand-1.4.0:fastrand",
+        "//third_party/rust_crates/vendor/fastrand-1.9.0:fastrand",
         "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
         "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
         "//third_party/rust_crates/vendor/parking-2.2.1:parking",

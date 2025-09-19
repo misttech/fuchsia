@@ -1,3 +1,28 @@
+# Version 1.9.0
+
+- Add `Rng::fill()` (#35, #43)
+- Add `#[must_use]` to `Rng::with_seed()` (#46)
+
+# Version 1.8.0
+
+- Add `get_seed()` and `Rng::get_seed()` (#33)
+
+# Version 1.7.0
+
+- Add `char()` and `Rng::char()` (#25)
+
+# Version 1.6.0
+
+- Implement `PartialEq` and `Eq` for `Rng` (#23)
+
+# Version 1.5.0
+
+- Switch to Wyrand (#14)
+
+# Version 1.4.1
+
+- Fix bug when generating a signed integer within a range (#16)
+
 # Version 1.4.0
 
 - Add wasm support.

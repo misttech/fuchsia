@@ -1,3 +1,9 @@
+#[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
+#[cfg(all(target_family = "wasm", not(target_os = "wasi")))]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
 #[test]
 fn bool() {
     for x in &[false, true] {
@@ -67,6 +73,18 @@ fn u128() {
             }
         }
     }
+}
+
+#[test]
+fn fill() {
+    let r = fastrand::Rng::new();
+    let mut a = [0u8; 64];
+    let mut b = [0u8; 64];
+
+    r.fill(&mut a);
+    r.fill(&mut b);
+
+    assert_ne!(a, b);
 }
 
 #[test]

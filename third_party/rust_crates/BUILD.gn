@@ -3093,7 +3093,7 @@ rustc_library("blocking-v1_3_0") {
   deps += [ ":async-lock-v2_6_0" ]
   deps += [ ":async-task-v4_0_3" ]
   deps += [ ":atomic-waker-v1_1_2" ]
-  deps += [ ":fastrand-v1_4_0" ]
+  deps += [ ":fastrand-v1_9_0" ]
   deps += [ ":futures-lite-v1_11_3" ]
 
   rustenv = []
@@ -6389,25 +6389,25 @@ rustc_library("fancy-regex-v0_8_0") {
   applicable_licenses = [ ":fancy-regex-v0_8_0.license" ]
 }
 
-license("fastrand-v1_4_0.license") {
+license("fastrand-v1_9_0.license") {
   public_package_name = "fastrand"
   license_files = [
-    "//third_party/rust_crates/vendor/fastrand-1.4.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/fastrand-1.4.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/fastrand-1.9.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/fastrand-1.9.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("fastrand-v1_4_0") {
+rustc_library("fastrand-v1_9_0") {
   crate_name = "fastrand"
-  source_root = "//third_party/rust_crates/vendor/fastrand-1.4.0/src/lib.rs"
-  output_name = "fastrand-3e2364b5ac67c966"
+  source_root = "//third_party/rust_crates/vendor/fastrand-1.9.0/src/lib.rs"
+  output_name = "fastrand-3a01fa24414996c0"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  if (current_cpu == "wasm32") {
+  if (current_cpu == "wasm32" && !false) {
     deps += [ ":instant-v0_1_13" ]
   }
 
@@ -6415,13 +6415,13 @@ rustc_library("fastrand-v1_4_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=3e2364b5ac67c966",
-    "-Cextra-filename=-3e2364b5ac67c966",
+    "-Cmetadata=3a01fa24414996c0",
+    "-Cextra-filename=-3a01fa24414996c0",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":fastrand-v1_4_0.license" ]
+  applicable_licenses = [ ":fastrand-v1_9_0.license" ]
 }
 
 license("fatfs-v0_3_6.license") {
@@ -7296,7 +7296,7 @@ rustc_library("futures-lite-v1_11_3") {
 
   deps = []
   deps += [ ":memchr-v2_7_4" ]
-  deps += [ ":fastrand-v1_4_0" ]
+  deps += [ ":fastrand-v1_9_0" ]
   deps += [ ":futures-core-v0_3_31" ]
   deps += [ ":futures-io-v0_3_31" ]
   deps += [ ":parking-v2_2_1" ]
