@@ -176,6 +176,20 @@ func registerTool(shard *Shard, tools build.Tools, toolName string) (string, err
 	return tool.Path, err
 }
 
+func addEnvPrefixes(shard *Shard, tools build.Tools) error {
+	envPrefixes := make(map[string][]string)
+	if shard.Env.Dimensions.OS() != "Mac" {
+		sshPath, err := registerTool(shard, tools, "ssh")
+		if err != nil {
+			return fmt.Errorf("failed to get path to ssh tool: %w", err)
+		}
+		// Add ssh to $PATH. This is relied on by botanist.
+		envPrefixes["PATH"] = []string{filepath.Clean(filepath.Join(shard.RelativeCWD, filepath.Dir(sshPath)))}
+	}
+	shard.EnvPrefixes = envPrefixes
+	return nil
+}
+
 func ConstructBaseCommand(shard *Shard, checkoutRoot, buildDir string, tools build.Tools, params *proto.Params, variants, experiments []string) error {
 	// Some artifacts are within the checkout root directory but not in the
 	// build directory. Thus we need to map the task input tree root to the
@@ -187,6 +201,10 @@ func ConstructBaseCommand(shard *Shard, checkoutRoot, buildDir string, tools bui
 		return err
 	}
 	shard.RelativeCWD = relativeCWD
+
+	if err := addEnvPrefixes(shard, tools); err != nil {
+		return err
+	}
 
 	botanist, err := registerTool(shard, tools, "botanist")
 	if err != nil {

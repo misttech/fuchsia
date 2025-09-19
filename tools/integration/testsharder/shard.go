@@ -104,6 +104,9 @@ type Shard struct {
 	// directory.
 	RelativeCWD string `json:"relative_cwd,omitempty"`
 
+	// The env prefixes to pass to the task request.
+	EnvPrefixes map[string][]string `json:"env_prefixes,omitempty"`
+
 	// BuildMetadata provides the fint set artifacts metadata needed to construct
 	// swarming task requests from the shards. This will only be populated if the
 	// `-deps-file` flag is provided meaning that local artifacts will be used and

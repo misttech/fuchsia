@@ -411,7 +411,7 @@ func TestGetEnabledExperiments(t *testing.T) {
 }
 
 func TestConstructBaseCommand(t *testing.T) {
-	toolNames := []string{"botanist", "ffx", "llvm-profdata"}
+	toolNames := []string{"botanist", "ffx", "llvm-profdata", "ssh"}
 	tools := build.Tools{}
 	for _, name := range toolNames {
 		for _, cpu := range []string{"x64", "arm64"} {
@@ -442,7 +442,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			},
 			targetCPU: "x64",
 			wantCmd:   []string{"./host_x64/botanist", "-level", "debug", "run", "-skip-setup"},
-			wantDeps:  []string{"host_x64/botanist"},
+			wantDeps:  []string{"host_x64/botanist", "host_x64/ssh"},
 		},
 		{
 			name: "mac shard",
@@ -466,7 +466,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "600s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name", "core.x64",
 				"-local-repo", "repo", "-expects-ssh"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
 		},
 		{
 			name: "emu x64 shard netboot, no ssh",
@@ -479,7 +479,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name",
 				"core.x64", "-use-serial", "-netboot"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
 		},
 		{
 			name: "emu arm64 shard boot test",
@@ -494,7 +494,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_arm64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_arm64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name", "arm64_boot_test",
 				"-boot-test", "-bootup-timeout", "60s", "-use-serial", "-netboot"},
-			wantDeps: []string{"host_arm64/botanist", "host_arm64/ffx"},
+			wantDeps: []string{"host_arm64/botanist", "host_arm64/ffx", "host_arm64/ssh"},
 		},
 		{
 			name: "emu arm64 shard with tcg",
@@ -508,7 +508,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name", "core.arm64",
 				"-expects-ssh", "-test-timeout-scale-factor", "2"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
 		},
 		{
 			name: "nuc shard",
@@ -522,7 +522,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-llvm-profdata", "host_x64/llvm-profdata=clang",
 				"-timeout", "0s", "-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json",
 				"-product-bundle-name", "core.x64", "-expects-ssh"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/llvm-profdata"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/llvm-profdata", "host_x64/ssh"},
 		},
 		{
 			name: "vim3 shard",
@@ -537,7 +537,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-experiment", "exp1", "-experiment", "exp2", "-product-bundles", "product_bundles.json",
 				"-product-bundle-name", "core.vim3", "-expects-ssh", "-zircon-args", "arg1", "-zircon-args", "arg2"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
 		},
 		{
 			name: "missing product bundle",

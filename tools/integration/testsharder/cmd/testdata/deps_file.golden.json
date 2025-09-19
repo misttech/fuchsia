@@ -124,6 +124,11 @@
             "-expects-ssh"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {
             "board": "x64",
             "compilation_mode": "debug",

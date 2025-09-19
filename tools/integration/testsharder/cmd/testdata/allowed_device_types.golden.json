@@ -34,7 +34,8 @@
             "host_x64/bar",
             "host_x64/botanist",
             "host_x64/dep1",
-            "host_x64/dep2"
+            "host_x64/dep2",
+            "host_x64/ssh"
         ],
         "timeout_secs": 0,
         "summary": {
@@ -57,6 +58,11 @@
             "-skip-setup"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     },
     {
@@ -98,6 +104,7 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/ssh",
             "host_x64/zbi",
             "product_bundle/zbi",
             "product_bundles.json"
@@ -148,6 +155,11 @@
             "-expects-ssh"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     }
 ]

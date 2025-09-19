@@ -39,6 +39,7 @@
             "host_x64/foo.sh",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/ssh",
             "host_x64/zbi",
             "product_bundle/zbi",
             "product_bundles.json"
@@ -88,6 +89,11 @@
             "-use-serial"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     },
     {
@@ -130,6 +136,7 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/ssh",
             "host_x64/zbi",
             "product_bundle/zbi",
             "product_bundles.json"
@@ -180,6 +187,11 @@
             "2"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     },
     {
@@ -216,7 +228,8 @@
         "deps": [
             "Linux-other_dimension:bar_tests.json",
             "host_x64/bar.sh",
-            "host_x64/botanist"
+            "host_x64/botanist",
+            "host_x64/ssh"
         ],
         "timeout_secs": 0,
         "summary": {
@@ -240,6 +253,11 @@
             "-skip-setup"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     },
     {
@@ -276,7 +294,8 @@
         "deps": [
             "Linux-other_dimension:foo_tests.json",
             "host_x64/botanist",
-            "host_x64/foo.sh"
+            "host_x64/foo.sh",
+            "host_x64/ssh"
         ],
         "timeout_secs": 0,
         "summary": {
@@ -300,6 +319,11 @@
             "-skip-setup"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     }
 ]

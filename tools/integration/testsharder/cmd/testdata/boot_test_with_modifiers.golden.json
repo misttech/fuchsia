@@ -44,6 +44,7 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/ssh",
             "host_x64/zbi",
             "product_bundles.json"
         ],
@@ -94,6 +95,11 @@
             "-use-serial"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     },
     {
@@ -141,6 +147,7 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/ssh",
             "host_x64/zbi",
             "product_bundles.json"
         ],
@@ -191,6 +198,11 @@
             "-use-serial"
         ],
         "relative_cwd": "out/temp",
+        "env_prefixes": {
+            "PATH": [
+                "out/temp/host_x64"
+            ]
+        },
         "build_metadata": {}
     }
 ]
