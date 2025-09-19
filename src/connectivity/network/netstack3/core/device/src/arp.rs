@@ -540,9 +540,10 @@ fn handle_packet<
                         flags: ConfirmationFlags {
                             solicited_flag: solicited,
                             // ARP does not have the concept of an override flag in a neighbor
-                            // confirmation; if the link address that's received does not match the
-                            // one in the neighbor cache, the entry should always go to STALE.
-                            override_flag: false,
+                            // confirmation. In order to ensure we don't fail to update a cached
+                            // link address when a neighbor informs us of the update, always
+                            // consider ARP replies as overrides.
+                            override_flag: true,
                         },
                     }
                 }
