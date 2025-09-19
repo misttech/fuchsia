@@ -4,15 +4,16 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("lockup_detector") {
+static_library("lockup_detector") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "diagnostics.cc",
     "lockup_detector.cc",
   ]
   deps = [
-    "tests",
     "//zircon/kernel/lib/backtrace",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/console",
@@ -22,5 +23,14 @@ zx_library("lockup_detector") {
     "//zircon/kernel/object",
     "//zircon/system/ulib/affine",
   ]
+}
+
+library_headers("headers") {
+  headers = []
   public_deps = [ "//zircon/kernel/lib/ktl:headers" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }

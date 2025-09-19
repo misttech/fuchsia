@@ -203,6 +203,9 @@ library_headers("headers") {
     # arch/x86/hypervisor.h has #include <hypervisor/aspace.h>.
     "//zircon/kernel/hypervisor:headers",
 
+    # arch/x86/hypervisor.h has #include <lib/id_allocator.h>.
+    "//zircon/kernel/lib/id_allocator:headers",
+
     # <arch/aspace.h> has #include <bitmap/rle-bitmap.h>.
     # <arch/x86/ioport.h> has #include <bitmap/rle-bitmap.h>.
     "//zircon/system/ulib/bitmap:headers",

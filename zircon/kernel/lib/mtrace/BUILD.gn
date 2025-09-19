@@ -4,11 +4,13 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
 assert(is_kernel)
 
-zx_library("mtrace") {
+static_library("mtrace") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "mtrace-pmu.cc",
     "mtrace.cc",
@@ -20,6 +22,10 @@ zx_library("mtrace") {
     "//zircon/kernel/object",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+library_headers("headers") {
+  headers = [ "lib/mtrace.h" ]
   public_deps = [
     # <lib/mtrace.h> has #include <lib/user_copy/user_ptr.h>
     "//zircon/kernel/lib/user_copy:headers",

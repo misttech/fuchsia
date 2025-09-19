@@ -38,9 +38,5 @@ library_headers("headers") {
 
     # <hypervisor/aspace.h> has #include <vm/vm_aspace.h>.
     "//zircon/kernel/vm:headers",
-
-    # <hypervisor/interrupt_tracker.h> has #include <lib/ktrace.h>.
-    "//zircon/kernel/lib/id_allocator",
-    "//zircon/kernel/lib/ktrace:headers",
   ]
 }

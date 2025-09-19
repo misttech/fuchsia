@@ -4,9 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
-
-zx_library("ktrace") {
+source_set("ktrace") {
   sources = [ "ktrace.cc" ]
   deps = [
     "//zircon/kernel/hypervisor:headers",

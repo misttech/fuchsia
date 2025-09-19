@@ -29,6 +29,7 @@ group("kernel-tests") {
     "cbuf:kernel-tests",
     "crashlog:kernel-tests",
     "fbl:kernel-tests",
+    "id_allocator:kernel-tests",
     "instrumentation:kernel-tests",
     "jtrace:kernel-tests",
     "kconcurrent/tests",

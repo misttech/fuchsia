@@ -6,7 +6,11 @@
 
 import("//build/cpp/library_headers.gni")
 
-library_headers("id_allocator_headers") {
+group("id_allocator") {
+  public_deps = [ ":headers" ]
+}
+
+library_headers("headers") {
   headers = [ "lib/id_allocator.h" ]
   public_deps = [
     "//zircon/system/ulib/bitmap",
@@ -14,17 +18,11 @@ library_headers("id_allocator_headers") {
   ]
 }
 
-source_set("tests") {
+source_set("kernel-tests") {
   # TODO: testonly = true
   sources = [ "id_allocator_tests.cc" ]
   deps = [
-    "//zircon/kernel/lib/id_allocator:id_allocator_headers",
+    ":headers",
     "//zircon/kernel/lib/unittest",
   ]
-}
-
-source_set("id_allocator") {
-  public_deps = [ ":id_allocator_headers" ]
-
-  deps = [ ":tests" ]
 }

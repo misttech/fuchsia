@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
 
@@ -103,6 +104,8 @@ if (toolchain_environment == "physmem" ||
   }
 
   source_set("arm64") {
+    public_deps = [ ":headers" ]
+
     sources = [
       "arch.cc",
       "asid_allocator.cc",
@@ -164,6 +167,13 @@ if (toolchain_environment == "physmem" ||
       "//zircon/system/ulib/lazy_init",
       "//zircon/system/ulib/pretty",
       "//zircon/system/ulib/zx",
+    ]
+  }
+
+  library_headers("headers") {
+    headers = [
+      # arch/arm64/hypervisor.h has #include <lib/id_allocator.h>.
+      "//zircon/kernel/lib/id_allocator:headers",
     ]
   }
 

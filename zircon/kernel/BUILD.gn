@@ -116,10 +116,11 @@ if (current_toolchain == default_toolchain) {
         # <lib/ktrace.h> has #include <lib/spsc_buffer/spsc_buffer.h>.
         "//zircon/kernel/lib/spsc_buffer:headers.config",
 
-        # <lib/ktrace.h> has #include <lib/ktrace/string_ref.h>.
-        "//zircon/kernel/lib/ktrace:headers.config",
-        "//zircon/kernel/lib/special-sections:headers.config",
+        # <lib/ktrace.h> has #include <lib/fxt/*.h>.
         "//src/performance/lib/fxt:headers.config",
+
+        # <lib/fxt/section_symbols.h> has #include <lib/special-sections/special-sections.h>.
+        "//zircon/kernel/lib/special-sections:headers.config",
 
         # <kernel/thread.h> has #include <fbl/macros.h>
         "//zircon/system/ulib/fbl:headers.config",
@@ -129,6 +130,9 @@ if (current_toolchain == default_toolchain) {
 
         # <reg.h> has #include <lib/mmio-ptr/mmio-ptr.h>.
         "//zircon/system/ulib/mmio-ptr:headers.config",
+
+        # <arch/*/hypervisor.h> has #include <lib/id_allocator.h>.
+        "//zircon/kernel/lib/id_allocator:headers.config",
 
         # Everywhere has #include <lib/fit/result.h>
         # Everywhere has #include <lib/zx/result.h>
