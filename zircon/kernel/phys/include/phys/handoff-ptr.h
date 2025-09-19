@@ -23,7 +23,8 @@ extern PhysHandoff* gPhysHandoff;
 // PhysHandoffPtr provides a "smart pointer" style API for pointers handed off
 // from physboot to the kernel proper.  A handoff pointer is only ever created
 // in physboot by the HandoffPrep class.  It's only ever dereferenced (or
-// converted into a raw pointer) in the kernel proper.
+// converted into a raw pointer) in the kernel proper.  When converted to a
+// pointer, it's only ever converted to a pointer to const.
 //
 // Lifetime issues for handoff data are complex.  PhysHandoffPtr is always
 // treated as a traditional "owning" smart pointer and is a move-only type.
@@ -77,7 +78,7 @@ class PhysHandoffPtr {
 #if HANDOFF_PTR_DEREF
   // Handoff pointers can only be dereferenced in the kernel proper.
 
-  T* get() const {
+  const T* get() const {
     if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
       ZX_DEBUG_ASSERT_MSG(gPhysHandoff,
                           "Pointer no longer valid; phys hand-off has already ended!");
@@ -85,27 +86,27 @@ class PhysHandoffPtr {
     return ptr_;
   }
 
-  T* release() { return std::exchange(ptr_, {}); }
+  const T* release() { return std::exchange(ptr_, {}); }
 
-  T& operator*() const { return *get(); }
+  const T& operator*() const { return *get(); }
 
-  T* operator->() const { return get(); }
+  const T* operator->() const { return get(); }
 #endif  // HANDOFF_PTR_DEREF
 
  private:
   friend class HandoffPrep;
 
-  T* ptr_ = nullptr;
+  const T* ptr_ = nullptr;
 };
 
-// PhysHandoffSpan<T> is to std::span<T> as PhysHandoffPtr<T> is to T*.
-// It has get() and release() methods that return std::span<T>.
+// PhysHandoffSpan<T> is to std::span<const T> as PhysHandoffPtr<T> is to const
+// T*.  It has get() and release() methods that return std::span<const T>.
 
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffSpan {
  public:
   using Ptr = PhysHandoffPtr<T, Lifetime>;
-  using value_type = T;
+  using value_type = const T;
 
   PhysHandoffSpan() = default;
   PhysHandoffSpan(const PhysHandoffSpan&) = delete;
@@ -122,9 +123,9 @@ class PhysHandoffSpan {
   bool empty() const { return size() == 0; }
 
 #if HANDOFF_PTR_DEREF
-  std::span<T> get() const { return {ptr_.get(), size_}; }
+  std::span<value_type> get() const { return {ptr_.get(), size_}; }
 
-  std::span<T> release() { return {ptr_.release(), size_}; }
+  std::span<value_type> release() { return {ptr_.release(), size_}; }
 #endif
 
  private:
