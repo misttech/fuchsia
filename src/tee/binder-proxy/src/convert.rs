@@ -138,7 +138,7 @@ fn parameter_is_output_or_inout(p: &fidl_fuchsia_tee::Parameter) -> bool {
 
 fn buffer_to_aidl(buffer: &fidl_fuchsia_tee::Buffer) -> Buffer {
     let contents = match &buffer.vmo {
-        Some(vmo) => vmo.read_to_vec(buffer.offset.unwrap(), buffer.size.unwrap()).unwrap(),
+        Some(vmo) => vmo.read_to_vec::<u8>(buffer.offset.unwrap(), buffer.size.unwrap()).unwrap(),
         None => vec![],
     };
     Buffer { direction: direction_to_aidl(buffer.direction.unwrap()), contents }
@@ -208,7 +208,7 @@ mod tests {
         assert!(fidl_buffer.vmo.is_some());
         if let Some(vmo) = fidl_buffer.vmo {
             assert_eq!(vmo.get_content_size(), Ok(4));
-            let read_data = vmo.read_to_vec(0, 4).unwrap();
+            let read_data = vmo.read_to_vec::<u8>(0, 4).unwrap();
             assert_eq!(&read_data, &[1, 2, 3, 4]);
         }
     }

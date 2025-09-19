@@ -2384,7 +2384,7 @@ mod tests {
                 // Trigger a pager request.
                 let cloned_file = file.clone();
                 let thread1 = std::thread::spawn(move || {
-                    cloned_file.vmo().read_to_vec(0, 10).unwrap();
+                    cloned_file.vmo().read_to_vec::<u8>(0, 10).unwrap();
                 });
 
                 // Wait for it.
@@ -2413,7 +2413,7 @@ mod tests {
                 // return non-zero content.
                 let file_cloned = file.clone();
                 let thread3 = std::thread::spawn(move || {
-                    assert_eq!(&file_cloned.vmo().read_to_vec(0, 10).unwrap(), &[0; 10]);
+                    assert_eq!(&file_cloned.vmo().read_to_vec::<u8>(0, 10).unwrap(), &[0; 10]);
                 });
 
                 // Wait for the second page request to arrive.

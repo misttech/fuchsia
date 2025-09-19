@@ -1692,7 +1692,7 @@ mod tests {
         outer_runner.shutdown().await;
 
         // Check that the write targeted the correct block (4 + 5 = 9)
-        let data = vmo.read_to_vec(9 * 512, 512).unwrap();
+        let data = vmo.read_to_vec::<u8>(9 * 512, 512).unwrap();
         assert_eq!(&data[..], &buffer[..]);
     }
 

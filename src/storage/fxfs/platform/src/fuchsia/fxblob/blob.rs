@@ -1023,7 +1023,7 @@ mod tests {
 
             let blob = fixture.get_blob(hash).await.unwrap();
             assert_eq!(blob.chunks_supply_count.len(), 8);
-            blob.vmo.read_to_vec(32 * 1024, 4096).unwrap();
+            blob.vmo.read_to_vec::<u8>(32 * 1024, 4096).unwrap();
 
             assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 0, 0, 0]);
 
@@ -1039,7 +1039,7 @@ mod tests {
             )
             .await;
 
-            blob.vmo.read_to_vec(164 * 1024, 4096).unwrap();
+            blob.vmo.read_to_vec::<u8>(164 * 1024, 4096).unwrap();
             assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 1, 0, 0]);
 
             // We can't evict pages from the VMO so get the kernel to resupply them but we can call
@@ -1059,7 +1059,7 @@ mod tests {
             assert_eq!(volume.refault_tracker().bytes(), 32 * 1024);
 
             // Page in the last chunk and then do it again.
-            blob.vmo.read_to_vec(224 * 1024, 4096).unwrap();
+            blob.vmo.read_to_vec::<u8>(224 * 1024, 4096).unwrap();
             blob.clone().page_in(PageInRange::new(
                 224 * 1024..228 * 1024,
                 blob.clone(),
@@ -1116,7 +1116,7 @@ mod tests {
                 &[false, false, false, false, false, false, false, false]
             );
 
-            blob.vmo.read_to_vec(32 * 1024, 4096).unwrap();
+            blob.vmo.read_to_vec::<u8>(32 * 1024, 4096).unwrap();
 
             assert_eq!(
                 &blob.chunks_supplied.get(),
@@ -1134,7 +1134,7 @@ mod tests {
                 "read-ahead size didn't change with memory pressure change"
             );
 
-            blob.vmo.read_to_vec(164 * 1024, 4096).unwrap();
+            blob.vmo.read_to_vec::<u8>(164 * 1024, 4096).unwrap();
             assert_eq!(
                 &blob.chunks_supplied.get(),
                 &[true, true, true, true, false, true, false, false]

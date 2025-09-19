@@ -426,7 +426,7 @@ async fn test_gpt_on_ramdisk() {
             .read_at(MutableBufferSlice::new_with_vmo_id(&vmoid1, 0, LEN), BS as u64 * 150)
             .await
             .expect("read failed");
-        assert_eq!(&vmo.read_to_vec(0, LEN).unwrap()[..], &[0x11u8; LEN as usize]);
+        assert_eq!(&vmo.read_to_vec::<u8>(0, LEN).unwrap()[..], &[0x11u8; LEN as usize]);
 
         vmo.write(&[0x22u8; LEN as usize], 0).unwrap();
         client2
@@ -438,7 +438,7 @@ async fn test_gpt_on_ramdisk() {
             .read_at(MutableBufferSlice::new_with_vmo_id(&vmoid2, 0, BS as u64), 0)
             .await
             .expect("read failed");
-        assert_eq!(&vmo.read_to_vec(0, BS as u64).unwrap()[..], &[0x22u8; BS]);
+        assert_eq!(&vmo.read_to_vec::<u8>(0, BS as u64).unwrap()[..], &[0x22u8; BS]);
 
         // Write past end
         vmo.write(&[0x33u8; LEN as usize], 0).unwrap();
@@ -452,7 +452,7 @@ async fn test_gpt_on_ramdisk() {
             .read_at(MutableBufferSlice::new_with_vmo_id(&vmoid2, 0, BS as u64), 0)
             .await
             .expect("read failed");
-        assert_eq!(&vmo.read_to_vec(0, BS as u64).unwrap()[..], &[0x22u8; BS]);
+        assert_eq!(&vmo.read_to_vec::<u8>(0, BS as u64).unwrap()[..], &[0x22u8; BS]);
 
         client1.detach_vmo(vmoid1).await.unwrap();
         client2.detach_vmo(vmoid2).await.unwrap();

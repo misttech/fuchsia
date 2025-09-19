@@ -98,7 +98,7 @@ impl MemoryObject {
         }
     }
 
-    pub fn read_to_array<T: FromBytes, const N: usize>(
+    pub fn read_to_array<T: Copy + FromBytes, const N: usize>(
         &self,
         offset: u64,
     ) -> Result<[T; N], zx::Status> {

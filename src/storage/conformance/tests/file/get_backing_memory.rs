@@ -171,5 +171,5 @@ async fn file_get_backing_memory_shared_buffer() {
     // Write to the file and it should show up in the VMO.
     fuchsia_fs::file::write(&vmo_file, "foo").await.expect("write failed");
 
-    assert_eq!(&vmo.read_to_vec(0, 3).expect("read_to_vec failed"), b"foo");
+    assert_eq!(&vmo.read_to_vec::<u8>(0, 3).expect("read_to_vec failed"), b"foo");
 }

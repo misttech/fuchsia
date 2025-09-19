@@ -187,7 +187,7 @@ impl NonMetaStorage for blobfs::Client {
         let content_size = vmo.get_content_size().map_err(|e| {
             NonMetaStorageError::ReadBlob(fuchsia_fs::file::ReadError::ReadError(e))
         })?;
-        vmo.read_to_vec(0, content_size)
+        vmo.read_to_vec::<u8>(0, content_size)
             .map_err(|e| NonMetaStorageError::ReadBlob(fuchsia_fs::file::ReadError::ReadError(e)))
     }
 }
@@ -574,7 +574,7 @@ mod tests {
         let proxy = vfs::directory::serve_read_only(directory);
 
         let vmo = proxy.get_blob_vmo(&blob_contents_hash()).await.unwrap();
-        assert_eq!(vmo.read_to_vec(0, BLOB_CONTENTS.len() as u64).unwrap(), BLOB_CONTENTS);
+        assert_eq!(vmo.read_to_vec::<u8>(0, BLOB_CONTENTS.len() as u64).unwrap(), BLOB_CONTENTS);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -611,7 +611,7 @@ mod tests {
 
         let vmo =
             NonMetaStorage::get_blob_vmo(&blobfs_client, &blob_contents_hash()).await.unwrap();
-        assert_eq!(vmo.read_to_vec(0, BLOB_CONTENTS.len() as u64).unwrap(), BLOB_CONTENTS);
+        assert_eq!(vmo.read_to_vec::<u8>(0, BLOB_CONTENTS.len() as u64).unwrap(), BLOB_CONTENTS);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

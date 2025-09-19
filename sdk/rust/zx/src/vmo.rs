@@ -5,9 +5,9 @@
 //! Type-safe bindings for Zircon vmo objects.
 
 use crate::{
-    object_get_info_single, object_get_property, object_set_property, ok, sys, AsHandleRef, Bti,
-    Handle, HandleBased, HandleRef, Koid, Name, ObjectQuery, Property, PropertyQuery, Resource,
-    Rights, Status, Topic,
+    AsHandleRef, Bti, Handle, HandleBased, HandleRef, Koid, Name, ObjectQuery, Property,
+    PropertyQuery, Resource, Rights, Status, Topic, object_get_info_single, object_get_property,
+    object_set_property, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -129,34 +129,42 @@ impl Vmo {
         }
     }
 
-    /// Provides the thinest wrapper possible over `zx_vmo_read`.
+    /// Provides a very thin wrapper over `zx_vmo_read`.
     ///
     /// # Safety
     ///
     /// Callers must guarantee that the buffer is valid to write to.
-    pub unsafe fn read_raw(
+    pub unsafe fn read_raw<T: FromBytes>(
         &self,
-        buffer: *mut u8,
+        buffer: *mut T,
         buffer_length: usize,
         offset: u64,
     ) -> Result<(), Status> {
-        let status = sys::zx_vmo_read(self.raw_handle(), buffer, offset, buffer_length);
+        let status = sys::zx_vmo_read(
+            self.raw_handle(),
+            buffer.cast::<u8>(),
+            offset,
+            buffer_length * std::mem::size_of::<T>(),
+        );
         ok(status)
     }
 
     /// Same as read, but reads into memory that might not be initialized, returning an initialized
     /// slice of bytes on success.
-    pub fn read_uninit<'a>(
+    ///
+    /// `Copy` is required to ensure that there are no custom `Drop` implementations. It is
+    /// difficult to correctly run custom drop code after initializing a `MaybeUninit`.
+    pub fn read_uninit<'a, T: Copy + FromBytes>(
         &self,
-        data: &'a mut [MaybeUninit<u8>],
+        data: &'a mut [MaybeUninit<T>],
         offset: u64,
-    ) -> Result<&'a mut [u8], Status> {
+    ) -> Result<&'a mut [T], Status> {
         // SAFETY: This system call requires that the pointer and length we pass are valid to write
         // to, which we guarantee here by getting the pointer and length from a valid slice.
         unsafe {
             self.read_raw(
                 // TODO(https://fxbug.dev/42079723) use MaybeUninit::slice_as_mut_ptr when stable
-                data.as_mut_ptr().cast::<u8>(),
+                data.as_mut_ptr().cast::<T>(),
                 data.len(),
                 offset,
             )?
@@ -168,12 +176,16 @@ impl Vmo {
             // have to trust that the kernel didn't lie when it said it wrote to the entire
             // buffer, but as long as that assumption is valid them it's safe to assume this
             // slice is init.
-            unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast::<u8>(), data.len()) },
+            unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast::<T>(), data.len()) },
         )
     }
 
     /// Same as read, but returns a Vec.
-    pub fn read_to_vec(&self, offset: u64, length: u64) -> Result<Vec<u8>, Status> {
+    pub fn read_to_vec<T: Copy + FromBytes>(
+        &self,
+        offset: u64,
+        length: u64,
+    ) -> Result<Vec<T>, Status> {
         let len = length.try_into().map_err(|_| Status::INVALID_ARGS)?;
         let mut buffer = Vec::with_capacity(len);
         self.read_uninit(buffer.spare_capacity_mut(), offset)?;
@@ -186,7 +198,7 @@ impl Vmo {
     }
 
     /// Same as read, but returns an array.
-    pub fn read_to_array<T: FromBytes, const N: usize>(
+    pub fn read_to_array<T: Copy + FromBytes, const N: usize>(
         &self,
         offset: u64,
     ) -> Result<[T; N], Status> {
@@ -219,7 +231,7 @@ impl Vmo {
     }
 
     /// Same as read, but returns a `T`.
-    pub fn read_to_object<T: FromBytes>(&self, offset: u64) -> Result<T, Status> {
+    pub fn read_to_object<T: Copy + FromBytes>(&self, offset: u64) -> Result<T, Status> {
         let mut object = MaybeUninit::<T>::uninit();
         // SAFETY: T is FromBytes, which means that any bit pattern is valid. Interpreting
         // MaybeUninit<T> as [MaybeUninit<u8>] is safe because T's alignment requirements
@@ -622,7 +634,7 @@ mod tests {
         vmo.write(&ACTUAL, 0).unwrap();
         let read_len = ACTUAL_SIZE - read_offset;
         assert_eq!(
-            &vmo.read_to_vec(read_offset as u64, read_len as u64).unwrap(),
+            &vmo.read_to_vec::<u8>(read_offset as u64, read_len as u64).unwrap(),
             &ACTUAL[read_offset..]
         );
     }
@@ -631,7 +643,7 @@ mod tests {
     #[test_case(1)]
     fn vmo_read_to_object(read_offset: usize) {
         #[repr(C)]
-        #[derive(Debug, Eq, KnownLayout, FromBytes, PartialEq)]
+        #[derive(Copy, Clone, Debug, Eq, KnownLayout, FromBytes, PartialEq)]
         struct Object {
             a: u8,
             b: u8,
@@ -662,7 +674,7 @@ mod tests {
         assert!(vmo.read(&mut vec1, 1).is_ok());
         assert_eq!(b"b123f", &vec1[0..5]);
 
-        assert_eq!(&vmo.read_to_vec(0, 6).expect("read_to_vec failed"), b"ab123f");
+        assert_eq!(&vmo.read_to_vec::<u8>(0, 6).expect("read_to_vec failed"), b"ab123f");
     }
 
     #[test]

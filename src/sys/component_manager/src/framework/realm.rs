@@ -1434,7 +1434,7 @@ mod tests {
         // numbers are different.
         assert_eq!(fidl_resolved_info.url, internal_resolved_info.url);
         let read_buffer = |data: fmem::Data| match data {
-            fmem::Data::Buffer(fmem::Buffer { vmo, size }) => Some(vmo.read_to_vec(0, size)),
+            fmem::Data::Buffer(fmem::Buffer { vmo, size }) => Some(vmo.read_to_vec::<u8>(0, size)),
             _ => None,
         };
         assert_eq!(

@@ -5,20 +5,20 @@
 use fidl::AsHandleRef as _;
 use fidl_fuchsia_boot::BootfsFileVmo;
 use fuchsia_bootfs::{
-    zbi_bootfs_is_aligned, zbi_bootfs_page_align, BootfsParser, BootfsParserError,
+    BootfsParser, BootfsParserError, zbi_bootfs_is_aligned, zbi_bootfs_page_align,
 };
 use fuchsia_component::client;
-use fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType};
+use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
 use log::info;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 use thiserror::Error;
+use vfs::ToObjectRequest;
 use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo;
 use vfs::tree_builder::{self, TreeBuilder};
-use vfs::ToObjectRequest;
 use zx::{self as zx, HandleBased, Resource};
 use {fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(committed_bytes(&bootfs_dup), data_start);
 
         // Expect the entire data VMO region to be zero-ed out.
-        let content = bootfs_dup.read_to_vec(data_start, data_size).unwrap();
+        let content = bootfs_dup.read_to_vec::<u8>(data_start, data_size).unwrap();
         assert!(content.iter().all(|b| *b == 0x0));
     }
 

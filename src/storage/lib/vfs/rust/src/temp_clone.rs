@@ -215,11 +215,14 @@ mod tests {
                 {
                     // Create and read from a temporary clone.
                     let temp_clone2 = vmo.temp_clone();
-                    assert_eq!(&temp_clone2.read_to_vec(0, 3).expect("read_to_vec failed"), b"foo");
+                    assert_eq!(
+                        &temp_clone2.read_to_vec::<u8>(0, 3).expect("read_to_vec failed"),
+                        b"foo"
+                    );
                 }
 
                 // We should still be able to read from the primary handle.
-                assert_eq!(&vmo.read_to_vec(0, 3).expect("read_to_vec failed"), b"foo");
+                assert_eq!(&vmo.read_to_vec::<u8>(0, 3).expect("read_to_vec failed"), b"foo");
 
                 // Create another vmo which should get cleaned up when the primary handle is
                 // dropped.
@@ -240,7 +243,7 @@ mod tests {
 
             // The primary handle has been dropped, but we should still be able to
             // read via temp_clone.
-            assert_eq!(&temp_clone.read_to_vec(0, 3).expect("read_to_vec failed"), b"foo");
+            assert_eq!(&temp_clone.read_to_vec::<u8>(0, 3).expect("read_to_vec failed"), b"foo");
         }
 
         // Make sure that all the VMOs got properly cleaned up.
@@ -265,7 +268,7 @@ mod tests {
             let t1 = std::thread::spawn(move || {
                 for _ in 0..1000 {
                     assert_eq!(
-                        &vmo.temp_clone().read_to_vec(0, 3).expect("read_to_vec failed"),
+                        &vmo.temp_clone().read_to_vec::<u8>(0, 3).expect("read_to_vec failed"),
                         b"foo"
                     );
                 }
@@ -274,7 +277,10 @@ mod tests {
             let t2 = std::thread::spawn(move || {
                 for _ in 0..1000 {
                     assert_eq!(
-                        &vmo_clone.temp_clone().read_to_vec(0, 3).expect("read_to_vec failed"),
+                        &vmo_clone
+                            .temp_clone()
+                            .read_to_vec::<u8>(0, 3)
+                            .expect("read_to_vec failed"),
                         b"foo"
                     );
                 }

@@ -1477,7 +1477,7 @@ mod tests {
                 last_koid = koid;
                 reopen_count += 1;
             }
-            assert_eq!(child_vmo.read_to_vec(0, SIZE as u64).expect("vmo read failed"), data);
+            assert_eq!(child_vmo.read_to_vec::<u8>(0, SIZE as u64).expect("vmo read failed"), data);
         }
         finished.store(true, Ordering::Relaxed);
         overwrite_loop.await;
