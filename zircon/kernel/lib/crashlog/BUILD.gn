@@ -4,10 +4,13 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
+import("//build/cpp/library_headers.gni")
 import("params.gni")
 
-zx_library("crashlog") {
+static_library("crashlog") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "crashlog.cc",
     "panic_buffer.cc",
@@ -20,16 +23,22 @@ zx_library("crashlog") {
     "//zircon/kernel/lib/version",
     "//zircon/kernel/object:headers",
   ]
+}
+
+library_headers("headers") {
+  headers = []
   public_configs = [
     ":config",
     "//zircon/kernel:persistent_ram_config",
   ]
-
-  # TODO: testonly
-  deps += [ "test" ]
 }
 
 config("config") {
   visibility = [ ":*" ]
   defines = [ "MIN_CRASHLOG_SIZE=$min_crashlog_size" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "test" ]
 }

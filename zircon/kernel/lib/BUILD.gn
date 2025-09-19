@@ -26,6 +26,8 @@ group("kernel-tests") {
     "acpi_lite:kernel-tests",
     "arch/test:kernel-tests",
     "backtrace/tests",
+    "cbuf:kernel-tests",
+    "crashlog:kernel-tests",
     "instrumentation/test:tests",
     "jtrace/tests",
     "kconcurrent/tests",

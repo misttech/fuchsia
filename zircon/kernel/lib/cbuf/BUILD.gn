@@ -4,20 +4,27 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("cbuf") {
+static_library("cbuf") {
+  public_deps = [ ":headers" ]
+
   sources = [ "cbuf.cc" ]
   deps = [
-    ":tests",
     "//zircon/kernel/lib/ktl",
     "//zircon/system/ulib/zx",
   ]
 }
 
-source_set("tests") {
+library_headers("headers") {
+  headers = [ "lib/cbuf.h" ]
+}
+
+source_set("kernel-tests") {
   # TODO: testonly = true
   sources = [ "cbuf_tests.cc" ]
-  include_dirs = [ "include" ]
-  deps = [ "//zircon/kernel/lib/unittest" ]
+  deps = [
+    ".",
+    "//zircon/kernel/lib/unittest",
+  ]
 }

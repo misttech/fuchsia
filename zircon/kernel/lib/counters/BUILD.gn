@@ -4,15 +4,9 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("counters") {
-  sdk = "source"
-  sdk_headers = [
-    "lib/counters.h",
-    "lib/counter-vmo-abi.h",
-  ]
-
+source_set("counters") {
   visibility = [
     "//src/zircon/bin/kcounter:*",
     "//src/zircon/tests/kcounter:*",
@@ -22,16 +16,25 @@ zx_library("counters") {
     "//zircon/system/ulib/kcounter/*",
   ]
 
-  sources = []
+  public_deps = [ ":headers" ]
+
   if (is_kernel) {
-    sources += [ "counters.cc" ]
+    sources = [ "counters.cc" ]
     deps = [
       "//zircon/kernel/lib/init",
       "//zircon/kernel/lib/special-sections",
     ]
-    public_deps = [
-      # <lib/counters.h> has #include <lib/special-sections/special-sections.h>.
-      "//zircon/kernel/lib/special-sections:headers",
-    ]
   }
+}
+
+library_headers("headers") {
+  headers = [
+    "lib/counters.h",
+    "lib/counter-vmo-abi.h",
+  ]
+
+  public_deps = [
+    # <lib/counters.h> has #include <lib/special-sections/special-sections.h>.
+    "//zircon/kernel/lib/special-sections:headers",
+  ]
 }

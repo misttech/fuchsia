@@ -4,10 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/testing/boot_tests/boot_test.gni")
-import("//build/zircon/migrated_targets.gni")
 
-zx_library("console") {
+static_library("console") {
+  public_deps = [ ":headers" ]
+
   sources = [ "console.cc" ]
   defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
   deps = [
@@ -15,6 +17,10 @@ zx_library("console") {
     "//zircon/kernel/lib/debuglog:headers",
     "//zircon/kernel/lib/init",
   ]
+}
+
+library_headers("headers") {
+  headers = [ "lib/console.h" ]
   public_deps = [
     # <lib/console.h> has #include <lib/special-sections/special-sections.h>.
     "//zircon/kernel/lib/special-sections:headers",
