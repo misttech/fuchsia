@@ -1462,7 +1462,6 @@ impl CurrentTask {
         user_pidfd: UserRef<FdNumber>,
     ) -> Result<TaskBuilder, Errno>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
         L: LockBefore<MmDumpable>,
         L: LockBefore<TaskRelease>,
         L: LockBefore<ProcessGroupState>,
@@ -1762,6 +1761,7 @@ impl CurrentTask {
             }
 
             if clone_pidfd {
+                let locked = locked.cast_locked::<TaskRelease>();
                 let file = new_pidfd(locked, self, child.thread_group(), OpenFlags::empty());
                 let pidfd = self.add_file(locked, file, FdFlags::CLOEXEC)?;
                 self.write_object(user_pidfd, &pidfd)?;
@@ -1958,7 +1958,6 @@ impl CurrentTask {
         exit_signal: Option<Signal>,
     ) -> crate::testing::AutoReleasableTask
     where
-        L: LockEqualOrBefore<FileOpsCore>,
         L: LockBefore<MmDumpable>,
         L: LockBefore<TaskRelease>,
         L: LockBefore<ProcessGroupState>,
