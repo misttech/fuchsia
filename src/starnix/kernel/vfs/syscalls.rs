@@ -73,6 +73,7 @@ use starnix_uapi::{
     io_uring_register_op_IORING_REGISTER_BUFFERS as IORING_REGISTER_BUFFERS,
     io_uring_register_op_IORING_REGISTER_IOWQ_MAX_WORKERS as IORING_REGISTER_IOWQ_MAX_WORKERS,
     io_uring_register_op_IORING_REGISTER_PBUF_RING as IORING_REGISTER_PBUF_RING,
+    io_uring_register_op_IORING_REGISTER_PBUF_STATUS as IORING_REGISTER_PBUF_STATUS,
     io_uring_register_op_IORING_REGISTER_RING_FDS as IORING_REGISTER_RING_FDS,
     io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS,
     io_uring_register_op_IORING_UNREGISTER_PBUF_RING as IORING_UNREGISTER_PBUF_RING,
@@ -3356,6 +3357,19 @@ pub fn sys_io_uring_register(
             }
             let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
             io_uring.unregister_ring_buffers(locked, buffer_definition)?;
+            return Ok(SUCCESS);
+        }
+
+        IORING_REGISTER_PBUF_STATUS => {
+            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
+            if nr_args != 1 {
+                return error!(EINVAL);
+            }
+            let buffer_status_addr = UserRef::<uapi::io_uring_buf_status>::from(arg);
+            let mut buffer_status: uapi::io_uring_buf_status =
+                current_task.read_object(buffer_status_addr)?;
+            io_uring.ring_buffer_status(locked, &mut buffer_status)?;
+            current_task.write_object(buffer_status_addr, &buffer_status)?;
             return Ok(SUCCESS);
         }
 

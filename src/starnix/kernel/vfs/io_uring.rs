@@ -603,9 +603,9 @@ pub struct IoUringFileObject {
 }
 
 #[derive(Default, Debug)]
-pub struct IoUringFileMutableState {
+struct IoUringFileMutableState {
     registered_buffers: UserBuffers,
-    registered_iobuffers: Vec<uapi::io_uring_buf_reg>,
+    registered_iobuffers: Vec<IoUringProviderRingBuffer>,
 }
 
 impl IoUringFileObject {
@@ -702,7 +702,7 @@ impl IoUringFileObject {
         if buffer_definition.ring_entries > IORING_MAX_ENTRIES {
             return error!(EINVAL);
         }
-        self.state.lock(locked).registered_iobuffers.push(buffer_definition);
+        self.state.lock(locked).registered_iobuffers.push(buffer_definition.into());
         Ok(())
     }
 
@@ -715,12 +715,29 @@ impl IoUringFileObject {
             .state
             .lock(locked)
             .registered_iobuffers
-            .extract_if(.., |buffer| buffer.bgid == buffer_definition.bgid)
+            .extract_if(.., |buffer| buffer.config.bgid == buffer_definition.bgid)
             .next()
             .is_none()
         {
             return error!(EINVAL);
         }
+        Ok(())
+    }
+
+    pub fn ring_buffer_status(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        buffer_status: &mut uapi::io_uring_buf_status,
+    ) -> Result<(), Errno> {
+        let state = self.state.lock(locked);
+        let Some(buffer) = state
+            .registered_iobuffers
+            .iter()
+            .find(|buffer| buffer.config.bgid as u32 == buffer_status.buf_group)
+        else {
+            return error!(EINVAL);
+        };
+        buffer_status.head = buffer.head;
         Ok(())
     }
 
@@ -891,6 +908,18 @@ impl IoUringFileObject {
             | Op::OpenAt2
             | Op::EpollCtl => error!(EOPNOTSUPP),
         }
+    }
+}
+
+#[derive(Debug)]
+struct IoUringProviderRingBuffer {
+    config: uapi::io_uring_buf_reg,
+    head: u32,
+}
+
+impl From<uapi::io_uring_buf_reg> for IoUringProviderRingBuffer {
+    fn from(config: uapi::io_uring_buf_reg) -> Self {
+        Self { config, head: 0 }
     }
 }
 
