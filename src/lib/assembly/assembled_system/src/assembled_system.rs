@@ -203,9 +203,12 @@ impl AssembledSystem {
             info!("Skipping vbmeta creation");
         }
 
-        // If the board specifies a vendor-specific signing script, use that to
-        // post-process the ZBI.
-        if let Some(zbi_config) = zbi_config {
+        // If we're not in 'test ramdisk' mode (which forbids modifications)
+        // and if the board specifies a vendor-specific signing script, then
+        // the ZBI should be signed accordingly.
+        if let Some(zbi_config) = zbi_config
+            && assembly_mode != AssemblyMode::TestRamdisk
+        {
             #[allow(clippy::single_match)]
             match &zbi_config.postprocessing_script {
                 Some(script) => {

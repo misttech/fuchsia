@@ -692,9 +692,18 @@ template("assembled_system") {
       files.assembly_manifest,
     ]
 
+    _generate_signed_zbi = defined(invoker.zbi_signing_script)
+    if (defined(invoker.generate_signed_zbi)) {
+      _generate_signed_zbi = invoker.generate_signed_zbi
+    }
+
     is_mode_test_ramdisk = defined(invoker.assembly_mode) &&
                            invoker.assembly_mode == "test-ramdisk"
-    if (!is_mode_test_ramdisk) {
+    if (is_mode_test_ramdisk) {
+      assert(
+          !_generate_signed_zbi,
+          "\"test-ramdisk\" mode is incompatible with `zbi_signing_script` and `generate_signed_zbi` specifications")
+    } else {
       outputs += [
         files.bootfs_files,
         files.additional_boot_args,
@@ -702,11 +711,6 @@ template("assembled_system") {
         files.zbi_manifest,
         files.bootfs_packages,
       ]
-    }
-
-    _generate_signed_zbi = defined(invoker.zbi_signing_script)
-    if (defined(invoker.generate_signed_zbi)) {
-      _generate_signed_zbi = invoker.generate_signed_zbi
     }
 
     if (_generate_signed_zbi) {
