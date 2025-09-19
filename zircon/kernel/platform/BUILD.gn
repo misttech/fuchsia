@@ -4,10 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
-import("//build/zircon/zx_library.gni")
 
-zx_library("platform") {
+source_set("platform") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "debug.cc",
     "efi.cc",
@@ -46,11 +48,10 @@ zx_library("platform") {
     "//zircon/system/ulib/ram-crashlog",
     "//zircon/system/ulib/zx",
   ]
+}
 
-  public_deps = [
-    # <platform/efi.h> has #include <efi/runtime_services.h>
-    "//zircon/kernel/lib/efi:headers",
-  ]
+library_headers("headers") {
+  headers = [ "platform/uart.h" ]
 }
 
 source_set("tests") {

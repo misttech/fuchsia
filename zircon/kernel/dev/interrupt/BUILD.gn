@@ -4,9 +4,13 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("interrupt") {
-  sources = []
+group("interrupt") {
+  public_deps = [ ":headers" ]
+}
+
+library_headers("headers") {
+  headers = [ "dev/interrupt.h" ]
   public_deps = [ "//sdk/lib/fit" ]
 }

@@ -4,16 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("cpuid") {
-  sources = [ "cpuid.cc" ]
-
+library_headers("headers") {
+  headers = []
   public_deps = [
     # <arch/x86/cpuid.h> has #include <ktl/optional.h>.
     "//zircon/kernel/lib/ktl:headers",
   ]
+}
 
+static_library("cpuid") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "cpuid.cc" ]
   deps = [
     ":test",
     "//zircon/system/ulib/fbl",

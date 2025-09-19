@@ -4,9 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("object") {
+source_set("object") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "buffer_chain.cc",
     "bus_transaction_initiator_dispatcher.cc",
@@ -93,6 +95,10 @@ zx_library("object") {
   if (current_cpu == "x64") {
     deps += [ "//zircon/kernel/dev/iommu/intel" ]
   }
+}
+
+library_headers("headers") {
+  headers = []
   public_deps = [
     # <object/buffer_chain.h> has #include <ktl/utility.h>.
     "//zircon/kernel/lib/ktl:headers",

@@ -4,8 +4,8 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
-import("//build/zircon/zx_library.gni")
 
 # These set the ABI contract between C++ and assembly code.
 # This is kept consistent between the kernel proper and phys
@@ -108,10 +108,7 @@ config("kernel") {
   ]
 }
 
-# TODO(https://fxbug.dev/42136423): Remove conditional when all dependencies below have been
-# migrated to the Fuchsia build.
-# NOTE: Bad indentation is intentional, to make code reviews easier.
-zx_library("x86") {
+source_set("x86") {
   sources = [
     "acpi.S",
     "amd.cc",
@@ -190,6 +187,11 @@ zx_library("x86") {
     "//zircon/system/ulib/bitmap",
     "//zircon/system/ulib/pretty",
   ]
+  public_deps = [ ":headers" ]
+}
+
+library_headers("headers") {
+  headers = []
   public_deps = [
     # arch/x86/system_topology.h has #include <arch/x86/cpuid.h>.
     "//zircon/kernel/arch/x86/cpuid:headers",

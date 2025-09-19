@@ -4,10 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 import("//zircon/kernel/params.gni")
 
-zx_library("vm") {
+source_set("vm") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "anonymous_page_request.cc",
     "compression.cc",
@@ -80,6 +82,16 @@ zx_library("vm") {
     "LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
   ]
 
+  # GCC figures out some cases where we have a global variable that's used as a
+  # RefPtr and so appears like it might be passed to delete.  We always leak
+  # the reference so it will never actually be called, but the compiler can't
+  # figure that out statically so we must disable its warning.
+  configs += [ ":suppress-nonheap-warning" ]
+}
+
+library_headers("headers") {
+  headers = []
+
   public_deps = [
     # <vm/page.h> has #include <vm/phys/arena.h>.
     "phys:headers",
@@ -108,17 +120,12 @@ zx_library("vm") {
     # <vm/pmm_checker.h> has #include <lib/boot-options/boot-options.h>.
     "//zircon/kernel/lib/boot-options:headers",
   ]
+
   public_configs = [
     # <vm/physical_page_provider.h> has #include <object/port_dispatcher.h>.
     # But this is a circular dependency, so we can't use its :headers in deps.
     "//zircon/kernel/object:headers.config",
   ]
-
-  # GCC figures out some cases where we have a global variable that's used as a
-  # RefPtr and so appears like it might be passed to delete.  We always leak
-  # the reference so it will never actually be called, but the compiler can't
-  # figure that out statically so we must disable its warning.
-  configs += [ ":suppress-nonheap-warning" ]
 }
 
 config("suppress-nonheap-warning") {

@@ -4,9 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("intel") {
+source_set("intel") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "context_table_state.cc",
     "device_context.cc",
@@ -22,6 +24,7 @@ zx_library("intel") {
     "//zircon/kernel/dev/pcie",
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/libc",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/user_copy",
     "//zircon/kernel/vm:headers",
@@ -29,6 +32,10 @@ zx_library("intel") {
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/region-alloc",
   ]
+}
+
+library_headers("headers") {
+  headers = [ "dev/iommu/intel.h" ]
   public_deps = [
     # dev/iommu/intel.h has #include <fbl/ref_ptr.h>.
     "//zircon/kernel/lib/fbl:headers",

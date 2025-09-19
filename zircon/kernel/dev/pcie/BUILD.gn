@@ -4,9 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("pcie") {
+source_set("pcie") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "address_provider/designware.cc",
     "address_provider/ecam_region.cc",
@@ -33,6 +35,14 @@ zx_library("pcie") {
     "//zircon/system/ulib/pretty",
     "//zircon/system/ulib/region-alloc",
   ]
+
+  # TODO(mcgrathr): Say why this is needed.
+  cflags_cc = [ "-Wno-invalid-offsetof" ]
+}
+
+library_headers("headers") {
+  headers = []
+
   public_deps = [
     # <dev/address_provider/ecam_region.h> has #include <ktl/unique_ptr.h>.
     "//zircon/kernel/lib/ktl:headers",
@@ -46,7 +56,4 @@ zx_library("pcie") {
     # <dev/pcie_bus_driver.h> has #include <arch/ops.h>.
     "//zircon/kernel/lib/arch:headers",
   ]
-
-  # TODO(mcgrathr): Say why this is needed.
-  cflags_cc = [ "-Wno-invalid-offsetof" ]
 }

@@ -4,9 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("hw_rng") {
+source_set("hw_rng") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "debug.cc",
     "hw_rng.cc",
@@ -15,4 +17,8 @@ zx_library("hw_rng") {
     "//zircon/kernel/lib/console",
     "//zircon/system/ulib/pretty",
   ]
+}
+
+library_headers("headers") {
+  headers = []
 }

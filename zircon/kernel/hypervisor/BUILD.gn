@@ -4,10 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
-import("//build/zircon/zx_library.gni")
 
-zx_library("hypervisor") {
+source_set("hypervisor") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "aspace.cc",
     "cpu.cc",
@@ -23,6 +25,10 @@ zx_library("hypervisor") {
     "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/bitmap",
   ]
+}
+
+library_headers("headers") {
+  headers = []
   public_deps = [
     # <hypervisor/trap_map.h> has #include <object/port_dispatcher.h>.
     "//zircon/kernel/object:headers",

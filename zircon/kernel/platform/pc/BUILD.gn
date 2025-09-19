@@ -4,10 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
-import("//build/zircon/zx_library.gni")
 
-zx_library("pc") {
+source_set("pc") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "acpi.cc",
     "cmos_bootbyte.cc",
@@ -61,6 +63,11 @@ zx_library("pc") {
     "//zircon/system/ulib/uart",
     "//zircon/third_party/ulib/cksum",
   ]
+}
+
+library_headers("headers") {
+  headers = []
+
   public_deps = [
     # <platform/pc/smbios.h> has #include <lib/smbios/smbios.h>.
     "//zircon/system/ulib/smbios:headers",

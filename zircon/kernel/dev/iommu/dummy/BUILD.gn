@@ -4,11 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("dummy") {
+static_library("dummy") {
+  public_deps = [ ":headers" ]
+
   sources = [ "dummy_iommu.cc" ]
-  deps = [ "//zircon/kernel/lib/ktl" ]
+  deps = [
+    "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/libc",
+  ]
+}
+
+library_headers("headers") {
+  headers = [ "dev/iommu/dummy.h" ]
   public_deps = [
     # <dev/iommu/dummy.h> has #include <ktl/unique_ptr.h>.
     "//zircon/kernel/lib/ktl:headers",
