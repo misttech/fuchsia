@@ -541,7 +541,18 @@ fn compute_state_metric<P, CR>(
         (RollbackNetstackVersion::Netstack2, Some(NetstackVersion::Netstack3), _) => {
             state_metric::Scheduled
         }
-        (RollbackNetstackVersion::ForceNetstack2, _, _) => state_metric::RolledBack,
+        (RollbackNetstackVersion::ForceNetstack2, Some(NetstackVersion::Netstack3), _) => {
+            state_metric::RolledBack
+        }
+        // NB: If a device observes the automated setting switch to Netstack2
+        // while it's current boot is `ForceNetstack2` it won't have any need
+        // to schedule a reboot, and it will perpetually stay in
+        // `ForceNetstack`. Rather that perpetually reporting
+        // `state_metric::RolledBack`, it's more useful from a diagnostics
+        // perspective to consider this device `state_metric::NotStarted`.
+        (RollbackNetstackVersion::ForceNetstack2, Some(NetstackVersion::Netstack2) | None, _) => {
+            state_metric::NotStarted
+        }
         (RollbackNetstackVersion::Netstack3, Some(NetstackVersion::Netstack2) | None, _) => {
             state_metric::Canceled
         }
@@ -1423,6 +1434,11 @@ mod tests {
         RollbackNetstackVersion::ForceNetstack2, Some(NetstackVersion::Netstack3), None =>
         metrics_registry::StackMigrationStateMetricDimensionMigrationState::RolledBack;
         "rolled_back"
+    )]
+    #[test_case(
+        RollbackNetstackVersion::ForceNetstack2, Some(NetstackVersion::Netstack2), None =>
+        metrics_registry::StackMigrationStateMetricDimensionMigrationState::NotStarted;
+        "rolled_back_becomes_not_started"
     )]
     #[fuchsia::test]
     fn test_state_metric(
