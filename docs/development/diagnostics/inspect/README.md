@@ -15,9 +15,7 @@ that expose information.
 * [Quickstart](quickstart.md): A get-started guide for component inspection.
 * [`ffx inspect`][ffx-inspect]: The `ffx` command for inspecting components.
 * [Codelab](codelab.md): A full codelab in C++ and Rust.
-* API reference for [C++](https://fuchsia-docs.firebaseapp.com/cpp/inspect/index.html),
-  [Rust](https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect/index.html).
-
+* API reference for [C++][cpp-ref] and [Rust][rust-ref].
 * [Health checks]: Describes the health check subsystem.
 
 ## Concepts
@@ -271,3 +269,5 @@ ffx target snapshot
 [ffx-inspect-show]: https://fuchsia.dev/reference/tools/sdk/ffx.md#show_3
 [ffx-target-snapshot]: https://fuchsia.dev/reference/tools/sdk/ffx.md#snapshot
 [selectors]: /docs/reference/diagnostics/selectors.md
+[cpp-ref]: https://fuchsia-docs.firebaseapp.com/cpp/inspect/index.html
+[rust-ref]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect/index.html
