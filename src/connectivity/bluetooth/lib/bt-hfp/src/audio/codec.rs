@@ -5,7 +5,7 @@
 use anyhow::anyhow;
 use fuchsia_audio_device::codec;
 use fuchsia_audio_device::codec::CodecRequest;
-use fuchsia_bluetooth::types::{peer_audio_stream_id, PeerId};
+use fuchsia_bluetooth::types::{PeerId, peer_audio_stream_id};
 use fuchsia_sync::Mutex;
 use futures::stream::BoxStream;
 use futures::{SinkExt, StreamExt};
@@ -26,6 +26,13 @@ struct CodecControlInner {
         Option<Box<dyn FnOnce(std::result::Result<zx::MonotonicInstant, zx::Status>) + Send>>,
     stop_request:
         Option<Box<dyn FnOnce(std::result::Result<zx::MonotonicInstant, zx::Status>) + Send>>,
+}
+
+impl CodecControlInner {
+    fn clear(&mut self) {
+        self.start_request = None;
+        self.stop_request = None;
+    }
 }
 
 // Control that is connected to a Codec device registered with an
@@ -84,7 +91,7 @@ impl Control for CodecControl {
         }
         let Some(stop_request) = self.inner.lock().stop_request.take() else {
             return Err(Error::UnsupportedParameters {
-                source: anyhow!("Can only stop in response to request"),
+                source: anyhow!("Codec can only stop in response to request"),
             });
         };
         self.connection = None;
@@ -122,9 +129,12 @@ impl Control for CodecControl {
         self.connected_peer = Some(id);
     }
 
-    fn disconnect(&mut self, _id: PeerId) {
+    fn disconnect(&mut self, id: PeerId) {
+        info!("Codec peer {id} disconnected, cleaning up");
         self.codec_task = None;
         self.connected_peer = None;
+        self.connection = None;
+        self.inner.lock().clear();
     }
 
     fn take_events(&self) -> BoxStream<'static, ControlEvent> {
@@ -248,21 +258,17 @@ mod tests {
     use super::*;
 
     use fidl::endpoints::Proxy;
+    use fidl_fuchsia_audio_device::ProviderRequestStream;
     use fixture::fixture;
-    use futures::task::{Context, Poll};
     use futures::FutureExt;
+    use futures::task::{Context, Poll};
 
     use crate::sco::test_utils::connection_for_codec;
 
-    async fn codec_setup_connected<F, Fut>(_test_name: &str, test: F)
-    where
-        F: FnOnce(audio::CodecProxy, CodecControl) -> Fut,
-        Fut: futures::Future<Output = ()>,
-    {
-        let (provider_proxy, mut provider_requests) =
-            fidl::endpoints::create_proxy_and_stream::<audio_device::ProviderMarker>();
-        let mut codec = CodecControl::new(provider_proxy);
-
+    async fn connect_peer_to_codec(
+        codec: &mut CodecControl,
+        provider_requests: &mut ProviderRequestStream,
+    ) -> audio::CodecProxy {
         codec.connect(PeerId(1), &[CodecId::MSBC]);
 
         let Some(Ok(audio_device::ProviderRequest::AddDevice {
@@ -286,15 +292,30 @@ mod tests {
         let audio_device::DriverClient::Codec(codec_client) = client else {
             panic!("Should have provided a codec client");
         };
+        codec_client.into_proxy()
+    }
 
-        let codec_proxy = codec_client.into_proxy();
+    async fn codec_setup_connected<F, Fut>(_test_name: &str, test: F)
+    where
+        F: FnOnce(audio::CodecProxy, CodecControl, ProviderRequestStream) -> Fut,
+        Fut: futures::Future<Output = ()>,
+    {
+        let (provider_proxy, mut provider_requests) =
+            fidl::endpoints::create_proxy_and_stream::<audio_device::ProviderMarker>();
+        let mut codec = CodecControl::new(provider_proxy);
 
-        test(codec_proxy, codec).await
+        let codec_proxy = connect_peer_to_codec(&mut codec, &mut provider_requests).await;
+
+        test(codec_proxy, codec, provider_requests).await
     }
 
     #[fixture(codec_setup_connected)]
     #[fuchsia::test]
-    async fn publishes_on_connect(codec_client: audio::CodecProxy, codec: CodecControl) {
+    async fn publishes_on_connect(
+        codec_client: audio::CodecProxy,
+        codec: CodecControl,
+        _provider_requests: ProviderRequestStream,
+    ) {
         let _properties = codec_client.get_properties().await.unwrap();
         let audio::CodecGetDaiFormatsResult::Ok(formats) =
             codec_client.get_dai_formats().await.unwrap()
@@ -310,14 +331,30 @@ mod tests {
 
     #[fixture(codec_setup_connected)]
     #[fuchsia::test]
-    async fn removed_on_disconnect(codec_client: audio::CodecProxy, mut codec: CodecControl) {
+    async fn removed_on_disconnect(
+        codec_client: audio::CodecProxy,
+        mut codec: CodecControl,
+        _provider_requests: ProviderRequestStream,
+    ) {
         codec.disconnect(PeerId(1));
         let _ = codec_client.on_closed().await;
     }
 
     #[fixture(codec_setup_connected)]
     #[fuchsia::test]
-    async fn start_request_lifetime(codec_client: audio::CodecProxy, mut codec: CodecControl) {
+    async fn start_request_lifetime_test(
+        codec_client: audio::CodecProxy,
+        codec: CodecControl,
+        provider_requests: ProviderRequestStream,
+    ) {
+        start_request_lifetime(codec_client, codec, provider_requests).await
+    }
+
+    async fn start_request_lifetime(
+        codec_client: audio::CodecProxy,
+        mut codec: CodecControl,
+        _provider_requests: ProviderRequestStream,
+    ) {
         let mut event_stream = codec.take_events();
         // start without a request should fail
         let (connection, _stream) = connection_for_codec(PeerId(1), CodecId::MSBC, false);
@@ -364,7 +401,11 @@ mod tests {
 
     #[fixture(codec_setup_connected)]
     #[fuchsia::test]
-    async fn stop_request_lifetime(codec_client: audio::CodecProxy, mut codec: CodecControl) {
+    async fn stop_request_lifetime(
+        codec_client: audio::CodecProxy,
+        mut codec: CodecControl,
+        _provider_requests: ProviderRequestStream,
+    ) {
         let mut event_stream = codec.take_events();
         // can't stop before we are started
         let Err(Error::NotStarted) = codec.stop(PeerId(1)) else {
@@ -414,5 +455,22 @@ mod tests {
         let Err(Error::NotStarted) = codec.stop(PeerId(1)) else {
             panic!("Expected to not be able tp start when stopped");
         };
+    }
+
+    #[fixture(codec_setup_connected)]
+    #[fuchsia::test]
+    async fn disconnect_and_reconnect(
+        mut codec_client: audio::CodecProxy,
+        mut codec: CodecControl,
+        mut provider_requests: ProviderRequestStream,
+    ) {
+        codec.disconnect(PeerId(1));
+
+        let _ = codec_client.on_closed().await;
+
+        // Reconnect.
+        codec_client = connect_peer_to_codec(&mut codec, &mut provider_requests).await;
+        // Should be able to do the whole start request lifetime again now
+        start_request_lifetime(codec_client, codec, provider_requests).await
     }
 }
