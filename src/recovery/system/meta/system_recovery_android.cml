@@ -19,7 +19,26 @@
         },
     ],
     capabilities: [
-        { protocol: "fuchsia.recovery.android.Updater" },
+        {
+            directory: "system-blob",
+            rights: [ "r*" ],
+            path: "/blob",
+        },
+        {
+            directory: "system-blob-exec",
+            rights: [
+                "execute",
+                "rw*",
+            ],
+            path: "/blob",
+        },
+        {
+            protocol: [
+                "fuchsia.fxfs.BlobCreator",
+                "fuchsia.fxfs.BlobReader",
+                "fuchsia.recovery.android.Updater",
+            ],
+        },
     ],
     use: [
         {
@@ -27,6 +46,10 @@
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],
+        },
+        {
+            protocol: [ "fuchsia.fshost.Recovery" ],
+            availability: "optional",
         },
         {
             directory: "build-info",
@@ -38,12 +61,14 @@
             protocol: "fuchsia.update.installer.Installer",
             from: "#pkg-recovery",
         },
+        {
+            protocol: "fuchsia.sys2.LifecycleController",
+            from: "framework",
+        },
     ],
     offer: [
         {
             directory: [
-                "blob",
-                "blob-exec",
                 "build-info",
                 "config-data",
                 "root-ssl-certificates",
@@ -54,8 +79,6 @@
         {
             protocol: [
                 "fuchsia.boot.Arguments",
-                "fuchsia.fxfs.BlobCreator",
-                "fuchsia.fxfs.BlobReader",
                 "fuchsia.net.http.Loader",
                 "fuchsia.net.name.Lookup",
                 "fuchsia.paver.Paver",
@@ -63,6 +86,29 @@
             ],
             from: "parent",
             to: "#pkg-recovery",
+        },
+        {
+            directory: "system-blob",
+            from: "self",
+            as: "blob",
+            to: "#pkg-recovery",
+            dependency: "weak",
+        },
+        {
+            directory: "system-blob-exec",
+            from: "self",
+            as: "blob-exec",
+            to: "#pkg-recovery",
+            dependency: "weak",
+        },
+        {
+            protocol: [
+                "fuchsia.fxfs.BlobCreator",
+                "fuchsia.fxfs.BlobReader",
+            ],
+            from: "self",
+            to: "#pkg-recovery",
+            dependency: "weak",
         },
     ],
     expose: [

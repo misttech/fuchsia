@@ -17,13 +17,17 @@
         {
             protocol: [
                 "fuchsia.boot.Arguments",
-                "fuchsia.fxfs.BlobCreator",
-                "fuchsia.fxfs.BlobReader",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],
             from: "parent",
             to: "#system_recovery",
+        },
+        {
+            protocol: [ "fuchsia.fshost.Recovery" ],
+            from: "parent",
+            to: "#system_recovery",
+            availability: "optional",
         },
         {
             protocol: [
@@ -42,8 +46,6 @@
         },
         {
             directory: [
-                "blob",
-                "blob-exec",
                 "build-info",
                 "root-ssl-certificates",
             ],

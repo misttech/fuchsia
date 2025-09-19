@@ -19,14 +19,14 @@ use carnelian::{
     ViewAssistantContext, ViewAssistantPtr, ViewKey, input,
 };
 use euclid::size2;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_input_report::ConsumerControlButton;
-use fidl_fuchsia_recovery_android::{UpdaterRequest, UpdaterRequestStream};
-use fuchsia_async as fasync;
-use fuchsia_component::server::ServiceFs;
+use fidl_fuchsia_recovery_android::{UpdaterMarker, UpdaterRequest, UpdaterRequestStream};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use std::sync::Arc;
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 mod menu;
 use menu::Menu;
@@ -47,16 +47,22 @@ const MENU_SELECTED_COLOR: Color = Color::white();
 struct RecoveryAppAssistant {
     display_rotation: DisplayRotation,
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
+    exposed_dir: Arc<vfs::directory::simple::Simple>,
+    svc_dir: Arc<vfs::directory::simple::Simple>,
 }
 
 impl RecoveryAppAssistant {
     fn new(
         display_rotation: DisplayRotation,
         sideload_request_receiver: mpsc::Receiver<UpdaterRequest>,
+        exposed_dir: Arc<vfs::directory::simple::Simple>,
+        svc_dir: Arc<vfs::directory::simple::Simple>,
     ) -> Self {
         Self {
             display_rotation,
             sideload_request_receiver: Arc::new(Mutex::new(sideload_request_receiver)),
+            exposed_dir,
+            svc_dir,
         }
     }
 }
@@ -74,6 +80,8 @@ impl AppAssistant for RecoveryAppAssistant {
             params.view_key,
             params.app_sender,
             Arc::clone(&self.sideload_request_receiver),
+            Arc::clone(&self.exposed_dir),
+            Arc::clone(&self.svc_dir),
         )?))
     }
 
@@ -97,6 +105,8 @@ struct RecoveryViewAssistant {
     // tuple of touch contact id, start location, current location
     active_contact: Option<(input::touch::ContactId, IntPoint, IntPoint)>,
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
+    exposed_dir: Arc<vfs::directory::simple::Simple>,
+    svc_dir: Arc<vfs::directory::simple::Simple>,
 }
 
 impl RecoveryViewAssistant {
@@ -104,6 +114,8 @@ impl RecoveryViewAssistant {
         view_key: ViewKey,
         app_sender: AppSender,
         sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
+        exposed_dir: Arc<vfs::directory::simple::Simple>,
+        svc_dir: Arc<vfs::directory::simple::Simple>,
     ) -> Result<RecoveryViewAssistant, Error> {
         let font_face = recovery_ui::font::get_default_font_face().clone();
         let logo_file = load_rive(LOGO_IMAGE_PATH).ok();
@@ -129,6 +141,8 @@ impl RecoveryViewAssistant {
             waiting_for_confirmation: false,
             active_contact: None,
             sideload_request_receiver,
+            exposed_dir,
+            svc_dir,
         })
     }
 
@@ -537,6 +551,8 @@ impl ViewAssistant for RecoveryViewAssistant {
             RecoveryMessages::Sideload => {
                 let view_sender = self.view_sender.clone();
                 let sideload_request_receiver = Arc::clone(&self.sideload_request_receiver);
+                let exposed_dir = Arc::clone(&self.exposed_dir);
+                let svc_dir = Arc::clone(&self.svc_dir);
                 fasync::Task::local(async move {
                     let mut receiver = sideload_request_receiver.lock().await;
                     let Some(request) = receiver.next().await else {
@@ -545,14 +561,19 @@ impl ViewAssistant for RecoveryViewAssistant {
                     };
                     let UpdaterRequest::Update { manifest_url, responder } = request;
 
-                    view_sender.queue_message(RecoveryMessages::Log(format!(
-                        "Applying update from ADB..."
-                    )));
-                    if let Err(e) = update::apply_update(&manifest_url).await {
-                        view_sender.queue_message(RecoveryMessages::Log(format!(
-                            "Failed to apply update: {e:#}"
-                        )));
-                    }
+                    view_sender.queue_message(RecoveryMessages::Log(
+                        match update::apply_update(
+                            &manifest_url,
+                            &view_sender,
+                            exposed_dir,
+                            svc_dir,
+                        )
+                        .await
+                        {
+                            Ok(()) => "Successfully applied update!".into(),
+                            Err(e) => format!("Failed to apply update: {e:#}"),
+                        },
+                    ));
                     if let Err(e) = responder.send() {
                         log::error!("Error sending response for Update: {e:?}");
                     }
@@ -629,19 +650,36 @@ fn main() -> Result<(), Error> {
         Box::pin(async move {
             let (sideload_request_sender, sideload_request_receiver) = mpsc::channel(1);
 
-            let mut fs = ServiceFs::new_local();
-            fs.dir("svc").add_fidl_service(move |stream| {
-                let sender = sideload_request_sender.clone();
-                fasync::Task::local(run_updater_service(stream, sender).unwrap_or_else(|e| {
-                    log::error!("Updater service failed: {e:#}");
-                }))
-                .detach()
-            });
-            fs.take_and_serve_directory_handle()?;
-            fasync::Task::local(fs.collect()).detach();
+            let scope = vfs::execution_scope::ExecutionScope::new();
+            let svc_dir = vfs::pseudo_directory! {
+                UpdaterMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
+                    let sender = sideload_request_sender.clone();
+                    run_updater_service(stream, sender).unwrap_or_else(|e| {
+                        log::error!("Updater service failed: {e:#}");
+                    })
+                })
+            };
+            let exposed_dir = vfs::pseudo_directory! {
+                "svc" => Arc::clone(&svc_dir) as Arc<dyn vfs::directory::entry::DirectoryEntry>,
+            };
+            let handle = fuchsia_runtime::take_startup_handle(
+                fuchsia_runtime::HandleType::DirectoryRequest.into(),
+            )
+            .context("taking startup handle")?;
+            vfs::directory::serve_on(
+                Arc::clone(&exposed_dir),
+                fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE,
+                scope.clone(),
+                ServerEnd::new(handle.into()),
+            );
+            fasync::Task::local(async move { scope.wait().await }).detach();
 
-            let assistant =
-                Box::new(RecoveryAppAssistant::new(display_rotation, sideload_request_receiver));
+            let assistant = Box::new(RecoveryAppAssistant::new(
+                display_rotation,
+                sideload_request_receiver,
+                exposed_dir,
+                svc_dir,
+            ));
             Ok::<AppAssistantPtr, Error>(assistant)
         })
     }))
