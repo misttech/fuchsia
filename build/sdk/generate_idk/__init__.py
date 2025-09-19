@@ -35,7 +35,7 @@ TYPES_SUPPORTING_UNSTABLE_ATOMS = [
     # LINT.IfChange(unstable_atom_types)
     "cc_source_library",
     "fidl_library"
-    # LINT.ThenChange(//build/sdk/sdk_atom.gni:unstable_atom_types, //build/sdk/generate_prebuild_idk/idk_generator.py)
+    # LINT.ThenChange(//build/bazel/bazel_idk/private/idk_atom.bzl:unstable_atom_types, //build/sdk/sdk_atom.gni:unstable_atom_types, //build/sdk/generate_prebuild_idk/idk_generator.py)
 ]
 
 
