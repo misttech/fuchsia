@@ -146,7 +146,7 @@ _partner_idk_unstable_source_sets_list_testonly = [
 _internal_source_sets_list = [
   # DO NOT ADD TO THIS LIST.
 
-  # TODO(https://fxbug.dev/343059325): Promote devicetree to "partner".
+  # TODO(https://fxbug.dev/376105715): Promote devicetree to "partner".
   "//sdk/lib/device-watcher/cpp:cpp",
   "//sdk/lib/driver/devicetree/manager:headers",
   "//sdk/lib/driver/devicetree/manager:manager",
@@ -168,14 +168,11 @@ _internal_source_sets_list = [
   "//sdk/lib/driver/devicetree/visitors:registry",
   "//sdk/lib/driver_test_realm/realm_builder/cpp:cpp",
 
-  # TODO(https://fxbug.dev/333907192): Promote mock-registers to "partner".
-  "//src/devices/registers/testing/mock-registers:mock-registers",
-
-  # TODO(https://fxbug.dev/333907192): Promote mmio source sets to "partner".
+  # TODO(https://fxbug.dev/444519345): Promote these to "partner".
   "//src/devices/lib/mmio:test_helper",
+  "//src/devices/registers/testing/mock-registers:mock-registers",
   "//src/devices/testing/fake-mmio-reg:fake-mmio-reg",
   "//src/devices/testing/mock-mmio-reg:mock-mmio-reg",
-  "//zircon/system/ulib/mmio-ptr:mmio-ptr-fake",
 
   # TODO(https://fxbug.dev/331991540): Remove once the Firmware SDK no longer
   # uses `sdk_source_set()`.
@@ -191,8 +188,8 @@ _internal_source_sets_list = [
   "//third_party/vboot_reference/firmware/lib:gpt_misc",
   "//third_party/vboot_reference/firmware/lib:headers",
 
-  # TODO(https://fxbug.dev/333907192): Eliminate vendor dependencies on fzl
-  # or promote it to "partner".
+  # TODO(https://fxbug.dev/444521390): Eliminate vendor dependencies on fzl
+  # or promote it to "partner". Make `fbl` not `sdk_publishable`.
   "//zircon/system/ulib/fbl:fbl",
   "//zircon/system/ulib/fzl:fzl",
 ]

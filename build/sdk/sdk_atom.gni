@@ -226,13 +226,13 @@ template("sdk_atom") {
   target_label = get_label_info(":${target_name}", "label_no_toolchain")
 
   if (category == "internal") {
-    # TODO(https://fxbug.dev/343059325): Remove once devicetree is in
+    # TODO(https://fxbug.dev/376105715): Remove once devicetree is in
     # "partner" or no longer using loadable modules.
     is_devicetree_visitor_loadable_module =
         type == "loadable_module" &&
         target_label != string_replace(target_label, "devicetree", "", 1)
 
-    # TODO(https://fxbug.dev/343059325): Remove once devicetree is in "partner".
+    # TODO(https://fxbug.dev/376105715): Remove once devicetree is in "partner".
     is_devicetree =
         type == "cc_prebuilt_library" &&
         target_label == "//zircon/kernel/lib/devicetree:devicetree_sdk_manifest"
@@ -270,7 +270,7 @@ template("sdk_atom") {
       is_type_supporting_unstable == defined(meta.stable) ||
           # loadable_module does not support unstable atoms, but there are some
           # in the internal only IDK.
-          # TODO(https://fxbug.dev/343059325): Remove once devicetree is in
+          # TODO(https://fxbug.dev/376105715): Remove once devicetree is in
           # "partner" or no longer using loadable modules.
           (type == "loadable_module" &&
                target_label !=
