@@ -17,16 +17,16 @@
 //! Start by calling [FakeHrtimerServer::new], followed by [FakeHrtimerServer::serve].
 
 use anyhow::{Context, Result};
-use fidl::endpoints::create_proxy;
 use fidl::AsHandleRef;
+use fidl::endpoints::{create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc;
-use futures::{select, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt, select};
 use scopeguard::defer;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::rc::Rc;
 use {
     fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_power_broker as ffpb,
@@ -71,7 +71,6 @@ struct Inner {
 struct FakeHrtimerServer {
     lessor_proxy: ffpb::LessorProxy,
     _element_control_proxy: ffpb::ElementControlProxy,
-    _current_level_proxy: ffpb::CurrentLevelProxy,
     // Max timer ID supported. Supported timer IDs are 1..max_timers.
     max_timers: usize,
     // Ensure inner is not borrowed across `.await` points.
@@ -96,16 +95,9 @@ impl FakeHrtimerServer {
         max_timers: usize,
         lessor_proxy: ffpb::LessorProxy,
         _element_control_proxy: ffpb::ElementControlProxy,
-        _current_level_proxy: ffpb::CurrentLevelProxy,
     ) -> Rc<Self> {
         let inner = RefCell::new(Inner { timers: HashMap::new(), events: HashMap::new() });
-        Rc::new(Self {
-            lessor_proxy,
-            _element_control_proxy,
-            _current_level_proxy,
-            inner,
-            max_timers,
-        })
+        Rc::new(Self { lessor_proxy, _element_control_proxy, inner, max_timers })
     }
 
     /// Returns a closure that waits for expiry of a given timer.
@@ -237,7 +229,9 @@ impl FakeHrtimerServer {
                 // We currently support only one resolution. If more are needed, it will require
                 // a code change.
                 if *d as i64 != TIMER_RESOLUTION.into_nanos() {
-                    log::error!("requested to start timer {id}, with unsupported resolution: {resolution:?}");
+                    log::error!(
+                        "requested to start timer {id}, with unsupported resolution: {resolution:?}"
+                    );
                     return Err(ffhh::DriverError::InvalidArgs);
                 }
             }
@@ -421,8 +415,8 @@ async fn main() -> Result<()> {
         .context("while connecting to fuchsia.power.broker/Topology")?;
     let (lessor_proxy, lessor_server_end) = create_proxy::<ffpb::LessorMarker>();
     let (element_proxy, element_server_end) = create_proxy::<ffpb::ElementControlMarker>();
-    let (current_level_proxy, _current_level_server_end) =
-        create_proxy::<ffpb::CurrentLevelMarker>();
+    let (element_runner_client_end, _element_runner_server_end) =
+        create_endpoints::<ffpb::ElementRunnerMarker>();
 
     let schema = ffpb::ElementSchema {
         element_name: Some("fake-hrtimer".into()),
@@ -433,6 +427,7 @@ async fn main() -> Result<()> {
         ]),
         lessor_channel: Some(lessor_server_end),
         element_control: Some(element_server_end),
+        element_runner: Some(element_runner_client_end),
         ..Default::default()
     };
     let _result = topology_proxy
@@ -449,8 +444,7 @@ async fn main() -> Result<()> {
     fs.take_and_serve_directory_handle()
         .context("while trying to serve fuchsia.hardware.hrtimer/Service")?;
 
-    let hrtimer_server =
-        FakeHrtimerServer::new(MAX_TIMERS, lessor_proxy, element_proxy, current_level_proxy);
+    let hrtimer_server = FakeHrtimerServer::new(MAX_TIMERS, lessor_proxy, element_proxy);
 
     fs.for_each_concurrent(/*limit=*/ None, move |connection| {
         let hrtimer_server_clone = hrtimer_server.clone();
