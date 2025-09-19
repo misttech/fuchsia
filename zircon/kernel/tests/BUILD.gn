@@ -118,7 +118,6 @@ if (toolchain_environment == "kernel") {
       "//zircon/kernel/lib/root_resource_filter",
       "//zircon/kernel/lib/thread-stack",
       "//zircon/kernel/lib/unittest",
-      "//zircon/kernel/lib/zxc",
       "//zircon/kernel/object",
       "//zircon/system/ulib/affine",
       "//zircon/system/ulib/pretty",

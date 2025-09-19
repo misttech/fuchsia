@@ -11,7 +11,7 @@ zx_library("cbuf") {
   deps = [
     ":tests",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/zxc",
+    "//zircon/system/ulib/zx",
   ]
 }
 
