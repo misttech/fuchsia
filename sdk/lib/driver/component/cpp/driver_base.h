@@ -177,6 +177,16 @@ class DriverBase {
     return StructuredConfig::CreateFromVmo(std::move(config_vmo.value()));
   }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  zx::unowned_vmar vmar() {
+    auto& vmar = start_args_.vmar();
+    if (vmar.has_value()) {
+      return vmar->borrow();
+    }
+    return zx::vmar::root_self();
+  }
+#endif
+
   // The name of the driver that is given to the DriverBase constructor.
   std::string_view name() const { return name_; }
 
