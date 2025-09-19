@@ -6,13 +6,13 @@
 
 use crate::exponential_backoff::default_backoff_strategy;
 use crate::token_store::TokenStore;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use fuchsia_backoff::retry_or_last_error;
-use fuchsia_hyper::{new_https_client, HttpsClient};
+use fuchsia_hyper::{HttpsClient, new_https_client};
 use hyper::body::HttpBody as _;
 use hyper::header::CONTENT_LENGTH;
-use hyper::{Body, Response, StatusCode};
-use std::fs::{create_dir_all, File};
+use hyper::{Body, Request, Response, StatusCode};
+use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -330,6 +330,10 @@ impl Client {
     ) -> Result<Url> {
         self.token_store.upload(&self.https, bucket, object_name, file_path).await
     }
+
+    pub async fn send_request(&self, req: Request<Body>) -> Result<Response<Body>> {
+        self.token_store.send_request(&self.https, req).await
+    }
 }
 
 #[cfg(test)]
@@ -340,9 +344,11 @@ mod test {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_client_factory_no_auth() {
         let client = Client::initial().expect("creating client");
-        let res =
-            client.stream("for_testing_does_not_exist", "face_test_object").await.expect("stream");
-        assert_eq!(res.status(), 404);
+        let res = client
+            .stream("for_testing_does_not_exist", "face_test_object")
+            .await
+            .expect_err("stream should fail");
+        assert!(format!("{:?}", res).contains("404"));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

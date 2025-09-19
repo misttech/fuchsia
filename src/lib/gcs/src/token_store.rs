@@ -6,11 +6,11 @@
 
 use crate::error::GcsError;
 use crate::exponential_backoff::default_backoff_strategy;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use async_lock::Mutex;
 use fuchsia_backoff::retry_or_last_error;
 use fuchsia_hyper::HttpsClient;
-use http::{request, StatusCode};
+use http::{StatusCode, request};
 use hyper::{Body, Method, Request, Response};
 use std::fmt;
 use std::path::PathBuf;
@@ -130,18 +130,43 @@ impl TokenStore {
             .storage_base
             .join(&format!("{}/{}", bucket, object))
             .context("joining to storage base")?;
-        self.request_with_retries(https_client, url).await.context("sending http(s) request")
+        let req = Request::builder().method(Method::GET).uri(url.to_string()).body(Body::empty())?;
+        self.request_with_retries(https_client, req).await.context("sending http(s) request")
     }
 
     /// Make one attempt to request data from GCS.
     ///
     /// Callers are expected to handle errors and call send_request() again as
     /// desired (e.g. follow redirects).
-    async fn send_request(&self, https_client: &HttpsClient, url: Url) -> Result<Response<Body>> {
-        log::debug!("https_client.request {:?}", url);
-        let req = Request::builder().method(Method::GET).uri::<String>(url.into());
-        let req = self.maybe_authorize(req).await.context("authorizing in send_request")?;
-        let req = req.body(Body::empty()).context("creating request body")?;
+    pub async fn send_request(
+        &self,
+        https_client: &HttpsClient,
+        req: Request<Body>,
+    ) -> Result<Response<Body>> {
+        let (parts, body) = req.into_parts();
+        self.execute_request(https_client, &parts, body).await
+    }
+
+    async fn execute_request(
+        &self,
+        https_client: &HttpsClient,
+        parts: &http::request::Parts,
+        body: Body,
+    ) -> Result<Response<Body>> {
+        log::debug!("https_client.request {:?}", parts.uri);
+        // The request is deconstructed and reconstructed here to allow `maybe_authorize`
+        // to add an authorization header. The `http::Request` type does not allow
+        // modifying headers after construction.
+        let mut builder = Request::builder()
+            .method(parts.method.clone())
+            .uri(parts.uri.clone())
+            .version(parts.version);
+        if let Some(headers) = builder.headers_mut() {
+            *headers = parts.headers.clone();
+        }
+
+        let builder = self.maybe_authorize(builder).await.context("authorizing in send_request")?;
+        let req = builder.body(body).context("creating request body")?;
         let auth_used = req.headers().contains_key("Authorization");
 
         let res = https_client.request(req).await.context("https_client.request")?;
@@ -158,6 +183,13 @@ impl TokenStore {
                 log::debug!("send_request status {} (UNAUTHORIZED)", res.status());
                 bail!(GcsError::NeedNewAccessToken);
             }
+            // For any other client or server error, read the body for more details.
+            s if s.is_client_error() || s.is_server_error() => {
+                let status = res.status();
+                let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
+                let body_str = String::from_utf8_lossy(&body_bytes);
+                bail!("Request failed with status {}: {}", status, body_str);
+            }
             _ => (),
         }
         Ok(res)
@@ -171,11 +203,15 @@ impl TokenStore {
     async fn request_with_retries(
         &self,
         https_client: &HttpsClient,
-        url: Url,
+        req: Request<Body>,
     ) -> Result<Response<Body>> {
+        let (parts, body) = req.into_parts();
+        let body = hyper::body::to_bytes(body).await?.to_vec();
         retry_or_last_error(default_backoff_strategy(), || async {
-            let result =
-                self.send_request(https_client, url.clone()).await.context("send_request")?;
+            let result = self
+                .execute_request(https_client, &parts, Body::from(body.clone()))
+                .await
+                .context("send_request")?;
             let status = result.status();
             // Retry on http errors 408 | 429 | 500..=599.
             if matches!(status, StatusCode::REQUEST_TIMEOUT | StatusCode::TOO_MANY_REQUESTS)
@@ -343,8 +379,10 @@ impl TokenStore {
             if let Some(t) = page_token {
                 url.query_pairs_mut().append_pair("pageToken", t.as_str());
             }
+            let req =
+                Request::builder().method(Method::GET).uri(url.to_string()).body(Body::empty())?;
             let res =
-                self.request_with_retries(https_client, url).await.context("sending request")?;
+                self.request_with_retries(https_client, req).await.context("sending request")?;
             match res.status() {
                 StatusCode::OK => {
                     let bytes = hyper::body::to_bytes(res.into_body())
