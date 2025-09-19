@@ -28,6 +28,7 @@ group("kernel-tests") {
     "backtrace/tests",
     "cbuf:kernel-tests",
     "crashlog:kernel-tests",
+    "debuglog:kernel-tests",
     "fbl:kernel-tests",
     "id_allocator:kernel-tests",
     "instrumentation:kernel-tests",

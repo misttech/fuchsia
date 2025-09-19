@@ -4,12 +4,17 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("debuglog") {
+library_headers("headers") {
+  headers = [ "lib/debuglog.h" ]
+}
+
+source_set("debuglog") {
+  public_deps = [ ":headers" ]
+
   sources = [ "debuglog.cc" ]
   deps = [
-    ":tests",
     "//sdk/lib/fit",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/crashlog",
@@ -22,9 +27,9 @@ zx_library("debuglog") {
   ]
 }
 
-source_set("tests") {
+source_set("kerneltests") {
   #TODO: testonly = true
-  visibility = [ ":*" ]
+
   sources = [ "debuglog_tests.cc" ]
 
   deps = [
