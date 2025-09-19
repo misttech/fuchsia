@@ -459,14 +459,11 @@ def idk_cc_source_library(
         deps = [],
         implementation_deps = [],
         fuchsia_deps = [],
-        # TODO(https://fxbug.dev/417307356): When implementing prebuilt
-        # libraries, add `data = []`, which will be equivalent to GN's
-        # `runtime_deps`.
         include_base = "include",
         api_file_path = None,
         testonly = False,
         visibility = ["//visibility:private"],
-        # TODO(https://fxbug.dev/425931839): Remove these no longer converting to GN.
+        # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
         build_as_static = False,  # buildifier: disable=unused-variable - For GN conversion only.
         friend = [],  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs = [],  # buildifier: disable=unused-variable - For GN conversion only.
@@ -531,8 +528,9 @@ def idk_cc_source_library(
         include_base: Path to the root directory for includes.
             This path will be added to the underlying library's `includes`.
             If the path is "//sdk", the paths to the headers will be made
-            relative to `//sdk`. Otherwise, `include_base` will be removed from
-            the header paths.
+            relative to `//sdk`. Otherwise, it must be relative to the directory
+            containing the invoking BUILD.bazel file and `include_base` will be
+            removed from all header paths.
             GN note: This preserves the behavior of the GN template.
         api_file_path: Override path for the file representing the API of this library.
             This file is used to ensure modifications to the library's API are
@@ -555,6 +553,9 @@ def idk_cc_source_library(
     """
     atom_type = "cc_source_library"
 
+    if "data" in kwargs:
+        fail("Rumtime dependencies are not supported for source libraries.")
+
     # TODO(https://fxbug.dev/417305295): Replace this with `allow_empty = False`
     # when converting this macro to a symbolic macro.
     if not hdrs:
@@ -564,6 +565,7 @@ def idk_cc_source_library(
         # Other categories are only to ensure ABI compatibility and thus not
         # applicable.
         fail("Category '%s' is not supported." % category)
+
     if api_file_path and not stable:
         fail("Unstable targets do not require/support modification acknowledgement.")
 
@@ -617,7 +619,6 @@ def idk_cc_source_library(
         # `non_idk_implementation_deps`, include it below.
         implementation_deps = implementation_deps,
         includes = [include_path],
-        linkstatic = True,
         testonly = testonly,
         visibility = visibility,
         **kwargs
@@ -658,9 +659,6 @@ def idk_cc_source_library(
     # Dependencies for generating the actual IDK atom (not the underlying library).
     # TODO(https://fxbug.dev/428229472): If we must support
     # `non_idk_implementation_deps`, add it here.
-    # TODO(https://fxbug.dev/417307356): When implementing prebuilt
-    # libraries, add `[":%s" % name]`. It may also be necessary to return
-    # `DefaultInfo` from the underlying library.
     atom_build_deps = [
         # All this target really does is provide a clearer error message than if
         # we relied on combining the lists in the `verify_no_pragma_once()` rule
