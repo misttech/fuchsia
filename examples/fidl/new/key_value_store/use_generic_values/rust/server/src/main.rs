@@ -5,11 +5,11 @@
 use anyhow::{Context as _, Error};
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use regex::Regex;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::sync::LazyLock;
 
 // [START diff_1]
 use fidl_examples_keyvaluestore_usegenericvalues::{
@@ -19,10 +19,9 @@ use std::collections::hash_map::OccupiedEntry;
 use std::ops::Add;
 // [END diff_1]
 
-lazy_static! {
-    static ref KEY_VALIDATION_REGEX: Regex =
-        Regex::new(r"^[A-Za-z]\w+[A-Za-z0-9]$").expect("Key validation regex failed to compile");
-}
+static KEY_VALIDATION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Za-z]\w+[A-Za-z0-9]$").expect("Key validation regex failed to compile")
+});
 
 // [START diff_2]
 /// Sums any numeric type.

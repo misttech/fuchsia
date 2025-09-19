@@ -58,13 +58,6 @@ lazy_static_visibility = [
   #
   # To regenerate, run:
   # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:lazy_static' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
-  "//examples/components/storage:*",
-  "//examples/fidl/new/key_value_store/add_iterator/rust/server:*",
-  "//examples/fidl/new/key_value_store/add_read_item/rust/server:*",
-  "//examples/fidl/new/key_value_store/baseline/rust/server:*",
-  "//examples/fidl/new/key_value_store/support_exports/rust/server:*",
-  "//examples/fidl/new/key_value_store/support_trees/rust/server:*",
-  "//examples/fidl/new/key_value_store/use_generic_values/rust/server:*",
   "//src/connectivity/lowpan/drivers/lowpan-ot-driver:*",
   "//src/connectivity/lowpan/service:*",
   "//src/connectivity/network/netstack3/core:*",

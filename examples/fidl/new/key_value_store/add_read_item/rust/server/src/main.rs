@@ -11,18 +11,17 @@ use {
     // [END diff_1]
     fuchsia_component::server::ServiceFs,
     futures::prelude::*,
-    lazy_static::lazy_static,
     regex::Regex,
     std::cell::RefCell,
     std::collections::HashMap,
     std::collections::hash_map::Entry,
+    std::sync::LazyLock,
 };
 
-lazy_static! {
-    static ref KEY_VALIDATION_REGEX: Regex =
-        Regex::new(r"^[A-Za-z][A-Za-z0-9_\./]{2,62}[A-Za-z0-9]$")
-            .expect("Key validation regex failed to compile");
-}
+static KEY_VALIDATION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Za-z][A-Za-z0-9_\./]{2,62}[A-Za-z0-9]$")
+        .expect("Key validation regex failed to compile")
+});
 
 /// Handler for the `WriteItem` method.
 fn write_item(store: &mut HashMap<String, Vec<u8>>, attempt: Item) -> Result<(), WriteError> {

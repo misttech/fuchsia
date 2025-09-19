@@ -14,18 +14,17 @@ use {
     // [END diff_1]
     fuchsia_component::server::ServiceFs,
     futures::prelude::*,
-    lazy_static::lazy_static,
     regex::Regex,
     std::cell::RefCell,
     std::collections::HashMap,
     std::collections::hash_map::Entry,
     std::str::from_utf8,
+    std::sync::LazyLock,
 };
 
-lazy_static! {
-    static ref KEY_VALIDATION_REGEX: Regex =
-        Regex::new(r"^[A-Za-z]\w+[A-Za-z0-9]$").expect("Key validation regex failed to compile");
-}
+static KEY_VALIDATION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Za-z]\w+[A-Za-z0-9]$").expect("Key validation regex failed to compile")
+});
 
 // [START diff_2]
 // A representation of a key-value store that can contain an arbitrarily deep nesting of other

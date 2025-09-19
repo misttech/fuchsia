@@ -7,20 +7,18 @@ use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, Node};
 use futures::stream::StreamExt;
-use lazy_static::lazy_static;
 use log::{info, warn};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 const U64_SIZE: usize = (u64::BITS / 8) as usize;
 const DEFAULT_VALUE: u64 = 1;
 const FILENAME: &str = "counter";
 
-lazy_static! {
-    static ref DIRECTORIES: Vec<&'static str> = vec!["data", "cache", "tmp"];
-    static ref INSPECTOR: Inspector = Inspector::default();
-}
+static DIRECTORIES: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec!["data", "cache", "tmp"]);
+static INSPECTOR: LazyLock<Inspector> = LazyLock::new(Inspector::default);
 
 #[fuchsia::main(logging = true)]
 async fn main() -> Result<(), Error> {
