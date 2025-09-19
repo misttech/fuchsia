@@ -364,15 +364,18 @@ pub struct JournaledTransaction {
     pub checkpoint: JournalCheckpoint,
     pub root_parent_mutations: Vec<Mutation>,
     pub root_mutations: Vec<Mutation>,
-    // List of (store_object_id, mutation).
+    /// List of (store_object_id, mutation).
     pub non_root_mutations: Vec<(u64, Mutation)>,
     pub end_offset: u64,
     pub checksums: Vec<JournaledChecksums>,
 
-    // Records offset + 1 of the matching begin_flush transaction.  If the object is deleted, the
-    // offset will be STORE_DELETED.  The +1 is because we want to ignore the begin flush
-    // transaction; we don't need or want to replay it.
+    /// Records offset + 1 of the matching begin_flush transaction. The +1 is because we want to
+    /// ignore the begin flush
+    /// transaction; we don't need or want to replay it.
     pub end_flush: Option<(/* store_id: */ u64, /* begin offset: */ u64)>,
+
+    /// The volume which was deleted in this transaction, if any.
+    pub volume_deleted: Option</* store_id: */ u64>,
 }
 
 impl JournaledTransaction {
@@ -381,7 +384,7 @@ impl JournaledTransaction {
     }
 }
 
-const STORE_DELETED: u64 = u64::MAX;
+const VOLUME_DELETED: u64 = u64::MAX;
 
 #[derive(Debug)]
 pub struct JournaledChecksums {
@@ -731,8 +734,16 @@ impl Journal {
 
         // Start with the root-parent mutations, and also determine the journal offsets for all
         // other objects.
-        for (index, JournaledTransaction { checkpoint, root_parent_mutations, end_flush, .. }) in
-            transactions.iter_mut().enumerate()
+        for (
+            index,
+            JournaledTransaction {
+                checkpoint,
+                root_parent_mutations,
+                end_flush,
+                volume_deleted,
+                ..
+            },
+        ) in transactions.iter_mut().enumerate()
         {
             if checkpoint.file_offset >= valid_to {
                 last_checkpoint = checkpoint.clone();
@@ -756,6 +767,10 @@ impl Journal {
 
             if let Some((object_id, journal_offset)) = end_flush {
                 journal_offsets.insert(*object_id, *journal_offset);
+            }
+
+            if let Some(object_id) = volume_deleted {
+                journal_offsets.insert(*object_id, VOLUME_DELETED);
             }
         }
 
@@ -947,6 +962,16 @@ impl Journal {
                                 }
                                 Mutation::EndFlush => {
                                     if let Some(offset) = begin_flush_offsets.remove(&object_id) {
+                                        if let Some(deleted_volume) =
+                                            &current_transaction.volume_deleted
+                                        {
+                                            if *deleted_volume == object_id {
+                                                bail!(anyhow!(FxfsError::Inconsistent).context(
+                                                    "Multiple EndFlush/DeleteVolume mutations in a \
+                                                    single transaction for the same object"
+                                                ));
+                                            }
+                                        }
                                         // The +1 is because we don't want to replay the transaction
                                         // containing the begin flush.
                                         if current_transaction
@@ -955,20 +980,30 @@ impl Journal {
                                             .is_some()
                                         {
                                             bail!(anyhow!(FxfsError::Inconsistent).context(
-                                                "Multiple EndFlush/DeleteVolume mutations in a \
+                                                "Multiple EndFlush mutations in a \
                                                  single transaction"
                                             ));
                                         }
                                     }
                                 }
                                 Mutation::DeleteVolume => {
+                                    if let Some((flushed_object, _)) =
+                                        &current_transaction.end_flush
+                                    {
+                                        if *flushed_object == object_id {
+                                            bail!(anyhow!(FxfsError::Inconsistent).context(
+                                                "Multiple EndFlush/DeleteVolume mutations in a \
+                                                    single transaction for the same object"
+                                            ));
+                                        }
+                                    }
                                     if current_transaction
-                                        .end_flush
-                                        .replace((object_id, STORE_DELETED))
+                                        .volume_deleted
+                                        .replace(object_id)
                                         .is_some()
                                     {
                                         bail!(anyhow!(FxfsError::Inconsistent).context(
-                                            "Multiple EndFlush/DeleteVolume mutations in a single \
+                                            "Multiple DeleteVolume mutations in a single \
                                              transaction"
                                         ));
                                     }

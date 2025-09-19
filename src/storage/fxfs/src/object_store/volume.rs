@@ -5,10 +5,11 @@
 use crate::errors::FxfsError;
 use crate::filesystem::FxFilesystem;
 use crate::object_store::directory::Directory;
-use crate::object_store::transaction::{Options, Transaction, lock_keys};
+use crate::object_store::transaction::{Mutation, Options, Transaction, lock_keys};
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::{
-    LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOwner, load_store_info,
+    ChildValue, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectKey, ObjectStore,
+    ObjectValue, StoreOwner, load_store_info,
 };
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use fxfs_crypto::Crypt;
@@ -130,13 +131,29 @@ impl RootVolume {
         Ok(store)
     }
 
-    /// Deletes the given volume.  Consumes |transaction| and runs |callback| during commit.
+    /// Deletes the given volume.  Consumes `transaction` and runs `callback` during commit. The
+    /// caller must have the correct locks for the volumes directory.
     pub async fn delete_volume(
         &self,
         volume_name: &str,
         mut transaction: Transaction<'_>,
         callback: impl FnOnce() + Send,
     ) -> Result<(), Error> {
+        let objects_to_delete = self.delete_volume_impl(volume_name, &mut transaction).await?;
+        transaction.commit_with_callback(|_| callback()).await.context("commit")?;
+        // Tombstone the deleted objects.
+        let root_store = self.filesystem.root_store();
+        for object_id in &objects_to_delete {
+            root_store.tombstone_object(*object_id, Options::default()).await?;
+        }
+        Ok(())
+    }
+
+    async fn delete_volume_impl(
+        &self,
+        volume_name: &str,
+        transaction: &mut Transaction<'_>,
+    ) -> Result<Vec<u64>, Error> {
         let object_id =
             match self.volume_directory().lookup(volume_name).await?.ok_or(FxfsError::NotFound)? {
                 (object_id, ObjectDescriptor::Volume, _) => object_id,
@@ -150,18 +167,74 @@ impl RootVolume {
         objects_to_delete.push(object_id);
 
         for object_id in &objects_to_delete {
-            root_store.adjust_refs(&mut transaction, *object_id, -1).await?;
+            root_store.adjust_refs(transaction, *object_id, -1).await?;
         }
         // Mark all volume data as deleted.
-        self.filesystem.allocator().mark_for_deletion(&mut transaction, object_id);
+        self.filesystem.allocator().mark_for_deletion(transaction, object_id);
         // Remove the volume entry from the VolumeDirectory.
-        self.volume_directory().delete_child_volume(&mut transaction, volume_name, object_id)?;
-        transaction.commit_with_callback(|_| callback()).await.context("commit")?;
-        // Tombstone the deleted objects.
-        for object_id in &objects_to_delete {
-            root_store.tombstone_object(*object_id, Options::default()).await?;
-        }
-        Ok(())
+        self.volume_directory().delete_child_volume(transaction, volume_name, object_id)?;
+        Ok(objects_to_delete)
+    }
+
+    /// Adds the required mutations to atomically replace a volume, returning a list of object IDs
+    /// of objects which can be deleted. If `dst` does not exist, this is equivalent to renaming the
+    /// volume from `src` to `dst`. The caller must have the correct locks on the volumes directory.
+    pub(crate) async fn replace_volume(
+        &self,
+        transaction: &mut Transaction<'_>,
+        src: &str,
+        dst: &str,
+    ) -> Result<Option<Vec<u64>>, Error> {
+        let src_object_id = match self.volume_directory().lookup(src).await? {
+            Some((object_id, ObjectDescriptor::Volume, _)) => Ok(object_id),
+            Some(_) => Err(FxfsError::Inconsistent),
+            None => Err(FxfsError::NotFound),
+        }?;
+
+        let replaced_objects = if let Some((_, ObjectDescriptor::Volume, _)) =
+            self.volume_directory().lookup(dst).await?
+        {
+            Some(self.delete_volume_impl(dst, transaction).await?)
+        } else {
+            None
+        };
+
+        transaction.add(
+            self.volume_directory().store().store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::child(self.volume_directory().object_id(), src, false),
+                ObjectValue::None,
+            ),
+        );
+
+        transaction.add(
+            self.volume_directory().store().store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::child(self.volume_directory().object_id(), dst, false),
+                ObjectValue::Child(ChildValue {
+                    object_id: src_object_id,
+                    object_descriptor: ObjectDescriptor::Volume,
+                }),
+            ),
+        );
+
+        Ok(replaced_objects)
+    }
+
+    /// Attempts to install the image `image_file` in the volume `src` as the volume `dst`. The
+    /// image file should be an fxfs partition image containing a volume matching the name `dst`.
+    /// The contents of the `dst` volume in the image will be installed in-place into this
+    /// filesystem, replacing an existing `dst` volume if one exists.
+    ///
+    /// There can be no other objects in `src` with extent records, and neither `src` nor `dst` can
+    /// be encrypted.
+    pub async fn install_volume(
+        &self,
+        src: &str,
+        image_file: &str,
+        dst: &str,
+    ) -> Result<(), Error> {
+        ObjectStore::install_volume(self, src, image_file, dst).await
     }
 }
 
@@ -191,14 +264,39 @@ pub async fn list_volumes(volume_directory: &Directory<ObjectStore>) -> Result<V
 mod tests {
     use super::root_volume;
     use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
+    use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::{LockKey, NO_OWNER};
+    use fxfs_crypto::Crypt;
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+
+    async fn do_fsck(
+        fs: &Arc<FxFilesystem>,
+        volume_name: Option<&str>,
+        crypt: Option<Arc<dyn Crypt>>,
+    ) {
+        let fsck_options = FsckOptions {
+            fail_on_warning: true,
+            on_error: Box::new(|err| eprintln!("fsck error: {:?}", err)),
+            ..Default::default()
+        };
+        fsck_with_options(fs.clone(), &fsck_options).await.expect("fsck filesystem");
+        if let Some(volume_name) = volume_name {
+            let root = root_volume(fs.clone()).await.unwrap();
+            let vol = root
+                .volume(volume_name, NO_OWNER, crypt.clone())
+                .await
+                .expect("could not open volume");
+            fsck_volume_with_options(&fs, &fsck_options, vol.store_object_id(), crypt)
+                .await
+                .expect("fsck volume");
+        }
+    }
 
     #[fuchsia::test]
     async fn test_lookup_nonexistent_volume() {
@@ -250,9 +348,10 @@ mod tests {
             let device = filesystem.take_device().await;
             device.reopen(false);
             let filesystem = FxFilesystem::open(device).await.expect("open failed");
+            do_fsck(&filesystem, Some("vol"), Some(crypt)).await;
             let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
-            let volume =
-                root_volume.volume("vol", NO_OWNER, Some(crypt)).await.expect("volume failed");
+            // NOTE: The volume should have been unlocked by `do_fsck` so we omit `crypt` here.
+            let volume = root_volume.volume("vol", NO_OWNER, None).await.expect("volume failed");
             let root_directory = Directory::open(&volume, volume.root_directory_object_id())
                 .await
                 .expect("open failed");
@@ -312,25 +411,26 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.expect("open failed");
+        do_fsck(&filesystem, Some("vol"), Some(crypt.clone())).await;
         {
             // Expect 8kiB accounted to the new volume.
             assert_eq!(
                 filesystem.allocator().get_owner_allocated_bytes().get(&store_object_id),
                 Some(&8192)
             );
-            let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
+            let root = root_volume(filesystem.clone()).await.expect("root_volume failed");
             let transaction = filesystem
                 .clone()
                 .new_transaction(
                     lock_keys![LockKey::object(
-                        root_volume.volume_directory().store().store_object_id(),
-                        root_volume.volume_directory().object_id(),
+                        root.volume_directory().store().store_object_id(),
+                        root.volume_directory().object_id(),
                     )],
                     Options { borrow_metadata_space: true, ..Default::default() },
                 )
                 .await
                 .expect("new_transaction failed");
-            root_volume.delete_volume("vol", transaction, || {}).await.expect("delete_volume");
+            root.delete_volume("vol", transaction, || {}).await.expect("delete_volume");
             // Confirm data allocation is gone.
             assert_eq!(
                 filesystem
@@ -341,8 +441,7 @@ mod tests {
                 &0,
             );
             // Confirm volume entry is gone.
-            root_volume
-                .volume("vol", NO_OWNER, Some(crypt.clone()))
+            root.volume("vol", NO_OWNER, Some(crypt.clone()))
                 .await
                 .err()
                 .expect("volume shouldn't exist anymore.");
@@ -352,6 +451,7 @@ mod tests {
         device.reopen(false);
         // All artifacts of the original volume should be gone.
         let filesystem = FxFilesystem::open(device).await.expect("open failed");
+        do_fsck(&filesystem, None, None).await;
         for object_id in &parent_objects {
             let _ = filesystem
                 .root_store()
@@ -361,5 +461,89 @@ mod tests {
                 .expect("File wasn't deleted.");
         }
         filesystem.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_replace_volume() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        // Add volume "vol" with a file "foo".
+        {
+            let root = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root.new_volume("vol", NO_OWNER, None).await.unwrap();
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .unwrap();
+            let root_directory =
+                Directory::open(&store, store.root_directory_object_id()).await.unwrap();
+            let _ = root_directory.create_child_file(&mut transaction, "foo").await.unwrap();
+            transaction.commit().await.expect("commit failed");
+        }
+        // Add a second volume "vol2" with a file "foo2".
+        {
+            let root = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root.new_volume("vol2", NO_OWNER, None).await.expect("new_volume failed");
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new transaction failed");
+            let root_directory = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let _ = root_directory
+                .create_child_file(&mut transaction, "foo2")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        // Replace "vol" with "vol2", and ensure the filesystem and installed volume passes fsck.
+        {
+            let root = root_volume(fs.clone()).await.expect("root_volume failed");
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        root.volume_directory().store().store_object_id(),
+                        root.volume_directory().object_id(),
+                    )],
+                    Options { borrow_metadata_space: true, ..Default::default() },
+                )
+                .await
+                .expect("new_transaction failed");
+            root.replace_volume(&mut transaction, "vol2", "vol").await.unwrap();
+            transaction.commit().await.unwrap();
+            do_fsck(&fs, Some("vol"), None).await;
+        }
+        fs.close().await.expect("Close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystem::open(device).await.unwrap();
+        do_fsck(&fs, Some("vol"), None).await;
+        {
+            let root = root_volume(fs.clone()).await.unwrap();
+            // vol2 should now have replaced vol
+            root.volume("vol2", NO_OWNER, None).await.err().expect("vol2 shouldn't exist anymore.");
+            let vol = root.volume("vol", NO_OWNER, None).await.unwrap();
+            let dir = Directory::open(&vol, vol.root_directory_object_id()).await.unwrap();
+            // The contents of "foo" should have been replaced entirely with those from "foo2".
+            assert!(dir.lookup("foo").await.unwrap().is_none(), "foo should not be present");
+            assert!(dir.lookup("foo2").await.unwrap().is_some(), "foo2 should be present");
+        }
+        fs.close().await.unwrap();
     }
 }
