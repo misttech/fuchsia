@@ -136,7 +136,6 @@ impl ExternalSubToolSuite {
     }
 
     pub fn find_workspace_tool(&self, ffx_cmd: &FfxCommandLine) -> Option<ExternalSubTool> {
-        log::trace!("looking for workspace tool: {ffx_cmd:?}");
         let name = ffx_cmd.global.subcommand.first()?;
         let cmd = match self.workspace_tools.get(name).and_then(SubToolLocation::validate_tool) {
             Some(FfxToolInfo { path: Some(path), .. }) => {
@@ -150,7 +149,6 @@ impl ExternalSubToolSuite {
     }
 
     pub fn find_sdk_tool(&self, sdk: &Sdk, ffx_cmd: &FfxCommandLine) -> Option<ExternalSubTool> {
-        log::trace!("looking for sdk tool: {ffx_cmd:?}");
         let name = format!("ffx-{}", ffx_cmd.global.subcommand.first()?);
         let ffx_tool = sdk.get_ffx_tool(&name)?;
         let location = SubToolLocation::from_path(
@@ -167,32 +165,12 @@ impl ExternalSubToolSuite {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum InitExternalSubToolSuiteError {
-    #[error(
-        "Neither the Subtool Search Path ({}) nor the Subtool Manifest Path ({}) have been initialized.",
-        FFX_SUBTOOL_PATHS_CONFIG,
-        FFX_SUBTOOL_MANIFEST_CONFIG
-    )]
-    NoSubToolSearchPathOrManifest,
-}
-
 #[async_trait::async_trait(?Send)]
 impl ToolSuite for ExternalSubToolSuite {
     fn from_env(env: &EnvironmentContext) -> Result<Self> {
         let subtool_manifest: PathBuf =
             env.query(FFX_SUBTOOL_MANIFEST_CONFIG).get_file().unwrap_or_default();
 
-        let subtool_config: Vec<Value> = env
-            .query(FFX_SUBTOOL_PATHS_CONFIG)
-            .select(SelectMode::All)
-            .get_file()
-            .unwrap_or_else(|_| vec![]);
-
-        if !subtool_manifest.exists() && subtool_config.is_empty() {
-            return Err(InitExternalSubToolSuiteError::NoSubToolSearchPathOrManifest)
-                .map_err(anyhow::Error::from)?;
-        }
         // If the subtool manifest is configured, it use it to load the information for
         // external subtools. Otherwise scan the directories. The manifest file is used when
         // ffx is being run hermetically, and should not scan and read directories.
@@ -427,7 +405,7 @@ mod tests {
         subtool_path
     }
 
-    #[fuchsia::test]
+    #[test]
     fn check_non_existent() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         assert!(
@@ -437,7 +415,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn check_no_metadata() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let name = "ffx-no-metadata";
@@ -448,7 +426,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn check_invalid_metadata() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let name = "ffx-bad-metadata";
@@ -459,7 +437,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn check_valid_metadata() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let name = "ffx-valid-metadata";
@@ -478,7 +456,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn check_incorrect_name_metadata() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let name = "ffx-invalid-metadata";
@@ -491,7 +469,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn check_future_fho_version_required() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let name = "ffx-invalid-metadata";
@@ -636,17 +614,17 @@ mod tests {
         assert_eq!(cmd.unwrap().path, executable)
     }
 
-    #[fuchsia::test]
+    #[test]
     fn subtool_config_none() {
         assert!(get_subtool_paths(vec![]).is_empty());
     }
 
-    #[fuchsia::test]
+    #[test]
     fn subtool_config_one() {
         assert_eq!(get_subtool_paths(vec![json!("boom")]), vec![PathBuf::from("boom")]);
     }
 
-    #[fuchsia::test]
+    #[test]
     fn subtool_config_multiple() {
         assert_eq!(
             get_subtool_paths(vec![json!("boom"), json!("zoom")]),
@@ -654,7 +632,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn subtool_config_listlist() {
         assert_eq!(
             get_subtool_paths(vec![json!(["boom", "zoom"])]),
@@ -662,7 +640,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn subtool_config_multiple_listlist() {
         assert_eq!(
             get_subtool_paths(vec![json!(["boom", "zoom"]), json!(["doom", "loom"])]),
@@ -675,7 +653,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[test]
     fn subtool_config_multiple_different() {
         assert_eq!(
             get_subtool_paths(vec![json!("boom"), json!(["doom", "loom"])]),
@@ -685,11 +663,5 @@ mod tests {
             get_subtool_paths(vec![json!(["boom", "zoom"]), json!("loom")]),
             vec![PathBuf::from("boom"), PathBuf::from("zoom"), PathBuf::from("loom")]
         );
-    }
-
-    #[fuchsia::test]
-    async fn test_externalsubtoolsuite_errors_on_invalid_from_env() {
-        let test_env = ffx_config::test_init().await.expect("test init");
-        assert!(ExternalSubToolSuite::from_env(&test_env.context).is_err())
     }
 }

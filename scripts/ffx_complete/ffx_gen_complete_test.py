@@ -29,16 +29,9 @@ class CompletionTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        args = (
-            ARGS.ffx_path,
-            "--config",
-            "ffx.subtool-search-paths=./host-tools",
-            "--machine",
-            "json",
-            "--help",
-        )
+        print(f"ARGS.ffx_path={ARGS.ffx_path}")
         ffx_proc = subprocess.run(
-            args,
+            [ARGS.ffx_path, "--machine", "json", "--help"],
             capture_output=True,
             text=True,
             check=True,
