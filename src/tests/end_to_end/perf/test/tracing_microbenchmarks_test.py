@@ -58,6 +58,8 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
     # overhead of tracing.
     def test_tracing_categories_enabled(self) -> None:
         results_files = []
+        userspace_events = {"InstantEvent", "ScopedDuration", "DurationBegin"}
+        syscall_events = {"syscall_test_0", "syscall_test_8"}
         for i in range(PROCESS_RUNS):
             results_files.append(
                 self._run_tracing_microbenchmark(
@@ -65,7 +67,10 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
                 )
             )
             model = trace_importing.create_model_from_trace_file_path(
-                os.path.join(self.test_case_path, "trace.fxt")
+                os.path.join(self.test_case_path, "trace.fxt"),
+                # DurationEnd records pair with DurationBegin records to create DurationBegin events
+                # so we need them too.
+                patterns=userspace_events | {"DurationEnd"} | syscall_events,
             )
 
             events = list(
@@ -75,16 +80,11 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
                     type=trace_model.Event,
                 )
             )
-            for event_name in [
-                "InstantEvent",
-                "ScopedDuration",
-                "DurationBegin",
-            ]:
+            for event_name in userspace_events:
                 asserts.assert_equal(
-                    len(
-                        [event for event in events if event.name == event_name]
-                    ),
+                    len([e for e in events if e.name == event_name]),
                     ITERATIONS_PER_TEST_PER_PROCESS,
+                    f"Wrong number of {event_name} events in trace.",
                 )
 
             events = list(
@@ -94,12 +94,11 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
                     type=trace_model.Event,
                 )
             )
-            for event_name in ["syscall_test_0", "syscall_test_8"]:
+            for event_name in syscall_events:
                 asserts.assert_equal(
-                    len(
-                        [event for event in events if event.name == event_name]
-                    ),
+                    len([e for e in events if e.name == event_name]),
                     ITERATIONS_PER_TEST_PER_PROCESS,
+                    f"Wrong number of {event_name} events in trace.",
                 )
 
         publish.publish_fuchsiaperf(
