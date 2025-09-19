@@ -4,7 +4,8 @@
 
 //! Epoch based deferred execution
 
-use fuchsia_sync::Mutex;
+use fuchsia_sync::{Mutex, MutexGuard};
+use smallvec::SmallVec;
 use std::collections::VecDeque;
 use std::future::{Future, poll_fn};
 use std::marker::PhantomData;
@@ -70,19 +71,23 @@ pub struct CallbackRef<'a> {
     sequence: usize,
 }
 
+// PendingCallbacks must be dropped after the guard.
+struct InnerGuard<'a>(MutexGuard<'a, Inner>, PendingCallbacks);
+
+#[derive(Default)]
+struct PendingCallbacks(SmallVec<[Callback; 4]>);
+
 impl Epoch {
     /// Schedule `callback` to be executed when all prior references have been returned. If
     /// `callback` is no bigger than `usize`, typically no heap allocation will be incurred.  If
-    /// there are no outstanding guards, `callback` will be called immediately.  When `callback`
-    /// fires, it is not safe to make any calls to this instance of `Epoch` as that will cause a
-    /// deadlock.
-    pub fn defer<F: FnOnce() + Send + Unpin>(&self, callback: F) -> CallbackRef<'_> {
-        CallbackRef { epoch: self, sequence: self.inner.lock().defer(callback.into()) }
+    /// there are no outstanding guards, `callback` will be called immediately.
+    pub fn defer<F: FnOnce() + Send + Unpin + 'static>(&self, callback: F) -> CallbackRef<'_> {
+        CallbackRef { epoch: self, sequence: self.inner_guard().defer(callback.into()) }
     }
 
     /// Same as `defer` but for a waker.
     pub fn defer_waker(&self, waker: &Waker) -> CallbackRef<'_> {
-        CallbackRef { epoch: self, sequence: self.inner.lock().defer(waker.clone().into()) }
+        CallbackRef { epoch: self, sequence: self.inner_guard().defer(waker.clone().into()) }
     }
 
     /// Takes a guard on the current epoch. Subsequent callbacks queued via `defer` are guaranteed
@@ -107,22 +112,13 @@ impl Epoch {
             },
         )
     }
+
+    fn inner_guard(&self) -> InnerGuard<'_> {
+        InnerGuard(self.inner.lock(), PendingCallbacks::default())
+    }
 }
 
 impl Inner {
-    fn defer(&mut self, callback: Callback) -> usize {
-        if self.callbacks.front().is_none_or(|cb| cb.count().unwrap() == 0) {
-            // There are no outstanding guards, so call the callback immediately.
-            callback.call();
-
-            // Return a sequence of 0, which `has_fired` below will always return true for.
-            0
-        } else {
-            self.callbacks.push_back(callback);
-            self.sequence + self.callbacks.len() - 1
-        }
-    }
-
     // Add a reference to the current epoch.
     fn add_ref(&mut self) -> usize {
         if let Some(count) = self.callbacks.back_mut().and_then(|cb| cb.count_mut()) {
@@ -132,28 +128,59 @@ impl Inner {
         }
         self.sequence + self.callbacks.len() - 1
     }
+}
+
+impl InnerGuard<'_> {
+    fn defer(&mut self, callback: Callback) -> usize {
+        let InnerGuard(inner, pending_callbacks) = self;
+        if inner.callbacks.front().is_none_or(|cb| cb.count().unwrap() == 0) {
+            // There are no outstanding guards, so call the callback immediately.
+            pending_callbacks.push(callback);
+
+            // Return a sequence of 0, which `has_fired` below will always return true for.
+            0
+        } else {
+            inner.callbacks.push_back(callback);
+            inner.sequence + inner.callbacks.len() - 1
+        }
+    }
 
     // Decrement a reference to the epoch at `sequence`.
     fn sub_ref(&mut self, sequence: usize) {
-        let index = sequence - self.sequence;
-        let count = self.callbacks[index].count_mut().unwrap();
+        let InnerGuard(inner, pending_callbacks) = self;
+        let index = sequence - inner.sequence;
+        let count = inner.callbacks[index].count_mut().unwrap();
         *count -= 1;
         // We need to call the callbacks if the count has reached zero, and the count is at the
         // beginning of `callbacks` *and* there are actually callbacks queued.
-        if *count == 0 && index == 0 && self.callbacks.len() > 1 {
-            while let Some(callback) = self.callbacks.front() {
+        if *count == 0 && index == 0 && inner.callbacks.len() > 1 {
+            while let Some(callback) = inner.callbacks.front() {
                 if let Some(count) = callback.count() {
-                    if count > 0 || self.callbacks.len() == 1 {
+                    if count > 0 || inner.callbacks.len() == 1 {
                         // We've encountered a count element which is either non-zero or has no
                         // callbacks after it, so we're done.
                         break;
                     }
-                    self.callbacks.pop_front();
+                    inner.callbacks.pop_front();
                 } else {
-                    self.callbacks.pop_front().unwrap().call();
+                    pending_callbacks.push(inner.callbacks.pop_front().unwrap());
                 }
-                self.sequence += 1;
+                inner.sequence += 1;
             }
+        }
+    }
+}
+
+impl PendingCallbacks {
+    fn push(&mut self, callback: Callback) {
+        self.0.push(callback);
+    }
+}
+
+impl Drop for PendingCallbacks {
+    fn drop(&mut self) {
+        for callback in self.0.drain(..) {
+            callback.call();
         }
     }
 }
@@ -198,12 +225,12 @@ impl Drop for Callback {
     }
 }
 
-impl<F: FnOnce() + Send + Unpin> From<F> for Callback {
+impl<F: FnOnce() + Send + Unpin + 'static> From<F> for Callback {
     fn from(value: F) -> Self {
         if std::mem::size_of::<F>() <= std::mem::size_of::<*const ()>() {
             struct InlineCallback<F>(PhantomData<F>);
 
-            impl<F: FnOnce() + Send> InlineCallback<F> {
+            impl<F: FnOnce() + Send + Unpin + 'static> InlineCallback<F> {
                 const VTABLE: RawWakerVTable = RawWakerVTable::new(
                     |_| unreachable!(),
                     Self::wake,
@@ -239,7 +266,7 @@ impl<F: FnOnce() + Send + Unpin> From<F> for Callback {
         } else {
             struct BoxCallback<F>(PhantomData<F>);
 
-            impl<F: FnOnce() + Send> BoxCallback<F> {
+            impl<F: FnOnce() + Send + Unpin + 'static> BoxCallback<F> {
                 const VTABLE: RawWakerVTable = RawWakerVTable::new(
                     |_| unreachable!(),
                     Self::wake,
@@ -282,7 +309,7 @@ impl Clone for EpochGuard<'_> {
 
 impl Drop for EpochGuard<'_> {
     fn drop(&mut self) {
-        self.epoch.inner.lock().sub_ref(self.sequence);
+        self.epoch.inner_guard().sub_ref(self.sequence);
     }
 }
 
@@ -297,7 +324,7 @@ impl CallbackRef<'_> {
     /// Replaces the callback with a different callback. Returns `true` if successful, or `false` if
     /// the existing callback has already been called.
     #[must_use]
-    pub fn replace<F: FnOnce() + Send + Unpin>(&self, callback: F) -> bool {
+    pub fn replace<F: FnOnce() + Send + Unpin + 'static>(&self, callback: F) -> bool {
         let mut inner = self.epoch.inner.lock();
         if self.sequence <= inner.sequence {
             return false;
@@ -325,7 +352,7 @@ mod test {
     use super::*;
     use futures::stream::{FuturesUnordered, StreamExt};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::{iter, thread};
 
     #[test]
@@ -496,5 +523,36 @@ mod test {
                 }
             });
         });
+    }
+
+    #[test]
+    fn test_callback_reentrancy() {
+        let epoch = Arc::new(Epoch::default());
+        let counter = Arc::new(AtomicU8::new(0));
+
+        let epoch_clone = epoch.clone();
+        let counter_clone = counter.clone();
+        epoch.defer(move || {
+            epoch_clone.defer(move || {
+                counter_clone.fetch_add(1, Ordering::Relaxed);
+            });
+        });
+
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+
+        let guard = epoch.guard();
+        let epoch_clone = epoch.clone();
+        let counter_clone = counter.clone();
+        epoch.defer(move || {
+            epoch_clone.defer(move || {
+                counter_clone.fetch_add(1, Ordering::Relaxed);
+            });
+        });
+
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+
+        drop(guard);
+
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
     }
 }

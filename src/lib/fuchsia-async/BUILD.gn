@@ -158,6 +158,7 @@ rustc_library("fuchsia-async") {
     "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:pin-project-lite",
+    "//third_party/rust_crates:smallvec",
   ]
   if (is_fuchsia) {
     deps += [

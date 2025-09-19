@@ -73,6 +73,7 @@ rustc_library(
         "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:pin-project-lite",
+        "//third_party/rust_crates/vendor:smallvec",
     ] + select({
         "@platforms//os:fuchsia": [
             "//sdk/lib/fdio",
