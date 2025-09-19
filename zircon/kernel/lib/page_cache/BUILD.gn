@@ -4,14 +4,24 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("page_cache") {
+static_library("page_cache") {
+  public_deps = [ ":headers" ]
+
   sources = [ "page_cache.cc" ]
   deps = [
-    "tests",
     "//zircon/kernel/lib/counters",
     "//zircon/kernel/lib/crypto",
   ]
+}
+
+library_headers("headers") {
+  headers = [ "lib/page_cache.h" ]
   public_deps = [ "//zircon/kernel/lib/ktl:headers" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }

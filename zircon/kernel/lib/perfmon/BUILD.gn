@@ -4,13 +4,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-config("config") {
-  include_dirs = [ "include" ]
+library_headers("headers") {
+  headers = [ "lib/perfmon.h" ]
 }
 
-zx_library("perfmon") {
+static_library("perfmon") {
+  public_deps = [ ":headers" ]
+
   sources = [ "perfmon.cc" ]
   deps = [ "//zircon/kernel/vm" ]
 }

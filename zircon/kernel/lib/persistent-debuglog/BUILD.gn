@@ -4,10 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 import("params.gni")
 
-zx_library("persistent-debuglog") {
+library_headers("headers") {
+  headers = [ "lib/persistent-debuglog.h" ]
+  public_configs = [
+    ":config",
+    "//zircon/kernel:persistent_ram_config",
+  ]
+}
+
+static_library("persistent-debuglog") {
+  public_deps = [ ":headers" ]
+
   sources = [ "persistent-debuglog.cc" ]
   deps = [
     "//zircon/kernel/lib/console",
@@ -15,14 +25,15 @@ zx_library("persistent-debuglog") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/lazy_init",
   ]
-  public_configs = [
-    ":config",
-    "//zircon/kernel:persistent_ram_config",
-  ]
 }
 
 config("config") {
   visibility = [ ":*" ]
   defines =
       [ "TARGET_PERSISTENT_DEBUGLOG_SIZE=$target_persistent_debuglog_size" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }

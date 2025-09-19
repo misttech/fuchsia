@@ -4,14 +4,19 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("pow2_range_allocator") {
-  sources = [ "pow2_range_allocator.cc" ]
-  deps = [ ":tests" ]
+library_headers("headers") {
+  headers = [ "lib/pow2_range_allocator.h" ]
 }
 
-source_set("tests") {
+static_library("pow2_range_allocator") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "pow2_range_allocator.cc" ]
+}
+
+source_set("kernel-tests") {
   sources = [ "pow2_range_allocator_tests.cc" ]
   deps = [
     ":headers",

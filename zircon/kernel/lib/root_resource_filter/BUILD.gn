@@ -4,9 +4,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("root_resource_filter") {
+library_headers("headers") {
+  headers = [ "lib/root_resource_filter.h" ]
+}
+
+static_library("root_resource_filter") {
+  public_deps = [ ":headers" ]
+
   sources = [ "root_resource_filter.cc" ]
   deps = [
     "//zircon/kernel/lib/counters",
