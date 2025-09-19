@@ -7,12 +7,12 @@ mod debian_guest;
 mod gbenchmark;
 mod gtest;
 mod helpers;
-mod ltp;
 mod results_parser;
 mod runner;
 mod selinux;
 mod syscalls;
 mod test_suite;
+mod vts_binary;
 
 use crate::debian_guest::DebianGuest;
 

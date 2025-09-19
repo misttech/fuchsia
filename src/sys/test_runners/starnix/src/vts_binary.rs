@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::helpers::*;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
 use std::collections::HashMap;
 use {
@@ -11,7 +11,7 @@ use {
     fidl_fuchsia_test as ftest,
 };
 
-pub async fn get_cases_list_for_ltp(
+pub async fn get_cases_list_for_vts_binary(
     mut start_info: frunner::ComponentStartInfo,
 ) -> Result<Vec<ftest::Case>, Error> {
     let tests_list = read_tests_list(&mut start_info)
@@ -26,7 +26,7 @@ pub async fn get_cases_list_for_ltp(
         .collect())
 }
 
-pub async fn run_ltp_cases(
+pub async fn run_vts_binary_cases(
     tests: Vec<ftest::Invocation>,
     mut start_info: frunner::ComponentStartInfo,
     run_listener_proxy: &ftest::RunListenerProxy,
@@ -59,7 +59,8 @@ pub async fn run_ltp_cases(
 
         let allow_skipped = expected_test_results[test_name] == "IGNORED";
         let result =
-            read_ltp_test_result(component_controller.take_event_stream(), allow_skipped).await;
+            read_vts_binary_test_result(component_controller.take_event_stream(), allow_skipped)
+                .await;
         case_listener_proxy.finished(&result)?;
     }
 
@@ -117,7 +118,7 @@ fn start_command(
     Ok((start_test_component(start_info, component_runner)?, std_handles))
 }
 
-async fn read_ltp_test_result(
+async fn read_vts_binary_test_result(
     event_stream: frunner::ComponentControllerEventStream,
     allow_skipped: bool,
 ) -> ftest::Result_ {
@@ -128,15 +129,15 @@ async fn read_ltp_test_result(
     // get Linux exit code from component runner.
     const COMPONENT_EXIT_CODE_BASE: i32 = 1024;
 
-    // Status code used by LTP tests for skipped tests. See
+    // Status code used by VTS kernel tests for skipped tests. See
     // https://github.com/linux-test-project/ltp/blob/master/include/tst_res_flags.h .
-    const LTP_RESULT_TCONF: i32 = COMPONENT_EXIT_CODE_BASE + 32;
+    const VTS_RESULT_TCONF: i32 = COMPONENT_EXIT_CODE_BASE + 32;
 
     match read_component_epitaph(event_stream).await {
         zx::Status::OK => {
             ftest::Result_ { status: Some(ftest::Status::Passed), ..Default::default() }
         }
-        status if status.into_raw() == LTP_RESULT_TCONF && allow_skipped => {
+        status if status.into_raw() == VTS_RESULT_TCONF && allow_skipped => {
             ftest::Result_ { status: Some(ftest::Status::Skipped), ..Default::default() }
         }
         _ => ftest::Result_ { status: Some(ftest::Status::Failed), ..Default::default() },

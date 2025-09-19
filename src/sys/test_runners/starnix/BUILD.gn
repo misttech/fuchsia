@@ -52,13 +52,13 @@ rustc_binary("bin") {
     "src/gbenchmark.rs",
     "src/gtest.rs",
     "src/helpers.rs",
-    "src/ltp.rs",
     "src/main.rs",
     "src/results_parser.rs",
     "src/runner.rs",
     "src/selinux.rs",
     "src/syscalls.rs",
     "src/test_suite.rs",
+    "src/vts_binary.rs",
   ]
 }
 

@@ -26,10 +26,10 @@ pub enum TestType {
     Gtest,
     GtestXmlOutput,
     Gunit,
-    Ltp,
     SeLinux,
     SingleTest,
     Syscall,
+    VtsBinary,
 }
 
 pub fn get_opt_str_value_from_dict(

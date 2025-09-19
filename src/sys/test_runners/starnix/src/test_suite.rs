@@ -6,9 +6,9 @@ use crate::debian_guest::DebianGuest;
 use crate::gbenchmark::*;
 use crate::gtest::*;
 use crate::helpers::*;
-use crate::ltp::*;
 use crate::selinux::*;
 use crate::syscalls::*;
+use crate::vts_binary::*;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_test::{self as ftest};
@@ -33,10 +33,10 @@ fn remove_test_type(program: &mut fdata::Dictionary) -> Result<TestType, Error> 
         Some("gtest") => Ok(TestType::Gtest),
         Some("gtest_xml_output") => Ok(TestType::GtestXmlOutput),
         Some("gunit") => Ok(TestType::Gunit),
-        Some("ltp") => Ok(TestType::Ltp),
+        Some("vts_binary") => Ok(TestType::VtsBinary),
         Some("selinux") => Ok(TestType::SeLinux),
         Some("syscall") => Ok(TestType::Syscall),
-        Some("vts") => Ok(TestType::Ltp),
+        Some("ltp") => Ok(TestType::VtsBinary),
         Some(value) => Err(anyhow!("Unrecognized test_type: {}", value)),
 
         // If test_type is not specified, then just run the component as a single test case.
@@ -103,8 +103,8 @@ pub async fn handle_suite_requests(
                             ..Default::default()
                         }]
                     }
-                    TestType::Ltp | TestType::SeLinux => {
-                        get_cases_list_for_ltp(test_start_info).await?
+                    TestType::VtsBinary | TestType::SeLinux => {
+                        get_cases_list_for_vts_binary(test_start_info).await?
                     }
                 };
 
@@ -167,8 +167,8 @@ pub async fn handle_suite_requests(
                         )
                         .await?
                     }
-                    TestType::Ltp => {
-                        run_ltp_cases(
+                    TestType::VtsBinary => {
+                        run_vts_binary_cases(
                             tests,
                             test_start_info,
                             &run_listener_proxy,
