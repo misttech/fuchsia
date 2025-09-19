@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::HandleBased;
 use fidl::endpoints::{ControlHandle, ServerEnd, SynchronousProxy};
+use fidl::{AsHandleRef, HandleBased};
 use fidl_fuchsia_ldsvc as fldsvc;
 use futures::{TryFutureExt, TryStreamExt};
 use std::collections::BTreeMap;
@@ -31,13 +31,14 @@ pub(crate) struct Library {
 unsafe impl Send for Library {}
 
 impl Library {
-    fn try_load(vmo: zx::Vmo, vmar: Option<zx::Vmar>) -> Result<Self, Status> {
+    fn try_load(vmo: zx::Vmo, vmar: &Option<zx::Vmar>) -> Result<Self, Status> {
         // SAFETY: By checking it's not null and placing in the Library wrapper, we ensure it's a
         // valid pointer and we will close it after it's no longer used.
         let library = unsafe {
             dlopen_vmo_vmar(
                 vmo.into_raw(),
-                vmar.map(|h| h.into_raw())
+                vmar.as_ref()
+                    .map(|h| h.raw_handle())
                     .unwrap_or_else(|| fuchsia_runtime::vmar_root_self().raw_handle()),
                 libc::RTLD_NOW,
             )
@@ -69,7 +70,7 @@ impl LoaderService {
         Loader::install(LOADER_SERVICE.lock.lock().await, overrides)
     }
 
-    pub(crate) async fn try_load(vmo: zx::Vmo, vmar: Option<zx::Vmar>) -> Result<Library, Status> {
+    pub(crate) async fn try_load(vmo: zx::Vmo, vmar: &Option<zx::Vmar>) -> Result<Library, Status> {
         LOADER_SERVICE.lock.lock().await;
         Library::try_load(vmo, vmar)
     }
@@ -109,11 +110,12 @@ impl Loader {
     pub(crate) async fn try_load(
         &self,
         vmo: zx::Vmo,
-        vmar: Option<zx::Vmar>,
+        vmar: &Option<zx::Vmar>,
     ) -> Result<Library, Status> {
         // This needs to be done on another thread because it makes sync calls back into the
         // loader service we just installed.
-        fuchsia_async::unblock(move || Library::try_load(vmo, vmar)).await
+        let vmar = vmar.as_ref().map(|v| v.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+        fuchsia_async::unblock(move || Library::try_load(vmo, &vmar)).await
     }
 
     fn load_object(&self, object_name: &str) -> Result<zx::Vmo, Status> {

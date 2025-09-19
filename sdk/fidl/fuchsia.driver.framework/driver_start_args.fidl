@@ -107,4 +107,9 @@ type DriverStartArgs = resource table {
     // TODO(https://fxbug.dev/42176642) add link to reference for the contents
     /// Configuration passed to the driver.
     7: config zx.Handle:VMO;
+
+    /// Root VMAR the driver is mapped into. All child mappings should be placed into this VMAR
+    /// if they want to have the same scheduler profile applied to them.
+    @available(added=NEXT)
+    13: vmar zx.Handle:VMAR;
 };

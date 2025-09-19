@@ -596,6 +596,12 @@
         "type": "string:4096"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.driver.framework/DriverStartArgs.vmar",
+        "ordinal": "13",
+        "type": "zx/Handle:VMAR"
+    },
+    {
         "kind": "table",
         "name": "fuchsia.driver.framework/DriverStartArgs",
         "resourceness": "resource"

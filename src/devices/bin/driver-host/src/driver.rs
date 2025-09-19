@@ -269,7 +269,8 @@ impl Driver {
             None
         };
 
-        let library = LoaderService::try_load(vmo, vmar).await?;
+        let library = LoaderService::try_load(vmo, &vmar).await?;
+        start_args.vmar = vmar;
         let hooks = Hooks::new_from_library(&library)?;
         let modules_and_symbols = ModulesAndSymbols::load(program, &incoming).await?;
         modules_and_symbols.copy_to_start_args(&mut start_args);

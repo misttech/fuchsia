@@ -90,9 +90,9 @@ impl ModulesAndSymbols {
         let mut modules_and_symbols = ModulesAndSymbols::default();
         for (module_name, module) in module_map {
             let module_library = if !module.overrides.is_empty() {
-                LoaderService::install(module.overrides).await.try_load(module.vmo, None).await?
+                LoaderService::install(module.overrides).await.try_load(module.vmo, &None).await?
             } else {
-                LoaderService::try_load(module.vmo, None).await?
+                LoaderService::try_load(module.vmo, &None).await?
             };
 
             // Find symbols.
