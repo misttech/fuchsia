@@ -7,7 +7,6 @@ mod debug;
 mod device;
 pub mod directory;
 mod dirent_cache;
-mod epochs;
 mod errors;
 pub mod file;
 pub mod fxblob;

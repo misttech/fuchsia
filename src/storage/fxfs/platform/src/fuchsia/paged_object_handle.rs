@@ -609,7 +609,7 @@ impl PagedObjectHandle {
         truncate_guard: &TruncateGuard<'a>,
         last_chance: bool,
     ) -> Result<(), Error> {
-        self.handle.owner().pager().page_in_barrier().await;
+        Pager::page_in_barrier().await;
 
         let pending_shrink = self.inner.lock().pending_shrink;
         if let PendingShrink::ShrinkTo(size, update_has_overwrite_extents) = pending_shrink {

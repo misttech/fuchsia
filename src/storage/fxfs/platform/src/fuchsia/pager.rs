@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fuchsia::epochs::{Epochs, RefGuard};
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::FxNode;
 use crate::fuchsia::profile::Recorder;
 use anyhow::Error;
 use bitflags::bitflags;
+use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_async::{self as fasync};
 use fuchsia_sync::{Mutex, MutexGuard};
 use fxfs::future_with_guard::FutureWithGuard;
@@ -95,7 +95,7 @@ impl<T: PagerBacked> PagerPacketReceiver<T> {
             return;
         }
 
-        let (file, ref_guard) = {
+        let (file, epoch_guard) = {
             let file_lock = self.file.lock();
             let file = match &*file_lock {
                 FileHolder::Strong(file) => file.clone(),
@@ -108,14 +108,20 @@ impl<T: PagerBacked> PagerPacketReceiver<T> {
                     }
                 }
             };
-            let ref_guard = match command {
+
+            // Whenever a file is flushed, we must make sure existing page requests for a file are
+            // completed to eliminate the possibility of supplying stale data for a file.  We solve
+            // this by using a barrier when we flush to wait for outstanding page requests to
+            // finish.  Technically, we only need to wait for page requests for the specific file
+            // being flushed, but we should see if we need to for performance reasons first.
+            let epoch_guard = match command {
                 // Don't take refs for mark_dirty, it can block on flushes which block on the epoch
                 // creating a deadlock. The call for awaiting epochs is `page_in_barrier` which
                 // correctly implies that it should only wait on page in.
-                ZX_PAGER_VMO_READ => Some(file.pager().epochs.add_ref()),
+                ZX_PAGER_VMO_READ => Some(Epoch::global().guard()),
                 _ => None,
             };
-            (file, ref_guard)
+            (file, epoch_guard)
         };
 
         // The scope guard needs to be held and outlive the file Arc and the clones of it.
@@ -127,7 +133,7 @@ impl<T: PagerBacked> PagerPacketReceiver<T> {
         };
         match command {
             ZX_PAGER_VMO_READ => {
-                file.clone().page_in(PageInRange::new(contents.range(), file, ref_guard.unwrap()))
+                file.clone().page_in(PageInRange::new(contents.range(), file, epoch_guard.unwrap()))
             }
             ZX_PAGER_VMO_DIRTY => {
                 file.clone().mark_dirty(MarkDirtyRange::new(contents.range(), file))
@@ -194,13 +200,6 @@ pub struct Pager {
     pager: zx::Pager,
     scope: ExecutionScope,
     executor: fasync::EHandle,
-
-    // Whenever a file is flushed, we must make sure existing page requests for a file are completed
-    // to eliminate the possibility of supplying stale data for a file.  We solve this by using a
-    // barrier when we flush to wait for outstanding page requests to finish.  Technically, we only
-    // need to wait for page requests for the specific file being flushed, but we should see if we
-    // need to for performance reasons first.
-    epochs: Arc<Epochs>,
     recorder: Mutex<Option<Box<dyn Recorder>>>,
 }
 
@@ -221,7 +220,6 @@ impl Pager {
             pager: zx::Pager::create(zx::PagerOptions::empty())?,
             scope,
             executor: fasync::EHandle::local(),
-            epochs: Epochs::new(),
             recorder: Mutex::new(None),
         })
     }
@@ -429,8 +427,8 @@ impl Pager {
         Ok(PagerVmoStats { was_vmo_modified: vmo_stats.modified == ZX_PAGER_VMO_STATS_MODIFIED })
     }
 
-    pub async fn page_in_barrier(&self) {
-        self.epochs.barrier().await;
+    pub async fn page_in_barrier() {
+        Epoch::global().barrier().await;
     }
 }
 
@@ -630,7 +628,7 @@ pub type PageInRange<T> = PagerRange<T, PageInRequest>;
 
 impl<T: PagerBacked> PageInRange<T> {
     /// Constructs a new `PageInRange<T>`. `range` must be page aligned.
-    pub fn new(range: Range<u64>, file: Arc<T>, ref_guard: RefGuard) -> Self {
+    pub fn new(range: Range<u64>, file: Arc<T>, epoch_guard: EpochGuard<'static>) -> Self {
         debug_assert!(
             range.start % page_size() == 0 && range.end % page_size() == 0,
             "{:?} is not page aligned",
@@ -638,7 +636,7 @@ impl<T: PagerBacked> PageInRange<T> {
         );
         Self {
             range,
-            inner: Some(PagerRangeInner { file, _ref_guard: Some(ref_guard) }),
+            inner: Some(PagerRangeInner { file, _epoch_guard: Some(epoch_guard) }),
             _request_type: PhantomData,
         }
     }
@@ -680,7 +678,7 @@ impl<T: PagerBacked> MarkDirtyRange<T> {
         );
         Self {
             range,
-            inner: Some(PagerRangeInner { file, _ref_guard: None }),
+            inner: Some(PagerRangeInner { file, _epoch_guard: None }),
             _request_type: PhantomData,
         }
     }
@@ -693,7 +691,7 @@ impl<T: PagerBacked> MarkDirtyRange<T> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct PagerRangeInner<T: std::clone::Clone + Deref<Target: PagerBacked>> {
     // All generic types in the template must be cloneable to derive Clone, so we template the Arc
     // instead of the inner type.
@@ -701,12 +699,11 @@ struct PagerRangeInner<T: std::clone::Clone + Deref<Target: PagerBacked>> {
 
     /// Holds a reference to the current Epoch, so that in-flight read requests can be tracked. This
     /// should be None for MarkDirty requests.
-    _ref_guard: Option<RefGuard>,
+    _epoch_guard: Option<EpochGuard<'static>>,
 }
 
 /// The requested range from a pager packet. This object ensures that all pager requests receive a
 /// response.
-#[derive(Debug)]
 pub struct PagerRange<T: PagerBacked, U: PagerRequestType> {
     range: Range<u64>,
 
@@ -1416,9 +1413,8 @@ mod tests {
         let scope = ExecutionScope::new();
         let pager = Arc::new(Pager::new(scope).unwrap());
         let file = MockFile::new(pager.clone());
-        let epoch = Epochs::new();
 
-        let pager_range = PageInRange::new(0..page_size() * 5, file, epoch.add_ref());
+        let pager_range = PageInRange::new(0..page_size() * 5, file, Epoch::global().guard());
         let ranges: Vec<Range<u64>> = pager_range
             .chunks(page_size() * 2)
             .map(|pager_range| {
@@ -1442,9 +1438,8 @@ mod tests {
         let scope = ExecutionScope::new();
         let pager = Arc::new(Pager::new(scope).unwrap());
         let file = MockFile::new(pager.clone());
-        let epoch = Epochs::new();
 
-        let pager_range = PageInRange::new(0..page_size() * 10, file, epoch.add_ref());
+        let pager_range = PageInRange::new(0..page_size() * 10, file, Epoch::global().guard());
         let (left, right) = pager_range.split(page_size() * 5);
         let (left, right) = (left.unwrap(), right.unwrap());
         assert_eq!(left.range(), 0..page_size() * 5);
@@ -1460,9 +1455,8 @@ mod tests {
         let scope = ExecutionScope::new();
         let pager = Arc::new(Pager::new(scope).unwrap());
         let file = MockFile::new(pager.clone());
-        let epoch = Epochs::new();
 
-        let pager_range = PageInRange::new(0..page_size() * 2, file, epoch.add_ref());
+        let pager_range = PageInRange::new(0..page_size() * 2, file, Epoch::global().guard());
         pager_range.expand(0..page_size()).consume();
     }
 

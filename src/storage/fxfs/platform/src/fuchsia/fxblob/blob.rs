@@ -16,6 +16,7 @@ use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer;
+use fuchsia_async::epoch::Epoch;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_hash::Hash;
 use fuchsia_merkle::{MerkleTree, hash_block};
@@ -27,7 +28,6 @@ use fxfs::object_store::{DataObjectHandle, ObjectDescriptor};
 use fxfs::round::{round_down, round_up};
 use fxfs::serialized_types::BlobMetadata;
 use fxfs_macros::ToWeakNode;
-use std::future::Future;
 use std::num::NonZero;
 use std::ops::Range;
 use std::sync::Arc;
@@ -113,7 +113,7 @@ impl FxBlob {
         self: &Arc<Self>,
         handle: DataObjectHandle<FxVolume>,
         compression_info: Option<CompressionInfo>,
-    ) -> (Arc<Self>, Option<impl Future<Output = ()>>) {
+    ) -> Arc<Self> {
         let vmo = self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
 
         let new_blob = Arc::new(Self {
@@ -138,19 +138,16 @@ impl FxBlob {
         // zero children signals.
         let receiver_lock =
             self.pager_packet_receiver_registration.receiver().set_receiver(&new_blob);
-        let deferred_work = receiver_lock.is_strong().then(|| {
+        if receiver_lock.is_strong() {
             // If there was a strong moved between them, then the counts exchange as well. It is
             // only important that the increment happen under the lock as it may handle the next
             // zero children signal, no new requests can now go to the old blob, but to safely
-            // ensure that all existing requests finish, we will defer to an async context.
+            // ensure that all existing requests finish, we will defer the open count decrement.
             new_blob.open_count_add_one();
             let old_blob = self.clone();
-            async move {
-                old_blob.pager().page_in_barrier().await;
-                old_blob.open_count_sub_one();
-            }
-        });
-        (new_blob, deferred_work)
+            Epoch::global().defer(move || old_blob.open_count_sub_one());
+        }
+        new_blob
     }
 
     pub fn root(&self) -> Hash {
@@ -634,7 +631,6 @@ fn read_ahead_size_for_chunk_size(chunk_size: u64, suggested_read_ahead_size: u6
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::epochs::Epochs;
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PageInRange;
@@ -642,6 +638,7 @@ mod tests {
     use assert_matches::assert_matches;
     use delivery_blob::CompressionMode;
     use fuchsia_async as fasync;
+    use fuchsia_async::epoch::Epoch;
     use std::time::Duration;
 
     #[fasync::run(10, test)]
@@ -1045,14 +1042,12 @@ mod tests {
             blob.vmo.read_to_vec(164 * 1024, 4096).unwrap();
             assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 1, 0, 0]);
 
-            let epochs = Epochs::new();
-
             // We can't evict pages from the VMO so get the kernel to resupply them but we can call
             // page_in directly and wait for the counters to change.
             blob.clone().page_in(PageInRange::new(
                 32 * 1024..36 * 1024,
                 blob.clone(),
-                epochs.add_ref(),
+                Epoch::global().guard(),
             ));
             wait(
                 || blob.chunks_supply_count[1].load(Ordering::Relaxed) == 2,
@@ -1068,7 +1063,7 @@ mod tests {
             blob.clone().page_in(PageInRange::new(
                 224 * 1024..228 * 1024,
                 blob.clone(),
-                epochs.add_ref(),
+                Epoch::global().guard(),
             ));
             wait(
                 || blob.chunks_supply_count[7].load(Ordering::Relaxed) == 2,
@@ -1150,14 +1145,12 @@ mod tests {
 
             // Re-read some pages.
 
-            let epochs = Epochs::new();
-
             // We can't evict pages from the VMO so get the kernel to resupply them but we can call
             // page_in directly and wait for the counters to change.
             blob.clone().page_in(PageInRange::new(
                 32 * 1024..68 * 1024,
                 blob.clone(),
-                epochs.add_ref(),
+                Epoch::global().guard(),
             ));
 
             assert!(wait(|| volume.blob_resupplied_count().read(Ordering::SeqCst) == 2,).await);

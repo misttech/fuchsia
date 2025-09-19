@@ -17,7 +17,6 @@ platform_sources = [
   "src/fuchsia/device.rs",
   "src/fuchsia/directory.rs",
   "src/fuchsia/dirent_cache.rs",
-  "src/fuchsia/epochs.rs",
   "src/fuchsia/errors.rs",
   "src/fuchsia/file.rs",
   "src/fuchsia/fxblob.rs",

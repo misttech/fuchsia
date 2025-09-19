@@ -399,21 +399,19 @@ impl DeliveryBlobWriter {
             _ => return Err(FxfsError::Inconsistent.into()),
         };
 
-        let deferred_work = transaction
+        transaction
             .commit_with_callback(|_| {
                 let handle = self.stage.complete();
                 self.parent.did_add(&name, None);
-                replacing.and_then(|(old_id, reservation)| {
+                if let Some((old_id, reservation)) = replacing {
                     self.parent.did_remove(&name);
                     // If the blob is in the cache, then we need to swap it.
                     match handle.owner().cache().get(old_id) {
                         Some(old_blob) => {
                             let old_blob = old_blob.into_any().downcast::<FxBlob>().unwrap();
-                            let (new_blob, deferred_work) =
-                                old_blob.overwrite_me(handle, compression_info);
+                            let new_blob = old_blob.overwrite_me(handle, compression_info);
                             old_blob.mark_to_be_purged();
                             reservation.commit(&(new_blob as Arc<dyn FxNode>));
-                            deferred_work
                         }
                         None => {
                             // If it isn't open now, it is no longer reachable to be opened, so just
@@ -422,16 +420,12 @@ impl DeliveryBlobWriter {
                                 self.parent.store().store_object_id(),
                                 old_id,
                             );
-                            None
                         }
                     }
-                })
+                }
             })
             .await
             .context("Failed to commit transaction!")?;
-        if let Some(deferred_work) = deferred_work {
-            deferred_work.await;
-        }
         Ok(())
     }
 
@@ -670,6 +664,7 @@ mod tests {
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, CreateBlobError};
     use fidl_fuchsia_io::UnlinkOptions;
+    use fuchsia_async::epoch::Epoch;
     use fuchsia_async::{self as fasync, TimeoutExt as _};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
 
@@ -1308,6 +1303,7 @@ mod tests {
             assert_ne!(new_id, old_id);
 
             // The old blob data should be gone.
+            Epoch::global().barrier().await;
             fixture.fs().graveyard().flush().await;
             fixture
                 .volume()
@@ -1462,7 +1458,8 @@ mod tests {
                     .await
                     .expect("transport error on bytes_ready")
                     .expect("failed to write data to vmo");
-                // Await graveyard so that we don't fill up the disk.
+                // Add barrier and await graveyard so that we don't fill up the disk.
+                Epoch::global().barrier().await;
                 graveyard.flush().await;
             }
         });

@@ -21,6 +21,7 @@ use fidl_fuchsia_fxfs::{
     ProjectIdRequest, ProjectIdRequestStream, ProjectIterToken,
 };
 use fs_inspect::{FsInspectVolume, VolumeData};
+use fuchsia_async::epoch::Epoch;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::stream::{self, FusedStream, Stream};
@@ -341,6 +342,9 @@ impl FxVolume {
         self.scope.shutdown();
         self.cache.terminate();
         self.scope.wait().await;
+
+        // Make sure there are no deferred operations still pending for this volume.
+        Epoch::global().barrier().await;
 
         // The dirent_cache must be cleared *after* shutting down the scope because there can be
         // tasks that insert entries into the cache.
