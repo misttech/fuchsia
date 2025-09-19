@@ -1040,18 +1040,18 @@
     },
     {
         "package": "fuchsia/tools/futility/linux-amd64",
-        "version": "git_revision:b303a0abdb7db633c3a4195890c0c0fb50dc966f",
-        "instance_id": "zbNXmxzqrTVSFqzeRgYeFUEI3XbME_tFzy5oDUi0654C"
+        "version": "git_revision:f81450147e05d39b1bd616e61a56d9b06a81b647",
+        "instance_id": "0dGLCNEr6QfjCWes9SLYhYdvd9xXvipxF1TdKp6EVJQC"
     },
     {
         "package": "fuchsia/tools/futility/mac-amd64",
-        "version": "git_revision:b303a0abdb7db633c3a4195890c0c0fb50dc966f",
-        "instance_id": "ts8ca2ijUGsxzC1CAGJYpfnEz4mNuM_Fg0jeCHQFOZYC"
+        "version": "git_revision:f81450147e05d39b1bd616e61a56d9b06a81b647",
+        "instance_id": "CmmvXqewdjMj_J3vkjcVaClaSG0PA6vUt7LsO6LRLdEC"
     },
     {
         "package": "fuchsia/tools/futility/mac-arm64",
-        "version": "git_revision:b303a0abdb7db633c3a4195890c0c0fb50dc966f",
-        "instance_id": "NITPSztJ5NoVrcMxlRokd9ZU2-L0U48oA8n1rLWlsjsC"
+        "version": "git_revision:f81450147e05d39b1bd616e61a56d9b06a81b647",
+        "instance_id": "4NfnIcmXcxvfTIl5irgodvbN2kANOqm9VFoRfFrgFDwC"
     },
     {
         "package": "fuchsia/tools/ninjatrace/linux-amd64",
