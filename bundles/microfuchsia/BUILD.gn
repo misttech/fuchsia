@@ -4,5 +4,5 @@
 
 group("boot_tests") {
   testonly = true
-  deps = []
+  deps = [ "//src/microfuchsia:boot_tests" ]
 }

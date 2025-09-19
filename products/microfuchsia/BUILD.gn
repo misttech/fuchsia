@@ -57,6 +57,7 @@ if (target_cpu == "x64" || target_cpu == "arm64") {
     image_has_fvm = false
     image_use_vbmeta = false
     product_bundle_name = target_name
+    generate_product_bundle_metadata = true
     bazel_product_bundle_target =
         "//products/microfuchsia:product_bundle_eng.pkvm-${board_name}"
     bazel_product_image_target =
