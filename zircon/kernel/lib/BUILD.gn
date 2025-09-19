@@ -25,13 +25,14 @@ group("kernel-tests") {
   deps = [
     "acpi_lite:kernel-tests",
     "arch/test:kernel-tests",
+    "backtrace/tests",
     "instrumentation/test:tests",
-    "//zircon/kernel/lib/jtrace/tests",
-    "//zircon/kernel/lib/kconcurrent/tests",
-    "//zircon/kernel/lib/ktrace/tests",
-    "//zircon/kernel/lib/persistent-debuglog/tests",
-    "//zircon/kernel/lib/power-management:tests",
-    "//zircon/kernel/lib/spsc_buffer/tests",
-    "//zircon/kernel/lib/thread_sampler/tests",
+    "jtrace/tests",
+    "kconcurrent/tests",
+    "ktrace/tests",
+    "persistent-debuglog/tests",
+    "power-management:tests",
+    "spsc_buffer/tests",
+    "thread_sampler/tests",
   ]
 }

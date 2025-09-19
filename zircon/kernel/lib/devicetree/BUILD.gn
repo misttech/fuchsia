@@ -4,7 +4,21 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
+import("//build/zircon/zx_library.gni")
+
+# TODO: This is redundantly used below until the SDK integration can be fixed.
+devicetree_headers = [
+  "lib/devicetree/devicetree.h",
+  "lib/devicetree/matcher.h",
+  "lib/devicetree/internal/devicetree.h",
+  "lib/devicetree/internal/matcher.h",
+]
+if (zircon_toolchain == false) {
+  library_headers("headers") {
+    headers = devicetree_headers
+  }
+}
 
 zx_library("devicetree") {
   sources = [
@@ -30,11 +44,6 @@ zx_library("devicetree") {
   # compilation of this library to the fuchsia build.
 
   sdk = "static"
-  sdk_headers = [
-    "lib/devicetree/devicetree.h",
-    "lib/devicetree/matcher.h",
-    "lib/devicetree/internal/devicetree.h",
-    "lib/devicetree/internal/matcher.h",
-  ]
+  sdk_headers = devicetree_headers
   sdk_publishable = "internal"
 }

@@ -5,9 +5,9 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/compiled_action.gni")
+import("//build/cpp/library_headers.gni")
 import("//build/testing/golden_files.gni")
 import("//build/toolchain/toolchain_environment.gni")
-import("//build/zircon/migrated_targets.gni")
 
 if (current_toolchain == default_toolchain) {
   compiled_action("json") {
@@ -43,28 +43,29 @@ if (current_toolchain == default_toolchain) {
   }
 }
 
-zx_library("boot-options") {
+static_library("boot-options") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "boot-options.cc",
     "word-view.cc",
   ]
   deps = [ "//zircon/system/ulib/uart" ]
-  public_deps = [ "//zircon/system/ulib/uart:headers" ]
 
   if (is_kernel) {
     deps += [
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",
     ]
+  }
+}
+
+library_headers("headers") {
+  headers = []
+  public_deps = [ "//zircon/system/ulib/uart:headers" ]
+  if (is_kernel) {
     public_deps += [ "//zircon/kernel/lib/ktl:headers" ]
   }
-
-  # TODO: revisit the following three specifications after the zircon-to-fuchsia
-  # build migration. They seem currently required in order to export the host
-  # compilation of this library to the fuchsia build.
-
-  sdk = "source"
-  sdk_headers = []
 }
 
 if (toolchain_environment == "kernel") {
@@ -79,7 +80,7 @@ if (toolchain_environment == "kernel") {
 }
 
 if (is_host) {
-  zx_host_tool("boot-options-tool") {
+  executable("boot-options-tool") {
     # This recompiles the library's source file rather than using the library
     # directly because the #if logic includes details for all machines when
     # building for the generator tool but not in the library.
@@ -87,13 +88,13 @@ if (is_host) {
       "BOOT_OPTIONS_GENERATOR=1",
       "UART_ALL_DRIVERS=1",
     ]
-    include_dirs = [ "include" ]
     sources = [
       "boot-options.cc",
       "tool.cc",
       "word-view.cc",
     ]
     deps = [
+      ":headers",
       "//third_party/rapidjson",
       "//zircon/system/ulib/uart",
     ]

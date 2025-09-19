@@ -4,16 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("backtrace") {
+static_library("backtrace") {
+  public_deps = [ ":headers" ]
+
   sources = [ "backtrace.cc" ]
-
   deps = [
-    "tests",
     "//zircon/kernel/lib/version",
     "//zircon/system/ulib/affine",
   ]
+}
+
+library_headers("headers") {
+  headers = []
 
   public_deps = [
     "//zircon/kernel/lib/arch:headers",

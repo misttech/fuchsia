@@ -26,6 +26,7 @@ test("uart-unittests") {
   defines = [ "UART_ALL_DRIVERS=1" ]
   deps = [
     "//sdk/lib/zbi-format",
+    "//zircon/kernel/lib/devicetree",
     "//zircon/system/ulib/uart",
     "//zircon/system/ulib/uart:uart-mock",
     "//zircon/system/ulib/zxtest",

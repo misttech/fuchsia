@@ -2,11 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("uart") {
-  sdk = "source"
-  sdk_headers = [
+library_headers("headers") {
+  headers = [
     "lib/uart/all.h",
     "lib/uart/interrupt.h",
     "lib/uart/chars-from.h",
@@ -18,7 +17,6 @@ zx_library("uart") {
     "lib/uart/uart.h",
   ]
 
-  sources = [ "parse.cc" ]
   public_deps = [
     # Most headers have #include <lib/zbi-format/driver-config.h>.
     # Most headers have #include <lib/zbi-format/zbi.h>.
@@ -44,13 +42,17 @@ zx_library("uart") {
   }
 }
 
-zx_library("uart-mock") {
+static_library("uart") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "parse.cc" ]
+}
+
+library_headers("uart-mock") {
   testonly = true
 
-  sdk = "source"
-  sdk_headers = [ "lib/uart/mock.h" ]
+  headers = [ "lib/uart/mock.h" ]
 
-  sources = []
   public_deps = [
     ":headers",
 
