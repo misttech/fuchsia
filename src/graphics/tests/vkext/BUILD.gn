@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/packages/sdk_fuchsia_package.gni")
 import("//src/graphics/lib/magma/gnbuild/magma.gni")
+import("//src/lib/vulkan/vulkan.gni")
 
 source_set("vulkan_extension_test") {
   sources = [
@@ -121,7 +122,7 @@ if (current_toolchain == default_toolchain) {
 protected_libvulkan_envs = []
 
 # Filter out everything that's not astro, sherlock, or nelson.
-foreach(env, magma_libvulkan_hardware_envs) {
+foreach(env, vulkan_envs) {
   if (env == sherlock_env || env == astro_env || env == nelson_env) {
     protected_libvulkan_envs += [ env ]
   }
@@ -138,8 +139,9 @@ fuchsia_test_package("vkext-unprotected-package") {
   test_components = [ ":vkext-unprotected-test-component" ]
   subpackages = [ ":vkext-child-package" ]
   test_specs = {
+    # TODO(https://fxbug.dev/445702094) - enable goldfish
     environments =
-        magma_libvulkan_hardware_envs - magma_libvulkan_arm_hardware_envs
+        vulkan_envs - vulkan_goldfish_envs - magma_libvulkan_arm_hardware_envs
     log_settings = {
       max_severity = "ERROR"
     }

@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/testing/environments.gni")
-import("//src/graphics/lib/magma/gnbuild/magma.gni")
 import("//src/lib/vulkan/layers.gni")
 import("//src/lib/vulkan/vulkan.gni")
 import("//src/ui/lib/escher/build_args.gni")
@@ -176,7 +175,7 @@ fuchsia_unittest_package("flatland_renderer_unittests") {
     log_settings = {
       max_severity = "ERROR"
     }
-    environments = basic_envs + magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
   test_type = "vulkan"
 }
@@ -189,7 +188,7 @@ fuchsia_unittest_package("flatland_renderer_unittests_vulkanrenderertest") {
     log_settings = {
       max_severity = "ERROR"
     }
-    environments = basic_envs + magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
   test_type = "vulkan"
 }
@@ -205,7 +204,7 @@ fuchsia_unittest_package("flatland_renderer_display_unittests") {
     log_settings = {
       max_severity = "ERROR"
     }
-    environments = basic_envs + magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
   test_type = "vulkan"
 }

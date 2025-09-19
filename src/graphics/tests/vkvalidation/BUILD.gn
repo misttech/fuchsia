@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//src/graphics/lib/magma/gnbuild/magma.gni")
+import("//src/lib/vulkan/vulkan.gni")
 
 executable("vkvalidation_bin") {
   testonly = true
@@ -39,7 +39,7 @@ fuchsia_test_package("vkvalidation-pkg") {
   package_name = "vkvalidation"
   test_components = [ ":vkvalidation_cmp" ]
   test_specs = {
-    environments = magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
 }
 
@@ -64,7 +64,7 @@ fuchsia_test_package("vkvalidation-external-pkg") {
       [ "//src/lib/vulkan/vulkan-validation-pkg:validation-server-pkg" ]
   test_components = [ ":vkvalidation_external_cmp" ]
   test_specs = {
-    environments = magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
 }
 

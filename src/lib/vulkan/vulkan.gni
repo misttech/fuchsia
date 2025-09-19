@@ -8,7 +8,8 @@ import("//src/graphics/lib/magma/gnbuild/magma.gni")
 vulkan_goldfish_envs = [ aemu_env ]
 
 # Intel NUC devices use Lavapipe.
-vulkan_lavapipe_envs = magma_intel_gpu_envs
+vulkan_lavapipe_envs = [ nuc11_env ]
 
 # This is the complete set of test environments that support Vulkan.
-vulkan_envs = vulkan_goldfish_envs + magma_libvulkan_hardware_envs
+vulkan_envs =
+    vulkan_goldfish_envs + vulkan_lavapipe_envs + magma_libvulkan_hardware_envs

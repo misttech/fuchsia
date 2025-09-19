@@ -674,7 +674,7 @@ ctf_components_packages("flatland-pixeltest-exotic-srgb") {
   bin = ":flatland-pixeltest-exotic-srgb-validator-bin"
   test_specs = {
     # TODO(https://fxbug.dev/42137913): Skip this test for AEMU as format support is lacking
-    environments = magma_libvulkan_hardware_envs
+    environments = vulkan_envs - vulkan_goldfish_envs
     log_settings = {
       max_severity = "ERROR"
     }

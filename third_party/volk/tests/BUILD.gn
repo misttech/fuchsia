@@ -4,7 +4,7 @@
 
 import("//build/components.gni")
 import("//build/test.gni")
-import("//src/graphics/lib/magma/gnbuild/magma.gni")
+import("//src/lib/vulkan/vulkan.gni")
 
 test("volk-test-without-vulkan-loader-bin") {
   testonly = true
@@ -46,7 +46,7 @@ fuchsia_unittest_component("volk-test-component") {
 fuchsia_test_package("volk-test") {
   test_components = [ ":volk-test-component" ]
   test_specs = {
-    environments = magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
 }
 
@@ -70,7 +70,7 @@ fuchsia_unittest_component("volk-test-headers-only-component") {
 fuchsia_test_package("volk-test-headers-only") {
   test_components = [ ":volk-test-headers-only-component" ]
   test_specs = {
-    environments = magma_libvulkan_hardware_envs
+    environments = vulkan_envs
   }
 }
 

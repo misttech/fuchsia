@@ -4,7 +4,7 @@
 
 import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
-import("//src/graphics/lib/magma/gnbuild/magma.gni")
+import("//src/lib/vulkan/vulkan.gni")
 
 cc_test_executable("mali_vulkan_test_bin") {
   testonly = true
@@ -39,7 +39,7 @@ fuchsia_test_component("mali_vulkan_test_cmp") {
 protected_libvulkan_envs = []
 
 # Filter out everything that's not astro, sherlock, or nelson.
-foreach(env, magma_libvulkan_hardware_envs) {
+foreach(env, vulkan_envs) {
   if (env == sherlock_env || env == astro_env || env == nelson_env) {
     protected_libvulkan_envs += [ env ]
   }
