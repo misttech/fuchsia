@@ -15,6 +15,9 @@
     capabilities: [
         { service: 'fuchsia.hardware.interconnect.Service' },
     ],
+    use: [
+        { protocol: 'fuchsia.interconnect.test.Waiter' },
+    ],
     expose: [
         {
             service: 'fuchsia.hardware.interconnect.Service',

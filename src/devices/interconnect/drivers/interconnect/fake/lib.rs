@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use fdf_component::{
-    driver_register, Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer,
+    Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
 };
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_driver_framework::NodeControllerMarker;
-use fidl_fuchsia_hardware_interconnect as icc;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::{info, warn};
 use zx::Status;
+use {fidl_fuchsia_hardware_interconnect as icc, fidl_fuchsia_interconnect_test as ft};
 
 driver_register!(FakeInterconnectDriver);
 
@@ -41,12 +41,16 @@ impl Driver for FakeInterconnectDriver {
         let child_controller = node.add_child(node_args).await?;
         context.serve_outgoing(&mut outgoing)?;
 
+        let waiter: ft::WaiterProxy = context.incoming.connect_protocol().unwrap();
         let scope = fuchsia_async::Scope::new_with_name("outgoing_directory");
         scope.spawn_local(async move {
             outgoing
-                .for_each_concurrent(None, move |request| async move {
-                    let mut connection = Connection;
-                    connection.run_device_server(request).await;
+                .for_each_concurrent(None, move |request| {
+                    let waiter = waiter.clone();
+                    async move {
+                        let mut connection = Connection { waiter };
+                        connection.run_device_server(request).await;
+                    }
                 })
                 .await;
         });
@@ -57,7 +61,9 @@ impl Driver for FakeInterconnectDriver {
     async fn stop(&self) {}
 }
 
-struct Connection;
+struct Connection {
+    waiter: ft::WaiterProxy,
+}
 
 impl Connection {
     fn set_nodes_bandwidth(
@@ -65,6 +71,7 @@ impl Connection {
         _nodes: Vec<icc::NodeBandwidth>,
     ) -> Result<&[icc::AggregatedBandwidth], Status> {
         info!("set_nodes_bandwidth called");
+        self.waiter.ack().unwrap();
         Ok(&[])
     }
 

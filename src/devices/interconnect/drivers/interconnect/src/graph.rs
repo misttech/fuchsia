@@ -216,8 +216,31 @@ impl NodeGraph {
         }
     }
 
+    /// Creates a bandwidth request for all nodes.
+    pub fn make_inital_bandwidth_requests(&self) -> Vec<icc::NodeBandwidth> {
+        self.nodes
+            .iter()
+            .map(|(node_id, node)| {
+                let requests: Vec<_> = node
+                    .path_bandwidth_requests
+                    .iter()
+                    .map(|(_, request)| icc::BandwidthRequest {
+                        average_bandwidth_bps: Some(request.average_bandwidth_bps),
+                        peak_bandwidth_bps: Some(request.peak_bandwidth_bps),
+                        ..Default::default()
+                    })
+                    .collect();
+                icc::NodeBandwidth {
+                    node_id: Some(node_id.0),
+                    requests: Some(requests),
+                    ..Default::default()
+                }
+            })
+            .collect()
+    }
+
     /// Creates a bandwidth request for the specified path where the bandwidth request includes
-    /// an entry for each path that intersects with this node.
+    /// an entry for each node that intersects with this path.
     pub fn make_bandwidth_requests(&self, path: &Path) -> Vec<icc::NodeBandwidth> {
         path.nodes
             .iter()

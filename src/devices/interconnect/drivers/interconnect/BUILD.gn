@@ -33,7 +33,6 @@ fuchsia_rust_driver("driver") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
@@ -75,6 +74,10 @@ driver_bind_rules("fake_bind") {
   deps = [ "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib" ]
 }
 
+fidl("fuchsia.interconnect.test") {
+  sources = [ "interconnect.test.fidl" ]
+}
+
 fuchsia_rust_driver("fake_driver") {
   edition = "2024"
   output_name = "fake_interconnect"
@@ -82,6 +85,7 @@ fuchsia_rust_driver("fake_driver") {
   source_root = "fake/lib.rs"
   sources = [ "fake/lib.rs" ]
   deps = [
+    ":fuchsia.interconnect.test_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_rust",
     "//sdk/lib/driver/component/rust",
@@ -96,6 +100,7 @@ fuchsia_rust_driver("fake_driver") {
 }
 
 fuchsia_driver_component("fake_component") {
+  testonly = true
   component_name = "fake_interconnect"
   manifest = "meta/fake_interconnect.cml"
   deps = [
@@ -112,6 +117,7 @@ rustc_test("integration-test") {
   source_root = "integration_test.rs"
   sources = [ "integration_test.rs" ]
   deps = [
+    ":fuchsia.interconnect.test_rust",
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
@@ -119,8 +125,11 @@ rustc_test("integration-test") {
     "//src/devices/bind/fuchsia:fuchsia_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
   ]
 }
 
