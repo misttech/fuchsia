@@ -11,6 +11,7 @@
 
 namespace display {
 
+using WireAlphaMode = fuchsia_hardware_display_types::wire::AlphaMode;
 using WireBufferCollectionId = fuchsia_hardware_display::wire::BufferCollectionId;
 using WireColor = fuchsia_hardware_display_types::wire::Color;
 using WireConfigResult = fuchsia_hardware_display_types::wire::ConfigResult;
@@ -23,6 +24,7 @@ using WireEventId = fuchsia_hardware_display::wire::EventId;
 using WireImageId = fuchsia_hardware_display::wire::ImageId;
 using WireImageMetadata = fuchsia_hardware_display_types::wire::ImageMetadata;
 using WireLayerId = fuchsia_hardware_display::wire::LayerId;
+using WireRectU = fuchsia_math::wire::RectU;
 using WireSizeU = fuchsia_math::wire::SizeU;
 using WireVsyncAckCookie = fuchsia_hardware_display::wire::VsyncAckCookie;
 

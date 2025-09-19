@@ -11,58 +11,92 @@
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <unordered_set>
+
 #include "src/ui/scenic/lib/display/fidl_typedefs.h"
 
 namespace display::test {
 
-class MockDisplayCoordinator;
-
 class MockDisplayCoordinator
     : public fidl::testing::WireTestBase<fuchsia_hardware_display::Coordinator> {
  public:
-  using CheckConfigFn = std::function<void(WireConfigResult*)>;
+  using ImportImageFn =
+      std::function<void(fuchsia_hardware_display::wire::CoordinatorImportImageRequest*)>;
+  using ReleaseImageFn =
+      std::function<void(fuchsia_hardware_display::wire::CoordinatorReleaseImageRequest*)>;
+  using ImportEventFn = std::function<void(zx::event event, WireEventId event_id)>;
+  using ReleaseEventFn =
+      std::function<void(fuchsia_hardware_display::wire::CoordinatorReleaseEventRequest*)>;
+  using CreateLayerFn = std::function<void()>;
+  using DestroyLayerFn =
+      std::function<void(fuchsia_hardware_display::wire::CoordinatorDestroyLayerRequest*)>;
+  using SetDisplayModeFn = std::function<void(WireDisplayId, WireDisplayMode)>;
   using SetDisplayColorConversionFn = std::function<void(
       display::WireDisplayId, fidl::Array<float, 3>, fidl::Array<float, 9>, fidl::Array<float, 3>)>;
-  using SetMinimumRgbFn = std::function<void(uint8_t)>;
-  using ImportEventFn = std::function<void(zx::event event, display::WireEventId event_id)>;
+  using SetDisplayLayersFn = std::function<void(WireDisplayId, fidl::VectorView<WireLayerId>)>;
+  using SetLayerPrimaryConfigFn = std::function<void(WireLayerId, WireImageMetadata)>;
+  using SetLayerPrimaryPositionFn =
+      std::function<void(WireLayerId, WireCoordinateTransformation, WireRectU, WireRectU)>;
+  using SetLayerPrimaryAlphaFn = std::function<void(WireLayerId, WireAlphaMode, float)>;
+  using SetLayerColorConfigFn = std::function<void(WireLayerId, WireColor, WireRectU)>;
+  using SetLayerImage2Fn = std::function<void(WireLayerId, WireImageId, WireEventId)>;
+  using CheckConfigFn = std::function<void(WireConfigResult*)>;
+  using DiscardConfigFn = std::function<void()>;
   using AcknowledgeVsyncFn = std::function<void(uint64_t cookie)>;
-  using SetDisplayLayersFn =
-      std::function<void(display::WireDisplayId, fidl::VectorView<display::WireLayerId>)>;
-  using SetLayerPrimaryPositionFn = std::function<void(
-      display::WireLayerId, fuchsia_hardware_display_types::wire::CoordinateTransformation,
-      fuchsia_math::wire::RectU, fuchsia_math::wire::RectU)>;
-
-  using SetDisplayModeFn = std::function<void(fuchsia_hardware_display_types::DisplayId,
-                                              fuchsia_hardware_display_types::Mode)>;
+  using SetMinimumRgbFn = std::function<void(uint8_t)>;
+  using SetDisplayPowerFn =
+      std::function<void(fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerRequest*)>;
 
   explicit MockDisplayCoordinator(WireDisplayInfo display_info);
   ~MockDisplayCoordinator() override;
 
   // `fidl::testing::TestBase<fuchsia_hardware_display::Coordinator>`:
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) final {}
+
+  // Methods in FIDL order
+  void ImportImage(fuchsia_hardware_display::wire::CoordinatorImportImageRequest* request,
+                   ImportImageCompleter::Sync& completer) override;
+  void ReleaseImage(fuchsia_hardware_display::wire::CoordinatorReleaseImageRequest* request,
+                    ReleaseImageCompleter::Sync& completer) override;
   void ImportEvent(fuchsia_hardware_display::wire::CoordinatorImportEventRequest* request,
                    ImportEventCompleter::Sync& completer) override;
+  void ReleaseEvent(fuchsia_hardware_display::wire::CoordinatorReleaseEventRequest* request,
+                    ReleaseEventCompleter::Sync& completer) override;
+  void CreateLayer(CreateLayerCompleter::Sync& completer) override;
+  void DestroyLayer(fuchsia_hardware_display::wire::CoordinatorDestroyLayerRequest* request,
+                    DestroyLayerCompleter::Sync& completer) override;
+  void SetDisplayMode(fuchsia_hardware_display::wire::CoordinatorSetDisplayModeRequest* request,
+                      SetDisplayModeCompleter::Sync& completer) override;
   void SetDisplayColorConversion(
       fuchsia_hardware_display::wire::CoordinatorSetDisplayColorConversionRequest* request,
       SetDisplayColorConversionCompleter::Sync& completer) override;
-  void SetMinimumRgb(fuchsia_hardware_display::wire::CoordinatorSetMinimumRgbRequest* request,
-                     SetMinimumRgbCompleter::Sync& completer) override;
-  void CreateLayer(CreateLayerCompleter::Sync& completer) override;
   void SetDisplayLayers(fuchsia_hardware_display::wire::CoordinatorSetDisplayLayersRequest* request,
                         SetDisplayLayersCompleter::Sync& completer) override;
-  void ImportImage(fuchsia_hardware_display::wire::CoordinatorImportImageRequest* request,
-                   ImportImageCompleter::Sync& completer) override;
+  void SetLayerPrimaryConfig(
+      fuchsia_hardware_display::wire::CoordinatorSetLayerPrimaryConfigRequest* request,
+      SetLayerPrimaryConfigCompleter::Sync& completer) override;
   void SetLayerPrimaryPosition(
       fuchsia_hardware_display::wire::CoordinatorSetLayerPrimaryPositionRequest* request,
       SetLayerPrimaryPositionCompleter::Sync& completer) override;
+  void SetLayerPrimaryAlpha(
+      fuchsia_hardware_display::wire::CoordinatorSetLayerPrimaryAlphaRequest* request,
+      SetLayerPrimaryAlphaCompleter::Sync& completer) override;
+  void SetLayerColorConfig(
+      fuchsia_hardware_display::wire::CoordinatorSetLayerColorConfigRequest* request,
+      SetLayerColorConfigCompleter::Sync& completer) override;
+  void SetLayerImage2(fuchsia_hardware_display::wire::CoordinatorSetLayerImage2Request* request,
+                      SetLayerImage2Completer::Sync& completer) override;
   void CheckConfig(CheckConfigCompleter::Sync& completer) override;
+  void DiscardConfig(DiscardConfigCompleter::Sync& completer) override;
   void AcknowledgeVsync(fuchsia_hardware_display::wire::CoordinatorAcknowledgeVsyncRequest* request,
                         AcknowledgeVsyncCompleter::Sync& completer) override;
+  void SetMinimumRgb(fuchsia_hardware_display::wire::CoordinatorSetMinimumRgbRequest* request,
+                     SetMinimumRgbCompleter::Sync& completer) override;
   void SetDisplayPower(fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerRequest* request,
                        SetDisplayPowerCompleter::Sync& completer) override;
-  void SetDisplayMode(fuchsia_hardware_display::wire::CoordinatorSetDisplayModeRequest* request,
-                      SetDisplayModeCompleter::Sync& completer) override;
+  void GetLatestAppliedConfigStamp(GetLatestAppliedConfigStampCompleter::Sync& completer) override;
 
+  // `listener_client` is allowed to be null.
   void Bind(fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server,
             fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> listener_client,
             async_dispatcher_t* dispatcher = nullptr);
@@ -86,52 +120,109 @@ class MockDisplayCoordinator
 
   const WireDisplayInfo& display_info() const { return display_info_; }
 
+  void set_import_image_fn(ImportImageFn fn) { import_image_fn_ = std::move(fn); }
+  void set_release_image_fn(ReleaseImageFn fn) { release_image_fn_ = std::move(fn); }
   void set_import_event_fn(ImportEventFn fn) { import_event_fn_ = std::move(fn); }
+  void set_release_event_fn(ReleaseEventFn fn) { release_event_fn_ = std::move(fn); }
+  void set_create_layer_fn(CreateLayerFn fn) { create_layer_fn_ = std::move(fn); }
+  void set_destroy_layer_fn(DestroyLayerFn fn) { destroy_layer_fn_ = std::move(fn); }
+  void set_display_mode_fn(SetDisplayModeFn fn) { set_display_mode_fn_ = std::move(fn); }
   void set_display_color_conversion_fn(SetDisplayColorConversionFn fn) {
     set_display_color_conversion_fn_ = std::move(fn);
   }
-  void set_minimum_rgb_fn(SetMinimumRgbFn fn) { set_minimum_rgb_fn_ = std::move(fn); }
   void set_set_display_layers_fn(SetDisplayLayersFn fn) { set_display_layers_fn_ = std::move(fn); }
+  void set_set_layer_primary_config_fn(SetLayerPrimaryConfigFn fn) {
+    set_layer_primary_config_fn_ = std::move(fn);
+  }
   void set_layer_primary_position_fn(SetLayerPrimaryPositionFn fn) {
     set_layer_primary_position_fn_ = std::move(fn);
   }
-  void set_check_config_fn(CheckConfigFn fn) { check_config_fn_ = std::move(fn); }
-  void set_acknowledge_vsync_fn(AcknowledgeVsyncFn acknowledge_vsync_fn) {
-    acknowledge_vsync_fn_ = std::move(acknowledge_vsync_fn);
+  void set_set_layer_primary_alpha_fn(SetLayerPrimaryAlphaFn fn) {
+    set_layer_primary_alpha_fn_ = std::move(fn);
   }
+  void set_set_layer_image_fn(SetLayerImage2Fn fn) { set_layer_image_fn_ = std::move(fn); }
+  void set_set_layer_color_config_fn(SetLayerColorConfigFn fn) {
+    set_layer_color_config_fn_ = std::move(fn);
+  }
+  void set_check_config_fn(CheckConfigFn fn) { check_config_fn_ = std::move(fn); }
+  void set_discard_config_fn(DiscardConfigFn fn) { discard_config_fn_ = std::move(fn); }
+  void set_acknowledge_vsync_fn(AcknowledgeVsyncFn fn) { acknowledge_vsync_fn_ = std::move(fn); }
+  void set_minimum_rgb_fn(SetMinimumRgbFn fn) { set_minimum_rgb_fn_ = std::move(fn); }
+  void set_set_display_power_fn(SetDisplayPowerFn fn) { set_display_power_fn_ = std::move(fn); }
   void set_set_display_power_result(zx_status_t result) { set_display_power_result_ = result; }
   bool display_power_on() const { return display_power_on_; }
 
   // Number of times each function has been called.
-  uint32_t check_config_count() const { return check_config_count_; }
+  uint32_t import_image_count() const { return import_image_count_; }
+  uint32_t release_image_count() const { return release_image_count_; }
+  uint32_t import_event_count() const { return import_event_count_; }
+  uint32_t release_event_count() const { return release_event_count_; }
+  uint32_t create_layer_count() const { return create_layer_count_; }
+  uint32_t destroy_layer_count() const { return destroy_layer_count_; }
+  uint32_t set_display_mode_count() const { return set_display_mode_count_; }
   uint32_t set_display_color_conversion_count() const {
     return set_display_color_conversion_count_;
   }
-  uint32_t set_minimum_rgb_count() const { return set_minimum_rgb_count_; }
-  uint32_t import_event_count() const { return import_event_count_; }
-  uint32_t acknowledge_vsync_count() const { return acknowledge_vsync_count_; }
   uint32_t set_display_layers_count() const { return set_display_layers_count_; }
+  uint32_t set_layer_primary_config_count() const { return set_layer_primary_config_count_; }
   uint32_t set_layer_primary_position_count() const { return set_layer_primary_position_count_; }
-  uint32_t set_display_mode_count() const { return set_display_mode_count_; }
+  uint32_t set_layer_primary_alpha_count() const { return set_layer_primary_alpha_count_; }
+  uint32_t set_layer_image_count() const { return set_layer_image_count_; }
+  uint32_t check_config_count() const { return check_config_count_; }
+  uint32_t discard_config_count() const { return discard_config_count_; }
+  uint32_t acknowledge_vsync_count() const { return acknowledge_vsync_count_; }
+  uint32_t set_minimum_rgb_count() const { return set_minimum_rgb_count_; }
+  uint32_t set_display_power_count() const { return set_display_power_count_; }
+  uint32_t illegal_action_count() const { return illegal_action_count_; }
 
  private:
-  CheckConfigFn check_config_fn_;
-  SetDisplayColorConversionFn set_display_color_conversion_fn_;
-  SetMinimumRgbFn set_minimum_rgb_fn_;
+  // Callback functions in FIDL order.
+  ImportImageFn import_image_fn_;
+  ReleaseImageFn release_image_fn_;
   ImportEventFn import_event_fn_;
-  AcknowledgeVsyncFn acknowledge_vsync_fn_;
-  SetDisplayLayersFn set_display_layers_fn_;
-  SetLayerPrimaryPositionFn set_layer_primary_position_fn_;
+  ReleaseEventFn release_event_fn_;
+  CreateLayerFn create_layer_fn_;
+  DestroyLayerFn destroy_layer_fn_;
   SetDisplayModeFn set_display_mode_fn_;
+  SetDisplayColorConversionFn set_display_color_conversion_fn_;
+  SetDisplayLayersFn set_display_layers_fn_;
+  SetLayerPrimaryConfigFn set_layer_primary_config_fn_;
+  SetLayerPrimaryPositionFn set_layer_primary_position_fn_;
+  SetLayerPrimaryAlphaFn set_layer_primary_alpha_fn_;
+  SetLayerColorConfigFn set_layer_color_config_fn_;
+  SetLayerImage2Fn set_layer_image_fn_;
+  CheckConfigFn check_config_fn_;
+  DiscardConfigFn discard_config_fn_;
+  AcknowledgeVsyncFn acknowledge_vsync_fn_;
+  SetMinimumRgbFn set_minimum_rgb_fn_;
+  SetDisplayPowerFn set_display_power_fn_;
 
-  uint32_t check_config_count_ = 0;
-  uint32_t set_display_color_conversion_count_ = 0;
-  uint32_t set_minimum_rgb_count_ = 0;
+  std::unordered_set<uint64_t> imported_image_ids_;
+  std::unordered_map<uint64_t, zx::event> imported_events_;
+  std::unordered_set<uint64_t> created_layer_ids_;
+
+  // FIDL method invocation counts (in FIDL order).
+  uint32_t illegal_action_count_ = 0;
+  uint32_t import_image_count_ = 0;
+  uint32_t release_image_count_ = 0;
   uint32_t import_event_count_ = 0;
-  uint32_t acknowledge_vsync_count_ = 0;
-  uint32_t set_display_layers_count_ = 0;
-  uint32_t set_layer_primary_position_count_ = 0;
+  uint32_t release_event_count_ = 0;
+  uint32_t create_layer_count_ = 0;
+  uint32_t destroy_layer_count_ = 0;
   uint32_t set_display_mode_count_ = 0;
+  uint32_t set_display_color_conversion_count_ = 0;
+  uint32_t set_display_layers_count_ = 0;
+  uint32_t set_layer_primary_config_count_ = 0;
+  uint32_t set_layer_primary_position_count_ = 0;
+  uint32_t set_layer_primary_alpha_count_ = 0;
+  uint32_t set_layer_image_count_ = 0;
+  uint32_t set_layer_color_config_count_ = 0;
+  uint32_t check_config_count_ = 0;
+  uint32_t discard_config_count_ = 0;
+  uint32_t acknowledge_vsync_count_ = 0;
+  uint32_t set_minimum_rgb_count_ = 0;
+  uint32_t set_display_power_count_ = 0;
+
   zx_status_t set_display_power_result_ = ZX_OK;
   bool display_power_on_ = true;
 
