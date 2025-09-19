@@ -260,7 +260,7 @@ impl Driver {
                 | zx::VmarFlags::CAN_MAP_SPECIFIC;
             // We choose 1GiB as the vmar size fairly arbitrarily. We aren't aware of any drivers
             // that would be larger than that.
-            let vmar = fuchsia_runtime::vmar_root_self().allocate(0, 1_000_000_000, flags)?.0;
+            let vmar = fuchsia_runtime::vmar_root_self().allocate(0, 2_usize.pow(30), flags)?.0;
             if let Err(e) = fuchsia_scheduler::set_role_for_vmar(&vmar, vmar_scheduler_role) {
                 warn!("Failed to set vmar to scheduler role {vmar_scheduler_role}: {e:?}");
             }
