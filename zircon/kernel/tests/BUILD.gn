@@ -8,10 +8,7 @@ import("//build/zircon/migrated_targets.gni")
 import("//zircon/kernel/params.gni")
 
 group("tests") {
-  deps = [
-    ":phys",
-    "//zircon/kernel/lib/libc:tests",
-  ]
+  deps = [ ":phys" ]
   if (toolchain_environment == "kernel") {
     deps += [ ":kernel" ]
   } else {  # TODO(https://fxbug.dev/42145882): testonly in kernel proper
@@ -35,7 +32,7 @@ source_set("phys") {
   ]
   deps = [
     ":zbitl",
-    "//zircon/kernel/lib/boot-options/tests:kernel-tests",
+    "//zircon/kernel/lib:phys-tests",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/libc",
     "//zircon/kernel/lib/unittest",
@@ -111,24 +108,15 @@ if (toolchain_environment == "kernel") {
     ]
     deps = [
       "//zircon/kernel/lib/arch",
-      "//zircon/kernel/lib/arch/test:kernel-tests",
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/console",
       "//zircon/kernel/lib/crypto",
       "//zircon/kernel/lib/debuglog",
       "//zircon/kernel/lib/fbl",
-      "//zircon/kernel/lib/instrumentation/test:tests",
       "//zircon/kernel/lib/io",
-      "//zircon/kernel/lib/jtrace/tests",
-      "//zircon/kernel/lib/kconcurrent/tests",
       "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/lib/ktrace/tests",
-      "//zircon/kernel/lib/persistent-debuglog/tests",
-      "//zircon/kernel/lib/power-management:tests",
       "//zircon/kernel/lib/root_resource_filter",
-      "//zircon/kernel/lib/spsc_buffer/tests",
       "//zircon/kernel/lib/thread-stack",
-      "//zircon/kernel/lib/thread_sampler/tests",
       "//zircon/kernel/lib/unittest",
       "//zircon/kernel/lib/zxc",
       "//zircon/kernel/object",

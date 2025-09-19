@@ -1,0 +1,37 @@
+# Copyright 2025 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/toolchain/toolchain_environment.gni")
+
+group("tests") {
+  testonly = true
+}
+
+# This reaches tests built for both phys and kernel proper.
+group("phys-tests") {
+  testonly = toolchain_environment != "kernel"  # TODO: true
+  deps = [
+    "boot-options/tests:kernel-tests",
+    "libc:tests",
+  ]
+}
+
+# This reaches unittest code for the kernel proper only.
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [
+    "acpi_lite:kernel-tests",
+    "arch/test:kernel-tests",
+    "instrumentation/test:tests",
+    "//zircon/kernel/lib/jtrace/tests",
+    "//zircon/kernel/lib/kconcurrent/tests",
+    "//zircon/kernel/lib/ktrace/tests",
+    "//zircon/kernel/lib/persistent-debuglog/tests",
+    "//zircon/kernel/lib/power-management:tests",
+    "//zircon/kernel/lib/spsc_buffer/tests",
+    "//zircon/kernel/lib/thread_sampler/tests",
+  ]
+}

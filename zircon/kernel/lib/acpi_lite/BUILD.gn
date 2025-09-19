@@ -4,20 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
-import("//build/zircon/zx_library.gni")
 
 # Generic parts of acpi_lite.
-zx_library("acpi_lite") {
-  sdk = "source"
-  sdk_headers = [
-    "lib/acpi_lite.h",
-    "lib/acpi_lite/numa.h",
-    "lib/acpi_lite/apic.h",
-    "lib/acpi_lite/debug_port.h",
-    "lib/acpi_lite/internal.h",
-    "lib/acpi_lite/structures.h",
-  ]
+static_library("acpi_lite") {
+  public_deps = [ ":headers" ]
 
   sources = [
     "acpi_lite.cc",
@@ -27,24 +19,12 @@ zx_library("acpi_lite") {
     "structures.cc",
     "test_data.cc",
   ]
-
   deps = [ "//zircon/system/ulib/pretty" ]
-
-  public_deps = [
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/zx",
-  ]
 
   # Zircon-specific parts of acpi_lite.
   if (toolchain_environment == "kernel") {
-    sdk_headers += [ "lib/acpi_lite/zircon.h" ]
-    sources += [
-      "zircon.cc",
-
-      # TODO: These should be test-only.
-      "zircon_test.cc",
-    ]
-    deps += [ "//zircon/kernel/lib/unittest" ]
+    sources += [ "zircon.cc" ]
+    deps += [ "//zircon/kernel/vm:headers" ]
   }
 
   # These bits are needed for both Zircon proper and phys environments.
@@ -54,6 +34,31 @@ zx_library("acpi_lite") {
       "//zircon/kernel/lib/libc",
     ]
   }
+}
+
+library_headers("headers") {
+  headers = [
+    "lib/acpi_lite.h",
+    "lib/acpi_lite/numa.h",
+    "lib/acpi_lite/zircon.h",
+    "lib/acpi_lite/apic.h",
+    "lib/acpi_lite/debug_port.h",
+    "lib/acpi_lite/internal.h",
+    "lib/acpi_lite/structures.h",
+  ]
+  public_deps = [
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+source_set("kernel-tests") {
+  # TODO: testonly=true
+  sources = [ "zircon_test.cc" ]
+  deps = [
+    ".",
+    "//zircon/kernel/lib/unittest",
+  ]
 }
 
 if (!is_kernel) {
