@@ -309,49 +309,50 @@ mod tests {
     use fidl_fuchsia_bluetooth_avrcp::{BatteryStatus, ControllerRequest, PlayStatus};
     use fuchsia_async as fasync;
     use futures::prelude::*;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref PLAY_STATUS: CustomPlayStatus = CustomPlayStatus {
-            song_length: Some(120),
-            song_position: Some(10),
-            playback_status: Some(4),
-        };
-        static ref PLAYER_APPLICATION_SETTINGS: CustomPlayerApplicationSettings =
-            CustomPlayerApplicationSettings {
-                equalizer: Some(CustomEqualizer::Off),
-                repeat_status_mode: Some(CustomRepeatStatusMode::AllTrackRepeat),
-                shuffle_mode: None,
-                scan_mode: Some(CustomScanMode::GroupScan),
-                custom_settings: Some(vec![CustomCustomPlayerApplicationSetting {
-                    attribute_id: Some(1),
-                    attribute_name: Some("attribute".to_string()),
-                    possible_values: Some(vec![CustomCustomAttributeValue {
-                        description: "description".to_string(),
-                        value: 5
-                    }]),
-                    current_value: Some(5),
-                }])
-            };
-        static ref PLAYER_APPLICATION_SETTINGS_INPUT: CustomPlayerApplicationSettings =
-            CustomPlayerApplicationSettings {
-                equalizer: Some(CustomEqualizer::Off),
-                repeat_status_mode: None,
-                shuffle_mode: None,
-                scan_mode: None,
-                custom_settings: Some(vec![CustomCustomPlayerApplicationSetting {
-                    attribute_id: Some(1),
-                    attribute_name: Some("attribute".to_string()),
-                    possible_values: Some(vec![CustomCustomAttributeValue {
-                        description: "description".to_string(),
-                        value: 5
-                    }]),
-                    current_value: Some(5),
-                }])
-            };
-        static ref PLAYER_APPLICATION_SETTINGS_ATTRIBUTE_IDS: CustomPlayerApplicationSettingsAttributeIds =
-            CustomPlayerApplicationSettingsAttributeIds { attribute_ids: Some(vec![1]) };
-    }
+    static PLAY_STATUS: LazyLock<CustomPlayStatus> = LazyLock::new(|| CustomPlayStatus {
+        song_length: Some(120),
+        song_position: Some(10),
+        playback_status: Some(4),
+    });
+    static PLAYER_APPLICATION_SETTINGS: LazyLock<CustomPlayerApplicationSettings> =
+        LazyLock::new(|| CustomPlayerApplicationSettings {
+            equalizer: Some(CustomEqualizer::Off),
+            repeat_status_mode: Some(CustomRepeatStatusMode::AllTrackRepeat),
+            shuffle_mode: None,
+            scan_mode: Some(CustomScanMode::GroupScan),
+            custom_settings: Some(vec![CustomCustomPlayerApplicationSetting {
+                attribute_id: Some(1),
+                attribute_name: Some("attribute".to_string()),
+                possible_values: Some(vec![CustomCustomAttributeValue {
+                    description: "description".to_string(),
+                    value: 5,
+                }]),
+                current_value: Some(5),
+            }]),
+        });
+    static PLAYER_APPLICATION_SETTINGS_INPUT: LazyLock<CustomPlayerApplicationSettings> =
+        LazyLock::new(|| CustomPlayerApplicationSettings {
+            equalizer: Some(CustomEqualizer::Off),
+            repeat_status_mode: None,
+            shuffle_mode: None,
+            scan_mode: None,
+            custom_settings: Some(vec![CustomCustomPlayerApplicationSetting {
+                attribute_id: Some(1),
+                attribute_name: Some("attribute".to_string()),
+                possible_values: Some(vec![CustomCustomAttributeValue {
+                    description: "description".to_string(),
+                    value: 5,
+                }]),
+                current_value: Some(5),
+            }]),
+        });
+    static PLAYER_APPLICATION_SETTINGS_ATTRIBUTE_IDS: LazyLock<
+        CustomPlayerApplicationSettingsAttributeIds,
+    > = LazyLock::new(|| CustomPlayerApplicationSettingsAttributeIds {
+        attribute_ids: Some(vec![1]),
+    });
     struct MockAvrcpTester {
         expected_state: Vec<Box<dyn FnOnce(ControllerRequest) + Send + 'static>>,
     }

@@ -6,8 +6,8 @@ use anyhow::Error;
 
 use crate::factory_store::types::{FactoryStoreProvider, ListFilesRequest, ReadFileRequest};
 
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_factory::{
     AlphaFactoryStoreProviderMarker, CastCredentialsFactoryStoreProviderMarker,
@@ -16,9 +16,9 @@ use fidl_fuchsia_factory::{
 };
 use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_protocol;
-use fuchsia_fs::directory::{readdir_recursive, DirentKind};
+use fuchsia_fs::directory::{DirentKind, readdir_recursive};
 use futures::stream::TryStreamExt;
-use serde_json::{from_value, to_value, Value};
+use serde_json::{Value, from_value, to_value};
 
 /// Facade providing access to FactoryStoreProvider interfaces.
 #[derive(Debug)]
@@ -122,39 +122,40 @@ impl FactoryStoreFacade {
 mod tests {
     use super::*;
     use fuchsia_async as fasync;
-    use lazy_static::lazy_static;
     use maplit::hashmap;
     use serde_json::json;
     use std::collections::HashMap;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref GOLDEN_FILE_DATA: HashMap<&'static str, HashMap<&'static str, &'static str>> = hashmap! {
-            "alpha" => hashmap! {
-                "alpha.file" => "alpha info",
-                "alpha/data" => "alpha data"
-            },
-            "cast" => hashmap! {
-                "txt/info.txt" => "cast info.txt",
-                "more.extra" => "extra cast stuff",
-            },
-            "misc" => hashmap! {
-                "info/misc" => "misc.info",
-                "more.misc" => "more misc stuff"
-            },
-            "playready" => hashmap! {
-                "pr/pr/prinfo.dat" => "playready info",
-                "dat.stuff" => "playready stuff"
-            },
-            "weave" => hashmap! {
-                "weave.file" => "weave info",
-                "weave/data" => "weave data"
-            },
-            "widevine" => hashmap! {
-                "stuff.log" => "widevine stuff",
-                "wv/more_stuff" => "more_stuff from widevine",
+    static GOLDEN_FILE_DATA: LazyLock<HashMap<&'static str, HashMap<&'static str, &'static str>>> =
+        LazyLock::new(|| {
+            hashmap! {
+                "alpha" => hashmap! {
+                    "alpha.file" => "alpha info",
+                    "alpha/data" => "alpha data"
+                },
+                "cast" => hashmap! {
+                    "txt/info.txt" => "cast info.txt",
+                    "more.extra" => "extra cast stuff",
+                },
+                "misc" => hashmap! {
+                    "info/misc" => "misc.info",
+                    "more.misc" => "more misc stuff"
+                },
+                "playready" => hashmap! {
+                    "pr/pr/prinfo.dat" => "playready info",
+                    "dat.stuff" => "playready stuff"
+                },
+                "weave" => hashmap! {
+                    "weave.file" => "weave info",
+                    "weave/data" => "weave data"
+                },
+                "widevine" => hashmap! {
+                    "stuff.log" => "widevine stuff",
+                    "wv/more_stuff" => "more_stuff from widevine",
+                }
             }
-        };
-    }
+        });
 
     #[fasync::run_singlethreaded(test)]
     async fn list_files_with_no_message_fails() -> Result<(), Error> {

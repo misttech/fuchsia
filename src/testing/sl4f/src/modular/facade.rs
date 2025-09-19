@@ -4,9 +4,9 @@
 use crate::modular::types::{
     BasemgrResult, KillSessionResult, RestartSessionResult, StartBasemgrRequest,
 };
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_component::client::connect_to_protocol;
-use serde_json::{from_value, Value};
+use serde_json::{Value, from_value};
 use {
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_session as fsession,
     fidl_fuchsia_sys2 as fsys,
@@ -140,8 +140,8 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_test_util::spawn_stream_handler;
     use futures::Future;
-    use lazy_static::lazy_static;
     use serde_json::json;
+    use std::sync::LazyLock;
     use test_util::Counter;
     use {fidl_fuchsia_session as fsession, fidl_fuchsia_sys2 as fsys};
 
@@ -161,11 +161,9 @@ mod tests {
     where
         Fut: Future<Output = Result<(), Error>>,
     {
-        lazy_static! {
-            static ref SESSION_LAUNCH_CALL_COUNT: Counter = Counter::new(0);
-            static ref DESTROY_CHILD_CALL_COUNT: Counter = Counter::new(0);
-            static ref SESSION_RESTART_CALL_COUNT: Counter = Counter::new(0);
-        }
+        static SESSION_LAUNCH_CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
+        static DESTROY_CHILD_CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
+        static SESSION_RESTART_CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 
         let session_launcher = spawn_stream_handler(move |launcher_request| async move {
             match launcher_request {

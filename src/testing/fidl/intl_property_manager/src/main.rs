@@ -310,43 +310,46 @@ mod test {
     use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
     use futures::prelude::*;
     use futures::{self};
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref PROFILE_EMPTY: Profile =
-            Profile { locales: None, calendars: None, time_zones: None, temperature_unit: None, ..Default::default() };
-        static ref PROFILE_A: Profile = Profile {
-            locales: Some(vec![
-                LocaleId { id: "en-US".to_string() },
-                LocaleId { id: "fr-CA".to_string() }
-            ]),
-            calendars: Some(vec![CalendarId { id: "gregorian".to_string() }]),
-            time_zones: Some(vec![TimeZoneId { id: "America/New_York".to_string() }]),
-            temperature_unit: Some(TemperatureUnit::Celsius),
-            ..Default::default()
-        };
-        static ref PROFILE_B: Profile = Profile {
-            locales: Some(vec![
-                LocaleId { id: "ar-EG".to_string() },
-                LocaleId { id: "el-GR".to_string() }
-            ]),
-            calendars: Some(vec![CalendarId { id: "gregorian".to_string() }]),
-            time_zones: Some(vec![TimeZoneId { id: "Europe/Athens".to_string() }]),
-            temperature_unit: Some(TemperatureUnit::Celsius),
-            ..Default::default()
-        };
-        // This profile corresponds to the flag settings in the manifest at `COMPONENT_URL`.
-        static ref INITIAL_PROFILE: Profile = Profile {
-            locales: Some(vec![
-                LocaleId { id: "en-US".to_string() },
-                LocaleId { id: "nl-NL".to_string() }
-            ]),
-            calendars: None,
-            time_zones: Some(vec![TimeZoneId { id: "und-u-tz-uslax".to_string() }]),
-            temperature_unit: None,
-            ..Default::default()
-        };
-    }
+    static PROFILE_EMPTY: LazyLock<Profile> = LazyLock::new(|| Profile {
+        locales: None,
+        calendars: None,
+        time_zones: None,
+        temperature_unit: None,
+        ..Default::default()
+    });
+    static PROFILE_A: LazyLock<Profile> = LazyLock::new(|| Profile {
+        locales: Some(vec![
+            LocaleId { id: "en-US".to_string() },
+            LocaleId { id: "fr-CA".to_string() },
+        ]),
+        calendars: Some(vec![CalendarId { id: "gregorian".to_string() }]),
+        time_zones: Some(vec![TimeZoneId { id: "America/New_York".to_string() }]),
+        temperature_unit: Some(TemperatureUnit::Celsius),
+        ..Default::default()
+    });
+    static PROFILE_B: LazyLock<Profile> = LazyLock::new(|| Profile {
+        locales: Some(vec![
+            LocaleId { id: "ar-EG".to_string() },
+            LocaleId { id: "el-GR".to_string() },
+        ]),
+        calendars: Some(vec![CalendarId { id: "gregorian".to_string() }]),
+        time_zones: Some(vec![TimeZoneId { id: "Europe/Athens".to_string() }]),
+        temperature_unit: Some(TemperatureUnit::Celsius),
+        ..Default::default()
+    });
+    // This profile corresponds to the flag settings in the manifest at `COMPONENT_URL`.
+    static INITIAL_PROFILE: LazyLock<Profile> = LazyLock::new(|| Profile {
+        locales: Some(vec![
+            LocaleId { id: "en-US".to_string() },
+            LocaleId { id: "nl-NL".to_string() },
+        ]),
+        calendars: None,
+        time_zones: Some(vec![TimeZoneId { id: "und-u-tz-uslax".to_string() }]),
+        temperature_unit: None,
+        ..Default::default()
+    });
 
     /// The test launches the provider/manager, then sets and gets `Profile` values several times,
     /// confirming that `OnChange` events are sent and the updated values are correct.

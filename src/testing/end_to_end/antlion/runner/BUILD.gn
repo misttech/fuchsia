@@ -20,7 +20,6 @@ rustc_binary("runner") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:home",
     "//third_party/rust_crates:itertools",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:nix",
     "//third_party/rust_crates:serde",

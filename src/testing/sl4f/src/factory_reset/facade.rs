@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common_utils::common::macros::{fx_err_and_bail, with_line};
 use crate::common_utils::common::LazyProxy;
+use crate::common_utils::common::macros::{fx_err_and_bail, with_line};
 use anyhow::Error;
 use fidl_fuchsia_recovery::{FactoryResetMarker, FactoryResetProxy};
 use log::info;
@@ -48,11 +48,9 @@ mod tests {
     use fidl_fuchsia_recovery::FactoryResetRequest;
     use fuchsia_async as fasync;
     use futures::prelude::*;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref RESULT: i32 = 0;
-    }
+    static RESULT: LazyLock<i32> = LazyLock::new(|| 0);
 
     #[fasync::run_singlethreaded(test)]
     async fn test_factory_reset() {

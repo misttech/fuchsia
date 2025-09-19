@@ -110,27 +110,28 @@ mod tests {
     };
     use fuchsia_async as fasync;
     use futures::prelude::*;
-    use lazy_static::lazy_static;
     use serde_json::json;
+    use std::sync::LazyLock;
 
     const PAIRING_CODE: &'static [u8] = b"ABC1234";
 
-    lazy_static! {
-        static ref QR_CODE: QrCode = QrCode { data: String::from("qrcodedata") };
-        static ref PAIRING_STATE: PairingState = PairingState {
-            is_wlan_provisioned: Some(true),
-            is_fabric_provisioned: Some(true),
-            is_service_provisioned: Some(false),
-            is_weave_fully_provisioned: Some(false),
-            is_thread_provisioned: Some(true)
-        };
-        static ref RESET_CONFIG: Value = json!({
+    static QR_CODE: LazyLock<QrCode> =
+        LazyLock::new(|| QrCode { data: String::from("qrcodedata") });
+    static PAIRING_STATE: LazyLock<PairingState> = LazyLock::new(|| PairingState {
+        is_wlan_provisioned: Some(true),
+        is_fabric_provisioned: Some(true),
+        is_service_provisioned: Some(false),
+        is_weave_fully_provisioned: Some(false),
+        is_thread_provisioned: Some(true),
+    });
+    static RESET_CONFIG: LazyLock<Value> = LazyLock::new(|| {
+        json!({
             "network_config": true,
             // "fabric_config" unset
             "service_config": true,
             // "operational_credentials" unset
-        });
-    }
+        })
+    });
 
     struct MockStackBuilder {
         expected_stack: Vec<Box<dyn FnOnce(StackRequest) + Send + 'static>>,

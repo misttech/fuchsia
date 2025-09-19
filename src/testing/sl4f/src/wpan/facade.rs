@@ -211,12 +211,10 @@ mod tests {
     use fidl_fuchsia_lowpan_test::DeviceTestMarker;
     use fuchsia_async as fasync;
     use futures::prelude::*;
-    use lazy_static::lazy_static;
     use lowpan_driver_common::{DummyDevice, ServeTo};
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref MOCK_TESTER: MockTester = MockTester::new();
-    }
+    static MOCK_TESTER: LazyLock<MockTester> = LazyLock::new(|| MockTester::new());
 
     struct MockTester {
         dummy_device: DummyDevice,

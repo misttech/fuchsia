@@ -8,6 +8,7 @@ use itertools::Itertools;
 use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6, UdpSocket};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use std::{io, str};
 
@@ -22,9 +23,7 @@ const MDNS_MCAST_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0x00fb);
 const MDNS_PORT: u16 = 5353;
 const MDNS_TIMEOUT: Duration = Duration::from_secs(10);
 
-lazy_static::lazy_static! {
-    static ref MDNS_QUERY: &'static [u8] = construct_query_buf(FUCHSIA_DOMAIN);
-}
+static MDNS_QUERY: LazyLock<&'static [u8]> = LazyLock::new(|| construct_query_buf(FUCHSIA_DOMAIN));
 
 /// Find Fuchsia devices.
 pub(crate) trait Finder {

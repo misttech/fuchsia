@@ -37,10 +37,7 @@ rustc_binary("intl_property_manager_bin") {
     "//third_party/rust_crates:structopt",
   ]
 
-  test_deps = [
-    "//src/lib/fuchsia-component-test",
-    "//third_party/rust_crates:lazy_static",
-  ]
+  test_deps = [ "//src/lib/fuchsia-component-test" ]
 
   sources = [ "src/main.rs" ]
 }
