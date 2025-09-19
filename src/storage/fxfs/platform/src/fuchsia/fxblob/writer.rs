@@ -435,7 +435,7 @@ impl DeliveryBlobWriter {
         Ok(())
     }
 
-    async fn truncate(&mut self, length: u64) -> Result<(), Error> {
+    fn truncate(&mut self, length: u64) -> Result<(), Error> {
         if self.expected_size.is_some() {
             return Err(Status::BAD_STATE).context("Blob was already truncated.");
         }
@@ -504,9 +504,8 @@ impl DeliveryBlobWriter {
         Ok(())
     }
 
-    async fn get_vmo(&mut self, size: u64) -> Result<zx::Vmo, Error> {
+    fn get_vmo(&mut self, size: u64) -> Result<zx::Vmo, Error> {
         self.truncate(size)
-            .await
             .with_context(|| format!("Failed to truncate blob {} to size {}", self.hash, size))?;
         if self.vmo.is_some() {
             return Err(FxfsError::AlreadyExists)
@@ -594,7 +593,7 @@ impl DeliveryBlobWriter {
         while let Some(request) = request_stream.try_next().await? {
             match request {
                 BlobWriterRequest::GetVmo { size, responder } => {
-                    let result = self.get_vmo(size).await.map_err(|error| {
+                    let result = self.get_vmo(size).map_err(|error| {
                         log::error!(error:?; "BlobWriter.GetVmo failed.");
                         map_to_status(error).into_raw()
                     });

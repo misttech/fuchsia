@@ -77,13 +77,12 @@ async fn mount_user_volume(
     let (exposed_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
     volumes_directory.serve_volume(&vol, server_end, false).context("failed to serve volume")?;
     exposed_dir.clone(starnix_exposed_dir.into_channel().into())?;
-    update_mounted_volume(mounted_volume, exposed_dir, vol.volume().store().store_object_id())
-        .await?;
+    update_mounted_volume(mounted_volume, exposed_dir, vol.volume().store().store_object_id())?;
 
     Ok(())
 }
 
-async fn update_mounted_volume(
+fn update_mounted_volume(
     mounted_volume: &Mutex<Option<MountedVolume>>,
     exposed_dir: fio::DirectoryProxy,
     store_id: u64,
@@ -109,7 +108,7 @@ async fn delete_user_volume(volumes_directory: &Arc<VolumesDirectory>) -> Result
     Ok(())
 }
 
-async fn get_user_volume_root(
+fn get_user_volume_root(
     mounted_volume: &Mutex<Option<MountedVolume>>,
 ) -> Result<fio::DirectoryProxy, Error> {
     let guard = mounted_volume.lock();
@@ -158,8 +157,7 @@ async fn create_user_volume(
     let (exposed_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
     volumes_directory.serve_volume(&vol, server_end, false).context("failed to serve volume")?;
     exposed_dir.clone(starnix_exposed_dir.into_channel().into())?;
-    update_mounted_volume(mounted_volume, exposed_dir, vol.volume().store().store_object_id())
-        .await?;
+    update_mounted_volume(mounted_volume, exposed_dir, vol.volume().store().store_object_id())?;
 
     Ok(())
 }
@@ -187,7 +185,7 @@ async fn handle_starnix_volume_admin_requests(
             StarnixVolumeAdminRequest::GetRoot { responder } => {
                 log::info!("volume admin get_root called");
                 let res: Result<ClientEnd<fio::DirectoryMarker>, i32> =
-                    match get_user_volume_root(&mounted_volume).await {
+                    match get_user_volume_root(&mounted_volume) {
                         Ok(root_dir) => Ok(root_dir.into_client_end().unwrap()),
                         Err(e) => {
                             log::error!("volume admin service: get_root failed: {:?}", e);

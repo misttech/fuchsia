@@ -123,7 +123,7 @@ impl TestFixtureBuilder {
             None => None,
         };
         let (tx, crash_reports) = mpsc::channel(32);
-        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, device_config).await;
+        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, device_config);
 
         let mocks = builder
             .add_local_child("mocks", move |h| mocks(h).boxed(), ChildOptions::new())

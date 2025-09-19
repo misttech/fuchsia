@@ -761,7 +761,7 @@ impl<'a> ScannedStore<'a> {
     }
 
     // Process an extent, performing some checks and building fsck.allocations.
-    async fn process_extent(
+    fn process_extent(
         &mut self,
         object_id: u64,
         attribute_id: u64,
@@ -1025,16 +1025,14 @@ async fn scan_extents_and_directory_children<'a>(
                     let is_overwrite_extent =
                         matches!(mode, ExtentMode::Overwrite | ExtentMode::OverwritePartial(_));
 
-                    scanned
-                        .process_extent(
-                            *object_id,
-                            *attribute_id,
-                            range,
-                            *device_offset,
-                            bs,
-                            is_overwrite_extent,
-                        )
-                        .await?;
+                    scanned.process_extent(
+                        *object_id,
+                        *attribute_id,
+                        range,
+                        *device_offset,
+                        bs,
+                        is_overwrite_extent,
+                    )?;
                 };
             }
             ItemRef {

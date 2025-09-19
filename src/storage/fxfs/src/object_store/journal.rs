@@ -1178,7 +1178,6 @@ impl Journal {
             HandleOptions::default(),
             None,
         )
-        .await
         .context("create super block")?;
         root_store.update_last_object_id(SuperBlockInstance::A.object_id());
         super_block_a_handle
@@ -1192,7 +1191,6 @@ impl Journal {
             HandleOptions::default(),
             None,
         )
-        .await
         .context("create super block")?;
         root_store.update_last_object_id(SuperBlockInstance::B.object_id());
         super_block_b_handle
@@ -1562,7 +1560,7 @@ impl Journal {
 
             // Tell the allocator that we flushed the device so that it can now start using
             // space that was deallocated.
-            self.objects.allocator().did_flush_device(checkpoint_offset).await;
+            self.objects.allocator().did_flush_device(checkpoint_offset);
             if trace {
                 info!("J: did flush device");
             }

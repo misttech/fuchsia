@@ -82,7 +82,7 @@ impl dirents_sink::Sealed for Done {
 /// `entries` must be the contents of the directory sorted by name, the second tuple element.
 /// `entries` must not contain ".". This fn will append "." to `sink` as the first element
 ///   automatically using inode `fidl_fuchsia_io::INO_UNKNOWN`.
-pub async fn read_dirents<'a>(
+pub fn read_dirents<'a>(
     entries: &'a [(EntryInfo, String)],
     pos: &'a TraversalPosition,
     mut sink: Box<dyn dirents_sink::Sink + 'static>,
@@ -203,7 +203,6 @@ mod tests {
         // No space in sink.
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::Start, Box::new(FakeSink::new(0)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::Start);
         assert_eq!(FakeSink::from_sealed(sealed).entries, vec![]);
@@ -211,7 +210,6 @@ mod tests {
         // Only enough space in sink for partial write.
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::Start, Box::new(FakeSink::new(2)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::Index(1));
         assert_eq!(
@@ -225,7 +223,6 @@ mod tests {
         // Enough space in sink for complete write.
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::Start, Box::new(FakeSink::new(3)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::End);
         assert_eq!(
@@ -248,7 +245,6 @@ mod tests {
         // No space in sink.
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::Index(0), Box::new(FakeSink::new(0)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::Index(0));
         assert_eq!(FakeSink::from_sealed(sealed).entries, vec![]);
@@ -256,7 +252,6 @@ mod tests {
         // Only enough space in sink for partial write.
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::Index(0), Box::new(FakeSink::new(1)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::Index(1));
         assert_eq!(
@@ -267,7 +262,6 @@ mod tests {
         // Enough space in sink for complete write.
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::Index(0), Box::new(FakeSink::new(2)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::End);
         assert_eq!(
@@ -288,7 +282,6 @@ mod tests {
 
         let (pos, sealed) =
             read_dirents(&entries, &TraversalPosition::End, Box::new(FakeSink::new(3)))
-                .await
                 .expect("read_dirents failed");
         assert_eq!(pos, TraversalPosition::End);
         assert_eq!(FakeSink::from_sealed(sealed).entries, vec![]);

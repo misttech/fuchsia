@@ -73,8 +73,7 @@ impl FatServer {
                 break;
             }
             let device_ref = device.as_ref().unwrap();
-            if let Some(shutdown_responder) = device_ref.handle_admin(&device_ref.scope, req).await
-            {
+            if let Some(shutdown_responder) = device_ref.handle_admin(&device_ref.scope, req) {
                 if let Some(device) = device.take() {
                     device.scope.wait().await;
                     device

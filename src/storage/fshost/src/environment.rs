@@ -1063,12 +1063,12 @@ impl Environment for FshostEnvironment {
         if let Err(error) = &res {
             log::warn!(error:%; "migration failed");
             if let Some(status) = error.downcast_ref::<zx::Status>().clone() {
-                register_migration_status(self.inspector.root(), *status).await;
+                register_migration_status(self.inspector.root(), *status);
             } else {
-                register_migration_status(self.inspector.root(), zx::Status::INTERNAL).await;
+                register_migration_status(self.inspector.root(), zx::Status::INTERNAL);
             }
         } else {
-            register_migration_status(self.inspector.root(), zx::Status::OK).await;
+            register_migration_status(self.inspector.root(), zx::Status::OK);
         }
         res
     }

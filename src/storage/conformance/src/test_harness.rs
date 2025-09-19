@@ -30,7 +30,7 @@ pub struct TestHarness {
 impl TestHarness {
     /// Connects to the test harness and returns a `TestHarness` struct.
     pub async fn new() -> TestHarness {
-        let proxy = connect_to_harness().await;
+        let proxy = connect_to_harness();
         let config = proxy.get_config().await.expect("Could not get config from proxy");
 
         // Validate configuration options for consistency, disallow invalid combinations.
@@ -116,7 +116,7 @@ impl TestHarness {
     }
 }
 
-async fn connect_to_harness() -> io_test::TestHarnessProxy {
+fn connect_to_harness() -> io_test::TestHarnessProxy {
     // Connect to the realm to get access to the outgoing directory for the harness.
     let (client, server) = zx::Channel::create();
     fuchsia_component::client::connect_channel_to_protocol::<fcomponent::RealmMarker>(server)

@@ -701,7 +701,7 @@ impl VolumesDirectory {
                     }),
                 )?,
                 VolumeRequest::GetLimit { responder } => {
-                    responder.send(Ok(self.handle_get_limit(store_id).await))?
+                    responder.send(Ok(self.handle_get_limit(store_id)))?
                 }
             }
         }
@@ -799,14 +799,14 @@ impl VolumesDirectory {
     async fn handle_set_limit(self: &Arc<Self>, store_id: u64, bytes: u64) -> Result<(), Error> {
         let fs = self.root_volume.volume_directory().store().filesystem();
         let mut transaction = fs.clone().new_transaction(lock_keys![], Options::default()).await?;
-        fs.allocator().set_bytes_limit(&mut transaction, store_id, bytes).await?;
+        fs.allocator().set_bytes_limit(&mut transaction, store_id, bytes)?;
         transaction.commit().await?;
         Ok(())
     }
 
-    async fn handle_get_limit(self: &Arc<Self>, store_id: u64) -> u64 {
+    fn handle_get_limit(self: &Arc<Self>, store_id: u64) -> u64 {
         let fs = self.root_volume.volume_directory().store().filesystem();
-        fs.allocator().get_bytes_limit(store_id).await.unwrap_or_default()
+        fs.allocator().get_bytes_limit(store_id).unwrap_or_default()
     }
 
     async fn handle_mount(

@@ -286,7 +286,6 @@ async fn test_extra_allocation() {
             round_down(TEST_DEVICE_BLOCK_SIZE as u64 * TEST_DEVICE_BLOCK_COUNT, fs.block_size());
         fs.allocator()
             .mark_allocated(&mut transaction, 4, end - fs.block_size()..end)
-            .await
             .expect("mark_allocated failed");
         transaction.commit().await.expect("commit failed");
     }
@@ -314,7 +313,6 @@ async fn test_misaligned_allocation() {
             round_down(TEST_DEVICE_BLOCK_SIZE as u64 * TEST_DEVICE_BLOCK_COUNT, fs.block_size());
         fs.allocator()
             .mark_allocated(&mut transaction, 99, end - fs.block_size() + 1..end)
-            .await
             .expect("mark_allocated failed");
         transaction.commit().await.expect("commit failed");
     }

@@ -218,7 +218,7 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
             let factory = FileFactory::new(rng, uncompressed_size, compressibility);
             let home_dir = open_dir_at_root("home1");
             let file_actor = FileActor::new(factory, home_dir);
-            file_actor.set_progress_timer(std::time::Duration::from_secs(60)).await;
+            file_actor.set_progress_timer(std::time::Duration::from_secs(60));
             Arc::new(FuturesMutex::new(file_actor))
         };
         let deletion_actor = {

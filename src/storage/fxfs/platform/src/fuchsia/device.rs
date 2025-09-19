@@ -355,8 +355,7 @@ impl BlockServer {
                     Ok(attr) => {
                         debug_assert!(attr.immutable_attributes.storage_size.is_some());
                         let allocated_bytes = attr.immutable_attributes.storage_size.unwrap();
-                        let unallocated_bytes =
-                            self.file.get_size_uncached().await - allocated_bytes;
+                        let unallocated_bytes = self.file.get_size_uncached() - allocated_bytes;
                         let allocated_slices =
                             round_up(allocated_bytes, DEVICE_VOLUME_SLICE_SIZE).unwrap();
                         let unallocated_bytes =

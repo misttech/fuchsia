@@ -633,7 +633,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ramdisk_create_block_device_with_zxcrypt() {
-        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT).await;
+        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT);
         let _ = ramdisk_factory
             .create_block_device(&BlockDeviceConfig {
                 requires_fvm: true,
@@ -645,7 +645,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ramdisk_create_block_device_without_zxcrypt() {
-        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT).await;
+        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT);
         let _ = ramdisk_factory
             .create_block_device(&BlockDeviceConfig {
                 requires_fvm: true,
@@ -657,7 +657,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ramdisk_create_block_device_without_volume_size() {
-        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT).await;
+        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT);
         let ramdisk = ramdisk_factory
             .create_block_device(&BlockDeviceConfig {
                 requires_fvm: true,
@@ -680,7 +680,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ramdisk_create_block_device_with_volume_size() {
-        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT).await;
+        let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT);
         let ramdisk = ramdisk_factory
             .create_block_device(&BlockDeviceConfig {
                 requires_fvm: false,

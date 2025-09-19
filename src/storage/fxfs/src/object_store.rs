@@ -557,8 +557,7 @@ impl ObjectStore {
                 options.object_id,
                 HandleOptions::default(),
                 None,
-            )
-            .await?;
+            )?;
             self.update_last_object_id(options.object_id);
             handle
         } else {
@@ -827,13 +826,13 @@ impl ObjectStore {
 
     /// Provides access to the allocator to mark a specific region of the device as allocated.
     #[cfg(feature = "migration")]
-    pub async fn mark_allocated(
+    pub fn mark_allocated(
         &self,
         transaction: &mut Transaction<'_>,
         store_object_id: u64,
         device_range: std::ops::Range<u64>,
     ) -> Result<(), Error> {
-        self.allocator().mark_allocated(transaction, store_object_id, device_range).await
+        self.allocator().mark_allocated(transaction, store_object_id, device_range)
     }
 
     /// `crypt` can be provided if the crypt service should be different to the default; see the
@@ -967,7 +966,7 @@ impl ObjectStore {
         Ok(data_object_handle)
     }
 
-    pub async fn create_object_with_id<S: HandleOwner>(
+    pub fn create_object_with_id<S: HandleOwner>(
         owner: &Arc<S>,
         transaction: &mut Transaction<'_>,
         object_id: u64,
@@ -1061,7 +1060,6 @@ impl ObjectStore {
             options,
             encryption_options,
         )
-        .await
     }
 
     /// Creates an object using explicitly provided keys.
@@ -1089,7 +1087,6 @@ impl ObjectStore {
                 unwrapped_key,
             }),
         )
-        .await
     }
 
     /// Adjusts the reference count for a given object.  If the reference count reaches zero, the

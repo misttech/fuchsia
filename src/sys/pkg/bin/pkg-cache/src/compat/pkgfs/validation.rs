@@ -143,7 +143,6 @@ impl vfs::directory::entry_container::Directory for Validation {
             pos,
             sink,
         )
-        .await
     }
 
     fn register_watcher(

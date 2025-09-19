@@ -104,11 +104,7 @@ impl FatFile {
         if file.get(fs).is_none() { Err(Status::BAD_HANDLE) } else { Ok(Guard::new(fs, file)) }
     }
 
-    async fn write_or_append(
-        &self,
-        offset: Option<u64>,
-        content: &[u8],
-    ) -> Result<(u64, u64), Status> {
+    fn write_or_append(&self, offset: Option<u64>, content: &[u8]) -> Result<(u64, u64), Status> {
         let fs_lock = self.filesystem.lock();
         let mut file = self.borrow_file_mut(&fs_lock).ok_or(Status::BAD_HANDLE)?;
         let mut file_offset = match offset {
@@ -349,11 +345,11 @@ impl VfsFileIo for FatFile {
     }
 
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
-        self.write_or_append(Some(offset), content).await.map(|r| r.0)
+        self.write_or_append(Some(offset), content).map(|r| r.0)
     }
 
     async fn append(&self, content: &[u8]) -> Result<(u64, u64), Status> {
-        self.write_or_append(None, content).await
+        self.write_or_append(None, content)
     }
 }
 

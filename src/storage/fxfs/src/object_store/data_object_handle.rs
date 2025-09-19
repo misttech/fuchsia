@@ -226,7 +226,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// Verifies contents of `buffer` against the corresponding hashes in the stored merkle tree.
     /// `offset` is the logical offset in the file that `buffer` starts at. `offset` must be
     /// block-aligned. Fails on non fsverity-enabled files.
-    async fn verify_data(&self, mut offset: usize, buffer: &[u8]) -> Result<(), Error> {
+    fn verify_data(&self, mut offset: usize, buffer: &[u8]) -> Result<(), Error> {
         let block_size = self.block_size() as usize;
         assert!(offset % block_size == 0);
         let fsverity_state = self.fsverity_state.lock();
@@ -280,10 +280,11 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let old_end =
             round_up(self.txn_get_size(transaction), self.block_size()).ok_or(FxfsError::TooBig)?;
         let new_size = old_end + device_range.end - device_range.start;
-        self.store()
-            .allocator()
-            .mark_allocated(transaction, self.store().store_object_id(), device_range.clone())
-            .await?;
+        self.store().allocator().mark_allocated(
+            transaction,
+            self.store().store_object_id(),
+            device_range.clone(),
+        )?;
         self.txn_update_size(transaction, new_size, None).await?;
         let key_id = self.get_key(None).await?.0;
         transaction.add(
@@ -331,9 +332,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// The cached value for `self.fsverity_state` is set either in `open_object` or on
     /// `enable_verity`. If set, translates `self.fsverity_state.descriptor` into an
     /// fio::VerificationOptions instance and a root hash. Otherwise, returns None.
-    pub async fn get_descriptor(
-        &self,
-    ) -> Result<Option<(fio::VerificationOptions, Vec<u8>)>, Error> {
+    pub fn get_descriptor(&self) -> Result<Option<(fio::VerificationOptions, Vec<u8>)>, Error> {
         let fsverity_state = self.fsverity_state.lock();
         match &*fsverity_state {
             FsverityState::None => Ok(None),
@@ -1689,7 +1688,7 @@ impl<S: HandleOwner> ReadObjectHandle for DataObjectHandle<S> {
         buf = buf.subslice_mut(0..length);
         self.handle.read_unchecked(self.attribute_id(), offset, buf.reborrow(), &guard).await?;
         if self.is_verified_file() {
-            self.verify_data(offset as usize, buf.as_slice()).await?;
+            self.verify_data(offset as usize, buf.as_slice())?;
         }
         Ok(length)
     }

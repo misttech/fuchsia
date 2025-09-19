@@ -286,7 +286,7 @@ impl Component {
         connect_to_protocol::<fattribution::PageRefaultSinkMarker>()?
             .send_page_refault_count(blob_resupplied_count.readonly_vmo()?)?;
 
-        let mem_monitor = match MemoryPressureMonitor::start().await {
+        let mem_monitor = match MemoryPressureMonitor::start() {
             Ok(v) => Some(v),
             Err(error) => {
                 warn!(

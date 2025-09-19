@@ -242,7 +242,7 @@ impl Inner {
         }
     }
 
-    async fn bind_partition(
+    fn bind_partition(
         &mut self,
         parent: &Arc<GptManager>,
         index: u32,
@@ -279,7 +279,7 @@ impl Inner {
         Ok(())
     }
 
-    async fn bind_super_and_userdata_partition(
+    fn bind_super_and_userdata_partition(
         &mut self,
         parent: &Arc<GptManager>,
         super_partition: (u32, gpt::PartitionInfo),
@@ -305,10 +305,9 @@ impl Inner {
             info,
             vec![super_partition.0 as usize, userdata_partition.0 as usize],
         )
-        .await
     }
 
-    async fn bind_all_partitions(&mut self, parent: &Arc<GptManager>) -> Result<(), Error> {
+    fn bind_all_partitions(&mut self, parent: &Arc<GptManager>) -> Result<(), Error> {
         self.partitions.clear();
         self.overlay_partitions.clear();
         self.partitions_dir.clear();
@@ -337,21 +336,20 @@ impl Inner {
                 let super_part = super_part.unwrap();
                 let userdata_part = userdata_part.unwrap();
                 if can_merge(&super_part.1, &userdata_part.1) {
-                    self.bind_super_and_userdata_partition(parent, super_part, userdata_part)
-                        .await?;
+                    self.bind_super_and_userdata_partition(parent, super_part, userdata_part)?;
                 } else {
                     log::warn!("super/userdata cannot be merged");
-                    self.bind_partition(parent, super_part.0, super_part.1, vec![]).await?;
-                    self.bind_partition(parent, userdata_part.0, userdata_part.1, vec![]).await?;
+                    self.bind_partition(parent, super_part.0, super_part.1, vec![])?;
+                    self.bind_partition(parent, userdata_part.0, userdata_part.1, vec![])?;
                 }
             } else if super_part.is_some() || userdata_part.is_some() {
                 log::warn!("Only one of super/userdata found; not merging");
                 let (index, info) = super_part.or(userdata_part).unwrap();
-                self.bind_partition(parent, index, info, vec![]).await?;
+                self.bind_partition(parent, index, info, vec![])?;
             }
         }
         for (index, info) in partitions {
-            self.bind_partition(parent, index, info, vec![]).await?;
+            self.bind_partition(parent, index, info, vec![])?;
         }
         Ok(())
     }
@@ -416,7 +414,7 @@ impl GptManager {
             }),
             shutdown: AtomicBool::new(false),
         });
-        this.inner.lock().await.bind_all_partitions(&this).await?;
+        this.inner.lock().await.bind_all_partitions(&this)?;
         log::info!("Starting all partitions OK!");
         Ok(this)
     }
@@ -485,7 +483,7 @@ impl GptManager {
         }
         for idx in pending.added_partitions {
             if let Some(info) = inner.gpt.partitions().get(&idx).cloned() {
-                if let Err(err) = inner.bind_partition(self, idx, info, vec![]).await {
+                if let Err(err) = inner.bind_partition(self, idx, info, vec![]) {
                     log::error!(err:?; "Failed to bind partition");
                 }
             }
@@ -640,7 +638,7 @@ impl GptManager {
         transaction.partitions = partitions;
         inner.gpt.commit_transaction(transaction).await?;
 
-        if let Err(err) = inner.bind_all_partitions(&self).await {
+        if let Err(err) = inner.bind_all_partitions(&self) {
             log::error!(err:?; "Failed to rebind partitions");
             return Err(zx::Status::BAD_STATE);
         }

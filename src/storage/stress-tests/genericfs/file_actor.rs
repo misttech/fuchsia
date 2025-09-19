@@ -30,7 +30,7 @@ impl FileActor {
     /// Arms a timer which will expire after `duration` and fail the test.
     /// Each time a file is successfully created, the timer is reset.  This ensures forward
     /// progress.
-    pub async fn set_progress_timer(&self, duration: std::time::Duration) {
+    pub fn set_progress_timer(&self, duration: std::time::Duration) {
         let (tx, mut rx) = futures::channel::mpsc::unbounded();
         let task = fasync::Task::spawn(async move {
             use futures::future::FutureExt;

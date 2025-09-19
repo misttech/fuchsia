@@ -946,7 +946,7 @@ impl<S: HandleOwner> Directory<S> {
         .await
     }
 
-    pub async fn delete_child_volume<'a>(
+    pub fn delete_child_volume<'a>(
         &self,
         transaction: &mut Transaction<'a>,
         volume_name: &str,

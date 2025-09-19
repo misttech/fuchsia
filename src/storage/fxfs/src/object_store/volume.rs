@@ -153,11 +153,9 @@ impl RootVolume {
             root_store.adjust_refs(&mut transaction, *object_id, -1).await?;
         }
         // Mark all volume data as deleted.
-        self.filesystem.allocator().mark_for_deletion(&mut transaction, object_id).await;
+        self.filesystem.allocator().mark_for_deletion(&mut transaction, object_id);
         // Remove the volume entry from the VolumeDirectory.
-        self.volume_directory()
-            .delete_child_volume(&mut transaction, volume_name, object_id)
-            .await?;
+        self.volume_directory().delete_child_volume(&mut transaction, volume_name, object_id)?;
         transaction.commit_with_callback(|_| callback()).await.context("commit")?;
         // Tombstone the deleted objects.
         for object_id in &objects_to_delete {

@@ -91,7 +91,7 @@ impl FatFs {
         Ok(self.root.clone())
     }
 
-    pub async fn handle_admin(
+    pub fn handle_admin(
         &self,
         scope: &ExecutionScope,
         req: AdminRequest,

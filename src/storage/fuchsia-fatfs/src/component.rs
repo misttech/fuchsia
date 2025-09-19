@@ -52,7 +52,7 @@ struct RunningState {
 }
 
 impl State {
-    async fn stop(&mut self, outgoing_dir: &vfs::directory::immutable::Simple) {
+    fn stop(&mut self, outgoing_dir: &vfs::directory::immutable::Simple) {
         if let State::Running(RunningState { fs }) =
             std::mem::replace(self, State::ComponentStarted)
         {
@@ -177,7 +177,7 @@ impl Component {
         info!(options:?; "Received start request");
 
         let mut state = self.state.lock().await;
-        state.stop(&self.outgoing_dir).await;
+        state.stop(&self.outgoing_dir);
 
         let remote_block_client = RemoteBlockClientSync::new(device)?;
         let device = block_client::Cache::new(remote_block_client)?;
@@ -257,7 +257,7 @@ impl Component {
     }
 
     async fn shutdown(&self) {
-        self.state.lock().await.stop(&self.outgoing_dir).await;
+        self.state.lock().await.stop(&self.outgoing_dir);
         info!("Filesystem terminated");
     }
 

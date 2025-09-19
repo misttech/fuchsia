@@ -55,7 +55,7 @@ impl SuperParser {
 
     /// Get a partition within super. Must specify the name of the sub-partition and which slot from
     /// super to read from.
-    pub async fn get_sub_partition(
+    pub fn get_sub_partition(
         &self,
         name: &str,
         slot_index: usize,
@@ -63,7 +63,7 @@ impl SuperParser {
         let metadata_slot = &self.super_metadata.metadata_slots[slot_index];
         let extent_locations = metadata_slot.extent_locations_for_partition(name)?;
         assert_eq!(self.block_size(), self.device.block_size());
-        Ok(SuperPartitionDevice::new(self.device.clone(), extent_locations).await?)
+        Ok(SuperPartitionDevice::new(self.device.clone(), extent_locations)?)
     }
 
     fn block_size(&self) -> u32 {
@@ -105,7 +105,7 @@ pub struct SuperPartitionDevice {
 }
 
 impl SuperPartitionDevice {
-    pub async fn new(
+    pub fn new(
         device: Arc<dyn Device>,
         extent_locations: Vec<SuperDeviceRange>,
     ) -> Result<Self, Error> {
@@ -310,10 +310,8 @@ mod tests {
             .await
             .expect("failed to write to device");
 
-        let system_partition = super_parser
-            .get_sub_partition("system_a", 0)
-            .await
-            .expect("failed to load partition device");
+        let system_partition =
+            super_parser.get_sub_partition("system_a", 0).expect("failed to load partition device");
         assert_eq!(system_partition.block_size(), 4096);
         assert_eq!(system_partition.block_count(), 2);
         // Verify the contents of this sub-partition
@@ -332,7 +330,6 @@ mod tests {
         // this should just be zeroes.
         let system_ext_partition = super_parser
             .get_sub_partition("system_ext_a", 0)
-            .await
             .expect("failed to load partition device");
 
         assert_eq!(system_ext_partition.block_size(), 4096);
@@ -352,10 +349,8 @@ mod tests {
         let super_parser =
             SuperParser::new(parent_device.clone()).await.expect("SuperParser::new failed");
 
-        let system_partition = super_parser
-            .get_sub_partition("system_a", 0)
-            .await
-            .expect("failed to load partition device");
+        let system_partition =
+            super_parser.get_sub_partition("system_a", 0).expect("failed to load partition device");
 
         // Test reading when buffer is not a multiple of block size
         let mut read_buffer = system_partition.allocate_buffer(3).await;
@@ -379,10 +374,8 @@ mod tests {
         let super_parser =
             SuperParser::new(parent_device.clone()).await.expect("SuperParser::new failed");
 
-        let system_partition = super_parser
-            .get_sub_partition("system_a", 0)
-            .await
-            .expect("failed to load partition device");
+        let system_partition =
+            super_parser.get_sub_partition("system_a", 0).expect("failed to load partition device");
 
         let block_size = system_partition.block_size() as usize;
         let block_count = system_partition.block_count() as usize;

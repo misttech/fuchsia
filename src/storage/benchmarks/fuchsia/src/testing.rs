@@ -28,7 +28,7 @@ pub struct RamdiskFactory {
 
 impl RamdiskFactory {
     #[allow(dead_code)]
-    pub async fn new(block_size: u64, block_count: u64) -> Self {
+    pub fn new(block_size: u64, block_count: u64) -> Self {
         Self { block_size, block_count }
     }
 }

@@ -48,7 +48,7 @@ impl MemoryPressureMonitor {
     ///
     /// Call `[MemoryPressureMonitor::get_level_stream()`] to get an async [`Stream`] of memory
     /// pressure updates.
-    pub async fn start() -> Result<Self, anyhow::Error> {
+    pub fn start() -> Result<Self, anyhow::Error> {
         debug!("Attempting to connect to fuchsia.memorypressure/Provider");
         let provider = connect_to_protocol::<ProviderMarker>()?;
         debug!("Successfully connected to fuchsia.memorypressure/Provider");

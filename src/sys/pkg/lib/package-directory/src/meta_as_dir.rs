@@ -189,7 +189,6 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for Me
             pos,
             sink,
         )
-        .await
     }
 
     fn register_watcher(

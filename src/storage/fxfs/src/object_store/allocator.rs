@@ -837,8 +837,7 @@ impl Allocator {
             self.object_id(),
             HandleOptions::default(),
             None,
-        )
-        .await?;
+        )?;
         root_store.update_last_object_id(self.object_id());
         Ok(())
     }
@@ -1483,7 +1482,7 @@ impl Allocator {
     /// Marks the given device range as allocated.  The main use case for this at this time is for
     /// the super-block which needs to be at a fixed location on the device.
     #[trace]
-    pub async fn mark_allocated(
+    pub fn mark_allocated(
         &self,
         transaction: &mut Transaction<'_>,
         owner_object_id: u64,
@@ -1522,7 +1521,7 @@ impl Allocator {
     }
 
     /// Sets the limits for an owner object in terms of usage.
-    pub async fn set_bytes_limit(
+    pub fn set_bytes_limit(
         &self,
         transaction: &mut Transaction<'_>,
         owner_object_id: u64,
@@ -1538,7 +1537,7 @@ impl Allocator {
     }
 
     /// Gets the bytes limit for an owner object.
-    pub async fn get_bytes_limit(&self, owner_object_id: u64) -> Option<u64> {
+    pub fn get_bytes_limit(&self, owner_object_id: u64) -> Option<u64> {
         self.inner.lock().info.limit_bytes.get(&owner_object_id).copied()
     }
 
@@ -1611,7 +1610,7 @@ impl Allocator {
     ///
     /// After an allocator.flush() (i.e. a major compaction), we know that there is no data left
     /// in the layer files for this owner_object_id and we are able to clear `marked_for_deletion`.
-    pub async fn mark_for_deletion(&self, transaction: &mut Transaction<'_>, owner_object_id: u64) {
+    pub fn mark_for_deletion(&self, transaction: &mut Transaction<'_>, owner_object_id: u64) {
         // Note that because the actual time of deletion (the next major compaction) is undefined,
         // |owner_object_id| should not be reused after this call.
         transaction.add(
@@ -1622,7 +1621,7 @@ impl Allocator {
 
     /// Called when the device has been flush and indicates what the journal log offset was when
     /// that happened.
-    pub async fn did_flush_device(&self, flush_log_offset: u64) {
+    pub fn did_flush_device(&self, flush_log_offset: u64) {
         // First take out the deallocations that we now know to be flushed.  The list is maintained
         // in order, so we can stop on the first entry that we find that should not be unreserved
         // yet.
@@ -2465,7 +2464,6 @@ mod tests {
         range2.start += fs.block_size();
         allocator
             .mark_allocated(&mut transaction, STORE_OBJECT_ID, range2.clone())
-            .await
             .expect("mark_allocated failed");
         device_ranges.push(range2);
 
@@ -2520,7 +2518,7 @@ mod tests {
         // Mark for deletion.
         let mut transaction =
             fs.clone().new_transaction(lock_keys![], Options::default()).await.expect("new failed");
-        allocator.mark_for_deletion(&mut transaction, STORE_OBJECT_ID).await;
+        allocator.mark_for_deletion(&mut transaction, STORE_OBJECT_ID);
         transaction.commit().await.expect("commit failed");
 
         // Expect that allocated bytes is updated immediately but device ranges are still allocated.
@@ -2867,7 +2865,7 @@ mod tests {
             {
                 let mut transaction =
                     fs.clone().new_transaction(lock_keys![], Options::default()).await.unwrap();
-                allocator.mark_for_deletion(&mut transaction, STORE_OBJECT_ID).await;
+                allocator.mark_for_deletion(&mut transaction, STORE_OBJECT_ID);
                 transaction.commit().await.expect("Committing.");
             }
             assert!(!allocator.get_owner_allocated_bytes().contains_key(&STORE_OBJECT_ID));
@@ -2955,7 +2953,6 @@ mod tests {
                 .expect("new_transaction failed");
             allocator
                 .set_bytes_limit(&mut transaction, OWNER_ID, LIMIT)
-                .await
                 .expect("Failed to set limit.");
             assert!(allocator.inner.lock().info.limit_bytes.get(&OWNER_ID).is_none());
             transaction.commit().await.expect("Failed to commit transaction");

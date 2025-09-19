@@ -21,7 +21,7 @@ pub async fn check_filesystem<T: CacheClearableFilesystem>(
 ) {
     const FILE_CONTENTS: &str = "file-contents";
 
-    let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT).await;
+    let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT);
     let mut fs = filesystem.start_filesystem(&ramdisk_factory).await;
 
     let file_path = fs.benchmark_dir().join("filename");
@@ -47,7 +47,7 @@ pub async fn check_blob_filesystem<T: BlobFilesystem>(
     let blob_contents = Vec::from("blob-contents");
     let blob = DeliveryBlob::new(blob_contents.clone(), CompressionMode::Always);
 
-    let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT).await;
+    let ramdisk_factory = RamdiskFactory::new(BLOCK_SIZE, BLOCK_COUNT);
     let mut fs = filesystem.start_filesystem(&ramdisk_factory).await;
     fs.write_blob(&blob).await;
     fs.clear_cache().await;

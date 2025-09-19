@@ -431,7 +431,7 @@ mod tests {
         V: FilesystemConfig<Filesystem = U>,
     {
         let blocks = 200 * 1024 * 1024 / page_size() as u64; // 200MiB
-        let ramdisk_factory = RamdiskFactory::new(page_size() as u64, blocks).await;
+        let ramdisk_factory = RamdiskFactory::new(page_size() as u64, blocks);
         let mut filesystem = filesystem_config.start_filesystem(&ramdisk_factory).await;
         let results = benchmark.run(&mut filesystem).await;
         assert_eq!(results.len(), op_count);

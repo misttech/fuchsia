@@ -316,13 +316,11 @@ async fn migrate(
                                 ..(block_addr as u64 + 1) * BLOCK_SIZE as u64;
                             let logical_range = block_offset as u64 * BLOCK_SIZE as u64
                                 ..(block_offset as u64 + 1) * BLOCK_SIZE as u64;
-                            dir.store()
-                                .mark_allocated(
-                                    &mut transaction,
-                                    dir.store().store_object_id(),
-                                    device_range.clone(),
-                                )
-                                .await?;
+                            dir.store().mark_allocated(
+                                &mut transaction,
+                                dir.store().store_object_id(),
+                                device_range.clone(),
+                            )?;
                             transaction.add(
                                 dir.store().store_object_id(),
                                 Mutation::merge_object(

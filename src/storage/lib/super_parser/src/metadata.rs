@@ -273,8 +273,7 @@ impl Metadata {
                 read_cursor,
                 &header,
                 &header.partitions,
-            )
-            .await?
+            )?
             .iter()
             // Calling `unwrap` on `trimmed_name` should be fine as the partition metadata has
             // already been validated and checked that calling `trimmed_name` will not return an
@@ -292,8 +291,7 @@ impl Metadata {
             read_cursor,
             &header,
             &header.extents,
-        )
-        .await?;
+        )?;
 
         // Parse partition group table entries.
         let read_cursor =
@@ -305,8 +303,7 @@ impl Metadata {
             read_cursor,
             &header,
             &header.groups,
-        )
-        .await?;
+        )?;
 
         // Parse block device table entries.
         let read_cursor =
@@ -318,8 +315,7 @@ impl Metadata {
             read_cursor,
             &header,
             &header.block_devices,
-        )
-        .await?;
+        )?;
 
         // Expect there to be at least be one block device: "super".
         ensure!(block_devices.len() > 0, "Metadata did not specify a super device.");
@@ -358,7 +354,7 @@ impl Metadata {
         Ok(metadata_header)
     }
 
-    async fn parse_table<T: ValidateTable + FromBytes + KnownLayout>(
+    fn parse_table<T: ValidateTable + FromBytes + KnownLayout>(
         tables_bytes: &[u8],
         tables_offset: u32,
         metadata_header: &MetadataHeader,

@@ -24,7 +24,7 @@ use {
 /// Identifier for ramdisk storage. Defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
 const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
 
-pub async fn new_mocks(
+pub fn new_mocks(
     vmo: Option<zx::Vmo>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     device_config: String,

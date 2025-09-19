@@ -252,7 +252,7 @@ impl FxFile {
         Ok(bytes_read as u64)
     }
 
-    pub async fn get_size_uncached(&self) -> u64 {
+    pub fn get_size_uncached(&self) -> u64 {
         self.handle.uncached_handle().get_size()
     }
 
@@ -471,8 +471,7 @@ impl vfs::node::Node for FxFile {
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
         let mut props = self.handle.get_properties().await.map_err(map_to_status)?;
-        let descriptor =
-            self.handle.uncached_handle().get_descriptor().await.map_err(map_to_status)?;
+        let descriptor = self.handle.uncached_handle().get_descriptor().map_err(map_to_status)?;
         // In most cases, the reference count of objects can be used as the link count. There are
         // two cases where this is not the case - for unnamed temporary files and unlink files with
         // no more open references to it. For these two cases, the link count should be zero (the

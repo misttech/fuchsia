@@ -20,8 +20,7 @@ enum Mode {
     Aggressive(AggressiveOptions),
 }
 
-#[fuchsia_async::run_singlethreaded]
-async fn main() {
+fn main() {
     diagnostics_log::initialize(diagnostics_log::PublishOptions::default()).unwrap();
 
     // Attempt to load configuration from file.
