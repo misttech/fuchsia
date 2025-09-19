@@ -54,7 +54,7 @@ const struct FidlCodedEnum fidl_internal_kFrameworkErrTable = {
     .validate = &EnumValidatorForFrameworkErr,
     .name = "fidl/FrameworkErr"};
 
-zx_rights_t subtract_rights(zx_rights_t minuend, zx_rights_t subtrahend) {
+static zx_rights_t subtract_rights(zx_rights_t minuend, zx_rights_t subtrahend) {
   return minuend & ~subtrahend;
 }
 
