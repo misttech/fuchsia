@@ -99,6 +99,16 @@ impl PowerLogger {
             .as_event_code()]
         )
     }
+
+    pub async fn handle_chip_power_up_failure(&self) {
+        log_cobalt!(
+            self.cobalt_proxy,
+            log_occurrence,
+            metrics::CHIP_POWER_UP_FAILURE_METRIC_ID,
+            1,
+            &[]
+        )
+    }
 }
 
 #[cfg(test)]
@@ -106,7 +116,7 @@ mod tests {
     use super::*;
     use crate::testing::setup_test;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyNumericProperty};
+    use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
     use futures::pin_mut;
     use futures::task::Poll;
     use std::pin::pin;
@@ -306,6 +316,30 @@ mod tests {
                 metric_id: metrics::UNCLEAR_POWER_LEVEL_DEMAND_METRIC_ID,
                 event_codes: vec![metrics::UnclearPowerLevelDemandMetricDimensionReason::PowerSaveRequestedWhileSuspendModeEnabled
                     .as_event_code()],
+                payload: fidl_fuchsia_metrics::MetricEventPayload::Count(1),
+            };
+            assert_eq!(metric, &expected_metric);
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_chip_power_up_failure_logs_to_cobalt() {
+        let mut test_helper = setup_test();
+        let node = test_helper.create_inspect_node("wlan_mock_node");
+        let power_logger = PowerLogger::new(test_helper.cobalt_proxy.clone(), &node);
+
+        let mut test_fut = pin!(power_logger.handle_chip_power_up_failure());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CHIP_POWER_UP_FAILURE_METRIC_ID);
+        assert_matches!(&logged_metrics[..], [metric] => {
+            let expected_metric = fidl_fuchsia_metrics::MetricEvent {
+                metric_id: metrics::CHIP_POWER_UP_FAILURE_METRIC_ID,
+                event_codes: vec![],
                 payload: fidl_fuchsia_metrics::MetricEventPayload::Count(1),
             };
             assert_eq!(metric, &expected_metric);

@@ -1,10 +1,10 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fuchsia_inspect::Node as InspectNode;
 use futures::channel::mpsc;
-use futures::{future, select, Future, StreamExt, TryFutureExt};
+use futures::{Future, StreamExt, TryFutureExt, future, select};
 use log::error;
 use std::boxed::Box;
 use windowed_stats::experimental::serve::serve_time_matrix_inspection;
@@ -62,11 +62,12 @@ pub enum TelemetryEvent {
     BatteryChargeStatus(fidl_battery::ChargeStatus),
     RecoveryEvent,
     SmeTimeout,
+    ChipPowerUpFailure,
 }
 
 /// Attempts to connect to the Cobalt service.
-pub async fn setup_cobalt_proxy(
-) -> Result<fidl_fuchsia_metrics::MetricEventLoggerProxy, anyhow::Error> {
+pub async fn setup_cobalt_proxy()
+-> Result<fidl_fuchsia_metrics::MetricEventLoggerProxy, anyhow::Error> {
     let cobalt_svc = fuchsia_component::client::connect_to_protocol::<
         fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker,
     >()
@@ -89,14 +90,14 @@ pub async fn setup_cobalt_proxy(
 
 /// Attempts to create a disconnected FIDL channel with types matching the Cobalt service. This
 /// allows for a fallback with a uniform code path in case of a failure to connect to Cobalt.
-pub fn setup_disconnected_cobalt_proxy(
-) -> Result<fidl_fuchsia_metrics::MetricEventLoggerProxy, anyhow::Error> {
+pub fn setup_disconnected_cobalt_proxy()
+-> Result<fidl_fuchsia_metrics::MetricEventLoggerProxy, anyhow::Error> {
     // Create a disconnected proxy
     Ok(fidl::endpoints::create_proxy::<fidl_fuchsia_metrics::MetricEventLoggerMarker>().0)
 }
 
-pub fn setup_persistence_req_sender(
-) -> Result<(auto_persist::PersistenceReqSender, impl Future<Output = ()>), anyhow::Error> {
+pub fn setup_persistence_req_sender()
+-> Result<(auto_persist::PersistenceReqSender, impl Future<Output = ()>), anyhow::Error> {
     fuchsia_component::client::connect_to_protocol::<
         fidl_fuchsia_diagnostics_persist::DataPersistenceMarker,
     >()
@@ -229,6 +230,9 @@ pub fn serve_telemetry(
                         }
                         UnclearPowerDemand(demand) => {
                             power_logger.handle_unclear_power_demand(demand).await;
+                        }
+                        ChipPowerUpFailure => {
+                            power_logger.handle_chip_power_up_failure().await;
                         }
                         BatteryChargeStatus(charge_status) => {
                             scan_logger.handle_battery_charge_status(charge_status).await;

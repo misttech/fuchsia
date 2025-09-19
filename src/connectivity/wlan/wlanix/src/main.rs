@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::security::wep::WepKeys;
 use crate::security::Credential;
-use anyhow::{bail, format_err, Context, Error};
+use crate::security::wep::WepKeys;
+use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
@@ -319,6 +319,15 @@ async fn handle_wifi_request<I: IfaceManager>(
                             "Failed to start phy {} in response to WifiRequest::Start: {}",
                             phy_id, e
                         );
+                        // Attempt to power the chip back down, to ensure we're in a low-power
+                        // state after the failure to power up.
+                        if let Err(e) = iface_manager.power_down(phy_id).await {
+                            error!(
+                                "Failed to stop phy {} to recover from failed WifiRequest::Start: {}",
+                                phy_id, e
+                            )
+                        };
+                        telemetry_sender.send(TelemetryEvent::ChipPowerUpFailure);
                         driver_started = false;
                         result = Err(zx::sys::ZX_ERR_BAD_STATE);
                     }
@@ -615,7 +624,9 @@ async fn handle_client_connect_transactions<C: ClientIface>(
                         let source = match result.disconnect_info {
                             Some(disconnect_info) => disconnect_info.disconnect_source,
                             None => {
-                                error!("RoamResult indicates failure, but disconnect source is missing");
+                                error!(
+                                    "RoamResult indicates failure, but disconnect source is missing"
+                                );
                                 fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
                                     mlme_event_name:
                                         fidl_sme::DisconnectMlmeEventName::RoamResultIndication,
@@ -780,7 +791,9 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
                     sta_network_state.credential = Credential::WepKey(wep_keys);
                 }
                 Credential::Password(_) => {
-                    warn!("SetWepKey was called for a network that already has a passphrase; ignoring");
+                    warn!(
+                        "SetWepKey was called for a network that already has a passphrase; ignoring"
+                    );
                 }
                 Credential::WepKey(ref mut wep_keys) => {
                     wep_keys
@@ -810,7 +823,9 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
                     wep_keys.set_index(index as usize)?;
                 }
                 Credential::Password(_) => {
-                    warn!("SetWepTxKeyIdx was called when the credential has been set to Password; ignoring.");
+                    warn!(
+                        "SetWepTxKeyIdx was called when the credential has been set to Password; ignoring."
+                    );
                 }
             }
         }
@@ -1299,7 +1314,7 @@ fn get_supported_frequencies() -> Vec<Vec<Nl80211FrequencyAttr>> {
 
 trait MessageResponder {
     fn send(self, result: Result<Vec<fidl_wlanix::Nl80211Message>, i32>)
-        -> Result<(), fidl::Error>;
+    -> Result<(), fidl::Error>;
 }
 
 impl MessageResponder for Nl80211MessageV2Responder {
@@ -1899,14 +1914,14 @@ mod tests {
     use super::*;
     use anyhow::format_err;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_wlan_wlanix::Nl80211Message;
+    use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
-    use futures::Future;
     use ieee80211::Ssid;
-    use ifaces::test_utils::{ClientIfaceCall, TestIfaceManager, FAKE_IFACE_RESPONSE};
-    use std::pin::{pin, Pin};
+    use ifaces::test_utils::{ClientIfaceCall, FAKE_IFACE_RESPONSE, TestIfaceManager};
+    use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
     use {
@@ -2084,6 +2099,53 @@ mod tests {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
             }))
         );
+    }
+
+    #[test]
+    fn test_wifi_start_fails() {
+        let (mut test_helper, mut test_fut) =
+            setup_wifi_test_with_iface_manager(TestIfaceManager::new().mock_power_up_failure());
+
+        // Precondition: chip is off
+        let get_state_fut = test_helper.wifi_proxy.get_state();
+        let mut get_state_fut = pin!(get_state_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut get_state_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_state_fut),
+            Poll::Ready(Ok(response1)) => response1
+        );
+        assert_eq!(response.is_started, Some(false));
+
+        // Also ensure the fake iface manager has matching chip power off
+        *test_helper.iface_manager.power_state.lock() = false;
+
+        // Clear any previous calls from test setup
+        *test_helper.iface_manager.calls.lock() = vec![];
+
+        // Power up
+        let start_fut = test_helper.wifi_proxy.start();
+        let mut start_fut = pin!(start_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut start_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Expect a failure to power up, and a metric logged for it
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut start_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert!(response.is_err());
+        assert_matches!(
+            test_helper.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ChipPowerUpFailure))
+        );
+
+        // Expect we turn the chip back off after failure to start
+        let calls = test_helper.iface_manager.calls.lock();
+        assert_matches!(&calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+        assert_matches!(&calls[1], ifaces::test_utils::IfaceManagerCall::GetPowerState(_));
+        assert_matches!(&calls[2], ifaces::test_utils::IfaceManagerCall::PowerUp(_));
+        assert_matches!(&calls[3], ifaces::test_utils::IfaceManagerCall::PowerDown(_));
     }
 
     #[test]
@@ -3548,10 +3610,12 @@ mod tests {
         assert_eq!(message.payload.cmd, Nl80211Cmd::NewInterface);
         assert!(message.payload.attrs.iter().any(|attr| *attr
             == Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())));
-        assert!(message
-            .payload
-            .attrs
-            .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr)));
+        assert!(
+            message
+                .payload
+                .attrs
+                .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr))
+        );
         assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
     }
 

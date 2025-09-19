@@ -910,9 +910,10 @@ pub mod test_utils {
         pub client_iface: Mutex<Option<Arc<TestClientIface>>>,
         pub calls: Arc<Mutex<Vec<IfaceManagerCall>>>,
         country: Arc<Mutex<[u8; 2]>>,
-        power_state: Arc<Mutex<bool>>,
+        pub power_state: Arc<Mutex<bool>>,
         mock_create_client_iface_result: Result<u16, Error>,
         mock_destroy_client_iface_result: Result<(), Error>,
+        mock_power_up_result: Result<(), Error>,
         iface_id: Arc<Mutex<u16>>,
     }
 
@@ -925,20 +926,13 @@ pub mod test_utils {
                 power_state: Arc::new(Mutex::new(true)),
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),
+                mock_power_up_result: Ok(()),
                 iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
             }
         }
 
         pub fn new_with_client() -> Self {
-            Self {
-                client_iface: Mutex::new(Some(Arc::new(TestClientIface::new()))),
-                calls: Arc::new(Mutex::new(vec![])),
-                country: Arc::new(Mutex::new(*b"WW")),
-                power_state: Arc::new(Mutex::new(true)),
-                mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
-                mock_destroy_client_iface_result: Ok(()),
-                iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
-            }
+            Self { client_iface: Mutex::new(Some(Arc::new(TestClientIface::new()))), ..Self::new() }
         }
 
         pub fn new_with_client_and_scan_end_sender()
@@ -950,12 +944,7 @@ pub mod test_utils {
                         scan_end_receiver: Mutex::new(Some(receiver)),
                         ..TestClientIface::new()
                     }))),
-                    calls: Arc::new(Mutex::new(vec![])),
-                    country: Arc::new(Mutex::new(*b"WW")),
-                    power_state: Arc::new(Mutex::new(true)),
-                    mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
-                    mock_destroy_client_iface_result: Ok(()),
-                    iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
+                    ..Self::new()
                 },
                 sender,
             )
@@ -987,6 +976,10 @@ pub mod test_utils {
                 )),
                 ..self
             }
+        }
+
+        pub fn mock_power_up_failure(self) -> Self {
+            Self { mock_power_up_result: Err(format_err!("mocked PowerUp failure")), ..self }
         }
 
         pub fn set_iface_id(&self, new_id: u16) {
@@ -1074,8 +1067,13 @@ pub mod test_utils {
 
         async fn power_up(&self, phy_id: u16) -> Result<(), Error> {
             self.calls.lock().push(IfaceManagerCall::PowerUp(phy_id));
-            *self.power_state.lock() = true;
-            Ok(())
+            match &self.mock_power_up_result {
+                Ok(()) => {
+                    *self.power_state.lock() = true;
+                    Ok(())
+                }
+                Err(e) => bail!("{e}"),
+            }
         }
 
         async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error> {
