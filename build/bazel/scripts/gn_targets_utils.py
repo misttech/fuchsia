@@ -28,7 +28,7 @@ class BazelBuildActionInfo(object):
     bazel_command_file: str = ""
     build_events_log_json: str = ""
     path_mapping: str = ""
-    # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
+    # LINT.ThenChange(//BUILD.gn)
 
 
 class BazelBuildActionsMap(object):

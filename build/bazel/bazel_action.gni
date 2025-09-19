@@ -621,10 +621,6 @@ template("bazel_action") {
       # Imported by create_gn_targets_dir.py
       "//build/bazel/scripts/build_utils.py",
       "//build/bazel/scripts/workspace_utils.py",
-
-      # Used to handle debug symbols and binaries.
-      "//build/bazel/debug_symbols/aspects.bzl",
-      "//build/api/debug_symbols.py",
     ]
 
     deps = [
@@ -662,11 +658,6 @@ template("bazel_action") {
   _timings_file = "${target_out_dir}/${target_name}.bazel_action_timings.json"
   _rebased_timings_file = rebase_path(_timings_file, root_build_dir)
 
-  _debug_symbols_manifest =
-      "${target_out_dir}/${target_name}.debug_symbols.json"
-  _rebased_debug_symbols_manifest =
-      rebase_path(_debug_symbols_manifest, root_build_dir)
-
   action(target_name) {
     forward_variables_from(invoker,
                            [
@@ -701,7 +692,6 @@ template("bazel_action") {
     outputs = [
       _path_mapping,
       _bazel_command_file,
-      _debug_symbols_manifest,
       _timings_file,
     ]
 
@@ -741,8 +731,6 @@ template("bazel_action") {
              _rebased_timings_file,
              "--path-mapping",
              _rebased_path_mapping,
-             "--debug-symbols-manifest",
-             _rebased_debug_symbols_manifest,
              "--stamp-files",
            ]
     foreach(s, _dedupe_stamps) {
@@ -887,7 +875,6 @@ template("bazel_action") {
         # Used by //:bazel_build_actions target.
         bazel_build_actions_barrier = []
         bazel_build_actions = [
-          # LINT.IfChange(bazel_build_actions)
           {
             gn_target = get_label_info(":$target_name", "label_no_toolchain")
             bazel_targets = _bazel_targets
@@ -900,16 +887,6 @@ template("bazel_action") {
             bazel_command_file = _rebased_bazel_command_file
             path_mapping = _rebased_path_mapping
             timings_file = _rebased_timings_file
-            debug_symbols_manifest = _rebased_debug_symbols_manifest
-          },
-          # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
-        ]
-
-        # Used by //:debug_symbols
-        debug_symbol_manifests = [
-          {
-            label = get_label_info(":$target_name", "label_no_toolchain")
-            manifest = _rebased_debug_symbols_manifest
           },
         ]
       }
