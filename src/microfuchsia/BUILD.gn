@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("testing/linux_test_initramfs.gni")
+import("testing/gki_pkvm_boot_test.gni")
 
 group("tests") {
   testonly = true
@@ -12,21 +12,15 @@ group("tests") {
 group("boot_tests") {
   testonly = true
   deps = []
-
-  # TODO(https://fxbug.dev/432535854): This dep is here temporarily to ensure
-  # that it is built in automation. Replace with a proper boot test dep.
   if (current_cpu == "arm64") {
-    deps += [ ":linux-test-initramfs" ]
+    deps += [ ":pkvm-hello-world-test" ]
   }
 }
 
 if (current_cpu == "arm64") {
-  linux_test_initramfs("linux-test-initramfs") {
-    deps = [
-      "testing:crosvm",
-      "testing:linux-runtime-sysroot",
-      "testing:linux-test-init-crosvm-exec",
-      "//products/microfuchsia:microfuchsia_eng.pkvm-arm64",
-    ]
+  # Basic boot exercise of the linux boot shim and a small ZBI.
+  gki_pkvm_boot_test("pkvm-hello-world-test") {
+    init = "testing:linux-test-init-crosvm-exec"
+    product_bundle = "//zircon/kernel/phys/test:zbi-hello-world-test"
   }
 }

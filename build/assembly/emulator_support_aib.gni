@@ -131,6 +131,15 @@ template("emulator_support_assembly_input_bundle") {
         },
       ]
     }
+
+    # The creation of this subdirectory in the bundle involves a potential copy
+    # in the event of a failed hard link, which can happen for reasons outside
+    # the control of the build when the kernel is a prebuilt (e.g., a developer
+    # may have mounted their checkout on a partition separate from the build
+    # directory). Since this amounts in effect to a non-deterministic output,
+    # we disable hermeticity for this subdirectory.
+    hermetic_action_ignored_prefixes =
+        [ "${files.assembly_input_bundle_dir}/kernel" ]
   }
 
   # Make generated AIBs available to Bazel builds.

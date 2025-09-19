@@ -143,6 +143,9 @@ template("_boot_test") {
     if (defined(invoker.zbi)) {
       deps += [ invoker.zbi ]
     }
+    if (defined(invoker.ramdisk)) {
+      deps += [ invoker.ramdisk ]
+    }
   }
 }
 
@@ -178,12 +181,19 @@ template("_boot_test") {
 #      in //build/testing/environments.gni.
 #    - Type: list of strings
 #
-#  * zbi, qemu_kernel, vbmeta, dtbo, efi_disk
+#  * zbi, ramdisk, qemu_kernel, vbmeta, dtbo, efi_disk
 #    - Optional: A label specifying a ZBI, QEMU kernel, VBMeta, dtbo, UEFI
 #      executable, or a bootable UEFI filesystem or disk image, respectively.
 #      At least one of these parameters must be set, but each on their own is
-#      optional. `efi_disk` must provide `efi_input` metadata entry consisting
-#      of a `name`, `path` and `type`.
+#      optional.
+#
+#      `ramdisk` is distinct from `zbi` in that it indicates an arbitrary,
+#      possibly non-ZBI ramdisk to be interpreted in the emulated context by
+#      QEMU kernel alone; in particular, it should be passed through the
+#      assembly machinery as-is.
+#
+#      An `efi_disk` must provide `efi_input` metadata entry consisting of a
+#      `name`, `path` and `type`.
 #    - Type: label
 #
 #  * timeout
@@ -225,10 +235,10 @@ template("boot_test") {
   assert(defined(invoker.environments),
          "boot_test(\"$target_name\") must define `environments`")
   assert(
-      defined(invoker.zbi) || defined(invoker.qemu_kernel) ||
-          defined(invoker.vbmeta) || defined(invoker.efi_disk) ||
-          defined(invoker.dtbo),
-      "boot_test(\"$target_name\") must define at least one of `zbi`, `qemu_kernel`, `vbmeta`, `efi_disk`, `dtbo`")
+      defined(invoker.zbi) || defined(invoker.ramdisk) ||
+          defined(invoker.qemu_kernel) || defined(invoker.vbmeta) ||
+          defined(invoker.efi_disk) || defined(invoker.dtbo),
+      "boot_test(\"$target_name\") must define at least one of `zbi`, `ramdisk`, `qemu_kernel`, `vbmeta`, `efi_disk`, `dtbo`")
 
   main_target = target_name
   product_bundle_target = "$target_name.product_bundle"
@@ -324,9 +334,15 @@ template("boot_test") {
   if (current_toolchain == default_toolchain) {
     assembled_system_target = "_$main_target.assembled_system"
 
+    assembly_mode = "test-zbi"
     assembled_system_kernel_zbi = "//build/testing/boot_tests:empty-zbi"
+    signable_ramdisk = true
     if (defined(invoker.zbi)) {
       assembled_system_kernel_zbi = invoker.zbi
+    } else if (defined(invoker.ramdisk)) {
+      assembly_mode = "test-ramdisk"
+      assembled_system_kernel_zbi = invoker.ramdisk
+      signable_ramdisk = false  # Per test-ramdisk semantics
     }
 
     assembled_system(assembled_system_target) {
@@ -339,14 +355,18 @@ template("boot_test") {
           "//build/testing/boot_tests:product_config"
       kernel_zbi = assembled_system_kernel_zbi
       generate_vbmeta = use_vbmeta
-      assembly_mode = "test-zbi"
-      if (custom_signing_script != "") {
-        inputs = custom_signing_script_inputs
-        deps = [ "//build/images/custom_signing:deps" ]
-        generate_signed_zbi = true
-      } else if (use_vboot) {
-        inputs = vboot_action.inputs
-        generate_signed_zbi = true
+      assembly_mode = assembly_mode
+
+      generate_signed_zbi = false
+      if (signable_ramdisk) {
+        if (custom_signing_script != "") {
+          inputs = custom_signing_script_inputs
+          deps = [ "//build/images/custom_signing:deps" ]
+          generate_signed_zbi = true
+        } else if (use_vboot) {
+          inputs = vboot_action.inputs
+          generate_signed_zbi = true
+        }
       }
       forward_variables_from(invoker, [ "qemu_kernel" ])
     }

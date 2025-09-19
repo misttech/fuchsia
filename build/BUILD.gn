@@ -386,6 +386,13 @@ group("non_hermetic_deps") {
 
   # product config for boot_tests.
   visibility += [ "//build/testing/boot_tests:product_config" ]
+
+  # Boot tests defined here use a custom QEMU kernel taken from under
+  # //prebuilts. The definition of an emulator AIB in this case can result in
+  # non-deterministic outputs for the reason indicated around the setting of
+  # hermetic_action_ignored_prefixes in
+  # emulator_support_assembly_input_bundle()
+  visibility += [ "//src/microfuchsia:*" ]
 }
 
 # Build targets that use the legacy zx_library and zx_host_tool templates

@@ -28,11 +28,34 @@ rustc_binary("assemble-initramfs") {
 # Core resources intended for linux_test_initramfs() aggregation.
 #
 
+# This init process will replace itself with the crosvm process that runs the
+# the boot shim and ZBI - found at /data/kernel and /data/ramdisk,
+# respectively - in a protected VM. This is useful for exercising test logic
+# that does not try to prove what is happening within the VM after boot.
+#
+# When run in the context of a boot test, it becomes the responsibility of the
+# boot shim or ZBI to print the success string.
 linux_test_init("linux-test-init-crosvm-exec") {
   sources = [ "linux-test-init-crosvm-exec.cc" ]
 }
 
 if (current_cpu == "arm64") {
+  # A target that can be used for the `qemu_kernel` parameter of `boot_test()`,
+  # which in particular is used for those defined by `gki_pkvm_boot_test()`.
+  group("gki") {
+    testonly = true
+    metadata = {
+      emulator_support_aib_input = [
+        {
+          label = get_label_info(":$target_name", "label_with_toolchain")
+          path = rebase_path(
+                  "//prebuilt/virtualization/packages/aosp_gki/arm64/Image.gz",
+                  root_build_dir)
+        },
+      ]
+    }
+  }
+
   resource("crosvm") {
     testonly = true
     allow_binary_output_dir = true

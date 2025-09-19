@@ -101,16 +101,14 @@ template("linux_test_initramfs") {
       ]
 
       metadata = {
-        # TODO(https://fxbug.dev/432535854) Aggregated in the //:images build
-        # API module, useful for specification via `fx list-build-artifacts`
-        # until properly wired up as a boot test, at which point this can be
-        # removed.
-        images = [
+        # Specifies a ZBI/ramdisk to contribute to an assembled system. While
+        # this is not actually a ZBI, it is intended to be treated as such by
+        # the emulator tooling.
+        kernel_aib_input_barrier = []
+        kernel_aib_input = [
           {
-            label = get_label_info(":$main_target", "label_with_toolchain")
-            name = main_target
-            path = rebase_path(outputs[0], root_build_dir)
-            type = "initramfs"
+            label = get_label_info(":$target_name", "label_with_toolchain")
+            zbi = rebase_path(outputs[0], root_build_dir)
           },
         ]
       }
