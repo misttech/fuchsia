@@ -30,7 +30,7 @@
             availability: "optional",
             default: false,
         },
-        { protocol: "fucshia.power.system.ActivityGovernor" },
+        { protocol: "fuchsia.power.system.ActivityGovernor" },
         { service: "fuchsia.hardware.clock.Service" },
         { service: "fuchsia.hardware.interconnect.PathService" },
         { service: "fuchsia.hardware.platform.device.Service" },
