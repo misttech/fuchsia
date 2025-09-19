@@ -281,6 +281,7 @@ def create_model_from_trace_file_path(
     trace_path: str | os.PathLike[Any],
     compressed_input: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
+    patterns: set[str] | None = None,
 ) -> trace_model.Model:
     """Converts the specified trace file to JSON.
 
@@ -289,6 +290,10 @@ def create_model_from_trace_file_path(
       trace2json_path: The path to the trace2json executable. When unset, find
           at a runtime_deps/trace2json location in a parent directory.
       compressed_input: Whether the input file is compressed.
+      patterns: Regexps to match against event names. Only events that match one or more of these
+                patterns will be included in the converted trace file.
+                Pass None to include all events.
+                Pass the empty set to discard all events.
 
     Raises:
       subprocess.CalledProcessError: The trace2json process returned an error.
@@ -298,7 +303,7 @@ def create_model_from_trace_file_path(
     """
     return create_model_from_file_path(
         convert_trace_file_to_json(
-            trace_path, compressed_input, False, trace2json_path
+            trace_path, compressed_input, False, trace2json_path, patterns
         )
     )
 
