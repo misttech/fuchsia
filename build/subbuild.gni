@@ -33,7 +33,7 @@ import("//sdk/config.gni")
 #   extra_deps (required)
 #     [label list] List of labels to build before starting the subbuild.
 #
-#   build_dir_prefix (required)
+#   subbuild_dir_name (required)
 #     [string] The name of the build directory to create under the out directory.
 #
 #   use_idk_tools_only (optional)
@@ -52,9 +52,9 @@ template("subbuild") {
   assert(defined(invoker.outputs))
   assert(defined(invoker.api_level))
   assert(defined(invoker.extra_deps))
-  assert(defined(invoker.build_dir_prefix))
+  assert(defined(invoker.subbuild_dir_name))
 
-  _build_dir = root_build_dir + "/${invoker.build_dir_prefix}"
+  _build_dir = root_build_dir + "/${invoker.subbuild_dir_name}"
 
   # LINT.IfChange
   _build_dir_stamp = _build_dir + ".stamp"

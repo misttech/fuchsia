@@ -81,7 +81,7 @@ template("idk_subbuilds") {
   # First, define subbuild targets for the default API level.
   foreach(target_cpu, _target_cpus) {
     _subbuild_target = "${main_target_name}-${target_cpu}"
-    _subbuild_dir_prefix = "${subbuild_prefix}-${target_cpu}"
+    _subbuild_dir_name = "${subbuild_prefix}-${target_cpu}"
 
     subbuild(_subbuild_target) {
       target = invoker.sdk_collection_label
@@ -95,7 +95,7 @@ template("idk_subbuilds") {
 
       target_cpu = target_cpu
       api_level = "PLATFORM"
-      build_dir_prefix = _subbuild_dir_prefix
+      subbuild_dir_name = _subbuild_dir_name
 
       # Each subbuild depends on the `sdk_collection` in the main build, so
       # that when a change happens that would cause the `sdk_collection` to be
@@ -120,7 +120,7 @@ template("idk_subbuilds") {
   foreach(api_level, _api_levels) {
     foreach(target_cpu, _target_cpus) {
       _subbuild_target = "${main_target_name}-api${api_level}-${target_cpu}"
-      _subbuild_dir_prefix = "${subbuild_prefix}-api${api_level}-${target_cpu}"
+      _subbuild_dir_name = "${subbuild_prefix}-api${api_level}-${target_cpu}"
 
       subbuild(_subbuild_target) {
         target = invoker.sdk_collection_label
@@ -134,7 +134,7 @@ template("idk_subbuilds") {
 
         target_cpu = target_cpu
         api_level = "$api_level"
-        build_dir_prefix = _subbuild_dir_prefix
+        subbuild_dir_name = _subbuild_dir_name
 
         # Each subbuild depends on the `sdk_collection` in the main build, so
         # that when a change happens that would cause the `sdk_collection` to be

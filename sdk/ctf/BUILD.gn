@@ -88,7 +88,7 @@ subbuild("ctf_subbuild") {
   outputs = [ "/cts/package_archives.json" ]
   api_level = ctf_api_level
   target_cpu = target_cpu
-  build_dir_prefix = ctf_output_directory
+  subbuild_dir_name = ctf_output_directory
   extra_deps = [
     # Some host tools required by the sub-build are Bazel artifacts.
     # Since Bazel cannot be invoked from sub-builds, ensure they are generated first.
