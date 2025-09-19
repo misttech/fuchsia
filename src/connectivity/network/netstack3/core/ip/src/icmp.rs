@@ -1249,7 +1249,18 @@ fn send_neighbor_advertisement<
     let advertisement = NeighborAdvertisement::new(
         core_ctx.is_router_device(&device_id),
         solicited,
-        false,
+        // Per RFC 4861, section 7.2.4:
+        //
+        //    If the Target Address is either an anycast address or a unicast
+        //    address for which the node is providing proxy service, or the Target
+        //    Link-Layer Address option is not included, the Override flag SHOULD
+        //    be set to zero.  Otherwise, the Override flag SHOULD be set to one.
+        //
+        // We don't support anycast addresses or proxy ARP, and we only send neighbor
+        // advertisements for addresses we own, so always set the Override flag.
+        //
+        // [RFC 4861, section 7.2.4]: https://tools.ietf.org/html/rfc4861#section-7.2.4
+        true, /* override_flag */
         device_addr.get(),
     );
     let _: Result<(), _> = send_ndp_packet(

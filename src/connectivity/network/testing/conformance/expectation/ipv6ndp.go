@@ -269,9 +269,9 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{5, 5}:  AnvlSkip, // Router test but this is the host suite.
 	{5, 6}:  Pass,
 	{5, 7}:  Pass,
-	{5, 8}:  Fail,
+	{5, 8}:  Pass,
 	{5, 9}:  AnvlSkip, // Router test but this is the host suite.
-	{5, 10}: Fail,
+	{5, 10}: Pass,
 	{5, 12}: Pass,
 	{5, 13}: Pass,
 	{5, 14}: Pass,
