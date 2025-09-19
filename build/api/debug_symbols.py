@@ -14,13 +14,6 @@ from pathlib import Path
 
 DebugSymbolEntryType = dict[str, T.Any]
 
-# Binaries whose file name appears in this set are ignored.
-# See https://fxbug.dev/445670194
-_DEBUG_BINARY_DENYLIST = {
-    "static-pie-noop-test",
-    "static-pie-custom-startup-test",
-}
-
 
 def extract_gnu_build_id(elf_file: str | Path) -> str:
     """Extracts the GNU build ID from an ELF64 file.
@@ -457,9 +450,6 @@ class DebugSymbolExporter(object):
         for entry in debug_entries:
             # Skip non-ELF platforms.
             if entry["os"] not in ("fuchsia", "linux"):
-                continue
-
-            if os.path.basename(entry["debug"]) in _DEBUG_BINARY_DENYLIST:
                 continue
 
             build_id = entry.get("elf_build_id", "")

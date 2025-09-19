@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/google/subcommands"
 
@@ -271,11 +272,24 @@ func (cmd upCommand) execute(ctx context.Context, buildDir string) error {
 	}
 	uploads = append(uploads, productSizeCheckerUploads...)
 
-	debugSymbols, err := artifactory.DebugSymbolUploads(ctx, m, cmd.namespace, debugDirName, buildidDirName)
+	debugBinaries, buildIDsToLabels, buildIDs, err := artifactory.DebugBinaryUploads(ctx, m, debugDirName, buildidDirName)
 	if err != nil {
 		return err
 	}
-	uploads = append(uploads, debugSymbols...)
+	uploads = append(uploads, debugBinaries...)
+
+	uploads = append(uploads, artifactory.Upload{
+		Contents:    []byte(strings.Join(buildIDs, "\n")),
+		Destination: path.Join(cmd.namespace, buildIDsTxt),
+	})
+	buildIDsToLabelsJSON, err := json.MarshalIndent(buildIDsToLabels, "", "  ")
+	if err != nil {
+		return err
+	}
+	uploads = append(uploads, artifactory.Upload{
+		Contents:    buildIDsToLabelsJSON,
+		Destination: path.Join(cmd.namespace, buildIDsToLabelsManifestName),
+	})
 
 	uploads, err = filterNonExistentFiles(ctx, uploads)
 	if err != nil {
