@@ -18,7 +18,7 @@ use starnix_uapi::{audit_status, error, pid_t};
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::sync::Weak;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU8, AtomicU32, Ordering};
 use std::time::SystemTime;
 use std::u32;
 use zx::MonotonicDuration;
@@ -48,9 +48,18 @@ impl TryFrom<u32> for AuditRequest {
     }
 }
 
+/// Possible modes of the audit framework.
+#[derive(PartialEq)]
+enum AuditMode {
+    Disabled,
+    Unspecified,
+    Enabled,
+}
+
 /// Audit status structure defining the behaviour of the logger.
 struct AuditConfig {
-    enabled: AtomicBool,
+    /// The audit mode set by kernel command line.
+    audit_mode: AuditMode,
     /// The maximum number of audit messages that can be stored by the logger.
     backlog_limit: AtomicU32,
     /// Action to take in case of audit failure.
@@ -64,8 +73,7 @@ struct AuditConfig {
 impl Default for AuditConfig {
     fn default() -> Self {
         Self {
-            // TODO: https://fxbug.dev/438671380 - should be disabled by default.
-            enabled: AtomicBool::new(true),
+            audit_mode: AuditMode::Unspecified,
             backlog_limit: AtomicU32::new(DEFAULT_BACKLOG_LIMIT),
             fail_action: AtomicU8::new(AUDIT_FAIL_PRINTK as u8),
             audit_sink_pid: Default::default(),
@@ -76,19 +84,24 @@ impl Default for AuditConfig {
 
 impl AuditConfig {
     pub fn new<'a>(cmdline_iter: impl Iterator<Item = ArgNameAndValue<'a>>) -> Self {
-        let config = Self::default();
+        let mut config = Self::default();
         // The logger may be disabled by the kernel command line.
         config.apply_kernel_cmdline(cmdline_iter);
         config
     }
 
     /// Function to apply the optional kernel command line arguments.
-    fn apply_kernel_cmdline<'a>(&self, cmdline_iter: impl Iterator<Item = ArgNameAndValue<'a>>) {
+    fn apply_kernel_cmdline<'a>(
+        &mut self,
+        cmdline_iter: impl Iterator<Item = ArgNameAndValue<'a>>,
+    ) {
         for arg in cmdline_iter {
             match arg {
-                ArgNameAndValue { name: "audit", value: Some(value) } => {
-                    self.enabled.store(value == "1", Ordering::Release)
-                }
+                ArgNameAndValue { name: "audit", value: Some(value) } => match value {
+                    "0" | "off" => self.audit_mode = AuditMode::Disabled,
+                    // If the audit option is "1"/"on"/anything else, fully enable auditing.
+                    _ => self.audit_mode = AuditMode::Enabled,
+                },
                 ArgNameAndValue { name: "audit_backlog_limit", value: Some(value) } => self
                     .backlog_limit
                     .store(value.parse().unwrap_or(DEFAULT_BACKLOG_LIMIT), Ordering::Release),
@@ -121,26 +134,18 @@ impl AuditLogger {
         }
     }
 
+    pub fn is_disabled(&self) -> bool {
+        self.configuration.audit_mode == AuditMode::Disabled
+    }
+
     /// Audit logging function that adds an audit message to the queue.
     ///
     /// The `audit_formatter` function is called only if the auditing is enabled.
     pub fn audit_log<M: Display, T: FnOnce() -> M>(&self, audit_type: u16, audit_formatter: T) {
-        if !self.configuration.enabled.load(Ordering::Acquire) {
+        if self.configuration.audit_mode == AuditMode::Disabled {
             return;
         }
-        let audit_message = self.prepend_audit_metadata(audit_formatter);
-
-        let mut queue = self.audit_queue.lock();
-        // TODO: https://fxbug.dev/440090442 - implement backlog waiting.
-        if !self.check_backlog(queue.len() as u32) {
-            queue.push_back(AuditMessage { audit_type, message: audit_message.clone().into() });
-            self.configuration.audit_sink.load().upgrade().inspect(|sink| sink.notify()).or_else(
-                || {
-                    log_warn!("{audit_message}");
-                    None
-                },
-            );
-        }
+        self.add_audit_to_backlog(audit_type, audit_formatter);
     }
 
     /// Called by the `NetlinkAuditClient` to pull the next audit log from the backlog.
@@ -165,8 +170,10 @@ impl AuditLogger {
         status: audit_status,
         client: Weak<AuditNetlinkClient>,
     ) -> Result<(), Errno> {
-        if status.mask & AUDIT_STATUS_ENABLED != 0 {
-            self.configuration.enabled.store(status.enabled != 0, Ordering::Release);
+        // Dummy check for enable/disable request. This should be used again if other
+        // subsystems will use the audit logger.
+        if status.mask & AUDIT_STATUS_ENABLED != 0 && status.enabled > 1 {
+            return error!(EINVAL);
         }
         if status.mask & AUDIT_STATUS_BACKLOG_LIMIT != 0 {
             self.configuration.backlog_limit.store(status.backlog_limit, Ordering::Release);
@@ -195,7 +202,7 @@ impl AuditLogger {
     pub fn get_status(&self) -> audit_status {
         audit_status {
             mask: Default::default(),
-            enabled: self.configuration.enabled.load(Ordering::Acquire) as u32,
+            enabled: Default::default(),
             failure: self.configuration.fail_action.load(Ordering::Acquire) as u32,
             pid: self.configuration.audit_sink_pid.load(Ordering::Acquire) as u32,
             rate_limit: u32::MAX,
@@ -214,6 +221,36 @@ impl AuditLogger {
             return 0;
         }
         self.audit_queue.lock().len()
+    }
+
+    /// Add an audit message to the backlog if it is enabled.
+    fn add_audit_to_backlog<M: Display, T: FnOnce() -> M>(
+        &self,
+        audit_type: u16,
+        audit_formatter: T,
+    ) {
+        // At this point, we know that the audit framework is not disabled until reboot.
+        let audit_message = self.prepend_audit_metadata(audit_formatter);
+        // If there is no audit sink and the auditing is partially enabled, print and return
+        // without pushing the message to the backlog.
+        let Some(client) = self.configuration.audit_sink.load().upgrade() else {
+            log_warn!("{audit_message}");
+            if self.configuration.audit_mode == AuditMode::Enabled {
+                self.push_back_audit(audit_type, audit_message);
+            }
+            return;
+        };
+        self.push_back_audit(audit_type, audit_message);
+        client.notify();
+    }
+
+    /// Push the audit message in the backlog after checking its limit.
+    fn push_back_audit(&self, audit_type: u16, audit_message: String) {
+        let mut queue = self.audit_queue.lock();
+        // TODO: https://fxbug.dev/440090442 - implement backlog waiting.
+        if !self.check_backlog(queue.len() as u32) {
+            queue.push_back(AuditMessage { audit_type, message: audit_message.into() });
+        }
     }
 
     /// Function to check the backlog size against the backlog limit.

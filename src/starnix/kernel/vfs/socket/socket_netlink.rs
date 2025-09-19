@@ -75,7 +75,7 @@ pub fn new_netlink_socket(
         NetlinkFamily::Route => Box::new(RouteNetlinkSocket::new(kernel)?),
         NetlinkFamily::Generic => Box::new(GenericNetlinkSocket::new(kernel)?),
         NetlinkFamily::SockDiag => Box::new(DiagnosticNetlinkSocket::default()),
-        NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)),
+        NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)?),
         _ => Box::new(BaseNetlinkSocket::new(family)),
     };
     Ok(ops)
@@ -1673,9 +1673,11 @@ pub struct AuditNetlinkSocket {
 }
 
 impl AuditNetlinkSocket {
-    pub fn new(kernel: &Kernel) -> Self {
-        let audit_client = Arc::new(AuditNetlinkClient::new(kernel.audit_logger()));
-        Self { audit_client }
+    pub fn new(kernel: &Kernel) -> Result<Self, Errno> {
+        if kernel.audit_logger().is_disabled() {
+            return error!(EPROTONOSUPPORT);
+        }
+        Ok(Self { audit_client: Arc::new(AuditNetlinkClient::new(kernel.audit_logger())) })
     }
 }
 
