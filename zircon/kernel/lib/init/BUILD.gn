@@ -4,10 +4,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/zircon/migrated_targets.gni")
 
-zx_library("init") {
-  sources = []
+group("init") {
+  public_deps = [ ":headers" ]
+}
+
+library_headers("headers") {
+  headers = [ "lk/init.h" ]
   public_deps = [
     # <lk/init.h> has #include <lib/special-sections/special-sections.h>.
     "//zircon/kernel/lib/special-sections:headers",

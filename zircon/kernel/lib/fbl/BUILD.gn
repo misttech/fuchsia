@@ -4,17 +4,23 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("fbl") {
+static_library("fbl") {
+  public_deps = [ ":headers" ]
+
   sources = [ "arena.cc" ]
   deps = [
-    ":tests",
     "//sdk/lib/fit",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/fbl",
   ]
+}
+
+library_headers("headers") {
+  headers = []
+
   public_deps = [
     # <fbl/gparena.h> has #include <lib/fit/defer.h>
     "//sdk/lib/fit:headers",
@@ -25,7 +31,7 @@ zx_library("fbl") {
   ]
 }
 
-source_set("tests") {
+source_set("kernel-tests") {
   #TODO: testonly = true
   visibility = [ ":*" ]
   sources = [

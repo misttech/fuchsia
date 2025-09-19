@@ -4,19 +4,22 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("efi") {
+static_library("efi") {
   visibility = [
     "//src/firmware/gigaboot/*",
     "//src/lib/zbitl/*",
     "//zircon/kernel/*",
   ]
 
-  sources = [ "guids.c" ]
+  public_deps = [ ":headers" ]
 
-  sdk = "source"
-  sdk_headers = [
+  sources = [ "guids.c" ]
+}
+
+library_headers("headers") {
+  headers = [
     "efi/boot-services.h",
     "efi/protocol/block-io.h",
     "efi/protocol/device-path-to-text.h",
@@ -40,6 +43,10 @@ zx_library("efi") {
     "efi/runtime-services.h",
     "efi/system-table.h",
     "efi/types.h",
+  ]
+  public_deps = [
+    # All headers use `#include <zircon/compiler.h>`.
+    "//zircon/system/public",
   ]
 }
 

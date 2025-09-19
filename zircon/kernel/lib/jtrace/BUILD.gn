@@ -4,9 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("jtrace") {
+static_library("jtrace") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "jtrace.cc",
     "jtrace_internal.h",
@@ -25,8 +27,18 @@ zx_library("jtrace") {
     "//zircon/system/ulib/lazy_init",
     "//zircon/system/ulib/pretty",
   ]
+}
+
+library_headers("headers") {
+  headers = [ "lib/jtrace/jtrace.h" ]
+
   public_configs = [
     "//zircon/kernel:jtrace_config",
     "//zircon/kernel:persistent_ram_config",
   ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
 }

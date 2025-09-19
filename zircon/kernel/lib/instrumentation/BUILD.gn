@@ -4,9 +4,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
+import("//build/toolchain/toolchain_environment.gni")
 
-zx_library("instrumentation") {
+static_library("instrumentation") {
+  public_deps = [ ":headers" ]
+
   sources = []
   if (toolchain_environment == "kernel") {
     sources += [ "vmo.cc" ]
@@ -25,6 +28,15 @@ zx_library("instrumentation") {
       "//zircon/system/ulib/fbl",
     ]
   }
+}
+
+library_headers("headers") {
+  headers = []
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "test:tests" ]
 }
 
 if (is_kernel) {
@@ -53,11 +65,6 @@ if (is_kernel) {
       "//zircon/kernel/object",
       "//zircon/kernel/vm:headers",
     ]
-
-    if (current_os == "win") {
-      # The LLVM header file describing the instrumentation data tests this.
-      defines += [ "_WIN32" ]
-    }
   }
 
   source_set("memory-profile") {
