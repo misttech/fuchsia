@@ -49,7 +49,7 @@ readonly ifconfig_base="$(basename "$ifconfig_loop")"
 # vmstat: always include the timestamp (-t), expected by vmstat_trace.py.
 vmstat_args=(-t)
 ifconfig_args=()
-interval=2  # seconds
+interval=1  # seconds
 prev_opt=
 for opt
 do
