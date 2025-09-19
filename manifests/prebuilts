@@ -561,6 +561,12 @@
              version="git_revision:6c1aba977be6e58e18c8b0d2bd64b3e51ae5e3f9"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"/>
 
+    <!-- rsclient tools -->
+    <package name="fuchsia/tools/rsclient/${platform}"
+             path="prebuilt/rsclient/{{.OS}}-{{.Arch}}"
+             version="git_revision:baf5556c452ab06e749e68d8a96147823f47f702"
+             platforms="linux-amd64"/>
+
     <!-- Zedmon -->
     <package name="fuchsia/infra/zedmon/${platform}"
              path="prebuilt/tools/zedmon"
