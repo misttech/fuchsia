@@ -213,6 +213,7 @@ class AvgWindow:
         self.avg = None
 
     def AddVal(self, val):
+        """Updates the averaging window by replacing the oldest value."""
         self.sum += val - self.data[self.ndx]
         self.data[self.ndx] = val
         self.ndx += 1
@@ -233,6 +234,7 @@ class CalibrationWindow:
         self.ready = False
 
     def AddRefPoint(self, val):
+        """Adds a reference point to the reference calibration window."""
         self.ref_window.AddVal(val)
         if (
             self.ref_window.val() is not None
@@ -241,6 +243,7 @@ class CalibrationWindow:
             self.ready = True
 
     def AddZeroPoint(self, val):
+        """Adds a zero point to the zero calibration window."""
         self.zero_window.AddVal(val)
         if (
             self.ref_window.val() is not None
@@ -249,6 +252,9 @@ class CalibrationWindow:
             self.ready = True
 
     def CalibratePoint(self, val):
+        """Returns a calibrated current measurement given a raw value and the
+        associated average zero and reference values from the calibration windows.
+        """
         cal_ref = self.ref_window.val()
         cal_zero = self.zero_window.val()
         if cal_ref is None or cal_zero is None:
@@ -277,18 +283,27 @@ class CalibrationChannel:
         return self.coarse_window.is_ready() and self.fine_window.is_ready()
 
     def CalibrateSample(self, sample):
+        """Returns a calibrated current measurement based on a raw sample and
+        the averaging windows for the associated channel."""
         coarse, fine = self.val_fetcher(sample)
+
+        # Switch to fine-based measurements for increased accuracy when the
+        # fine value drops below the threshold. Raw fine values are in
+        # microamps while raw coarse values and the final calibrated value are
+        # in milliamps, hence the conversion for fine-based measurements.
         if fine < self.fine_threshold:
-            return self.fine_window.CalibratePoint(fine)
+            return self.fine_window.CalibratePoint(fine) / 1000
         else:
             return self.coarse_window.CalibratePoint(coarse)
 
     def AddRefPoint(self, sample):
+        """Adds a reference point to the coarse and fine averaging windows."""
         coarse, fine = self.val_fetcher(sample)
         self.coarse_window.AddRefPoint(coarse)
         self.fine_window.AddRefPoint(fine)
 
     def AddZeroPoint(self, sample):
+        """Adds a zero point to the coarse and fine averaging windows."""
         coarse, fine = self.val_fetcher(sample)
         self.coarse_window.AddZeroPoint(coarse)
         self.fine_window.AddZeroPoint(fine)
@@ -413,10 +428,10 @@ class Sampler:
                 last_packet_sample_count = len(samples)
 
             for s in packet.samples:
-                # figure out what type of sample this is.  If it is a calibration
-                # sample, we need to feed it to our average windows.
+                # Identify sample type and process accordingly.
                 sample_type = s.usb_gain & 0x30
 
+                # Process measurement samples to determine voltage and current
                 if sample_type == op.SampleType.Measurement:
                     if self.main_cal.is_ready() and self.aux_cal.is_ready():
                         current = self.main_cal.CalibrateSample(s)
@@ -438,7 +453,8 @@ class Sampler:
                             if min_raw_aux is None
                             else min(raw_aux_fine, min_raw_aux)
                         )
-
+                # Feed caliibration samples (zero and reference) to the
+                # averaging windows.
                 elif sample_type == op.SampleType.ZeroCal:
                     self.main_cal.AddZeroPoint(s)
                     self.aux_cal.AddZeroPoint(s)
@@ -487,6 +503,7 @@ class Sampler:
         )
         print("Minimum raw fine aux current value was %d" % (min_raw_aux,))
 
+        # Write finalized measurements to the output file
         for i, s in enumerate(samples):
             if s is not None:
                 common_output = (i * measured_period_nsec, s[0], s[1])
