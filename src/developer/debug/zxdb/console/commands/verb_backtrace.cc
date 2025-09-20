@@ -110,8 +110,15 @@ void RunVerbBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_contex
     return;
   }
 
-  opts.sync_options.force_update = cmd.HasSwitch(kForceRefresh);
-  opts.sync_options.remote_unwind = cmd.HasSwitch(kForceRemoteUnwind);
+  if (cmd.HasSwitch(kForceRefresh)) {
+    opts.sync_options.force_update = true;
+  }
+
+  if (cmd.HasSwitch(kForceRemoteUnwind)) {
+    opts.sync_options.force_update = true;
+    opts.sync_options.remote_unwind = true;
+  }
+
   cmd_context->Output(FormatStack(cmd.thread(), opts));
 }
 
@@ -125,7 +132,7 @@ VerbRecord GetBacktraceVerbRecord() {
   SwitchRecord verbose(kVerboseBacktrace, false, "verbose", 'v');
   SwitchRecord force_refresh(kForceRefresh, false, "force", 'f');
   SwitchRecord force_remote_unwind(kForceRemoteUnwind, false, "force-remote-unwind");
-  backtrace.switches = {force_types, raw, verbose, force_refresh};
+  backtrace.switches = {force_types, raw, verbose, force_refresh, force_remote_unwind};
 
   return backtrace;
 }
