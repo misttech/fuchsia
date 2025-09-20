@@ -396,11 +396,12 @@ def main() -> int:
             #
 
         if not use_jobserver:
+            # Only pass a -j value, not a loadaverage limit value, as Ninja appears to
+            # incorrectly use the loadavg specified by the -l option, and may only
+            # schedule one action at time for minutes on end.
             ninja_cmd += [
                 "-j",
                 args.parallelism,
-                "-l",
-                args.max_load_average,
             ]
 
         ninja_cmd += [
