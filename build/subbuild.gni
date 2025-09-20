@@ -133,13 +133,25 @@ template("subbuild") {
     }
 
     if (cxx_rbe_enable) {
-      args += [ "--cxx-rbe-enable" ]
+      args += [
+        "--cxx-rbe-enable",
+        "--cxx-exec-strategy",
+        cxx_rbe_exec_strategy,
+      ]
     }
     if (link_rbe_enable) {
-      args += [ "--link-rbe-enable" ]
+      args += [
+        "--link-rbe-enable",
+        "--link-exec-strategy",
+        link_rbe_exec_strategy,
+      ]
     }
     if (rust_rbe_enable) {
-      args += [ "--rust-rbe-enable" ]
+      args += [
+        "--rust-rbe-enable",
+        "--rust-exec-strategy",
+        rust_rbe_exec_strategy,
+      ]
     }
     if (defined(invoker.api_level_path)) {
       args += [

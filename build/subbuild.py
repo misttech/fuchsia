@@ -182,14 +182,26 @@ def main() -> int:
         help="Enable remote builds with RBE for C++ targets.",
     )
     parser.add_argument(
+        "--cxx-exec-strategy",
+        help="RBE exec strategy for cxx compilation.",
+    )
+    parser.add_argument(
         "--link-rbe-enable",
         action="store_true",
         help="Enable remote builds with RBE for linking C++ targets.",
     )
     parser.add_argument(
+        "--link-exec-strategy",
+        help="RBE exec strategy for linking.",
+    )
+    parser.add_argument(
         "--rust-rbe-enable",
         action="store_true",
         help="Enable remote builds with RBE for Rust targets.",
+    )
+    parser.add_argument(
+        "--rust-exec-strategy",
+        help="RBE exec strategy for Rust compilation.",
     )
     parser.add_argument(
         "--parallelism",
@@ -307,6 +319,17 @@ def main() -> int:
         rust_rbe_enable="true" if args.rust_rbe_enable else "false",
         sdk_labels_list=f'"{args.target_label}"',
     )
+    if args.cxx_exec_strategy:
+        args_gn_content += f'cxx_rbe_exec_strategy = "{args.cxx_exec_strategy}"'
+    if args.link_exec_strategy:
+        args_gn_content += (
+            f'link_rbe_exec_strategy = "{args.link_exec_strategy}"'
+        )
+    if args.rust_exec_strategy:
+        args_gn_content += (
+            f'rust_rbe_exec_strategy = "{args.rust_exec_strategy}"'
+        )
+
     if args.sdk_id:
         args_gn_content += f'sdk_id = "{args.sdk_id}"\n'
 
