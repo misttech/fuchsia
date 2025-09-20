@@ -168,14 +168,20 @@ pub fn from_product_release_info(
         info.info.version.clone(),
         info.info.repository.clone(),
         slot,
-        "product",
+        "products",
     )
 }
 
 /// Convert a PIB ReleaseInfo instance into a UniqueReleaseInfo instance,
 /// to better suit the format needed by customers of `ffx product get-version`.
 pub fn from_pib_release_info(info: &ReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
-    from_release_info(info.name.clone(), info.version.clone(), info.repository.clone(), slot, "pib")
+    from_release_info(
+        info.name.clone(),
+        info.version.clone(),
+        info.repository.clone(),
+        slot,
+        "product_input_bundles",
+    )
 }
 
 /// Convert a BoardReleaseInfo instance into a UniqueReleaseInfo instance,
@@ -186,7 +192,7 @@ pub fn from_board_release_info(info: &BoardReleaseInfo, slot: &Option<Slot>) -> 
         info.info.version.clone(),
         info.info.repository.clone(),
         slot,
-        "board",
+        "boards",
     )
 }
 
@@ -198,7 +204,7 @@ pub fn from_bib_set_release_info(info: &ReleaseInfo, slot: &Option<Slot>) -> Uni
         info.version.clone(),
         info.repository.clone(),
         slot,
-        "bib_set",
+        "board_input_bundles",
     )
 }
 
@@ -265,9 +271,9 @@ mod tests {
             "1.2.3".to_string(),
             "fuchsia".to_string(),
             vec![],
-            "product".to_string(),
+            "products".to_string(),
         );
-        assert_eq!(info.name_sanitized, "product_product-name");
+        assert_eq!(info.name_sanitized, "products_product-name");
         assert_eq!(info.version_sanitized, "1.2.3");
         assert_eq!(info.repository_sanitized, "fuchsia");
 
@@ -277,9 +283,9 @@ mod tests {
             "1!2@3".to_string(),
             "invalid/repo/path".to_string(),
             vec![],
-            "product".to_string(),
+            "products".to_string(),
         );
-        assert_eq!(info.name_sanitized, "product_product_name_with_spaces");
+        assert_eq!(info.name_sanitized, "products_product_name_with_spaces");
         assert_eq!(info.version_sanitized, "1_2_3");
         assert_eq!(info.repository_sanitized, "invalid_repo_path");
 
@@ -289,9 +295,9 @@ mod tests {
             "VERSION".to_string(),
             "REPOSITORY".to_string(),
             vec![],
-            "product".to_string(),
+            "products".to_string(),
         );
-        assert_eq!(info.name_sanitized, "product_productname");
+        assert_eq!(info.name_sanitized, "products_productname");
         assert_eq!(info.version_sanitized, "version");
         assert_eq!(info.repository_sanitized, "repository");
     }
