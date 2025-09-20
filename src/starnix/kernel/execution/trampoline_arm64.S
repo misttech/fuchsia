@@ -155,7 +155,16 @@ FUNCTION(restricted_return_loop)
   .cfi_offset x29, 0xE8
   .cfi_offset lr, 0xF0   // x30
   .cfi_offset sp, 0xF8   // x31
-  .cfi_offset pc, 0x100  // x32
+
+  // We cannot refer directly to the PC register as per the AArch64 manual:
+  // https://developer.arm.com/documentation/dui0801/l/Overview-of-AArch64-state/Predeclared-core-register-names-in-AArch64-state?lang=en,
+  // attempting to do so will silently not produce a CFI directive to recover that register.
+  // Instead, we are handcrafting our own DW_CFA_offset_extended_sf CFI expression, pointing at
+  // register "32" (which is not specified in the DWARF standard, but the unwinder understands to be
+  // "PC") and a value corresponding to the next stack slot at offset 0x100 in SLEB128 format per
+  // the format specification for DW_CFA_offset_extended_sf. This way, the unwinder can recover both
+  // PC and LR, which enables finding the rest of the restricted mode stack frames.
+  .cfi_escape 0x11, 32, 0x40
 
   // Invoke callback with context and reason_code:
   //       fn restricted_exit_callback_c(
@@ -253,7 +262,16 @@ FUNCTION(restricted_return_loop_aarch32)
   .cfi_offset x29, 0xE8
   .cfi_offset lr, 0xF0   // x30
   .cfi_offset sp, 0xF8   // x31
-  .cfi_offset pc, 0x100  // x32
+
+  // We cannot refer directly to the PC register as per the AArch64 manual:
+  // https://developer.arm.com/documentation/dui0801/l/Overview-of-AArch64-state/Predeclared-core-register-names-in-AArch64-state?lang=en,
+  // attempting to do so will silently not produce a CFI directive to recover that register.
+  // Instead, we are handcrafting our own DW_CFA_offset_extended_sf CFI expression, pointing at
+  // register "32" (which is not specified in the DWARF standard, but the unwinder understands to be
+  // "PC") and a value corresponding to the next stack slot at offset 0x100 in SLEB128 format per
+  // the format specification for DW_CFA_offset_extended_sf. This way, the unwinder can recover both
+  // PC and LR, which enables finding the rest of the restricted mode stack frames.
+  .cfi_escape 0x11, 32, 0x40
 
   // Invoke callback with context and reason_code:
   //       fn restricted_exit_callback_c(
