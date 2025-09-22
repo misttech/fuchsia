@@ -545,6 +545,77 @@ perf_event_attr example_sampling_attr(uint64_t sample_type) {
   return attr;
 }
 
+// TODO(https://fxbug.dev/398914921): The Linux version of this test will fail because
+// we are currently testing against semi-hardcoded values in the Starnix implementation.
+// Use better EXPECT statements when we grab real values.
+//
+// We avoid checking the absolute value for sample id, because its value rely on a global
+// counter that might be updated through other tests. We issue multiple perf_event_open()
+// syscall in this test and validate sample_id got updated for different event group.
+TEST(PerfEventOpenTest, SampleIdIsValid) {
+  if (test_helper::HasSysAdmin()) {
+    perf_event_attr attr_task_clock =
+        example_sampling_attr(PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_ID);
+    attr_task_clock.type = PERF_TYPE_SOFTWARE;
+    attr_task_clock.config = PERF_COUNT_SW_TASK_CLOCK;
+
+    perf_event_attr attr_cpu_clock = example_sampling_attr(PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_ID);
+    attr_task_clock.type = PERF_TYPE_SOFTWARE;
+    attr_cpu_clock.config = PERF_COUNT_SW_CPU_CLOCK;
+
+    int32_t fd_task_1 = sys_perf_event_open(&attr_task_clock, example_pid, example_cpu,
+                                            example_group_fd, example_flags);
+    int32_t fd_task_2 =
+        sys_perf_event_open(&attr_task_clock, example_pid, example_cpu, fd_task_1, example_flags);
+    int32_t fd_cpu_1 = sys_perf_event_open(&attr_cpu_clock, example_pid, example_cpu,
+                                           example_group_fd, example_flags);
+    int32_t fd_cpu_2 =
+        sys_perf_event_open(&attr_cpu_clock, example_pid, example_cpu, fd_cpu_1, example_flags);
+
+    auto get_sample_id = [](int32_t fd) {
+      int num_pages = 2;
+      size_t data_size = num_pages * getpagesize();
+      size_t buffer_size = getpagesize() + data_size;
+      void* address = mmap(nullptr, buffer_size, PROT_READ, MAP_SHARED, fd, 0);
+      EXPECT_NE(address, MAP_FAILED);
+
+      EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
+      printf("This is an event\n");
+      EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
+
+      perf_event_mmap_page* metadata = (perf_event_mmap_page*)address;
+      uint64_t sample_id = 0;
+      uint64_t id;
+      uint64_t curr_pointer = metadata->data_tail;
+      if (curr_pointer < metadata->data_head) {
+        char* record_start = static_cast<char*>(address) + metadata->data_offset +
+                             metadata->data_tail + curr_pointer;
+        char* record_details_start = record_start + sizeof(perf_event_header);
+        struct perf_record_sample {
+          uint64_t sample_id;
+          uint64_t id;
+        };
+        struct perf_record_sample* record_details =
+            (struct perf_record_sample*)record_details_start;
+        sample_id = record_details->sample_id;
+        id = record_details->id;
+        EXPECT_EQ(sample_id, id);
+      }
+      EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
+      return sample_id;
+    };
+
+    uint64_t task_id_1 = get_sample_id(fd_task_1);
+    uint64_t task_id_2 = get_sample_id(fd_task_2);
+    uint64_t cpu_id_1 = get_sample_id(fd_cpu_1);
+    uint64_t cpu_id_2 = get_sample_id(fd_cpu_2);
+
+    EXPECT_EQ(task_id_1, task_id_2);
+    EXPECT_EQ(cpu_id_1, cpu_id_2);
+    EXPECT_LT(task_id_1, cpu_id_1);
+  }
+}
+
 TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
   if (test_helper::HasSysAdmin()) {
     perf_event_attr attr = example_sampling_attr(PERF_SAMPLE_TIME);
@@ -596,7 +667,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
   if (test_helper::HasSysAdmin()) {
     perf_event_attr attr =
         example_sampling_attr(PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_IP | PERF_SAMPLE_TID |
-                              PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID | PERF_SAMPLE_PERIOD);
+                              PERF_SAMPLE_ID | PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_PERIOD);
     int32_t file_descriptor =
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
 
@@ -687,11 +758,10 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         uint64_t nr;
       };
       struct perf_record_sample* record_details = (struct perf_record_sample*)record_details_start;
-      EXPECT_GE(record_details->sample_id, (uint64_t)1);
       EXPECT_GE(record_details->ip, (uint64_t)1);
       EXPECT_GE(record_details->pid, (uint64_t)0);
       EXPECT_GE(record_details->tid, (uint64_t)1);
-      EXPECT_GE(record_details->id, (uint64_t)1);
+      EXPECT_EQ(record_details->id, record_details->sample_id);
       EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
       // On average we are getting ~100 samples for 100ms hardcoded sample duration.
       EXPECT_GE(record_details->nr, (uint64_t)1);
