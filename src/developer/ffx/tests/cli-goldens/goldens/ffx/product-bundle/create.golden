@@ -3,7 +3,8 @@
   "description": "Construct a product bundle using a platform, product config, and board config.",
   "examples": [
     "// Create a minimal.arm64 product bundle in a local fuchsia checkout.\nffx product-bundle create --product-config minimal --board-config arm64\n\n// This is shorthand for the above command.\nffx product-bundle create minimal.arm64\n    ",
-    "// Create a minimal.arm64 product bundle using prebuilts in CIPD.\nffx product-bundle create \\\n    --platform 29.20250826.6.1 \\\n    --product-config minimal \\\n    --board-config cipd://fuchsia/assembly/boards/arm64@29.20250826.6.1\n    "
+    "// Create a minimal.arm64 product bundle using prebuilts in CIPD.\nffx product-bundle create \\\n    --platform 29.20250826.6.1 \\\n    --product-config minimal \\\n    --board-config cipd://fuchsia/assembly/boards/arm64@29.20250826.6.1\n    ",
+    "// Create a minimal.vim3 product bundle using a board config from MOS.\nffx product-bundle create \\\n    --platform 29.20250826.6.1 \\\n    --product-config minimal \\\n    --board-config mos://fuchsia/boards/vim3@29.20250916.6.1\n    "
   ],
   "flags": [
     {
@@ -104,6 +105,18 @@
       "long": "--out",
       "short": null,
       "description": "the location to write the product bundle to.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "auth"
+        }
+      },
+      "optionality": "optional",
+      "long": "--auth",
+      "short": null,
+      "description": "authentication method to use.",
       "hidden": false
     }
   ],

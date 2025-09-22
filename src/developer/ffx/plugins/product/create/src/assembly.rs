@@ -21,21 +21,21 @@ pub struct Assembly {
 }
 
 impl Assembly {
-    pub fn new(
+    pub async fn new(
         cache: &ArtifactCache,
         platform: Option<String>,
         product_config: String,
         board_config: String,
     ) -> Result<Self, ArtifactError> {
-        let product_config_path = cache.resolve_product(product_config)?;
+        let product_config_path = cache.resolve_product(product_config).await?;
         let product_config =
             ProductConfig::from_dir(&product_config_path).context("Reading product config")?;
 
-        let board_config_path = cache.resolve_board(board_config)?;
+        let board_config_path = cache.resolve_board(board_config).await?;
         let board_config =
             BoardConfig::from_dir(&board_config_path).context("Reading board config")?;
 
-        let platform_path = cache.resolve_platform(platform, &board_config.arch)?;
+        let platform_path = cache.resolve_platform(platform, &board_config.arch).await?;
         let platform =
             PlatformArtifacts::from_dir_with_path(&platform_path).context("Reading platform")?;
 

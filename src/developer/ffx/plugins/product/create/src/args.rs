@@ -7,6 +7,7 @@
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
 use ffx_core::ffx_command;
+use pbms::AuthFlowChoice;
 
 /// Construct a product bundle using a platform, product config, and board
 /// config.
@@ -48,6 +49,13 @@ ffx product-bundle create \\
     --platform 29.20250826.6.1 \\
     --product-config minimal \\
     --board-config cipd://fuchsia/assembly/boards/arm64@29.20250826.6.1
+    ",
+    example = "\
+    // Create a minimal.vim3 product bundle using a board config from MOS.
+ffx product-bundle create \\
+    --platform 29.20250826.6.1 \\
+    --product-config minimal \\
+    --board-config mos://fuchsia/boards/vim3@29.20250916.6.1
     "
 )]
 pub struct CreateCommand {
@@ -88,4 +96,8 @@ pub struct CreateCommand {
     /// the location to write the product bundle to.
     #[argh(option)]
     pub out: Option<Utf8PathBuf>,
+
+    /// authentication method to use.
+    #[argh(option, default = "AuthFlowChoice::Default")]
+    pub auth: AuthFlowChoice,
 }

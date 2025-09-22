@@ -17,6 +17,7 @@ use ffx_writer::{SimpleWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use product_bundle::{ProductBundleBuilder, Slot};
 use tempfile::tempdir;
+use {gcs, pbms, structured_ui};
 
 #[derive(FfxTool)]
 pub struct ProductBundleCreateTool {
@@ -97,6 +98,9 @@ struct SanitizedCreateCommand {
     /// The version to add to the output product bundle.
     pub output_version: Option<String>,
 
+    /// The authentication flow to use to access googleapis.
+    pub auth: pbms::AuthFlowChoice,
+
     /// The tuf keys to use.
     pub tuf_keys: Option<Utf8PathBuf>,
 
@@ -151,12 +155,14 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
         let output_name = cmd.output_name;
         let output_version = cmd.output_version;
         let tuf_keys = cmd.tuf_keys;
+        let auth = cmd.auth;
         Ok(Self {
             platform,
             product_config,
             board_config,
             output_name,
             output_version,
+            auth,
             tuf_keys,
             result,
         })
@@ -179,8 +185,17 @@ async fn sanitized_product_bundle_create(
     let tmp = tempdir().unwrap();
     let tmp_path = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
 
-    let cache = ArtifactCache::new(build_dir)?;
-    let assembly = Assembly::new(&cache, cmd.platform, cmd.product_config, cmd.board_config)?;
+    let gcs_client = gcs::client::Client::initial().map_err(|e| {
+        ArtifactError::new(anyhow::anyhow!("Failed to initialize GCS client: {}", e))
+    })?;
+    let token = pbms::handle_new_access_token(&cmd.auth, &structured_ui::MockUi::new())
+        .await
+        .context("Failed to handle or retrieve new access token")?;
+    gcs_client.set_access_token(token).await;
+
+    let cache = ArtifactCache::new(build_dir, gcs_client)?;
+    let assembly =
+        Assembly::new(&cache, cmd.platform, cmd.product_config, cmd.board_config).await?;
     writer
         .line(format!("Staged the artifacts\n{}", assembly.version_string()))
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;

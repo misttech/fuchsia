@@ -33,6 +33,18 @@ pub enum Architecture {
     RISCV64,
 }
 
+impl FromStr for Architecture {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "x64" => Ok(Self::X64),
+            "arm64" => Ok(Self::ARM64),
+            "riscv64" => Ok(Self::RISCV64),
+            _ => Err(anyhow!("Unknown architecture: {}", s)),
+        }
+    }
+}
+
 impl std::fmt::Display for Architecture {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

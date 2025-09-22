@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use crate::artifact::{Artifact, CIPDPackage};
-use crate::{build_api, cipd};
+use crate::{build_api, cipd, mos};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use assembly_config_schema::Architecture;
 use camino::Utf8PathBuf;
+use gcs::client::Client;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -16,16 +17,17 @@ pub struct ArtifactCache {
     build_dir: Option<Utf8PathBuf>,
     cache: Utf8PathBuf,
     ensured_artifacts: Utf8PathBuf,
+    gcs_client: Client,
 }
 
 impl ArtifactCache {
     /// Construct a new ArtifactCache.
-    pub fn new(build_dir: Option<Utf8PathBuf>) -> Result<Self> {
+    pub fn new(build_dir: Option<Utf8PathBuf>, gcs_client: Client) -> Result<Self> {
         let home = std::env::home_dir().unwrap();
         let home = Utf8PathBuf::from_path_buf(home).unwrap();
         let cache = home.join(".fuchsia").join("cipd");
         let ensured_artifacts = cache.join("artifacts");
-        Ok(Self { build_dir, cache, ensured_artifacts })
+        Ok(Self { build_dir, cache, ensured_artifacts, gcs_client })
     }
 
     /// Delete all ensured artifacts.
@@ -37,33 +39,38 @@ impl ArtifactCache {
     }
 
     /// Resolve a product to a local path, downloading it if necessary.
-    pub fn resolve_product(&self, product_config: String) -> Result<Utf8PathBuf, ArtifactError> {
+    pub async fn resolve_product(
+        &self,
+        product_config: String,
+    ) -> Result<Utf8PathBuf, ArtifactError> {
         self.resolve_product_or_board_with_suggestion(
             product_config,
             "products.json",
             "product",
             &["fuchsia/assembly/products", "fuchsia_internal/assembly/products"],
         )
+        .await
     }
 
     /// Resolve a board to a local path, downloading it if necessary.
-    pub fn resolve_board(&self, board_config: String) -> Result<Utf8PathBuf, ArtifactError> {
+    pub async fn resolve_board(&self, board_config: String) -> Result<Utf8PathBuf, ArtifactError> {
         self.resolve_product_or_board_with_suggestion(
             board_config,
             "boards.json",
             "board",
             &["fuchsia/assembly/boards", "fuchsia_internal/assembly/boards"],
         )
+        .await
     }
 
-    fn resolve_product_or_board_with_suggestion(
+    async fn resolve_product_or_board_with_suggestion(
         &self,
         artifact: String,
         build_api: &str,
         artifact_type: &str,
         cipd_dirs: &[&str],
     ) -> Result<Utf8PathBuf, ArtifactError> {
-        self.resolve_product_or_board_internal(artifact, build_api).map_err(|e| {
+        self.resolve_product_or_board_internal(artifact, build_api).await.map_err(|e| {
             let suggested_tags = match self.suggest_product_or_board(build_api, cipd_dirs) {
                 Ok(tags) => tags,
                 Err(e) => return ArtifactError::new(e),
@@ -81,17 +88,21 @@ impl ArtifactCache {
         })
     }
 
-    fn resolve_product_or_board_internal(
+    async fn resolve_product_or_board_internal(
         &self,
         artifact: String,
         build_api: &str,
     ) -> Result<Utf8PathBuf, ArtifactError> {
         if let Some(artifact) = cipd::parse_cipd_artifact(&artifact)? {
-            return self.resolve(&artifact);
+            return self.resolve(&artifact).await;
+        }
+
+        if let Some(artifact) = mos::parse_mos_artifact(&artifact)? {
+            return self.resolve(&artifact).await;
         }
 
         if let Some(artifact) = parse_local_path(&artifact)? {
-            return self.resolve(&artifact);
+            return self.resolve(&artifact).await;
         }
 
         self.resolve(&build_api::parse_local_artifact(
@@ -99,23 +110,24 @@ impl ArtifactCache {
             self.build_dir.as_ref(),
             build_api,
         )?)
+        .await
     }
 
     /// Resolve a platform to a local path, downloading it if necessary.
-    pub fn resolve_platform(
+    pub async fn resolve_platform(
         &self,
         platform: Option<String>,
         arch: &Architecture,
     ) -> Result<Utf8PathBuf, ArtifactError> {
-        self.resolve_platform_with_suggestion(platform, arch)
+        self.resolve_platform_with_suggestion(platform, arch).await
     }
 
-    fn resolve_platform_with_suggestion(
+    async fn resolve_platform_with_suggestion(
         &self,
         platform: Option<String>,
         arch: &Architecture,
     ) -> Result<Utf8PathBuf, ArtifactError> {
-        self.resolve_platform_internal(platform, arch).map_err(|e| {
+        self.resolve_platform_internal(platform, arch).await.map_err(|e| {
             let suggested_tags = match self.suggest_platform(arch) {
                 Ok(tags) => tags,
                 Err(e) => return ArtifactError::new(e),
@@ -132,7 +144,7 @@ impl ArtifactCache {
         })
     }
 
-    fn resolve_platform_internal(
+    async fn resolve_platform_internal(
         &self,
         platform: Option<String>,
         arch: &Architecture,
@@ -140,21 +152,25 @@ impl ArtifactCache {
         let platform = match platform {
             None => {
                 let platform_artifact = build_api::get_default_platform(self.build_dir.as_ref())?;
-                return self.resolve(&platform_artifact);
+                return self.resolve(&platform_artifact).await;
             }
             Some(platform) => platform,
         };
 
         if let Some(artifact) = cipd::parse_cipd_artifact(&platform)? {
-            return self.resolve(&artifact);
+            return self.resolve(&artifact).await;
+        }
+
+        if let Some(artifact) = mos::parse_mos_artifact(&platform)? {
+            return self.resolve(&artifact).await;
         }
 
         if let Some(artifact) = parse_local_path(&platform)? {
-            return self.resolve(&artifact);
+            return self.resolve(&artifact).await;
         }
 
         // Assume the input is a tag to the default CIPD location.
-        self.resolve(&cipd::get_default_platform(&platform, arch))
+        self.resolve(&cipd::get_default_platform(&platform, arch)).await
     }
 
     /// Retrieve a list of suggested product or board artifacts.
@@ -182,7 +198,7 @@ impl ArtifactCache {
     }
 
     /// Resolve an artifact to a local path, downloading it if necessary.
-    fn resolve(&self, artifact: &Artifact) -> Result<Utf8PathBuf, ArtifactError> {
+    async fn resolve(&self, artifact: &Artifact) -> Result<Utf8PathBuf, ArtifactError> {
         match artifact {
             Artifact::Local(path) => Ok(path.clone()),
             Artifact::CIPD(package) => {
@@ -190,7 +206,17 @@ impl ArtifactCache {
                 cipd::download(package, &destination, &self.cache)?;
                 Ok(destination)
             }
-            Artifact::MOS(_) => Err(anyhow!("MOS identifiers are not supported").into()),
+            Artifact::MOS(identifier) => {
+                let gcs_client = &self.gcs_client;
+                let package = mos::get_cipd_package_from_mos_artifact(&identifier, gcs_client)
+                    .await
+                    .map_err(|_| {
+                        anyhow::anyhow!(format!("Unable to retrieve [{}].", identifier.id()))
+                    })?;
+                let destination = self.ensured_artifacts.join(package.path.clone());
+                cipd::download(&package, &destination, &self.cache)?;
+                Ok(destination)
+            }
         }
     }
 }
@@ -255,8 +281,8 @@ mod tests {
     use std::fs::File;
     use tempfile::tempdir;
 
-    #[test]
-    fn test_resolve_board_by_name() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_resolve_board_by_name() {
         let tmp_dir = tempdir().unwrap();
         let tmp_path = Utf8PathBuf::from_path_buf(tmp_dir.path().to_path_buf()).unwrap();
 
@@ -274,25 +300,29 @@ mod tests {
         std::fs::create_dir_all(board_path.parent().unwrap()).unwrap();
         File::create(&board_path).unwrap();
 
-        let cache = ArtifactCache::new(Some(tmp_path.clone())).unwrap();
-        let resolved_path = cache.resolve_board("board_a".to_string()).unwrap();
+        let cache =
+            ArtifactCache::new(Some(tmp_path.clone()), gcs::client::Client::initial().unwrap())
+                .unwrap();
+        let resolved_path = cache.resolve_board("board_a".to_string()).await.unwrap();
         assert_eq!(resolved_path, board_path);
     }
 
-    #[test]
-    fn test_resolve_board_by_path() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_resolve_board_by_path() {
         let tmp_dir = tempdir().unwrap();
         let tmp_path = Utf8PathBuf::from_path_buf(tmp_dir.path().to_path_buf()).unwrap();
         let board_path = tmp_path.join("board");
         File::create(&board_path).unwrap();
 
-        let cache = ArtifactCache::new(Some(tmp_path.clone())).unwrap();
-        let resolved_path = cache.resolve_board(board_path.to_string()).unwrap();
+        let cache =
+            ArtifactCache::new(Some(tmp_path.clone()), gcs::client::Client::initial().unwrap())
+                .unwrap();
+        let resolved_path = cache.resolve_board(board_path.to_string()).await.unwrap();
         assert_eq!(resolved_path, board_path);
     }
 
-    #[test]
-    fn test_resolve_platform_default() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_resolve_platform_default() {
         let tmp_dir = tempdir().unwrap();
         let tmp_path = Utf8PathBuf::from_path_buf(tmp_dir.path().to_path_buf()).unwrap();
 
@@ -311,21 +341,27 @@ mod tests {
         std::fs::create_dir_all(platform_path.parent().unwrap()).unwrap();
         File::create(&platform_path).unwrap();
 
-        let cache = ArtifactCache::new(Some(tmp_path.clone())).unwrap();
-        let resolved_path = cache.resolve_platform(None, &Architecture::X64).unwrap();
+        let cache =
+            ArtifactCache::new(Some(tmp_path.clone()), gcs::client::Client::initial().unwrap())
+                .unwrap();
+        let resolved_path = cache.resolve_platform(None, &Architecture::X64).await.unwrap();
         assert_eq!(resolved_path, platform_path);
     }
 
-    #[test]
-    fn test_resolve_platform_by_path() {
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_resolve_platform_by_path() {
         let tmp_dir = tempdir().unwrap();
         let tmp_path = Utf8PathBuf::from_path_buf(tmp_dir.path().to_path_buf()).unwrap();
         let platform_path = tmp_path.join("platform");
         File::create(&platform_path).unwrap();
 
-        let cache = ArtifactCache::new(Some(tmp_path.clone())).unwrap();
-        let resolved_path =
-            cache.resolve_platform(Some(platform_path.to_string()), &Architecture::X64).unwrap();
+        let cache =
+            ArtifactCache::new(Some(tmp_path.clone()), gcs::client::Client::initial().unwrap())
+                .unwrap();
+        let resolved_path = cache
+            .resolve_platform(Some(platform_path.to_string()), &Architecture::X64)
+            .await
+            .unwrap();
         assert_eq!(resolved_path, platform_path);
     }
 }
