@@ -18,6 +18,9 @@ struct pdev_power_ops {
   zx_status_t (*cpu_off)();
   zx_status_t (*cpu_on)(uint64_t hw_cpu_id, paddr_t entry, uint64_t context);
   zx::result<power_cpu_state> (*get_cpu_state)(uint64_t hw_cpu_id);
+  zx_status_t (*opp_set)(uint32_t domain_id, uint64_t opp);
+  zx::result<uint64_t> (*opp_get)(uint32_t domain_id);
+  zx::result<size_t> (*opp_get_domain_count)();
 };
 
 void pdev_register_power(const pdev_power_ops* ops);
