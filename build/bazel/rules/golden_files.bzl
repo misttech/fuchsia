@@ -35,8 +35,17 @@ def _verify_golden_files_impl(ctx):
     if ctx.attr.golden_dir:
         verify_args.add("--golden-dir=" + ctx.attr.golden_dir)
 
+    execution_requirements = {}
     if update_goldens:
         verify_args.add("--bless")
+
+        # The Bazel sandbox must be disabled to update source files.
+        execution_requirements["no-sandbox"] = "1"
+
+        # Disable remoting and caching too since we are modifying local files.
+        execution_requirements["no-remote"] = "1"
+        execution_requirements["no-cache"] = "1"
+
     verify_args.add("--label", ctx.label)
 
     comparison_manifest_file = None
@@ -140,6 +149,7 @@ def _verify_golden_files_impl(ctx):
         arguments = [verify_args],
         mnemonic = "VerifyGoldenFiles",
         progress_message = "Verifying golden files for %s" % ctx.label.name,
+        execution_requirements = execution_requirements,
     )
 
     # TODO(https://fxbug.dev/427998443): Provide metadata for //:golden_files.
