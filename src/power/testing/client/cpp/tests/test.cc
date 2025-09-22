@@ -24,22 +24,15 @@ TEST_F(PowerFrameworkTestRealmTest, ConnectTest) {
   std::vector<fuchsia_power_broker::PowerLevel> levels = {0, 1};
   std::vector<fuchsia_power_broker::LevelDependency> level_deps{};
 
-  zx::result<fidl::Endpoints<fuchsia_power_broker::CurrentLevel>> current_level_endpoints =
-      fidl::CreateEndpoints<fuchsia_power_broker::CurrentLevel>();
-  zx::result<fidl::Endpoints<fuchsia_power_broker::RequiredLevel>> required_level_endpoints =
-      fidl::CreateEndpoints<fuchsia_power_broker::RequiredLevel>();
-
-  fuchsia_power_broker::LevelControlChannels level_control_endpoints{{
-      .current = std::move(current_level_endpoints->server),
-      .required = std::move(required_level_endpoints->server),
-  }};
+  zx::result<fidl::Endpoints<fuchsia_power_broker::ElementRunner>> element_runner =
+      fidl::CreateEndpoints<fuchsia_power_broker::ElementRunner>();
 
   fuchsia_power_broker::ElementSchema schema{{
       .element_name = "power-framework-test-realm-test-element",
       .initial_current_level = static_cast<uint8_t>(0),
       .valid_levels = std::move(levels),
       .dependencies = std::move(level_deps),
-      .level_control_channels = std::move(level_control_endpoints),
+      .element_runner = std::move(element_runner->client),
   }};
 
   auto add_element_result = fidl::Call(*realm.component().Connect<fuchsia_power_broker::Topology>())

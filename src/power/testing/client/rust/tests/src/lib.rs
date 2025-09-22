@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl::endpoints::create_proxy;
+use fidl::endpoints::{create_endpoints, create_proxy};
 use fuchsia_component_test::RealmBuilder;
 use power_framework_test_realm::{PowerFrameworkTestRealmBuilder, PowerFrameworkTestRealmInstance};
 
@@ -21,11 +21,10 @@ async fn test_connect_and_call_all_protocols() -> Result<()> {
     let realm = realm_builder.build().await?;
 
     let topology: fbroker::TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
-    let (_current_level, current_level_server_end) = create_proxy::<fbroker::CurrentLevelMarker>();
-    let (_required_level, required_level_server_end) =
-        create_proxy::<fbroker::RequiredLevelMarker>();
     let (_element_control, element_control_server_end) =
         create_proxy::<fbroker::ElementControlMarker>();
+    let (element_runner_client_end, _element_runner_server_end) =
+        create_endpoints::<fbroker::ElementRunnerMarker>();
 
     topology
         .add_element(fbroker::ElementSchema {
@@ -33,11 +32,8 @@ async fn test_connect_and_call_all_protocols() -> Result<()> {
             initial_current_level: Some(0),
             valid_levels: Some(vec![0, 1]),
             dependencies: Some(vec![]),
-            level_control_channels: Some(fbroker::LevelControlChannels {
-                current: current_level_server_end,
-                required: required_level_server_end,
-            }),
             element_control: Some(element_control_server_end),
+            element_runner: Some(element_runner_client_end),
             ..Default::default()
         })
         .await
