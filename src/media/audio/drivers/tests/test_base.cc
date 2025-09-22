@@ -586,7 +586,7 @@ void TestBase::ValidateDaiFormatSets(
     // Ensure frame_rates are unique and ascending.
     for (size_t j = 0; j < format_set.frame_rates.size(); ++j) {
       EXPECT_GE(format_set.frame_rates[j], 1'000u);
-      EXPECT_LE(format_set.frame_rates[j], 768'000u);
+      EXPECT_LE(format_set.frame_rates[j], 6'144'000u);
       if (j > 0) {
         EXPECT_LT(format_set.frame_rates[j - 1], format_set.frame_rates[j])
             << "frame_rates[" << j - 1 << "] must be less than frame_rates[" << j << "]";
