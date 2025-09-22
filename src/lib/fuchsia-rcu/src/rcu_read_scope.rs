@@ -24,21 +24,6 @@ impl RcuReadScope {
         rcu_read_lock();
         Self { _marker: PhantomData }
     }
-
-    /// Get a reference to an object managed by the RCU state machine.
-    ///
-    /// The object referenced by the pointer will remain valid until the `RcuReadScope` is dropped.
-    /// However, another thread running concurrently might see a different value for the object.
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn as_ref<T>(&self, ptr: *const T) -> Option<&T> {
-        if ptr.is_null() {
-            None
-        } else {
-            // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we call
-            // we drop the RcuReadScope.
-            Some(unsafe { &*ptr })
-        }
-    }
 }
 
 impl Drop for RcuReadScope {

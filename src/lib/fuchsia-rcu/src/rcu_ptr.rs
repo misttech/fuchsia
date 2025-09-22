@@ -45,7 +45,7 @@ impl<T> RcuPtr<T> {
     /// object.
     pub fn get(&self) -> RcuReadGuard<T> {
         let scope = RcuReadScope::new();
-        let ptr = self.read(&scope);
+        let ptr = self.read(&scope).as_ptr();
         assert!(!ptr.is_null());
         RcuReadGuard { scope, ptr }
     }
@@ -54,8 +54,11 @@ impl<T> RcuPtr<T> {
     ///
     /// The returned pointer will remain valid until the `RcuReadScope` is dropped. However, another
     /// thread running concurrently might see a different value for the object.
-    pub fn read(&self, _scope: &RcuReadScope) -> *const T {
-        rcu_read_pointer(&self.ptr)
+    pub fn read<'a>(&self, scope: &'a RcuReadScope) -> RcuPtrRef<'a, T> {
+        let ptr = rcu_read_pointer(&self.ptr);
+        // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we drop
+        // the RcuReadScope whose lifetime is described by the lifetime parameter.
+        unsafe { RcuPtrRef::new(scope, ptr) }
     }
 
     /// Assign a new value to the RCU pointer.
@@ -67,6 +70,15 @@ impl<T> RcuPtr<T> {
         rcu_assign_pointer(&self.ptr, ptr);
     }
 
+    /// Assign a new value to the RCU pointer.
+    ///
+    /// Concurrent readers may continue to see the old value of the pointer until the RCU state
+    /// machine has made sufficient progress. To wait until all concurrent readers have dropped
+    /// their read guards, call `rcu_synchronize()`.
+    pub fn assign_ptr(&self, ptr: RcuPtrRef<'_, T>) {
+        self.assign(ptr.as_mut_ptr());
+    }
+
     /// Replace the value of the RCU pointer.
     ///
     /// Concurrent readers may continue to see the old value of the pointer until the RCU state
@@ -74,6 +86,15 @@ impl<T> RcuPtr<T> {
     /// their read guards, call `rcu_synchronize()`.
     pub fn replace(&self, ptr: *mut T) -> *mut T {
         rcu_replace_pointer(&self.ptr, ptr)
+    }
+
+    /// Replace the value of the RCU pointer.
+    ///
+    /// Concurrent readers may continue to see the old value of the pointer until the RCU state
+    /// machine has made sufficient progress. To wait until all concurrent readers have dropped
+    /// their read guards, call `rcu_synchronize()`.
+    pub fn replace_ptr(&self, ptr: RcuPtrRef<'_, T>) -> *mut T {
+        self.replace(ptr.as_mut_ptr())
     }
 
     /// Poison the RCU pointer.
@@ -115,5 +136,94 @@ impl<T> Deref for RcuReadGuard<T> {
         // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we drop
         // the RcuReadScope.
         unsafe { &*self.ptr }
+    }
+}
+
+/// A pointer to an object managed by the RCU state machine.
+///
+/// This pointer is valid for reading until the `RcuReadScope` is dropped.
+pub struct RcuPtrRef<'a, T> {
+    /// The pointer to the object.
+    ptr: *const T,
+
+    /// The scope in which the pointer is valid.
+    _marker: std::marker::PhantomData<&'a T>,
+}
+
+impl<'a, T> Clone for RcuPtrRef<'a, T> {
+    fn clone(&self) -> Self {
+        Self { ptr: self.ptr, _marker: self._marker }
+    }
+}
+
+impl<'a, T> Copy for RcuPtrRef<'a, T> {}
+
+impl<'a, T> RcuPtrRef<'a, T> {
+    /// Create a new `RcuPtrRef` from a pointer and a scope.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must be valid for reading until the `RcuReadScope` is dropped.
+    pub unsafe fn new(_scope: &'a RcuReadScope, ptr: *const T) -> Self {
+        Self { ptr, _marker: std::marker::PhantomData }
+    }
+
+    /// Create a null `RcuPtrRef`.
+    pub fn null() -> Self {
+        Self { ptr: std::ptr::null(), _marker: std::marker::PhantomData }
+    }
+
+    /// Check if the pointer is null.
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    /// Get a reference to the object.
+    ///
+    /// Returns `None` if the pointer is null.
+    pub fn as_ref(&self) -> Option<&'a T> {
+        if self.is_null() {
+            None
+        } else {
+            // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we
+            // drop the RcuReadScope whose lifetime is described by the lifetime parameter.
+            Some(unsafe { &*self.ptr })
+        }
+    }
+
+    /// Get the raw pointer to the object.
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+
+    /// Get the raw mutable pointer to the object.
+    pub fn as_mut_ptr(&self) -> *mut T {
+        self.ptr as *mut T
+    }
+
+    /// Adds a byte offset to the pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the offset is within the bounds of the object and points to a
+    /// valid object of type `U`.
+    pub unsafe fn add_byte_offset<U>(&self, offset: usize) -> RcuPtrRef<'a, U> {
+        let ptr = self.ptr as *const u8;
+        // SAFETY: The caller must ensure that the offset is within the bounds of the object and
+        // points to a valid object of type `U`.
+        RcuPtrRef { ptr: ptr.add(offset) as *const U, _marker: std::marker::PhantomData }
+    }
+
+    /// Subtracts a byte offset from the pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the offset is within the bounds of the object and points to a
+    /// valid object of type `U`.
+    pub unsafe fn sub_byte_offset<U>(&self, offset: usize) -> RcuPtrRef<'a, U> {
+        let ptr = self.ptr as *const u8;
+        // SAFETY: The caller must ensure that the offset is within the bounds of the object and
+        // points to a valid object of type `U`.
+        RcuPtrRef { ptr: ptr.sub(offset) as *const U, _marker: std::marker::PhantomData }
     }
 }

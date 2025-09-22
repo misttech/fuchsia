@@ -4,7 +4,7 @@
 
 #![warn(unsafe_op_in_unsafe_fn)]
 
-use fuchsia_rcu::rcu_ptr::RcuPtr;
+use fuchsia_rcu::rcu_ptr::{RcuPtr, RcuPtrRef};
 use fuchsia_rcu::rcu_read_scope::RcuReadScope;
 use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
 
@@ -35,10 +35,7 @@ impl Default for Link {
 ///
 /// The pointer must point to the given field in a valid instance of the container.
 macro_rules! container_of {
-    ($ptr:expr, $container:path, $field:ident) => {{
-        ($ptr as *const _ as *const u8).sub(memoffset::offset_of!($container, $field))
-            as *const $container
-    }};
+    ($ptr:expr, $container:path, $field:ident) => {{ $ptr.sub_byte_offset::<$container>(memoffset::offset_of!($container, $field)) }};
 }
 
 /// Returns the field of a given container.
@@ -47,10 +44,7 @@ macro_rules! container_of {
 ///
 /// The pointer must point to a valid instance of the container.
 macro_rules! field_of {
-    ($ptr:expr, $container:path, $field:ident, $field_type:ty) => {{
-        ($ptr as *const _ as *const u8).add(memoffset::offset_of!($container, $field))
-            as *const $field_type
-    }};
+    ($ptr:expr, $container:path, $field:ident, $field_type:ty) => {{ $ptr.add_byte_offset::<$field_type>(memoffset::offset_of!($container, $field)) }};
 }
 
 /// `Node` is a node in an `RcuList`.
@@ -72,32 +66,35 @@ impl<T> Node<T> {
     /// Allocates a new node.
     ///
     /// The node must be deallocated using `deferred_dealloc`.
-    fn alloc(data: T) -> *mut Node<T> {
-        Box::into_raw(Box::new(Node { link: Link::default(), data }))
+    fn alloc(scope: &RcuReadScope, data: T) -> RcuPtrRef<'_, Node<T>> {
+        let ptr = Box::into_raw(Box::new(Node { link: Link::default(), data }));
+        // SAFETY: All nodes must be deallocated using `deferred_dealloc`, which defers their
+        // deallocation until all in-flight read operations have completed.
+        unsafe { RcuPtrRef::new(scope, ptr) }
     }
 
     /// Deallocates a node once all in-flight read operations have completed.
     ///
     /// The node must have been allocated using `alloc`.
-    fn deferred_dealloc(scope: &RcuWriteScope, node: *const Node<T>)
+    fn deferred_dealloc(scope: &RcuWriteScope, node: RcuPtrRef<'_, Node<T>>)
     where
         T: Send + Sync + 'static,
     {
-        unsafe { scope.drop_box(node as *mut Node<T>) };
+        unsafe { scope.drop_box(node.as_mut_ptr()) };
     }
 
     /// Returns a pointer to the Link embedded in a Node.
-    fn to_link(node: *const Node<T>) -> *const Link {
+    fn to_link(node: RcuPtrRef<'_, Node<T>>) -> RcuPtrRef<'_, Link> {
         if node.is_null() {
-            return std::ptr::null();
+            return RcuPtrRef::null();
         }
         unsafe { field_of!(node, Node<T>, link, Link) }
     }
 
     /// Returns a pointer to the Node containing the given Link.
-    fn from_link(link: *const Link) -> *const Node<T> {
+    fn from_link(link: RcuPtrRef<'_, Link>) -> RcuPtrRef<'_, Node<T>> {
         if link.is_null() {
-            return std::ptr::null();
+            return RcuPtrRef::null();
         }
         unsafe { container_of!(link, Node<T>, link) }
     }
@@ -139,19 +136,18 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     ///
     /// Requires external synchronization to exclude concurrent writers.
     pub unsafe fn push_front(&self, data: T) {
-        let node = Node::alloc(data);
-        let link_ptr = Node::to_link(node) as *mut Link;
-
         let scope = RcuReadScope::new();
-        let link = scope.as_ref(link_ptr).unwrap();
-        let head_ptr = self.head.read(&scope) as *mut Link;
-        if let Some(head) = scope.as_ref(head_ptr) {
-            head.prev.assign(link_ptr);
-            link.next.assign(head_ptr);
+        let node = Node::alloc(&scope, data);
+        let link_ptr = Node::to_link(node);
+        let link = link_ptr.as_ref().unwrap();
+        let head_ptr = self.head.read(&scope);
+        if let Some(head) = head_ptr.as_ref() {
+            head.prev.assign_ptr(link_ptr);
+            link.next.assign_ptr(head_ptr);
         } else {
-            self.tail.assign(link_ptr);
+            self.tail.assign_ptr(link_ptr);
         }
-        self.head.assign(link_ptr);
+        self.head.assign_ptr(link_ptr);
     }
 
     /// Pushes a new element to the back of the list.
@@ -160,19 +156,18 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     ///
     /// Requires external synchronization to exclude concurrent writers.
     pub unsafe fn push_back(&self, data: T) {
-        let node = Node::alloc(data);
-        let link_ptr = Node::to_link(node) as *mut Link;
-
         let scope = RcuReadScope::new();
-        let link = scope.as_ref(link_ptr).unwrap();
-        let tail_ptr = self.tail.read(&scope) as *mut Link;
-        if let Some(tail) = scope.as_ref(tail_ptr) {
-            link.prev.assign(tail_ptr);
-            tail.next.assign(link_ptr);
+        let node = Node::alloc(&scope, data);
+        let link_ptr = Node::to_link(node);
+        let link = link_ptr.as_ref().unwrap();
+        let tail_ptr = self.tail.read(&scope);
+        if let Some(tail) = tail_ptr.as_ref() {
+            link.prev.assign_ptr(tail_ptr);
+            tail.next.assign_ptr(link_ptr);
         } else {
-            self.head.assign(link_ptr);
+            self.head.assign_ptr(link_ptr);
         }
-        self.tail.assign(link_ptr);
+        self.tail.assign_ptr(link_ptr);
     }
 
     /// Removes all elements from the list.
@@ -190,13 +185,14 @@ impl<T: Send + Sync + 'static> RcuList<T> {
         self.head.assign(std::ptr::null_mut());
         self.tail.assign(std::ptr::null_mut());
 
-        while let Some(link) = read_scope.as_ref(current) {
+        while let Some(link) = current.as_ref() {
             let next = link.next.read(&read_scope);
 
             // Other readers may continue to see this entry in the list and use the `next` pointer,
             // but they should not read the `prev` pointer anymore.
             link.prev.poison();
-            Node::deferred_dealloc(scope, Node::<T>::from_link(link));
+            let node = Node::<T>::from_link(current);
+            Node::deferred_dealloc(scope, node);
             current = next;
         }
     }
@@ -231,19 +227,19 @@ impl<T: Send + Sync + 'static> Drop for RcuList<T> {
 pub struct RcuListCursor<'a, T: Send + Sync + 'static> {
     scope: &'a RcuReadScope,
     list: &'a RcuList<T>,
-    current: *const Link,
+    current: RcuPtrRef<'a, Link>,
 }
 
 impl<'a, T: Send + Sync + 'static> RcuListCursor<'a, T> {
     /// Returns the element at the current cursor position.
     pub fn current(&self) -> Option<&T> {
-        let ptr = Node::from_link(self.current);
-        self.scope.as_ref(ptr).map(|node| &node.data)
+        let node = Node::from_link(self.current);
+        node.as_ref().map(|node| &node.data)
     }
 
     /// Advances the cursor to the next element in the list.
     pub fn advance(&mut self) {
-        if let Some(link) = self.scope.as_ref(self.current) {
+        if let Some(link) = self.current.as_ref() {
             self.current = link.next.read(&self.scope);
         }
     }
@@ -262,36 +258,36 @@ impl<'a, T: Send + Sync + 'static> RcuListCursor<'a, T> {
     where
         T: Send + Sync + 'static,
     {
-        let doomed_ptr = Node::<T>::from_link(self.current);
-        if let Some(doomed) = self.scope.as_ref(doomed_ptr) {
-            let link = &doomed.link;
-            let prev = link.prev.read(self.scope) as *mut Link;
-            let next = link.next.read(self.scope) as *mut Link;
+        let node_ptr = Node::<T>::from_link(self.current);
+        if let Some(node) = node_ptr.as_ref() {
+            let link = &node.link;
+            let prev = link.prev.read(&self.scope);
+            let next = link.next.read(&self.scope);
 
             self.current = next;
 
-            if let Some(next) = self.scope.as_ref(next) {
-                next.prev.assign(prev);
+            if let Some(next) = next.as_ref() {
+                next.prev.assign_ptr(prev);
             } else {
-                self.list.tail.assign(prev);
+                self.list.tail.assign_ptr(prev);
             }
-            if let Some(prev) = self.scope.as_ref(prev) {
-                prev.next.assign(next);
+            if let Some(prev) = prev.as_ref() {
+                prev.next.assign_ptr(next);
             } else {
-                self.list.head.assign(next);
+                self.list.head.assign_ptr(next);
             }
 
             // Other readers may continue to see this entry in the list and use the `next` pointer,
             // but they should not read the `prev` pointer anymore.
             link.prev.poison();
-            Node::deferred_dealloc(scope, doomed_ptr);
+            Node::deferred_dealloc(scope, node_ptr);
         }
     }
 }
 
 struct RcuListIter<'a, T: 'static> {
     scope: &'a RcuReadScope,
-    next: *const Link,
+    next: RcuPtrRef<'a, Link>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -299,9 +295,8 @@ impl<'a, T: 'static> Iterator for RcuListIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(node) = self.scope.as_ref(Node::from_link(self.next)) {
-            let link = &node.link;
-            self.next = link.next.read(&self.scope);
+        if let Some(node) = Node::from_link(self.next).as_ref() {
+            self.next = node.link.next.read(&self.scope);
             Some(&node.data)
         } else {
             None
