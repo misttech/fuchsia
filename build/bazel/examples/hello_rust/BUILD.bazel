@@ -22,7 +22,9 @@ rust_binary(
     ],
 
     # TODO(https://fxbug.dev/42065890) make this be included automatically for all rust binaries.
-    deps = select({
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+    ] + select({
         "@platforms//os:fuchsia": ["@fuchsia_sdk//pkg/fdio"],
         "//conditions:default": [],
     }),
@@ -59,7 +61,10 @@ rust_test(
         "-Zpanic_abort_tests",
         "-Cpanic=abort",
     ],
-    deps = ["@fuchsia_sdk//pkg/fdio"],
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+        "@fuchsia_sdk//pkg/fdio",
+    ],
 )
 
 fuchsia_wrap_rust_binary(
