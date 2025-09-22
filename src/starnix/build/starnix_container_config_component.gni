@@ -60,7 +60,7 @@ template("starnix_container_config_component") {
 #     Path to which to write the generated shard. Typically this is a path within target_gen_dir.
 #   offer_from (string)
 #     CF `from` for config capability offers.
-#   offer_to (string)
+#   offer_to (list[string])
 #     CF `to` for config capability offers.
 template("starnix_container_config_offers") {
   assert(defined(invoker.output), "must define an output path")
@@ -68,21 +68,24 @@ template("starnix_container_config_offers") {
   assert(defined(invoker.offer_from), "must define an offer_from")
   _offer_from = invoker.offer_from
   assert(defined(invoker.offer_to), "must define an offer_to")
-  _offer_to = invoker.offer_to
-
+  _args = [
+    "--schema",
+    rebase_path(_config_schema, root_build_dir),
+    "--output",
+    rebase_path(_output, root_build_dir),
+    "--offer-from",
+    _offer_from,
+  ]
+  foreach(one_offer, invoker.offer_to) {
+    _args += [
+      "--offer-to",
+      one_offer,
+    ]
+  }
   python_action(target_name) {
     binary_label = "//src/starnix/build:generate_container_config_shard"
     inputs = [ _config_schema ]
     outputs = [ _output ]
-    args = [
-      "--schema",
-      rebase_path(_config_schema, root_build_dir),
-      "--output",
-      rebase_path(_output, root_build_dir),
-      "--offer-from",
-      _offer_from,
-      "--offer-to",
-      _offer_to,
-    ]
+    args = _args
   }
 }

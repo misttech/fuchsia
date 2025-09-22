@@ -17,7 +17,13 @@ def main() -> int:
     parser.add_argument("--schema", type=argparse.FileType("r"), required=True)
     parser.add_argument("--output", type=argparse.FileType("w"), required=True)
     parser.add_argument("--offer-from", type=str, required=True)
-    parser.add_argument("--offer-to", type=str, required=True)
+    parser.add_argument(
+        "--offer-to",
+        action="append",
+        dest="offers_to",
+        default=[],
+        help="A component to offer the config to. Can be repeated",
+    )
     args = parser.parse_args()
 
     with args.schema as f:
@@ -29,7 +35,7 @@ def main() -> int:
             {
                 "config": cap_schema["config"],
                 "from": args.offer_from,
-                "to": args.offer_to,
+                "to": args.offers_to,
             }
         )
 

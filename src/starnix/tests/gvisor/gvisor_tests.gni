@@ -394,7 +394,7 @@ template("gvisor_test_package") {
   starnix_container_config_offers(_container_config_shard_label) {
     output = _container_config_shard
     offer_from = "#config"
-    offer_to = "#container"
+    offer_to = [ "#container" ]
   }
 
   _bin_resource_label = "${target_name}_bin"
