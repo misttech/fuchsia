@@ -165,7 +165,7 @@ Error ArmEhAbiParser::ParseCompactFromWord(Memory* stack, uint32_t data, Registe
       num_extra_words = (data & 0x00ff0000) >> 16;
       break;
     default:
-      return Error("Unknown FrameHandlerType: %d\n", static_cast<uint16_t>(type));
+      return Error("Unknown FrameHandlerType: %d\n", static_cast<uint8_t>(type));
   }
 
   if (num_extra_words == 0) {

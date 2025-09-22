@@ -18,13 +18,17 @@ class ArmEhAbiParser {
   [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
 
  private:
-  enum class FrameHandlerType : uint16_t {
+  enum class FrameHandlerType : uint8_t {
     // All instructions are within a single 32 bit word.
     kSu16 = 0x00,
-    // The next 16 bits are a number of 16 bit instructions to parse from the extab.
+    // The next byte is a number of 32 bit words to parse from the extab. The difference between
+    // the 16 and 32 variants are to differentiate between types of "descriptors", which "define
+    // regions of interest within a function". These are relevant for exception handling
+    // specifically but not for unwinding. Both variants are handled identically for our purposes.
     kLu16 = 0x01,
-    // The next 16 bits are a number of 32 bit instructions to parse from the extab.
-    kLu32 = 0x02,
+    // The Lu32 descriptor is encoded as 3, despite the specification claiming that it should be 2.
+    // https://github.com/llvm/llvm-project/blob/9542d0a0c661be92db950514b5dc9c5ea6d953af/libunwind/src/Unwind-EHABI.cpp#L58
+    kLu32 = 0x03,
   };
 
   // Given a mask of registers where the bit index corresponds to the register number, pop from the
