@@ -416,7 +416,15 @@ impl KernelResourcesExplorer {
                 }
                 Ok(child) => child,
             };
-            self.explore_job(visitor, child_job_koid, child_job.as_ref(), process_mapped)?;
+            if let Err(status) =
+                self.explore_job(visitor, child_job_koid, child_job.as_ref(), process_mapped)
+            {
+                // If the job disappeared while being explored, we get a BAD_STATE error. In that
+                // case, we want to go to the next job but not fail the entire collection.
+                if status != zx::Status::BAD_STATE {
+                    return Err(status);
+                }
+            }
         }
 
         for process_koid in &processes {
@@ -437,7 +445,9 @@ impl KernelResourcesExplorer {
                 process_mapped.get(process_koid),
             ) {
                 Err(s) => {
-                    if s == zx::Status::NOT_FOUND {
+                    // If the process disappeared while being explored, we get a BAD_STATE error. In
+                    // that case, we want to go to the next job but not fail the entire collection.
+                    if s == zx::Status::BAD_STATE {
                         continue;
                     } else {
                         Err(s)?
@@ -575,6 +585,7 @@ pub mod tests {
         name: zx::Name,
         children: HashMap<zx::Koid, FakeJob>,
         processes: HashMap<zx::Koid, FakeProcess>,
+        status: Option<zx::Status>,
     }
 
     impl FakeJob {
@@ -589,25 +600,48 @@ pub mod tests {
                 name: zx::Name::from_bytes_lossy(name.as_bytes()),
                 children: children.into_iter().map(|c| (c.koid, c)).collect(),
                 processes: processes.into_iter().map(|p| (p.koid, p)).collect(),
+                status: None,
+            }
+        }
+
+        pub fn new_disappearing(koid: u64, status: zx::Status) -> FakeJob {
+            FakeJob {
+                koid: zx::Koid::from_raw(koid),
+                name: zx::Name::default(),
+                children: HashMap::new(),
+                processes: HashMap::new(),
+                status: Some(status),
             }
         }
     }
 
     impl Job for FakeJob {
         fn get_koid(&self) -> Result<zx::Koid, zx::Status> {
-            Ok(self.koid)
+            match self.status {
+                Some(status) => Err(status),
+                None => Ok(self.koid.clone()),
+            }
         }
 
         fn get_name(&self) -> Result<zx::Name, zx::Status> {
-            Ok(self.name.clone())
+            match self.status {
+                Some(status) => Err(status),
+                None => Ok(self.name.clone()),
+            }
         }
 
         fn children(&self) -> Result<Vec<zx::Koid>, zx::Status> {
-            Ok(self.children.keys().copied().collect())
+            match self.status {
+                Some(status) => Err(status),
+                None => Ok(self.children.keys().copied().collect()),
+            }
         }
 
         fn processes(&self) -> Result<Vec<zx::Koid>, zx::Status> {
-            Ok(self.processes.keys().copied().collect())
+            match self.status {
+                Some(status) => Err(status),
+                None => Ok(self.processes.keys().copied().collect()),
+            }
         }
 
         fn get_child_job(
@@ -615,7 +649,12 @@ pub mod tests {
             koid: &zx::Koid,
             _rights: zx::Rights,
         ) -> Result<Box<dyn Job>, zx::Status> {
-            Ok(Box::new(self.children.get(koid).ok_or(Err(zx::Status::NOT_FOUND))?.clone()))
+            match self.status {
+                Some(status) => Err(status),
+                None => {
+                    Ok(Box::new(self.children.get(koid).ok_or(Err(zx::Status::NOT_FOUND))?.clone()))
+                }
+            }
         }
 
         fn get_child_process(
@@ -623,7 +662,12 @@ pub mod tests {
             koid: &zx::Koid,
             _rights: zx::Rights,
         ) -> Result<Box<dyn Process>, zx::Status> {
-            Ok(Box::new(self.processes.get(koid).ok_or(Err(zx::Status::NOT_FOUND))?.clone()))
+            match self.status {
+                Some(status) => Err(status),
+                None => Ok(Box::new(
+                    self.processes.get(koid).ok_or(Err(zx::Status::NOT_FOUND))?.clone(),
+                )),
+            }
         }
     }
 
@@ -633,6 +677,7 @@ pub mod tests {
         name: zx::Name,
         vmos: Vec<zx::VmoInfo>,
         maps: Vec<zx::MapInfo>,
+        status: Option<zx::Status>,
     }
 
     impl FakeProcess {
@@ -647,19 +692,36 @@ pub mod tests {
                 name: zx::Name::from_bytes_lossy(name.as_bytes()),
                 vmos,
                 maps,
+                status: None,
+            }
+        }
+
+        pub fn new_disappearing(koid: u64, status: zx::Status) -> FakeProcess {
+            FakeProcess {
+                koid: zx::Koid::from_raw(koid),
+                name: zx::Name::default(),
+                vmos: Vec::new(),
+                maps: Vec::new(),
+                status: Some(status),
             }
         }
     }
 
     impl Process for FakeProcess {
         fn get_name(&self) -> Result<zx::Name, zx::Status> {
-            Ok(self.name.clone())
+            match self.status {
+                Some(status) => Err(status),
+                None => Ok(self.name.clone()),
+            }
         }
 
         fn info_vmos<'a>(
             &self,
             output_vector: &'a mut Vec<std::mem::MaybeUninit<zx::VmoInfo>>,
         ) -> Result<(&'a [zx::VmoInfo], usize), zx::Status> {
+            if let Some(status) = self.status {
+                return Err(status);
+            }
             self.vmos.iter().take(output_vector.len()).copied().enumerate().for_each(
                 |(index, vmo)| {
                     output_vector[index] = MaybeUninit::new(vmo);
@@ -682,6 +744,9 @@ pub mod tests {
             &self,
             output_vector: &'a mut Vec<std::mem::MaybeUninit<zx::MapInfo>>,
         ) -> Result<(&'a [zx::MapInfo], usize), zx::Status> {
+            if let Some(status) = self.status {
+                return Err(status);
+            }
             self.maps.iter().take(output_vector.len()).copied().enumerate().for_each(
                 |(index, maps)| {
                     output_vector[index] = MaybeUninit::new(maps);
@@ -741,16 +806,21 @@ pub mod tests {
                     1,
                     "job1",
                     vec![],
-                    vec![FakeProcess::new(
-                        11,
-                        "proc11",
-                        vec![
-                            simple_vmo_info(111, "vmo111", 0, 100, 100),
-                            simple_vmo_info(112, "vmo112", 0, 200, 200),
-                        ],
-                        vec![],
-                    )],
+                    vec![
+                        FakeProcess::new(
+                            11,
+                            "proc11",
+                            vec![
+                                simple_vmo_info(111, "vmo111", 0, 100, 100),
+                                simple_vmo_info(112, "vmo112", 0, 200, 200),
+                            ],
+                            vec![],
+                        ),
+                        // A disappearing process won't affect the data collection.
+                        FakeProcess::new_disappearing(12, zx::Status::BAD_STATE),
+                    ],
                 ),
+                FakeJob::new_disappearing(4, zx::Status::BAD_STATE),
                 FakeJob::new(
                     2,
                     "job2",

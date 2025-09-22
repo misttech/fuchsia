@@ -5,14 +5,15 @@
 use crate::attribution_client::AttributionClient;
 use crate::common::PrincipalIdMap;
 use crate::resources::{Job, KernelResources};
+use anyhow::Context;
 use attribution_processing::{
     Attribution, AttributionData, AttributionDataProvider, Principal, PrincipalDescription,
     PrincipalType, ResourceReference, ResourcesVisitor,
 };
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use std::sync::Arc;
 use traces::CATEGORY_MEMORY_CAPTURE;
 
@@ -118,11 +119,9 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
 
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
         let attribution_state = self.attribution_client.get_attributions();
-        crate::resources::KernelResourcesExplorer::default().explore_root_job(
-            visitor,
-            self.root_job.lock().as_ref(),
-            &attribution_state,
-        )?;
+        crate::resources::KernelResourcesExplorer::default()
+            .explore_root_job(visitor, self.root_job.lock().as_ref(), &attribution_state)
+            .context("Failed to explore root job")?;
         Ok(())
     }
 }
@@ -139,7 +138,7 @@ mod tests {
     use crate::common::{
         GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, LocalPrincipalIdentifier,
     };
-    use crate::resources::tests::{simple_vmo_info, FakeJob, FakeProcess};
+    use crate::resources::tests::{FakeJob, FakeProcess, simple_vmo_info};
     use fuchsia_async as fasync;
 
     #[test]
