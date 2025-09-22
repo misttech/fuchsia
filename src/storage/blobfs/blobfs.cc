@@ -376,8 +376,8 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
                   << *(fs->write_compression_settings_.compression_level);
   }
 
-  FX_LOGS(INFO) << "Using blob layout format: "
-                << BlobLayoutFormatToString(GetBlobLayoutFormat(*superblock));
+  FX_LOGS(INFO) << "Writing blob layout format: "
+                << BlobLayoutFormatToString(GetDefaultBlobLayoutFormat(*superblock));
 
   if (zx_status_t status = fs->Migrate(); status != ZX_OK) {
     return zx::error(status);
@@ -1130,7 +1130,10 @@ void Blobfs::FsckAtEndOfTransaction() {
 zx_status_t Blobfs::Migrate() {
   if (info_.oldest_minor_version < kBlobfsMinorVersionNoOldCompressionFormats)
     return ZX_ERR_NOT_SUPPORTED;  // Too old to support migration.
-  return MigrateToRev4();
+  if (zx_status_t status = MigrateToRev4(); status != ZX_OK) {
+    return status;
+  }
+  return MigrateToV10Rev4();
 }
 
 zx_status_t Blobfs::MigrateToRev4() {
@@ -1155,6 +1158,38 @@ zx_status_t Blobfs::MigrateToRev4() {
     WriteNode(node_index, transaction);
   }
   info_.oldest_minor_version = kBlobfsMinorVersionHostToolHandlesNullBlobCorrectly;
+  WriteInfo(transaction);
+  transaction.Commit(*journal_);
+  return ZX_OK;
+}
+
+zx_status_t Blobfs::MigrateToV10Rev4() {
+  if (writability_ != Writability::Writable ||
+      (info_.major_version != 0x8 && info_.major_version != 0x9)) {
+    return ZX_OK;
+  }
+  FX_LOGS(INFO) << "Migrating to Blobfs to V10Rev4";
+
+  BlobTransaction transaction;
+  const BlobLayoutFormat blob_layout_format =
+      info_.major_version == kBlobfsCompactMerkleTreeVersion
+          ? BlobLayoutFormat::kCompactMerkleTreeAtEnd
+          : BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
+  for (uint32_t node_index = 0; node_index < info_.inode_count; ++node_index) {
+    auto inode = GetNode(node_index);
+    ZX_ASSERT_MSG(inode.is_ok(), "Failed to get node %u: %s", node_index, inode.status_string());
+    if (!inode->header.IsAllocated() || inode->header.IsExtentContainer()) {
+      continue;
+    }
+    SetBlobLayoutFormat(inode.value().get(), blob_layout_format);
+    WriteNode(node_index, transaction);
+  }
+  if (blob_layout_format == BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart) {
+    info_.flags |= kBlobWriteLegacyMerkle;
+  } else {
+    info_.flags &= ~kBlobWriteLegacyMerkle;
+  }
+  info_.major_version = kBlobfsBlobLayoutFormatInInodeVersion;
   WriteInfo(transaction);
   transaction.Commit(*journal_);
   return ZX_OK;

@@ -10,6 +10,7 @@
 
 #include "src/storage/fs_test/crypt_service.h"
 #include "src/storage/fs_test/fs_test.h"
+#include "src/storage/lib/fs_management/cpp/admin.h"
 #include "src/storage/lib/fs_management/cpp/mount.h"
 
 namespace fs_test {

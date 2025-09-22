@@ -4,11 +4,26 @@
 
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 
+#include <lib/sync/completion.h>
+#include <lib/zx/result.h>
+#include <zircon/errors.h>
+#include <zircon/time.h>
+#include <zircon/types.h>
+
+#include <cstdint>
+#include <memory>
+#include <utility>
+
 #include <gtest/gtest.h>
 
+#include "src/storage/blobfs/blobfs.h"
+#include "src/storage/blobfs/common.h"
+#include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/mkfs.h"
+#include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/vfs/cpp/paged_vfs.h"
 
 namespace blobfs {
 
@@ -88,11 +103,25 @@ void BlobfsTestSetup::ShutdownVfs() {
 
 BlobfsTestSetupWithThread::BlobfsTestSetupWithThread() { loop_.StartThread("blobfs-async-loop"); }
 
+std::unique_ptr<BlockDevice> BlobfsTestSetupWithThread::ShutdownBlobfs() {
+  std::unique_ptr<BlockDevice> block_device;
+  RunOnDispatcherThread(
+      [&block_device, this]() { block_device = Blobfs::Destroy(std::move(this->blobfs_)); });
+  return block_device;
+}
+
 BlobfsTestSetupWithThread::~BlobfsTestSetupWithThread() {
-  if (vfs())
+  if (vfs()) {
     ShutdownVfs();
-  if (blobfs_)
-    Blobfs::Destroy(std::move(blobfs_));
+  }
+  if (blobfs_) {
+    ShutdownBlobfs();
+  }
+}
+
+std::unique_ptr<BlockDevice> BlobfsTestSetupWithThread::Unmount() {
+  ShutdownVfs();
+  return ShutdownBlobfs();
 }
 
 void BlobfsTestSetupWithThread::ShutdownVfs() {

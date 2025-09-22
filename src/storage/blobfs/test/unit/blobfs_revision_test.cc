@@ -2,16 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <zircon/errors.h>
 
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <utility>
 
-#include "src/storage/blobfs/blobfs.h"
+#include <gtest/gtest.h>
+#include <storage/buffer/vmo_buffer.h>
+
+#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/blobfs/common.h"
+#include "src/storage/blobfs/compression/external_decompressor.h"
+#include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/fsck.h"
 #include "src/storage/blobfs/mkfs.h"
-#include "src/storage/blobfs/test/blob_utils.h"
+#include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
-#include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
+#include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_client/cpp/reader.h"
 
@@ -20,7 +30,6 @@ namespace {
 
 using ::block_client::BlockDevice;
 using ::block_client::FakeBlockDevice;
-using ::block_client::FakeFVMBlockDevice;
 
 constexpr uint32_t kBlockSize = 512;
 constexpr uint32_t kNumBlocks = 400 * kBlobfsBlockSize / kBlockSize;
@@ -42,8 +51,7 @@ class BlobfsTestAtMinorVersion : public BlobfsTestSetup, public testing::Test {
   }
 
   std::unique_ptr<BlockDevice> CreateAndFormat() {
-    FilesystemOptions options{.blob_layout_format = BlobLayoutFormat::kCompactMerkleTreeAtEnd,
-                              .oldest_minor_version = oldest_minor_version};
+    FilesystemOptions options{.oldest_minor_version = oldest_minor_version};
     std::unique_ptr<BlockDevice> device = DeviceFactory(num_blocks);
     EXPECT_EQ(FormatFilesystem(device.get(), options), ZX_OK);
     return device;

@@ -5,17 +5,21 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <lib/zx/result.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <thread>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <memory>
 #include <vector>
 
+#include <fbl/string.h>
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/storage/blobfs/common.h"
+#include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 
 namespace blobfs {

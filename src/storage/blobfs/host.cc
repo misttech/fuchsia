@@ -35,6 +35,7 @@
 #include <safemath/safe_conversions.h>
 
 #include "src/lib/chunked-compression/multithreaded-chunked-compressor.h"
+#include "src/lib/digest/digest.h"
 #include "src/lib/digest/merkle-tree.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/allocator/host_allocator.h"
@@ -607,9 +608,6 @@ zx::result<uint32_t> Blobfs::FindInodeByDigest(const Digest& digest) {
 
 zx::result<> Blobfs::AddBlob(const BlobInfo& blob_info) {
   const BlobLayout& blob_layout = blob_info.GetBlobLayout();
-  if (blob_layout.Format() != GetBlobLayoutFormat(Info())) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
 
   // Make sure that the blob hasn't already been added.
   if (auto existing_node = FindInodeByDigest(blob_info.GetDigest());
@@ -683,6 +681,7 @@ zx::result<> Blobfs::AddBlob(const BlobInfo& blob_info) {
   blob_info.GetDigest().CopyTo(inode->merkle_root_hash);
   inode->header.flags |=
       (blob_info.IsCompressed() ? ChunkedCompressor::InodeHeaderCompressionFlags() : 0);
+  SetBlobLayoutFormat(inode.value().get(), blob_layout.Format());
 
   // Write out all nodes.
   // The nodes can't be in written in |on_node| because the NodePopulator modifies the nodes after
@@ -854,7 +853,7 @@ fpromise::result<std::vector<uint8_t>, std::string> Blobfs::LoadDataAndVerifyBlo
   };
 
   auto blob_layout =
-      blobfs::BlobLayout::CreateFromInode(GetBlobLayoutFormat(Info()), inode, block_size);
+      blobfs::BlobLayout::CreateFromInode(GetBlobLayoutFormat(Info(), inode), inode, block_size);
   if (blob_layout.is_error()) {
     return make_error("Failed to create blob layout with status " +
                       std::to_string(blob_layout.status_value()));

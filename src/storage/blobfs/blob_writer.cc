@@ -301,6 +301,7 @@ zx::result<> Blob::Writer::WriteMetadata(BlobTransaction& transaction) {
   if (blob_layout_->FileSize() > 0) {
     SetCompressionAlgorithm(mapped_inode_ptr.value().get(), data_format_);
   }
+  SetBlobLayoutFormat(mapped_inode_ptr.value().get(), blob_layout_->Format());
   return zx::ok();
 }
 
@@ -695,7 +696,7 @@ zx::result<> Blob::Writer::WriteDataBlocks(uint64_t block_count, uint64_t block_
 }
 
 zx::result<> Blob::Writer::Initialize(uint64_t blob_size, uint64_t data_size) {
-  zx::result blob_layout = BlobLayout::CreateFromSizes(GetBlobLayoutFormat(blobfs().Info()),
+  zx::result blob_layout = BlobLayout::CreateFromSizes(GetDefaultBlobLayoutFormat(blobfs().Info()),
                                                        blob_size, data_size, block_size_);
   if (blob_layout.is_error()) {
     FX_LOGS(ERROR) << "Failed to create blob layout: " << blob_layout.status_string();
@@ -704,7 +705,7 @@ zx::result<> Blob::Writer::Initialize(uint64_t blob_size, uint64_t data_size) {
 
   if (blob_size > 0 && merkle_tree_buffer_.empty()) {
     merkle_tree_creator_.SetUseCompactFormat(
-        ShouldUseCompactMerkleTreeFormat(GetBlobLayoutFormat(blobfs().Info())));
+        ShouldUseCompactMerkleTreeFormat(blob_layout->Format()));
     zx_status_t status = merkle_tree_creator_.SetDataLength(blob_size);
     if (status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to set Merkle tree data length to " << blob_size

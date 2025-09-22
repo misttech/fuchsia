@@ -5,12 +5,29 @@
 #ifndef SRC_STORAGE_BLOBFS_TEST_BLOBFS_TEST_SETUP_H_
 #define SRC_STORAGE_BLOBFS_TEST_BLOBFS_TEST_SETUP_H_
 
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
+#include <lib/async/dispatcher.h>
+#include <lib/sync/cpp/completion.h>
+#include <lib/zx/result.h>
+#include <lib/zx/time.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
+
+#include <cstdint>
 #include <memory>
+
+#include <fbl/ref_ptr.h>
 
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/common.h"
+#include "src/storage/blobfs/compression/external_decompressor.h"
+#include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/vfs/cpp/paged_vfs.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 
@@ -43,7 +60,7 @@ class BlobfsTestSetupBase {
 
   zx_status_t Mount(std::unique_ptr<BlockDevice> device,
                     const MountOptions& options = MountOptions());
-  std::unique_ptr<BlockDevice> Unmount();
+  virtual std::unique_ptr<BlockDevice> Unmount();
 
   // Initializes the decompressor creator if needed and returns a connector.
   zx::result<DecompressorCreatorConnector*> GetDecompressorCreatorConnector();
@@ -97,9 +114,23 @@ class BlobfsTestSetupWithThread : public BlobfsTestSetupBase {
   BlobfsTestSetupWithThread();
   ~BlobfsTestSetupWithThread();
 
+  std::unique_ptr<BlockDevice> Unmount() final;
+
+ protected:
+  template <typename T>
+  void RunOnDispatcherThread(T task) {
+    libsync::Completion completion;
+    ZX_ASSERT(async::PostTask(loop().dispatcher(), [&completion, task = std::move(task)]() mutable {
+                task();
+                completion.Signal();
+              }) == ZX_OK);
+    ZX_ASSERT(completion.Wait(zx::sec(5)) == ZX_OK);
+  }
+
  private:
   async::Loop& GetLoop() override { return loop_; }
   void ShutdownVfs() override;
+  std::unique_ptr<BlockDevice> ShutdownBlobfs();
 
   async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
 };

@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.fs/cpp/common_types.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.update.verify/cpp/common_types.h>
 #include <fidl/fuchsia.update.verify/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>

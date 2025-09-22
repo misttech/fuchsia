@@ -284,6 +284,10 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   // NOP if oldest_minor_version >= kBlobfsMinorVersionHostToolHandlesNullBlobCorrectly.
   zx_status_t MigrateToRev4();
 
+  // Migrates from V8Rev4 and V9Rev4 to V10Rev4 by inserting the blob layout format into each blob's
+  // inode header..
+  zx_status_t MigrateToV10Rev4();
+
   // Walks all the extents of a given inode, updating |extents_per_blob| and |used_fragments|
   // metrics in |out_metrics|. If |out_stats| is provided, also records those values there.
   void ComputeBlobFragmentation(uint32_t node_index, Inode& inode,

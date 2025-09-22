@@ -5,6 +5,7 @@
 #include "src/storage/blobfs/blobfs.h"
 
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
@@ -13,6 +14,7 @@
 #include <zircon/errors.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/time.h>
+#include <zircon/types.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -29,7 +31,6 @@
 
 #include "src/devices/block/drivers/core/block-fifo.h"
 #include "src/storage/blobfs/blob.h"
-#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs_inspect_tree.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
@@ -98,8 +99,7 @@ template <uint64_t oldest_minor_version, uint64_t num_blocks = kNumBlocks,
 class BlobfsTestAtRevision : public BlobfsTestSetup, public testing::Test {
  public:
   void SetUp() final {
-    FilesystemOptions fs_options{.blob_layout_format = BlobLayoutFormat::kCompactMerkleTreeAtEnd,
-                                 .oldest_minor_version = oldest_minor_version};
+    FilesystemOptions fs_options{.oldest_minor_version = oldest_minor_version};
     auto device = Device::CreateAndFormat(fs_options, num_blocks);
     ASSERT_TRUE(device);
     device_ = device.get();
@@ -375,7 +375,6 @@ TEST(BlobfsFragmentationTest, FragmentationMetrics) {
   FragmentationMetrics stub_metrics;
   auto device = MockBlockDevice::CreateAndFormat(
       {
-          .blob_layout_format = BlobLayoutFormat::kCompactMerkleTreeAtEnd,
           .oldest_minor_version = kBlobfsCurrentMinorVersion,
           .num_inodes = kNumNodes,
       },

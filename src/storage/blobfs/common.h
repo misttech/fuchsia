@@ -8,6 +8,7 @@
 #ifndef SRC_STORAGE_BLOBFS_COMMON_H_
 #define SRC_STORAGE_BLOBFS_COMMON_H_
 
+#include <lib/zx/time.h>
 #include <stdint.h>
 #include <zircon/types.h>
 
@@ -68,10 +69,15 @@ void InitializeSuperblockOptions(const FilesystemOptions& options, Superblock* i
 zx_status_t InitializeSuperblock(uint64_t block_count, const FilesystemOptions& options,
                                  Superblock* info);
 
-// Returns the blob layout format used in |info|. Panics if the blob layout format is invalid.
-// |CheckSuperblock| should be used to validate |info| before trying to access the blob layout
-// format.
-BlobLayoutFormat GetBlobLayoutFormat(const Superblock& info);
+// Returns the blob layout format that was used to store the contents of `inode`. |CheckSuperblock|
+// should be used to validate |info| before trying to access the blob layout format.
+BlobLayoutFormat GetBlobLayoutFormat(const Superblock& info, const Inode& inode);
+
+// The default format to use for this filesystem based on superblock fields.
+BlobLayoutFormat GetDefaultBlobLayoutFormat(const Superblock& info);
+
+// Stores the `blob_layout_format` inside of the Inode.
+void SetBlobLayoutFormat(Inode* inode, BlobLayoutFormat blob_layout_format);
 
 // Helper functions to create VMO names for blobs in various states. Although rare, name collisions
 // *are* possible, as the name is based on a prefix of the merkle root hash of |node|.

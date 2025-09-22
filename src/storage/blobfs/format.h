@@ -50,7 +50,7 @@ constexpr uint64_t kBlobfsMagic1  = (0x985000d4d4d3d314ULL);
 //
 // *************************************************************************************************
 
-constexpr uint32_t kBlobfsCurrentMajorVersion = 0x00000009;
+constexpr uint32_t kBlobfsCurrentMajorVersion = 0x0000000A;
 
 // When this next changes, consider enabling the OldestMinorVersionNotUpdated test.
 constexpr uint64_t kBlobfsCurrentMinorVersion = 0x00000004;
@@ -58,6 +58,10 @@ constexpr uint64_t kBlobfsCurrentMinorVersion = 0x00000004;
 // Version 9 introduced a compact merkle tree version. Version 8 uses padded merkle trees. This
 // format is controlled by a build flag so version 9 is not necessarily newer (see README.md).
 constexpr uint32_t kBlobfsCompactMerkleTreeVersion = 0x00000009;
+
+// Version 10 introduced storing the blob layout format in each blob's inode header, and a flag
+// in the superblock to decide which layout to write new blobs in.
+constexpr uint32_t kBlobfsBlobLayoutFormatInInodeVersion = 0x0000000A;
 
 // Revision 2: introduced a backup superblock.
 constexpr uint64_t kBlobfsMinorVersionBackupSuperblock = 0x00000002;
@@ -68,6 +72,7 @@ constexpr uint64_t kBlobfsMinorVersionHostToolHandlesNullBlobCorrectly = 0x00000
 
 constexpr uint32_t kBlobFlagClean          = 1;
 constexpr uint32_t kBlobFlagFVM            = 4;
+constexpr uint32_t kBlobWriteLegacyMerkle  = 8;
 
 // These constants should all be defined as uint64_t to prevent unintended truncation errors
 // when performing arithmetic.
@@ -327,10 +332,14 @@ constexpr uint16_t kBlobFlagChunkCompressed = 1 << 5;
 // Bitmask of all compression flags (this allows additional flags to be added more easily).
 constexpr uint16_t kBlobFlagMaskAnyCompression = kBlobFlagChunkCompressed;
 
+// Identifies that this blob is stored in the kDeprecatedPaddedMerkleTreeAtStart BlobLayoutFormat.
+constexpr uint16_t kBlobFlagDeprecatedPaddedMerkleTreeFormat = 1 << 6;
+
 // This mask is the mask of all valid flag bits, but we should be tolerant if we encounter bits set
 // on a filesystem in case the filesystem has been touched by a future version of blobfs.
-constexpr uint16_t kBlobFlagMaskValid =
-    kBlobFlagAllocated | kBlobFlagExtentContainer | kBlobFlagMaskAnyCompression;
+constexpr uint16_t kBlobFlagMaskValid = kBlobFlagAllocated | kBlobFlagExtentContainer |
+                                        kBlobFlagMaskAnyCompression |
+                                        kBlobFlagDeprecatedPaddedMerkleTreeFormat;
 
 // The number of extents within a normal inode.
 constexpr uint64_t kInlineMaxExtents = 1;

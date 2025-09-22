@@ -247,11 +247,10 @@ TEST_P(BlobTest, WriteBlobWithSharedBlockInCompactFormat) {
   std::unique_ptr<BlobInfo> info =
       GenerateRealisticBlob("", (digest::kDefaultNodeSize - digest::kSha256Length) * 3);
   {
-    if (GetBlobLayoutFormat(blobfs()->Info()) == BlobLayoutFormat::kCompactMerkleTreeAtEnd) {
-      std::unique_ptr<MerkleTreeInfo> merkle_tree =
-          CreateMerkleTree(info->data.get(), info->size_data, /*use_compact_format=*/true);
-      EXPECT_EQ(info->size_data + merkle_tree->merkle_tree_size, digest::kDefaultNodeSize * 3);
-    }
+    std::unique_ptr<MerkleTreeInfo> merkle_tree =
+        CreateMerkleTree(info->data.get(), info->size_data, /*use_compact_format=*/true);
+    EXPECT_EQ(info->size_data + merkle_tree->merkle_tree_size, digest::kDefaultNodeSize * 3);
+
     auto root = OpenRoot();
     zx::result file = root->Create(info->path, fs::CreationType::kFile);
     ASSERT_TRUE(file.is_ok()) << file.status_string();
