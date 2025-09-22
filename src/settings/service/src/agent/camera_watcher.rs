@@ -9,12 +9,13 @@ use crate::base::SettingType;
 use crate::event::{Event, Publisher, camera_watcher};
 use crate::handler::base::{Payload as HandlerPayload, Request};
 use crate::message::base::Audience;
-use crate::service_context::ServiceContext;
 use crate::{service, trace, trace_guard};
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedSender;
 use settings_camera::connect_to_camera;
 use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::service_context::ServiceContext;
+
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -96,17 +97,17 @@ impl CameraWatcherAgent {
     async fn handle(&mut self, invocation: Invocation) -> InvocationResult {
         match invocation.lifespan {
             Lifespan::Initialization => Err(AgentError::UnhandledLifespan),
-            Lifespan::Service => self.handle_service_lifespan(invocation.service_context).await,
+            Lifespan::Service => {
+                self.handle_service_lifespan(&*invocation.service_context.common_context()).await
+            }
         }
     }
 
     async fn handle_service_lifespan(
         &mut self,
-        service_context: Rc<ServiceContext>,
+        service_context: &ServiceContext,
     ) -> InvocationResult {
-        match connect_to_camera(service_context.common_context(), self.external_publisher.clone())
-            .await
-        {
+        match connect_to_camera(service_context, self.external_publisher.clone()).await {
             Ok(camera_device_client) => {
                 let mut event_handler = EventHandler {
                     muted_txs: self.muted_txs.clone(),
@@ -212,7 +213,7 @@ mod tests {
         let result = agent
             .handle(Invocation {
                 lifespan: Lifespan::Initialization,
-                service_context: Rc::new(ServiceContext::new(None, None)),
+                service_context: Rc::new(crate::service_context::ServiceContext::new(None, None)),
             })
             .await;
 
@@ -236,7 +237,7 @@ mod tests {
             external_publisher,
         };
 
-        let service_context = Rc::new(ServiceContext::new(
+        let service_context = Rc::new(crate::service_context::ServiceContext::new(
             // Create a service registry without a camera3 service interface.
             Some(ServiceRegistry::serve(ServiceRegistry::create())),
             None,

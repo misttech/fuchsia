@@ -13,7 +13,6 @@ use futures::future::Fuse;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use settings_common::{call, call_async};
-use std::rc::Rc;
 use zx::MonotonicDuration;
 
 /// The amount of time in milliseconds to wait for a camera device to be detected.
@@ -75,12 +74,12 @@ fn extract_cam_id(ids: Vec<WatchDevicesEvent>) -> Result<u64, Error> {
 /// Establishes a connection to the fuchsia.camera3.Device api by watching
 /// the camera id and using it to connect to the device.
 pub async fn connect_to_camera(
-    service_context_handle: Rc<ServiceContext>,
+    service_context: &ServiceContext,
     external_publisher: ExternalEventPublisher,
 ) -> Result<Camera3DeviceProxy, Error> {
     // Connect to the camera device watcher to get camera ids. This will
     // be used to connect to the camera.
-    let camera_watcher_proxy = service_context_handle
+    let camera_watcher_proxy = service_context
         .connect_with_publisher::<DeviceWatcherMarker, _>(external_publisher)
         .await?;
     let camera_id = get_camera_id(&camera_watcher_proxy).await?;

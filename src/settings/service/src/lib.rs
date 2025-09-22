@@ -1001,11 +1001,14 @@ fn create_agent_blueprints(
     })
     .detach();
     let camera_registrar = agent_types.contains(&AgentType::CameraWatcher).then(|| {
-        agent::camera_watcher::create_registrar(camera_watcher_event_txs, external_publisher)
+        agent::camera_watcher::create_registrar(
+            camera_watcher_event_txs,
+            external_publisher.clone(),
+        )
     });
-    let media_buttons_registrar = agent_types
-        .contains(&AgentType::MediaButtons)
-        .then(|| agent::media_buttons::create_registrar(media_buttons_event_txs));
+    let media_buttons_registrar = agent_types.contains(&AgentType::MediaButtons).then(|| {
+        agent::media_buttons::create_registrar(media_buttons_event_txs, external_publisher)
+    });
     let inspect_settings_values_registrar = agent_types
         .contains(&AgentType::InspectSettingValues)
         .then(|| agent::inspect::setting_values::create_registrar(setting_value_rx));

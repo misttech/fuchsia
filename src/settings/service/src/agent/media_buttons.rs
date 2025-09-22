@@ -9,7 +9,6 @@ use crate::base::SettingType;
 use crate::event::{Event, Publisher};
 use crate::handler::base::{Payload as HandlerPayload, Request};
 use crate::message::base::Audience;
-use crate::service_context::ServiceContext;
 use crate::{service, trace_guard};
 use anyhow::Error;
 use fidl::endpoints::create_request_stream;
@@ -20,6 +19,8 @@ use fidl_fuchsia_ui_policy::{
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use settings_common::call_async;
+use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::service_context::ServiceContext;
 use settings_media_buttons::{self as media_buttons, MediaButtons};
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -29,13 +30,15 @@ use super::{AgentCreator, CreationFunc};
 
 pub(crate) fn create_registrar(
     event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    external_publisher: ExternalEventPublisher,
 ) -> AgentCreator {
     AgentCreator {
         debug_id: "MediaButtonsAgent",
         create: CreationFunc::Dynamic(Rc::new(move |context| {
             let event_txs = event_txs.clone();
+            let external_publisher = external_publisher.clone();
             Box::pin(async move {
-                MediaButtonsAgent::create(context, event_txs).await;
+                MediaButtonsAgent::create(context, event_txs, external_publisher).await;
             })
         })),
     }
@@ -50,11 +53,13 @@ fn get_event_setting_types() -> HashSet<SettingType> {
 /// Method for listening to media button changes. Changes will be reported back
 /// on the supplied sender.
 pub(crate) async fn monitor_media_buttons(
-    service_context_handle: Rc<ServiceContext>,
+    service_context_handle: &ServiceContext,
     sender: futures::channel::mpsc::UnboundedSender<MediaButtonsEvent>,
+    external_publisher: ExternalEventPublisher,
 ) -> Result<(), Error> {
-    let presenter_service =
-        service_context_handle.connect::<DeviceListenerRegistryMarker>().await?;
+    let presenter_service = service_context_handle
+        .connect_with_publisher::<DeviceListenerRegistryMarker, _>(external_publisher)
+        .await?;
     let (client_end, mut stream) = create_request_stream::<MediaButtonsListenerMarker>();
 
     // TODO(https://fxbug.dev/42058092) This independent spawn is necessary! For some reason removing this or
@@ -101,12 +106,14 @@ pub(crate) struct MediaButtonsAgent {
 
     /// Settings to send media buttons events to.
     recipient_settings: HashSet<SettingType>,
+    external_publisher: ExternalEventPublisher,
 }
 
 impl MediaButtonsAgent {
     pub(crate) async fn create(
         context: AgentContext,
         event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+        external_publisher: ExternalEventPublisher,
     ) {
         let mut agent = MediaButtonsAgent {
             event_txs,
@@ -117,6 +124,7 @@ impl MediaButtonsAgent {
                 .intersection(&get_event_setting_types())
                 .cloned()
                 .collect::<HashSet<SettingType>>(),
+            external_publisher,
         };
 
         let mut receptor = context.receptor;
@@ -135,16 +143,20 @@ impl MediaButtonsAgent {
     async fn handle(&mut self, invocation: Invocation) -> InvocationResult {
         match invocation.lifespan {
             Lifespan::Initialization => Err(AgentError::UnhandledLifespan),
-            Lifespan::Service => self.handle_service_lifespan(invocation.service_context).await,
+            Lifespan::Service => {
+                self.handle_service_lifespan(&*invocation.service_context.common_context()).await
+            }
         }
     }
 
     async fn handle_service_lifespan(
         &mut self,
-        service_context: Rc<ServiceContext>,
+        service_context: &ServiceContext,
     ) -> InvocationResult {
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
-        if let Err(e) = monitor_media_buttons(service_context, input_tx).await {
+        if let Err(e) =
+            monitor_media_buttons(service_context, input_tx, self.external_publisher.clone()).await
+        {
             log::error!("Unable to monitor media buttons: {:?}", e);
             return Err(AgentError::UnexpectedError);
         }
@@ -235,6 +247,8 @@ mod tests {
     async fn initialization_lifespan_is_unhandled() {
         // Setup messengers needed to construct the agent.
         let (messenger, publisher) = create_messenger_and_publisher().await;
+        let (event_tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
         // Construct the agent.
         let mut agent = MediaButtonsAgent {
@@ -242,13 +256,14 @@ mod tests {
             publisher,
             messenger,
             recipient_settings: HashSet::new(),
+            external_publisher,
         };
 
         // Try to initiatate the initialization lifespan.
         let result = agent
             .handle(Invocation {
                 lifespan: Lifespan::Initialization,
-                service_context: Rc::new(ServiceContext::new(None, None)),
+                service_context: Rc::new(crate::service_context::ServiceContext::new(None, None)),
             })
             .await;
 
@@ -261,15 +276,19 @@ mod tests {
         // Setup messengers needed to construct the agent.
         let (messenger, publisher) = create_messenger_and_publisher().await;
 
+        let (event_tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+
         // Construct the agent.
         let mut agent = MediaButtonsAgent {
             event_txs: vec![],
             publisher,
             messenger,
             recipient_settings: HashSet::new(),
+            external_publisher,
         };
 
-        let service_context = Rc::new(ServiceContext::new(
+        let service_context = Rc::new(crate::service_context::ServiceContext::new(
             // Create a service registry without a media buttons interface.
             Some(ServiceRegistry::serve(ServiceRegistry::create())),
             None,
@@ -449,13 +468,15 @@ mod tests {
 
         service_registry.lock().await.register_service(input_device_registry_service.clone());
 
-        let service_context = Rc::new(ServiceContext::new(
-            Some(ServiceRegistry::serve(service_registry.clone())),
-            None,
-        ));
+        let service_context =
+            ServiceContext::new(Some(ServiceRegistry::serve(service_registry.clone())));
+        let (event_tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
-        assert!(monitor_media_buttons(service_context, input_tx).await.is_ok());
+        assert!(
+            monitor_media_buttons(&service_context, input_tx, external_publisher).await.is_ok()
+        );
 
         // Listener receives an event immediately upon listening.
         if let Some(event) = input_rx.next().await {
@@ -492,15 +513,18 @@ mod tests {
 
         service_registry.lock().await.register_service(input_device_registry_service.clone());
 
-        let service_context = Rc::new(ServiceContext::new(
-            Some(ServiceRegistry::serve(service_registry.clone())),
-            None,
-        ));
+        let service_context =
+            &ServiceContext::new(Some(ServiceRegistry::serve(service_registry.clone())));
+        let (event_tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
         let (input_tx, _input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
         #[allow(clippy::bool_assert_comparison)]
         {
-            assert_eq!(monitor_media_buttons(service_context, input_tx).await.is_ok(), false);
+            assert_eq!(
+                monitor_media_buttons(service_context, input_tx, external_publisher).await.is_ok(),
+                false
+            );
         }
     }
 }

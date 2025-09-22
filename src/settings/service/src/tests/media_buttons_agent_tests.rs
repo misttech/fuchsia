@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::agent::{media_buttons, Context, Invocation, Lifespan, Payload};
+use crate::agent::{Context, Invocation, Lifespan, Payload, media_buttons};
 use crate::event::{self, Event};
 use crate::message::base::{Audience, MessengerType};
 use crate::service;
 use crate::service_context::ServiceContext;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
+use futures::channel::mpsc;
 use futures::lock::Mutex;
 use media_buttons::MediaButtonsAgent;
+use settings_common::inspect::event::ExternalEventPublisher;
 use settings_media_buttons::MediaButtons;
 use settings_test_common::fakes::service::ServiceRegistry;
 use std::collections::HashSet;
@@ -50,7 +52,9 @@ async fn test_media_buttons_proxied() {
 
     // Create the agent context and agent.
     let context = Context::new(agent_receptor, service_hub, HashSet::new()).await;
-    MediaButtonsAgent::create(context, vec![]).await;
+    let (event_tx, _) = mpsc::unbounded();
+    let external_publisher = ExternalEventPublisher::new(event_tx);
+    MediaButtonsAgent::create(context, vec![], external_publisher).await;
 
     // Setup the fake services.
     let (service_registry, fake_services) = create_services().await;
