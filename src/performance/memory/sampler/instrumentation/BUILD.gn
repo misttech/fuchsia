@@ -39,6 +39,7 @@ sdk_shared_library("instrumentation") {
   output_name = "sampler_instrumentation"
 
   no_headers = true
+  public = []
   sources = [ "instrumentation.cc" ]
 
   deps = [

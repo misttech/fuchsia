@@ -38,6 +38,8 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     Specifies that the library's headers are NOT included in the SDK.
 #     When true, the API modification acknowledgement mechanism is disabled.
 #     (Only the IFS file mechanism will be used.)
+#     When true, `public` must be an empty list and `public_configs` and
+#     `public_deps` must be empty or not specified.
 #     Defaults to false.
 #     May only be specified when `prebuilt_library_type` is "shared".
 #
@@ -193,6 +195,21 @@ template("sdk_prebuilt_library_impl") {
          "`no_headers` is only supported for shared libraries.")
   no_headers = defined(invoker.no_headers) && invoker.no_headers
 
+  # If a prebuilt library is only provided for packaging purposes (by not
+  # exposing headers) then it should not have any public headers, dependencies,
+  # or configs specifying `include_dirs` or `defines`. `public` must be
+  # specified as an empty list to prevent inclusion of headers specified in
+  # `sources`.
+  #
+  # In rare cases, `public_configs` may be needed to specify cflags required
+  # for compatibility. Vulkan-Loader is an exception for this reason.
+  assert(!no_headers ||
+         (defined(invoker.public) && invoker.public == [] &&
+          (!defined(invoker.public_deps) || invoker.public_deps == []) &&
+          (!defined(invoker.public_configs) || invoker.public_configs == [] ||
+           get_label_info(":${target_name}", "label_no_toolchain") ==
+           "//third_party/Vulkan-Loader/src:libvulkan")))
+
   main_target_name = target_name
   manifest_target_name = "${main_target_name}_sdk_manifest"
   sdk_target_name = "${main_target_name}_sdk"
@@ -317,14 +334,10 @@ template("sdk_prebuilt_library_impl") {
   if (defined(invoker.public_deps)) {
     all_deps += invoker.public_deps
 
-    # If a prebuilt library is only provided for packaging purposes (by not
-    # exposing headers) then its dependencies need not be included in an SDK.
-    if (!no_headers) {
-      foreach(dep, invoker.public_deps) {
-        full_label = get_label_info(dep, "label_no_toolchain")
-        sdk_dep = "${full_label}_sdk"
-        sdk_deps += [ sdk_dep ]
-      }
+    foreach(dep, invoker.public_deps) {
+      full_label = get_label_info(dep, "label_no_toolchain")
+      sdk_dep = "${full_label}_sdk"
+      sdk_deps += [ sdk_dep ]
     }
   }
 
