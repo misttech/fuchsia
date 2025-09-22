@@ -14,7 +14,7 @@ use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
 /// writers.
 #[derive(Default)]
 pub struct RcuArray<T: Send + Sync + 'static> {
-    inner: RcuCell<Vec<T>>,
+    inner: RcuCell<Box<[T]>>,
 }
 
 impl<T: Send + Sync + 'static> RcuArray<T> {
@@ -28,7 +28,7 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
     /// Returns a slice containing the entire array.
     pub fn as_slice<'a>(&self, scope: &'a RcuReadScope) -> &'a [T] {
         let array = self.inner.as_ref(scope);
-        array.as_slice()
+        array.as_ref()
     }
 
     /// Ensures that the array has at least `requested_size` elements, filling with
@@ -53,7 +53,12 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
         self.copy_update(scope, &array, new_size, value);
     }
 
-    fn copy_update(&self, scope: &RcuWriteScope, array: &Vec<T>, new_size: usize, value: T)
+    /// Updates the array to contain the given vector.
+    pub fn update(&self, scope: &RcuWriteScope, new_array: Vec<T>) {
+        self.inner.update(scope, new_array.into_boxed_slice());
+    }
+
+    fn copy_update(&self, scope: &RcuWriteScope, array: &[T], new_size: usize, value: T)
     where
         T: Clone,
     {
@@ -65,14 +70,14 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
         for _ in array.len()..new_size {
             new_array.push(value.clone());
         }
-        self.inner.update(scope, new_array);
+        self.inner.update(scope, new_array.into_boxed_slice());
     }
 }
 
 /// Creates an `RcuArray` from a `Vec<T>`.
 impl<T: Send + Sync + 'static> From<Vec<T>> for RcuArray<T> {
     fn from(value: Vec<T>) -> Self {
-        Self { inner: RcuCell::new(value) }
+        Self { inner: RcuCell::new(value.into_boxed_slice()) }
     }
 }
 
