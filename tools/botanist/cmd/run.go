@@ -259,6 +259,58 @@ func (r *RunCommand) setupSerialLog(ctx context.Context, eg *errgroup.Group, fuc
 	return nil
 }
 
+func (r *RunCommand) setupSSHControlMaster(ctx context.Context, sshKey string, addr string) (string, func(), error) {
+	var cleanup func()
+	runner := subprocess.Runner{}
+	socketPath := targets.CreateSocketPath("ssh")
+	// ssh is added to $PATH in //tools/integration/testsharder/task_requests.go.
+	cmd := []string{
+		"ssh",
+		// Enable ControlMaster.
+		"-M",
+		// ControlMaster path.
+		"-S", socketPath,
+		// Don't execute a remote command.
+		"-N",
+		// No config file.
+		"-F", "none",
+		"-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=20",
+		"-i", sshKey,
+		addr,
+	}
+	cmdProcess := runner.Command(cmd, subprocess.RunOptions{})
+	logger.Debugf(ctx, "starting: %v", cmd)
+	if err := cmdProcess.Start(); err != nil {
+		return socketPath, cleanup, fmt.Errorf("failed to start ssh controlmaster: %w", err)
+	}
+	// Use a new context so that the subprocess can only be terminated by
+	// a direct call to the cancel function.
+	cmCtx, cmCancel := context.WithCancel(context.Background())
+	cmdWait := make(chan error)
+	go func() {
+		// Using subprocess.WaitForCmd() instead of cmd.Wait() ensures that
+		// the function returns when the context is done.
+		err := subprocess.WaitForCmd(cmCtx, cmdProcess)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Errorf(ctx, "ssh controlmaster process finished with err: %s", err)
+		} else {
+			logger.Debugf(ctx, "ssh controlmaster process finished")
+		}
+		cmdWait <- err
+	}()
+	cleanup = func() {
+		cmCancel()
+		<-cmdWait
+		// Killing the process should cause the socket to be deleted as well,
+		// but try removing just in case.
+		if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+			logger.Errorf(ctx, "failed to remove ssh controlmaster socket: %s", err)
+		}
+
+	}
+	return socketPath, cleanup, nil
+}
+
 func (r *RunCommand) setupPackageServer(ctx context.Context) (*botanist.PackageServer, error) {
 	if r.localRepo == "" {
 		return nil, nil
@@ -356,6 +408,20 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					return err
 				}
 				t.GetFFX().SetTarget(addr.String())
+				experiments := botanist.GetExperiments(r.experiments)
+				if experiments.Contains(botanist.UseFFXStrict) {
+					sshSocketPath, cleanupControlMaster, err := r.setupSSHControlMaster(ctx, t.SSHKey(), addr.String())
+					if err != nil {
+						return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
+					}
+					defer cleanupControlMaster()
+					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
+						return fmt.Errorf("failed to set ssh.controlmaster.mode to explicit: %w", err)
+					}
+					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", sshSocketPath); err != nil {
+						return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", sshSocketPath, err)
+					}
+				}
 				if r.syslogDir != "" {
 					if _, err := os.Stat(r.syslogDir); errors.Is(err, os.ErrNotExist) {
 						if err := os.Mkdir(r.syslogDir, os.ModePerm); err != nil {

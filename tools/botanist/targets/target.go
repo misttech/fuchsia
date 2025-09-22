@@ -212,7 +212,7 @@ func (t *genericFuchsiaTarget) StartSerialServer() error {
 	if t.serial == nil || t.serialSocket != "" {
 		return nil
 	}
-	t.serialSocket = createSocketPath()
+	t.serialSocket = CreateSocketPath("serial")
 	t.serialServer = serial.NewServer(t.serial, serial.ServerOptions{})
 	addr := &net.UnixAddr{
 		Name: t.serialSocket,
@@ -556,11 +556,11 @@ func escapePercentSign(addr string) string {
 	return strings.Replace(addr, "%", "%25", 1)
 }
 
-func createSocketPath() string {
+func CreateSocketPath(prefix string) string {
 	// We randomly construct a socket path that is highly improbable to collide with anything.
 	randBytes := make([]byte, 16)
 	rand.Read(randBytes)
-	return filepath.Join(os.TempDir(), "serial"+hex.EncodeToString(randBytes)+".sock")
+	return filepath.Join(os.TempDir(), prefix+hex.EncodeToString(randBytes)+".sock")
 }
 
 // Options represents lifecycle options for a target. The options will not necessarily make
