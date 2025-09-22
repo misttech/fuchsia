@@ -74,8 +74,8 @@
                 additionalProperties: false,
             },
         },
-        sdk_tool_path: {
-            description: "Path to sdk tools",
+        ssh_private_key_path: {
+            description: "Path to ssh private key file",
             type: "string",
         },
         target: {

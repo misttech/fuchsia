@@ -141,6 +141,11 @@ template("fuchsia_test_package") {
       _validate_structured_config = invoker.validate_structured_config
     }
 
+    # While ffx is not listed as a dependency here, it is required for running this target
+    # test. It is not included as a dependency, because doing so would push the the scheduling
+    # of the test target creation steps to after the compilation of ffx, which would slow the
+    # build significantly. ffx is ambiently available when these tests are run and is listed
+    # as a dependency in //bundles/infra/test:host_tools.
     host_test_component_target =
         "//src/developer/ffx:suite_test_data($host_toolchain)"
     host_tool_dir = get_label_info(host_test_component_target, "root_out_dir")
@@ -195,12 +200,29 @@ template("fuchsia_test_package") {
       _test_config = {
         host_test_binary = host_executable_rebased
         host_test_args = [
+          "--log-output",
+          "{output_directory}/test/ffx.log",
+          "--strict",
+          "--config",
+          "ffx.subtool-search-paths=host_${host_cpu}",
+          "--config",
+          "ssh.priv={ssh_private_key_path}",
+          "--config",
+          "log.dir={output_directory}/test/ffx_logs",
+          "--machine",
+          "raw",
+          "--target",
+          "{target}",
           "test",
           "run",
           "--pilot",
           "{test_config_file}",
+          "--filter-ansi",
         ]
-        require = [ "target" ]
+        require = [
+          "target",
+          "ssh_private_key_path",
+        ]
 
         # TODO(https://fxbug.dev/327640651): Add common tags for the test.
         target_test_url = test_url

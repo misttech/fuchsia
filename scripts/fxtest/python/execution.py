@@ -123,7 +123,11 @@ class TestExecution:
             extra_args = []
 
             if self._device_env is not None:
-                extra_args += ["--target=" + self._device_env.address]
+                extra_args += [
+                    "--target=" + self._device_env.address,
+                    "--ssh_private_key_path="
+                    + self._device_env.private_key_path,
+                ]
 
             if execution.realm:
                 extra_args += ["--realm=" + execution.realm]
