@@ -6,7 +6,7 @@
 
 #![deny(missing_docs)]
 use anyhow::{Context as _, Error, anyhow};
-use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _, Proxy as _};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy, ControllerSynchronousProxy};
 use fidl_fuchsia_hardware_ramdisk::{Guid, RamdiskControllerMarker};
 use fs_management::filesystem::{BlockConnector, DirBasedBlockConnector};
@@ -196,10 +196,10 @@ pub enum RamdiskClient {
     /// V1
     V1 {
         /// The directory backing the block driver.
-        block_dir: Option<fio::DirectoryProxy>,
+        block_dir: fio::DirectoryProxy,
 
         /// The device controller for the block device.
-        block_controller: Option<ControllerProxy>,
+        block_controller: ControllerProxy,
 
         /// The device controller for the ramdisk.
         ramdisk_controller: Option<ControllerProxy>,
@@ -241,11 +241,7 @@ impl RamdiskClient {
             format!("opening block controller at {}/device_controller", &block_path)
         })?;
 
-        Ok(Self::V1 {
-            block_dir: Some(block_dir),
-            block_controller: Some(block_controller),
-            ramdisk_controller: Some(ramdisk_controller),
-        })
+        Ok(Self::V1 { block_dir, block_controller, ramdisk_controller: Some(ramdisk_controller) })
     }
 
     fn new_v2(outgoing: fio::DirectoryProxy, event: zx::EventPair) -> Result<Self, Error> {
@@ -265,15 +261,7 @@ impl RamdiskClient {
     /// Get a reference to the block controller.
     pub fn as_controller(&self) -> Option<&ControllerProxy> {
         match self {
-            Self::V1 { block_controller, .. } => block_controller.as_ref(),
-            Self::V2 { .. } => None,
-        }
-    }
-
-    /// Take the block controller.
-    pub fn take_controller(&mut self) -> Option<ControllerProxy> {
-        match self {
-            Self::V1 { block_controller, .. } => block_controller.take(),
+            Self::V1 { block_controller, .. } => Some(block_controller),
             Self::V2 { .. } => None,
         }
     }
@@ -281,15 +269,7 @@ impl RamdiskClient {
     /// Get a reference to the block directory proxy.
     pub fn as_dir(&self) -> Option<&fio::DirectoryProxy> {
         match self {
-            Self::V1 { block_dir, .. } => block_dir.as_ref(),
-            Self::V2 { .. } => None,
-        }
-    }
-
-    /// Take the block directory proxy.
-    pub fn take_dir(&mut self) -> Option<fio::DirectoryProxy> {
-        match self {
-            Self::V1 { block_dir, .. } => block_dir.take(),
+            Self::V1 { block_dir, .. } => Some(block_dir),
             Self::V2 { .. } => None,
         }
     }
@@ -351,16 +331,16 @@ impl RamdiskClient {
     }
 
     /// Get an open channel to the underlying ramdevice's controller.
-    pub fn open_controller(
-        &self,
-    ) -> Result<fidl::endpoints::ClientEnd<fidl_fuchsia_device::ControllerMarker>, Error> {
+    pub fn open_controller(&self) -> Result<ControllerProxy, Error> {
         match self {
             Self::V1 { .. } => {
                 let block_dir = self.as_dir().ok_or_else(|| anyhow!("directory is invalid"))?;
-                let controller_proxy = connect_to_named_protocol_at_dir_root::<
-                    fidl_fuchsia_device::ControllerMarker,
-                >(block_dir, "device_controller")?;
-                Ok(ClientEnd::new(controller_proxy.into_channel().unwrap().into()))
+                let controller_proxy = connect_to_named_protocol_at_dir_root::<ControllerMarker>(
+                    block_dir,
+                    "device_controller",
+                )
+                .context("opening block controller")?;
+                Ok(controller_proxy)
             }
             Self::V2 { .. } => Err(anyhow!("Not supported")),
         }
@@ -399,10 +379,6 @@ impl RamdiskClient {
                 // closed during the unbind process so the ramdisk controller connection will be
                 // closed before connections to the child block device. After unbinding, the drivers
                 // are removed starting at the children and ending at the ramdisk.
-
-                let block_controller = block_controller
-                    .take()
-                    .ok_or_else(|| anyhow!("block controller is invalid"))?;
                 let ramdisk_controller = ramdisk_controller
                     .take()
                     .ok_or_else(|| anyhow!("ramdisk controller is invalid"))?;
@@ -431,9 +407,7 @@ impl RamdiskClient {
     pub fn forget(mut self) -> Result<(), Error> {
         match &mut self {
             Self::V1 { ramdisk_controller, .. } => {
-                let _: ControllerProxy = ramdisk_controller
-                    .take()
-                    .ok_or_else(|| anyhow!("ramdisk controller is invalid"))?;
+                let _ = ramdisk_controller.take();
                 Ok(())
             }
             Self::V2 { .. } => Err(anyhow!("Not supported")),
@@ -534,8 +508,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn destroy_and_wait_for_removal() {
-        let mut ramdisk = RamdiskClient::create(512, 2048).await.unwrap();
-        let dir = ramdisk.take_dir().unwrap();
+        let ramdisk = RamdiskClient::create(512, 2048).await.unwrap();
+        let dir = fuchsia_fs::directory::clone(ramdisk.as_dir().unwrap()).unwrap();
 
         assert_matches!(
             fuchsia_fs::directory::readdir(&dir).await.unwrap().as_slice(),

@@ -17,8 +17,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn small_write_no_wrap_test() {
-        let mut ramdisk = RamdiskClient::create(BLOCK_SIZE, BLOCK_COUNT).await.unwrap();
-        let mut fs = Filesystem::new(ramdisk.take_controller().unwrap(), Fxfs::default());
+        let ramdisk = RamdiskClient::create(BLOCK_SIZE, BLOCK_COUNT).await.unwrap();
+        let mut fs = Filesystem::new(ramdisk.open_controller().unwrap(), Fxfs::default());
         fs.format().await.expect("Failed to format the filesystem");
         let serving_filesystem =
             fs.serve_multi_volume().await.expect("Failed to start the filesystem");
@@ -71,8 +71,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn large_write_wraps_multiple_times_test() {
-        let mut ramdisk = RamdiskClient::create(BLOCK_SIZE, BLOCK_COUNT).await.unwrap();
-        let mut fs = Filesystem::new(ramdisk.take_controller().unwrap(), Fxfs::default());
+        let ramdisk = RamdiskClient::create(BLOCK_SIZE, BLOCK_COUNT).await.unwrap();
+        let mut fs = Filesystem::new(ramdisk.open_controller().unwrap(), Fxfs::default());
         fs.format().await.expect("Failed to format the filesystem");
         let serving_filesystem =
             fs.serve_multi_volume().await.expect("Failed to start the filesystem");

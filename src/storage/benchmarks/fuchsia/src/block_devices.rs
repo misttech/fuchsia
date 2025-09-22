@@ -837,7 +837,7 @@ mod tests {
                 (TestState::StorageHost(ramdisk, fvm_component), fvm.unwrap())
             } else {
                 // Add a blob volume, since that is how we identify the system FVM partition.
-                let block_controller = ramdisk.open_controller().unwrap().into_proxy();
+                let block_controller = ramdisk.open_controller().unwrap();
                 let fvm_path = block_controller
                     .get_topological_path()
                     .await

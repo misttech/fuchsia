@@ -127,7 +127,7 @@ impl BlobfsRamdiskBuilder {
             None => (Ramdisk::start().await.context("creating backing ramdisk for blobfs")?, true),
         };
 
-        let ramdisk_controller = ramdisk.client.open_controller()?.into_proxy();
+        let ramdisk_controller = ramdisk.client.open_controller()?;
 
         // Spawn blobfs on top of the ramdisk.
         let mut fs = match implementation {
