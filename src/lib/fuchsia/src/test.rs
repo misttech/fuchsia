@@ -320,6 +320,30 @@ mod test {
         Ok(())
     }
 
+    // Compile test for instrumentation hooks
+    #[allow(dead_code)]
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::main(instrumentation = true)]
+    async fn instrumentation_default_test() -> Result<(), Error> {
+        Ok(())
+    }
+
+    // Compile test for instrumentation hooks
+    #[allow(dead_code)]
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::main(instrumentation = false)]
+    async fn instrumentation_disabled_test() -> Result<(), Error> {
+        Ok(())
+    }
+
+    // Compile test for instrumentation hooks
+    #[allow(dead_code)]
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::main(threads = 2, instrumentation = true)]
+    async fn instrumentation_multithreaded_default_test() -> Result<(), Error> {
+        Ok(())
+    }
+
     // fuchsia::main with arguments can't be written as a test
     // (since argh will parse command line arguments and these will be arguments defining
     // the test execution environment)

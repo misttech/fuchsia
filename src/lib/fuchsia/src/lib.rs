@@ -25,6 +25,9 @@ pub use fidl_fuchsia_diagnostics::{Interest, Severity};
 #[cfg(fuchsia_api_level_at_least = "27")]
 pub use fidl_fuchsia_diagnostics_types::{Interest, Severity};
 
+#[cfg(target_os = "fuchsia")]
+pub use fuchsia_async_inspect;
+
 //
 // LOGGING INITIALIZATION
 //
@@ -197,7 +200,25 @@ where
 
 /// Run an async main function with a single threaded executor.
 #[doc(hidden)]
-pub fn main_singlethreaded<F, Fut, R>(f: F) -> R
+#[cfg(target_os = "fuchsia")]
+pub fn main_singlethreaded<F, Fut, R>(
+    f: F,
+    instrument: Option<std::sync::Arc<dyn fuchsia_async::instrument::TaskInstrument>>,
+) -> R
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = R> + 'static,
+{
+    fuchsia_async::LocalExecutorBuilder::new()
+        .instrument(instrument)
+        .build()
+        .run_singlethreaded(f())
+}
+
+/// Run an async main function with a single threaded executor.
+#[doc(hidden)]
+#[cfg(not(target_os = "fuchsia"))]
+pub fn main_singlethreaded<F, Fut, R>(f: F, _instrument: Option<()>) -> R
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = R> + 'static,
@@ -207,19 +228,63 @@ where
 
 /// Run an async main function with a single threaded executor, applying `role_name`.
 #[doc(hidden)]
-pub fn main_singlethreaded_with_role<F, Fut, R>(f: F, _role_name: &'static str) -> R
+#[cfg(target_os = "fuchsia")]
+pub fn main_singlethreaded_with_role<F, Fut, R>(
+    f: F,
+    _role_name: &'static str,
+    instrument: Option<std::sync::Arc<dyn fuchsia_async::instrument::TaskInstrument>>,
+) -> R
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = R> + 'static,
 {
     #[cfg(target_os = "fuchsia")]
     set_thread_role(_role_name);
+    fuchsia_async::LocalExecutorBuilder::new()
+        .instrument(instrument)
+        .build()
+        .run_singlethreaded(f())
+}
+
+/// Run an async main function with a single threaded executor, applying `role_name`.
+#[doc(hidden)]
+#[cfg(not(target_os = "fuchsia"))]
+pub fn main_singlethreaded_with_role<F, Fut, R>(
+    f: F,
+    _role_name: &'static str,
+    _instrument: Option<()>,
+) -> R
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = R> + 'static,
+{
     fuchsia_async::LocalExecutorBuilder::new().build().run_singlethreaded(f())
 }
 
 /// Run an async main function with a multi threaded executor (containing `num_threads`).
 #[doc(hidden)]
-pub fn main_multithreaded<F, Fut, R>(f: F, num_threads: u8) -> R
+#[cfg(target_os = "fuchsia")]
+pub fn main_multithreaded<F, Fut, R>(
+    f: F,
+    num_threads: u8,
+    instrument: Option<std::sync::Arc<dyn fuchsia_async::instrument::TaskInstrument>>,
+) -> R
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    fuchsia_async::SendExecutorBuilder::new()
+        .num_threads(num_threads)
+        .instrument(instrument)
+        .build()
+        .run(f())
+}
+
+/// Run an async main function with a multi threaded executor (containing `num_threads`).
+#[doc(hidden)]
+#[cfg(not(target_os = "fuchsia"))]
+pub fn main_multithreaded<F, Fut, R>(f: F, num_threads: u8, _instrument: Option<()>) -> R
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = R> + Send + 'static,
@@ -231,7 +296,13 @@ where
 /// Run an async main function with a multi threaded executor (containing `num_threads`) and apply
 /// `role_name` to all of the threads.
 #[doc(hidden)]
-pub fn main_multithreaded_with_role<F, Fut, R>(f: F, num_threads: u8, _role_name: &'static str) -> R
+#[cfg(target_os = "fuchsia")]
+pub fn main_multithreaded_with_role<F, Fut, R>(
+    f: F,
+    num_threads: u8,
+    _role_name: &'static str,
+    instrument: Option<std::sync::Arc<dyn fuchsia_async::instrument::TaskInstrument>>,
+) -> R
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = R> + Send + 'static,
@@ -240,6 +311,30 @@ where
     #[cfg(target_os = "fuchsia")]
     set_thread_role(_role_name);
 
+    let builder =
+        fuchsia_async::SendExecutorBuilder::new().num_threads(num_threads).instrument(instrument);
+
+    #[cfg(target_os = "fuchsia")]
+    let builder = builder.worker_init(move || set_thread_role(_role_name));
+
+    builder.build().run(f())
+}
+
+/// Run an async main function with a multi threaded executor (containing `num_threads`) and apply
+/// `role_name` to all of the threads.
+#[doc(hidden)]
+#[cfg(not(target_os = "fuchsia"))]
+pub fn main_multithreaded_with_role<F, Fut, R>(
+    f: F,
+    num_threads: u8,
+    _role_name: &'static str,
+    _instrument: Option<()>,
+) -> R
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
     let builder = fuchsia_async::SendExecutorBuilder::new().num_threads(num_threads);
 
     #[cfg(target_os = "fuchsia")]

@@ -25,9 +25,9 @@ enum Executor {
     // Directly by calling it
     None { thread_role: Option<Expr> },
     // fasync::run_singlethreaded
-    Singlethreaded { thread_role: Option<Expr> },
+    Singlethreaded { thread_role: Option<Expr>, instrumentation: bool },
     // fasync::run
-    Multithreaded { threads: Expr, thread_role: Option<Expr> },
+    Multithreaded { threads: Expr, thread_role: Option<Expr>, instrumentation: bool },
     // #[test]
     Test,
     // fasync::run_singlethreaded(test)
@@ -38,13 +38,27 @@ enum Executor {
     UntilStalledTest,
 }
 
+fn build_instrumentation(instrumentation: bool) -> (TokenStream, TokenStream) {
+    if instrumentation {
+        (
+            quote! {
+                let config = ::fuchsia_async_inspect::InspectTaskConfiguration::new(::fuchsia_async_inspect::default_root());
+                let instrument = ::fuchsia_async_inspect::InspectTaskInstrument::new(config);
+            },
+            quote! { Some(instrument) },
+        )
+    } else {
+        (quote! {}, quote! { None })
+    }
+}
+
 impl Executor {
     fn is_test(&self) -> bool {
         match self {
             Executor::Test
-            | Executor::SinglethreadedTest
+            | Executor::SinglethreadedTest { .. }
             | Executor::MultithreadedTest { .. }
-            | Executor::UntilStalledTest => true,
+            | Executor::UntilStalledTest { .. } => true,
             Executor::None { .. }
             | Executor::Singlethreaded { .. }
             | Executor::Multithreaded { .. } => false,
@@ -56,37 +70,59 @@ impl Executor {
     }
 
     fn build_token_stream(&self, func: &syn::Ident) -> TokenStream {
-        let mut tokens = TokenStream::new();
-        tokens.extend(match self {
+        let (instrumentation, executor_new) = match self {
             Executor::None { thread_role } => {
                 if let Some(role) = thread_role {
-                    quote! { ::fuchsia::main_not_async_with_role(#func, #role) }
+                    (quote! {}, quote! { ::fuchsia::main_not_async_with_role(#func, #role) })
                 } else {
-                    quote! { ::fuchsia::main_not_async(#func) }
+                    (quote! {}, quote! { ::fuchsia::main_not_async(#func) })
                 }
             }
-            Executor::Test => quote! { ::fuchsia::test_not_async(#func) },
-            Executor::Singlethreaded { thread_role } => {
+            Executor::Test => (quote! {}, quote! { ::fuchsia::test_not_async(#func) }),
+            Executor::Singlethreaded { thread_role, instrumentation } => {
+                let (instrumentation_code, instrument_arg) =
+                    build_instrumentation(*instrumentation);
                 if let Some(role) = thread_role {
-                    quote! { ::fuchsia::main_singlethreaded_with_role(#func, #role) }
+                    (
+                        instrumentation_code,
+                        quote! { ::fuchsia::main_singlethreaded_with_role(#func, #role, #instrument_arg) },
+                    )
                 } else {
-                    quote! { ::fuchsia::main_singlethreaded(#func) }
+                    (
+                        instrumentation_code,
+                        quote! { ::fuchsia::main_singlethreaded(#func, #instrument_arg) },
+                    )
                 }
             }
-            Executor::Multithreaded { threads, thread_role } => {
+            Executor::Multithreaded { threads, thread_role, instrumentation } => {
+                let (instrumentation_code, instrument_arg) =
+                    build_instrumentation(*instrumentation);
                 if let Some(role) = thread_role {
-                    quote! { ::fuchsia::main_multithreaded_with_role(#func, #threads, #role) }
+                    (
+                        instrumentation_code,
+                        quote! { ::fuchsia::main_multithreaded_with_role(#func, #threads, #role, #instrument_arg) },
+                    )
                 } else {
-                    quote! { ::fuchsia::main_multithreaded(#func, #threads) }
+                    (
+                        instrumentation_code,
+                        quote! { ::fuchsia::main_multithreaded(#func, #threads, #instrument_arg) },
+                    )
                 }
             }
-            Executor::SinglethreadedTest => quote! { ::fuchsia::test_singlethreaded(#func) },
+            Executor::SinglethreadedTest => {
+                (quote! {}, quote! { ::fuchsia::test_singlethreaded(#func) })
+            }
             Executor::MultithreadedTest { threads } => {
-                quote! { ::fuchsia::test_multithreaded(#func, #threads) }
+                (quote! {}, quote! { ::fuchsia::test_multithreaded(#func, #threads) })
             }
-            Executor::UntilStalledTest => quote! { ::fuchsia::test_until_stalled(#func) },
-        });
-        tokens
+            Executor::UntilStalledTest => {
+                (quote! {}, quote! { ::fuchsia::test_until_stalled(#func) })
+            }
+        };
+        quote! {{
+            #instrumentation
+            #executor_new
+        }}
     }
 }
 
@@ -123,6 +159,7 @@ struct Args {
     interest: Interest,
     panic_prefix: Option<LitStr>,
     add_test_attr: bool,
+    instrumentation: bool,
 }
 
 #[derive(Default)]
@@ -144,7 +181,7 @@ impl Parse for Interest {
                 return Err(syn::Error::new(
                     str_token.span(),
                     format!("invalid severity: {}", other),
-                ))
+                ));
             }
         };
         Ok(Interest { min_severity: Some(min_severity) })
@@ -185,11 +222,7 @@ fn get_arg<T: Parse>(p: &ParseStream<'_>) -> syn::Result<T> {
 }
 
 fn get_bool_arg(p: &ParseStream<'_>, if_present: bool) -> syn::Result<bool> {
-    if p.peek(Token![=]) {
-        Ok(get_arg::<LitBool>(p)?.value)
-    } else {
-        Ok(if_present)
-    }
+    if p.peek(Token![=]) { Ok(get_arg::<LitBool>(p)?.value) } else { Ok(if_present) }
 }
 
 fn get_logging_tags(p: &ParseStream<'_>) -> syn::Result<Punctuated<LitStr, Token![,]>> {
@@ -217,6 +250,7 @@ impl Args {
             panic_prefix: None,
             interest: Interest::default(),
             add_test_attr: true,
+            instrumentation: false,
         };
 
         let arg_parser = syn::meta::parser(|meta| {
@@ -235,6 +269,7 @@ impl Args {
                 "logging_minimum_severity" => args.interest = get_interest_arg(&meta.input)?,
                 "logging_panic_prefix" => args.panic_prefix = Some(get_arg(&meta.input)?),
                 "add_test_attr" => args.add_test_attr = get_bool_arg(&meta.input, true)?,
+                "instrumentation" => args.instrumentation = get_bool_arg(&meta.input, true)?,
                 _ => return Err(meta.error("unrecognized argument")),
             }
 
@@ -274,22 +309,26 @@ impl Transformer {
         let executor =
             match (args.threads, args.allow_stalls, args.thread_role, is_async, function_type) {
                 (_, _, Some(_), _, FunctionType::Test) => {
-                    return err("thread_role cannot be applied to tests")
+                    return err("thread_role cannot be applied to tests");
                 }
                 (_, Some(_), _, _, FunctionType::Component) => {
-                    return err("allow_stalls only applies to tests")
+                    return err("allow_stalls only applies to tests");
                 }
                 (None, _, thread_role, false, FunctionType::Component) => {
                     Executor::None { thread_role }
                 }
                 (None, None, thread_role, true, FunctionType::Component) => {
-                    Executor::Singlethreaded { thread_role }
+                    Executor::Singlethreaded { thread_role, instrumentation: args.instrumentation }
                 }
                 (Some(threads), None, thread_role, true, FunctionType::Component) => {
-                    Executor::Multithreaded { threads, thread_role }
+                    Executor::Multithreaded {
+                        threads,
+                        thread_role,
+                        instrumentation: args.instrumentation,
+                    }
                 }
                 (None, Some(_), _, false, FunctionType::Test) => {
-                    return err("allow_stalls only applies to async tests")
+                    return err("allow_stalls only applies to async tests");
                 }
                 (None, None, _, false, FunctionType::Test) => Executor::Test,
                 (None, Some(true) | None, _, true, FunctionType::Test) => {
@@ -300,10 +339,10 @@ impl Transformer {
                 }
                 (None, Some(false), _, true, FunctionType::Test) => Executor::UntilStalledTest,
                 (_, Some(false), _, _, FunctionType::Test) => {
-                    return err("allow_stalls=false tests must be single threaded")
+                    return err("allow_stalls=false tests must be single threaded");
                 }
                 (_, Some(true) | None, _, false, _) => {
-                    return err("must be async to use >1 thread")
+                    return err("must be async to use >1 thread");
                 }
             };
 

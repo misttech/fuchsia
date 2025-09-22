@@ -20,6 +20,8 @@ use transformer::{Finish, Transformer};
 ///  - `logging_minimum_severity` - optional minimum severity to be set for logs. Default: None,
 ///                                 the logging library will choose it (typically `info`).
 ///  - `logging_panic_prefix` - optional string indicating the panic message prefix to log
+///  - `instrumentation` - optional argument to enable or disable Inspect instrumentation. If this
+///                        is set to `true`, `fuchsia_async::Task` data will be exported to Inspect.
 ///
 /// The main function can return either () or a Result<(), E> where E is an error type.
 #[proc_macro_attribute]

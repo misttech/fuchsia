@@ -119,7 +119,7 @@ impl TaskInstrument for InspectTaskInstrument {
             .instrument_data()
             .and_then(|scope| scope.downcast_ref::<ScopeInspect>())
             .map(|scope| (&scope.node, Arc::clone(&scope.child_names)))
-            .unwrap_or((&self.root, Arc::clone(&self.child_names)));
+            .unwrap_or_else(|| (&self.root, Arc::clone(&self.child_names)));
         let name = {
             let mut names = parent_names.lock().unwrap();
             get_unique_name(&mut names, base_name)
@@ -148,7 +148,7 @@ impl TaskInstrument for InspectTaskInstrument {
             .flatten()
             .and_then(|scope| scope.downcast_ref::<ScopeInspect>())
             .map(|scope| (&scope.node, Arc::clone(&scope.child_names)))
-            .unwrap_or((&self.root, Arc::clone(&self.child_names)));
+            .unwrap_or_else(|| (&self.root, Arc::clone(&self.child_names)));
         let name = {
             let mut names = parent_names.lock().unwrap();
             get_unique_name(&mut names, scope_name.to_string())
@@ -161,6 +161,12 @@ impl TaskInstrument for InspectTaskInstrument {
             parent_names,
         })
     }
+}
+
+pub fn default_root() -> Node {
+    fuchsia_inspect::component::inspector()
+        .root()
+        .create_child("fuchsia.inspect.AsyncInstrumentation")
 }
 
 #[cfg(test)]

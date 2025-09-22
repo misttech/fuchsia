@@ -27,7 +27,10 @@ rustc_library("fuchsia") {
   }
 
   if (is_fuchsia) {
-    deps += [ "//sdk/lib/scheduler/rust" ]
+    deps += [
+      "//sdk/lib/scheduler/rust",
+      "//src/lib/diagnostics/fuchsia-async-inspect",
+    ]
   }
   sources = [ "src/lib.rs" ]
 }
@@ -41,6 +44,9 @@ rustc_test("fuchsia_test") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:log",
   ]
+  if (is_fuchsia) {
+    deps += [ "//src/lib/diagnostics/fuchsia-async-inspect" ]
+  }
   source_root = "src/test.rs"
   sources = [ "src/test.rs" ]
 }
