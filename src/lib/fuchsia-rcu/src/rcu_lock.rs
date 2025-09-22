@@ -39,7 +39,7 @@ impl<'a, T: Send + Sync + 'static> RcuLockGuard<'a, T> {
     pub fn update_sync(self, data: T) {
         // SAFETY: We call `rcu_synchronize` before dropping the old value to ensure that no
         // concurrent readers are holding read guards.
-        let old_data = unsafe { self.lock.cell.update(data) };
+        let old_data = unsafe { self.lock.cell.replace(data) };
         // We drop the guard before synchronizing so that we are not holding the lock while
         // waiting for the RCU state machine to advance.
         std::mem::drop(self);
@@ -51,9 +51,11 @@ impl<'a, T: Send + Sync + 'static> RcuLockGuard<'a, T> {
     //
     // Concurrent readers may continue to see the old value of the lock until the RCU state machine
     // has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn update_deferred(self, scope: &RcuWriteScope, data: T) {
-        self.lock.cell.update_deferred(scope, data);
-        std::mem::drop(self);
+    pub fn update_deferred<'b, 'c>(&'b self, scope: &'c RcuWriteScope, data: T)
+    where
+        'c: 'b,
+    {
+        self.lock.cell.update(scope, data);
     }
 }
 

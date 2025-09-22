@@ -23,6 +23,15 @@ impl RcuWriteScope {
     pub fn drop<T: Send + Sync + 'static>(&self, value: T) {
         rcu_drop(value);
     }
+
+    /// Schedule a pointer to a Box to be dropped after all in-flight read operations have completed.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pointer was originally created by `Box::into_raw`.
+    pub unsafe fn drop_box<T: Send + Sync + 'static>(&self, ptr: *mut T) {
+        rcu_drop(Box::from_raw(ptr));
+    }
 }
 
 impl Drop for RcuWriteScope {

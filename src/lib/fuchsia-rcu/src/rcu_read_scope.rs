@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 ///
 /// This scope is used to ensure that the object referenced by the pointer remains valid until the
 /// scope is dropped.
-pub(crate) struct RcuReadScope {
+pub struct RcuReadScope {
     // We need to call `rcu_read_lock` and `rcu_read_unlock` from the same thread, so
     // we need to make `RcuReadScope` non-Send.
     _marker: PhantomData<*const ()>,
@@ -20,9 +20,24 @@ impl RcuReadScope {
     ///
     /// This function acquires a read lock on the RCU state machine. The read lock is held until the
     /// scope is dropped.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         rcu_read_lock();
         Self { _marker: PhantomData }
+    }
+
+    /// Get a reference to an object managed by the RCU state machine.
+    ///
+    /// The object referenced by the pointer will remain valid until the `RcuReadScope` is dropped.
+    /// However, another thread running concurrently might see a different value for the object.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn as_ref<T>(&self, ptr: *const T) -> Option<&T> {
+        if ptr.is_null() {
+            None
+        } else {
+            // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we call
+            // we drop the RcuReadScope.
+            Some(unsafe { &*ptr })
+        }
     }
 }
 

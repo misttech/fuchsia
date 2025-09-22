@@ -28,7 +28,7 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     /// The object referenced by the RCU Arc will remain valid until the `RcuReadGuard` is dropped.
     /// However, another thread running concurrently might see a different value for the object.
     pub fn read(&self) -> RcuReadGuard<T> {
-        self.ptr.read()
+        self.ptr.get()
     }
 
     /// Write the value of the RCU Arc.
@@ -44,7 +44,7 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     ///
     /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn update_deferred(&self, scope: &RcuWriteScope, data: Arc<T>) {
+    pub fn update(&self, scope: &RcuWriteScope, data: Arc<T>) {
         let ptr = Self::into_ptr(data);
         // SAFETY: `scope.drop` defers the drop of the object until the RCU state machine has made
         // sufficient progress to ensure that no concurrent readers are holding read guards.
@@ -77,7 +77,9 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
 
     /// Replace the pointer in the RCU Arc with a new pointer.
     ///
-    /// SAFETY: The caller must defer the drop of the object until the RCU state machine has made
+    /// # Safety
+    ///
+    /// The caller must defer the drop of the object until the RCU state machine has made
     /// sufficient progress to ensure that no concurrent readers are holding read guards.
     #[must_use]
     unsafe fn replace(&self, ptr: *mut T) -> Arc<T> {
@@ -153,7 +155,7 @@ mod tests {
         assert_eq!(arc.read().value, 42);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
         let scope = RcuWriteScope::default();
-        arc.update_deferred(&scope, DropCounter::new(43));
+        arc.update(&scope, DropCounter::new(43));
         assert_eq!(arc.read().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
 
