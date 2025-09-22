@@ -5,7 +5,6 @@
 use crate::agent::camera_watcher::CameraWatcherAgent;
 use crate::agent::{AgentError, Context, Invocation, Lifespan, Payload};
 use crate::event::{self, Event};
-use crate::input::common::CAMERA_WATCHER_TIMEOUT;
 use crate::message::base::{Audience, MessengerType};
 use crate::service;
 use crate::service_context::ServiceContext;
@@ -14,6 +13,8 @@ use fuchsia_async::{MonotonicInstant, TestExecutor};
 use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
+use settings_camera::CAMERA_WATCHER_TIMEOUT;
+use settings_common::inspect::event::ExternalEventPublisher;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::helpers::{move_executor_forward, move_executor_forward_and_get};
 use std::collections::HashSet;
@@ -69,7 +70,9 @@ async fn test_camera_agent_proxy() {
 
     let expected_camera_state = true;
     fake_services.camera3_service.lock().await.set_camera_sw_muted(expected_camera_state);
-    CameraWatcherAgent::create(context, vec![]).await;
+    let (event_tx, _event_rx) = mpsc::unbounded();
+    let external_publisher = ExternalEventPublisher::new(event_tx);
+    CameraWatcherAgent::create(context, vec![], external_publisher).await;
 
     let service_context =
         Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
@@ -158,7 +161,11 @@ fn test_camera_devices_watcher_timeout() {
     )
     .set_camera_sw_muted(true);
 
-    let camera_watcher_agent_future = CameraWatcherAgent::create(context, vec![]);
+    let (event_tx, _event_rx) = mpsc::unbounded();
+    let external_publisher = ExternalEventPublisher::new(event_tx);
+
+    let camera_watcher_agent_future =
+        CameraWatcherAgent::create(context, vec![], external_publisher);
     move_executor_forward(
         &mut executor,
         camera_watcher_agent_future,
@@ -218,7 +225,10 @@ async fn test_camera_agent_delayed_devices() {
     let expected_camera_state = true;
     fake_services.camera3_service.lock().await.set_camera_sw_muted(expected_camera_state);
     let (tx, mut rx) = mpsc::unbounded();
-    CameraWatcherAgent::create(context, vec![tx]).await;
+    let (event_tx, _event_rx) = mpsc::unbounded();
+    let external_publisher = ExternalEventPublisher::new(event_tx);
+
+    CameraWatcherAgent::create(context, vec![tx], external_publisher).await;
 
     let service_context =
         Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));

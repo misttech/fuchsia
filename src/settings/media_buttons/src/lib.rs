@@ -51,3 +51,41 @@ impl From<MediaButtons> for Event {
         Self::OnButton(button_types)
     }
 }
+
+// Only used for tests
+/// Builder to simplify construction of fidl_fuchsia_ui_input::MediaButtonsEvent.
+/// # Example usage:
+/// ```
+/// MediaButtonsEventBuilder::new().set_mic_mute(true).build();
+/// ```
+pub struct MediaButtonsEventBuilder {
+    mic_mute: bool,
+    camera_disable: bool,
+}
+
+impl MediaButtonsEventBuilder {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        // Create with defaults.
+        Self { mic_mute: false, camera_disable: false }
+    }
+
+    pub fn build(self) -> MediaButtonsEvent {
+        MediaButtonsEvent {
+            mic_mute: Some(self.mic_mute),
+            pause: Some(false),
+            camera_disable: Some(self.camera_disable),
+            ..Default::default()
+        }
+    }
+
+    pub fn set_mic_mute(mut self, mic_mute: bool) -> Self {
+        self.mic_mute = mic_mute;
+        self
+    }
+
+    pub fn set_camera_disable(mut self, camera_disable: bool) -> Self {
+        self.camera_disable = camera_disable;
+        self
+    }
+}

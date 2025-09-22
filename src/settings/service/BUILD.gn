@@ -33,7 +33,6 @@ icu_rustc_library("lib") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust",
@@ -59,6 +58,7 @@ icu_rustc_library("lib") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/trace/rust:trace",
+    "//src/settings/camera:settings_camera",
     "//src/settings/common:settings_common",
     "//src/settings/inspect_utils:settings_inspect_utils",
     "//src/settings/light:settings_light",
@@ -84,6 +84,7 @@ icu_rustc_library("lib") {
   ]
 
   test_deps = [
+    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
@@ -151,7 +152,6 @@ icu_rustc_library("lib") {
     "src/ingress/request.rs",
     "src/ingress/watch.rs",
     "src/input.rs",
-    "src/input/common.rs",
     "src/input/input_controller.rs",
     "src/input/input_device_configuration.rs",
     "src/input/input_fidl_handler.rs",

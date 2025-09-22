@@ -18,15 +18,16 @@ use crate::{
     AgentConfiguration, EnabledInterfacesConfiguration, Environment, EnvironmentBuilder,
     ServiceConfiguration, ServiceFlags,
 };
-use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::AgentType;
+use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::config_logger::InspectConfigLogger;
+use settings_common::inspect::event::ExternalEventPublisher;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 
 use fidl_fuchsia_settings::{InputMarker, InputProxy};
 use fuchsia_inspect::component;
-use futures::channel::mpsc::UnboundedSender;
+use futures::channel::mpsc::{self, UnboundedSender};
 use futures::lock::Mutex;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -130,6 +131,8 @@ impl TestInputEnvironmentBuilder {
             let generate_handler: GenerateHandler = Box::new(move |context: Context| {
                 let config = config.clone();
                 let storage_factory = Rc::clone(&storage_factory);
+                let (event_tx, _) = mpsc::unbounded();
+                let external_publisher = ExternalEventPublisher::new(event_tx);
                 Box::pin(async move {
                     let setting_type = context.setting_type;
                     ClientImpl::create(
@@ -137,6 +140,7 @@ impl TestInputEnvironmentBuilder {
                         Box::new(move |proxy| {
                             let config = config.clone();
                             let storage_factory = Rc::clone(&storage_factory);
+                            let external_publisher = external_publisher.clone();
                             Box::pin(async move {
                                 let proxy = ClientProxy::new(proxy, setting_type).await;
                                 let store = storage_factory.get_device_storage().await;
@@ -144,6 +148,7 @@ impl TestInputEnvironmentBuilder {
                                     proxy,
                                     config.clone(),
                                     store,
+                                    external_publisher,
                                 );
 
                                 controller_result.map(

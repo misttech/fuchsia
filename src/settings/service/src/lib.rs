@@ -523,6 +523,9 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
         Self::initialize_storage(&settings, &*fidl_storage_factory, &*self.storage_factory).await;
 
+        let (external_event_tx, external_event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(external_event_tx);
+
         EnvironmentBuilder::register_setting_handlers(
             &settings,
             Rc::clone(&self.storage_factory),
@@ -531,6 +534,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             self.audio_configuration.map(AudioInfoLoader::new),
             self.input_configuration,
             &mut handler_factory,
+            external_publisher.clone(),
         )
         .await;
 
@@ -542,7 +546,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             camera_watcher_event_txs,
             media_buttons_event_txs,
             setting_value_rx,
-            external_event_rx,
             usage_event_rx,
             tasks,
         } = Self::register_controllers(
@@ -553,6 +556,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             self.light_configuration,
             &mut service_dir,
             Rc::clone(&listener_logger),
+            external_publisher.clone(),
         )
         .await;
         for task in tasks {
@@ -574,6 +578,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             self.media_buttons_event_txs,
             setting_value_rx,
             external_event_rx,
+            external_publisher,
             usage_event_rx,
         );
 
@@ -647,7 +652,6 @@ struct RegistrationResult {
     camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
-    external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
     usage_event_rx: UnboundedReceiver<UsageEvent>,
     tasks: Vec<fasync::Task<()>>,
 }
@@ -712,15 +716,14 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
         listener_logger: Rc<ListenerInspectLogger>,
+        external_publisher: ExternalEventPublisher,
     ) -> RegistrationResult
     where
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
         let (setting_value_tx, setting_value_rx) = mpsc::unbounded();
-        let (external_event_tx, external_event_rx) = mpsc::unbounded();
         let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
-        let external_publisher = ExternalEventPublisher::new(external_event_tx);
         let camera_watcher_event_txs = vec![];
         let mut media_buttons_event_txs = vec![];
         let mut tasks = vec![];
@@ -830,7 +833,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             camera_watcher_event_txs,
             media_buttons_event_txs,
             setting_value_rx,
-            external_event_rx,
             usage_event_rx,
             tasks,
         }
@@ -846,6 +848,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         audio_loader: Option<AudioInfoLoader>,
         input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
         factory_handle: &mut SettingHandlerFactoryImpl,
+        external_publisher: ExternalEventPublisher,
     ) {
         // Accessibility
         if components.contains(&SettingType::Accessibility) {
@@ -928,7 +931,11 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 Box::new(move |context| {
                     DataHandler::<InputController<T>>::spawn_with_async(
                         context,
-                        (Rc::clone(&device_storage_factory), Rc::clone(&input_configuration)),
+                        (
+                            Rc::clone(&device_storage_factory),
+                            Rc::clone(&input_configuration),
+                            external_publisher.clone(),
+                        ),
                     )
                 }),
             );
@@ -979,6 +986,7 @@ fn create_agent_blueprints(
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
+    external_publisher: ExternalEventPublisher,
     mut usage_router_rx: UnboundedReceiver<UsageEvent>,
 ) -> Vec<AgentCreator> {
     let (proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
@@ -992,9 +1000,9 @@ fn create_agent_blueprints(
         }
     })
     .detach();
-    let camera_registrar = agent_types
-        .contains(&AgentType::CameraWatcher)
-        .then(|| agent::camera_watcher::create_registrar(camera_watcher_event_txs));
+    let camera_registrar = agent_types.contains(&AgentType::CameraWatcher).then(|| {
+        agent::camera_watcher::create_registrar(camera_watcher_event_txs, external_publisher)
+    });
     let media_buttons_registrar = agent_types
         .contains(&AgentType::MediaButtons)
         .then(|| agent::media_buttons::create_registrar(media_buttons_event_txs));

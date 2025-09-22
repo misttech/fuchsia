@@ -131,6 +131,12 @@ generate_inspect! {
     }
 }
 
+impl From<MediaButtons> for Request {
+    fn from(event: MediaButtons) -> Self {
+        Request::OnButton(event)
+    }
+}
+
 /// The data that is sent to and from setting handlers through the service
 /// MessageHub.
 #[derive(Clone, PartialEq, Debug)]

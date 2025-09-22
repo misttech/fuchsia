@@ -4,18 +4,19 @@
 
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
+use crate::handler::setting_handler::persist::{ClientProxy, controller as data_controller};
 use crate::handler::setting_handler::{
-    controller, ControllerError, ControllerStateResult, IntoHandlerResult, SettingHandlerResult,
-    State,
+    ControllerError, ControllerStateResult, IntoHandlerResult, SettingHandlerResult, State,
+    controller,
 };
-use crate::input::common::connect_to_camera;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::{
     DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
     InputState, Microphone,
 };
+use settings_camera::connect_to_camera;
 use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::event::ExternalEventPublisher;
 use settings_media_buttons::MediaButtons;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
@@ -146,6 +147,8 @@ struct InputControllerInner {
 
     /// Configuration for this device.
     input_device_config: InputConfiguration,
+
+    external_publisher: ExternalEventPublisher,
 }
 
 impl InputControllerInner {
@@ -339,12 +342,16 @@ impl InputControllerInner {
         // Start up a connection to the camera device watcher and connect to the
         // camera proxy using the id that is returned. The connection will drop out
         // of scope after the mute state is sent.
-        let camera_proxy =
-            connect_to_camera(self.client.get_service_context()).await.map_err(|e| {
-                ControllerError::UnexpectedError(
-                    format!("Could not connect to camera device: {e:?}").into(),
-                )
-            })?;
+        let camera_proxy = connect_to_camera(
+            self.client.get_service_context().common_context(),
+            self.external_publisher.clone(),
+        )
+        .await
+        .map_err(|e| {
+            ControllerError::UnexpectedError(
+                format!("Could not connect to camera device: {e:?}").into(),
+            )
+        })?;
 
         camera_proxy.set_software_mute_state(is_muted).await.map_err(|e| {
             ControllerError::ExternalFailure(
@@ -375,6 +382,7 @@ impl<F> InputController<F> {
         client: ClientProxy,
         input_device_config: InputConfiguration,
         store: Rc<DeviceStorage>,
+        external_publisher: ExternalEventPublisher,
     ) -> Result<Self, ControllerError> {
         Ok(Self {
             inner: Rc::new(Mutex::new(InputControllerInner {
@@ -382,6 +390,7 @@ impl<F> InputController<F> {
                 store,
                 input_device_state: InputState::new(),
                 input_device_config,
+                external_publisher,
             })),
             _phantom: PhantomData,
         })
@@ -400,11 +409,15 @@ impl<F> data_controller::CreateWithAsync for InputController<F>
 where
     F: StorageFactory<Storage = DeviceStorage>,
 {
-    type Data = (Rc<F>, Rc<std::sync::Mutex<DefaultSetting<InputConfiguration, &'static str>>>);
+    type Data = (
+        Rc<F>,
+        Rc<std::sync::Mutex<DefaultSetting<InputConfiguration, &'static str>>>,
+        ExternalEventPublisher,
+    );
     async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
         if let Ok(Some(config)) = data.1.lock().unwrap().load_default_value() {
             let store = data.0.get_store().await;
-            InputController::create_with_config(client, config, store)
+            InputController::create_with_config(client, config, store, data.2)
         } else {
             Err(ControllerError::InitFailure("Invalid default input device config".into()))
         }
@@ -485,13 +498,14 @@ impl<F> controller::Handle for InputController<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handler::setting_handler::controller::Handle;
     use crate::handler::setting_handler::ClientImpl;
+    use crate::handler::setting_handler::controller::Handle;
     use crate::input::input_device_configuration::{InputDeviceConfiguration, SourceState};
     use crate::service;
     use crate::service_context::ServiceContext;
     use fuchsia_async as fasync;
     use fuchsia_inspect::component;
+    use futures::channel::mpsc;
     use settings_common::inspect::config_logger::InspectConfigLogger;
     use settings_test_common::fakes::service::ServiceRegistry;
     use settings_test_common::storage::InMemoryStorageFactory;
@@ -591,6 +605,8 @@ mod tests {
     #[fasync::run_until_stalled(test)]
     async fn test_camera_error_on_restore() {
         let message_hub = service::MessageHub::create_hub();
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
         let storage_factory = InMemoryStorageFactory::new();
         storage_factory
@@ -613,6 +629,7 @@ mod tests {
                 }],
             },
             store,
+            external_publisher,
         )
         .expect("Should have controller");
 
@@ -645,6 +662,9 @@ mod tests {
             Rc::new(std::sync::Mutex::new(config_logger)),
         );
 
+        let (event_tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+
         let storage_factory = InMemoryStorageFactory::new();
         storage_factory
             .initialize::<InputController<InMemoryStorageFactory>>()
@@ -652,7 +672,11 @@ mod tests {
             .expect("controller should have impls");
         let _controller = InputController::create_with(
             client_proxy,
-            (Rc::new(storage_factory), Rc::new(std::sync::Mutex::new(default_setting))),
+            (
+                Rc::new(storage_factory),
+                Rc::new(std::sync::Mutex::new(default_setting)),
+                external_publisher,
+            ),
         )
         .await
         .expect("Should have controller");

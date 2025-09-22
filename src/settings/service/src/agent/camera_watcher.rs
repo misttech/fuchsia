@@ -8,12 +8,13 @@ use crate::agent::{
 use crate::base::SettingType;
 use crate::event::{Event, Publisher, camera_watcher};
 use crate::handler::base::{Payload as HandlerPayload, Request};
-use crate::input::common::connect_to_camera;
 use crate::message::base::Audience;
 use crate::service_context::ServiceContext;
 use crate::{service, trace, trace_guard};
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedSender;
+use settings_camera::connect_to_camera;
+use settings_common::inspect::event::ExternalEventPublisher;
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -25,13 +26,17 @@ fn get_event_setting_types() -> HashSet<SettingType> {
     vec![SettingType::Input].into_iter().collect()
 }
 
-pub(crate) fn create_registrar(muted_txs: Vec<UnboundedSender<bool>>) -> AgentCreator {
+pub(crate) fn create_registrar(
+    muted_txs: Vec<UnboundedSender<bool>>,
+    external_publisher: ExternalEventPublisher,
+) -> AgentCreator {
     AgentCreator {
         debug_id: "CameraWatcherAgent",
         create: CreationFunc::Dynamic(Rc::new(move |context| {
             let muted_txs = muted_txs.clone();
+            let external_publisher = external_publisher.clone();
             Box::pin(async move {
-                CameraWatcherAgent::create(context, muted_txs).await;
+                CameraWatcherAgent::create(context, muted_txs, external_publisher).await;
             })
         })),
     }
@@ -47,10 +52,15 @@ pub(crate) struct CameraWatcherAgent {
     /// Sends an event whenever camera muted state changes. The `bool`
     /// represents whether the camera is muted or not.
     muted_txs: Vec<UnboundedSender<bool>>,
+    external_publisher: ExternalEventPublisher,
 }
 
 impl CameraWatcherAgent {
-    pub(crate) async fn create(context: AgentContext, muted_txs: Vec<UnboundedSender<bool>>) {
+    pub(crate) async fn create(
+        context: AgentContext,
+        muted_txs: Vec<UnboundedSender<bool>>,
+        external_publisher: ExternalEventPublisher,
+    ) {
         let mut agent = CameraWatcherAgent {
             publisher: context.get_publisher(),
             messenger: context
@@ -63,6 +73,7 @@ impl CameraWatcherAgent {
                 .cloned()
                 .collect::<HashSet<SettingType>>(),
             muted_txs,
+            external_publisher,
         };
 
         let mut receptor = context.receptor;
@@ -93,7 +104,9 @@ impl CameraWatcherAgent {
         &mut self,
         service_context: Rc<ServiceContext>,
     ) -> InvocationResult {
-        match connect_to_camera(service_context).await {
+        match connect_to_camera(service_context.common_context(), self.external_publisher.clone())
+            .await
+        {
             Ok(camera_device_client) => {
                 let mut event_handler = EventHandler {
                     muted_txs: self.muted_txs.clone(),
@@ -183,6 +196,8 @@ mod tests {
     async fn initialization_lifespan_is_unhandled() {
         // Setup messengers needed to construct the agent.
         let (messenger, publisher) = create_messenger_and_publisher().await;
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
         // Construct the agent.
         let mut agent = CameraWatcherAgent {
@@ -190,6 +205,7 @@ mod tests {
             publisher,
             messenger,
             recipient_settings: HashSet::new(),
+            external_publisher,
         };
 
         // Try to initiatate the initialization lifespan.
@@ -208,6 +224,8 @@ mod tests {
     async fn when_camera3_inaccessible_returns_err() {
         // Setup messengers needed to construct the agent.
         let (messenger, publisher) = create_messenger_and_publisher().await;
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
 
         // Construct the agent.
         let mut agent = CameraWatcherAgent {
@@ -215,6 +233,7 @@ mod tests {
             publisher,
             messenger,
             recipient_settings: HashSet::new(),
+            external_publisher,
         };
 
         let service_context = Rc::new(ServiceContext::new(

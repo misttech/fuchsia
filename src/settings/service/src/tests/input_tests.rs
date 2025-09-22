@@ -4,16 +4,12 @@
 
 use crate::base::SettingType;
 use crate::ingress::fidl::Interface;
-use crate::input::common::MediaButtonsEventBuilder;
 use crate::input::input_device_configuration::{
     InputConfiguration, InputDeviceConfiguration, SourceState,
 };
-use crate::input::monitor_media_buttons;
 use crate::input::types::{
     DeviceState, DeviceStateSource, InputCategory, InputDeviceType, InputInfoSources, InputState,
 };
-use crate::service_context::ServiceContext;
-use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use crate::tests::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
 use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
 use assert_matches::assert_matches;
@@ -22,14 +18,12 @@ use fidl_fuchsia_settings::{
     DeviceState as FidlDeviceState, DeviceType, InputMarker, InputProxy, InputSettings,
     InputState as FidlInputState, ToggleStateFlags,
 };
-use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use fuchsia_async::TestExecutor;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::lock::Mutex;
 use futures::pin_mut;
 use futures::stream::StreamExt;
 use futures::task::Poll;
-use settings_test_common::fakes::service::ServiceRegistry;
+use settings_media_buttons::MediaButtonsEventBuilder;
 use settings_test_common::helpers::move_executor_forward;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashMap;
@@ -748,57 +742,4 @@ async fn test_channel_failure_watch() {
         create_input_test_env_with_failures(Rc::new(InMemoryStorageFactory::new())).await;
     let result = input_proxy.watch().await;
     assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
-}
-
-#[fuchsia::test(allow_stalls = false)]
-async fn test_media_buttons() {
-    let service_registry = ServiceRegistry::create();
-    let input_device_registry_service = Rc::new(Mutex::new(InputDeviceRegistryService::new()));
-
-    let initial_event = MediaButtonsEventBuilder::new().set_mic_mute(true).build();
-    input_device_registry_service.lock().await.send_media_button_event(initial_event.clone()).await;
-
-    service_registry.lock().await.register_service(input_device_registry_service.clone());
-
-    let service_context =
-        Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry.clone())), None));
-
-    let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
-    assert!(monitor_media_buttons(service_context, input_tx).await.is_ok());
-
-    // Listener receives an event immediately upon listening.
-    if let Some(event) = input_rx.next().await {
-        assert_eq!(initial_event, event);
-    }
-
-    // Disable the camera.
-    let second_event = MediaButtonsEventBuilder::new().set_camera_disable(true).build();
-    input_device_registry_service.lock().await.send_media_button_event(second_event.clone()).await;
-
-    // Listener receives the camera disable event.
-    if let Some(event) = input_rx.next().await {
-        assert_eq!(second_event, event);
-    }
-}
-
-#[fuchsia::test(allow_stalls = false)]
-async fn test_device_listener_failure() {
-    let service_registry = ServiceRegistry::create();
-    let input_device_registry_service = Rc::new(Mutex::new(InputDeviceRegistryService::new()));
-    input_device_registry_service.lock().await.set_fail(true);
-
-    let initial_event = MediaButtonsEventBuilder::new().set_mic_mute(true).build();
-
-    input_device_registry_service.lock().await.send_media_button_event(initial_event.clone()).await;
-
-    service_registry.lock().await.register_service(input_device_registry_service.clone());
-
-    let service_context =
-        Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry.clone())), None));
-
-    let (input_tx, _input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
-    #[allow(clippy::bool_assert_comparison)]
-    {
-        assert_eq!(monitor_media_buttons(service_context, input_tx).await.is_ok(), false);
-    }
 }

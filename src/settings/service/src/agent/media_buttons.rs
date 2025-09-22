@@ -8,13 +8,18 @@ use crate::agent::{
 use crate::base::SettingType;
 use crate::event::{Event, Publisher};
 use crate::handler::base::{Payload as HandlerPayload, Request};
-use crate::input::monitor_media_buttons;
 use crate::message::base::Audience;
 use crate::service_context::ServiceContext;
 use crate::{service, trace_guard};
+use anyhow::Error;
+use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
-use futures::channel::mpsc::UnboundedSender;
+use fidl_fuchsia_ui_policy::{
+    DeviceListenerRegistryMarker, MediaButtonsListenerMarker, MediaButtonsListenerRequest,
+};
 use futures::StreamExt;
+use futures::channel::mpsc::UnboundedSender;
+use settings_common::call_async;
 use settings_media_buttons::{self as media_buttons, MediaButtons};
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -40,6 +45,53 @@ pub(crate) fn create_registrar(
 /// available on the device.
 fn get_event_setting_types() -> HashSet<SettingType> {
     vec![SettingType::Audio, SettingType::Light, SettingType::Input].into_iter().collect()
+}
+
+/// Method for listening to media button changes. Changes will be reported back
+/// on the supplied sender.
+pub(crate) async fn monitor_media_buttons(
+    service_context_handle: Rc<ServiceContext>,
+    sender: futures::channel::mpsc::UnboundedSender<MediaButtonsEvent>,
+) -> Result<(), Error> {
+    let presenter_service =
+        service_context_handle.connect::<DeviceListenerRegistryMarker>().await?;
+    let (client_end, mut stream) = create_request_stream::<MediaButtonsListenerMarker>();
+
+    // TODO(https://fxbug.dev/42058092) This independent spawn is necessary! For some reason removing this or
+    // merging it with the spawn below causes devices to lock up on input button events. Figure out
+    // whether this can be removed or left as-is as part of the linked bug.
+    fasync::Task::local(async move {
+        if let Err(error) = call_async!(presenter_service => register_listener(client_end)).await {
+            log::error!(
+                "Registering media button listener with presenter service failed {:?}",
+                error
+            );
+        }
+    })
+    .detach();
+
+    fasync::Task::local(async move {
+        while let Some(Ok(media_request)) = stream.next().await {
+            // Support future expansion of FIDL
+            #[allow(clippy::single_match)]
+            #[allow(unreachable_patterns)]
+            match media_request {
+                MediaButtonsListenerRequest::OnEvent { event, responder } => {
+                    sender
+                        .unbounded_send(event)
+                        .expect("Media buttons sender failed to send event");
+                    // Acknowledge the event.
+                    responder
+                        .send()
+                        .unwrap_or_else(|_| log::error!("Failed to ack media buttons event"));
+                }
+                _ => {}
+            }
+        }
+    })
+    .detach();
+
+    Ok(())
 }
 
 pub(crate) struct MediaButtonsAgent {
@@ -166,14 +218,16 @@ impl EventHandler {
 mod tests {
     use super::*;
     use crate::event;
-    use crate::input::common::MediaButtonsEventBuilder;
     use crate::message::base::MessageEvent;
     use crate::message::receptor::Receptor;
+    use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
     use crate::tests::helpers::{
         create_messenger_and_publisher, create_messenger_and_publisher_from_hub,
         create_receptor_for_setting_type,
     };
     use futures::channel::mpsc;
+    use futures::lock::Mutex;
+    use settings_media_buttons::MediaButtonsEventBuilder;
     use settings_test_common::fakes::service::ServiceRegistry;
 
     // Tests that the initialization lifespan is not handled.
@@ -379,5 +433,74 @@ mod tests {
 
         // No events were received via the setting handler.
         assert_eq!(received_events, 0);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_media_buttons() {
+        let service_registry = ServiceRegistry::create();
+        let input_device_registry_service = Rc::new(Mutex::new(InputDeviceRegistryService::new()));
+
+        let initial_event = MediaButtonsEventBuilder::new().set_mic_mute(true).build();
+        input_device_registry_service
+            .lock()
+            .await
+            .send_media_button_event(initial_event.clone())
+            .await;
+
+        service_registry.lock().await.register_service(input_device_registry_service.clone());
+
+        let service_context = Rc::new(ServiceContext::new(
+            Some(ServiceRegistry::serve(service_registry.clone())),
+            None,
+        ));
+
+        let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
+        assert!(monitor_media_buttons(service_context, input_tx).await.is_ok());
+
+        // Listener receives an event immediately upon listening.
+        if let Some(event) = input_rx.next().await {
+            assert_eq!(initial_event, event);
+        }
+
+        // Disable the camera.
+        let second_event = MediaButtonsEventBuilder::new().set_camera_disable(true).build();
+        input_device_registry_service
+            .lock()
+            .await
+            .send_media_button_event(second_event.clone())
+            .await;
+
+        // Listener receives the camera disable event.
+        if let Some(event) = input_rx.next().await {
+            assert_eq!(second_event, event);
+        }
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_device_listener_failure() {
+        let service_registry = ServiceRegistry::create();
+        let input_device_registry_service = Rc::new(Mutex::new(InputDeviceRegistryService::new()));
+        input_device_registry_service.lock().await.set_fail(true);
+
+        let initial_event = MediaButtonsEventBuilder::new().set_mic_mute(true).build();
+
+        input_device_registry_service
+            .lock()
+            .await
+            .send_media_button_event(initial_event.clone())
+            .await;
+
+        service_registry.lock().await.register_service(input_device_registry_service.clone());
+
+        let service_context = Rc::new(ServiceContext::new(
+            Some(ServiceRegistry::serve(service_registry.clone())),
+            None,
+        ));
+
+        let (input_tx, _input_rx) = futures::channel::mpsc::unbounded::<MediaButtonsEvent>();
+        #[allow(clippy::bool_assert_comparison)]
+        {
+            assert_eq!(monitor_media_buttons(service_context, input_tx).await.is_ok(), false);
+        }
     }
 }

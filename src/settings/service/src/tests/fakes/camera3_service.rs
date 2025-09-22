@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input::common::CAMERA_WATCHER_TIMEOUT;
+use settings_camera::CAMERA_WATCHER_TIMEOUT;
 use settings_test_common::fakes::service::Service;
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fidl_fuchsia_camera3::{

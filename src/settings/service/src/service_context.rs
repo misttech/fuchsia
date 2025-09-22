@@ -41,6 +41,10 @@ impl ServiceContext {
         Self { inner, delegate }
     }
 
+    pub(crate) fn common_context(&self) -> Rc<InnerServiceContext> {
+        self.inner.clone()
+    }
+
     async fn make_publisher(&self) -> Option<Publisher> {
         let maybe: OptionFuture<_> = self
             .delegate
