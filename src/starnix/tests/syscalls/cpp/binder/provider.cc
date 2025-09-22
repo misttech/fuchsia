@@ -88,15 +88,15 @@ void ProviderBehavior(
 
   while (true) {
     std::array<uint32_t, 32> read_buffer = {};
-    struct binder_write_read read_write = {
+    struct binder_write_read write_read = {
         .read_size = sizeof(read_buffer),
         .read_consumed = 0,
         .read_buffer = (binder_uintptr_t)read_buffer.data(),
     };
-    ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &read_write), SyscallSucceeds());
+    ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &write_read), SyscallSucceeds());
 
     binder_uintptr_t cursor = (binder_uintptr_t)read_buffer.data();
-    binder_uintptr_t limit = cursor + read_write.read_consumed;
+    binder_uintptr_t limit = cursor + write_read.read_consumed;
     while (cursor < limit) {
       binder_driver_return_protocol returned = *(binder_driver_return_protocol*)(cursor);
       cursor += sizeof(binder_driver_return_protocol);
