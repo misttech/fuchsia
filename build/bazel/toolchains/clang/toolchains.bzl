@@ -55,3 +55,34 @@ def define_host_prebuilt_clang_cc_toolchains(name, host_os, host_arch):
         sysroot_library_files = sysroot_library_files_arm64,
         sysroot_path = sysroot_path,
     )
+
+def define_fuchsia_platform_prebuilt_clang_cc_toolchains(name, host_os, host_arch):
+    bazel_os = to_bazel_os_name(host_os)
+    bazel_arch = to_bazel_cpu_name(host_arch)
+
+    generate_clang_cc_toolchain(
+        name = name + "_x64",
+        host_os = bazel_os,
+        host_arch = bazel_arch,
+        target_os = "fuchsia",
+        target_arch = "x86_64",
+        extra_target_compatible_with = ["@//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules"],
+    )
+
+    generate_clang_cc_toolchain(
+        name = name + "_arm64",
+        host_os = bazel_os,
+        host_arch = bazel_arch,
+        target_os = "fuchsia",
+        target_arch = "aarch64",
+        extra_target_compatible_with = ["@//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules"],
+    )
+
+    generate_clang_cc_toolchain(
+        name = name + "_riscv64",
+        host_os = bazel_os,
+        host_arch = bazel_arch,
+        target_os = "fuchsia",
+        target_arch = "riscv64",
+        extra_target_compatible_with = ["@//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules"],
+    )

@@ -245,7 +245,7 @@ exports_files([
         target_compatible_with = [
             "@platforms//cpu:" + cpu,
             "@platforms//os:fuchsia",
-        ],
+        ] + %{EXTRA_TARGET_COMPATIBLE_WITH},
         toolchain = ":cc-compiler-" + cpu,
         toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
     )

@@ -55,11 +55,18 @@ alias(
 # parts of Bazel should define C++ and Rust toolchain instances
 # and configs that match the same constraint values to be
 # selected for them.
+
+# The fuchsia_$cpu platform definitions are used to build
+# Fuchsia binaries with our Bazel SDK rules. As a consequence
+# they require a working @fuchsia_sdk and @fuchsia_clang
+# repository to provide a sysroot and SDK atoms to access
+# platform libraries.
 platform(
     name = "fuchsia_x64",
     constraint_values = [
         "@platforms//os:fuchsia",
         "@platforms//cpu:x86_64",
+        ":fuchsia_artifacts_build_with_sdk_rules",
     ],
 )
 
@@ -68,6 +75,7 @@ platform(
     constraint_values = [
         "@platforms//os:fuchsia",
         "@platforms//cpu:arm64",
+        ":fuchsia_artifacts_build_with_sdk_rules",
     ],
 )
 
@@ -76,9 +84,43 @@ platform(
     constraint_values = [
         "@platforms//os:fuchsia",
         "@platforms//cpu:riscv64",
+        ":fuchsia_artifacts_build_with_sdk_rules",
     ],
 )
 
+# The fuchsia_platform_$cpu platform definitions are used to
+# build Fuchsia binaries *without* Bazel SDK rules. These artifacts
+# are considered part of the Fuchsia platform itself and are used
+# to generate the SDK atoms that the fuchsia_$cpu platform targets
+# rely on.
+platform(
+    name = "fuchsia_platform_x64",
+    constraint_values = [
+        "@platforms//os:fuchsia",
+        "@platforms//cpu:x86_64",
+        ":fuchsia_artifacts_build_without_sdk_rules",
+    ],
+)
+
+platform(
+    name = "fuchsia_platform_arm64",
+    constraint_values = [
+        "@platforms//os:fuchsia",
+        "@platforms//cpu:arm64",
+        ":fuchsia_artifacts_build_without_sdk_rules",
+    ],
+)
+
+platform(
+    name = "fuchsia_platform_riscv64",
+    constraint_values = [
+        "@platforms//os:fuchsia",
+        "@platforms//cpu:riscv64",
+        ":fuchsia_artifacts_build_without_sdk_rules",
+    ],
+)
+
+# Host platform definitions.
 platform(
     name = "linux_x64",
     constraint_values = [
@@ -171,4 +213,22 @@ config_setting(
         "@platforms//os:osx",
         "@platforms//cpu:arm64",
     ],
+)
+
+# A constraint dimension which indiciates whether Fuchsia artifacts
+# are generated using SDK rules or not. Platform binaries cannot use
+# SDK rules.
+constraint_setting(
+    name = "fuchsia_artifacts_build_mode",
+    default_constraint_value = ":fuchsia_artifacts_build_with_sdk_rules",
+)
+
+constraint_value(
+    name = "fuchsia_artifacts_build_without_sdk_rules",
+    constraint_setting = ":fuchsia_artifacts_build_mode",
+)
+
+constraint_value(
+    name = "fuchsia_artifacts_build_with_sdk_rules",
+    constraint_setting = ":fuchsia_artifacts_build_mode",
 )

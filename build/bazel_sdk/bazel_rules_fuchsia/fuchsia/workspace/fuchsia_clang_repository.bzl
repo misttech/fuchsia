@@ -176,6 +176,7 @@ def _fuchsia_clang_repository_impl(ctx):
             "%{SYSROOT_LIBS_AARCH64}": ctx.attr.sysroot_libs.get("aarch64", "NOT_SET"),
             "%{SYSROOT_LIBS_RISCV64}": ctx.attr.sysroot_libs.get("riscv64", "NOT_SET"),
             "%{SYSROOT_LIBS_X86_64}": ctx.attr.sysroot_libs.get("x86_64", "NOT_SET"),
+            "%{EXTRA_TARGET_COMPATIBLE_WITH}": repr([str(label) for label in ctx.attr.extra_target_compatible_with]),
         },
         executable = False,
     )
@@ -306,6 +307,12 @@ archive file.
                 "riscv64": "@fuchsia_sdk//:fuchsia-sysroot-libraries-riscv64",
             },
         ),
+        "extra_target_compatible_with": attr.label_list(
+            doc = "An optional list of extra platform constraint values that the toolchain must match. " +
+                  "This is only useful for the Fuchsia in-tree build that also generates Fuchsia binaries " +
+                  "using a different Fuchsia-specific toolchain that cannot rely on SDK sysroots.",
+            default = [],
+        ),
         "rules_fuchsia_root_label": attr.label(
             doc = "The fuchsia workspace rules root label. eg: @fuchsia_sdk",
             default = "@fuchsia_sdk",
@@ -327,6 +334,7 @@ def _fuchsia_clang_repository_ext(ctx):
     sdk_root_label = None
     rules_fuchsia_root_label = None
     local_version_file = None
+    extra_target_compatible_with = []
 
     for mod in ctx.modules:
         # only the root module can set tags
@@ -344,6 +352,7 @@ def _fuchsia_clang_repository_ext(ctx):
             if mod.tags.local:
                 local_path = mod.tags.local[0].local_path
                 local_version_file = mod.tags.local[0].local_version_file
+                extra_target_compatible_with = mod.tags.local[0].extra_target_compatible_with
 
     fuchsia_clang_repository(
         name = "fuchsia_clang",
@@ -354,6 +363,7 @@ def _fuchsia_clang_repository_ext(ctx):
         local_version_file = local_version_file,
         sdk_root_label = sdk_root_label,
         rules_fuchsia_root_label = rules_fuchsia_root_label,
+        extra_target_compatible_with = extra_target_compatible_with,
     )
 
 _labels_tag = tag_class(
@@ -396,6 +406,10 @@ _local_tag = tag_class(
         "local_version_file": attr.label(
             doc = "Optional path to a workspace-relative path to a version file for this clang installation.",
             allow_single_file = True,
+        ),
+        "extra_target_compatible_with": attr.label_list(
+            doc = "Optional list of additional platform constraint values the toolchain must match.",
+            default = [],
         ),
     },
 )

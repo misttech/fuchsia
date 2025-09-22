@@ -529,7 +529,8 @@ def generate_clang_cc_toolchain(
         clang_info = "//:clang_info",
         sysroot_header_files = [],
         sysroot_library_files = [],
-        sysroot_path = ""):
+        sysroot_path = "",
+        extra_target_compatible_with = []):
     """Define C++ toolchain related targets for a prebuilt Clang installation.
 
     This defines cc_toolchain(), cc_toolchain_config() and toolchain() targets
@@ -560,6 +561,9 @@ def generate_clang_cc_toolchain(
        sysroot_path: (optional) Path to the sysroot directory to be used.
            This must be set if sysroot_header_files or sysroot_library_files
            are used.
+
+        extra_target_compatible_with: (optional) A list of extra target
+           constraint values for the toolchain() target definition.
     """
     _prebuilt_clang_cc_toolchain_config(
         name = name + "_cc_toolchain_config",
@@ -639,7 +643,7 @@ def generate_clang_cc_toolchain(
         target_compatible_with = [
             "@platforms//os:" + target_os,
             "@platforms//cpu:" + target_arch,
-        ],
+        ] + extra_target_compatible_with,
         toolchain = ":" + name,
         toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
     )
