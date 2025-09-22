@@ -107,12 +107,9 @@ template("syscall_test") {
       binary = "data/tests/${_test_binary_name}"
     }
 
-    # If we're targeting a different kernel, the binary should be prefixed with the target kernel,
-    # and we'll add a field to the program to indicate the target kernel. This field will later be
-    # consumed within the Starnix test runner to handle as appropriate.
+    # If we're targeting a different kernel, we'll add a field to the program to indicate the target
+    # kernel. This field will be consumed within the Starnix test runner to handle as appropriate.
     if (defined(invoker.test_target_kernel)) {
-      _program.binary =
-          "data/tests/${invoker.test_target_kernel}_${_test_binary_name}"
       _program.test_target_kernel = invoker.test_target_kernel
     }
     contents = {
