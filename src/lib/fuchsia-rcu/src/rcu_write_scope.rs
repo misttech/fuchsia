@@ -9,6 +9,11 @@ use crate::state_machine::{rcu_drop, rcu_synchronize};
 pub struct RcuWriteScope {}
 
 impl RcuWriteScope {
+    /// Create a new `RcuWriteScope`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Synchronize the RCU state machine.
     ///
     /// This function blocks until the RCU state machine has made sufficient progress to ensure
