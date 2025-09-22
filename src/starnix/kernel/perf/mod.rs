@@ -241,6 +241,7 @@ impl FileOps for PerfEventFile {
         data.write(&read_format_data)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn ioctl(
         &self,
         _locked: &mut Locked<Unlocked>,

@@ -483,6 +483,7 @@ impl Mount {
         Arc::strong_count(&self.active_client_counter) - 1
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unmount(&self, flags: UnmountFlags, propagate: bool) -> Result<(), Errno> {
         if !flags.contains(UnmountFlags::DETACH) {
             if self.active_clients() > 0 || !self.state.read().submounts.is_empty() {
@@ -514,6 +515,7 @@ impl MountState {
         Some(group)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Remove this mount from its peer group and return the peer group.
     fn take_from_peer_group(&mut self) -> Option<Arc<PeerGroup>> {
         let (old_group, old_mount) = self.peer_group_.take()?;
@@ -816,6 +818,7 @@ impl ProcMountinfoFile {
     }
 }
 impl DynamicFileSource for ProcMountinfoFile {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         // Returns path to the `dir` from the root of the file system.
         fn path_from_fs_root(dir: &DirEntryHandle) -> FsString {
@@ -1516,6 +1519,7 @@ impl NamespaceNode {
         PathWithReachability::Reachable(absolute_path)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn mount(&self, what: WhatToMount, flags: MountFlags) -> Result<(), Errno> {
         let flags = flags & (MountFlags::STORED_ON_MOUNT | MountFlags::REC);
         let mountpoint = self.enter_mount();

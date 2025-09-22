@@ -1082,6 +1082,7 @@ impl Default for FuseDirEntry {
 }
 
 impl DirEntryOps for FuseDirEntry {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn revalidate(
         &self,
         locked: &mut Locked<FileOpsCore>,

@@ -106,6 +106,7 @@ pub(crate) struct RingBuffer {
 }
 
 impl RingBuffer {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Build a new storage of a ring buffer. `size` must be a non zero multiple of the page size
     /// and a power of 2.
     ///

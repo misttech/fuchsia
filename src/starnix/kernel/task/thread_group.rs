@@ -1395,6 +1395,7 @@ impl ThreadGroup {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Returns a tracee whose state has changed, so that waitpid can report on
     /// it. If this returns a value, and the pid is being traced, the tracer
     /// thread is deemed to have seen the tracee ptrace-stop for the purposes of

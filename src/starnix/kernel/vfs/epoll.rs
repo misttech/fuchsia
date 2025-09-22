@@ -393,6 +393,7 @@ impl EpollFileObject {
         Ok(pending_list)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Blocking wait on all waited upon events with a timeout.
     pub fn wait<L>(
         &self,

@@ -112,6 +112,7 @@ impl LayeredImage {
         })
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Apply a new layer on top of the previous ones.
     ///
     /// If `handle_whiteouts` is true, whiteout files will hide the corresponding files from
@@ -301,6 +302,7 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn from_entry<R: Read>(entry: &mut Entry<'_, R>) -> Result<Metadata> {
         let header = entry.header();
         let mode = (header.mode()? & 0o7777).try_into().unwrap();

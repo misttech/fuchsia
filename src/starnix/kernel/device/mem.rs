@@ -362,6 +362,7 @@ impl FileOps for DevKmsg {
         Ok(events)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn read(
         &self,
         locked: &mut Locked<FileOpsCore>,

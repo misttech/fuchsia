@@ -192,6 +192,7 @@ impl<T> OwnedRef<T> {
 }
 
 impl<T: Releasable> OwnedRef<T> {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Take the releasable from the `OwnedRef`. Returns None if the `OwnedRef` is not the last
     /// reference to the data.
     pub fn take(this: &mut Self) -> Option<ReleaseGuard<T>> {

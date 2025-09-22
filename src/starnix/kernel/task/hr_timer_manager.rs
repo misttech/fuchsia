@@ -882,6 +882,7 @@ impl HrTimerManager {
         });
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Add a new timer.
     ///
     /// A wake alarm is scheduled for the timer.

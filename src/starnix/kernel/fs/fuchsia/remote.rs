@@ -772,6 +772,7 @@ impl FsNodeOps for RemoteNode {
         Ok(child)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn lookup(
         &self,
         _locked: &mut Locked<FileOpsCore>,

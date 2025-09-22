@@ -116,6 +116,7 @@ impl FileSystemOps for SeLinuxFs {
 /// Notebook at
 /// https://github.com/SELinuxProject/selinux-notebook/blob/main/src/lsm_selinux.md#selinux-filesystem
 impl SeLinuxFs {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn new_fs<L>(
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
@@ -451,6 +452,7 @@ impl SeLinuxApiOps for CreateApi {
         Ok(())
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn api_read(&self) -> Result<Cow<'_, [u8]>, Errno> {
         let maybe_context = self
             .result

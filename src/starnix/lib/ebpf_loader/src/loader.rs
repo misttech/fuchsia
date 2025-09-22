@@ -191,6 +191,7 @@ struct StringsSection {
 }
 
 impl StringsSection {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get(&self, index: u32) -> Result<Option<&BStr>, Error> {
         let index = index as usize;
         if index >= self.data.len() {

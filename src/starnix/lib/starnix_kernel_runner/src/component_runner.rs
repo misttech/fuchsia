@@ -469,6 +469,7 @@ impl MountRecord {
         Ok(())
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn mount_remote<L>(
         &mut self,
         locked: &mut Locked<L>,

@@ -24,6 +24,7 @@ pub struct GrallocFile {
 }
 
 impl GrallocFile {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn new_file(current_task: &CurrentTask) -> Result<Box<dyn FileOps>, Errno> {
         let mode_setter = current_task
             .kernel()
@@ -33,6 +34,7 @@ impl GrallocFile {
         Ok(Box::new(Self { mode_setter }))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn set_vulkan_mode(
         &self,
         vulkan_mode: virtgralloc_VulkanMode,

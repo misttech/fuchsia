@@ -164,6 +164,7 @@ impl FsNodeOps for ExtDirectory {
         Ok(Box::new(ExtDirFileObject { inner: self.inner.clone() }))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn lookup(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -292,6 +293,7 @@ impl FsNodeOps for ExtFile {
     fs_node_impl_not_dir!();
     fs_node_impl_xattr_delegate!(self, self.inner);
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn create_file_ops(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -347,6 +349,7 @@ impl FsNodeOps for ExtSymlink {
     fs_node_impl_symlink!();
     fs_node_impl_xattr_delegate!(self, self.inner);
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn readlink(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -379,6 +382,7 @@ impl FileOps for ExtDirFileObject {
         Ok(default_seek(current_offset, target, || error!(EINVAL))?)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn readdir(
         &self,
         _locked: &mut Locked<FileOpsCore>,

@@ -793,6 +793,7 @@ impl LpmTrie {
 }
 
 impl MapImpl for LpmTrie {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn lookup<'a>(&'a self, key: &[u8]) -> Option<MapValueRef<'a>> {
         let state = self.store().trie().read();
         let mut longest_match = None;

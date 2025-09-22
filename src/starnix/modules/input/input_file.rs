@@ -509,6 +509,7 @@ impl FileOps for InputFile {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn read(
         &self,
         _locked: &mut Locked<FileOpsCore>,

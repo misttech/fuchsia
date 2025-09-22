@@ -33,6 +33,7 @@ pub struct PagerExtent {
 }
 
 impl Pager {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Returns a new pager.  `block_size` shouldn't be too big (which might cause overflows) and it
     /// should be a power of 2.
     pub fn new(backing_vmo: zx::Vmo, block_size: u64) -> Result<Self, Errno> {

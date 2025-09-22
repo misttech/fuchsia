@@ -339,6 +339,7 @@ impl<'a> TraceEventQueue {
         self.tracing_enabled.load(Ordering::Relaxed)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn enable(&self) -> Result<(), Errno> {
         // Use the metadata mutex to make sure the state of the metadata and the enabled flag
         // are changed at the same time.

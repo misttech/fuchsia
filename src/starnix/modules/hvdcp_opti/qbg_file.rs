@@ -239,6 +239,7 @@ impl FileOps for QbgDeviceFile {
         })
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,

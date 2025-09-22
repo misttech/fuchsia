@@ -190,6 +190,7 @@ impl FrameReader {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Repeatedly reads from the specified file until a full message is available.
     pub fn next_frame_blocking<L>(
         &mut self,
@@ -252,6 +253,7 @@ pub struct Consumer {
 }
 
 impl Consumer {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Opens a socket connection to the specified socket path and initializes the requisite
     /// bookkeeping information.
     pub fn new(

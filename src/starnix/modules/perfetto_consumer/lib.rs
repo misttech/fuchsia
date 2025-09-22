@@ -53,6 +53,7 @@ struct CallbackState {
 }
 
 impl CallbackState {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn connection(
         &mut self,
         locked: &mut Locked<Unlocked>,

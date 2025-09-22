@@ -52,6 +52,7 @@ impl PrivateAnonymousMemoryManager {
         Ok(length)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn move_pages(
         &self,
         source: &std::ops::Range<UserAddress>,

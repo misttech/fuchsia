@@ -234,6 +234,7 @@ impl StarnixNodeConnection {
         Ok(StarnixNodeConnection::new(self.kernel.clone(), self.credentials.clone(), file))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Implementation of `vfs::directory::entry_container::Directory::directory_read_dirents`.
     fn directory_read_dirents<'a>(
         &'a self,
@@ -349,6 +350,7 @@ impl StarnixNodeConnection {
         })
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Implementation of `vfs::directory::entry::DirectoryEntry::open`.
     fn directory_entry_open(
         self: Arc<Self>,

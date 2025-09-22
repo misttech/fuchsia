@@ -625,6 +625,7 @@ impl FastRPCFile {
         error!(ENOSYS)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get_payload_info(
         current_task: &CurrentTask,
         locked: &mut Locked<Unlocked>,

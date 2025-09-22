@@ -215,6 +215,7 @@ impl FileOps for BpfHandle {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn wait_async(
         &self,
         _locked: &mut Locked<FileOpsCore>,

@@ -251,6 +251,7 @@ impl FsNodeOps for DevPtsRootDir {
         Ok(VecDirectory::new_file(result))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn lookup(
         &self,
         _locked: &mut Locked<FileOpsCore>,

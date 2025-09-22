@@ -538,6 +538,7 @@ impl DeviceRegistry {
         Ok(metadata)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Directly add a device to the KObjectStore.
     ///
     /// This function should be used only by device that have registered an entire major device

@@ -223,6 +223,7 @@ impl FileOps for TimerFile {
         if file.flags().contains(OpenFlags::NONBLOCK) { error!(EINVAL) } else { error!(ESPIPE) }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn read(
         &self,
         locked: &mut Locked<FileOpsCore>,
@@ -274,6 +275,7 @@ impl FileOps for TimerFile {
         })
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn wait_async(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -298,6 +300,7 @@ impl FileOps for TimerFile {
         Some(WaitCanceler::new_port(canceler))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn query_events(
         &self,
         _locked: &mut Locked<FileOpsCore>,

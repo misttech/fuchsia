@@ -317,6 +317,7 @@ impl OverlayNode {
         self.ensure_upper_maybe_copy(locked, current_task, UpperCopyMode::CopyAll)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Same as `ensure_upper()`, but allows to skip copying of the file content.
     fn ensure_upper_maybe_copy<L>(
         &self,
@@ -904,6 +905,7 @@ impl FsNodeOps for OverlayNodeOps {
         )
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get_xattr(
         &self,
         locked: &mut Locked<FileOpsCore>,
@@ -945,6 +947,7 @@ impl FsNodeOps for OverlayNodeOps {
         upper.entry().node.remove_xattr(locked, current_task, &upper.mount, name)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn list_xattrs(
         &self,
         locked: &mut Locked<FileOpsCore>,

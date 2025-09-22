@@ -126,6 +126,7 @@ impl FileOps for SyncFile {
         Ok(Some(dup.into()))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,

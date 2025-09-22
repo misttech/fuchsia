@@ -64,6 +64,7 @@ pub struct DataChannelFile {
 }
 
 impl DataChannelFile {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn new(
         client: Arc<fnanohub::DataChannelSynchronousProxy>,
         manager: Arc<frunner::ManagerSynchronousProxy>,
@@ -220,6 +221,7 @@ impl FileOps for DataChannelFile {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn wait_async(
         &self,
         _locked: &mut Locked<FileOpsCore>,

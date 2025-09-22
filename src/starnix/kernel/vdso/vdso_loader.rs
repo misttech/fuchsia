@@ -131,6 +131,7 @@ impl Vdso {
         Self { memory, sigreturn_offset, vvar_writeable, vvar_readonly }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn new_arch32() -> Option<Self> {
         let maybe_memory = load_vdso_arch32_from_file();
         if maybe_memory.is_err() {

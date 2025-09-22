@@ -137,6 +137,7 @@ impl MessageData for Arc<VmsplicePayload> {
         self.segments.lock().iter().map(|s| s.length).sum()
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn split_off(&mut self, mut limit: usize) -> Option<Self> {
         let new_segments = {
             let mut segments = self.segments.lock();

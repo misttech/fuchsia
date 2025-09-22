@@ -390,6 +390,7 @@ impl FsNodeOps for TmpFsDirectory {
         Ok(())
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn unlink(
         &self,
         _locked: &mut Locked<FileOpsCore>,

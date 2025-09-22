@@ -195,6 +195,7 @@ impl SecurityServer {
         Some(active_policy.parsed.serialize_security_context(context))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Applies the supplied policy to the security server.
     pub fn load_policy(&self, binary_policy: Vec<u8>) -> Result<(), anyhow::Error> {
         // Parse the supplied policy, and reject the load operation if it is
@@ -395,6 +396,7 @@ impl SecurityServer {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// If there is a genfscon statement for the given filesystem type, returns the
     /// [`SecurityContext`] that should be used for a node in path `node_path`. When `node_path` is
     /// the root path ("/") the label additionally corresponds to the `FileSystem` label.
@@ -560,6 +562,7 @@ impl Query for SecurityServerBackend {
         self.compute_create_sid(source_sid, target_sid, fs_node_class)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn compute_new_fs_node_sid_with_name(
         &self,
         source_sid: SecurityId,

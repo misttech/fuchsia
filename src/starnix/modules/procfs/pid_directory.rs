@@ -475,6 +475,7 @@ impl FsNodeOps for NsDirectory {
         ))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn lookup(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -812,6 +813,7 @@ impl FileOps for CommFile {
     fileops_impl_delegate_read_and_seek!(self, self.dynamic_file);
     fileops_impl_noop_sync!();
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,

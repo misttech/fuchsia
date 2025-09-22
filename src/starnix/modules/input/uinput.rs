@@ -137,6 +137,7 @@ struct UinputDeviceMutableState {
 }
 
 impl UinputDeviceMutableState {
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get_id_and_device_type(&self) -> Option<(uapi::input_id, DeviceType)> {
         let input_id = match self.input_id {
             Some(input_id) => input_id,
@@ -274,6 +275,7 @@ impl UinputDeviceFile {
         self.ui_dev_create_inner(locked, current_task, registry)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// UI_DEV_CREATE calls create the uinput device with given information
     /// from previous ioctl() calls.
     fn ui_dev_create_inner<L>(

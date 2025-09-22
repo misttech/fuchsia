@@ -2203,6 +2203,7 @@ impl MemoryManagerState {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn cache_flush(&self, range: Range<UserAddress>) -> Result<(), Errno> {
         let mut addr = range.start;
         let size = range.end - range.start;
@@ -2334,6 +2335,7 @@ impl MemoryManager {
         self.root_vmar == other.root_vmar
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unified_read_memory<'a>(
         &self,
         current_task: &CurrentTask,
@@ -2359,6 +2361,7 @@ impl MemoryManager {
         self.state.read().read_memory(addr, bytes)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unified_read_memory_partial_until_null_byte<'a>(
         &self,
         current_task: &CurrentTask,
@@ -2388,6 +2391,7 @@ impl MemoryManager {
         self.state.read().read_memory_partial_until_null_byte(addr, bytes)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unified_read_memory_partial<'a>(
         &self,
         current_task: &CurrentTask,
@@ -2417,6 +2421,7 @@ impl MemoryManager {
         self.state.read().read_memory_partial(addr, bytes)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unified_write_memory(
         &self,
         current_task: &CurrentTask,
@@ -2445,6 +2450,7 @@ impl MemoryManager {
         self.state.read().write_memory(addr, bytes)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unified_write_memory_partial(
         &self,
         current_task: &CurrentTask,
@@ -2470,6 +2476,7 @@ impl MemoryManager {
         self.state.read().write_memory_partial(addr, bytes)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unified_zero(
         &self,
         current_task: &CurrentTask,
@@ -2597,6 +2604,7 @@ impl MemoryManager {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn set_brk<L>(
         self: &Arc<Self>,
         locked: &mut Locked<L>,
@@ -2749,6 +2757,7 @@ impl MemoryManager {
     }
 
     // Register a given memory range with a userfault object.
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn register_with_uffd<L>(
         self: &Arc<Self>,
         locked: &mut Locked<L>,
@@ -2797,6 +2806,7 @@ impl MemoryManager {
     }
 
     // Unregister a given range from any userfault objects associated with it.
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn unregister_range_from_uffd<L>(
         &self,
         locked: &mut Locked<L>,
@@ -2879,6 +2889,7 @@ impl MemoryManager {
         state.userfaultfds.retain(|uf| !Weak::ptr_eq(uf, &weak_userfault));
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Populate a range of pages registered with an userfaulfd according to a `populate` function.
     /// This will fail if the pages were not registered with userfaultfd, or if the page at `addr`
     /// was already populated. If any page other than the first one was populated, the `length`
@@ -3202,6 +3213,7 @@ impl MemoryManager {
     }
 
     // Get a randomised address for loading a position-independent executable.
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn get_random_base_for_executable(
         &self,
         arch_width: ArchWidth,
@@ -3481,6 +3493,7 @@ impl MemoryManager {
         ))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn set_mapping_name(
         &self,
         addr: UserAddress,

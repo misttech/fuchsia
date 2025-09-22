@@ -179,6 +179,7 @@ impl MemoryObject {
         self
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn op_range(
         &self,
         op: zx::VmoOp,
@@ -217,6 +218,7 @@ impl MemoryObject {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn map_in_vmar(
         &self,
         vmar: &zx::Vmar,

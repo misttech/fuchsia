@@ -1082,6 +1082,7 @@ impl CurrentTask {
         Ok(())
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// After the memory is unmapped, any failure in exec is unrecoverable and results in the
     /// process crashing. This function is for that second half; any error returned from this
     /// function will be considered unrecoverable.

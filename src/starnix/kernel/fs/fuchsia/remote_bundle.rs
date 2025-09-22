@@ -179,6 +179,7 @@ impl Inner {
 impl FsNodeOps for File {
     fs_node_impl_not_dir!();
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn create_file_ops(
         &self,
         _locked: &mut Locked<FileOpsCore>,

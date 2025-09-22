@@ -294,6 +294,7 @@ impl InputDevice {
         Box::new(input_file)
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     #[cfg(test)]
     pub fn open_test(
         &self,

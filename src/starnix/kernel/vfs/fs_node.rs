@@ -1570,6 +1570,7 @@ impl FsNode {
             .unwrap_or_else(|| Ok(()))
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn create_tmpfile<L>(
         &self,
         locked: &mut Locked<L>,

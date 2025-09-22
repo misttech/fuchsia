@@ -149,6 +149,7 @@ impl NormalPriority {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Creates a normal priority from a value to be interpreted according
     /// to the "user-space nice" (-20..=19) scale, rejecting values outside
     /// that scale.
