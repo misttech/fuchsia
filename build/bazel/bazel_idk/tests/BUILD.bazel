@@ -26,8 +26,11 @@ create_idk_atom_for_test(
 idk_cc_source_library(
     name = "test-source-set",
     testonly = True,
-    srcs = ["some_library.cc"],
-    hdrs = ["test_header.h"],
+    srcs = [
+        "internal/helper.cc",
+        "some_library.cc",
+    ],
+    hdrs = ["include/lib/test_lib/test_header.h"],
     api_area = "Developer",
     api_file_path = "different_file_name.api",
     category = "partner",
@@ -37,7 +40,6 @@ idk_cc_source_library(
         ":test_source_set_dependency",
     ],
     idk_name = "test_source_set",
-    include_base = ".",
     stable = True,
     deps = [
         # Cover deps strings that omit the package path, omit the target name,
@@ -51,15 +53,15 @@ idk_cc_source_library(
     name = "test_source_set_dependency",
     testonly = True,
     srcs = ["dependency.cc"],
-    hdrs = ["dependency.h"],
+    hdrs = ["different_include_dir/dependency.h"],
     api_area = "Developer",
 
     # Test overriding the path to the API file.
     api_file_path = "dependency_1.api",
     category = "partner",
-    hdrs_for_internal_use = ["another_header.h"],
+    hdrs_for_internal_use = ["different_include_dir/another_header.h"],
     idk_name = "source_dependency_1",
-    include_base = ".",
+    include_base = "different_include_dir",
     stable = True,
     deps = [
         # Used to ensure transitive dependencies are included.
@@ -70,7 +72,7 @@ idk_cc_source_library(
 idk_cc_source_library(
     name = "test_source_set_dependency2",
     testonly = True,
-    hdrs = ["dependency.h"],
+    hdrs = ["different_include_dir/dependency.h"],
     api_area = "Developer",
 
     # Test specifying an absolute path to the API file.
@@ -79,21 +81,21 @@ idk_cc_source_library(
     # instances.
     api_file_path = "//build/bazel/bazel_idk/tests:source_dependency_2.api",
     category = "partner",
-    hdrs_for_internal_use = ["another_header.h"],
+    hdrs_for_internal_use = ["different_include_dir/another_header.h"],
     idk_name = "source_dependency_2",
-    include_base = ".",
+    include_base = "different_include_dir",
     stable = True,
 )
 
 idk_cc_source_library(
     name = "test_source_set_subdependency",
     testonly = True,
-    hdrs = ["dependency.h"],
+    hdrs = ["different_include_dir/dependency.h"],
     api_area = "Developer",
     category = "partner",
-    hdrs_for_internal_use = ["another_header.h"],
+    hdrs_for_internal_use = ["different_include_dir/another_header.h"],
     idk_name = "source_subdependency",
-    include_base = ".",
+    include_base = "different_include_dir",
     stable = True,
 )
 
@@ -103,12 +105,12 @@ idk_cc_source_library(
 idk_cc_source_library(
     name = "tests",
     testonly = True,
-    hdrs = ["dependency.h"],
+    hdrs = ["different_include_dir/dependency.h"],
     api_area = "Developer",
     category = "partner",
-    hdrs_for_internal_use = ["another_header.h"],
+    hdrs_for_internal_use = ["different_include_dir/another_header.h"],
     idk_name = "tests_dependency",
-    include_base = ".",
+    include_base = "different_include_dir",
     stable = True,
 
     # Prevent mistaken use of this target as a group of tests.

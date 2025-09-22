@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "dependency.h"
-#include "test_header.h"
+#include <dependency.h>
+#include <lib/test_lib/test_header.h>
 
 int SomeFunction() { return RequiredFunction(42); }
