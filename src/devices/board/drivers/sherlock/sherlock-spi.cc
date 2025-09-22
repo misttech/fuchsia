@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.spi.businfo/cpp/fidl.h>
@@ -22,7 +23,6 @@
 #include <bind/fuchsia/register/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <soc/aml-common/aml-registers.h>
-#include <soc/aml-common/aml-spi.h>
 #include <soc/aml-t931/t931-gpio.h>
 
 #include "sherlock-gpios.h"
@@ -64,14 +64,6 @@ static const spi_channel_t spi_channels[] = {
         .pid = PDEV_PID_NORDIC_NRF52840,
         .did = PDEV_DID_NORDIC_THREAD,
     },
-};
-
-static const amlogic_spi::amlspi_config_t spi_config = {
-    .bus_id = SHERLOCK_SPICC0,
-    .cs_count = 1,
-    .cs = {0},                                       // index into fragments list
-    .clock_divider_register_value = (512 >> 1) - 1,  // SCLK = core clock / 512 = ~1.3 MHz
-    .use_enhanced_clock_mode = true,
 };
 
 const std::vector kGpioSpiRules = {
@@ -133,11 +125,24 @@ zx_status_t Sherlock::SpiInit() {
     persisted_spi_bus_metadata = std::move(result.value());
   }
 
+  static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
+      .bus_id = SHERLOCK_SPICC0,
+      .cs = {0},                                       // index into fragments list
+      .clock_divider_register_value = (512 >> 1) - 1,  // SCLK = core clock / 512 = ~1.3 MHz
+      .use_enhanced_clock_mode = true,
+      .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+  });
+
+  fit::result persisted_config = fidl::Persist(kSpiConfig);
+  if (!persisted_config.is_ok()) {
+    zxlogf(ERROR, "Failed to persist spi config: %s",
+           persisted_config.error_value().FormatDescription().c_str());
+    return persisted_config.error_value().status();
+  }
+
   std::vector<fpbus::Metadata> spi_metadata{
-      {{.id = std::to_string(DEVICE_METADATA_AMLSPI_CONFIG),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&spi_config),
-            reinterpret_cast<const uint8_t*>(&spi_config) + sizeof(spi_config))}},
+      {{.id = fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+        .data = std::move(persisted_config.value())}},
       {{.id = fuchsia_hardware_spi_businfo::SpiBusMetadata::kSerializableName,
         .data = std::move(persisted_spi_bus_metadata)}},
   };

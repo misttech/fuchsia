@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.spi.businfo/cpp/fidl.h>
@@ -26,7 +27,6 @@
 #include <bind/fuchsia/register/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <soc/aml-common/aml-registers.h>
-#include <soc/aml-common/aml-spi.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
@@ -172,13 +172,13 @@ zx_status_t Nelson::Spi0Init() {
       },
   };
 
-  static const amlogic_spi::amlspi_config_t spi_0_config = {
+  static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpi0Config({
       .bus_id = NELSON_SPICC0,
-      .cs_count = 1,
       .cs = {0},                                       // index into fragments list
       .clock_divider_register_value = (500 >> 1) - 1,  // SCLK = core clock / 500 = 1.0 MHz
       .use_enhanced_clock_mode = true,
-  };
+      .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+  });
 
   fpbus::Node spi_0_dev;
   spi_0_dev.name() = "spi-0";
@@ -210,16 +210,19 @@ zx_status_t Nelson::Spi0Init() {
     persisted_spi_bus_metadata = std::move(result.value());
   }
 
-  std::vector<fpbus::Metadata> spi_0_metadata{
-      {{.id = std::to_string(DEVICE_METADATA_AMLSPI_CONFIG),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&spi_0_config),
-            reinterpret_cast<const uint8_t*>(&spi_0_config) + sizeof(spi_0_config))}},
+  fit::result persisted_config = fidl::Persist(kSpi0Config);
+  if (!persisted_config.is_ok()) {
+    zxlogf(ERROR, "Failed to persist spi 0 config: %s",
+           persisted_config.error_value().FormatDescription().c_str());
+    return persisted_config.error_value().status();
+  }
+
+  spi_0_dev.metadata() = std::vector<fpbus::Metadata>{
+      {{.id = fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+        .data = std::move(persisted_config.value())}},
       {{.id = fuchsia_hardware_spi_businfo::SpiBusMetadata::kSerializableName,
         .data = std::move(persisted_spi_bus_metadata)}},
   };
-
-  spi_0_dev.metadata() = std::move(spi_0_metadata);
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('SPI0');
@@ -279,15 +282,15 @@ zx_status_t Nelson::Spi1Init() {
   constexpr uint32_t kMiDelay3Cycles = 3 << 2;
   constexpr uint32_t kMiCapAhead2Cycles = 0 << 4;
 
-  static const amlogic_spi::amlspi_config_t spi_1_config = {
+  static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpi1Config({
       .bus_id = NELSON_SPICC1,
-      .cs_count = 1,
-      .cs = {amlogic_spi::amlspi_config_t::kCsClientManaged},  // CS GPIO managed by client driver
-      .clock_divider_register_value = (22 >> 1) - 1,           // SCLK = core clock / 22 = 30.3 MHz
+      .cs = {fuchsia_hardware_amlogic_metadata::kCsClientManaged},  // CS GPIO managed by client
+                                                                    // driver
+      .clock_divider_register_value = (22 >> 1) - 1,  // SCLK = core clock / 22 = 30.3 MHz
       .use_enhanced_clock_mode = true,
       .client_reverses_dma_transfers = true,
       .delay_control = kMoNoDelay | kMiDelay3Cycles | kMiCapAhead2Cycles,
-  };
+  });
 
   fpbus::Node spi_1_dev;
   spi_1_dev.name() = "spi-1";
@@ -308,15 +311,17 @@ zx_status_t Nelson::Spi1Init() {
 
   gpio_init_steps_.push_back(SpiPin(GPIO_SOC_SPI_B_SCLK, 3));  // SCLK
 
+  fit::result persisted_config = fidl::Persist(kSpi1Config);
+  if (!persisted_config.is_ok()) {
+    zxlogf(ERROR, "Failed to persist spi 1 config: %s",
+           persisted_config.error_value().FormatDescription().c_str());
+    return persisted_config.error_value().status();
+  }
+
   std::vector<fpbus::Metadata> spi_1_metadata;
-  spi_1_metadata.emplace_back([]() {
-    fpbus::Metadata ret;
-    ret.id() = std::to_string(DEVICE_METADATA_AMLSPI_CONFIG),
-    ret.data() = std::vector<uint8_t>(
-        reinterpret_cast<const uint8_t*>(&spi_1_config),
-        reinterpret_cast<const uint8_t*>(&spi_1_config) + sizeof(spi_1_config));
-    return ret;
-  }());
+  spi_1_metadata.emplace_back(
+      fpbus::Metadata({.id = fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                       .data = std::move(persisted_config.value())}));
 
   {
     const fuchsia_scheduler::RoleName kRoleName(kSpi1SchedulerRole);

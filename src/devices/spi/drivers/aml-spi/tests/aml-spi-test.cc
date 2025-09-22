@@ -978,19 +978,20 @@ TEST_F(AmlSpiTest, DefaultRoleMetadata) {
 
 class AmlSpiForwardRoleMetadataEnvironment : public BaseTestEnvironment {
  public:
-  void SetMetadata(compat::DeviceServer& compat) override {
-    constexpr amlogic_spi::amlspi_config_t kSpiConfig = {
+  void SetMetadata(fdf_fake::FakePDev& pdev) override {
+    static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
         .bus_id = 0,
-        .cs_count = 3,
-        .cs = {5, 3, amlogic_spi::amlspi_config_t::kCsClientManaged},
+        .cs = {5, 3, fuchsia_hardware_amlogic_metadata::kCsClientManaged},
         .clock_divider_register_value = 0,
         .use_enhanced_clock_mode = false,
-    };
+        .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+    });
 
-    EXPECT_OK(compat.AddMetadata(DEVICE_METADATA_AMLSPI_CONFIG, &kSpiConfig, sizeof(kSpiConfig)));
+    EXPECT_OK(pdev.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                                   kSpiConfig));
 
-    ASSERT_OK(pdev_server().AddFidlMetadata(fuchsia_scheduler::RoleName::kSerializableName,
-                                            fuchsia_scheduler::wire::RoleName{kExpectedRoleName}));
+    ASSERT_OK(pdev.AddFidlMetadata(fuchsia_scheduler::RoleName::kSerializableName,
+                                   fuchsia_scheduler::wire::RoleName{kExpectedRoleName}));
   }
 
   static constexpr char kExpectedRoleName[] = "no.such.scheduler.role";

@@ -22,7 +22,6 @@ zx_library("amlogic") {
     "soc/aml-common/aml-pwm-regs.h",
     "soc/aml-common/aml-rawnand.h",
     "soc/aml-common/aml-sdmmc.h",
-    "soc/aml-common/aml-spi.h",
     "soc/aml-common/aml-tdm-audio.h",
     "soc/aml-common/aml-loopback-audio.h",
     "soc/aml-common/aml-thermal.h",

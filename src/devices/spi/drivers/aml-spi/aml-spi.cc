@@ -263,11 +263,15 @@ void AmlSpi::WaitForDmaTransferComplete() {
 void AmlSpi::InitRegisters() {
   ConReg::Get().FromValue(0).WriteTo(&mmio_);
 
-  TestReg::Get().FromValue(0).set_dlyctl(config_.delay_control).set_clk_free_en(1).WriteTo(&mmio_);
+  TestReg::Get()
+      .FromValue(0)
+      .set_dlyctl(config_.delay_control())
+      .set_clk_free_en(1)
+      .WriteTo(&mmio_);
 
   ConReg::Get()
       .ReadFrom(&mmio_)
-      .set_data_rate(config_.use_enhanced_clock_mode ? 0 : config_.clock_divider_register_value)
+      .set_data_rate(config_.use_enhanced_clock_mode() ? 0 : config_.clock_divider_register_value())
       .set_drctl(0)
       .set_ssctl(0)
       .set_smc(0)
@@ -276,13 +280,13 @@ void AmlSpi::InitRegisters() {
       .WriteTo(&mmio_);
 
   auto enhance_cntl = EnhanceCntl::Get().FromValue(0);
-  if (config_.use_enhanced_clock_mode) {
+  if (config_.use_enhanced_clock_mode()) {
     enhance_cntl.set_clk_cs_delay_enable(1)
         .set_cs_oen_enhance_enable(1)
         .set_clk_oen_enhance_enable(1)
         .set_mosi_oen_enhance_enable(1)
         .set_spi_clk_select(1)  // Use this register instead of CONREG.
-        .set_enhance_clk_div(config_.clock_divider_register_value)
+        .set_enhance_clk_div(config_.clock_divider_register_value())
         .set_clk_cs_delay(0);
   }
   enhance_cntl.WriteTo(&mmio_);
@@ -669,7 +673,7 @@ zx_status_t AmlSpi::ExchangeDma(const uint8_t* txdata, uint8_t* out_rxdata, uint
   constexpr size_t kBytesPerWord = sizeof(uint64_t);
 
   if (txdata) {
-    if (config_.client_reverses_dma_transfers) {
+    if (config_.client_reverses_dma_transfers()) {
       memcpy(tx_buffer_.mapped.start(), txdata, size);
     } else {
       // Copy the TX data into the pinned VMO and reverse the endianness.
@@ -740,7 +744,7 @@ zx_status_t AmlSpi::ExchangeDma(const uint8_t* txdata, uint8_t* out_rxdata, uint
       return status;
     }
 
-    if (config_.client_reverses_dma_transfers) {
+    if (config_.client_reverses_dma_transfers()) {
       memcpy(out_rxdata, rx_buffer_.mapped.start(), size);
     } else {
       const auto* rx_vmo = static_cast<uint64_t*>(rx_buffer_.mapped.start());
@@ -795,17 +799,18 @@ bool AmlSpi::UseDma(size_t size) const {
          size <= rx_buffer_.mapped.size();
 }
 
-fbl::Array<AmlSpi::ChipInfo> AmlSpiDriver::InitChips(const amlogic_spi::amlspi_config_t& config) {
-  fbl::Array<AmlSpi::ChipInfo> chips(new AmlSpi::ChipInfo[config.cs_count], config.cs_count);
+fbl::Array<AmlSpi::ChipInfo> AmlSpiDriver::InitChips(
+    const fuchsia_hardware_amlogic_metadata::SpiConfig& config) {
+  fbl::Array<AmlSpi::ChipInfo> chips(new AmlSpi::ChipInfo[config.cs().size()], config.cs().size());
   if (!chips) {
     return chips;
   }
 
-  for (uint32_t i = 0; i < config.cs_count; i++) {
+  for (uint32_t i = 0; i < config.cs().size(); i++) {
     chips[i].registered_vmos = std::make_unique<SpiVmoStore>(vmo_store::Options{});
 
-    uint32_t index = config.cs[i];
-    if (index == amlogic_spi::amlspi_config_t::kCsClientManaged) {
+    uint32_t index = config.cs()[i];
+    if (index == fuchsia_hardware_amlogic_metadata::kCsClientManaged) {
       continue;
     }
 
@@ -816,8 +821,7 @@ fbl::Array<AmlSpi::ChipInfo> AmlSpiDriver::InitChips(const amlogic_spi::amlspi_c
       FDF_LOG(ERROR, "Failed to connect to GPIO device: %s", client.status_string());
       return fbl::Array<AmlSpi::ChipInfo>();
     }
-    chips[i].gpio =
-        fidl::WireClient(std::move(*client), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    chips[i].gpio = fidl::WireClient(std::move(*client), dispatcher());
   }
 
   return chips;
@@ -847,123 +851,104 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
     compat_.Bind(*std::move(compat_client), dispatcher());
   }
 
-  fpromise::bridge<> bridge;
+  auto task =
+      fpromise::join_promises(MapMmio(pdev_, 0), GetInterrupt(), GetBti(),
+                              GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(),
+                              GetMetadata<fuchsia_scheduler::RoleName>(),
+                              GetMetadata<fuchsia_hardware_amlogic_metadata::SpiConfig>())
+          .then(
+              [this, completer = std::move(completer)](
+                  fpromise::result<std::tuple<
+                      fpromise::result<fdf::MmioBuffer, zx_status_t>,
+                      fpromise::result<zx::interrupt, zx_status_t>,
+                      fpromise::result<zx::bti, zx_status_t>,
+                      fpromise::result<std::optional<fuchsia_hardware_spi_businfo::SpiBusMetadata>,
+                                       zx_status_t>,
+                      fpromise::result<std::optional<fuchsia_scheduler::RoleName>, zx_status_t>,
+                      fpromise::result<std::optional<fuchsia_hardware_amlogic_metadata::SpiConfig>,
+                                       zx_status_t>>>& results) mutable {
+                if (results.is_error()) {
+                  FDF_LOG(ERROR, "Failed to get resources");
+                  return completer(zx::error(ZX_ERR_INTERNAL));
+                }
 
-  pdev_->GetMetadata(fuchsia_scheduler::RoleName::kSerializableName)
-      .Then([this, start_completer = std::move(completer)](auto& result) mutable {
-        std::optional<fuchsia_scheduler::RoleName> scheduler_role_name;
-        if (!result.ok()) {
-          FDF_LOG(DEBUG, "Failed to send GetMetadata request: %s", result.status_string());
-        } else if (result->is_error()) {
-          if (result->error_value() == ZX_ERR_NOT_FOUND) {
-            FDF_LOG(DEBUG, "Failed to get persisted metadata: %s",
-                    zx_status_get_string(result->error_value()));
-          } else {
-            FDF_LOG(ERROR, "Failed to get persisted metadata: %s",
-                    zx_status_get_string(result->error_value()));
-            start_completer(zx::error(result->error_value()));
-            return;
-          }
-        } else {
-          fit::result unpersisted =
-              fidl::Unpersist<fuchsia_scheduler::RoleName>(result.value()->metadata.get());
-          if (unpersisted.is_error()) {
-            FDF_LOG(ERROR, "Failed to unpersist metadata: %s",
-                    zx_status_get_string(unpersisted.error_value().status()));
-            start_completer(zx::error(unpersisted.error_value().status()));
-            return;
-          }
-          scheduler_role_name.emplace(std::move(unpersisted.value()));
-        }
+                if (std::get<0>(results.value()).is_error()) {
+                  return completer(zx::error(std::get<0>(results.value()).error()));
+                }
+                auto& mmio = std::get<0>(results.value()).value();
 
-        OnGetSchedulerRoleName(std::move(start_completer), scheduler_role_name);
-      });
+                if (std::get<1>(results.value()).is_error()) {
+                  return completer(zx::error(std::get<1>(results.value()).error()));
+                }
+                zx::interrupt interrupt = std::move(std::get<1>(results.value()).value());
+
+                zx::bti bti{};
+                if (std::get<2>(results.value()).is_ok()) {
+                  bti = std::move(std::get<2>(results.value()).value());
+                }
+
+                fpromise::result spi_bus_metadata = std::get<3>(results.value());
+                if (spi_bus_metadata.is_error()) {
+                  FDF_LOG(ERROR, "Failed to get spi bus metadata: %s",
+                          zx_status_get_string(spi_bus_metadata.error()));
+                  return completer(zx::error(spi_bus_metadata.error()));
+                }
+
+                fpromise::result role_name = std::get<4>(results.value());
+                if (role_name.is_ok()) {
+                  zx::result result = ServeRoleName(role_name.value());
+                  if (result.is_error()) {
+                    FDF_LOG(ERROR, "Failed to serve role name: %s", result.status_string());
+                    return completer(result.take_error());
+                  }
+                } else {
+                  FDF_LOG(ERROR, "Failed to get role name: %s",
+                          zx_status_get_string(spi_bus_metadata.error()));
+                  return completer(zx::error(role_name.error()));
+                }
+
+                fpromise::result config = std::get<5>(results.value());
+                if (config.is_error()) {
+                  FDF_LOG(ERROR, "Failed to get config metadata: %s",
+                          zx_status_get_string(config.error()));
+                  return completer(zx::error(config.error()));
+                }
+                if (!config.value().has_value()) {
+                  FDF_LOG(ERROR, "Failed to get config metadata: ZX_ERR_NOT_FOUND");
+                  return completer(zx::error(ZX_ERR_NOT_FOUND));
+                }
+
+                AddNode(std::move(mmio), config.value().value(), std::move(interrupt),
+                        std::move(bti), spi_bus_metadata.value(), std::move(completer));
+              });
+  executor_.schedule_task(std::move(task));
 }
 
-void AmlSpiDriver::OnGetSchedulerRoleName(
-    fdf::StartCompleter completer,
+zx::result<> AmlSpiDriver::ServeRoleName(
     const std::optional<fuchsia_scheduler::RoleName>& scheduler_role_name) {
   static const fuchsia_scheduler::RoleName kDefaultSchedulerRoleName{kDefaultRoleName};
 
   const auto& unwrapped_scheduler_role_name =
       scheduler_role_name.value_or(kDefaultSchedulerRoleName);
-  if (zx::result result =
-          scheduler_role_name_metadata_server_.SetMetadata(unwrapped_scheduler_role_name);
-      result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set scheduler role name metadata: %s", result.status_string());
-    completer(result.take_error());
-    return;
-  }
-
-  if (zx::result result = scheduler_role_name_metadata_server_.Serve(*outgoing(), dispatcher());
+  if (zx::result result = scheduler_role_name_metadata_server_.Serve(*outgoing(), dispatcher(),
+                                                                     unwrapped_scheduler_role_name);
       result.is_error()) {
     FDF_LOG(ERROR, "Failed to serve scheduler role name metadata: %s", result.status_string());
-    completer(result.take_error());
-    return;
+    return result.take_error();
   }
 
-  auto task =
-      fpromise::join_promises(MapMmio(pdev_, 0), GetConfig(), GetInterrupt(), GetBti(),
-                              GetSpiBusMetadata())
-          .then([this, completer = std::move(completer)](
-                    fpromise::result<std::tuple<
-                        fpromise::result<fdf::MmioBuffer, zx_status_t>,
-                        fpromise::result<amlogic_spi::amlspi_config_t, zx_status_t>,
-                        fpromise::result<zx::interrupt, zx_status_t>,
-                        fpromise::result<zx::bti, zx_status_t>,
-                        fpromise::result<std::optional<std::vector<uint8_t>>, zx_status_t>>>&
-                        results) mutable {
-            if (results.is_error()) {
-              FDF_LOG(ERROR, "Failed to get resources");
-              return completer(zx::error(ZX_ERR_INTERNAL));
-            }
-
-            if (std::get<0>(results.value()).is_error()) {
-              return completer(zx::error(std::get<0>(results.value()).error()));
-            }
-            auto& mmio = std::get<0>(results.value()).value();
-
-            if (std::get<1>(results.value()).is_error()) {
-              return completer(zx::error(std::get<1>(results.value()).error()));
-            }
-            const auto& config = std::get<1>(results.value()).value();
-
-            if (std::get<2>(results.value()).is_error()) {
-              return completer(zx::error(std::get<2>(results.value()).error()));
-            }
-            zx::interrupt interrupt = std::move(std::get<2>(results.value()).value());
-
-            zx::bti bti{};
-            if (std::get<3>(results.value()).is_ok()) {
-              bti = std::move(std::get<3>(results.value()).value());
-            }
-
-            fpromise::result encoded_spi_bus_metadata = std::get<4>(results.value());
-            if (encoded_spi_bus_metadata.is_error()) {
-              return completer(zx::error(encoded_spi_bus_metadata.error()));
-            }
-
-            AddNode(std::move(mmio), config, std::move(interrupt), std::move(bti),
-                    std::move(encoded_spi_bus_metadata.value()), std::move(completer));
-          });
-  executor_.schedule_task(std::move(task));
+  return zx::ok();
 }
 
-void AmlSpiDriver::AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_config_t& config,
-                           zx::interrupt interrupt, zx::bti bti,
-                           std::optional<std::vector<uint8_t>> encoded_spi_bus_metadata,
-                           fdf::StartCompleter completer) {
+void AmlSpiDriver::AddNode(
+    fdf::MmioBuffer mmio, const fuchsia_hardware_amlogic_metadata::SpiConfig& config,
+    zx::interrupt interrupt, zx::bti bti,
+    const std::optional<fuchsia_hardware_spi_businfo::SpiBusMetadata>& spi_bus_metadata,
+    fdf::StartCompleter completer) {
   // Setup SPI bus metadata server.
   {
-    if (encoded_spi_bus_metadata.has_value()) {
-      auto metadata = fidl::Unpersist<fuchsia_hardware_spi_businfo::SpiBusMetadata>(
-          encoded_spi_bus_metadata.value());
-      if (metadata.is_error()) {
-        FDF_LOG(ERROR, "Failed to unpersist encoded SPI bus metadata: %s",
-                metadata.error_value().status_string());
-        return completer(zx::error(metadata.error_value().status()));
-      }
-      if (zx::result result = spi_metadata_server_.SetMetadata(metadata.value());
+    if (spi_bus_metadata.has_value()) {
+      if (zx::result result = spi_metadata_server_.SetMetadata(spi_bus_metadata.value());
           result.is_error()) {
         FDF_LOG(ERROR, "Failed to set metadata for metadata server: %s", result.status_string());
         return completer(result.take_error());
@@ -981,10 +966,10 @@ void AmlSpiDriver::AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_confi
   ConReg::Get().FromValue(0).WriteTo(&mmio);
 
   const uint32_t max_clock_div_reg_value =
-      config.use_enhanced_clock_mode ? EnhanceCntl::kEnhanceClkDivMax : ConReg::kDataRateMax;
-  if (config.clock_divider_register_value > max_clock_div_reg_value) {
+      config.use_enhanced_clock_mode() ? EnhanceCntl::kEnhanceClkDivMax : ConReg::kDataRateMax;
+  if (config.clock_divider_register_value() > max_clock_div_reg_value) {
     FDF_LOG(ERROR, "Metadata clock divider value is too large: %u",
-            config.clock_divider_register_value);
+            config.clock_divider_register_value());
     return completer(zx::error(ZX_ERR_INVALID_ARGS));
   }
 
@@ -1020,7 +1005,7 @@ void AmlSpiDriver::AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_confi
   }
 
   const uint32_t reset_mask =
-      config.bus_id == 0 ? kSpi0ResetMask : (config.bus_id == 1 ? kSpi1ResetMask : 0);
+      config.bus_id() == 0 ? kSpi0ResetMask : (config.bus_id() == 1 ? kSpi1ResetMask : 0);
 
   fbl::AllocChecker ac;
   device_.reset(new (&ac) AmlSpi(std::move(mmio), *std::move(reset_register_client), reset_mask,
@@ -1054,7 +1039,7 @@ void AmlSpiDriver::AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_confi
   controller_.Bind(std::move(controller_endpoints->client), dispatcher());
 
   char devname[32];
-  sprintf(devname, "aml-spi-%u", config.bus_id);
+  sprintf(devname, "aml-spi-%u", config.bus_id());
 
   fidl::Arena arena;
 
@@ -1084,29 +1069,6 @@ void AmlSpiDriver::AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_confi
           return completer(zx::error(ZX_ERR_INTERNAL));
         }
         completer(zx::ok());
-      });
-}
-
-fpromise::promise<amlogic_spi::amlspi_config_t, zx_status_t> AmlSpiDriver::GetConfig() {
-  fpromise::bridge<amlogic_spi::amlspi_config_t, zx_status_t> bridge;
-
-  auto task = compat::GetMetadataAsync<amlogic_spi::amlspi_config_t>(
-      fdf::Dispatcher::GetCurrent()->async_dispatcher(), incoming(), DEVICE_METADATA_AMLSPI_CONFIG,
-      [completer = std::move(bridge.completer)](
-          zx::result<std::unique_ptr<amlogic_spi::amlspi_config_t>> result) mutable {
-        if (result.is_ok()) {
-          completer.complete_ok(**result);
-        } else {
-          FDF_LOG(ERROR, "Failed to get metadata: %s", zx_status_get_string(result.error_value()));
-          completer.complete_error(result.error_value());
-        }
-      },
-      "pdev");
-
-  return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL))
-      .then([task = std::move(task)](
-                fpromise::result<amlogic_spi::amlspi_config_t, zx_status_t>& result) mutable {
-        return result;
       });
 }
 
@@ -1142,35 +1104,6 @@ fpromise::promise<zx::bti, zx_status_t> AmlSpiDriver::GetBti() {
       completer.complete_ok(std::move(result->value()->bti));
     }
   });
-
-  return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL));
-}
-
-fpromise::promise<std::optional<std::vector<uint8_t>>, zx_status_t>
-AmlSpiDriver::GetSpiBusMetadata() {
-  fpromise::bridge<std::optional<std::vector<uint8_t>>, zx_status_t> bridge;
-
-  pdev_->GetMetadata(fuchsia_hardware_spi_businfo::SpiBusMetadata::kSerializableName)
-      .Then([completer = std::move(bridge.completer)](auto& result) mutable {
-        if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to send GetMetadata request: %s", result.status_string());
-          completer.complete_error(result.status());
-          return;
-        }
-
-        if (result->is_error()) {
-          if (result->error_value() == ZX_ERR_NOT_FOUND) {
-            completer.complete_ok(std::nullopt);
-            return;
-          }
-          FDF_LOG(ERROR, "Failed to get metadata: %s", zx_status_get_string(result->error_value()));
-          completer.complete_error(result->error_value());
-          return;
-        }
-
-        auto& metadata = result->value()->metadata;
-        completer.complete_ok({{metadata.begin(), metadata.end()}});
-      });
 
   return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL));
 }

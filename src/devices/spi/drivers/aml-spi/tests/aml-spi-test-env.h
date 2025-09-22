@@ -154,15 +154,7 @@ class BaseTestEnvironment : public fdf_testing::Environment,
       return result.take_error();
     }
 
-    SetMetadata(compat_);
-    compat_.Initialize("pdev");
-    EXPECT_OK(compat_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs));
-
-    // Serve a second compat instance at default in order to satisfy AmlSpiDriver's compat
-    // server. Without this, metadata doesn't get forwarded.
-    compat_default_.Initialize("default");
-    EXPECT_OK(
-        compat_default_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs));
+    SetMetadata(pdev_server_);
 
     result = to_driver_vfs.AddService<fuchsia_hardware_gpio::Service>(CreateInstanceHandler(),
                                                                       "gpio-cs-2");
@@ -206,8 +198,17 @@ class BaseTestEnvironment : public fdf_testing::Environment,
 
   virtual bool SetupResetRegister() { return true; }
 
-  virtual void SetMetadata(compat::DeviceServer& compat) {
-    EXPECT_OK(compat.AddMetadata(DEVICE_METADATA_AMLSPI_CONFIG, &kSpiConfig, sizeof(kSpiConfig)));
+  virtual void SetMetadata(fdf_fake::FakePDev& pdev) {
+    static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
+        .bus_id = 0,
+        .cs = {5, 3, fuchsia_hardware_amlogic_metadata::kCsClientManaged},
+        .clock_divider_register_value = 0,
+        .use_enhanced_clock_mode = false,
+        .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+    });
+
+    EXPECT_OK(pdev.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                                   kSpiConfig));
   }
 
   uint32_t cs_toggle_count() const { return cs_toggle_count_; }
@@ -224,14 +225,6 @@ class BaseTestEnvironment : public fdf_testing::Environment,
   }
 
  protected:
-  static constexpr amlogic_spi::amlspi_config_t kSpiConfig = {
-      .bus_id = 0,
-      .cs_count = 3,
-      .cs = {5, 3, amlogic_spi::amlspi_config_t::kCsClientManaged},
-      .clock_divider_register_value = 0,
-      .use_enhanced_clock_mode = false,
-  };
-
   fuchsia_hardware_gpio::Service::InstanceHandler CreateInstanceHandler() {
     return fuchsia_hardware_gpio::Service::InstanceHandler({
         .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -252,16 +245,12 @@ class BaseTestEnvironment : public fdf_testing::Environment,
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
-  fdf_fake::FakePDev& pdev_server() { return pdev_server_; }
-
  private:
   fdf_fake::FakePDev pdev_server_;
   zx::interrupt interrupt_;
 
   mock_registers::MockRegisters registers_;
 
-  compat::DeviceServer compat_;
-  compat::DeviceServer compat_default_;
   fuchsia_hardware_gpio::BufferMode cs_buffer_mode_{fuchsia_hardware_gpio::BufferMode::kOutputHigh};
   uint32_t cs_toggle_count_ = 0;
   fidl::ServerBindingGroup<fuchsia_hardware_gpio::Gpio> bindings_;

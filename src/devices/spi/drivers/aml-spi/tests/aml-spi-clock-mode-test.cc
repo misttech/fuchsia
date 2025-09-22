@@ -7,16 +7,17 @@
 namespace spi {
 
 class AmlSpiNormalClockModeTestEnvironment : public BaseTestEnvironment {
-  void SetMetadata(compat::DeviceServer& compat) override {
-    constexpr amlogic_spi::amlspi_config_t kSpiConfig{
+  void SetMetadata(fdf_fake::FakePDev& pdev) override {
+    static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
         .bus_id = 0,
-        .cs_count = 2,
         .cs = {5, 3},
         .clock_divider_register_value = 0x5,
         .use_enhanced_clock_mode = false,
-    };
+        .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+    });
 
-    EXPECT_OK(compat.AddMetadata(DEVICE_METADATA_AMLSPI_CONFIG, &kSpiConfig, sizeof(kSpiConfig)));
+    EXPECT_OK(pdev.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                                   kSpiConfig));
   }
 };
 
@@ -64,17 +65,17 @@ TEST_F(AmlSpiNormalClockModeTest, Test) {
 }
 
 class AmlSpiEnhancedClockModeEnvironment : public BaseTestEnvironment {
-  void SetMetadata(compat::DeviceServer& compat) override {
-    constexpr amlogic_spi::amlspi_config_t kSpiConfig{
+  void SetMetadata(fdf_fake::FakePDev& pdev) override {
+    static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
         .bus_id = 0,
-        .cs_count = 2,
         .cs = {5, 3},
         .clock_divider_register_value = 0xa5,
         .use_enhanced_clock_mode = true,
         .delay_control = 0b00'11'00,
-    };
+    });
 
-    EXPECT_OK(compat.AddMetadata(DEVICE_METADATA_AMLSPI_CONFIG, &kSpiConfig, sizeof(kSpiConfig)));
+    EXPECT_OK(pdev.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                                   kSpiConfig));
   }
 };
 
@@ -129,16 +130,17 @@ TEST_F(AmlSpiEnhancedClockModeTest, Test) {
 }
 
 class AmlSpiNormalClockModeInvalidDividerEnvironment : public BaseTestEnvironment {
-  void SetMetadata(compat::DeviceServer& compat) override {
-    constexpr amlogic_spi::amlspi_config_t kSpiConfig{
+  void SetMetadata(fdf_fake::FakePDev& pdev) override {
+    static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
         .bus_id = 0,
-        .cs_count = 2,
         .cs = {5, 3},
         .clock_divider_register_value = 0xa5,
         .use_enhanced_clock_mode = false,
-    };
+        .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+    });
 
-    EXPECT_OK(compat.AddMetadata(DEVICE_METADATA_AMLSPI_CONFIG, &kSpiConfig, sizeof(kSpiConfig)));
+    EXPECT_OK(pdev.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                                   kSpiConfig));
   }
 };
 
@@ -169,16 +171,17 @@ TEST_F(AmlSpiNormalClockModeInvalidDividerTest, Test) {
 
 class AmlSpiEnhancedClockModeInvalidDividerEnvironment : public BaseTestEnvironment {
  public:
-  void SetMetadata(compat::DeviceServer& compat) override {
-    constexpr amlogic_spi::amlspi_config_t kSpiConfig{
+  void SetMetadata(fdf_fake::FakePDev& pdev) override {
+    static const fuchsia_hardware_amlogic_metadata::SpiConfig kSpiConfig({
         .bus_id = 0,
-        .cs_count = 2,
         .cs = {5, 3},
         .clock_divider_register_value = 0x1a5,
         .use_enhanced_clock_mode = true,
-    };
+        .delay_control = fuchsia_hardware_amlogic_metadata::kDefaultDelayControl,
+    });
 
-    EXPECT_OK(compat.AddMetadata(DEVICE_METADATA_AMLSPI_CONFIG, &kSpiConfig, sizeof(kSpiConfig)));
+    EXPECT_OK(pdev.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::SpiConfig::kSerializableName,
+                                   kSpiConfig));
   }
 };
 

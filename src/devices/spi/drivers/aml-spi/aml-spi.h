@@ -6,6 +6,7 @@
 #define SRC_DEVICES_SPI_DRIVERS_AML_SPI_AML_SPI_H_
 
 #include <fidl/fuchsia.driver.compat/cpp/wire.h>
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
@@ -29,7 +30,6 @@
 #include <variant>
 
 #include <fbl/array.h>
-#include <soc/aml-common/aml-spi.h>
 
 #include "src/lib/vmo_store/vmo_store.h"
 
@@ -129,7 +129,7 @@ class AmlSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
 
   AmlSpi(fdf::MmioBuffer mmio, fidl::ClientEnd<fuchsia_hardware_registers::Device> reset,
          uint32_t reset_mask, fbl::Array<ChipInfo> chips, zx::interrupt interrupt,
-         const amlogic_spi::amlspi_config_t& config, zx::bti bti, DmaBuffer tx_buffer,
+         fuchsia_hardware_amlogic_metadata::SpiConfig config, zx::bti bti, DmaBuffer tx_buffer,
          DmaBuffer rx_buffer)
       : mmio_(std::move(mmio)),
         dispatcher_(fdf::Dispatcher::GetCurrent()),
@@ -137,7 +137,7 @@ class AmlSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
         reset_mask_(reset_mask),
         chips_(std::move(chips)),
         interrupt_(std::move(interrupt)),
-        config_(config),
+        config_(std::move(config)),
         bti_(std::move(bti)),
         tx_buffer_(std::move(tx_buffer)),
         rx_buffer_(std::move(rx_buffer)),
@@ -228,7 +228,7 @@ class AmlSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
   const fbl::Array<ChipInfo> chips_;
   bool need_reset_ = false;
   zx::interrupt interrupt_;
-  const amlogic_spi::amlspi_config_t config_;
+  const fuchsia_hardware_amlogic_metadata::SpiConfig config_;
   zx::bti bti_;
   DmaBuffer tx_buffer_;
   DmaBuffer rx_buffer_;
@@ -292,20 +292,59 @@ class AmlSpiDriver : public fdf::DriverBase {
       fidl::WireClient<fuchsia_hardware_platform_device::Device>& pdev, uint32_t mmio_id);
 
  private:
-  void OnGetSchedulerRoleName(
-      fdf::StartCompleter completer,
-      const std::optional<fuchsia_scheduler::RoleName>& scheduler_role_name);
-  void AddNode(fdf::MmioBuffer mmio, const amlogic_spi::amlspi_config_t& config,
+  // Asynchronously retrieve metadata of type |FidlType| from the platform device.
+  template <typename FidlType>
+  fpromise::promise<std::optional<FidlType>, zx_status_t> GetMetadata() {
+    fpromise::bridge<std::optional<FidlType>, zx_status_t> bridge;
+
+    pdev_->GetMetadata(FidlType::kSerializableName)
+        .Then([completer = std::move(bridge.completer)](
+                  fidl::WireUnownedResult<fuchsia_hardware_platform_device::Device::GetMetadata>&
+                      result) mutable {
+          if (!result.ok()) {
+            FDF_LOG(ERROR, "Failed to send GetMetadata request: %s", result.status_string());
+            completer.complete_error(result.status());
+            return;
+          }
+
+          if (result->is_error()) {
+            if (result->error_value() == ZX_ERR_NOT_FOUND) {
+              completer.complete_ok(std::nullopt);
+              return;
+            }
+            FDF_LOG(ERROR, "Failed to get metadata: %s",
+                    zx_status_get_string(result->error_value()));
+            completer.complete_error(result->error_value());
+            return;
+          }
+
+          std::span<uint8_t> persisted_metadata = result->value()->metadata;
+          fit::result metadata = fidl::Unpersist<FidlType>(persisted_metadata);
+          if (metadata.is_error()) {
+            FDF_LOG(ERROR, "Failed to unpersist metadata: %s",
+                    zx_status_get_string(metadata.error_value().status()));
+            completer.complete_error(metadata.error_value().status());
+            return;
+          }
+
+          completer.complete_ok(std::move(metadata.value()));
+        });
+
+    return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL));
+  }
+
+  zx::result<> ServeRoleName(const std::optional<fuchsia_scheduler::RoleName>& scheduler_role_name);
+
+  void AddNode(fdf::MmioBuffer mmio, const fuchsia_hardware_amlogic_metadata::SpiConfig& config,
                zx::interrupt interrupt, zx::bti bti,
-               std::optional<std::vector<uint8_t>> encoded_spi_bus_metadata,
+               const std::optional<fuchsia_hardware_spi_businfo::SpiBusMetadata>& spi_bus_metadata,
                fdf::StartCompleter completer);
 
-  fpromise::promise<amlogic_spi::amlspi_config_t, zx_status_t> GetConfig();
   fpromise::promise<zx::interrupt, zx_status_t> GetInterrupt();
   fpromise::promise<zx::bti, zx_status_t> GetBti();
-  fpromise::promise<std::optional<std::vector<uint8_t>>, zx_status_t> GetSpiBusMetadata();
 
-  fbl::Array<AmlSpi::ChipInfo> InitChips(const amlogic_spi::amlspi_config_t& config);
+  fbl::Array<AmlSpi::ChipInfo> InitChips(
+      const fuchsia_hardware_amlogic_metadata::SpiConfig& config);
 
   fidl::WireClient<fuchsia_driver_framework::Node> parent_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> controller_;

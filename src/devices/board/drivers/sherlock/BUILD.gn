@@ -70,6 +70,7 @@ template("sherlock_driver") {
       "//sdk/fidl/fuchsia.buttons:fuchsia.buttons_cpp",
       "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
+      "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata_cpp",
       "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.audio.ti:fuchsia.hardware.audio.ti_cpp",
