@@ -90,7 +90,7 @@ class SystemPowerStateController(affordance.Affordance):
 
         Args:
             duration: Resume timer duration in seconds.
-            verify_duration: If set to True, verifies suspend-resume operation completed with in the
+            verify_duration: If set to True, verifies suspend-resume operation completed within the
                 duration specified. If set to False, skips this verification. Default is True.
 
         Raises:

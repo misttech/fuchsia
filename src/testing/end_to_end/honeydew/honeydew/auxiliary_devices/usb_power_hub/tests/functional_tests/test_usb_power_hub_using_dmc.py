@@ -24,7 +24,7 @@ from honeydew.fuchsia_device import fuchsia_device
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class UsbPowerHuUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
+class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
     """Mobly test for UsbPowerDmc implementation of UsbPower interface."""
 
     def setup_class(self) -> None:

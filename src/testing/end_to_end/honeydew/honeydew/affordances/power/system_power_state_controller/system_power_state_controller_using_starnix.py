@@ -131,8 +131,8 @@ class SystemPowerStateControllerUsingStarnix(
     ) -> None:
         """Perform suspend-resume operation on the device.
 
-        This is a synchronous operation on the device and thus this call will be
-        hanged until resume operation finishes.
+        This is a synchronous operation on the device and thus this call will
+        hang until resume operation finishes.
 
         Args:
             suspend_state: Which state to suspend the Fuchsia device into.
@@ -240,8 +240,8 @@ class SystemPowerStateControllerUsingStarnix(
     ) -> None:
         """Perform suspend operation on the device.
 
-        This is a synchronous operation on the device and thus this call will be
-        hanged until resume operation finishes.
+        This is a synchronous operation on the device and thus this call will
+        hang until resume operation finishes.
 
         Args:
             suspend_state: Which state to suspend the Fuchsia device into.
@@ -288,8 +288,8 @@ class SystemPowerStateControllerUsingStarnix(
     ) -> Generator[None, None, None]:
         """Perform resume operation on the device.
 
-        This is a synchronous operation on the device and thus call will be
-        hanged until resume operation finishes. So we will be using a context
+        This is a synchronous operation on the device and thus call will hang
+        until resume operation finishes. So we will be using a context
         manager which will start resume mode using subprocess, saves the proc
         and yields and when called again will wait for resume operation to be
         finished using the saved proc.
