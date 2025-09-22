@@ -1135,7 +1135,18 @@ enum class BackingType {
   READ_ONLY_FILE,
 };
 
-template <int map_flags>
+std::string BackingTypeName(const testing::TestParamInfo<BackingType> &info) {
+  switch (info.param) {
+    case BackingType::ANONYMOUS:
+      return "Anonymous";
+    case BackingType::MEMFD:
+      return "Memfd";
+    case BackingType::READ_ONLY_FILE:
+      return "ReadOnlyFile";
+  }
+}
+
+template <int map_flags, int prot_flags>
 class PokeInMappingTest : public testing::TestWithParam<BackingType> {
  public:
   void SetUp() override {
@@ -1156,7 +1167,7 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
         ASSERT_NE(fd, -1) << strerror(errno);
         break;
     }
-    mapping_ = mmap(nullptr, 2 * page_size, PROT_READ, flags, fd, 0);
+    mapping_ = mmap(nullptr, 2 * page_size, prot_flags, flags, fd, 0);
     ASSERT_NE(mapping_, MAP_FAILED) << strerror(errno);
 
     if (fd != -1) {
@@ -1164,7 +1175,7 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
     }
 
     helper_.OnlyWaitForForkedChildren();
-    child_pid_ = helper_.RunInForkedProcess([] {
+    child_pid_ = helper_.RunInForkedProcess([&] {
       SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
       raise(SIGSTOP);
       _exit(0);
@@ -1192,36 +1203,161 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
   void *mapping_ = nullptr;
 };
 
-// Poking in private memory should work, regardless of the backing.
-using PokeInPrivateMappingTest = PokeInMappingTest<MAP_PRIVATE>;
+// Poking in private memory should work, regardless of the backing and permissions.
+using PokeInPrivateMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_NONE>;
 
 TEST_P(PokeInPrivateMappingTest, Data) {
-  SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB));
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
 TEST_P(PokeInPrivateMappingTest, Text) {
-  SAFE_SYSCALL(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB));
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
-INSTANTIATE_TEST_SUITE_P(PtracePokePrivateMemory, PokeInPrivateMappingTest,
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE));
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
 
-// Poking in shared memory doesn't work, regardless of the backing.
-using PokeInSharedMappingTest = PokeInMappingTest<MAP_SHARED>;
+using PokeInPrivateROMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ>;
+
+TEST_P(PokeInPrivateROMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+TEST_P(PokeInPrivateROMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateROMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
+
+using PokeInPrivateRWMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_WRITE>;
+
+TEST_P(PokeInPrivateRWMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+TEST_P(PokeInPrivateRWMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRWMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
+
+using PokeInPrivateRXMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_EXEC>;
+
+TEST_P(PokeInPrivateRXMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+TEST_P(PokeInPrivateRXMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRXMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
+
+using PokeInPrivateRWXMappingTest =
+    PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_WRITE | PROT_EXEC>;
+
+TEST_P(PokeInPrivateRWXMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+TEST_P(PokeInPrivateRWXMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRWXMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
+
+// Poking in shared memory doesn't work, unless the process has writable permissions.
+using PokeInSharedMappingTest = PokeInMappingTest<MAP_SHARED, PROT_NONE>;
 
 TEST_P(PokeInSharedMappingTest, Data) {
-  EXPECT_EQ(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), -1);
-  EXPECT_EQ(errno, EIO);
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
 TEST_P(PokeInSharedMappingTest, Text) {
-  EXPECT_EQ(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), -1);
-  EXPECT_EQ(errno, EIO);
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
-INSTANTIATE_TEST_SUITE_P(PtracePokeSharedMemory, PokeInSharedMappingTest,
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE));
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
 
+using PokeInSharedROMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ>;
+
+TEST_P(PokeInSharedROMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
+}
+
+TEST_P(PokeInSharedROMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedROMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
+
+using PokeInSharedRWMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_WRITE>;
+
+TEST_P(PokeInSharedRWMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+}
+
+TEST_P(PokeInSharedRWMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+}
+
+// Skip READ_ONLY_FILE because we cannot create writable memory from read-only file.
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRWMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD),
+                         &BackingTypeName);
+
+using PokeInSharedRXMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_EXEC>;
+
+TEST_P(PokeInSharedRXMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
+}
+
+TEST_P(PokeInSharedRXMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
+}
+
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRXMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::READ_ONLY_FILE),
+                         &BackingTypeName);
+
+using PokeInSharedRWXMappingTest =
+    PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_WRITE | PROT_EXEC>;
+
+TEST_P(PokeInSharedRWXMappingTest, Data) {
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+}
+
+TEST_P(PokeInSharedRWXMappingTest, Text) {
+  EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
+  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+}
+
+// Skip READ_ONLY_FILE because we cannot create writable memory from read-only file.
+INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRWXMappingTest,
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD),
+                         &BackingTypeName);
 }  // namespace

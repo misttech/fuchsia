@@ -146,8 +146,14 @@
 
                 // TODO(https://fxbug.dev/445790710)
                 // Implement PTRACE_POKEDATA and PTRACE_POKETEXT.
-                "PtracePokeSharedMemory*",
-                "PtracePokePrivateMemory*",
+                "PtracePokeMemory/PokeInPrivateMappingTest*",
+                "PtracePokeMemory/PokeInPrivateROMappingTest*",
+                "PtracePokeMemory/PokeInPrivateRXMappingTest*",
+                "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
+                "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
+                "PtracePokeMemory/PokeInSharedMappingTest*",
+                "PtracePokeMemory/PokeInSharedROMappingTest*",
+                "PtracePokeMemory/PokeInSharedRXMappingTest*",
             ],
         },
     ],
