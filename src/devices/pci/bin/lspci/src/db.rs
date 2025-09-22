@@ -1,7 +1,7 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use std::collections::HashMap;
 use std::str::Lines;
 
@@ -227,16 +227,14 @@ impl<'a> PciDb<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use lazy_static::lazy_static;
     use std::fs;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref DB_BUF: String = fs::read_to_string("/pkg/data/lspci/pci.ids")
-            .context("Couldn't open PCI IDs file")
-            .unwrap();
-        static ref DB: PciDb<'static> =
-            PciDb::new(&DB_BUF).context("Couldnt parse database buffer").unwrap();
-    }
+    static DB_BUF: LazyLock<String> = LazyLock::new(|| {
+        fs::read_to_string("/pkg/data/lspci/pci.ids").context("Couldn't open PCI IDs file").unwrap()
+    });
+    static DB: LazyLock<PciDb<'static>> =
+        LazyLock::new(|| PciDb::new(&DB_BUF).context("Couldnt parse database buffer").unwrap());
 
     #[test]
     fn vendor_without_devices() -> Result<(), Error> {

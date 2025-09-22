@@ -20,7 +20,6 @@ rustc_library("lib") {
   deps = [
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:heck",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:serde",
   ]

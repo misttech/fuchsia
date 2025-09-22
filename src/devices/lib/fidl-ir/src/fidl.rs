@@ -4,26 +4,26 @@
 
 // Based on https://fuchsia.googlesource.com/fuchsia/+/HEAD/tools/fidl/fidlc/schema.json
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use heck::ToSnakeCase;
-use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Add;
+use std::sync::LazyLock;
 
-lazy_static! {
-    pub static ref IDENTIFIER_RE: Regex =
-        Regex::new(r#"^[A-Za-z]([_A-Za-z0-9]*[A-Za-z0-9])?$"#).unwrap();
-    pub static ref COMPOUND_IDENTIFIER_RE: Regex =
-        Regex::new(r#"([_A-Za-z][_A-Za-z0-9]*-)*[_A-Za-z][_A-Za-z0-9]*/[_A-Za-z][_A-Za-z0-9]*"#)
-            .unwrap();
-    pub static ref LIBRARY_IDENTIFIER_RE: Regex =
-        Regex::new(r#"^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$"#).unwrap();
-    pub static ref UNFLATTENED_PARAMETER_NAME: Identifier = Identifier { 0: "payload".to_string() };
-    pub static ref EMPTY_FIELD_SHAPE: FieldShape =
-        FieldShape { offset: Count(0), padding: Count(0) };
-}
+pub static IDENTIFIER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^[A-Za-z]([_A-Za-z0-9]*[A-Za-z0-9])?$"#).unwrap());
+pub static COMPOUND_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"([_A-Za-z][_A-Za-z0-9]*-)*[_A-Za-z][_A-Za-z0-9]*/[_A-Za-z][_A-Za-z0-9]*"#)
+        .unwrap()
+});
+pub static LIBRARY_IDENTIFIER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$"#).unwrap());
+pub static UNFLATTENED_PARAMETER_NAME: LazyLock<Identifier> =
+    LazyLock::new(|| Identifier("payload".to_string()));
+pub static EMPTY_FIELD_SHAPE: LazyLock<FieldShape> =
+    LazyLock::new(|| FieldShape { offset: Count(0), padding: Count(0) });
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]

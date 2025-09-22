@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// lazy_static is required for re_find_static.
 use crate::errors::UserError;
-use lazy_static::lazy_static;
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
 use nom::character::complete::{
@@ -18,6 +16,7 @@ use nom::{IResult, Input, Parser};
 use nom_locate::LocatedSpan;
 use regex::Regex;
 use std::fmt;
+use std::sync::LazyLock;
 use thiserror::Error;
 
 pub type NomSpan<'a> = LocatedSpan<&'a str>;
@@ -170,9 +169,8 @@ pub fn bool_literal(input: NomSpan) -> IResult<NomSpan, bool, BindParserError> {
 }
 
 pub fn identifier(input: NomSpan) -> IResult<NomSpan, String, BindParserError> {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"^[a-zA-Z]([a-zA-Z0-9_]*[a-zA-Z0-9])?").unwrap();
-    }
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[a-zA-Z]([a-zA-Z0-9_]*[a-zA-Z0-9])?").unwrap());
     if let Some(mat) = RE.find(input.fragment()) {
         Ok((
             input.take_from(mat.end()),
@@ -236,7 +234,9 @@ where
 
             let (next_input, res) = f.parse(input)?;
             if input.fragment().len() == next_input.fragment().len() {
-                panic!("many_until_eof called on an optional parser. This will result in an infinite loop");
+                panic!(
+                    "many_until_eof called on an optional parser. This will result in an infinite loop"
+                );
             }
             input = next_input;
             result.push(res);

@@ -17,10 +17,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:zerocopy",
   ]
-  test_deps = [
-    ":database",
-    "//third_party/rust_crates:lazy_static",
-  ]
+  test_deps = [ ":database" ]
   sources = [
     "src/bridge.rs",
     "src/capability.rs",

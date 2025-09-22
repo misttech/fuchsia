@@ -22,7 +22,6 @@ rustc_library("lib") {
   deps = [
     "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:byteorder",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:nom",
     "//third_party/rust_crates:nom_locate",
     "//third_party/rust_crates:num-derive",
