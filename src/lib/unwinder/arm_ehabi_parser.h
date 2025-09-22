@@ -35,9 +35,34 @@ class ArmEhAbiParser {
   // stack (from low register -> high register), and store them in |next|.
   Error SetRegistersFromMask(Memory* stack, uint32_t register_mask, Registers& next);
 
-  Error ParseCompactFromWord(Memory* stack, uint32_t data, Registers& next);
-  Error ParseInstructionsFromOffset(Memory* stack, uint32_t data, size_t offset,
-                                    FrameHandlerType type, Registers& next);
+  // Parses and returns a vector of bytes in the correct order, starting with |data| at |offset|. If
+  // |num_extra_words| is greater than 0, additional data will be read from |stack| at
+  // |extab_offset_| until the unwinding terminator instruction is reached. The terminator will not
+  // be included in the returned data vector. An error is returned if there was no terminator
+  // instruction found within |num_extra_words|.
+  fit::result<Error, std::vector<uint8_t>> ParseToFinished(uint32_t data, size_t offset,
+                                                           uint8_t num_extra_words);
+
+  // Converts a single 32 bit word to a vector of bytes in most significant to least significant
+  // byte order. That is, bits 31-24 from |data| will be found at index 0, bits 23-16 at index 1,
+  // etc. Parsing stops when either the end of the word has been parsed or a terminator instruction
+  // has been found. The terminator is not included in the returned byte vector.
+  struct ParsedResult {
+    std::vector<uint8_t> data;
+    bool found_terminator_opcode;
+  };
+  ParsedResult ParseWordFromOffset(uint32_t data, size_t offset);
+
+  // Returns the number of extra words from the given offset in |data|, advancing |offset|.
+  fit::result<Error, uint8_t> GetExtraWordsCountAndAdvance(uint32_t data, size_t& offset);
+  Error ExecuteInstructions(Memory* stack, const std::vector<uint8_t>& bytes, Registers& next);
+
+  // Returns the first word of data, which depends on the type of index entry we got. If the data
+  // was inlined, then |data_| contains the entire set of unwinding instructions. If the data is in
+  // the .ARM.extab section, then we'll use the offset in |extab_offset_| to read the first word of
+  // data from the table entry, which will tell us how many more words will follow in the
+  // instruction sequence.
+  fit::result<Error, uint32_t> GetFirstDataWord();
 
   int32_t extab_offset_ = 0;
   uint32_t data_ = 0;

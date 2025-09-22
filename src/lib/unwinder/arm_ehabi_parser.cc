@@ -118,17 +118,30 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
     }
   }
 
+  uint32_t data = 0;
+  if (auto result = GetFirstDataWord(); result.is_ok()) {
+    data = result.value();
+  } else {
+    return result.error_value();
+  }
+
+  size_t offset = 0;
+  uint8_t num_extra_words = 0;
+  if (auto result = GetExtraWordsCountAndAdvance(data, offset); result.is_ok()) {
+    num_extra_words = result.value();
+  } else {
+    return result.error_value();
+  }
+
+  if (auto result = ParseToFinished(data, offset, num_extra_words); result.is_ok()) {
+    if (auto err = ExecuteInstructions(stack, result.value(), next); err.has_err()) {
+      return err;
+    }
+  } else {
+    return result.error_value();
+  }
+
   Error err = Success();
-  if (data_ > 0) {
-    err = ParseCompactFromWord(stack, data_, next);
-  } else if (extab_offset_ > 0) {
-    err = Error("Offset not handled yet.");
-  }
-
-  if (err.has_err()) {
-    return err;
-  }
-
   // Finally, restore PC to LR if not directly set by the unwinding instructions.
   if (uint64_t pc; next.GetPC(pc).has_err()) {
     // Undefined LR register usually means the end of unwinding. This is not considered an error.
@@ -146,41 +159,76 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
   return err;
 }
 
-Error ArmEhAbiParser::ParseCompactFromWord(Memory* stack, uint32_t data, Registers& next) {
-  // Start from offset 1, because we know that the first byte is the encoding for inline data or
-  // not.
-  size_t offset = 1;
-
-  FrameHandlerType type = static_cast<FrameHandlerType>((data & 0x0f000000) >> 24);
+fit::result<Error, uint8_t> ArmEhAbiParser::GetExtraWordsCountAndAdvance(uint32_t data,
+                                                                         size_t& offset) {
+  uint8_t byte = GetNextByteFromData(data, offset++);
+  FrameHandlerType type = static_cast<FrameHandlerType>(byte & 0x0f);
 
   // The number of 32 bit words _after_ |data| that we need to read for all of the unwinding
   // instructions.
-  size_t num_extra_words;
+  uint8_t num_extra_words;
   switch (type) {
     case FrameHandlerType::kSu16:
       num_extra_words = 0;  // All instructions present in |data|.
       break;
     case FrameHandlerType::kLu16:
     case FrameHandlerType::kLu32:
-      num_extra_words = (data & 0x00ff0000) >> 16;
+      num_extra_words = GetNextByteFromData(data, offset++);
       break;
     default:
-      return Error("Unknown FrameHandlerType: %d\n", static_cast<uint8_t>(type));
+      return fit::error(Error("Unknown FrameHandlerType: %d\n", static_cast<uint8_t>(type)));
   }
 
-  if (num_extra_words == 0) {
-    // Parse instructions starting at byte offset 1.
-    return ParseInstructionsFromOffset(stack, data, offset, type, next);
-  }
-
-  return Error("num_extra_words > 0 not handled yet");
+  return fit::ok(num_extra_words);
 }
 
-Error ArmEhAbiParser::ParseInstructionsFromOffset(Memory* stack, uint32_t data, size_t offset,
-                                                  FrameHandlerType type, Registers& next) {
+// Will not read any more bytes other than what it is given. This won't return an error if it
+// doesn't find |kFinishedIndicator|.
+ArmEhAbiParser::ParsedResult ArmEhAbiParser::ParseWordFromOffset(uint32_t data, size_t offset) {
   uint8_t byte = GetNextByteFromData(data, offset++);
+  std::vector<uint8_t> parsed_bytes;
 
-  while (byte != kFinishedIndicator) {
+  do {
+    parsed_bytes.push_back(byte);
+    byte = GetNextByteFromData(data, offset++);
+  } while (offset <= 4 && byte != kFinishedIndicator);
+
+  return {.data = parsed_bytes, .found_terminator_opcode = byte == kFinishedIndicator};
+}
+
+// Will continue to read bytes from the given offset until it finds a "finished" instruction, but
+// will not decode any other instructions.
+fit::result<Error, std::vector<uint8_t>> ArmEhAbiParser::ParseToFinished(uint32_t data,
+                                                                         size_t offset,
+                                                                         uint8_t num_extra_words) {
+  auto res = ParseWordFromOffset(data, offset);
+
+  if (num_extra_words == 0) {
+    // The compact inline format will not include a finished instruction if it fills the allocated 4
+    // bytes in the index entry exactly, so we cannot assert that the result from parsing the first
+    // word has found the terminator opcode.
+    return fit::ok(res.data);
+  }
+
+  // TODO(https://fxbug.dev/430572991): Handle more words.
+
+  return fit::ok(std::vector<uint8_t>{});
+}
+
+fit::result<Error, uint32_t> ArmEhAbiParser::GetFirstDataWord() {
+  if (data_ > 0) {
+    return fit::ok(data_);
+  }
+
+  // TODO(https://fxbug.dev/430572991): Handle ARM.extab offset.
+
+  return fit::error(Error("extab not supported yet."));
+}
+
+Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8_t>& bytes,
+                                          Registers& next) {
+  for (size_t i = 0; i < bytes.size(); i++) {
+    uint8_t byte = bytes[i];
     // Modifying SP with an immediate.
     if ((byte & 0x80) == 0) {
       uint64_t sp;
@@ -210,9 +258,8 @@ Error ArmEhAbiParser::ParseInstructionsFromOffset(Memory* stack, uint32_t data, 
           // Registers r4-r15 are packed into the low 4 bits of this byte and the entire next byte.
           // This mask decodes those low 12 bits and creates a mask where each register is in it's
           // respective bit position in the mask (i.e. r15 is in bit 15, r14 in bit 14, etc).
-          uint32_t register_mask =
-              (((static_cast<uint32_t>(byte & 0x0f)) << 12) |
-               (static_cast<uint32_t>(GetNextByteFromData(data, offset++))) << 4);
+          uint32_t register_mask = (((static_cast<uint32_t>(byte & 0x0f)) << 12) |
+                                    (static_cast<uint32_t>(bytes[++i])) << 4);
 
           if (auto err = SetRegistersFromMask(stack, register_mask, next); err.has_err()) {
             return err;
@@ -262,12 +309,6 @@ Error ArmEhAbiParser::ParseInstructionsFromOffset(Memory* stack, uint32_t data, 
         }
       }
     }
-
-    if (offset > 3) {
-      break;
-    }
-
-    byte = GetNextByteFromData(data, offset++);
   }
 
   return Success();
