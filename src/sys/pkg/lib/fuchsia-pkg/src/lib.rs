@@ -16,6 +16,7 @@ mod package_builder;
 pub mod package_directory;
 mod package_manifest;
 mod package_manifest_list;
+pub mod package_sets;
 mod path;
 mod path_to_string;
 mod subpackages_build_manifest;

@@ -64,3 +64,18 @@ pub enum StaticPackagesInitError {
     #[error("while processing data/static_packages")]
     ProcessingStaticPackages(#[source] PathHashMappingError),
 }
+
+#[derive(Debug, Error)]
+pub enum AnchoredPackagesError {
+    #[error("while reading data/anchored_packages.json file")]
+    ReadAnchoredPackagesJson(#[source] package_directory::ReadFileError),
+
+    #[error("while parsing data/anchored_packages.json")]
+    ParseConfig(#[from] fuchsia_url::errors::ParseError),
+
+    #[error("json parsing error while reading packages config")]
+    JsonError(#[source] serde_json::error::Error),
+
+    #[error("duplicate packages not supported in mapping: '{0:?}'")]
+    DuplicateNotSupported(fuchsia_url::UnpinnedAbsolutePackageUrl),
+}

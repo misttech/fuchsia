@@ -53,6 +53,7 @@ lib_sources = [
   "src/package_directory.rs",
   "src/package_manifest.rs",
   "src/package_manifest_list.rs",
+  "src/package_sets.rs",
   "src/path.rs",
   "src/path_to_string.rs",
   "src/subpackages_build_manifest.rs",

@@ -38,6 +38,7 @@ rustc_library("system-image") {
   ]
 
   sources = [
+    "src/anchored_packages.rs",
     "src/cache_packages.rs",
     "src/errors.rs",
     "src/lib.rs",

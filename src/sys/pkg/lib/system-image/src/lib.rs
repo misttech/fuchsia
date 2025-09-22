@@ -4,11 +4,13 @@
 
 #![allow(clippy::let_unit_value)]
 
+mod anchored_packages;
 mod cache_packages;
 mod errors;
 mod path_hash_mapping;
 mod system_image;
 
+pub use crate::anchored_packages::AnchoredPackages;
 pub use crate::cache_packages::CachePackages;
 pub use crate::errors::{
     AllowListError, CachePackagesInitError, PathHashMappingError, StaticPackagesInitError,

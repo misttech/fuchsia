@@ -5,9 +5,10 @@
 use crate::{Package, PackageBuilder};
 use fuchsia_merkle::Hash;
 use fuchsia_pkg::PackagePath;
+use fuchsia_pkg::package_sets::AnchoredPackageSetType;
 use fuchsia_url::PinnedAbsolutePackageUrl;
 use std::future::Future;
-use system_image::{CachePackages, StaticPackages};
+use system_image::{AnchoredPackages, CachePackages, StaticPackages};
 
 const DEFAULT_PACKAGE_REPO_URL: &str = "fuchsia-pkg://fuchsia.com";
 
@@ -16,6 +17,7 @@ const DEFAULT_PACKAGE_REPO_URL: &str = "fuchsia-pkg://fuchsia.com";
 pub struct SystemImageBuilder {
     static_packages: Option<Vec<(PackagePath, Hash)>>,
     cache_packages: Option<Vec<PinnedAbsolutePackageUrl>>,
+    anchored_packages: Option<AnchoredPackages>,
     pkgfs_disable_executability_restrictions: bool,
 }
 
@@ -61,6 +63,28 @@ impl SystemImageBuilder {
         self
     }
 
+    /// Appends the given package set type, path and hash to the anchored packages manifest,
+    /// creating the manifest if it was not already staged to be added to the package.
+    pub fn anchored_package(
+        mut self,
+        package_set_type: AnchoredPackageSetType,
+        path: PackagePath,
+        hash: Hash,
+    ) -> Self {
+        let (name, variant) = path.into_name_and_variant();
+        let pinned_url = PinnedAbsolutePackageUrl::new(
+            DEFAULT_PACKAGE_REPO_URL.parse().unwrap(),
+            name,
+            Some(variant),
+            hash,
+        );
+        self.anchored_packages
+            .get_or_insert_default()
+            .insert(package_set_type, pinned_url)
+            .unwrap();
+        self
+    }
+
     /// Disable enforcement of executability restrictions for packages that are not base or
     /// allowlisted.
     pub fn pkgfs_disable_executability_restrictions(mut self) -> Self {
@@ -94,6 +118,12 @@ impl SystemImageBuilder {
             let cache_packages = CachePackages::from_entries(cache_packages.clone());
             cache_packages.serialize(&mut bytes).unwrap();
             builder = builder.add_resource_at("data/cache_packages.json", bytes.as_slice());
+        }
+
+        if let Some(anchored_packages) = &self.anchored_packages {
+            bytes.clear();
+            anchored_packages.serialize(&mut bytes).unwrap();
+            builder = builder.add_resource_at("data/anchored_packages.json", bytes.as_slice());
         }
 
         if self.pkgfs_disable_executability_restrictions {
