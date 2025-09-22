@@ -150,7 +150,7 @@ impl FileSystem {
         assert_eq!(ops.uses_external_node_ids(), node_cache.uses_external_node_ids());
 
         let mount_options = security::sb_eat_lsm_opts(&kernel, &mut options.params)?;
-        let security_state = security::file_system_init_security(&mount_options)?;
+        let security_state = security::file_system_init_security(&mount_options, &ops)?;
 
         let file_system = Arc::new(FileSystem {
             kernel: kernel.weak_self.clone(),

@@ -18,7 +18,9 @@ pub(super) mod testing;
 
 use super::{FsNodeSecurityXattr, PermissionFlags, TaskState};
 use crate::task::{CurrentTask, FullCredentials, Task};
-use crate::vfs::{Anon, DirEntry, FileHandle, FileObject, FileSystem, FsNode, OutputBuffer};
+use crate::vfs::{
+    Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
+};
 use audit::{Auditable, audit_decision, audit_todo_decision};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
@@ -558,11 +560,28 @@ pub(super) struct FileSystemState {
 
     // Set once the initial policy has been loaded, taking into account `mount_options`.
     label: OnceLock<FileSystemLabel>,
+
+    // TODO: https://fxbug.dev/362898792 - Derive this based on filesystem characteristics.
+    genfs_supports_relabel: bool,
 }
 
 impl FileSystemState {
-    fn new(mount_options: FileSystemMountOptions) -> Self {
-        Self { mount_options, pending_entries: Mutex::new(IndexSet::new()), label: OnceLock::new() }
+    fn new(mount_options: FileSystemMountOptions, ops: &dyn FileSystemOps) -> Self {
+        // TODO: https://fxbug.dev/362898792 - Replace this with a more graceful mechanism for
+        // deciding whether `genfscon` supports relabeling (as indicated by the "seclabel" tag
+        // reported by `mount`).
+        //
+        // For relabeling to make sense with `genfscon` labeling they must ensure to persist the
+        // `FsNode` security state. That is implicitly the case for filesystems which persist all
+        // `FsNode`s in-memory (independent of the `DirEntry` cache), e.g. those whose contents are
+        // managed as a `SimpleDirectory` structure.
+        let fs_name = ops.name().deref();
+        let genfs_supports_relabel = matches!(fs_name, b"sysfs" | b"tracefs" | b"pstore");
+
+        let pending_entries = Mutex::new(IndexSet::new());
+        let label = OnceLock::new();
+
+        Self { mount_options, pending_entries, label, genfs_supports_relabel }
     }
 
     /// Returns the resolved `FileSystemLabel`, or `None` if no policy has yet been loaded.
@@ -570,24 +589,27 @@ impl FileSystemState {
         self.label.get()
     }
 
-    /// Returns trye if this file system supports dynamic re-labeling of file nodes.
+    /// Returns true if this file system supports dynamic re-labeling of file nodes.
     pub fn supports_relabel(&self) -> bool {
-        // TODO: https://fxbug.dev/357876133 - Fix this to be consistent with observed
-        // behaviour under Linux, which allows relabeling of some `genfscon` labeled file systems.
-        match self.label() {
-            Some(FileSystemLabel { scheme: FileSystemLabelingScheme::FsUse { .. }, .. }) => true,
-            _ => false,
+        let Some(label) = self.label() else {
+            return false;
+        };
+        match label.scheme {
+            FileSystemLabelingScheme::Mountpoint { .. } => false,
+            FileSystemLabelingScheme::FsUse { .. } => true,
+            FileSystemLabelingScheme::GenFsCon { .. } => self.genfs_supports_relabel,
         }
     }
 
     /// Returns true if this file system persists labels in extended attributes.
     pub fn supports_xattr(&self) -> bool {
-        match self.label() {
-            Some(FileSystemLabel {
-                scheme: FileSystemLabelingScheme::FsUse { fs_use_type, .. },
-                ..
-            }) => *fs_use_type == FsUseType::Xattr,
-            _ => false,
+        let Some(label) = self.label() else {
+            return false;
+        };
+        match label.scheme {
+            FileSystemLabelingScheme::Mountpoint { .. }
+            | FileSystemLabelingScheme::GenFsCon { .. } => false,
+            FileSystemLabelingScheme::FsUse { fs_use_type, .. } => fs_use_type == FsUseType::Xattr,
         }
     }
 

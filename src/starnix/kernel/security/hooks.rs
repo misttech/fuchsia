@@ -18,7 +18,8 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{
     Anon, DirEntryHandle, DowncastedFile, FileHandle, FileObject, FileSystem, FileSystemHandle,
-    FsNode, FsStr, FsString, Mount, NamespaceNode, OutputBuffer, ValueOrSize, XattrOp,
+    FileSystemOps, FsNode, FsStr, FsString, Mount, NamespaceNode, OutputBuffer, ValueOrSize,
+    XattrOp,
 };
 use ebpf::MapFlags;
 use fuchsia_inspect_contrib::profile_duration;
@@ -252,10 +253,11 @@ pub fn sb_eat_lsm_opts(
 /// This sits somewhere between `fs_context_parse_param()` and `sb_set_mnt_opts()` in function.
 pub fn file_system_init_security(
     mount_options: &FileSystemMountOptions,
+    ops: &dyn FileSystemOps,
 ) -> Result<FileSystemState, Errno> {
     track_hook_duration!(c"security.hooks.file_system_init_security");
     Ok(FileSystemState {
-        state: selinux_hooks::superblock::file_system_init_security(mount_options)?,
+        state: selinux_hooks::superblock::file_system_init_security(mount_options, ops)?,
     })
 }
 

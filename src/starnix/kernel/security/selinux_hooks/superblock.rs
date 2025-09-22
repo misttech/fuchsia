@@ -10,7 +10,9 @@ use super::{
 
 use crate::task::CurrentTask;
 use crate::vfs::fs_args::MountParams;
-use crate::vfs::{FileSystem, FileSystemHandle, FsStr, Mount, NamespaceNode, OutputBuffer};
+use crate::vfs::{
+    FileSystem, FileSystemHandle, FileSystemOps, FsStr, Mount, NamespaceNode, OutputBuffer,
+};
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFilePermission, FileSystemMountOptions, FileSystemPermission, ForClass, FsNodeClass,
@@ -35,8 +37,9 @@ fn fs_sid(fs: &FileSystem) -> Result<SecurityId, Errno> {
 /// Returns security state to associate with a filesystem based on the supplied mount options.
 pub(in crate::security) fn file_system_init_security(
     mount_options: &FileSystemMountOptions,
+    ops: &dyn FileSystemOps,
 ) -> Result<FileSystemState, Errno> {
-    Ok(FileSystemState::new(mount_options.clone()))
+    Ok(FileSystemState::new(mount_options.clone(), ops))
 }
 
 /// Resolves the labeling scheme and arguments for the `file_system`, based on the loaded policy.

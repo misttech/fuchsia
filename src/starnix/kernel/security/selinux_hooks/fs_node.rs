@@ -1127,7 +1127,7 @@ where
     // Security Context, which we should return, so return the `get_xattr()` result, unless it indicates
     // that the filesystem does not support the attribute.
     let sid = fs_node_effective_sid_and_class(&fs_node).sid;
-    if sid == InitialSid::Unlabeled.into() {
+    if sid == InitialSid::Unlabeled.into() && fs_node.fs().security_state.state.supports_xattr() {
         let result = fs_node.ops().get_xattr(
             locked.cast_locked::<FileOpsCore>(),
             fs_node,
@@ -1190,9 +1190,8 @@ where
         );
     };
 
-    // If the "mountpoint"-labeling is used by this filesystem then setting labels is not supported.
-    // TODO: https://fxbug.dev/377915469 - Is re-labeling of "genfscon" nodes allowed?
-    if let FileSystemLabelingScheme::Mountpoint { .. } = fs_label.scheme {
+    // If re-labeling is not supported by the filesystem/labeling scheme then report as such.
+    if !fs.security_state.state.supports_relabel() {
         return error!(ENOTSUP);
     }
 
@@ -1235,23 +1234,24 @@ where
         )?;
     }
 
-    // Apply the change to the file node.
-    let result = fs_node.ops().set_xattr(
-        locked.cast_locked::<FileOpsCore>(),
-        fs_node,
-        current_task,
-        name,
-        value,
-        op,
-    );
-
-    // If the operation succeeded then update the label cached on the file node.
-    if result.is_ok() {
-        let effective_new_sid = new_sid.unwrap_or_else(|| InitialSid::Unlabeled.into());
-        set_cached_sid(fs_node, effective_new_sid);
+    // If the filesystem is configured to persist labels into xattrs then apply the label to the
+    // node.
+    if fs.security_state.state.supports_xattr() {
+        fs_node.ops().set_xattr(
+            locked.cast_locked::<FileOpsCore>(),
+            fs_node,
+            current_task,
+            name,
+            value,
+            op,
+        )?;
     }
 
-    result
+    // Finally, update the label cached on the file node.
+    let effective_new_sid = new_sid.unwrap_or_else(|| InitialSid::Unlabeled.into());
+    set_cached_sid(fs_node, effective_new_sid);
+
+    Ok(())
 }
 
 /// Temporarily sets the fscreate sid to match `fs_node` and runs `do_copy_up`.
