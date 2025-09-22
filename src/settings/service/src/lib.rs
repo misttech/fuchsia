@@ -539,6 +539,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             .unwrap_or_else(|| Rc::new(ListenerInspectLogger::new()));
 
         let RegistrationResult {
+            camera_watcher_event_txs,
             media_buttons_event_txs,
             setting_value_rx,
             external_event_rx,
@@ -569,6 +570,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         let agent_blueprints = create_agent_blueprints(
             agent_types,
             self.agent_blueprints,
+            camera_watcher_event_txs,
             self.media_buttons_event_txs,
             setting_value_rx,
             external_event_rx,
@@ -642,6 +644,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 }
 
 struct RegistrationResult {
+    camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
@@ -718,6 +721,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         let (external_event_tx, external_event_rx) = mpsc::unbounded();
         let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
         let external_publisher = ExternalEventPublisher::new(external_event_tx);
+        let camera_watcher_event_txs = vec![];
         let mut media_buttons_event_txs = vec![];
         let mut tasks = vec![];
 
@@ -823,6 +827,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         }
 
         RegistrationResult {
+            camera_watcher_event_txs,
             media_buttons_event_txs,
             setting_value_rx,
             external_event_rx,
@@ -970,6 +975,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 fn create_agent_blueprints(
     agent_types: HashSet<AgentType>,
     agent_blueprints: Vec<AgentCreator>,
+    camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
@@ -986,6 +992,9 @@ fn create_agent_blueprints(
         }
     })
     .detach();
+    let camera_registrar = agent_types
+        .contains(&AgentType::CameraWatcher)
+        .then(|| agent::camera_watcher::create_registrar(camera_watcher_event_txs));
     let media_buttons_registrar = agent_types
         .contains(&AgentType::MediaButtons)
         .then(|| agent::media_buttons::create_registrar(media_buttons_event_txs));
@@ -1003,6 +1012,7 @@ fn create_agent_blueprints(
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
     let agent_registrars = [
+        camera_registrar,
         media_buttons_registrar,
         inspect_settings_values_registrar,
         inspect_external_apis_registrar,
@@ -1013,7 +1023,8 @@ fn create_agent_blueprints(
     let mut agent_blueprints = if agent_types.iter().all(|t| {
         matches!(
             t,
-            AgentType::MediaButtons
+            AgentType::CameraWatcher
+                | AgentType::MediaButtons
                 | AgentType::InspectSettingValues
                 | AgentType::InspectExternalApis
                 | AgentType::InspectSettingProxy

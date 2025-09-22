@@ -11,6 +11,8 @@ use crate::service;
 use crate::service_context::ServiceContext;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use fuchsia_async::{MonotonicInstant, TestExecutor};
+use futures::StreamExt;
+use futures::channel::mpsc;
 use futures::lock::Mutex;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::helpers::{move_executor_forward, move_executor_forward_and_get};
@@ -67,7 +69,7 @@ async fn test_camera_agent_proxy() {
 
     let expected_camera_state = true;
     fake_services.camera3_service.lock().await.set_camera_sw_muted(expected_camera_state);
-    CameraWatcherAgent::create(context).await;
+    CameraWatcherAgent::create(context, vec![]).await;
 
     let service_context =
         Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
@@ -156,7 +158,7 @@ fn test_camera_devices_watcher_timeout() {
     )
     .set_camera_sw_muted(true);
 
-    let camera_watcher_agent_future = CameraWatcherAgent::create(context);
+    let camera_watcher_agent_future = CameraWatcherAgent::create(context, vec![]);
     move_executor_forward(
         &mut executor,
         camera_watcher_agent_future,
@@ -215,7 +217,8 @@ async fn test_camera_agent_delayed_devices() {
 
     let expected_camera_state = true;
     fake_services.camera3_service.lock().await.set_camera_sw_muted(expected_camera_state);
-    CameraWatcherAgent::create(context).await;
+    let (tx, mut rx) = mpsc::unbounded();
+    CameraWatcherAgent::create(context, vec![tx]).await;
 
     let service_context =
         Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None));
@@ -249,6 +252,8 @@ async fn test_camera_agent_delayed_devices() {
             }
         }
     }
+    let muted = rx.next().await;
+    assert_eq!(muted, Some(true));
 
     // Validate that we received all expected events.
     assert_eq!(camera_state, expected_camera_state);

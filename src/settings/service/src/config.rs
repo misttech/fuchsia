@@ -19,11 +19,9 @@ impl AgentCreator {
     pub(crate) fn from_type(agent_type: AgentType) -> Option<AgentCreator> {
         use crate::agent::*;
         Some(match agent_type {
-            AgentType::CameraWatcher => {
-                create_agent!(camera_watcher, camera_watcher::CameraWatcherAgent::create)
-            }
             AgentType::Earcons => create_agent!(earcons, earcons::agent::Agent::create),
-            AgentType::MediaButtons
+            AgentType::CameraWatcher
+            | AgentType::MediaButtons
             | AgentType::InspectSettingValues
             | AgentType::InspectExternalApis
             | AgentType::InspectSettingProxy

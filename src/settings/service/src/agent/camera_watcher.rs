@@ -6,20 +6,35 @@ use crate::agent::{
     AgentError, Context as AgentContext, Invocation, InvocationResult, Lifespan, Payload,
 };
 use crate::base::SettingType;
-use crate::event::{camera_watcher, Event, Publisher};
+use crate::event::{Event, Publisher, camera_watcher};
 use crate::handler::base::{Payload as HandlerPayload, Request};
 use crate::input::common::connect_to_camera;
 use crate::message::base::Audience;
 use crate::service_context::ServiceContext;
 use crate::{service, trace, trace_guard};
 use fuchsia_async as fasync;
+use futures::channel::mpsc::UnboundedSender;
 use std::collections::HashSet;
 use std::rc::Rc;
+
+use super::{AgentCreator, CreationFunc};
 
 /// Setting types that the camera watcher agent will send updates to, if they're
 /// available on the device.
 fn get_event_setting_types() -> HashSet<SettingType> {
     vec![SettingType::Input].into_iter().collect()
+}
+
+pub(crate) fn create_registrar(muted_txs: Vec<UnboundedSender<bool>>) -> AgentCreator {
+    AgentCreator {
+        debug_id: "CameraWatcherAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let muted_txs = muted_txs.clone();
+            Box::pin(async move {
+                CameraWatcherAgent::create(context, muted_txs).await;
+            })
+        })),
+    }
 }
 
 // TODO(https://fxbug.dev/42149412): Extract common template from agents.
@@ -29,10 +44,13 @@ pub(crate) struct CameraWatcherAgent {
 
     /// Settings to send camera watcher events to.
     recipient_settings: HashSet<SettingType>,
+    /// Sends an event whenever camera muted state changes. The `bool`
+    /// represents whether the camera is muted or not.
+    muted_txs: Vec<UnboundedSender<bool>>,
 }
 
 impl CameraWatcherAgent {
-    pub(crate) async fn create(context: AgentContext) {
+    pub(crate) async fn create(context: AgentContext, muted_txs: Vec<UnboundedSender<bool>>) {
         let mut agent = CameraWatcherAgent {
             publisher: context.get_publisher(),
             messenger: context
@@ -44,6 +62,7 @@ impl CameraWatcherAgent {
                 .intersection(&get_event_setting_types())
                 .cloned()
                 .collect::<HashSet<SettingType>>(),
+            muted_txs,
         };
 
         let mut receptor = context.receptor;
@@ -77,6 +96,7 @@ impl CameraWatcherAgent {
         match connect_to_camera(service_context).await {
             Ok(camera_device_client) => {
                 let mut event_handler = EventHandler {
+                    muted_txs: self.muted_txs.clone(),
                     publisher: self.publisher.clone(),
                     messenger: self.messenger.clone(),
                     recipient_settings: self.recipient_settings.clone(),
@@ -109,6 +129,7 @@ impl CameraWatcherAgent {
 }
 
 struct EventHandler {
+    muted_txs: Vec<UnboundedSender<bool>>,
     publisher: Publisher,
     messenger: service::message::Messenger,
     recipient_settings: HashSet<SettingType>,
@@ -124,6 +145,10 @@ impl EventHandler {
     }
 
     fn send_event(&self, muted: bool) {
+        for muted_tx in &self.muted_txs {
+            let _ = muted_tx.unbounded_send(muted);
+        }
+
         self.publisher.send_event(Event::CameraUpdate(camera_watcher::Event::OnSWMuteState(muted)));
         let setting_request: Request = Request::OnCameraSWState(muted);
 
@@ -150,6 +175,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use settings_test_common::fakes::service::ServiceRegistry;
 
     // Tests that the initialization lifespan is not handled.
@@ -159,8 +185,12 @@ mod tests {
         let (messenger, publisher) = create_messenger_and_publisher().await;
 
         // Construct the agent.
-        let mut agent =
-            CameraWatcherAgent { publisher, messenger, recipient_settings: HashSet::new() };
+        let mut agent = CameraWatcherAgent {
+            muted_txs: vec![],
+            publisher,
+            messenger,
+            recipient_settings: HashSet::new(),
+        };
 
         // Try to initiatate the initialization lifespan.
         let result = agent
@@ -180,8 +210,12 @@ mod tests {
         let (messenger, publisher) = create_messenger_and_publisher().await;
 
         // Construct the agent.
-        let mut agent =
-            CameraWatcherAgent { publisher, messenger, recipient_settings: HashSet::new() };
+        let mut agent = CameraWatcherAgent {
+            muted_txs: vec![],
+            publisher,
+            messenger,
+            recipient_settings: HashSet::new(),
+        };
 
         let service_context = Rc::new(ServiceContext::new(
             // Create a service registry without a camera3 service interface.
@@ -215,7 +249,11 @@ mod tests {
         let handler_receptor: Receptor =
             create_receptor_for_setting_type(&service_message_hub, SettingType::Unknown).await;
 
+        let (tx1, mut rx1) = mpsc::unbounded();
+        let (tx2, mut rx2) = mpsc::unbounded();
+
         let mut event_handler = EventHandler {
+            muted_txs: vec![tx1.clone(), tx2.clone()],
             publisher,
             messenger,
             recipient_settings: vec![SettingType::Unknown].into_iter().collect(),
@@ -232,9 +270,12 @@ mod tests {
 
         let mut agent_received_sw_mute = false;
         let mut handler_received_event = false;
+        let mut channel_received = 0;
 
         let fused_event = event_receptor.fuse();
         let fused_setting_handler = handler_receptor.fuse();
+        let mut next_rx1 = rx1.next();
+        let mut next_rx2 = rx2.next();
         futures::pin_mut!(fused_event, fused_setting_handler);
 
         // Loop over the select so we can handle the messages as they come in. When all messages
@@ -265,12 +306,31 @@ mod tests {
                         handler_received_event = true;
                     }
                 }
+                event = next_rx1 => {
+                    let Some(muted) = event else {
+                        continue;
+                    };
+                    assert!(muted);
+                    // Close channel so we can exit select loop.
+                    tx1.close_channel();
+                    channel_received += 1;
+                }
+                event = next_rx2 => {
+                    let Some(muted) = event else {
+                        continue;
+                    };
+                    assert!(muted);
+                    // Close channel so we can exit select loop.
+                    tx2.close_channel();
+                    channel_received += 1;
+                }
                 complete => break,
             }
         }
 
         assert!(agent_received_sw_mute);
         assert!(handler_received_event);
+        assert_eq!(channel_received, 2);
     }
 
     // Tests that events are not sent to unavailable settings.
@@ -294,6 +354,7 @@ mod tests {
 
         // Declare all settings as unavailable so that no events are sent.
         let mut event_handler = EventHandler {
+            muted_txs: vec![],
             publisher,
             messenger,
             recipient_settings: HashSet::new(),
