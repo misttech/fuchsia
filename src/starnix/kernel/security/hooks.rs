@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use super::{
-    BpfMapState, BpfProgState, FileObjectState, FileSystemState, ResolvedElfState,
-    SavedEffectiveState, TaskState, selinux_hooks,
+    BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
+    ResolvedElfState, SavedEffectiveState, TaskState, selinux_hooks,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
@@ -202,11 +202,36 @@ pub fn binder_set_context_mgr(current_task: &CurrentTask) -> Result<(), Errno> {
 
 /// Checks whether the given `current_task` can perform a transaction to `target_task`.
 /// Corresponds to the `binder_transaction` hook.
-pub fn binder_transaction(current_task: &CurrentTask, target_task: &Task) -> Result<(), Errno> {
+pub fn binder_transaction(
+    current_task: &CurrentTask,
+    target_task: &Task,
+    connection_state: &BinderConnectionState,
+) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.binder_transaction");
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::binder::binder_transaction(security_server, current_task, target_task)
+        selinux_hooks::binder::binder_transaction(
+            security_server,
+            &connection_state.state,
+            current_task,
+            target_task,
+        )
     })
+}
+
+/// Returns the serialized Security Context associated with the specified state.
+/// If the state's SID cannot be resolved then None is returned.
+pub fn binder_get_context(
+    current_task: &CurrentTask,
+    connection_state: &BinderConnectionState,
+) -> Option<Vec<u8>> {
+    track_hook_duration!(c"security.hooks.binder_get_context");
+    if_selinux_else(
+        current_task,
+        |security_server| {
+            selinux_hooks::binder::binder_get_context(&security_server, &connection_state.state)
+        },
+        || None,
+    )
 }
 
 /// Consumes the mount options from the supplied `MountParams` and returns the security mount
@@ -680,6 +705,13 @@ pub fn file_alloc_security(current_task: &CurrentTask) -> FileObjectState {
     FileObjectState { state: selinux_hooks::file::file_alloc_security(current_task) }
 }
 
+/// Returns the security context to be assigned to a BinderConnection, based on the task that
+/// creates it.
+pub fn binder_connection_alloc(current_task: &CurrentTask) -> BinderConnectionState {
+    track_hook_duration!(c"security.hooks.binder_connection_alloc");
+    BinderConnectionState { state: selinux_hooks::binder::binder_connection_alloc(current_task) }
+}
+
 /// Returns the security context to be assigned to a BPM map object, based on the task that
 /// creates it.
 /// Corresponds to the `bpf_map_alloc_security()` LSM hook.
@@ -848,20 +880,6 @@ pub fn run_with_effective_state<R>(
             creds.security_state.lock().current_sid = effective_state.0.clone();
         },
         f,
-    )
-}
-
-/// Returns the serialized Security Context associated with the specified task.
-/// If the task's current SID cannot be resolved then an empty string is returned.
-/// This combines the `task_getsecid()` and `secid_to_secctx()` hooks, in effect.
-pub fn task_get_context(current_task: &CurrentTask, target: &Task) -> Result<Vec<u8>, Errno> {
-    track_hook_duration!(c"security.hooks.task_get_context");
-    if_selinux_else(
-        current_task,
-        |security_server| {
-            selinux_hooks::task::task_get_context(&security_server, &current_task, &target)
-        },
-        || error!(ENOTSUP),
     )
 }
 

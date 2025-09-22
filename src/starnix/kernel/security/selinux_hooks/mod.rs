@@ -677,6 +677,13 @@ struct FsNodeSidAndClass {
     class: FsNodeClass,
 }
 
+/// Security state for a [`crate::binderfs::BinderConnection`] instance. This holds the
+/// [`selinux::SecurityId`] of the task as it was when it created the connection.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct BinderConnectionState {
+    sid: SecurityId,
+}
+
 /// Security state for a [`crate::vfs::Socket`] instance. This holds the [`selinux::SecurityId`] of
 /// the peer socket.
 #[derive(Debug, Default)]

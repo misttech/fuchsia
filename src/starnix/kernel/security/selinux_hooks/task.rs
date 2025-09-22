@@ -564,16 +564,6 @@ pub(in crate::security) fn check_syslog_access(
     )
 }
 
-/// Returns the serialized Security Context associated with the specified task.
-pub(in crate::security) fn task_get_context(
-    security_server: &SecurityServer,
-    _current_task: &CurrentTask,
-    target: &Task,
-) -> Result<Vec<u8>, Errno> {
-    let sid = target.security_state.lock().current_sid;
-    Ok(security_server.sid_to_security_context(sid).unwrap_or_default())
-}
-
 fn permission_from_capability(capability: starnix_uapi::auth::Capabilities) -> KernelPermission {
     // TODO: https://fxbug.dev/297313673 - CapClass::CapUserns will play a role here if-and-after
     // user namespaces are implemented in Starnix.

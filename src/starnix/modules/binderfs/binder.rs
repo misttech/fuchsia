@@ -160,7 +160,11 @@ impl DeviceOps for BinderDevice {
     ) -> Result<Box<dyn FileOps>, Errno> {
         let identifier = self.create_local_process(current_task.thread_group_key.clone());
         log_trace!("opened new BinderConnection id={}", identifier);
-        Ok(Box::new(BinderConnection { identifier, device: self.clone() }))
+        Ok(Box::new(BinderConnection {
+            identifier,
+            device: self.clone(),
+            security_state: security::binder_connection_alloc(current_task),
+        }))
     }
 }
 
@@ -171,6 +175,8 @@ struct BinderConnection {
     identifier: u64,
     /// The implementation of the binder driver.
     device: BinderDevice,
+    /// Security state associated this file object.
+    security_state: security::BinderConnectionState,
 }
 
 impl BinderConnection {
@@ -284,7 +290,16 @@ impl FileOps for BinderConnection {
     ) -> Result<SyscallResult, Errno> {
         let binder_process = self.proc(current_task)?;
         release_after!(binder_process, current_task.kernel(), {
-            self.device.ioctl(locked, current_task, &binder_process, None, request, arg, Vec::new())
+            self.device.ioctl(
+                locked,
+                current_task,
+                &self.security_state,
+                &binder_process,
+                None,
+                request,
+                arg,
+                Vec::new(),
+            )
         })
     }
 
@@ -402,6 +417,7 @@ impl RemoteBinderConnection {
             self.binder_connection.device.ioctl(
                 locked,
                 current_task,
+                &self.binder_connection.security_state,
                 &binder_process,
                 Some(&remote_ioctl),
                 request,
@@ -3709,6 +3725,7 @@ impl BinderDriver {
             binder_connection: BinderConnection {
                 identifier,
                 device: BinderDevice(Arc::clone(this)),
+                security_state: security::binder_connection_alloc(current_task),
             },
         })
     }
@@ -3741,6 +3758,7 @@ impl BinderDriver {
         &self,
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
+        connection_security_state: &security::BinderConnectionState,
         binder_proc: &BinderProcess,
         remote_ioctl: Option<&RemoteIoctl>,
         request: u32,
@@ -3828,6 +3846,7 @@ impl BinderDriver {
                                 self.handle_thread_write(
                                     locked,
                                     current_task,
+                                    connection_security_state,
                                     binder_proc,
                                     &binder_thread,
                                     memory_accessor,
@@ -4024,6 +4043,7 @@ impl BinderDriver {
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
+        connection_security_state: &security::BinderConnectionState,
         binder_proc: &BinderProcess,
         binder_thread: &BinderThread,
         memory_accessor: &dyn MemoryAccessor,
@@ -4096,6 +4116,7 @@ impl BinderDriver {
                 self.handle_transaction(
                     locked,
                     current_task,
+                    connection_security_state,
                     binder_proc,
                     binder_thread,
                     memory_accessor,
@@ -4124,6 +4145,7 @@ impl BinderDriver {
                 self.handle_transaction(
                     locked,
                     current_task,
+                    connection_security_state,
                     binder_proc,
                     binder_thread,
                     memory_accessor,
@@ -4183,6 +4205,7 @@ impl BinderDriver {
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
+        connection_security_state: &security::BinderConnectionState,
         binder_proc: &BinderProcess,
         binder_thread: &BinderThread,
         memory_acessor: &dyn MemoryAccessor,
@@ -4229,14 +4252,13 @@ impl BinderDriver {
                 }
                 let target_task = target_proc.get_task().ok_or(TransactionError::Dead)?;
 
-                if security::binder_transaction(current_task, &target_task).is_err() {
-                    return Err(TransactionError::Failure);
-                }
+                security::binder_transaction(current_task, &target_task, connection_security_state)
+                    .map_err(|_| TransactionError::Failure)?;
 
                 let security_context: Option<FsString> =
                     if object.flags.contains(BinderObjectFlags::TXN_SECURITY_CTX) {
                         let mut security_context = FsString::from(
-                            security::task_get_context(&current_task, &current_task)
+                            security::binder_get_context(current_task, connection_security_state)
                                 .unwrap_or_default(),
                         );
                         security_context.push(b'\0');
@@ -7700,6 +7722,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -7906,6 +7929,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -8876,6 +8900,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -8918,6 +8943,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9022,6 +9048,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9033,6 +9060,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9079,6 +9107,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9140,6 +9169,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9226,6 +9256,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9237,6 +9268,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9340,6 +9372,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9411,6 +9444,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9500,6 +9534,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9832,6 +9867,7 @@ pub mod tests {
                 .handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9892,6 +9928,7 @@ pub mod tests {
                 .ioctl(
                     locked,
                     current_task,
+                    &security::binder_connection_alloc(current_task),
                     &receiver.proc,
                     None,
                     uapi::BINDER_FREEZE,
@@ -9916,6 +9953,7 @@ pub mod tests {
                 device.handle_transaction(
                     locked,
                     &current_task,
+                    &security::binder_connection_alloc(current_task),
                     &sender.proc,
                     &sender.thread,
                     current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -9943,6 +9981,7 @@ pub mod tests {
                 .ioctl(
                     locked,
                     current_task,
+                    &security::binder_connection_alloc(current_task),
                     &receiver.proc,
                     None,
                     uapi::BINDER_GET_FROZEN_INFO,

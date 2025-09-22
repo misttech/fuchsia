@@ -1154,6 +1154,8 @@ class_permission_enum! {
         // keep-sorted start
         /// Permission to perform a binder IPC to a given target process.
         Call("call"),
+        /// Permission to use a Binder connection created with a different security context.
+        Impersonate("impersonate"),
         /// Permission to set oneself as a context manager.
         SetContextMgr("set_context_mgr"),
         // keep-sorted end

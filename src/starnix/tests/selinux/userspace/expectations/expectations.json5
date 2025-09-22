@@ -22,7 +22,6 @@
                 "BinderTest/ContextManagerPermission.BecomeServiceManager/1",
 
                 // TODO(https://fxbug.dev/398654361)
-                "BinderTest/Impersonation.ImpersonateViaTransition/0",
                 "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
                 // TODO: https://fxbug.dev/322843830 - Make (SE)Starnix match the (SE)Linux behavior
