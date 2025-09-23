@@ -1775,6 +1775,24 @@ track all input files that the repository rule may access when it is run.
         with open(args.timings_file, "wt") as f:
             json.dump(time_profile.to_json_timings(), f)
 
+    if args.command == "build":
+        # Update $BUILD_DIR/bazel_build_invocations.json with a
+        # JSON object describing the current invocation. Since all bazel_action()
+        # are in a pool of depth 1, there is no need to lock the file.
+        # Note that this file is always created as an empty list by `fx build`
+        # and `fint build` before invoking Ninja, so there is no need to check
+        # for its existence here.
+        build_utils.LastBazelBuildInvocations.append_to_build_dir(
+            build_dir,
+            build_utils.BazelBuildInvocation(
+                bazel_targets=args.bazel_targets,
+                build_args=configured_args,
+                gn_label=args.gn_target_label,
+                gn_targets_dir=str(args.gn_targets_repository_dir),
+                bazel_action_timings=time_profile.to_json_timings(),
+            ),
+        )
+
     # Done!
     return 0
 

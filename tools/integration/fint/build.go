@@ -96,6 +96,13 @@ const (
 	// list of Ninja targets passed to the last build invocation.
 	lastNinjaBuildTargetsName = "last_ninja_build_targets.txt"
 	// LINT.ThenChange(//tools/devshell/build)
+
+	// LINT.IfChange(last_bazel_build_invocations_file)
+	// lastBazelBuildInvocationsName is the name of a file that will be updated
+	// during the build to contain one JSON object per line describing a
+	// single bazel invocation.
+	lastBazelBuildInvocationsName = "last_bazel_build_invocations.json"
+	// LINT.ThenChange(//build/bazel/scripts/build_utils.py:last_bazel_build_invocations_file)
 )
 
 var (
@@ -274,6 +281,9 @@ func buildImpl(
 
 	updateFileIfNeeded(filepath.Join(buildDir, lastNinjaBuildTargetsName),
 		[]byte(strings.Join(targets, " ")))
+
+	os.WriteFile(filepath.Join(buildDir, lastBazelBuildInvocationsName),
+		[]byte("[]"), 0o644)
 
 	// Tell Ninja to generate a compressed Chrome trace after the build completes.
 	ninjaExtraArgs := []string{"--chrome_trace", ninjaBuildTraceName}

@@ -476,6 +476,256 @@ class TimeProfileTest(unittest.TestCase):
         )
 
 
+class BazelBuildInvocationTest(unittest.TestCase):
+    def test_new_instance(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            build_utils.BazelBuildInvocation(bazel_targets=[], build_args=[])
+
+        i = build_utils.BazelBuildInvocation(
+            bazel_targets=["//src:foo"],
+            build_args=[],
+        )
+        self.assertListEqual(i.bazel_targets, ["//src:foo"])
+        self.assertListEqual(i.build_args, [])
+        self.assertIsNone(i.gn_label)
+        self.assertIsNone(i.gn_targets_dir)
+        self.assertIsNone(i.bazel_action_timings)
+
+        i = build_utils.BazelBuildInvocation(
+            bazel_targets=["//first:target", "//second:target"],
+            build_args=["--config=host", "--config=remote_cache_only"],
+            gn_label="//some:bazel_action",
+            gn_targets_dir="obj/some/bazel_action/gn_targets_dir",
+            bazel_action_timings={"foo": 1.0},
+        )
+        self.assertListEqual(
+            i.bazel_targets, ["//first:target", "//second:target"]
+        )
+        self.assertListEqual(
+            i.build_args, ["--config=host", "--config=remote_cache_only"]
+        )
+        self.assertEqual(i.gn_label, "//some:bazel_action")
+        self.assertEqual(
+            i.gn_targets_dir, "obj/some/bazel_action/gn_targets_dir"
+        )
+        self.assertDictEqual(i.bazel_action_timings, {"foo": 1})
+
+    def test_to_json(self) -> None:
+        i = build_utils.BazelBuildInvocation(
+            bazel_targets=["//src:foo"],
+            build_args=[],
+        )
+        self.assertDictEqual(
+            i.to_json(),
+            {
+                "bazel_targets": ["//src:foo"],
+                "build_args": [],
+            },
+        )
+
+        i = build_utils.BazelBuildInvocation(
+            bazel_targets=["//first:target", "//second:target"],
+            build_args=["--config=host", "--config=remote_cache_only"],
+            gn_label="//some:bazel_action",
+            gn_targets_dir="obj/some/bazel_action/gn_targets_dir",
+            bazel_action_timings={"bar": 42.0},
+        )
+        self.assertDictEqual(
+            i.to_json(),
+            {
+                "bazel_targets": ["//first:target", "//second:target"],
+                "build_args": ["--config=host", "--config=remote_cache_only"],
+                "gn_label": "//some:bazel_action",
+                "gn_targets_dir": "obj/some/bazel_action/gn_targets_dir",
+                "bazel_action_timings": {"bar": 42},
+            },
+        )
+
+    def test_from_json(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            i = build_utils.BazelBuildInvocation.from_json([])
+        self.assertEqual(str(cm.exception), "Input JSON is not an object: []")
+
+        with self.assertRaises(ValueError) as cm:
+            i = build_utils.BazelBuildInvocation.from_json({})
+        self.assertEqual(
+            str(cm.exception), "Missing JSON object key 'bazel_targets'"
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            i = build_utils.BazelBuildInvocation.from_json(
+                {"bazel_targets": []}
+            )
+        self.assertEqual(
+            str(cm.exception), "Missing JSON object key 'build_args'"
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            i = build_utils.BazelBuildInvocation.from_json(
+                {"bazel_targets": [], "build_args": []}
+            )
+        self.assertEqual(str(cm.exception), "Empty bazel_targets list")
+
+        i = build_utils.BazelBuildInvocation.from_json(
+            {
+                "bazel_targets": ["//src:foo"],
+                "build_args": [],
+            }
+        )
+        self.assertListEqual(i.bazel_targets, ["//src:foo"])
+        self.assertListEqual(i.build_args, [])
+        self.assertIsNone(i.gn_label)
+        self.assertIsNone(i.gn_targets_dir)
+
+        i = build_utils.BazelBuildInvocation.from_json(
+            {
+                "bazel_targets": ["//src:foo"],
+                "build_args": ["--config=host", "--config=remote_cache_only"],
+                "gn_label": "//some:bazel_action",
+                "gn_targets_dir": "obj/some/bazel_action/gn_targets_dir",
+            }
+        )
+        self.assertListEqual(i.bazel_targets, ["//src:foo"])
+        self.assertListEqual(
+            i.build_args, ["--config=host", "--config=remote_cache_only"]
+        )
+        self.assertEqual(i.gn_label, "//some:bazel_action")
+        self.assertEqual(
+            i.gn_targets_dir, "obj/some/bazel_action/gn_targets_dir"
+        )
+
+
+class LastBazelBuildInvocationsTest(unittest.TestCase):
+    def test_from_json(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            last = build_utils.LastBazelBuildInvocations.new_from_json({})
+        self.assertEqual(
+            str(cm.exception),
+            "Input is not a JSON array, got <class 'dict'> instead!",
+        )
+
+        last = build_utils.LastBazelBuildInvocations.new_from_json([])
+        self.assertListEqual(last.invocations, [])
+
+        last = build_utils.LastBazelBuildInvocations.new_from_json(
+            [
+                {
+                    "bazel_targets": ["//first:target"],
+                    "build_args": ["--config=host"],
+                    "gn_label": "//first:bazel_action",
+                },
+                {
+                    "bazel_targets": ["//second:target"],
+                    "build_args": ["--config=fuchsia"],
+                    "gn_label": "//second:bazel_action",
+                    "gn_targets_dir": "obj/second/gn_targets_dir",
+                },
+            ]
+        )
+
+        self.assertEqual(len(last.invocations), 2)
+        i = last.invocations[0]
+        self.assertListEqual(i.bazel_targets, ["//first:target"])
+        self.assertListEqual(i.build_args, ["--config=host"])
+        self.assertEqual(i.gn_label, "//first:bazel_action")
+        self.assertIsNone(i.gn_targets_dir)
+
+        i = last.invocations[1]
+        self.assertListEqual(i.bazel_targets, ["//second:target"])
+        self.assertListEqual(i.build_args, ["--config=fuchsia"])
+        self.assertEqual(i.gn_label, "//second:bazel_action")
+        self.assertEqual(i.gn_targets_dir, "obj/second/gn_targets_dir")
+
+    def test_to_json(self) -> None:
+        last = build_utils.LastBazelBuildInvocations.new_from_json([])
+        self.assertListEqual(last.invocations, [])
+
+        last.append(
+            build_utils.BazelBuildInvocation(
+                bazel_targets=["//first:target"],
+                build_args=["--config=host"],
+                gn_label="//first:bazel_action",
+            )
+        )
+
+        last.append(
+            build_utils.BazelBuildInvocation(
+                bazel_targets=["//second:target"],
+                build_args=["--config=fuchsia"],
+                gn_label="//second:bazel_action",
+                gn_targets_dir="obj/second/gn_targets_dir",
+            )
+        )
+
+        last.to_json()
+
+        self.assertListEqual(
+            last.to_json(),
+            [
+                {
+                    "bazel_targets": ["//first:target"],
+                    "build_args": ["--config=host"],
+                    "gn_label": "//first:bazel_action",
+                },
+                {
+                    "bazel_targets": ["//second:target"],
+                    "build_args": ["--config=fuchsia"],
+                    "gn_label": "//second:bazel_action",
+                    "gn_targets_dir": "obj/second/gn_targets_dir",
+                },
+            ],
+        )
+
+    def test_append_to_build_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as build_dir:
+            # Create initial empty list file.
+            file_path = (
+                build_utils.LastBazelBuildInvocations.get_build_file_path(
+                    build_dir
+                )
+            )
+            file_path.write_text("[]")
+
+            build_utils.LastBazelBuildInvocations.append_to_build_dir(
+                build_dir,
+                build_utils.BazelBuildInvocation(
+                    bazel_targets=["//first:target"],
+                    build_args=["--config=host"],
+                    gn_label="//first:bazel_action",
+                ),
+            )
+
+            build_utils.LastBazelBuildInvocations.append_to_build_dir(
+                build_dir,
+                build_utils.BazelBuildInvocation(
+                    bazel_targets=["//second:target"],
+                    build_args=["--config=fuchsia"],
+                    gn_label="//second:bazel_action",
+                    gn_targets_dir="obj/second/gn_targets_dir",
+                ),
+            )
+
+            last_invocations = (
+                build_utils.LastBazelBuildInvocations.new_from_build(build_dir)
+            )
+            self.assertListEqual(
+                last_invocations.to_json(),
+                [
+                    {
+                        "bazel_targets": ["//first:target"],
+                        "build_args": ["--config=host"],
+                        "gn_label": "//first:bazel_action",
+                    },
+                    {
+                        "bazel_targets": ["//second:target"],
+                        "build_args": ["--config=fuchsia"],
+                        "gn_label": "//second:bazel_action",
+                        "gn_targets_dir": "obj/second/gn_targets_dir",
+                    },
+                ],
+            )
+
+
 class MockBazelLauncher(BazelLauncher):
     """A BazelLauncher sub-class used to mock subprocess invocation.
 

@@ -258,6 +258,194 @@ assert is_likely_content_hash_path("/src/.build-id/ae/23094.so")
 assert not is_likely_content_hash_path("/src/.build-id/log.txt")
 
 
+@dataclasses.dataclass(frozen=True)
+class BazelBuildInvocation:
+    """Models a single `bazel build` invocation from the Fuchsia build."""
+
+    bazel_targets: list[str]  # Bazel target labels, cannot be empty.
+
+    # Command-line arguments for build configuration. Can be empty.
+    build_args: list[str] = dataclasses.field(default_factory=list)
+
+    gn_label: str | None = None  # Optional GN label for the corresponding bazel_action() target, if any.
+
+    gn_targets_dir: str | None = None
+    # Optional path to @gn_targets repository content
+
+    bazel_action_timings: dict[str, float] | None = None
+    # Optional, dictionary describing the duration of bazel_action.py steps
+    # keys are step names, values are durations in seconds.
+
+    def __post_init__(self) -> None:
+        if not self.bazel_targets:
+            raise ValueError(f"Empty bazel_targets list")
+
+    def to_json(self) -> dict[str, T.Any]:
+        """Convert instance to JSON object.
+
+        Returns:
+            JSON object as a dictionary.
+        """
+        result: dict[str, T.Any] = {
+            "bazel_targets": self.bazel_targets,
+            "build_args": self.build_args,
+        }
+        if self.gn_label:
+            result["gn_label"] = self.gn_label
+        if self.gn_targets_dir:
+            result["gn_targets_dir"] = self.gn_targets_dir
+        if self.bazel_action_timings:
+            result["bazel_action_timings"] = self.bazel_action_timings
+        return result
+
+    @staticmethod
+    def from_json(d: dict[str, T.Any]) -> "BazelBuildInvocation":
+        """Convert JSON object into new instance value.
+
+        Args:
+            json: A JSON object as a Python dictionary.
+        Returns:
+            new instance value.
+        Raises:
+            ValueError if the input is malformed.
+        """
+        if not isinstance(d, dict):
+            raise ValueError(f"Input JSON is not an object: {d}")
+        try:
+            return BazelBuildInvocation(
+                bazel_targets=d["bazel_targets"],
+                build_args=d["build_args"],
+                gn_label=d.get("gn_label"),
+                gn_targets_dir=d.get("gn_targets_dir"),
+                bazel_action_timings=d.get("bazel_action_timings"),
+            )
+        except KeyError as e:
+            raise ValueError(f"Missing JSON object key {e}")
+        except TypeError as e:
+            raise ValueError(f"Missing JSON object key {e}")
+
+
+class LastBazelBuildInvocations(object):
+    """Models the list of last Bazel build invocations from the Fuchsia build.
+
+    An `fx build` or `fint build` command will populate the file
+    at $BUILD_DIR/{LastBazelBuildInvocations.FILENAME} with details about
+    each `bazel build` command that was invoked through `bazel_action()`
+    targets. This can later be used by //build/api/client to perform
+    queries to extract related information, such as debug symbols.
+
+    Its content is a JSON array of objects describing BazelBuildInvocation
+    instances.
+    """
+
+    # Name of the file created / updated by `fx build` and `fint build`.
+    # LINT.IfChange(last_bazel_build_invocations_file)
+    FILENAME = "last_bazel_build_invocations.json"
+    # LINT.ThenChange(//tools/devshell/build:last_bazel_build_invocations_file,//tools/integration/fint/build.go:last_bazel_build_invocations_file,//tools/artifactory/cmd/up.go:last_bazel_build_invocations_file)
+
+    def __init__(self, invocations: list[BazelBuildInvocation] = []):
+        """Constructor. Do not use directly, see new_from_xxxx() methods."""
+        self._invocations = invocations
+
+    @property
+    def invocations(self) -> list[BazelBuildInvocation]:
+        return self._invocations
+
+    def append(self, invocation: BazelBuildInvocation) -> None:
+        """Append new BazelBuildInvocation instance."""
+        self._invocations.append(invocation)
+
+    @staticmethod
+    def get_build_file_path(build_dir: FilePath) -> Path:
+        """Retrieve the path of the corresponding file in the Ninja build directory."""
+        return Path(build_dir) / LastBazelBuildInvocations.FILENAME
+
+    @staticmethod
+    def new_from_build(build_dir: FilePath) -> "LastBazelBuildInvocations":
+        """Create new instance from the Ninja build directory.
+
+        Args:
+            build_dir: Path to Ninja build directory.
+        Returns:
+            new instance value.
+        Raises:
+            ValueError if file is malformed
+        """
+        (
+            file_path,
+            last_invocations_json,
+        ) = LastBazelBuildInvocations._load_json_from_build_dir(build_dir)
+
+        return LastBazelBuildInvocations.new_from_json(last_invocations_json)
+
+    @staticmethod
+    def append_to_build_dir(
+        build_dir: FilePath, invocation: BazelBuildInvocation
+    ) -> None:
+        """Append a new BazelBuildInvocation instance to the Ninja build directory
+
+        Args:
+            build_dir: Path to the Ninja build directory.
+            invocation: BazelBuildInvocation value to add.
+        """
+        (
+            file_path,
+            last_invocations_json,
+        ) = LastBazelBuildInvocations._load_json_from_build_dir(build_dir)
+
+        last_invocations_json.append(invocation.to_json())
+
+        with open(file_path, "wt") as f:
+            json.dump(last_invocations_json, f)
+
+    @staticmethod
+    def _load_json_from_build_dir(
+        build_dir: FilePath,
+    ) -> tuple[Path, list[dict[str, T.Any]]]:
+        """Load JSON data from the build directory."""
+        file_path = LastBazelBuildInvocations.get_build_file_path(build_dir)
+        with open(file_path, "rt") as f:
+            last_invocations_json = json.load(f)
+        return file_path, last_invocations_json
+
+    def write_to_build_dir(self, build_dir: FilePath) -> None:
+        """Write instance to the Ninja build directory.
+
+        Args:
+            build_dir: Path to Ninja build directory.
+        """
+        file_path = self.get_build_file_path(build_dir)
+        with open(file_path, "wt") as f:
+            json.dump([i.to_json() for i in self._invocations], f)
+
+    @staticmethod
+    def new_from_json(
+        json: list[dict[str, T.Any]]
+    ) -> "LastBazelBuildInvocations":
+        """Create new instance from JSON array
+
+        Args:
+            json: A JSON array as a Python list.
+        Returns:
+            new instance value.
+        Raises:
+            ValueError if input is malformed.
+        """
+        if not isinstance(json, list):
+            raise ValueError(
+                f"Input is not a JSON array, got {type(json)} instead!"
+            )
+
+        invocations: list[BazelBuildInvocation] = [
+            BazelBuildInvocation.from_json(item) for item in json
+        ]
+        return LastBazelBuildInvocations(invocations)
+
+    def to_json(self) -> list[dict[str, T.Any]]:
+        """Convert instance to JSON array value."""
+        return [invocation.to_json() for invocation in self._invocations]
+
+
 # Callable object that takes log messages as input.
 LogFunc = T.Callable[[str], None]
 

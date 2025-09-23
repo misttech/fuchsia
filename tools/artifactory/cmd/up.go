@@ -64,6 +64,11 @@ const (
 
 	// A mapping of fidl mangled names to api functions.
 	fidlMangledToApiMappingManifestName = "ctf_fidl_mangled_to_api_mapping.json"
+
+	// A list of bazel build invocation details.
+	// LINT.IfChange(last_bazel_build_invocations_file)
+	lastBazelBuildInvocationsName = "last_bazel_build_invocations.json"
+	// LINT.ThenChange(//build/bazel/scripts/build_utils.py:last_bazel_build_invocations_file)
 )
 
 type upCommand struct {
@@ -221,6 +226,11 @@ func (cmd upCommand) execute(ctx context.Context, buildDir string) error {
 		{
 			Source:      path.Join(buildDir, ctsPlasaReportName),
 			Destination: path.Join(cmd.namespace, ctsPlasaReportName),
+		},
+		// Used to inspect bazel build invocation and bazel_action.py timings.
+		{
+			Source:      path.Join(buildDir, lastBazelBuildInvocationsName),
+			Destination: path.Join(cmd.namespace, lastBazelBuildInvocationsName),
 		},
 	}
 

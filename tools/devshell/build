@@ -302,6 +302,21 @@ function assert_build_mode {
   fi
 }
 
+function _array_to_json_list {
+  if [[ "${#@}" -eq 0 ]]; then
+    printf "[]"
+    return 0
+  fi
+  local item comma
+  printf "["
+  for item in "${@}"; do
+    printf "$comma"
+    comma=","
+    printf '"%q"' "${item}"
+  done
+  printf "]"
+}
+
 function main {
   local gn_targets=() extra_switches=() bazel_targets=() fx_gen_switches=()
   local log_file is_logging fint_params_path
@@ -604,9 +619,10 @@ function main {
     done
 
     if [[ "${has_bazel_host_flag}" ]]; then
+      local empty_gn_targets_dir="${FUCHSIA_DIR}/build/bazel/local_repositories/empty"
       extra_switches+=(
         # Prevent any existing @gn_targets definitions from being visible.
-        --override_repository=gn_targets="${FUCHSIA_DIR}"/build/bazel/local_repositories/empty
+        --override_repository=gn_targets="${empty_gn_targets_dir}"
       )
     else
       fx-error "Only host Bazel target labels are supported for now, please use --host flag."
@@ -639,6 +655,16 @@ function main {
       is_clean_build=1
     fi
   fi
+
+  # The last_bazel_build_invocations.json file contains details about each Bazel
+  # invocation performed during the latest `fx build` or `fint build` command.
+  # An array of JSON objects, each one describing one bazel invocation.
+  # This file is internal to the build itself, and should only be used by
+  # //build/api/client.
+  # LINT.IfChange(last_bazel_build_invocations_file)
+  local last_bazel_build_invocations_file="${FUCHSIA_BUILD_DIR}/last_bazel_build_invocations.json"
+  # LINT.ThenChange(//build/bazel/scripts/build_utils.py:last_bazel_build_invocations_file)
+  echo "[]" > "${last_bazel_build_invocations_file}"
 
   if [[ "${FX_BUILD_MODE}" == "fint" ]]; then
     readonly fint="${FX_CACHE_DIR}/fint"
@@ -689,6 +715,17 @@ job_count: $concurrency
         # The target labels or patterns
         "${bazel_targets[@]}"
       )
+
+      {
+        printf '[ '
+        printf '{ "%s": %s' "build_args" "$(_array_to_json_list "${extra_switches[0]}")"
+        printf ', "%s": %s' "bazel_targets" "$(_array_to_json_list "${bazel_targets[@]}")"
+        if [[ "${has_bazel_host_flag}" ]]; then
+          printf ', "%s": "%q"' "gn_targets_dir" "${empty_gn_targets_dir}"
+        fi
+        printf ' } ]\n'
+      } >> "${last_bazel_build_invocations_file}"
+
       (fx-run-bazel "${is_logging}" "$(fx-get-bazel)" build "${bazel_build_args[@]}")
       status=$?
 
