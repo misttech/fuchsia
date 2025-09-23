@@ -28,12 +28,6 @@ group("tests") {
     "//src/graphics/drivers/msd-vsi-vip/tests",
     "//src/graphics/drivers/msd-vsi-vip/tests/unit_tests:msd-vsi-vip-nonhardware-tests",
   ]
-  if (target_cpu == "x64") {
-    public_deps += [
-      "//src/graphics/drivers/intel-gen/icd:mesa_integration_tests",
-      "//src/graphics/drivers/intel-gen/icd:mesa_unit_tests",
-    ]
-  }
 
   # Ensure the test MSDs are built even when not deployed
   public_deps += [
