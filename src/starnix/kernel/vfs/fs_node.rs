@@ -1382,7 +1382,12 @@ impl FsNode {
         } else {
             PermissionFlags::empty()
         };
-        security::fs_node_permission(current_task, self, permission_flags | access.into())?;
+        security::fs_node_permission(
+            current_task,
+            self,
+            permission_flags | access.into(),
+            namespace_node.into(),
+        )?;
 
         match mode & FileMode::IFMT {
             FileMode::IFCHR => {

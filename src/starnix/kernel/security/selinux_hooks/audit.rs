@@ -14,6 +14,7 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use crate::security::AuditLogger;
+use crate::vfs::{NamespaceNode, PathWithReachability};
 
 /// Container for a reference to kernel state from which to include details when emitting audit
 /// logging.  [`Auditable`] instances are created from references to objects via `into()`, e.g:
@@ -37,7 +38,7 @@ use crate::security::AuditLogger;
 /// reference they are cheap to copy, avoiding the need to pass them by-reference if the same
 /// context is to be applied to multiple permission checks.
 #[derive(Clone, Copy)]
-pub(super) enum Auditable<'a> {
+pub enum Auditable<'a> {
     // keep-sorted start
     AuditContext(&'a [Auditable<'a>]),
     Bug(u64),
@@ -47,6 +48,7 @@ pub(super) enum Auditable<'a> {
     FsNode(&'a FsNode),
     IoctlCommand(u16),
     Name(&'a FsStr),
+    NamespaceNode(&'a NamespaceNode),
     Task(&'a Task),
     // keep-sorted end
 }
@@ -87,6 +89,12 @@ impl<'a> From<&'a FsNode> for Auditable<'a> {
 impl<'a> From<&'a FileSystem> for Auditable<'a> {
     fn from(value: &'a FileSystem) -> Self {
         Auditable::FileSystem(value)
+    }
+}
+
+impl<'a> From<&'a NamespaceNode> for Auditable<'a> {
+    fn from(value: &'a NamespaceNode) -> Self {
+        Auditable::NamespaceNode(value)
     }
 }
 
@@ -229,6 +237,12 @@ impl Display for Auditable<'_> {
             }
             Auditable::Name(name) => {
                 write!(f, " name=\"{}\"", name)
+            }
+            Auditable::NamespaceNode(node) => {
+                let PathWithReachability::Reachable(path) = node.path_from_root(None) else {
+                    return Ok(());
+                };
+                write!(f, " path=\"{}\"", path)
             }
             Auditable::Task(task) => {
                 write!(f, " pid={}, comm={}", task.get_pid(), BStr::new(task.command().as_bytes()))

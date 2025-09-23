@@ -5,7 +5,7 @@
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
-mod audit;
+pub(super) mod audit;
 pub(super) mod binder;
 pub(super) mod bpf;
 pub(super) mod file;

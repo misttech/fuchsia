@@ -10,6 +10,7 @@ use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::security::KernelState;
+use crate::security::selinux_hooks::audit::Auditable;
 use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::socket::{
@@ -679,6 +680,7 @@ pub fn fs_node_permission(
     current_task: &CurrentTask,
     fs_node: &FsNode,
     permission_flags: PermissionFlags,
+    audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.fs_node_permission");
     if_selinux_else_default_ok(current_task, |security_server| {
@@ -687,6 +689,7 @@ pub fn fs_node_permission(
             current_task,
             fs_node,
             permission_flags,
+            audit_context,
         )
     })
 }
