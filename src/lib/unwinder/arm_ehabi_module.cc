@@ -32,8 +32,6 @@ Error ArmEhAbiModule::Load() {
   arm_exidx_start_ = elf_ptr_ + phdr.p_vaddr;
   arm_exidx_end_ = arm_exidx_start_ + phdr.p_memsz;
 
-  // TODO(https://fxbug.dev/430572991): Support fetching the .ARM.extab section here as well.
-
   return Success();
 }
 
@@ -81,8 +79,10 @@ Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) {
     return Error("PC not found in this module.");
   }
 
+  uint32_t data_addr = *best_entry_addr + sizeof(hdr.fn_addr);
+
   // Now we can get the associated unwinding data.
-  if (auto err = elf_->Read(*best_entry_addr + sizeof(hdr.fn_addr), hdr.data); err.has_err()) {
+  if (auto err = elf_->Read(data_addr, hdr.data); err.has_err()) {
     return err;
   }
 
@@ -94,7 +94,16 @@ Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) {
     entry.type = IdxHeader::Type::kCompactInline;
   } else {
     entry.type = IdxHeader::Type::kCompact;
-    hdr.data = DecodePrel31(hdr.data);
+    // The decoded relative address is an offset from the current position in the index, which
+    // happens to always be in the middle of an index entry since the relative address will always
+    // be the second entry.
+    //
+    // Note that we never actually need to do a section lookup on the .ARM.extab section because
+    // this address will be pointing directly to the unwind table that we need for this function.
+    // Since we don't know the precise starting address of the section, we cannot find the start of
+    // the table based on this offset without consulting the string table or section header string
+    // table which are both typically not mapped into a live process.
+    hdr.data = DecodePrel31(hdr.data) + data_addr;
   }
 
   entry.header = hdr;
@@ -113,7 +122,7 @@ Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& n
     return err;
   }
 
-  ArmEhAbiParser parser(entry);
+  ArmEhAbiParser parser(elf_, entry);
 
   return parser.Step(stack, current, next);
 }

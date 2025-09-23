@@ -5,6 +5,7 @@
 #include "src/lib/unwinder/arm_ehabi_parser.h"
 
 #include <elf.h>
+#include <inttypes.h>
 
 #include "src/lib/unwinder/arm_ehabi_module.h"
 #include "src/lib/unwinder/registers.h"
@@ -82,8 +83,7 @@ uint8_t GetNextByteFromData(uint32_t data, size_t offset) {
 
 }  // namespace
 
-ArmEhAbiParser::ArmEhAbiParser(const ArmEhAbiModule::IdxHeader& entry) {
-  // TODO(https://fxbug.dev/430572991): Support decoding from the .ARM.extab section as well.
+ArmEhAbiParser::ArmEhAbiParser(Memory* elf, const ArmEhAbiModule::IdxHeader& entry) : elf_(elf) {
   switch (entry.type) {
     case ArmEhAbiModule::IdxHeader::Type::kCompact:
       extab_offset_ = static_cast<int32_t>(entry.header.data);
@@ -210,9 +210,31 @@ fit::result<Error, std::vector<uint8_t>> ArmEhAbiParser::ParseToFinished(uint32_
     return fit::ok(res.data);
   }
 
-  // TODO(https://fxbug.dev/430572991): Handle more words.
+  std::vector<uint8_t> data_stream = std::move(res.data);
 
-  return fit::ok(std::vector<uint8_t>{});
+  // Results from parsing each word of data. These are outside of the loop so we can do checking at
+  // the end to make sure that we actually encountered a terminator opcode and give a good error
+  // message if we didn't.
+  ParsedResult next_data_result;
+  uint32_t next_data = 0;
+
+  // Start at i = 1 because we already have the first word in |data|.
+  for (size_t i = 1; i <= num_extra_words; i++) {
+    if (auto err = elf_->Read(static_cast<uint64_t>(extab_offset_) + (i * 4), next_data);
+        err.has_err()) {
+      return fit::error(err);
+    }
+    next_data_result = ParseWordFromOffset(next_data, 0);
+    data_stream.insert(data_stream.end(), next_data_result.data.begin(),
+                       next_data_result.data.end());
+  }
+
+  if (!next_data_result.found_terminator_opcode) {
+    return fit::error(
+        Error("Failed to find finished indicator in final data word: 0x%" PRIx32, next_data));
+  }
+
+  return fit::ok(data_stream);
 }
 
 fit::result<Error, uint32_t> ArmEhAbiParser::GetFirstDataWord() {
@@ -220,9 +242,13 @@ fit::result<Error, uint32_t> ArmEhAbiParser::GetFirstDataWord() {
     return fit::ok(data_);
   }
 
-  // TODO(https://fxbug.dev/430572991): Handle ARM.extab offset.
+  // We have to read from |extab_offset_| to get the first data word.
+  uint32_t data = 0;
+  if (auto err = elf_->Read(static_cast<uint64_t>(extab_offset_), data); err.has_err()) {
+    return fit::error(err);
+  }
 
-  return fit::error(Error("extab not supported yet."));
+  return fit::ok(data);
 }
 
 Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8_t>& bytes,

@@ -13,7 +13,7 @@ namespace unwinder {
 
 class ArmEhAbiParser {
  public:
-  explicit ArmEhAbiParser(const ArmEhAbiModule::IdxHeader& entry);
+  ArmEhAbiParser(Memory* elf, const ArmEhAbiModule::IdxHeader& entry);
 
   [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
 
@@ -64,8 +64,10 @@ class ArmEhAbiParser {
   // instruction sequence.
   fit::result<Error, uint32_t> GetFirstDataWord();
 
-  int32_t extab_offset_ = 0;
+  uint32_t extab_offset_ = 0;
   uint32_t data_ = 0;
+
+  Memory* elf_;
 };
 
 }  // namespace unwinder
