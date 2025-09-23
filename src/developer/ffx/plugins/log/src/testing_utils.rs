@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use diagnostics_data::{BuilderArgs, LogsData, LogsDataBuilder, Severity, Timestamp};
+use ffx_config::EnvironmentContext;
 use ffx_target::fho::FhoConnectionBehavior;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker as _;
@@ -182,6 +183,10 @@ impl TestEnvironment {
         let disconnect_snd = std::mem::replace(&mut self.disconnect_snd, snd);
         let _ = disconnect_snd.send(());
         mutable_state.disconnect_rcv = Some(rcv);
+    }
+
+    pub fn environment_context(&self) -> EnvironmentContext {
+        self.fho_env.environment_context().clone()
     }
 }
 

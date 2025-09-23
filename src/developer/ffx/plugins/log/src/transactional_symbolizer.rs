@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Error, anyhow};
-use ffx_config::global_env_context;
+use anyhow::{Context, Error};
+use ffx_config::EnvironmentContext;
 use futures::{Future, FutureExt, Stream, StreamExt, ready, select};
 use log_command::{LogEntry, Symbolize};
 use pin_project::pin_project;
@@ -257,14 +257,12 @@ pub struct RealSymbolizerProcess {
 
 impl RealSymbolizerProcess {
     /// Constructs a new symbolizer.
-    pub fn new(enable_prettification: bool) -> Result<Self, LogError> {
-        let sdk = global_env_context().unwrap().get_sdk().map_err(|err| {
+    pub fn new(ctx: &EnvironmentContext, enable_prettification: bool) -> Result<Self, LogError> {
+        let sdk = ctx.get_sdk().map_err(|err| {
             log::warn!("Failed to get SDK. {}", err);
             LogError::SdkNotAvailable { msg: "not found" }
         })?;
-        if let Err(e) = ensure_symbol_index_registered(
-            &global_env_context().ok_or_else(|| anyhow!("Failed to get global context"))?,
-        ) {
+        if let Err(e) = ensure_symbol_index_registered(ctx) {
             log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
         let mut args = vec![

@@ -5,6 +5,7 @@
 use async_trait::async_trait;
 use diagnostics_data::{BuilderArgs, LogsDataBuilder, LogsProperty, Severity};
 use error::LogError;
+use ffx_config::EnvironmentContext;
 use ffx_log_args::LogCommand;
 use ffx_log_command_output::CommandOutputMachineWriter;
 use ffx_writer::ToolIO;
@@ -39,6 +40,7 @@ pub struct LogTool {
     #[command]
     cmd: LogCommand,
     rcs_connector: Connector<RemoteControlProxyHolder>,
+    context: EnvironmentContext,
 }
 
 struct NoOpSymoblizer;
@@ -57,7 +59,7 @@ impl FfxMain for LogTool {
     type Writer = CommandOutputMachineWriter;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        log_impl(writer, self.cmd, self.rcs_connector, true).await?;
+        log_impl(writer, &self.context, self.cmd, self.rcs_connector, true).await?;
         Ok(())
     }
 }
@@ -65,6 +67,7 @@ impl FfxMain for LogTool {
 // Main entrypoint called from other plugins
 pub async fn log_impl(
     writer: impl ToolIO<OutputItem = LogEntry> + Write + 'static,
+    ctx: &EnvironmentContext,
     cmd: LogCommand,
     rcs_connector: Connector<RemoteControlProxyHolder>,
     include_timestamp: bool,
@@ -80,6 +83,7 @@ pub async fn log_impl(
             None
         } else {
             Some(TransactionalSymbolizer::new(RealSymbolizerProcess::new(
+                ctx,
                 !prettification_disabled,
             )?)?)
         },
@@ -381,7 +385,7 @@ mod tests {
             self,
             writer: <LogTool as fho::FfxMain>::Writer,
         ) -> fho::Result<()> {
-            log_impl(writer, self.cmd, self.rcs_connector, false).await?;
+            log_impl(writer, &self.context, self.cmd, self.rcs_connector, false).await?;
             Ok(())
         }
     }
@@ -395,7 +399,7 @@ mod tests {
             symbolize: SymbolizeMode::Off,
             ..LogCommand::default()
         };
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(Some(Format::Json), &buffers);
 
@@ -445,7 +449,7 @@ mod tests {
             ..LogCommand::default()
         };
 
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
 
@@ -477,7 +481,7 @@ ffx log --force-set-severity.
         };
 
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -495,7 +499,7 @@ ffx log --force-set-severity.
         cmd: LogCommand,
         expected_output: &str,
     ) {
-        assert_eq!(logger_dump_string(config, cmd).await, expected_output);
+        assert_eq!(Box::pin(logger_dump_string(config, cmd)).await, expected_output);
     }
 
     #[fuchsia::test]
@@ -513,7 +517,7 @@ ffx log --force-set-severity.
             ..LogCommand::default()
         };
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -535,7 +539,7 @@ ffx log --force-set-severity.
             ..LogCommand::default()
         };
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
 
@@ -554,7 +558,7 @@ ffx log --force-set-severity.
             ..LogCommand::default()
         };
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -567,11 +571,11 @@ ffx log --force-set-severity.
 
     #[fuchsia::test]
     async fn logger_does_not_color_logs_if_disabled() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig::default(),
             LogCommand { no_color: true, ..LogCommand::default() },
             "[00000.000000][ffx] INFO: Hello world!\n",
-        )
+        ))
         .await;
     }
 
@@ -590,7 +594,7 @@ ffx log --force-set-severity.
             symbolize: SymbolizeMode::Off,
             ..LogCommand::default()
         };
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(Some(Format::Json), &buffers);
 
@@ -616,21 +620,21 @@ ffx log --force-set-severity.
 
     #[fuchsia::test]
     async fn logger_shows_metadata_if_enabled() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig::default(),
             LogCommand { no_color: true, show_metadata: true, ..LogCommand::default() },
             "[00000.000000][1][2][ffx] INFO: Hello world!\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_shows_utc_time_if_enabled() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig::default(),
             LogCommand { clock: TimeFormat::Utc, ..LogCommand::default() },
             "[1970-01-01 00:00:00.000][ffx] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
@@ -654,7 +658,7 @@ ffx log --force-set-severity.
         };
 
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -682,7 +686,7 @@ ffx log --force-set-severity.
 
     #[fuchsia::test]
     async fn logger_shows_logs_filtered_by_severity() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![
                     testing_utils::test_log_with_severity(0, Severity::Info),
@@ -697,7 +701,7 @@ ffx log --force-set-severity.
                 ..LogCommand::default()
             },
             "\u{1b}[38;5;1m[1970-01-01 00:00:03.000][ffx] ERROR: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
@@ -726,7 +730,7 @@ ffx log --force-set-severity.
         };
 
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -801,7 +805,7 @@ ffx log --force-set-severity.
         };
 
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -842,7 +846,7 @@ ffx log --force-set-severity.
         };
 
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -893,7 +897,7 @@ ffx log --force-set-severity.
 
     #[fuchsia::test]
     async fn logger_shows_logs_since_specific_timestamp() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![
                     testing_utils::test_log(testing_utils::naive_utc_nanos("1980-01-01T00:00:00")),
@@ -909,13 +913,13 @@ ffx log --force-set-severity.
                 ..LogCommand::default()
             },
             "[1980-01-01 00:00:03.000][ffx] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_shows_logs_since_specific_timestamp_boot() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![
                     testing_utils::test_log(0),
@@ -931,72 +935,72 @@ ffx log --force-set-severity.
                 ..LogCommand::default()
             },
             "[1970-01-01 00:00:03.000][ffx] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_shows_local_time_if_enabled() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig::default(),
             LogCommand { clock: TimeFormat::Local, ..LogCommand::default() },
             &format!(
                 "[{}][ffx] INFO: Hello world!\u{1b}[m\n",
                 Local.timestamp_opt(0, 1).unwrap().format(TIMESTAMP_FORMAT)
             ),
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_shows_tags_by_default() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![testing_utils::test_log_with_tag(0)],
                 ..Default::default()
             },
             LogCommand::default(),
             "[00000.000000][ffx][test tag] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_hides_full_moniker_by_default() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![testing_utils::test_log_with_tag(0)],
                 ..Default::default()
             },
             LogCommand::default(),
             "[00000.000000][ffx][test tag] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_shows_full_moniker_when_enabled() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![testing_utils::test_log_with_tag(0)],
                 ..Default::default()
             },
             LogCommand { show_full_moniker: true, ..LogCommand::default() },
             "[00000.000000][host/ffx][test tag] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_hides_tag_when_instructed() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![testing_utils::test_log_with_tag(0)],
                 ..Default::default()
             },
             LogCommand { hide_tags: true, ..LogCommand::default() },
             "[00000.000000][ffx] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
@@ -1018,7 +1022,7 @@ ffx log --force-set-severity.
         let mut event_stream = environment.take_event_stream().unwrap();
 
         let rcs_connector = environment.rcs_connector().await;
-        let tool = LogTool { cmd, rcs_connector };
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
         let buffers = TestBuffers::default();
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
         let selector = selector.into_iter().flatten().collect::<Vec<_>>();
@@ -1033,27 +1037,27 @@ ffx log --force-set-severity.
 
     #[fuchsia::test]
     async fn logger_shows_file_names_by_default() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![testing_utils::test_log_with_file(0)],
                 ..Default::default()
             },
             LogCommand::default(),
             "[00000.000000][ffx][test tag] INFO: [test_filename.cc(42)] Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 
     #[fuchsia::test]
     async fn logger_hides_filename_if_disabled() {
-        logger_dump_test(
+        Box::pin(logger_dump_test(
             TestEnvironmentConfig {
                 messages: vec![testing_utils::test_log_with_file(0)],
                 ..Default::default()
             },
             LogCommand { hide_file: true, ..LogCommand::default() },
             "[00000.000000][ffx][test tag] INFO: Hello world!\u{1b}[m\n",
-        )
+        ))
         .await;
     }
 

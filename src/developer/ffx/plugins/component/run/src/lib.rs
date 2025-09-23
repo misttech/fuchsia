@@ -12,6 +12,7 @@ use ffx_component::rcs::{
     connect_to_lifecycle_controller, connect_to_realm_query, connect_to_route_validator,
 };
 use ffx_component_run_args::RunComponentCommand;
+use ffx_config::EnvironmentContext;
 use ffx_core::macro_deps::errors::ffx_error;
 use ffx_log::log_impl;
 use ffx_log_args::LogCommand;
@@ -23,6 +24,7 @@ use std::io::Write;
 use target_holders::RemoteControlProxyHolder;
 
 async fn cmd_impl(
+    ctx: &EnvironmentContext,
     rcs_proxy: RemoteControlProxyHolder,
     args: RunComponentCommand,
     mut writer: MachineWriter<LogEntry>,
@@ -83,7 +85,7 @@ async fn cmd_impl(
     if args.follow_logs {
         let log_filter = args.moniker.to_string();
         let log_cmd = LogCommand { filter: vec![log_filter], ..LogCommand::default() };
-        log_impl(writer, log_cmd, connector, true).await?;
+        log_impl(writer, ctx, log_cmd, connector, true).await?;
     }
     Ok(())
 }
@@ -94,6 +96,7 @@ pub struct RunTool {
     cmd: RunComponentCommand,
     rcs: RemoteControlProxyHolder,
     connector: target_connector::Connector<RemoteControlProxyHolder>,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(RunTool);
@@ -103,7 +106,7 @@ impl FfxMain for RunTool {
     type Writer = MachineWriter<LogEntry>;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        cmd_impl(self.rcs, self.cmd, writer, self.connector).await?;
+        cmd_impl(&self.context, self.rcs, self.cmd, writer, self.connector).await?;
         Ok(())
     }
 }
