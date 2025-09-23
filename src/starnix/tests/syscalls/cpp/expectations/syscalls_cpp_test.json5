@@ -151,6 +151,7 @@
                 "PtracePokeMemory/PokeInPrivateRXMappingTest*",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
+                "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
                 "PtracePokeMemory/PokeInSharedMappingTest*",
                 "PtracePokeMemory/PokeInSharedROMappingTest*",
                 "PtracePokeMemory/PokeInSharedRXMappingTest*",

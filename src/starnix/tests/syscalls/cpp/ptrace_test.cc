@@ -1133,6 +1133,7 @@ enum class BackingType {
   ANONYMOUS,
   MEMFD,
   READ_ONLY_FILE,
+  WRITABLE_FILE,
 };
 
 std::string BackingTypeName(const testing::TestParamInfo<BackingType> &info) {
@@ -1143,6 +1144,8 @@ std::string BackingTypeName(const testing::TestParamInfo<BackingType> &info) {
       return "Memfd";
     case BackingType::READ_ONLY_FILE:
       return "ReadOnlyFile";
+    case BackingType::WRITABLE_FILE:
+      return "WritableFile";
   }
 }
 
@@ -1165,6 +1168,11 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
       case BackingType::READ_ONLY_FILE:
         fd = open("/proc/self/exe", O_RDONLY);
         ASSERT_NE(fd, -1) << strerror(errno);
+        break;
+      case BackingType::WRITABLE_FILE:
+        fd = temp_file_.fd();
+        ASSERT_NE(fd, -1) << "ScopedTempFD is -1";
+        SAFE_SYSCALL(ftruncate(fd, 2 * page_size));
         break;
     }
     mapping_ = mmap(nullptr, 2 * page_size, prot_flags, flags, fd, 0);
@@ -1199,6 +1207,7 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
 
  protected:
   test_helper::ForkHelper helper_;
+  test_helper::ScopedTempFD temp_file_;
   pid_t child_pid_ = 0;
   void *mapping_ = nullptr;
 };
@@ -1216,7 +1225,7 @@ TEST_P(PokeInPrivateMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInPrivateROMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ>;
@@ -1231,7 +1240,7 @@ TEST_P(PokeInPrivateROMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateROMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInPrivateRWMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_WRITE>;
@@ -1246,7 +1255,7 @@ TEST_P(PokeInPrivateRWMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRWMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInPrivateRXMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_EXEC>;
@@ -1261,7 +1270,7 @@ TEST_P(PokeInPrivateRXMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRXMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInPrivateRWXMappingTest =
@@ -1277,7 +1286,7 @@ TEST_P(PokeInPrivateRWXMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRWXMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 // Poking in shared memory doesn't work, unless the process has writable permissions.
@@ -1293,7 +1302,7 @@ TEST_P(PokeInSharedMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInSharedROMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ>;
@@ -1308,7 +1317,7 @@ TEST_P(PokeInSharedROMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedROMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInSharedRWMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_WRITE>;
@@ -1325,7 +1334,8 @@ TEST_P(PokeInSharedRWMappingTest, Text) {
 
 // Skip READ_ONLY_FILE because we cannot create writable memory from read-only file.
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRWMappingTest,
-                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD),
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInSharedRXMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_EXEC>;
@@ -1340,7 +1350,7 @@ TEST_P(PokeInSharedRXMappingTest, Text) {
 
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRXMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
-                                         BackingType::READ_ONLY_FILE),
+                                         BackingType::READ_ONLY_FILE, BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 
 using PokeInSharedRWXMappingTest =
@@ -1358,6 +1368,7 @@ TEST_P(PokeInSharedRWXMappingTest, Text) {
 
 // Skip READ_ONLY_FILE because we cannot create writable memory from read-only file.
 INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRWXMappingTest,
-                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD),
+                         testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
+                                         BackingType::WRITABLE_FILE),
                          &BackingTypeName);
 }  // namespace
