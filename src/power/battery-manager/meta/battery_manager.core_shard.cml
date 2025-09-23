@@ -11,6 +11,16 @@
     ],
     offer: [
         {
+            storage: "data",
+            from: "self",
+            to: [ "#battery_manager" ],
+        },
+        {
+            storage: "tmp",
+            from: "self",
+            to: [ "#battery_manager" ],
+        },
+        {
             service: "fuchsia.power.battery.InfoService",
             from: "parent",
             to: "#battery_manager",

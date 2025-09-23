@@ -2,14 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::history_logger::HistoryLogger;
 use anyhow::Error;
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
-use futures::TryStreamExt;
+use fuchsia_sync::Mutex as SMutex;
 use futures::lock::Mutex;
+use futures::{StreamExt, TryStreamExt};
 use log::{debug, error};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use {fidl_fuchsia_power_battery as fpower, fuchsia_async as fasync};
+
+// Record up to 12 hours of battery level data in 30 second intervals.
+//
+// Note, more than 12 hours of wall clock time may be covered because sampling is done on the
+// monotonic clock, which pauses during suspension, but timestamps are from the boot clock.
+const BATTERY_LEVEL_PUBLISH_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) trait BatterySimulationStateObserver {
     fn update_simulation(&self, new_state: bool);
@@ -40,10 +49,13 @@ impl BatterySimulationStateObserver for BatteryManager {
 ///
 /// simulation_state: true when the simulator is running
 pub struct BatteryManager {
-    battery_info: RwLock<fpower::BatteryInfo>,
+    battery_info: Arc<RwLock<fpower::BatteryInfo>>,
     watchers: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
     simulation_state: RwLock<bool>,
     simulated_battery_info: RwLock<fpower::BatteryInfo>,
+
+    /// Publishes battery events to Inspect.
+    history_logger: Arc<SMutex<HistoryLogger>>,
 }
 
 #[inline]
@@ -53,9 +65,9 @@ fn get_current_time() -> i64 {
 }
 
 impl BatteryManager {
-    pub fn new() -> BatteryManager {
+    pub fn new_with_logger(logger: HistoryLogger) -> BatteryManager {
         BatteryManager {
-            battery_info: RwLock::new(fpower::BatteryInfo {
+            battery_info: Arc::new(RwLock::new(fpower::BatteryInfo {
                 status: Some(fpower::BatteryStatus::NotAvailable),
                 charge_status: Some(fpower::ChargeStatus::Unknown),
                 charge_source: Some(fpower::ChargeSource::Unknown),
@@ -65,7 +77,7 @@ impl BatteryManager {
                 time_remaining: Some(fpower::TimeRemaining::Indeterminate(0)),
                 timestamp: Some(get_current_time()),
                 ..Default::default()
-            }),
+            })),
             watchers: Arc::new(Mutex::new(Vec::new())),
             simulation_state: RwLock::new(false),
             simulated_battery_info: RwLock::new(fpower::BatteryInfo {
@@ -79,6 +91,7 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             }),
+            history_logger: Arc::new(SMutex::new(logger)),
         }
     }
 
@@ -126,10 +139,14 @@ impl BatteryManager {
     }
 
     fn update_battery_info(&self, info: fpower::BatteryInfo) {
+        let new_charge_status = info.charge_status;
+        let new_timestamp = info.timestamp.unwrap_or_else(|| get_current_time());
+
         let mut new_battery_info = self.battery_info.write().unwrap();
         *new_battery_info = info;
-        let now = get_current_time();
-        new_battery_info.timestamp = Some(now);
+        new_battery_info.timestamp = Some(new_timestamp);
+
+        Self::publish_charge_status(self.history_logger.clone(), new_charge_status);
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
@@ -219,7 +236,44 @@ impl BatteryManager {
         let (client_end, server_end) =
             fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
         proxy.watch(client_end)?;
+        Self::periodically_publish_battery_level(
+            self.history_logger.clone(),
+            self.battery_info.clone(),
+        )
+        .detach();
         self.wait_on_updates(server_end).await
+    }
+
+    fn periodically_publish_battery_level(
+        history_logger: Arc<SMutex<HistoryLogger>>,
+        info: Arc<RwLock<fpower::BatteryInfo>>,
+    ) -> fasync::Task<()> {
+        let mut last_valid_level: f32 = 0.0;
+        let mut interval = fasync::Interval::new(BATTERY_LEVEL_PUBLISH_INTERVAL.into());
+        fasync::Task::local(async move {
+            loop {
+                // Immediately publish battery level to get an early measurement.
+                let level = info.read().unwrap().level_percent;
+
+                // Use the most recent valid value.
+                let level_to_publish = level.unwrap_or(last_valid_level);
+                last_valid_level = level_to_publish;
+                Self::publish_battery_level(history_logger.clone(), level_to_publish);
+
+                interval.next().await;
+            }
+        })
+    }
+
+    fn publish_battery_level(history_logger: Arc<SMutex<HistoryLogger>>, percent: f32) {
+        history_logger.lock().add_battery_level(zx::BootInstant::get(), percent as i32);
+    }
+
+    fn publish_charge_status(
+        history_logger: Arc<SMutex<HistoryLogger>>,
+        status: Option<fpower::ChargeStatus>,
+    ) {
+        history_logger.lock().update_charge_status(zx::BootInstant::get(), status);
     }
 
     // This function takes a reference to an Option<zx::EventPair>
@@ -236,17 +290,38 @@ impl BatteryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HistoryLoggerConfig;
     use fidl::AsHandleRef;
     use fidl::endpoints::create_request_stream;
+    use fuchsia_inspect::{self as inspect};
     use futures::channel::oneshot;
     use futures::future::*;
     use log::info;
+    use tempfile::{TempDir, tempdir};
 
-    #[allow(unused_macros)]
-    macro_rules! cmp_fields {
-        ($got:ident, $want:ident, [$($field:ident,)*], $test_no:expr) => { $(
-            assert_eq!($got.$field, $want.$field, "test no: {}", $test_no);
-        )* }
+    fn create_config(
+        dir: &TempDir,
+        battery_level_buffer_capacity: usize,
+        charge_status_buffer_capacity: usize,
+        curr_boot_file: &str,
+        prev_boot_file: &str,
+    ) -> HistoryLoggerConfig {
+        HistoryLoggerConfig {
+            curr_boot_path: dir.path().join(curr_boot_file).to_str().unwrap().to_string(),
+            prev_boot_path: dir.path().join(prev_boot_file).to_str().unwrap().to_string(),
+            battery_level_buffer_capacity,
+            charge_status_buffer_capacity,
+        }
+    }
+
+    pub fn create_manager() -> (TempDir, Arc<BatteryManager>) {
+        let inspector = inspect::Inspector::default();
+        let dir = tempdir().unwrap();
+
+        let config = create_config(&dir, 3, 3, "curr_data.txt", "prev_data.txt");
+        let logger = HistoryLogger::from_file(inspector.root(), config);
+        let battery_manager = Arc::new(BatteryManager::new_with_logger(logger));
+        (dir, battery_manager)
     }
 
     #[fuchsia::test]
@@ -255,7 +330,7 @@ mod tests {
         // To guarantee the code in the fake_watcher gets executed to the end.
         let (tx_signal, rx_signal) = oneshot::channel();
 
-        let battery_manager = BatteryManager::new();
+        let (_dir, battery_manager) = create_manager();
         let mut battery_info: fpower::BatteryInfo = battery_manager.get_battery_info_copy();
         battery_info.level_percent = Some(50.0);
 
@@ -305,7 +380,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_run_watchers_channel_closed() {
-        let battery_manager = BatteryManager::new();
+        let (_dir, battery_manager) = create_manager();
         let mut battery_info: fpower::BatteryInfo = battery_manager.get_battery_info_copy();
         battery_info.level_percent = Some(50.0);
 
@@ -422,7 +497,7 @@ mod tests {
         let tx_id = token_info.koid;
         let wake_lease = Some(rx);
 
-        let battery_manager = Arc::new(BatteryManager::new());
+        let (_dir, battery_manager) = create_manager();
 
         // Create a client and server pair for the FIDL call to be used by the pair of
         // wait_on_updates(business logic) and on_change_battery_info(test)
@@ -512,7 +587,7 @@ mod tests {
         let wake_lease = Some(rx);
 
         // Set some battery info, and add a fake watcher.
-        let battery_manager = Arc::new(BatteryManager::new());
+        let (_dir, battery_manager) = create_manager();
         let mut updated_info = battery_manager.get_battery_info_copy();
         updated_info.level_percent = Some(60.0);
         updated_info.status = Some(fpower::BatteryStatus::Ok);
