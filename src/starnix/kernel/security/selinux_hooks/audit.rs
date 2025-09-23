@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::vfs::{NamespaceNode, PathWithReachability};
 use bstr::BStr;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
@@ -11,10 +12,6 @@ use starnix_core::vfs::{FileObject, FileSystem, FsNode, FsStr};
 use starnix_logging::{__track_stub_inner, BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
 use std::fmt::{Display, Error};
 use std::num::NonZeroU64;
-use std::sync::Arc;
-
-use crate::security::AuditLogger;
-use crate::vfs::{NamespaceNode, PathWithReachability};
 
 /// Container for a reference to kernel state from which to include details when emitting audit
 /// logging.  [`Auditable`] instances are created from references to objects via `into()`, e.g:
@@ -61,9 +58,7 @@ impl Auditable<'_> {
 
 impl<'a> From<&'a CurrentTask> for Auditable<'a> {
     fn from(_value: &'a CurrentTask) -> Self {
-        // Starnix includes the PID and command in the log tags, so for now `CurrentTask` is
-        // integrated with at call-sites but the "pid" and "comm" are not duplicated in the audit
-        // log line.
+        // This case is vestigal and will be removed.
         Auditable::CurrentTask
     }
 }
@@ -118,7 +113,7 @@ impl<'a, const N: usize> From<&'a [Auditable<'a>; N]> for Auditable<'a> {
 /// Callers must supply an [`Auditable`] with context for the check (e.g. the calling task, target
 /// file object or filesystem node, etc.).
 pub(super) fn audit_decision(
-    audit_fw: Arc<AuditLogger>,
+    current_task: &CurrentTask,
     permission_check: &PermissionCheck<'_>,
     result: PermissionCheckResult,
     source_sid: SecurityId,
@@ -167,7 +162,8 @@ pub(super) fn audit_decision(
     let audit_data =
         if result.todo_bug.is_some() { (&audit_data_with_bug).into() } else { audit_data };
 
-    audit_fw.audit_log(
+    let audit_logger = current_task.kernel().audit_logger();
+    audit_logger.audit_log(
         AUDIT_AVC as u16,
         || {
             let tclass = permission.class().name();
@@ -181,7 +177,12 @@ pub(super) fn audit_decision(
             let tcontext = security_server.sid_to_security_context(target_sid).unwrap();
             let tcontext = BStr::new(&tcontext);
 
-            format!("avc: {decision} {{ {permission_name} }} {audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass}")
+            // Gather details about the calling task.
+            let pid = current_task.get_pid();
+            let command = current_task.command();
+            let command = BStr::new(command.as_bytes());
+
+            format!("avc: {decision} {{ {permission_name} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass}")
         }
     );
 }
@@ -189,7 +190,7 @@ pub(super) fn audit_decision(
 /// Emits an audit log entry for a check that failed, but will still be granted because it was made
 /// with the [`super::todo_check_permission()`] API.
 pub(super) fn audit_todo_decision(
-    audit_fw: Arc<AuditLogger>,
+    current_task: &CurrentTask,
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
     mut result: PermissionCheckResult,
@@ -200,7 +201,7 @@ pub(super) fn audit_todo_decision(
 ) {
     result.todo_bug = result.todo_bug.or_else(|| Some(bug.into()));
     audit_decision(
-        audit_fw,
+        current_task,
         permission_check,
         result,
         source_sid,
