@@ -986,7 +986,7 @@ group("sha2") {
 
 if (!(current_os == "fuchsia")) {
   group("shared_child") {
-    public_deps = [ ":shared_child-v1_0_1" ]
+    public_deps = [ ":shared_child-v1_1_1" ]
   }
 }
 
@@ -16784,16 +16784,16 @@ rustc_library("sharded-slab-v0_1_4") {
   applicable_licenses = [ ":sharded-slab-v0_1_4.license" ]
 }
 
-license("shared_child-v1_0_1.license") {
+license("shared_child-v1_1_1.license") {
   public_package_name = "shared_child"
   license_files =
-      [ "//third_party/rust_crates/vendor/shared_child-1.0.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/shared_child-1.1.1/LICENSE" ]
 }
 
-rustc_library("shared_child-v1_0_1") {
+rustc_library("shared_child-v1_1_1") {
   crate_name = "shared_child"
-  source_root = "//third_party/rust_crates/vendor/shared_child-1.0.1/src/lib.rs"
-  output_name = "shared_child-e778e191c2d57837"
+  source_root = "//third_party/rust_crates/vendor/shared_child-1.1.1/src/lib.rs"
+  output_name = "shared_child-758a40b944e361d1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -16804,20 +16804,20 @@ rustc_library("shared_child-v1_0_1") {
     deps += [ ":libc-v0_2_174" ]
   }
   if (false) {
-    deps += [ ":windows-sys-v0_59_0" ]
+    deps += [ ":windows-sys-v0_60_2" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e778e191c2d57837",
-    "-Cextra-filename=-e778e191c2d57837",
+    "-Cmetadata=758a40b944e361d1",
+    "-Cextra-filename=-758a40b944e361d1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":shared_child-v1_0_1.license" ]
+  applicable_licenses = [ ":shared_child-v1_1_1.license" ]
 }
 
 license("signal-hook-v0_1_17.license") {
@@ -21229,8 +21229,33 @@ rustc_library("windows-sys-v0_59_0") {
     "-Cextra-filename=-160906ccdd05e721",
     "--cfg=feature=\"Win32_Foundation\"",
     "--cfg=feature=\"Win32_System_Com\"",
-    "--cfg=feature=\"Win32_System_Threading\"",
     "--cfg=feature=\"Win32_UI_Shell\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_library("windows-sys-v0_60_2") {
+  crate_name = "windows_sys"
+  source_root = "//third_party/rust_crates/empty/windows-sys-0.60.2/src/lib.rs"
+  output_name = "windows_sys-d52d8ffb6acbef0d"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d52d8ffb6acbef0d",
+    "-Cextra-filename=-d52d8ffb6acbef0d",
+    "--cfg=feature=\"Win32_Foundation\"",
+    "--cfg=feature=\"Win32_System_Threading\"",
   ]
 
   visibility = [ ":*" ]

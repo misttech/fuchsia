@@ -11,10 +11,12 @@
 
 [package]
 edition = "2021"
+rust-version = "1.74"
 name = "shared_child"
-version = "1.0.1"
+version = "1.1.1"
 authors = ["jacko"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -32,6 +34,10 @@ categories = ["os"]
 license = "MIT"
 repository = "https://github.com/oconnor663/shared_child.rs"
 
+[features]
+default = ["timeout"]
+timeout = ["dep:sigchld"]
+
 [lib]
 name = "shared_child"
 path = "src/lib.rs"
@@ -39,8 +45,12 @@ path = "src/lib.rs"
 [target."cfg(not(windows))".dependencies.libc]
 version = "0.2.42"
 
+[target."cfg(not(windows))".dependencies.sigchld]
+version = "0.2.3"
+optional = true
+
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.59.0"
+version = "0.60.2"
 features = [
     "Win32_Foundation",
     "Win32_System_Threading",

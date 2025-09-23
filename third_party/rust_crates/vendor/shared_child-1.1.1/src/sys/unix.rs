@@ -1,23 +1,26 @@
-use std;
 use std::io;
+use std::mem::MaybeUninit;
 use std::process::Child;
+#[cfg(feature = "timeout")]
+use std::time::Instant;
 
 // A handle on Unix is just the PID.
+#[derive(Copy, Clone)]
 pub struct Handle(u32);
 
 pub fn get_handle(child: &Child) -> Handle {
     Handle(child.id())
 }
 
-// This blocks until a child exits, without reaping the child.
-pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
+// This blocks until the child exits, without reaping the child.
+pub fn wait_noreap(handle: Handle) -> io::Result<()> {
     loop {
+        let mut siginfo = MaybeUninit::zeroed();
         let ret = unsafe {
-            let mut siginfo = std::mem::zeroed();
             libc::waitid(
                 libc::P_PID,
                 handle.0 as libc::id_t,
-                &mut siginfo,
+                siginfo.as_mut_ptr(),
                 libc::WEXITED | libc::WNOWAIT,
             )
         };
@@ -33,7 +36,7 @@ pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
 }
 
 // This checks whether the child has already exited, without reaping the child.
-pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
+pub fn try_wait_noreap(handle: Handle) -> io::Result<bool> {
     let mut siginfo: libc::siginfo_t;
     let ret = unsafe {
         // Darwin doesn't touch the siginfo_t struct if the child hasn't exited
@@ -68,9 +71,28 @@ pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
     } else {
         // This should be impossible if we called waitid correctly. But it will
         // show up on macOS if we forgot to zero the siginfo_t above, for example.
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("unexpected si_signo from waitid: {}", siginfo.si_signo),
-        ))
+        Err(io::Error::other(format!(
+            "unexpected si_signo from waitid: {}",
+            siginfo.si_signo
+        )))
+    }
+}
+
+// This blocks until either the child exits or the deadline passes, without reaping the child.
+#[cfg(feature = "timeout")]
+pub fn wait_deadline_noreap(handle: Handle, deadline: Instant) -> io::Result<bool> {
+    let mut sigchld_waiter = sigchld::Waiter::new()?;
+    loop {
+        // Has the child exited?
+        if try_wait_noreap(handle)? {
+            return Ok(true);
+        }
+        // Has the deadline passed?
+        if deadline < Instant::now() {
+            return Ok(false);
+        }
+        // Wait for the next SIGCHLD and check again. Note that this returns immediately if a
+        // SIGCHLD has arrived since the last wait.
+        sigchld_waiter.wait_deadline(deadline)?;
     }
 }

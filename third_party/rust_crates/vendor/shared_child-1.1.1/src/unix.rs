@@ -10,15 +10,18 @@ pub trait SharedChildExt {
 
 impl SharedChildExt for super::SharedChild {
     fn send_signal(&self, signal: libc::c_int) -> io::Result<()> {
-        let status = self.state_lock.lock().unwrap();
-        if let super::ChildState::Exited(_) = *status {
+        let inner_guard = self.inner.lock().unwrap();
+        // Note that SharedChild::new calls try_wait_and_reap precisely so that we can assume "the
+        // child has been reaped if-and-only-if the state is Exited" right here. If we didn't have
+        // that guarantee, we'd need to call try_wait_and_reap right here, which would be an odd
+        // side effect. Unfortunately std::process::Child doesn't provide a way to query its exit
+        // status that doesn't potentially reap it as a side effect.
+        if let super::ChildState::Exited(_) = inner_guard.state {
             return Ok(());
         }
-        // The child is still running. Signal it. Holding the state lock
-        // is important to prevent a PID race.
-        // This assumes that the wait methods will never hold the child
-        // lock during a blocking wait, since we need it to get the pid.
-        let pid = self.id() as libc::pid_t;
+        // The child is still running. Signal it. Holding the inner lock here prevents PID races,
+        // but note that calling SharedChild::id would reacquire it and deadlock.
+        let pid = inner_guard.child.id() as libc::pid_t;
         match unsafe { libc::kill(pid, signal) } {
             -1 => Err(io::Error::last_os_error()),
             _ => Ok(()),

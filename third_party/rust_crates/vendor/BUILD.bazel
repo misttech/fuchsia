@@ -2623,14 +2623,14 @@ alias(
 )
 
 alias(
-    name = "shared_child-1.0.1",
-    actual = "//third_party/rust_crates/vendor/shared_child-1.0.1:shared_child",
+    name = "shared_child-1.1.1",
+    actual = "//third_party/rust_crates/vendor/shared_child-1.1.1:shared_child",
     tags = ["manual"],
 )
 
 alias(
     name = "shared_child",
-    actual = "//third_party/rust_crates/vendor/shared_child-1.0.1:shared_child",
+    actual = "//third_party/rust_crates/vendor/shared_child-1.1.1:shared_child",
     tags = ["manual"],
 )
 

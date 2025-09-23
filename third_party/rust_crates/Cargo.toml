@@ -343,7 +343,7 @@ rustls-native-certs = "0.6.3"
 semver = "1.0.26"
 serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "0.5.1" # Not for use on Fuchsia, only for a single process.
-shared_child = "1.0.1"
+shared_child = { version = "1.1.1", default-features = false }
 signal-hook = "0.3.18"
 syn = { version = "2.0.103", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.13.1"
@@ -416,6 +416,7 @@ windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0
 windows-sys-0_48_0 = { package = "windows-sys", path = "empty/windows-sys-0.48.0" }
 windows-sys-0_52_0 = { package = "windows-sys", path = "empty/windows-sys-0.52.0" }
 windows-sys-0_59_0 = { package = "windows-sys", path = "empty/windows-sys-0.59.0" }
+windows-sys-0_60_2 = { package = "windows-sys", path = "empty/windows-sys-0.60.2" }
 windows-targets-0_52_6 = { package = "windows-targets", path = "empty/windows-targets-0.52.6" }
 # keep-sorted end
 
