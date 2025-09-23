@@ -438,8 +438,8 @@ zx::result<> PlatformDevice::CreateNode() {
   node_controller_->WaitForDriver().Then(
       [this](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
         if (result.is_error()) {
-          fdf::error("Failed to wait for driver start for {}: {}", name_,
-                     result.error_value().FormatDescription());
+          fdf::warn("Failed to wait for driver start for {}: {}", name_,
+                    result.error_value().FormatDescription());
           return;
         }
 
