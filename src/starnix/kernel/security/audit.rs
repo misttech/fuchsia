@@ -256,7 +256,7 @@ impl AuditLogger {
             return error!(EPERM);
         }
         if pid != request_pid {
-            return error!(EPERM);
+            return error!(EINVAL);
         }
 
         let no_client = Weak::new();
@@ -264,7 +264,7 @@ impl AuditLogger {
             &self.configuration.audit_sink.compare_and_swap(&no_client, Arc::downgrade(client)),
             &Weak::new(),
         ) {
-            return error!(EINVAL);
+            return error!(EEXIST);
         }
         self.configuration.audit_sink_pid.store(pid, Ordering::Release);
         Ok(())

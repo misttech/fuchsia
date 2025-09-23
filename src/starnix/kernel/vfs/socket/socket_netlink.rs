@@ -1635,7 +1635,8 @@ impl AuditNetlinkClient {
             let code = match error {
                 Ok(()) => None,
                 Err(e) => Some(
-                    NonZeroI32::new(e.code.error_code() as i32)
+                    // Audit netlink errors are negative.
+                    NonZeroI32::new(-(e.code.error_code() as i32))
                         .expect("Errno's code must be non-zero"),
                 ),
             };
