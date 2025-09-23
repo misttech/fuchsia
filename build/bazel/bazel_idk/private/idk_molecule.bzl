@@ -4,16 +4,7 @@
 
 """Defines an IDK molecule."""
 
-load(":idk_atom.bzl", "FuchsiaIdkAtomInfo")
-
-FuchsiaIdkMoleculeInfo = provider(
-    doc = "Defines an IDK molecule, or group of atoms",
-    fields = {
-        "label": "The molecule's label",
-        "idk_deps": "Atoms and other molecules the molecule depends on.",
-        "atoms_depset": "depset[FuchsiaIdkAtomInfo] The full set atoms that make up the molecule",
-    },
-)
+load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkMoleculeInfo")
 
 def _idk_molecule_impl(ctx):
     all_deps_depset = depset(direct = ctx.files.deps)

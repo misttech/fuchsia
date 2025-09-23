@@ -9,7 +9,7 @@ Example use:
     fx bazel cquery build/bazel/bazel_idk/tests:test-source-set_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_atom_info.cquery
 """
 
-    atom_info = providers(target)["//build/bazel/bazel_idk:defs.bzl%FuchsiaIdkAtomInfo"]
+    atom_info = providers(target)["//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo"]
 
     lines = [
         atom_info.label.name + " definition:",

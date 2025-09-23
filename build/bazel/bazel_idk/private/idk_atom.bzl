@@ -5,32 +5,9 @@
 """Defines an IDK atom."""
 
 load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
+load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load(":idk_common.bzl", "get_allowlist_target")
-
-# TOOD(https://fxbug.dev/417304469): `sdk_area`,  and some other
-# fields of this provider do not belong in prebuild info. `idk_deps` may
-# also be unnecessary, but could be useful for category enforcement.
-FuchsiaIdkAtomInfo = provider(
-    doc = "Defines an IDK atom",
-    fields = {
-        "label": "[label] The atom's label",
-        "idk_name": "[string] Name of this atom within the IDK",
-        "id": "[string] Identifier of this atom within the IDK",
-        "meta_dest": "[string] Location of the atom's metadata file in the final IDK",
-        "type": "[string] The type of atom",
-        "category": "[string] The IDK category for the atom",
-        "is_stable": "[bool] Whether the atom is stable",
-        "api_area": "[string] The API area responsible for maintaining this atom",
-        "api_file_path": "Path to the file representing the API canonically exposed by this atom.",
-        "api_contents_map": "List of scopes for the files making up the atom's API.",
-        "atom_files_map": "[dict[str,File]] a { dest -> source } map of files for this atom",
-        "idk_deps": "[list[label]] Other atoms the atom directly depends on",
-        "atoms_depset": "[depset[FuchsiaIdkAtomInfo]] The full set of other atoms the atom depends on",
-        "atom_build_deps": "[list[label]] List of dependencies related to building the atom that should not be reflected in IDKs",
-        "additional_prebuild_info": "[dict[str,list[Any]]] A dictionary of type-specific prebuild info for the atom. All values are lists, even if there is only one value",
-    },
-)
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
     # LINT.IfChange(unstable_atom_types)

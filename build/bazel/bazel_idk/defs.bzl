@@ -4,14 +4,9 @@
 
 """Rules used to define IDK atoms."""
 
-load(
-    "//build/bazel/bazel_idk/private:idk_atom.bzl",
-    "idk_atom",
-    _FuchsiaIdkAtomInfo = "FuchsiaIdkAtomInfo",
-)
+load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load(
     "//build/bazel/bazel_idk/private:idk_molecule.bzl",
-    _FuchsiaIdkMoleculeInfo = "FuchsiaIdkMoleculeInfo",
     _idk_molecule = "idk_molecule",
 )
 load(
@@ -20,8 +15,6 @@ load(
     _idk_cc_source_library_zx = "idk_cc_source_library_zx",
 )
 
-FuchsiaIdkAtomInfo = _FuchsiaIdkAtomInfo
-FuchsiaIdkMoleculeInfo = _FuchsiaIdkMoleculeInfo
 idk_molecule = _idk_molecule
 idk_cc_source_library = _idk_cc_source_library
 idk_cc_source_library_zx = _idk_cc_source_library_zx
