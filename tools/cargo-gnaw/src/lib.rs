@@ -533,19 +533,20 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                     // If there is an existing GN target, there shouldn't be any other fields set.
                     if pkg_cfg.default_cfg.existing_gn_target.is_some() {
                         assert!(
-                        pkg_cfg.default_cfg.rustflags.is_none() &&
-                        pkg_cfg.default_cfg.env_vars.is_none() &&
-                        pkg_cfg.default_cfg.deps.is_none() &&
-                        pkg_cfg.default_cfg.configs.is_none() &&
-                        pkg_cfg.default_cfg.visibility.is_none() &&
-                        pkg_cfg.default_cfg.uses_fuchsia_license.is_none() &&
-                        pkg_cfg.platform_cfg.is_empty() &&
-                        pkg_cfg.binary.is_empty() &&
-                        pkg_cfg.reviewed_features.is_none() &&
-                        pkg_cfg.group_visibility.is_none() &&
-                        pkg_cfg.testonly.is_none() &&
-                        pkg_cfg.target_renaming.is_none(),
-                        "No other field can be set, including platform sub-configs, if an existing GN target is specified");
+                            pkg_cfg.default_cfg.rustflags.is_none()
+                                && pkg_cfg.default_cfg.env_vars.is_none()
+                                && pkg_cfg.default_cfg.deps.is_none()
+                                && pkg_cfg.default_cfg.configs.is_none()
+                                && pkg_cfg.default_cfg.visibility.is_none()
+                                && pkg_cfg.default_cfg.uses_fuchsia_license.is_none()
+                                && pkg_cfg.platform_cfg.is_empty()
+                                && pkg_cfg.binary.is_empty()
+                                && pkg_cfg.reviewed_features.is_none()
+                                && pkg_cfg.group_visibility.is_none()
+                                && pkg_cfg.testonly.is_none()
+                                && pkg_cfg.target_renaming.is_none(),
+                            "No other field can be set, including platform sub-configs, if an existing GN target is specified"
+                        );
                         assert!(
                             existing_targets
                                 .insert(
@@ -690,6 +691,9 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
             match reviewed_features {
                 Some(Some(_)) => {}
                 _ => {
+                    let mut features_map = std::collections::BTreeMap::new();
+                    features_map.insert("features", &target.features);
+
                     anyhow::bail!(
                         "{name} {version} requires feature review but reviewed features not found.\n\n\
                         Make sure to conduct code review assuming the following features are enabled, \
@@ -699,7 +703,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                         manifest_path = manifest_path.display(),
                         name = target.name(),
                         version = target.version(),
-                        features = toml::to_string(target.features).unwrap()
+                        features = toml::to_string(&features_map).unwrap()
                     );
                 }
             }

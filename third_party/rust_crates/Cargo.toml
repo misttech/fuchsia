@@ -243,7 +243,7 @@ test-case = "3.3.1"
 textwrap = { version = "0.16.2", default-features = false }
 thiserror = "2.0.12"
 tokio-rustls = "0.24.1"
-toml = "0.5"
+toml = "0.9.5"
 toml_edit = "0.2.1"
 tracing = { version = "0.1.40", default-features = false, features = ["std", "attributes", "log"] }
 tracing-core = "0.1.32"
