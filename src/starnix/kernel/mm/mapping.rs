@@ -106,7 +106,6 @@ impl Mapping {
         self.flags = self.flags.difference(MappingFlags::LOCKED);
     }
 
-    #[cfg(feature = "alternate_anon_allocs")]
     pub fn new_private_anonymous(flags: MappingFlags, name: MappingName) -> Mapping {
         MappingUnsplit {
             backing: MappingBacking::PrivateAnonymous,
@@ -132,7 +131,6 @@ impl Mapping {
     pub fn address_to_offset(&self, addr: UserAddress) -> u64 {
         match &self.backing {
             MappingBacking::Memory(backing) => backing.address_to_offset(addr),
-            #[cfg(feature = "alternate_anon_allocs")]
             MappingBacking::PrivateAnonymous => {
                 // For private, anonymous allocations the virtual address is the offset in the backing memory object.
                 addr.ptr() as u64
@@ -153,7 +151,6 @@ impl Mapping {
     }
 
     pub fn private_anonymous(&self) -> bool {
-        #[cfg(feature = "alternate_anon_allocs")]
         if let MappingBacking::PrivateAnonymous = &self.backing {
             return true;
         }
@@ -248,7 +245,6 @@ impl Mapping {
 pub enum MappingBacking {
     Memory(Box<MappingBackingMemory>),
 
-    #[cfg(feature = "alternate_anon_allocs")]
     PrivateAnonymous,
 }
 
@@ -450,7 +446,6 @@ impl MappingSummary {
             MappingBacking::Memory(_) => {
                 kind_summary.num_memory_objects += 1;
             }
-            #[cfg(feature = "alternate_anon_allocs")]
             MappingBacking::PrivateAnonymous => kind_summary.num_private_anon += 1,
         }
     }
@@ -483,7 +478,6 @@ struct MappingKindSummary {
     num_private: u64,
     num_shared: u64,
     num_memory_objects: u64,
-    #[cfg(feature = "alternate_anon_allocs")]
     num_private_anon: u64,
 }
 
@@ -493,7 +487,6 @@ impl MappingKindSummary {
         node.record_uint("num_private", self.num_private);
         node.record_uint("num_shared", self.num_shared);
         node.record_uint("num_memory_objects", self.num_memory_objects);
-        #[cfg(feature = "alternate_anon_allocs")]
         node.record_uint("num_private_anon", self.num_private_anon);
     }
 }

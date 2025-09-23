@@ -402,7 +402,6 @@ rustc_library("starnix_core") {
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:byteorder",
-    "//third_party/rust_crates:cfg-if",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:dyn-clone",
     "//third_party/rust_crates:flyweights",
@@ -466,9 +465,6 @@ rustc_library("starnix_core") {
   }
   if (starnix_unified_aspace) {
     features += [ "unified_aspace" ]
-  }
-  if (starnix_enable_alternate_anon_allocs) {
-    features += [ "alternate_anon_allocs" ]
   }
 
   # This is normally controlled on the starnix_logging crate, but controlling the features here also
