@@ -160,6 +160,14 @@ closed protocol BatteryInfoWatcher {
     }) -> ();
 };
 
+/// Charging control
+@discoverable
+open protocol Charger {
+    flexible Enable(struct {
+        enable bool;
+    }) -> () error zx.Status;
+};
+
 /// General manager interface for battery management.
 @discoverable
 closed protocol BatteryManager {
@@ -169,4 +177,8 @@ closed protocol BatteryManager {
 
 service InfoService {
     device client_end:BatteryInfoProvider;
+};
+
+service ChargerService {
+    device client_end:Charger;
 };
