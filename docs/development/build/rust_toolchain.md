@@ -85,7 +85,7 @@ Prior to building a custom Rust toolchain for Fuchsia, you need to do the follow
    echo "fuchsia/third_party/rust/target/${HOST_TRIPLE} rust_revision:${STAGE0_COMMIT_HASH}" >> ${CIPD_DIR}/cipd.ensure
 
    $DEV_ROOT/infra/fuchsia/prebuilt/tools/cipd ensure \
-     --root "${DEV_ROOT}" \
+     --root "${CIPD_DIR}" \
      --ensure-file "${CIPD_DIR}/cipd.ensure"
    ```
 
