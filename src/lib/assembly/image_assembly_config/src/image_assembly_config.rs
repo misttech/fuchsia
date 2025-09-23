@@ -32,6 +32,12 @@ pub struct ImageAssemblyConfig {
     #[serde(default)]
     pub cache: Vec<Utf8PathBuf>,
 
+    /// The anchored packages that are in the anchored package list, which is added
+    /// to the base package (data/anchored_packages.json).
+    /// These packages are not part of the image itself.
+    #[serde(default)]
+    pub anchored_automatic: Vec<Utf8PathBuf>,
+
     /// The packages that are in the on_demand package list, which is not part
     /// of the image itself, but is to be published alongside those packages in
     /// the image.
@@ -98,6 +104,7 @@ impl ImageAssemblyConfig {
             system: Vec::default(),
             base: Vec::default(),
             cache: Vec::default(),
+            anchored_automatic: Vec::default(),
             on_demand: Vec::default(),
             boot_args: Vec::default(),
             partitions_config: None,
@@ -180,6 +187,7 @@ mod tests {
               "base": ["package1", "package2"],
               "cache": ["package3", "package4"],
               "on_demand": ["package5", "package6"],
+              "anchored_automatic": ["package7", "package8"],
               "kernel": {
                 "path": "path/to/kernel",
                 "args": ["arg1", "arg2"],

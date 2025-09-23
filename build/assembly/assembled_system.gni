@@ -404,6 +404,7 @@ template("assembled_system") {
     blobs_json = "${gendir}/blobs.json"
     bootfs_packages = "${gendir}/data/bootfs_packages"
     static_packages = "${gendir}/system_image/data/static_packages"
+    anchored_packages = "${gendir}/system_image/data/anchored_packages.json"
     cache_packages = "${gendir}/system_image/data/cache_packages.json"
     base_meta_package = "${gendir}/system_image/meta/package"
     base_pkg_abi_revision =

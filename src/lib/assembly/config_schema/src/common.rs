@@ -81,6 +81,14 @@ pub enum PackageSet {
     /// anchoring (merkle-pinning) is done at this time.
     /// see: https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets?hl=en#change-7
     OnDemand,
+
+    /// The automatic anchored packages are packages that are known at the time of software
+    /// assembly, but are not part of the assembled image itself. They are downloaded when the
+    /// system boots up and a check reveals that the package is not available on local storage.
+    /// This is described in the RFCs 0212 and 0271:
+    /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets?hl=en#change-7
+    /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0271_anchored_packages?hl=en
+    AnchoredAutomatic,
 }
 
 impl std::fmt::Display for PackageSet {
@@ -92,6 +100,7 @@ impl std::fmt::Display for PackageSet {
             PackageSet::System => "system",
             PackageSet::Bootfs => "bootfs",
             PackageSet::OnDemand => "on_demand",
+            PackageSet::AnchoredAutomatic => "anchored_automatic",
         })
     }
 }

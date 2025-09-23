@@ -1162,6 +1162,7 @@ impl ImageAssemblyConfigBuilder {
         let image_assembly_config = ImageAssemblyConfig {
             base: packages.package_manifest_paths(PackageSet::Base),
             cache: packages.package_manifest_paths(PackageSet::Cache),
+            anchored_automatic: packages.package_manifest_paths(PackageSet::AnchoredAutomatic),
             system: packages.package_manifest_paths(PackageSet::System),
             bootfs_packages: packages.package_manifest_paths(PackageSet::Bootfs),
             on_demand: packages.package_manifest_paths(PackageSet::OnDemand),
@@ -1301,7 +1302,8 @@ impl PackageEntry {
             | PackageSet::Cache
             | PackageSet::System
             | PackageSet::Flexible
-            | PackageSet::OnDemand => PackageSetDestination::Blob(match &origin {
+            | PackageSet::OnDemand
+            | PackageSet::AnchoredAutomatic => PackageSetDestination::Blob(match &origin {
                 PackageOrigin::AIB => PackageDestination::FromAIB(name),
                 PackageOrigin::Board => PackageDestination::FromBoard(name),
                 PackageOrigin::Product => PackageDestination::FromProduct(name),

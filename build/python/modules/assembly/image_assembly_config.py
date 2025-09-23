@@ -74,6 +74,7 @@ class ImageAssemblyConfig:
     base: set[FilePath] = field(default_factory=set)
     cache: set[FilePath] = field(default_factory=set)
     on_demand: set[FilePath] = field(default_factory=set)
+    anchored_automatic: set[FilePath] = field(default_factory=set)
     system: set[FilePath] = field(default_factory=set)
     kernel: KernelInfo = field(default_factory=KernelInfo)
     qemu_kernel: Optional[FilePath] = None
