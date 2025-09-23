@@ -32,7 +32,7 @@ class BacklightInterface {
   // Retrieves the device state.
   //
   // If successful, the returned value is guaranteed to be valid.
-  virtual zx::result<BacklightState> GetState() = 0;
+  virtual zx::result<BacklightState> GetBacklightState() = 0;
 
   // Sets the device state.
   //
@@ -44,7 +44,7 @@ class BacklightInterface {
   //
   // Errors if ZX_ERR_NOT_SUPPORTED if `Backlight::brightness_nits` is populated
   // and the driver does not support absolute brightness.
-  virtual zx::result<> SetState(const BacklightState& state) = 0;
+  virtual zx::result<> SetBacklightState(const BacklightState& state) = 0;
 
  protected:
   // Destruction via base class pointer is not supported intentionally.

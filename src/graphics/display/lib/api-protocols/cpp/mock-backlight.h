@@ -27,8 +27,8 @@ class MockBacklight : public display::BacklightInterface {
  public:
   // Expectation containers for display::BacklightInterface:
   using GetMaxBrightnessNitsChecker = fit::function<zx::result<float>()>;
-  using GetStateChecker = fit::function<zx::result<BacklightState>()>;
-  using SetStateChecker = fit::function<zx::result<>(const BacklightState& state)>;
+  using GetBacklightStateChecker = fit::function<zx::result<BacklightState>()>;
+  using SetBacklightStateChecker = fit::function<zx::result<>(const BacklightState& state)>;
 
   MockBacklight();
   MockBacklight(const MockBacklight&) = delete;
@@ -37,8 +37,8 @@ class MockBacklight : public display::BacklightInterface {
 
   // Expectations for display::BacklightInterface:
   void ExpectGetMaxBrightnessNits(GetMaxBrightnessNitsChecker checker);
-  void ExpectGetState(GetStateChecker checker);
-  void ExpectSetState(SetStateChecker checker);
+  void ExpectGetBacklightState(GetBacklightStateChecker checker);
+  void ExpectSetBacklightState(SetBacklightStateChecker checker);
 
   // Must be called at least once during an instance's lifetime.
   //
@@ -48,8 +48,8 @@ class MockBacklight : public display::BacklightInterface {
 
   // display::BacklightInterface:
   zx::result<float> GetMaxBrightnessNits() override;
-  zx::result<BacklightState> GetState() override;
-  zx::result<> SetState(const BacklightState& state) override;
+  zx::result<BacklightState> GetBacklightState() override;
+  zx::result<> SetBacklightState(const BacklightState& state) override;
 
  private:
   struct Expectation;

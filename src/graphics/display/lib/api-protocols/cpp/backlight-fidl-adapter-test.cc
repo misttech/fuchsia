@@ -86,7 +86,7 @@ TEST_F(BacklightFidlAdapterTest, GetMaxBrightnessNitsNotSupported) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateNormalizedOnSuccess) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> {
+  mock_.ExpectGetBacklightState([]() -> zx::result<BacklightState> {
     return zx::ok(BacklightState({
         .on = true,
         .brightness_fraction = 0.5,
@@ -106,7 +106,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateNormalizedOnSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateNormalizedOffSuccess) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> {
+  mock_.ExpectGetBacklightState([]() -> zx::result<BacklightState> {
     return zx::ok(BacklightState({
         .on = false,
         .brightness_fraction = 0.0,
@@ -126,7 +126,8 @@ TEST_F(BacklightFidlAdapterTest, GetStateNormalizedOffSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateNormalizedError) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> { return zx::error(ZX_ERR_IO); });
+  mock_.ExpectGetBacklightState(
+      []() -> zx::result<BacklightState> { return zx::error(ZX_ERR_IO); });
   fidl::WireResult<fuchsia_hardware_backlight::Device::GetStateNormalized> fidl_transport_result =
       fidl_client_->GetStateNormalized();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -137,7 +138,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateNormalizedError) {
 }
 
 TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOffSuccess) {
-  mock_.ExpectSetState([](const BacklightState& state) -> zx::result<> {
+  mock_.ExpectSetBacklightState([](const BacklightState& state) -> zx::result<> {
     EXPECT_EQ(state.on(), false);
     EXPECT_EQ(state.brightness_fraction(), 0.0);
     EXPECT_EQ(state.brightness_nits(), std::nullopt);
@@ -156,7 +157,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOffSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOnSuccess) {
-  mock_.ExpectSetState([](const BacklightState& state) -> zx::result<> {
+  mock_.ExpectSetBacklightState([](const BacklightState& state) -> zx::result<> {
     EXPECT_EQ(state.on(), true);
     EXPECT_EQ(state.brightness_fraction(), 0.5);
     EXPECT_EQ(state.brightness_nits(), std::nullopt);
@@ -175,7 +176,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOnSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, SetStateNormalizedHardwareError) {
-  mock_.ExpectSetState([](const BacklightState& state) -> zx::result<> {
+  mock_.ExpectSetBacklightState([](const BacklightState& state) -> zx::result<> {
     EXPECT_EQ(state.brightness_nits(), std::nullopt);
     return zx::error(ZX_ERR_IO);
   });
@@ -203,7 +204,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateNormalizedOffParameterError) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOnSuccess) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> {
+  mock_.ExpectGetBacklightState([]() -> zx::result<BacklightState> {
     return zx::ok(BacklightState({
         .on = true,
         .brightness_fraction = 0.5,
@@ -223,7 +224,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOnSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOffSuccess) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> {
+  mock_.ExpectGetBacklightState([]() -> zx::result<BacklightState> {
     return zx::ok(
         BacklightState({.on = false, .brightness_fraction = 0.0, .brightness_nits = 0.0}));
   });
@@ -240,7 +241,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOffSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOnNotSupported) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> {
+  mock_.ExpectGetBacklightState([]() -> zx::result<BacklightState> {
     return zx::ok(BacklightState({
         .on = true,
         .brightness_fraction = 0.5,
@@ -258,7 +259,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOnNotSupported) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOffNotSupported) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> {
+  mock_.ExpectGetBacklightState([]() -> zx::result<BacklightState> {
     return zx::ok(BacklightState({
         .on = false,
         .brightness_fraction = 0.0,
@@ -276,7 +277,8 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteOffNotSupported) {
 }
 
 TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteError) {
-  mock_.ExpectGetState([]() -> zx::result<BacklightState> { return zx::error(ZX_ERR_IO); });
+  mock_.ExpectGetBacklightState(
+      []() -> zx::result<BacklightState> { return zx::error(ZX_ERR_IO); });
   fidl::WireResult<fuchsia_hardware_backlight::Device::GetStateAbsolute> fidl_transport_result =
       fidl_client_->GetStateAbsolute();
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
@@ -287,7 +289,7 @@ TEST_F(BacklightFidlAdapterTest, GetStateAbsoluteError) {
 }
 
 TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteOffSuccess) {
-  mock_.ExpectSetState([](const BacklightState& state) -> zx::result<> {
+  mock_.ExpectSetBacklightState([](const BacklightState& state) -> zx::result<> {
     EXPECT_EQ(state.on(), false);
     EXPECT_EQ(state.brightness_fraction(), 0.0);
     EXPECT_EQ(state.brightness_nits(), 0.0);
@@ -306,7 +308,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteOffSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteOnSuccess) {
-  mock_.ExpectSetState([](const BacklightState& state) -> zx::result<> {
+  mock_.ExpectSetBacklightState([](const BacklightState& state) -> zx::result<> {
     EXPECT_EQ(state.on(), true);
     EXPECT_EQ(state.brightness_fraction(), 0.0);
     EXPECT_EQ(state.brightness_nits(), 400.0);
@@ -325,7 +327,7 @@ TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteOnSuccess) {
 }
 
 TEST_F(BacklightFidlAdapterTest, SetStateAbsoluteHardwareError) {
-  mock_.ExpectSetState([](const BacklightState& state) -> zx::result<> {
+  mock_.ExpectSetBacklightState([](const BacklightState& state) -> zx::result<> {
     EXPECT_NE(state.brightness_nits(), std::nullopt);
     return zx::error(ZX_ERR_IO);
   });

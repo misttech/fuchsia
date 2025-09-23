@@ -16,8 +16,8 @@ namespace display::testing {
 
 struct MockBacklight::Expectation {
   GetMaxBrightnessNitsChecker get_max_brightness_nits_checker;
-  GetStateChecker get_state_checker;
-  SetStateChecker set_state_checker;
+  GetBacklightStateChecker get_backlight_state_checker;
+  SetBacklightStateChecker set_backlight_state_checker;
 };
 
 MockBacklight::MockBacklight() = default;
@@ -31,14 +31,14 @@ void MockBacklight::ExpectGetMaxBrightnessNits(GetMaxBrightnessNitsChecker check
   expectations_.push_back({.get_max_brightness_nits_checker = std::move(checker)});
 }
 
-void MockBacklight::ExpectGetState(GetStateChecker checker) {
+void MockBacklight::ExpectGetBacklightState(GetBacklightStateChecker checker) {
   std::lock_guard<std::mutex> lock(mutex_);
-  expectations_.push_back({.get_state_checker = std::move(checker)});
+  expectations_.push_back({.get_backlight_state_checker = std::move(checker)});
 }
 
-void MockBacklight::ExpectSetState(SetStateChecker checker) {
+void MockBacklight::ExpectSetBacklightState(SetBacklightStateChecker checker) {
   std::lock_guard<std::mutex> lock(mutex_);
-  expectations_.push_back({.set_state_checker = std::move(checker)});
+  expectations_.push_back({.set_backlight_state_checker = std::move(checker)});
 }
 
 void MockBacklight::CheckAllCallsReplayed() {
@@ -59,26 +59,26 @@ zx::result<float> MockBacklight::GetMaxBrightnessNits() {
   return call_expectation.get_max_brightness_nits_checker();
 }
 
-zx::result<BacklightState> MockBacklight::GetState() {
+zx::result<BacklightState> MockBacklight::GetBacklightState() {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
   Expectation& call_expectation = expectations_[call_index_];
   ++call_index_;
 
-  ZX_ASSERT_MSG(call_expectation.get_state_checker != nullptr,
+  ZX_ASSERT_MSG(call_expectation.get_backlight_state_checker != nullptr,
                 "Received call type does not match expected call type");
-  return call_expectation.get_state_checker();
+  return call_expectation.get_backlight_state_checker();
 }
 
-zx::result<> MockBacklight::SetState(const BacklightState& state) {
+zx::result<> MockBacklight::SetBacklightState(const BacklightState& state) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
   Expectation& call_expectation = expectations_[call_index_];
   ++call_index_;
 
-  ZX_ASSERT_MSG(call_expectation.set_state_checker != nullptr,
+  ZX_ASSERT_MSG(call_expectation.set_backlight_state_checker != nullptr,
                 "Received call type does not match expected call type");
-  return call_expectation.set_state_checker(state);
+  return call_expectation.set_backlight_state_checker(state);
 }
 
 }  // namespace display::testing

@@ -24,7 +24,7 @@ fidl::ProtocolHandler<fuchsia_hardware_backlight::Device> BacklightFidlAdapter::
 }
 
 void BacklightFidlAdapter::GetStateNormalized(GetStateNormalizedCompleter::Sync& completer) {
-  const zx::result<BacklightState> state_result = backlight_.GetState();
+  const zx::result<BacklightState> state_result = backlight_.GetBacklightState();
   if (state_result.is_error()) {
     completer.ReplyError(state_result.error_value());
     return;
@@ -41,13 +41,13 @@ void BacklightFidlAdapter::SetStateNormalized(
     return;
   }
 
-  const zx::result<> set_state_result =
-      backlight_.SetState(BacklightState::From(request->state, /*use_absolute_brightness=*/false));
+  const zx::result<> set_state_result = backlight_.SetBacklightState(
+      BacklightState::From(request->state, /*use_absolute_brightness=*/false));
   completer.Reply(set_state_result);
 }
 
 void BacklightFidlAdapter::GetStateAbsolute(GetStateAbsoluteCompleter::Sync& completer) {
-  const zx::result<BacklightState> state_result = backlight_.GetState();
+  const zx::result<BacklightState> state_result = backlight_.GetBacklightState();
   if (state_result.is_error()) {
     completer.ReplyError(state_result.error_value());
     return;
@@ -68,8 +68,8 @@ void BacklightFidlAdapter::SetStateAbsolute(
     return;
   }
 
-  const zx::result<> set_state_result =
-      backlight_.SetState(BacklightState::From(request->state, /*use_absolute_brightness=*/true));
+  const zx::result<> set_state_result = backlight_.SetBacklightState(
+      BacklightState::From(request->state, /*use_absolute_brightness=*/true));
   completer.Reply(set_state_result);
 }
 
