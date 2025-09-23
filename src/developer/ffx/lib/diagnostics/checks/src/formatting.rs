@@ -2,9 +2,36 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use discovery::TargetState;
 use discovery::query::TargetInfoQuery;
+use discovery::{DiscoverySources, TargetState};
 use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_net as fnet};
+
+pub(crate) trait AsDiagnosticMessage {
+    fn as_diagnostic_message(&self) -> String;
+}
+
+// WARN: This assumes the discovery sources enum has been condensed into a single value. Since it's
+// a bitflags struct it could be more than one. This is intended to be used with an iterator rather
+// than have the string handling happen in here.
+impl AsDiagnosticMessage for u8 {
+    fn as_diagnostic_message(&self) -> String {
+        match *self {
+            v if v == DiscoverySources::EMULATOR.bits() => "",
+            v if v == DiscoverySources::MDNS.bits() => {
+                "For mDNS debugging, see: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution"
+            }
+            v if v == DiscoverySources::MANUAL.bits() => "",
+            v if v == DiscoverySources::EMULATOR.bits() => "",
+            v if v == DiscoverySources::FASTBOOT_FILE.bits() => "",
+            v if v == DiscoverySources::USB_VSOCK.bits() => "",
+            v if v == DiscoverySources::USB_FASTBOOT.bits() => "",
+            b => panic!(
+                "Un-handled bit type: {b}. This may be a failure from the discovery library of ffx"
+            ),
+        }
+        .to_owned()
+    }
+}
 
 /// A human-readable representation of a target query.
 pub struct ReadableQuery {

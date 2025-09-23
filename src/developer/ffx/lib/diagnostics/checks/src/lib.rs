@@ -13,6 +13,7 @@ use ffx_fastboot_connection_factory::{
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
+use formatting::AsDiagnosticMessage;
 use futures::stream::StreamExt;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -308,7 +309,32 @@ where
                 });
             let mut targets = targets?;
             if targets.is_empty() {
-                return Err(anyhow::anyhow!("Unable to find any devices"));
+                notifier.info(format!(
+                    "{}{}No matching devices were found.{} Ensure the diagnostics logs don't contain your device before proceeding to debugging.",
+                    termion::style::Bold,
+                    termion::color::Fg(termion::color::Red),
+                    termion::style::Reset
+                ))?;
+                notifier.info(
+                    format!("The following link contains steps for general network debugging: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity")
+                )?;
+                for (name, source) in sources.iter_names() {
+                    // TODO(b/427299969): Style hinting should be supported here to remove the need
+                    // for this caller to implement styling. For certain displays styling should
+                    // be skipped entirely: in an infra environment there will be a lot of
+                    // unreadable gibberish surrounding this message.
+                    notifier.info(format!(
+                        "{}{} failed to find matching devices.{}",
+                        termion::color::Fg(termion::color::Red),
+                        name,
+                        termion::style::Reset
+                    ))?;
+                    let additional_message = source.bits().as_diagnostic_message();
+                    if !additional_message.is_empty() {
+                        notifier.info(additional_message)?;
+                    }
+                }
+                return Err(anyhow::anyhow!("Unable to find any matching devices"));
             }
             if targets.len() > 1 {
                 return Err(anyhow::anyhow!(
@@ -422,7 +448,7 @@ where
                 self.conn_provider.connector_for_target(self.ctx.clone(), input, notifier)?;
             Connection::new(connector).await.map_err(|e| {
                 anyhow::anyhow!(
-                    "Unable to connect to device. Underlying error: {}",
+                    "\nUnable to connect to ssh. Consider running the above `ssh` command and evaluating the output.\nIn addition, consult https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon\nUnderlying error: {}",
                     match e {
                         ConnectionError::ConnectionStartError(_, s) => anyhow::anyhow!("{}", s),
                         _ => e.into(),
