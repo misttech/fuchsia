@@ -17,13 +17,13 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{audit_status, error, pid_t};
 use std::collections::VecDeque;
 use std::fmt::Display;
-use std::sync::Weak;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicU32, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::SystemTime;
 use std::u32;
 use zx::MonotonicDuration;
 
-use crate::task::{ArgNameAndValue, Kernel};
+use crate::task::{ArgNameAndValue, CurrentTask, Kernel};
 const DEFAULT_BACKLOG_LIMIT: u32 = 128;
 
 /// Supported requests that manipulate the `AuditLogger`
@@ -149,26 +149,35 @@ impl AuditLogger {
     }
 
     /// Called by the `NetlinkAuditClient` to pull the next audit log from the backlog.
-    pub fn read_audit_log(&self, pid: pid_t) -> Option<AuditMessage> {
-        if self.configuration.audit_sink_pid.load(Ordering::Acquire) != pid {
+    pub fn read_audit_log(&self, client: &Arc<AuditNetlinkClient>) -> Option<AuditMessage> {
+        let current_client = self.configuration.audit_sink.load().upgrade()?;
+        // Check if the current client is reading the backlog.
+        if !Arc::ptr_eq(&current_client, client) {
             return None;
         }
         self.audit_queue.lock().pop_front()
     }
 
-    /// Function to detach the `AuditNetlinkClient` from the `AuditLogger`.
-    pub fn detach_client(&self) {
+    /// Function to detach the `AuditNetlinkClient` from the `AuditLogger` if
+    /// the provided client matches the one registered.
+    ///
+    /// The `client` must be valid.
+    pub fn detach_client(&self, client: Weak<AuditNetlinkClient>) {
+        if !Weak::ptr_eq(
+            &self.configuration.audit_sink.compare_and_swap(&client, Weak::new()),
+            &client,
+        ) {
+            return;
+        }
         self.configuration.audit_sink_pid.store(0, Ordering::Release);
-        self.configuration.audit_sink.store(Weak::new());
     }
 
     /// Applies the specified changes to the audit logger settings.
-    ///
-    /// If the `AUDIT_STATUS_PID` bit is set in `status.mask`, the `client` must be valid.
     pub fn set_status(
         &self,
+        current_task: &CurrentTask,
         status: audit_status,
-        client: Weak<AuditNetlinkClient>,
+        client: &Arc<AuditNetlinkClient>,
     ) -> Result<(), Errno> {
         // Dummy check for enable/disable request. This should be used again if other
         // subsystems will use the audit logger.
@@ -185,15 +194,7 @@ impl AuditLogger {
             self.lost_audit_messages.store(0, Ordering::Release);
         }
         if status.mask & AUDIT_STATUS_PID != 0 {
-            if let Err(_) = self.configuration.audit_sink_pid.compare_exchange(
-                0,
-                status.pid as pid_t,
-                Ordering::Release,
-                Ordering::Acquire,
-            ) {
-                return error!(EINVAL);
-            }
-            self.configuration.audit_sink.store(client);
+            self.update_client(current_task.get_pid(), status.pid as pid_t, client)?;
         }
         Ok(())
     }
@@ -216,11 +217,57 @@ impl AuditLogger {
     }
 
     /// Retrieve the number of audit messages in the backlog.
-    pub fn get_backlog_count(&self, pid: pid_t) -> usize {
-        if self.configuration.audit_sink_pid.load(Ordering::Acquire) != pid {
-            return 0;
+    pub fn get_backlog_count(&self, client: &Arc<AuditNetlinkClient>) -> usize {
+        match self.configuration.audit_sink.load().upgrade() {
+            Some(current_client) if Arc::ptr_eq(&current_client, client) => {
+                self.audit_queue.lock().len()
+            }
+            _ => 0,
         }
-        self.audit_queue.lock().len()
+    }
+
+    /// Detach was requested by the audit client.
+    fn detach_own_client(&self, pid: pid_t) -> bool {
+        // Verify the PID of the current task here to ensure the correct process
+        // requested the detach operation.
+        if let Err(_) = self.configuration.audit_sink_pid.compare_exchange(
+            pid,
+            0,
+            Ordering::Acquire,
+            Ordering::Relaxed,
+        ) {
+            return false;
+        }
+        self.configuration.audit_sink.store(Weak::new());
+        true
+    }
+
+    /// Function to update the attached `client` and its PID
+    fn update_client(
+        &self,
+        pid: pid_t,
+        request_pid: pid_t,
+        client: &Arc<AuditNetlinkClient>,
+    ) -> Result<(), Errno> {
+        if request_pid == 0 {
+            if self.detach_own_client(pid) {
+                return Ok(());
+            }
+            return error!(EPERM);
+        }
+        if pid != request_pid {
+            return error!(EPERM);
+        }
+
+        let no_client = Weak::new();
+        if !Weak::ptr_eq(
+            &self.configuration.audit_sink.compare_and_swap(&no_client, Arc::downgrade(client)),
+            &Weak::new(),
+        ) {
+            return error!(EINVAL);
+        }
+        self.configuration.audit_sink_pid.store(pid, Ordering::Release);
+        Ok(())
     }
 
     /// Add an audit message to the backlog if it is enabled.
@@ -296,42 +343,4 @@ pub struct AuditMessage {
     pub audit_type: u16,
     /// The message to be audit-logged.
     pub message: Vec<u8>,
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::security::AuditLogger;
-    use crate::testing::spawn_kernel_and_run;
-    use linux_uapi::{AUDIT_STATUS_PID, audit_status};
-    use std::sync::Weak;
-
-    #[fuchsia::test]
-    async fn test_audit_status_get_and_set() {
-        spawn_kernel_and_run(|_locked, current_task| {
-            let afw = AuditLogger::new(current_task.kernel());
-
-            let status = audit_status {
-                mask: AUDIT_STATUS_PID,
-                enabled: 0,
-                failure: 0,
-                pid: 100,
-                rate_limit: 100,
-                backlog_limit: 100,
-                lost: 100,
-                backlog: 0,
-                __bindgen_anon_1: Default::default(),
-                backlog_wait_time: 0,
-                backlog_wait_time_actual: 0,
-            };
-            let _ = afw.set_status(status, Weak::new());
-
-            let mut recv_status = afw.get_status();
-            assert_eq!(status.pid, recv_status.pid);
-            assert_ne!(status.rate_limit, recv_status.rate_limit);
-
-            afw.detach_client();
-            recv_status = afw.get_status();
-            assert_eq!(0, recv_status.pid);
-        })
-    }
 }

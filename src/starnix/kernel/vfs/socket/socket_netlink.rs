@@ -24,7 +24,7 @@ use netlink_packet_utils::{DecodeError, Emitable as _};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use std::marker::PhantomData;
 use std::num::{NonZeroI32, NonZeroU32};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
 
 use crate::device::kobject::{Device, UEventAction, UEventContext};
@@ -49,7 +49,7 @@ use starnix_uapi::{
     NETLINK_NETFILTER, NETLINK_NFLOG, NETLINK_RDMA, NETLINK_ROUTE, NETLINK_SCSITRANSPORT,
     NETLINK_SELINUX, NETLINK_SMC, NETLINK_SOCK_DIAG, NETLINK_USERSOCK, NETLINK_XFRM, NLM_F_MULTI,
     NLMSG_DONE, SO_PASSCRED, SO_PROTOCOL, SO_RCVBUF, SO_RCVBUFFORCE, SO_SNDBUF, SO_SNDBUFFORCE,
-    SO_TIMESTAMP, SOL_SOCKET, errno, error, nlmsghdr, pid_t, sockaddr_nl, socklen_t, ucred,
+    SO_TIMESTAMP, SOL_SOCKET, errno, error, nlmsghdr, sockaddr_nl, socklen_t, ucred,
 };
 
 // From netlink/socket.go in gVisor.
@@ -1529,9 +1529,7 @@ impl AuditNetlinkClient {
         };
         match audit_request_type {
             AuditRequest::AuditGet => self.process_get_status(nl_header.sequence_number),
-            AuditRequest::AuditSet => {
-                self.process_set_status(nl_header, payload, Arc::downgrade(self))
-            }
+            AuditRequest::AuditSet => self.process_set_status(current_task, nl_header, payload),
             AuditRequest::AuditUser => self.process_user_audit(nl_header, payload),
         }
     }
@@ -1548,8 +1546,8 @@ impl AuditNetlinkClient {
     }
 
     /// Function to read an audit message from `AuditLogger`.
-    fn read_audit_log(&self, pid: pid_t) -> Option<Vec<u8>> {
-        if let Some(AuditMessage { audit_type, message }) = self.audit_logger.read_audit_log(pid) {
+    fn read_audit_log(self: &Arc<Self>) -> Option<Vec<u8>> {
+        if let Some(AuditMessage { audit_type, message }) = self.audit_logger.read_audit_log(self) {
             return Some(AuditNetlinkClient::serialize_nlmsg(
                 AuditNetlinkClient::build_audit_nlmsg(0, audit_type, message),
             ));
@@ -1558,12 +1556,10 @@ impl AuditNetlinkClient {
     }
 
     /// Function to read the optional response if present or an audit message.
-    fn read_nlmsg(&self, flags: SocketMessageFlags, pid: pid_t) -> Result<Vec<u8>, Errno> {
+    fn read_nlmsg(self: &Arc<Self>, flags: SocketMessageFlags) -> Result<Vec<u8>, Errno> {
         // First check if there is a response and send it if present.
         // Send an audit message otherwise or return EAGAIN.
-        self.get_nl_response(flags)
-            .or_else(|| self.read_audit_log(pid))
-            .ok_or_else(|| errno!(EAGAIN))
+        self.get_nl_response(flags).or_else(|| self.read_audit_log()).ok_or_else(|| errno!(EAGAIN))
     }
 
     fn process_get_status(
@@ -1578,15 +1574,15 @@ impl AuditNetlinkClient {
     }
 
     fn process_set_status(
-        &self,
+        self: &Arc<Self>,
+        current_task: &CurrentTask,
         nl_hdr: NetlinkHeader,
         nl_payload: Vec<u8>,
-        client: Weak<AuditNetlinkClient>,
     ) -> Result<NetlinkMessage<GenericMessage>, Errno> {
         let Some(status) = audit_status::read_from_bytes(nl_payload.as_bytes()).ok() else {
             return error!(EINVAL);
         };
-        self.audit_logger.set_status(status, client)?;
+        self.audit_logger.set_status(current_task, status, self)?;
         Ok(AuditNetlinkClient::build_audit_ack(Ok(()), nl_hdr))
     }
 
@@ -1600,15 +1596,15 @@ impl AuditNetlinkClient {
         Ok(AuditNetlinkClient::build_audit_ack(Ok(()), nl_hdr))
     }
 
-    fn query_events(&self, pid: pid_t) -> FdEvents {
-        if self.audit_response.lock().is_some() || self.audit_logger.get_backlog_count(pid) != 0 {
+    fn query_events(self: &Arc<Self>) -> FdEvents {
+        if self.audit_response.lock().is_some() || self.audit_logger.get_backlog_count(self) != 0 {
             return FdEvents::POLLIN;
         }
         FdEvents::empty()
     }
 
-    fn detach(&self) {
-        self.audit_logger.detach_client();
+    fn detach(self: &Arc<Self>) {
+        self.audit_logger.detach_client(Arc::downgrade(self));
     }
 
     fn build_audit_nlmsg(
@@ -1686,11 +1682,11 @@ impl SocketOps for AuditNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
         flags: SocketMessageFlags,
     ) -> Result<MessageReadInfo, Errno> {
-        let buf = self.audit_client.read_nlmsg(flags, current_task.get_pid())?;
+        let buf = self.audit_client.read_nlmsg(flags)?;
 
         let size = data.write_all(buf.as_bytes())?;
         Ok(MessageReadInfo {
@@ -1746,9 +1742,9 @@ impl SocketOps for AuditNetlinkSocket {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _socket: &Socket,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        Ok(self.audit_client.query_events(current_task.get_pid()) & FdEvents::POLLIN)
+        Ok(self.audit_client.query_events() & FdEvents::POLLIN)
     }
 
     fn close(
