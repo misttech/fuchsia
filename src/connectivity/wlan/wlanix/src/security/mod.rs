@@ -13,8 +13,8 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use wlan_common::scan::Compatible;
-use wlan_common::security::wpa::credential::Passphrase;
 use wlan_common::security::wpa::WpaDescriptor;
+use wlan_common::security::wpa::credential::Passphrase;
 use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -23,6 +23,7 @@ pub enum Credential {
     /// used if a credential is not set.
     None,
     Password(Vec<u8>),
+    SaePassword(Vec<u8>),
     WepKey(WepKeys),
 }
 
@@ -31,6 +32,7 @@ impl Credential {
         match self {
             Credential::None => "None",
             Credential::Password(_) => "Password",
+            Credential::SaePassword(_) => "SAE password",
             Credential::WepKey(_) => "WEP keys",
         }
     }
@@ -94,9 +96,11 @@ fn bind_credential_to_protocol(
                 _ => None,
             },
             WpaDescriptor::Wpa3 { .. } => match credential {
-                Credential::Password(ref passphrase) => Passphrase::try_from(passphrase.as_slice())
-                    .ok()
-                    .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok()),
+                Credential::SaePassword(ref passphrase) => {
+                    Passphrase::try_from(passphrase.as_slice())
+                        .ok()
+                        .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok())
+                }
                 _ => None,
             },
         },

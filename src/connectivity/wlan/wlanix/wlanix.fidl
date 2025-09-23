@@ -208,6 +208,9 @@ open protocol SupplicantStaNetwork {
     flexible SetPskPassphrase(table {
         1: passphrase vector<uint8>:MAX;
     });
+    flexible SetSaePassword(table {
+        1: password vector<uint8>:MAX;
+    });
     flexible SetWepKey(table {
         1: key vector<uint8>:MAX;
         2: key_idx int32;

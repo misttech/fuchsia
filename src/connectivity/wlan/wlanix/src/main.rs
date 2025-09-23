@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::security::Credential;
 use crate::security::wep::WepKeys;
-use anyhow::{Context, Error, bail, format_err};
+use crate::security::Credential;
+use anyhow::{bail, format_err, Context, Error};
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
@@ -771,6 +771,12 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
                 sta_network_state.lock().credential = Credential::Password(passphrase);
             }
         }
+        fidl_wlanix::SupplicantStaNetworkRequest::SetSaePassword { payload, .. } => {
+            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetSaePassword");
+            if let Some(password) = payload.password {
+                sta_network_state.lock().credential = Credential::SaePassword(password);
+            }
+        }
         fidl_wlanix::SupplicantStaNetworkRequest::SetWepKey { payload, .. } => {
             let _ = get_iface_and_log(
                 "fidl_wlanix::SupplicantStaNetworkRequest::SetWepKey",
@@ -790,7 +796,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
 
                     sta_network_state.credential = Credential::WepKey(wep_keys);
                 }
-                Credential::Password(_) => {
+                Credential::Password(_) | Credential::SaePassword(_) => {
                     warn!(
                         "SetWepKey was called for a network that already has a passphrase; ignoring"
                     );
@@ -822,7 +828,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
                 Credential::WepKey(ref mut wep_keys) => {
                     wep_keys.set_index(index as usize)?;
                 }
-                Credential::Password(_) => {
+                Credential::Password(_) | Credential::SaePassword(_) => {
                     warn!(
                         "SetWepTxKeyIdx was called when the credential has been set to Password; ignoring."
                     );
@@ -1314,7 +1320,7 @@ fn get_supported_frequencies() -> Vec<Vec<Nl80211FrequencyAttr>> {
 
 trait MessageResponder {
     fn send(self, result: Result<Vec<fidl_wlanix::Nl80211Message>, i32>)
-    -> Result<(), fidl::Error>;
+        -> Result<(), fidl::Error>;
 }
 
 impl MessageResponder for Nl80211MessageV2Responder {
@@ -1914,14 +1920,14 @@ mod tests {
     use super::*;
     use anyhow::format_err;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
+    use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream, Proxy};
     use fidl_fuchsia_wlan_wlanix::Nl80211Message;
-    use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
+    use futures::Future;
     use ieee80211::Ssid;
-    use ifaces::test_utils::{ClientIfaceCall, FAKE_IFACE_RESPONSE, TestIfaceManager};
-    use std::pin::{Pin, pin};
+    use ifaces::test_utils::{ClientIfaceCall, TestIfaceManager, FAKE_IFACE_RESPONSE};
+    use std::pin::{pin, Pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
     use {
@@ -2845,6 +2851,58 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_supplicant_sta_wpa3_network_connect_flow() {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+
+        let mut mcast_stream = get_nl80211_mcast(&test_helper.nl80211_proxy, "mlme");
+        let next_mcast = next_mcast_message(&mut mcast_stream);
+        let mut next_mcast = pin!(next_mcast);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut next_mcast), Poll::Pending);
+
+        let result = test_helper.supplicant_sta_network_proxy.set_ssid(
+            &fidl_wlanix::SupplicantStaNetworkSetSsidRequest {
+                ssid: Some(vec![b'f', b'o', b'o']),
+                ..Default::default()
+            },
+        );
+        assert_matches!(result, Ok(()));
+
+        let password = vec![b'p', b'a', b's', b's'];
+        let result = test_helper.supplicant_sta_network_proxy.set_sae_password(
+            &fidl_wlanix::SupplicantStaNetworkSetSaePasswordRequest {
+                password: Some(password.clone()),
+                ..Default::default()
+            },
+        );
+        assert_matches!(result, Ok(()));
+        assert_matches!(test_helper.supplicant_sta_network_proxy.clear_bssid(), Ok(()));
+
+        let mut network_select_fut = test_helper.supplicant_sta_network_proxy.select();
+        assert_matches!(test_helper.exec.run_until_stalled(&mut network_select_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut network_select_fut),
+            Poll::Ready(Ok(Ok(())))
+        );
+
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        let (ssid, credential, bssid) = assert_matches!(
+            iface_calls.lock()[0].clone(),
+            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid } => (ssid, credential, bssid)
+        );
+        assert_eq!(ssid, vec![b'f', b'o', b'o']);
+        assert_eq!(credential, Credential::SaePassword(password));
+        assert_eq!(bssid, None);
+        let mut next_callback_fut = test_helper.supplicant_sta_iface_callback_stream.next();
+        let on_state_changed = assert_matches!(test_helper.exec.run_until_stalled(&mut next_callback_fut), Poll::Ready(Some(Ok(fidl_wlanix::SupplicantStaIfaceCallbackRequest::OnStateChanged { payload, .. }))) => payload);
+        assert_eq!(on_state_changed.new_state, Some(fidl_wlanix::StaIfaceCallbackState::Completed));
+
+        let mcast_msg = assert_matches!(test_helper.exec.run_until_stalled(&mut next_mcast), Poll::Ready(msg) => msg);
+        assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::Connect);
+    }
+
+    #[fuchsia::test]
     fn test_supplicant_sta_wep_network_connect_flow() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
@@ -3610,12 +3668,10 @@ mod tests {
         assert_eq!(message.payload.cmd, Nl80211Cmd::NewInterface);
         assert!(message.payload.attrs.iter().any(|attr| *attr
             == Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())));
-        assert!(
-            message
-                .payload
-                .attrs
-                .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr))
-        );
+        assert!(message
+            .payload
+            .attrs
+            .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr)));
         assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
     }
 
