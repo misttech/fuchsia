@@ -96,8 +96,7 @@ class ChildTransportDriverTest : public ::testing::Test {
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
 };
 
-// TODO(b/439021012): Re-enable test after fixing flakes
-TEST_F(ChildTransportDriverTest, DISABLED_VerifyQueryValues) {
+TEST_F(ChildTransportDriverTest, VerifyQueryValues) {
   // Access the driver's bound node and check that it's parenting one child node that has the
   // test property properly set to the max transfer size we return.
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
