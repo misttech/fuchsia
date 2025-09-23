@@ -11,6 +11,7 @@ use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::{File, OpenOptions, create_dir_all};
+use std::hash::Hash;
 use std::io::{BufRead, BufReader};
 use std::net::{AddrParseError, SocketAddr};
 use std::num::ParseIntError;
@@ -18,10 +19,20 @@ use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Clone, Copy)]
 pub enum FastbootMode {
     TCP,
     UDP,
+}
+
+impl std::fmt::Display for FastbootMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let msg = match self {
+            Self::TCP => "tcp",
+            Self::UDP => "udp",
+        };
+        write!(f, "{}", msg)
+    }
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -42,7 +53,7 @@ impl FromStr for FastbootMode {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Clone)]
 pub struct FastbootEntry {
     mode: FastbootMode,
     socket_addr: SocketAddr,
@@ -55,6 +66,12 @@ impl FastbootEntry {
 
     pub fn socket_addr(&self) -> SocketAddr {
         self.socket_addr
+    }
+}
+
+impl std::fmt::Display for FastbootEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.mode, self.socket_addr)
     }
 }
 
@@ -346,6 +363,20 @@ mod test {
             "udp:127.0.0.1:811".parse::<FastbootEntry>()?
         );
 
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_display_fastboot_entry() -> Result<()> {
+        let entry = FastbootEntry {
+            mode: FastbootMode::TCP,
+            socket_addr: "127.0.0.1:8080".parse().unwrap(),
+        };
+        assert_eq!(entry.to_string(), "tcp 127.0.0.1:8080");
+
+        let entry =
+            FastbootEntry { mode: FastbootMode::UDP, socket_addr: "[::1]:8080".parse().unwrap() };
+        assert_eq!(entry.to_string(), "udp [::1]:8080");
         Ok(())
     }
 }
