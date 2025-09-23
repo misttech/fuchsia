@@ -8,9 +8,9 @@ mod fuchsia_map;
 mod processes_data;
 mod write_human_readable_output;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 
-use ffx_config::global_env_context;
+use ffx_config::EnvironmentContext;
 use ffx_process_args::{Args, ProcessCommand, Task};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
@@ -46,6 +46,7 @@ pub struct ProcessTool {
     provider_proxy: ProviderProxy,
     #[command]
     cmd: ProcessCommand,
+    context: EnvironmentContext,
 
     task_writer: MachineWriter<raw::TasksData>,
 }
@@ -83,7 +84,7 @@ impl ProcessTool {
             }
             Args::Kill(arg) => kill_subcommand(writer, self.explorer_proxy, arg.task_to_kill).await,
             Args::StackTrace(arg) => {
-                stack_trace_subcommand(writer, self.explorer_proxy, arg.task).await
+                stack_trace_subcommand(writer, &self.context, self.explorer_proxy, arg.task).await
             }
             Args::Tree(_) => unreachable!(), // Handled above.
         }
@@ -264,6 +265,7 @@ async fn kill_subcommand(
 
 async fn stack_trace_subcommand(
     mut w: Writer,
+    ctx: &EnvironmentContext,
     explorer_proxy: ProcessExplorerProxy,
     task: Task,
 ) -> Result<()> {
@@ -273,7 +275,7 @@ async fn stack_trace_subcommand(
     };
     match explorer_proxy.get_stack_trace(&arg).await?.map_err(Status::from_raw) {
         Ok(stack_trace) => {
-            write_symbolized_stack_traces(w, stack_trace)?;
+            write_symbolized_stack_traces(w, ctx, stack_trace)?;
             Ok(())
         }
         Err(Status::NOT_FOUND) => {
@@ -287,11 +289,13 @@ async fn stack_trace_subcommand(
     }
 }
 
-fn write_symbolized_stack_traces(mut w: Writer, stack_trace: String) -> Result<()> {
-    let sdk = global_env_context().context("Loading global environment context")?.get_sdk()?;
-    if let Err(e) = symbol_index::ensure_symbol_index_registered(
-        &global_env_context().ok_or_else(|| anyhow!("Failed to get global context"))?,
-    ) {
+fn write_symbolized_stack_traces(
+    mut w: Writer,
+    ctx: &EnvironmentContext,
+    stack_trace: String,
+) -> Result<()> {
+    let sdk = ctx.get_sdk()?;
+    if let Err(e) = symbol_index::ensure_symbol_index_registered(ctx) {
         log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
     }
 
