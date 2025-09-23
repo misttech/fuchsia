@@ -9,10 +9,10 @@ use crate::node::Node;
 use crate::types::{Celsius, Seconds, ThermalLoad};
 use crate::utils::{CobaltIntHistogram, CobaltIntHistogramConfig};
 use crate::{log_if_err, ok_or_default_err};
-use anyhow::{format_err, Context, Error, Result};
+use anyhow::{Context, Error, Result, format_err};
 use async_trait::async_trait;
-use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::{self as inspect, HistogramProperty, LinearHistogramParams, Property};
@@ -98,6 +98,20 @@ impl fidl_contrib::protocol_connector::ConnectedProtocol for CobaltConnectedServ
             Ok(())
         }
         .boxed()
+    }
+
+    fn should_retry_on_connect_error(&self, error: &Self::ConnectError) -> bool {
+        for cause in error.chain() {
+            if let Some(fidl_err) = cause.downcast_ref::<fidl::Error>() {
+                if let fidl::Error::ClientChannelClosed { status, .. } = fidl_err {
+                    if *status == zx::Status::NOT_FOUND {
+                        error!("Server is not in package");
+                        return false; // Do not retry on NOT_FOUND
+                    }
+                }
+            }
+        }
+        true // Retry on all other errors
     }
 }
 
@@ -863,12 +877,12 @@ mod inspect_throttle_history_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker, create_dummy_node};
     use crate::utils::run_all_tasks_until_stalled::run_all_tasks_until_stalled;
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
     use async_utils::PollExt as _;
-    use diagnostics_assertions::{assert_data_tree, HistogramAssertion};
+    use diagnostics_assertions::{HistogramAssertion, assert_data_tree};
     use fidl_fuchsia_metrics::MetricEventPayload;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.

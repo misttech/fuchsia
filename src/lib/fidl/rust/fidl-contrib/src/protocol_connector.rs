@@ -82,8 +82,8 @@ use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{Future, StreamExt};
 use log::error;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A trait for implementing connecting to and sending messages to a FIDL protocol.
 pub trait ConnectedProtocol {
@@ -91,7 +91,7 @@ pub trait ConnectedProtocol {
     type Protocol: fidl::endpoints::Proxy;
 
     /// An error type returned for connection failures.
-    type ConnectError: std::fmt::Display;
+    type ConnectError: std::fmt::Display + 'static;
 
     /// The message type that will be forwarded to the `Protocol`.
     type Message;
@@ -113,6 +113,11 @@ pub trait ConnectedProtocol {
         protocol: &'a Self::Protocol,
         msg: Self::Message,
     ) -> BoxFuture<'a, Result<(), Self::SendError>>;
+
+    /// Determines if a connection error is retryable. The default is to always retry.
+    fn should_retry_on_connect_error(&self, _error: &Self::ConnectError) -> bool {
+        true
+    }
 }
 
 /// A ProtocolSender wraps around an `mpsc::Sender` object that is used to send
@@ -268,6 +273,11 @@ impl<CP: ConnectedProtocol> ProtocolConnector<CP> {
             let protocol = match self.protocol.get_protocol().await {
                 Ok(protocol) => protocol,
                 Err(e) => {
+                    if !self.protocol.should_retry_on_connect_error(&e) {
+                        error!("Stopping retries as requested: {e}");
+                        return;
+                    }
+
                     h(ProtocolConnectorError::ConnectFailed(e));
                     backoff.next_timer().await;
                     continue;
@@ -315,7 +325,7 @@ fn log_first_n_factory(n: u64, mut log_fn: impl FnMut(String)) -> impl FnMut(Str
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::{format_err, Context};
+    use anyhow::{Context, format_err};
     use fidl_test_protocol_connector::{
         ProtocolFactoryProxy, ProtocolFactoryRequest, ProtocolFactoryRequestStream, ProtocolProxy,
         ProtocolRequest, ProtocolRequestStream,
