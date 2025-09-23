@@ -50,6 +50,9 @@ var bazelRuleToGNTemplate = map[string]string{
 	// Other
 	"install_host_tools": "install_host_tools",
 	"package":            "package",
+
+	// `exports_files()` is a concept specific to Bazel, so there is no need to convert it.
+	"exports_files": "__NO_GN_EQUIVALENT__",
 }
 
 // attrsToOmitByRules stores a mapping from known Bazel rules to attributes to

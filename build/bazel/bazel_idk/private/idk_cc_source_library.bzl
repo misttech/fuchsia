@@ -287,7 +287,7 @@ def idk_cc_source_library(
     }
 
     idk_atom(
-        name = name,
+        name = name + "_idk",
         idk_name = idk_name,
         id = "sdk://" + idk_root_path,
         meta_dest = idk_root_path + "/meta.json",

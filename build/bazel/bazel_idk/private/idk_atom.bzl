@@ -84,11 +84,14 @@ _compute_atom_api = rule(
 )
 
 def _create_idk_atom_impl(ctx):
-    all_deps_depset = depset(direct = ctx.files.idk_deps + ctx.files.atom_build_deps)
-    idk_deps = ctx.attr.idk_deps
+    if not ctx.attr.name.endswith("_idk"):
+        fail("IDK atom names must end with `_idk`.")
 
     if (not ctx.attr.api_file_path) != (not ctx.attr.api_contents_map):
         fail("`api_file_path` and `api_contents_map` must be specified together.")
+
+    all_deps_depset = depset(direct = ctx.files.idk_deps + ctx.files.atom_build_deps)
+    idk_deps = ctx.attr.idk_deps
 
     return [
         DefaultInfo(files = all_deps_depset),
@@ -115,7 +118,9 @@ def _create_idk_atom_impl(ctx):
     ]
 
 _create_idk_atom = rule(
-    doc = """Define an IDK atom. Do not instantiate directly - use `_idk_atom()` instead.
+    doc = """Define an IDK atom. Do not instantiate directly - use `idk_atom()` instead.
+
+`name` must end in `_idk`.
 
 Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
 """,
@@ -212,36 +217,16 @@ Possible values, from most restrictive to least restrictive:
     },
 )
 
-# TODO(https://fxbug.dev/417305295): Make this a symbolic macro after updating
-# to Bazel 8. Consider moving all the args descriptions from _create_idk_atom()
-# to here and reference those definitions from _create_idk_atom(). Replace
-# "Required" comments with `mandatory = True`.
-def idk_atom(
+def _idk_atom_impl(
         name,
         type,
         category,
         stable,
         testonly,
         atom_build_deps,
-        api_file_path = None,
-        api_contents_map = None,
+        api_file_path,
+        api_contents_map,
         **kwargs):
-    """Generate an IDK atom and ensure proper validation of it.
-
-Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
-
-    Args:
-        name: The name of the IDK atom target. Required.
-        type: See _create_idk_atom(). Required.
-        category:  See _create_idk_atom(). Required.
-        stable:  See _create_idk_atom(). Required.
-        testonly: Standard definition. Required.
-        atom_build_deps:  See _create_idk_atom(). Required.
-        api_file_path: See _create_idk_atom().
-        api_contents_map:  See _create_idk_atom().
-        **kwargs: Additional arguments for the underlying atom.  See _create_idk_atom().
-    """
-
     if type not in _TYPES_SUPPORTING_UNSTABLE_ATOMS and not stable:
         fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
 
@@ -253,9 +238,11 @@ Atoms will be checked for category and API area violations when generating the I
         fail("All atoms with types ('%s') requiring compatibility must specify an `api_file_path` unless explicitly unstable." % type)
 
     # Ensure the atom is in the appropriate allowlist.
+    # The attribute is immutable, so create a mutable copy.
+    atom_build_deps = list(atom_build_deps)
     atom_build_deps.append(get_allowlist_target(type, category, stable))
 
-    _verify_api = api_file_path != None
+    _verify_api = bool(api_file_path)
     if _verify_api:
         if not api_contents_map:
             fail("`api_contents_map` cannot be empty.")
@@ -291,7 +278,7 @@ Atoms will be checked for category and API area violations when generating the I
     # if necessary. See https://fxbug.dev/407083737.
 
     _create_idk_atom(
-        name = name + "_idk",
+        name = name,
         type = type,
         category = category,
         stable = stable,
@@ -301,3 +288,47 @@ Atoms will be checked for category and API area violations when generating the I
         testonly = testonly,
         **kwargs
     )
+
+idk_atom = macro(
+    doc = """Generate an IDK atom and ensure proper validation of it.
+
+`name` is the name of the IDK atom target and must end in `_idk`.
+
+Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
+""",
+    implementation = _idk_atom_impl,
+    inherit_attrs = _create_idk_atom,
+    attrs = {
+        "type": attr.string(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+            configurable = False,
+        ),
+        "category": attr.string(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+            configurable = False,
+        ),
+        "stable": attr.bool(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+            configurable = False,
+        ),
+        "atom_build_deps": attr.label_list(
+            doc = "See _create_idk_atom().",
+            mandatory = True,
+            configurable = False,
+        ),
+        "api_file_path": attr.string(
+            doc = "See _create_idk_atom().",
+            default = "",
+            configurable = False,
+        ),
+        "api_contents_map": attr.string_keyed_label_dict(
+            doc = "See _create_idk_atom().",
+            allow_files = True,
+            default = {},
+            configurable = False,
+        ),
+    },
+)

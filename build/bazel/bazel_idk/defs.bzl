@@ -23,4 +23,4 @@ def create_idk_atom_for_test(name, testonly, **kwargs):
     """Wrapper to allow creating an atom directly for tests only."""
     if not testonly:
         fail("Atom must be `testonly`.")
-    idk_atom(name = name, testonly = testonly, **kwargs)
+    idk_atom(name = name + "_idk", testonly = testonly, **kwargs)

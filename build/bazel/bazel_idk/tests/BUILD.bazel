@@ -180,3 +180,12 @@ genrule(
         "//sdk/lib/utf-utils",
     ],
 )
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files([
+    "dependency_1.api",
+    "different_file_name.api",
+    "source_dependency_2.api",
+    "source_subdependency.api",
+    "tests_dependency.api",
+])

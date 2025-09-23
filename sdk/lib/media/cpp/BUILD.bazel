@@ -32,3 +32,6 @@ idk_cc_source_library(
         "//build/sdk:__pkg__",
     ],
 )
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["media_cpp_no_converters.api"])

@@ -5,5 +5,9 @@
 # Expose the .api file to the definition of the library.
 exports_files(
     ["zx.api"],
-    visibility = ["//zircon/system/ulib/zx:__pkg__"],
+    visibility = [
+        "//zircon/system/ulib/zx:__pkg__",
+        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+        "//build/bazel/bazel_idk/private:__pkg__",
+    ],
 )

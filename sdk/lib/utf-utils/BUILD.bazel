@@ -33,3 +33,6 @@ idk_cc_source_library(
     # This must come after `deps`.
     fuchsia_deps = ["//zircon/system/ulib/zx"],
 )
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["utf-utils.api"])

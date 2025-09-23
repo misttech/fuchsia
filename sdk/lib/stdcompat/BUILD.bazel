@@ -54,3 +54,6 @@ idk_cc_source_library_zx(
     stable = True,
     visibility = ["//visibility:public"],
 )
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["stdcompat.api"])
