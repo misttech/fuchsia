@@ -52,12 +52,14 @@ impl FfxMain for ListTool {
             || self.context.get_direct_connection_mode()
             || !ffx_target::is_discovery_enabled(&self.context).await
         {
+            let connect_to_rcs =
+                !cmd.no_probe && !matches!(cmd.format, ffx_list_args::Format::Addresses);
             ffx_target::list_targets(
                 &self.context,
                 cmd.nodename.clone(),
                 !cmd.no_usb,
                 !cmd.no_mdns,
-                !cmd.no_probe,
+                connect_to_rcs,
             )
             .await?
         } else {
