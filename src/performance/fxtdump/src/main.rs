@@ -5,7 +5,7 @@
 use anyhow::Result;
 use argh::{ArgsInfo, FromArgs};
 use fxt::session::SessionParser;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -60,11 +60,7 @@ pub struct CategoryStats {
 }
 
 fn format_size(size: usize) -> String {
-    if size > 1024 {
-        format!("{} KiB", size / 1024)
-    } else {
-        format!("{} bytes", size)
-    }
+    if size > 1024 { format!("{} KiB", size / 1024) } else { format!("{} bytes", size) }
 }
 
 fn dump<R: std::io::Read>(fxt: &mut SessionParser<R>, strict: bool) {
@@ -127,6 +123,7 @@ fn category_stats<R: std::io::Read>(
                     fxt::TraceRecord::ProviderEvent { .. } => {
                         ("metadata".into(), "metadata".into())
                     }
+                    fxt::TraceRecord::Profiler(_) => todo!(),
                 };
                 let name_map = category_name_counts.entry(category).or_insert(HashMap::new());
                 let stats = name_map.entry(name).or_insert(Stats::default());
