@@ -182,7 +182,9 @@ type PerformanceImpactMetrics = table {
     1: some_memory_stalls_ns int64;
     /// Total time spent with all threads memory-stalled.
     2: full_memory_stalls_ns int64;
-    /// Total number of page refaults.
+    // Estimated number of page faults handled by user-backed pagers, for pages
+    // that had been evicted due to memory pressure, after first being mapped.
+    // This is a lower-bound, since not all user-pagers report the metric.
     3: page_refaults uint64;
 };
 
