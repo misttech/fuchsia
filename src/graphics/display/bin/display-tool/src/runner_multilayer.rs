@@ -6,8 +6,8 @@
 use {
     anyhow::Result,
     display_utils::{
-        Coordinator, DisplayConfig, DisplayId, Image, ImageId, ImageParameters, Layer, LayerConfig,
-        LayerId, PixelFormat, VsyncEvent,
+        Alpha, Coordinator, DisplayConfig, DisplayId, Image, ImageId, ImageParameters, Layer,
+        LayerConfig, LayerId, PixelFormat, VsyncEvent,
     },
     fuchsia_trace::duration,
     futures::StreamExt,
@@ -34,6 +34,10 @@ pub trait MultiLayerScene {
     // Render the current scene contents to `images`.
     // `images` must not be used by the display engine during `render()`.
     fn render(&mut self, images: &mut [MappedImage]) -> Result<()>;
+
+    /// Gets the alpha configuration for a specific layer.
+    /// If None is returned, the layer's default alpha behavior is used.
+    fn get_alpha_for_layer(&self, layer_index: usize) -> Option<Alpha>;
 }
 
 struct Presentation {
@@ -105,12 +109,14 @@ impl<'a, S: MultiLayerScene> MultiLayerFenceLoop<'a, S> {
             .layer_ids
             .iter()
             .zip(presentation.images.iter())
-            .map(|(layer_id, image)| Layer {
+            .enumerate()
+            .map(|(layer_index, (layer_id, image))| Layer {
                 id: *layer_id,
                 config: LayerConfig::Primary {
                     image_id: image.id(),
                     image_metadata: self.params.borrow().into(),
                     unblock_event: None,
+                    alpha: self.scene.get_alpha_for_layer(layer_index),
                 },
             })
             .collect();

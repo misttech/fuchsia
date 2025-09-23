@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::types::{Color, DisplayId, EventId, ImageId, LayerId};
+use crate::types::{Alpha, Color, DisplayId, EventId, ImageId, LayerId};
 use {fidl_fuchsia_hardware_display_types as fdisplay_types, fidl_fuchsia_math as fmath};
 
 /// LayerConfig is a variant type of the two distinct layer configuration types that are
@@ -32,6 +32,10 @@ pub enum LayerConfig {
         /// When present, the display driver will not apply the configuration until the client
         /// signals this event.
         unblock_event: Option<EventId>,
+
+        /// Optional alpha blending configuration for the layer.
+        /// If None, the driver's default alpha behavior is used.
+        alpha: Option<Alpha>,
     },
 }
 

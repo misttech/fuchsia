@@ -113,6 +113,7 @@ impl<'a, S: Scene> DoubleBufferedFenceLoop<'a, S> {
                     image_id: presentation.image.id(),
                     image_metadata: self.params.borrow().into(),
                     unblock_event: None,
+                    alpha: None,
                 },
             }],
         }]

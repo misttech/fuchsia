@@ -5,7 +5,8 @@
 ///! Demonstrates building an animation using a double-buffer swapchain with multiple layers.
 use {
     anyhow::{Context, Result},
-    display_utils::{Coordinator, DisplayInfo, PixelFormat},
+    display_utils::{Alpha, Coordinator, DisplayInfo, PixelFormat},
+    fidl_fuchsia_hardware_display_types as fdisplay_types,
     std::cmp::min,
 };
 
@@ -57,7 +58,7 @@ impl MultiLayerSquaresScene {
                 velocity: (16, 16),
             },
             BouncingSquare {
-                color: [100, 255, 0, 255],
+                color: [100, 255, 0, 150],
                 frame: Frame { pos_x: 0, pos_y: height - dim - 1, width: dim, height: dim },
                 velocity: (4, -8),
             },
@@ -124,6 +125,21 @@ impl MultiLayerScene for MultiLayerSquaresScene {
         self.render_layer_1(&mut images[0])?;
         self.render_layer_2(&mut images[1])?;
         Ok(())
+    }
+
+    fn get_alpha_for_layer(&self, layer_index: usize) -> Option<Alpha> {
+        match layer_index {
+            // For the first layer (index 0), make it fully opaque.
+            0 => Some(Alpha {
+                mode: fdisplay_types::AlphaMode::Disable,
+                val: 0.0, // currently ignored
+            }),
+            // For the rest of the layers, use an alpha mode.
+            _ => Some(Alpha {
+                mode: fdisplay_types::AlphaMode::Premultiplied,
+                val: 0.0, // currently ignored
+            }),
+        }
     }
 }
 

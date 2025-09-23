@@ -14,15 +14,15 @@ use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use fuchsia_component::client::Service;
 use fuchsia_sync::RwLock;
 use futures::channel::mpsc;
-use futures::{future, TryFutureExt, TryStreamExt};
+use futures::{TryFutureExt, TryStreamExt, future};
 use std::fmt;
 use std::sync::Arc;
 use zx::{self as zx, HandleBased};
 
+use crate::INVALID_EVENT_ID;
 use crate::config::{DisplayConfig, LayerConfig};
 use crate::error::{ConfigError, Error, Result};
 use crate::types::{BufferCollectionId, DisplayId, DisplayInfo, Event, EventId, ImageId, LayerId};
-use crate::INVALID_EVENT_ID;
 
 const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
@@ -250,8 +250,15 @@ impl Coordinator {
                             display_destination,
                         )?;
                     }
-                    LayerConfig::Primary { image_id, image_metadata, unblock_event } => {
+                    LayerConfig::Primary { image_id, image_metadata, unblock_event, alpha } => {
                         proxy.set_layer_primary_config(&layer.id.into(), &image_metadata)?;
+                        if let Some(alpha_config) = alpha {
+                            proxy.set_layer_primary_alpha(
+                                &layer.id.into(),
+                                alpha_config.mode,
+                                alpha_config.val,
+                            )?;
+                        }
                         proxy.set_layer_image2(
                             &layer.id.into(),
                             &(*image_id).into(),
@@ -420,12 +427,12 @@ async fn wait_for_initial_displays(
 #[cfg(test)]
 mod tests {
     use super::{Coordinator, DisplayId, VsyncEvent};
-    use anyhow::{format_err, Context, Result};
+    use anyhow::{Context, Result, format_err};
     use assert_matches::assert_matches;
-    use display_mocks::{create_proxy_and_mock, MockCoordinator};
+    use display_mocks::{MockCoordinator, create_proxy_and_mock};
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
-    use futures::{pin_mut, select, FutureExt, StreamExt};
+    use futures::{FutureExt, StreamExt, pin_mut, select};
     use {
         fidl_fuchsia_hardware_display as display,
         fidl_fuchsia_hardware_display_types as display_types,

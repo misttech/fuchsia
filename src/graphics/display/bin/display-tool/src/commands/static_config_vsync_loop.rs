@@ -5,7 +5,7 @@
 ///! This function demonstrates setting a single config with a static full-screen fill color and
 ///! sampling vsync events.
 use {
-    anyhow::{format_err, Context, Result},
+    anyhow::{Context, Result, format_err},
     display_utils::{
         Coordinator, DisplayConfig, DisplayInfo, Image, ImageId, Layer, LayerConfig, PixelFormat,
         VsyncEvent,
@@ -77,6 +77,7 @@ pub async fn run<'a>(coordinator: &Coordinator, args: Args<'a>) -> Result<()> {
                 image_id: image.id(),
                 image_metadata: params.into(),
                 unblock_event: None,
+                alpha: None,
             },
         }],
     }];

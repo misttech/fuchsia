@@ -9,7 +9,7 @@ use fidl_fuchsia_hardware_display::{
     Info, LayerId as FidlLayerId,
 };
 use fidl_fuchsia_hardware_display_types::{
-    Color as FidlColor, DisplayId as FidlDisplayId, INVALID_DISP_ID,
+    AlphaMode, Color as FidlColor, DisplayId as FidlDisplayId, INVALID_DISP_ID,
 };
 use fuchsia_async::OnSignals;
 use std::fmt;
@@ -204,6 +204,15 @@ impl Event {
         self.event.as_handle_ref().signal(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)?;
         Ok(())
     }
+}
+
+/// Represents the alpha blending configuration for a layer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Alpha {
+    /// The blending mode to use.
+    pub mode: AlphaMode,
+    /// The constant alpha value to apply, in the range [0.0, 1.0].
+    pub val: f32,
 }
 
 /// Enhances the `fuchsia.hardware.display.typers.Color` FIDL struct.
