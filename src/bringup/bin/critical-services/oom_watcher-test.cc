@@ -12,12 +12,34 @@
 
 #include <zxtest/zxtest.h>
 
-class FakePowerManager : public fidl::WireServer<fuchsia_hardware_power_statecontrol::Admin> {
+class FakeShutdownShim : public fidl::WireServer<fuchsia_hardware_power_statecontrol::Admin> {
  public:
-  FakePowerManager() : reboot_signaled_(false), unexpected_calls_(false) {}
+  FakeShutdownShim() : reboot_signaled_(false), unexpected_calls_(false) {}
   void PowerFullyOn(PowerFullyOnCompleter::Sync& completer) override {
     unexpected_calls_ = true;
     completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void Shutdown(ShutdownRequestView view, ShutdownCompleter::Sync& completer) override {
+    if (!view->options.has_action() || !view->options.has_reasons() ||
+        view->options.reasons().size() != 1 ||
+        view->options.reasons().at(0) !=
+            fuchsia_hardware_power_statecontrol::RebootReason2::kOutOfMemory) {
+      unexpected_calls_ = true;
+      completer.Close(ZX_ERR_NOT_SUPPORTED);
+      return;
+    }
+
+    if (view->options.action() != fuchsia_hardware_power_statecontrol::ShutdownAction::kReboot) {
+      unexpected_calls_ = true;
+      completer.ReplySuccess();
+      loop_->Quit();
+      return;
+    }
+
+    reboot_signaled_ = true;
+    completer.ReplySuccess();
+    loop_->Quit();
   }
 
   void Reboot(RebootRequestView view, RebootCompleter::Sync& completer) override {
@@ -84,11 +106,11 @@ class OomWatcherTest : public zxtest::Test {
     ASSERT_OK(loop_.StartThread("oom-test-watcher"));
     // Give the fake a reference to the loop so it can quit the loop once it
     // receives the shutdown signal from the code under test.
-    fake_power_manager_.SetLoop(&loop_);
+    fake_shutdown_shim_.SetLoop(&loop_);
     auto endpoints = fidl::Endpoints<fuchsia_hardware_power_statecontrol::Admin>::Create();
     power_manager_client_ = std::move(endpoints.client);
     binding_ = fidl::ServerBindingRef<fuchsia_hardware_power_statecontrol::Admin>(
-        fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), &fake_power_manager_));
+        fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), &fake_shutdown_shim_));
 
     zx::eventpair::create(0, &kernel_oom_event_, &watcher_oom_event_);
     oom_watcher_.WatchForOom(this->loop_.dispatcher(), zx::event(watcher_oom_event_.get()),
@@ -98,7 +120,7 @@ class OomWatcherTest : public zxtest::Test {
  protected:
   async::Loop loop_;
   fidl::ClientEnd<fuchsia_hardware_power_statecontrol::Admin> power_manager_client_;
-  FakePowerManager fake_power_manager_;
+  FakeShutdownShim fake_shutdown_shim_;
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_power_statecontrol::Admin>> binding_;
   zx::eventpair kernel_oom_event_;
   zx::eventpair watcher_oom_event_;
@@ -111,6 +133,6 @@ TEST_F(OomWatcherTest, TestOom) {
   while (loop_.GetState() != ASYNC_LOOP_QUIT) {
     this->loop_.RunUntilIdle();
   }
-  ASSERT_EQ(true, this->fake_power_manager_.RebootSignaled());
-  ASSERT_EQ(false, this->fake_power_manager_.UnexpectedCalls());
+  ASSERT_EQ(true, this->fake_shutdown_shim_.RebootSignaled());
+  ASSERT_EQ(false, this->fake_shutdown_shim_.UnexpectedCalls());
 }

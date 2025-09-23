@@ -30,6 +30,18 @@ closed protocol Admin {
     @available(deprecated=NEXT, note="not used or supported")
     strict PowerFullyOn() -> () error zx.Status;
 
+    /// Asks the device to enter the state specified by `options.action`.
+    ///
+    /// Arguments:
+    ///   - options: The options with which to perform this request.
+    ///              `ZX_ERR_INVALID_ARGS` is returned if `action` is absent.
+    ///              `reasons` may be omitted, but adding a new enum value
+    ///              instead is strongly encouraged.
+    @available(added=HEAD)
+    strict Shutdown(struct {
+        options ShutdownOptions;
+    }) -> () error zx.Status;
+
     /// Asks the device to reboot.
     ///
     /// Replaced by `PerformReboot`.
@@ -46,18 +58,37 @@ closed protocol Admin {
     ///   - options: The options with which to perform this requests.
     ///              `ZX_ERR_INVALID_ARGS` is returned if the options are
     ///              malformed (i.e. `reasons` is absent or empty).
+    // TODO(https://fxbug.dev/414413282): deprecate once all other uses of RebootOptions are
+    // deprecated.
     @available(added=26)
     strict PerformReboot(struct {
         options RebootOptions;
     }) -> () error zx.Status;
 
     /// Asks the device to reboot into the bootloader.
+    ///
+    /// # Deprecation
+    ///
+    /// Use Shutdown, which allows callers to specify reasons why they are requesting a reboot to
+    /// bootloader.
+    @available(deprecated=NEXT, note="use Shutdown")
     strict RebootToBootloader() -> () error zx.Status;
 
     /// Asks the device to reboot into the recovery partition.
+    ///
+    /// # Deprecation
+    ///
+    /// Use Shutdown, which allows callers to specify reasons why they are requesting a reboot to
+    /// recovery.
+    @available(deprecated=NEXT, note="use Shutdown")
     strict RebootToRecovery() -> () error zx.Status;
 
     /// Asks all devices to enter a powered off state.
+    ///
+    /// # Deprecation
+    ///
+    /// Use Shutdown, which allows callers to specify reasons why they are requesting a poweroff.
+    @available(deprecated=NEXT, note="use Shutdown")
     strict Poweroff() -> () error zx.Status;
 
     /// Performs a kernel mexec.
@@ -82,6 +113,11 @@ closed protocol Admin {
 @available(added=26)
 const MAX_REBOOT_REASONS uint8 = 100;
 
+/// The maximum number of shutdown reasons that can be attributed to a single
+/// shutdown request.
+@available(added=HEAD)
+const MAX_SHUTDOWN_REASONS uint8 = 100;
+
 /// The options specified when a reboot is requested.
 @available(added=26)
 type RebootOptions = table {
@@ -90,6 +126,27 @@ type RebootOptions = table {
     // specify a single reason. Contact OWNERS if you believe your use case
     // warrants providing multiple reasons.
     1: reasons vector<RebootReason2>:MAX_REBOOT_REASONS;
+};
+
+@available(added=HEAD)
+type ShutdownAction = flexible enum {
+    POWEROFF = 1;
+    REBOOT = 2;
+    REBOOT_TO_RECOVERY = 3;
+    REBOOT_TO_BOOTLOADER = 4;
+};
+
+/// The options specified when a shutdown is requested.
+// TODO(https://fxbug.dev/414413282): migrate to ShutdownReason once available and promote to NEXT.
+@available(added=HEAD)
+type ShutdownOptions = table {
+    1: action ShutdownAction;
+
+    /// The set of shutdown reasons that are responsible for this shutdown request.
+    // When calling `Admin.Shutdown`, the majority of clients need only
+    // specify a single reason. Contact OWNERS if you believe your use case
+    // warrants providing multiple reasons.
+    2: reasons vector<RebootReason2>:MAX_SHUTDOWN_REASONS;
 };
 
 /// Allows components to register a callback that will be executed when a Reboot
@@ -178,6 +235,9 @@ closed protocol RebootMethodsWatcher {
 /// before the system power state is changed. The channel will be used once to
 /// send a notification to the watcher. Once the watcher responds or the timeout
 /// expires, the channel will be closed by the client of RebootWatcher.
+//
+// TODO(https://fxbug.dev/414413282): migrate to a new ShutdownWatcher protocol that uses
+// ShutdownOptions.
 @available(added=26)
 closed protocol RebootWatcher {
     strict OnReboot(struct {

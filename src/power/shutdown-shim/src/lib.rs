@@ -6,12 +6,13 @@ mod shutdown_watcher;
 
 use crate::reboot_reasons::RebootReasons;
 use crate::shutdown_watcher::ShutdownWatcher;
-use anyhow::{format_err, Context};
-use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
+use anyhow::{Context, format_err};
 use fidl::HandleBased;
+use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMexecRequest, AdminRequest, AdminRequestStream, RebootMethodsWatcherRegisterRequestStream,
-    RebootOptions, RebootReason, RebootReason2,
+    AdminMexecRequest, AdminRequest, AdminRequestStream, AdminShutdownResponder,
+    RebootMethodsWatcherRegisterRequestStream, RebootReason, RebootReason2, ShutdownAction,
+    ShutdownOptions,
 };
 use fidl_fuchsia_power::CollaborativeRebootInitiatorRequestStream;
 use fidl_fuchsia_power_internal::{
@@ -156,6 +157,9 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                 AdminRequest::PowerFullyOn { responder, .. } => {
                     let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
                 }
+                AdminRequest::Shutdown { options, responder } => {
+                    self.shutdown_request(options, responder).await;
+                }
                 // TODO(https://fxbug.dev/385742868): Delete this method once
                 // it's removed from the API.
                 AdminRequest::Reboot { reason, responder } => {
@@ -176,28 +180,33 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::PerformReboot { options, responder } => {
-                    let res = self.perform_reboot(options).await;
+                    let reasons = match options.reasons {
+                        Some(reasons) => Some(RebootReasons(reasons)),
+                        None => None,
+                    };
+
+                    let target_state = if reasons
+                        .as_ref()
+                        .is_some_and(|reasons| reasons.0.contains(&RebootReason2::OutOfMemory))
+                    {
+                        SystemPowerState::RebootKernelInitiated
+                    } else {
+                        SystemPowerState::Reboot
+                    };
+
+                    let res = self.shutdown(target_state, reasons).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::RebootToBootloader { responder } => {
-                    let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-                    let target_state = SystemPowerState::RebootBootloader;
-                    set_system_power_state(target_state);
-                    let res = self.forward_command(target_state, None, None).await;
+                    let res = self.shutdown(SystemPowerState::RebootBootloader, None).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::RebootToRecovery { responder } => {
-                    let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-                    let target_state = SystemPowerState::RebootRecovery;
-                    set_system_power_state(target_state);
-                    let res = self.forward_command(target_state, None, None).await;
+                    let res = self.shutdown(SystemPowerState::RebootRecovery, None).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::Poweroff { responder } => {
-                    let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-                    let target_state = SystemPowerState::Poweroff;
-                    set_system_power_state(target_state);
-                    let res = self.forward_command(target_state, None, None).await;
+                    let res = self.shutdown(SystemPowerState::Poweroff, None).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::SuspendToRam { responder } => {
@@ -236,6 +245,50 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
         }
     }
 
+    async fn shutdown_request(&self, options: ShutdownOptions, responder: AdminShutdownResponder) {
+        let Some(action) = options.action else {
+            println!("[shutdown-shim]: error, shutdown action must be specified");
+            let _ = responder.send(Err(zx::Status::INVALID_ARGS.into_raw()));
+            return;
+        };
+
+        let reasons = options.reasons.filter(|reasons| !reasons.is_empty()).map(RebootReasons);
+
+        match action {
+            ShutdownAction::Reboot => {
+                let target_state = if reasons
+                    .as_ref()
+                    .is_some_and(|reasons| reasons.0.contains(&RebootReason2::OutOfMemory))
+                {
+                    SystemPowerState::RebootKernelInitiated
+                } else {
+                    SystemPowerState::Reboot
+                };
+
+                let res = self.shutdown(target_state, reasons).await;
+                let _ = responder.send(res.map_err(|s| s.into_raw()));
+            }
+            ShutdownAction::RebootToBootloader => {
+                let res = self.shutdown(SystemPowerState::RebootBootloader, None).await;
+                let _ = responder.send(res.map_err(|s| s.into_raw()));
+            }
+            ShutdownAction::RebootToRecovery => {
+                let res = self.shutdown(SystemPowerState::RebootRecovery, None).await;
+                let _ = responder.send(res.map_err(|s| s.into_raw()));
+            }
+            ShutdownAction::Poweroff => {
+                let res = self.shutdown(SystemPowerState::Poweroff, None).await;
+                let _ = responder.send(res.map_err(|s| s.into_raw()));
+            }
+            ShutdownAction::__SourceBreaking { unknown_ordinal } => {
+                println!(
+                    "[shutdown-shim]: error, unrecognized shutdown action ordinal '{unknown_ordinal}'"
+                );
+                let _ = responder.send(Err(zx::Status::INVALID_ARGS.into_raw()));
+            }
+        }
+    }
+
     async fn handle_system_state_transition(&self, mut stream: SystemStateTransitionRequestStream) {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
@@ -261,24 +314,14 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
         }
     }
 
-    // A handler for the `Admin.PerformReboot` method.
-    async fn perform_reboot(&self, options: RebootOptions) -> Result<(), zx::Status> {
-        println!("[shutdown-shim] rebooting with reasons [{:?}]", options.reasons);
+    async fn shutdown(
+        &self,
+        target_state: SystemPowerState,
+        reasons: Option<RebootReasons>,
+    ) -> Result<(), zx::Status> {
+        println!("[shutdown-shim] shutdown with reasons [{:?}]", reasons);
         let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-        let target_state = if options
-            .reasons
-            .as_ref()
-            .is_some_and(|reasons| reasons.contains(&RebootReason2::OutOfMemory))
-        {
-            SystemPowerState::RebootKernelInitiated
-        } else {
-            SystemPowerState::Reboot
-        };
         set_system_power_state(target_state);
-        let reasons = match options.reasons {
-            Some(reasons) => Some(RebootReasons(reasons)),
-            None => None,
-        };
         self.forward_command(target_state, reasons, None).await
     }
 
@@ -387,7 +430,7 @@ impl<D: Directory + AsRefDirectory> collaborative_reboot::RebootActuator for Pro
                 CollaborativeRebootReason::SystemUpdate => RebootReason2::SystemUpdate,
             })
             .collect();
-        self.perform_reboot(RebootOptions { reasons: Some(reasons), ..Default::default() }).await
+        self.shutdown(SystemPowerState::Reboot, Some(RebootReasons(reasons))).await
     }
 }
 
