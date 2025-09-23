@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result, anyhow};
-use ffx_config::{EnvironmentContext, SdkRoot, global_env_context};
+use ffx_config::{EnvironmentContext, SdkRoot};
 use ffx_executor::{CommandOutput, FfxExecutor};
 use sdk::FfxSdkConfig;
 use serde::Serialize;
@@ -244,17 +244,6 @@ impl Isolate {
         // callers should call `ffx_config::cache_invalidate()` if they will be
         // querying config values, e.g. "log.dir".
         Ok(Isolate { tmpdir, log_dir, env_ctx })
-    }
-
-    /// Simple wrapper around [`Isolate::new_with_search`] for situations where all you
-    /// have is the path to ffx. You should prefer to use [`Isolate::new_with_sdk`] or
-    /// [`Isolate::new_in_test`] if you can.
-    pub async fn new(name: &str, ffx_path: PathBuf, ssh_key: PathBuf) -> Result<Self> {
-        // assume subtools are in the same directory as the ffx that ran this
-        let subtool_search_paths = ffx_path.parent().map_or_else(|| vec![], |p| vec![p.to_owned()]);
-        let search = SearchContext::Runtime { ffx_path, sdk_root: None, subtool_search_paths };
-        let env_context = global_env_context().context("No global context")?;
-        Self::new_with_search(name, search, ssh_key, &env_context).await
     }
 
     /// Use this when building an isolation environment from within an ffx subtool
