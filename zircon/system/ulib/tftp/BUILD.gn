@@ -40,7 +40,7 @@ group("tests") {
 }
 
 if (!is_kernel) {
-  zx_host_tool("tftp-example") {
+  executable("tftp-example") {
     sources = [ "tftp-example.c" ]
     deps = [ ":tftp" ]
   }

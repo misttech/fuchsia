@@ -3,12 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/go/go_binary.gni")
+import("//build/sdk/sdk_host_tool.gni")
 import("//build/zbi/zbi.gni")
 import("//build/zbi/zbi_input.gni")
-import("//build/zircon/migrated_targets.gni")
 import("zbi_item.gni")
 
-zx_host_tool("zbi") {
+executable("zbi") {
   sources = [ "zbi.cc" ]
   deps = [
     "//sdk/lib/stdcompat",
@@ -22,6 +22,14 @@ zx_host_tool("zbi") {
     "//zircon/third_party/ulib/lz4",
   ]
   defines = [ "ZSTD_STATIC_LINKING_ONLY" ]
+}
+
+if (is_host) {
+  sdk_host_tool("zbi_sdk") {
+    category = "partner"
+    output_name = "zbi"
+    deps = [ ":zbi" ]
+  }
 }
 
 group("tests") {

@@ -2,12 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/zircon/migrated_targets.gni")
-
 lz4_lib = "//third_party/lz4/lib"
 lz4_programs = "//third_party/lz4/programs"
 
-zx_host_tool("lz4") {
+executable("lz4") {
   sources = [
     "$lz4_programs/bench.c",
     "$lz4_programs/datagen.c",
@@ -18,8 +16,10 @@ zx_host_tool("lz4") {
   deps = [ "//zircon/third_party/ulib/lz4" ]
 
   defines = [ "XXH_NAMESPACE=LZ4_" ]
-  include_dirs = [ "$lz4_lib" ]
+  include_dirs = [ lz4_lib ]
 
-  configs += [ "//build/config:Wno-conversion" ]
-  configs += [ "//build/config:Wno-implicit-fallthrough" ]
+  configs += [
+    "//build/config:Wno-conversion",
+    "//build/config:Wno-implicit-fallthrough",
+  ]
 }
