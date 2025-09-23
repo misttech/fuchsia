@@ -53,6 +53,7 @@ Prior to building a custom Rust toolchain for Fuchsia, you need to do the follow
    HOST_TRIPLE={{ '<var>' }}x86_64-unknown-linux-gnu{{ '</var>' }}
    CIPD_DIR=$DEV_ROOT/cipd
 
+   mkdir -p $CIPD_DIR
    cat << "EOF" > ${CIPD_DIR}/cipd.ensure
    fuchsia/third_party/clang/${platform} latest
    fuchsia/third_party/cmake/${platform} integration
