@@ -355,6 +355,7 @@ class DebugSymbolCommandState(object):
         ninja: Path,
         build_dir: Path,
         resolve_build_ids: bool = True,
+        keep_duplicates: bool = False,
         test_mode: bool = False,
     ) -> None:
         import debug_symbols
@@ -363,6 +364,7 @@ class DebugSymbolCommandState(object):
         self._ninja = ninja
         self._build_dir = build_dir
         self._debug_parser = debug_symbols.DebugSymbolsManifestParser(build_dir)
+        self._merge_duplicates = not keep_duplicates
 
         if resolve_build_ids:
             self._debug_parser.enable_build_id_resolution()
@@ -401,6 +403,8 @@ class DebugSymbolCommandState(object):
 
         try:
             self._debug_parser.parse_manifest_json(manifest_json, module.path)
+            if self._merge_duplicates:
+                self._debug_parser.deduplicate_entries()
         except ValueError as e:
             return _printerr(str(e))
         return 0
@@ -415,8 +419,9 @@ def cmd_print_debug_symbols(args: argparse.Namespace) -> int:
         args.modules,
         get_ninja_path(args.fuchsia_dir, args.host_tag),
         args.build_dir,
-        args.resolve_build_ids,
-        args.test_mode,
+        resolve_build_ids=args.resolve_build_ids,
+        keep_duplicates=args.keep_duplicates,
+        test_mode=args.test_mode,
     )
 
     status = state.parse_manifest(bool(args.last_build_only))
@@ -444,6 +449,7 @@ def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
         get_ninja_path(args.fuchsia_dir, args.host_tag),
         args.build_dir,
         resolve_build_ids=True,  # Always resolve the .build-id value
+        keep_duplicates=args.keep_duplicates,
         test_mode=args.test_mode,
     )
 
@@ -720,6 +726,11 @@ def main(main_args: T.Sequence[str]) -> int:
         help="Force resolution of build-id values.",
     )
     print_debug_symbols_parser.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help="Keep duplicate entries, only used for debugging.",
+    )
+    print_debug_symbols_parser.add_argument(
         "--test-mode", action="store_true", help="For regression tests only."
     )
     LastBuildApiFilter.add_parser_arguments(print_debug_symbols_parser)
@@ -813,6 +824,11 @@ def main(main_args: T.Sequence[str]) -> int:
         type=Path,
         required=True,
         help="Output directory, this will be cleaned before generation.",
+    )
+    export_last_build_debug_symbols_parser.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help="Keep duplicate entries, only used for debugging this command.",
     )
     export_last_build_debug_symbols_parser.add_argument(
         "--no-breakpad-symbols-generation",

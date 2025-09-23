@@ -117,6 +117,7 @@ class DebugSymbolsManifestParser(object):
     def set_build_id_callback_for_test(
         self, get_build_id: T.Callable[[str | Path], str]
     ) -> None:
+        """Override the function used to compute the BuildID, only used for tests."""
         self._get_build_id = get_build_id
 
     @property
@@ -250,6 +251,15 @@ class DebugSymbolsManifestParser(object):
     def parse_manifest_json(
         self, manifest_json: T.Any, manifest_path: Path
     ) -> None:
+        """Parse a given debug_symbols manifest JSON value.
+
+        Args:
+            manifest_json: The input manifest as a JSON value
+            (i.e. a list of dictionaries).
+        Raises:
+            ValueError if the manifest, or one of its includes is
+            malformed, or if there is a cycle in the include chain.
+        """
         if not isinstance(manifest_json, list):
             raise ValueError(
                 f"Malformed manifest at {manifest_path}: expected list, got {type(manifest_json)}"
@@ -257,6 +267,92 @@ class DebugSymbolsManifestParser(object):
 
         for entry in manifest_json:
             self._parse_entry(entry, manifest_path)
+
+    def deduplicate_entries(self) -> None:
+        """Deduplicate entries after parsing.
+
+        Duplicate entries are possible when dealing with prebuilt symbols, for
+        example:
+
+        - The {BUILD}/gen/build/prebuilt/prebuilt_symbols.json file
+          is created by //build/prebuilt:prebuilt which parses the content
+          of //prebuilt/.build-id/ and generates breakpad symbol files
+          directly into {BUILD}/.build-id for them. The entries in this
+          manifest do not have a "label" key though. E.g.:
+
+            {
+              "breakpad": ".build-id/63/cd5f4d7cfa5a487cd50446b34023eb9a68fad6.sym",
+              "cpu": "arm64",
+              "debug": "../../prebuilt/.build-id/63/cd5f4d7cfa5a487cd50446b34023eb9a68fad6.debug",
+              "elf_build_id": "63cd5f4d7cfa5a487cd50446b34023eb9a68fad6",
+              "os": "fuchsia"
+            },
+
+        - The {BUILD}/obj/src/connectivity/bluetooth/core/bt-host/bt-host.debug_symbols.json
+          manifest contains labelled entries for some of the same prebuilt binaries,
+          but without any "breakpad" key.
+
+            {
+              "cpu": "arm64",
+              "debug": "../../prebuilt/.build-id/63/cd5f4d7cfa5a487cd50446b34023eb9a68fad6.debug",
+              "dest_path": "bin/bt_host",
+              "elf_build_id": "63cd5f4d7cfa5a487cd50446b34023eb9a68fad6",
+              "label": "//src/connectivity/bluetooth/core/bt-host:bt-host.package(//build/toolchain/fuchsia:arm64)",
+              "os": "fuchsia"
+            },
+
+        Deduplication verifies that there are no conflicts between entries pointing
+        to the same "debug" path, and merges the keys to keep all information.
+
+        This updates self._entries and should be called after a call to
+        parse_manifest_json() or parse_manifest_file().
+
+        Raises:
+            ValueError when duplicates are found. The exception string contains
+            a newline-separated list of error messages.
+        """
+        debug_to_entries: dict[str, T.Any] = {}
+        errors: list[str] = []
+        new_entries = []
+        for entry in self._entries:
+            debug = entry["debug"]
+            cur_entry = debug_to_entries.get(debug, None)
+            if cur_entry is None:
+                debug_to_entries[debug] = entry
+                new_entries.append(entry)
+                continue
+
+            for key in (
+                "elf_build_id",
+                "elf_build_id_file",
+                "breakpad",
+                "gsym",
+                "label",
+                "cpu",
+                "os",
+                "dest_path",
+            ):
+                cur_value = cur_entry.get(key, "")
+                new_value = entry.get(key, "")
+                if cur_value == new_value:
+                    continue
+                if cur_value == "":
+                    cur_entry[key] = new_value
+                elif new_value != "":
+                    errors.append(
+                        f"Incompatible '{key}' value between {cur_entry} and {entry}"
+                    )
+
+            # If the merge resolved the BuildID value, drop the elf_build_id_file key.
+            if cur_entry.get("elf_build_id") and cur_entry.get(
+                "elf_build_id_file"
+            ):
+                cur_entry.drop("elf_build_id_file", None)
+
+        if errors:
+            raise ValueError("\n".join(errors))
+
+        self._entries = new_entries
 
 
 # Type of a callable object used to start a new command. First parameter

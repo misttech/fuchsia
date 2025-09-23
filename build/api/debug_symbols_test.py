@@ -13,7 +13,7 @@ import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, Path(__file__).parent)
+sys.path.insert(0, str(Path(__file__).parent))
 from debug_symbols import (
     CommandPool,
     DebugSymbolExporter,
@@ -63,7 +63,7 @@ def generate_elf_with_build_id(build_id: bytes) -> bytes:
             self.offset = roundup8(self.offset + write_size)
             return write_size
 
-        def add_struct(self, fmt: str, *args) -> int:
+        def add_struct(self, fmt: str, *args: T.Any) -> int:
             """Append a formatted struct, then pad with zeroes for 8 alignment."""
             if not self.enable_output:
                 write_size = struct.calcsize(fmt)
@@ -428,6 +428,128 @@ class DebugSymbolsManifestParserTest(unittest.TestCase):
             {a_build_id_file, self._root / "b/libbar.so.unstripped"},
         )
 
+    def test_deduplicate_entries(self) -> None:
+        # Check that duplicates are merged, but other items are kept.
+        manifest = [
+            {
+                "label": "//src:label_1",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+            },
+            {
+                "label": "//src:label_2",
+                "debug": "../../prebuilt/.build-id/55/67676767.debug",
+                "elf_build_id": "5567676767",
+            },
+            {
+                "label": "//src:label_1",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+            },
+            {
+                "label": "//src:label_3",
+                "debug": "../../prebuilt/.build-id/00/11223344.debug",
+                "elf_build_id": "0011223344",
+            },
+        ]
+
+        parser = DebugSymbolsManifestParser(self._root)
+        parser.parse_manifest_json(manifest, "manifest.json")
+        parser.deduplicate_entries()
+        self.assertListEqual(
+            parser.entries,
+            [
+                {
+                    "label": "//src:label_1",
+                    "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                    "elf_build_id": "123456789",
+                },
+                {
+                    "label": "//src:label_2",
+                    "debug": "../../prebuilt/.build-id/55/67676767.debug",
+                    "elf_build_id": "5567676767",
+                },
+                {
+                    "label": "//src:label_3",
+                    "debug": "../../prebuilt/.build-id/00/11223344.debug",
+                    "elf_build_id": "0011223344",
+                },
+            ],
+        )
+
+        # Check that merging duplicates propagates label and dest_path
+        manifest = [
+            {
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+            },
+            {
+                "label": "//src:label_1",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "dest_path": "bin/prog",
+            },
+        ]
+
+        parser = DebugSymbolsManifestParser(self._root)
+        parser.parse_manifest_json(manifest, "manifest.json")
+        parser.deduplicate_entries()
+        self.assertListEqual(
+            parser.entries,
+            [
+                {
+                    "label": "//src:label_1",
+                    "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                    "elf_build_id": "123456789",
+                    "dest_path": "bin/prog",
+                },
+            ],
+        )
+
+        # Check that duplicates with conflicting elf_build_id values are detected.
+        manifest = [
+            {
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+            },
+            {
+                "label": "//src:label_1",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "abcdef012",
+            },
+        ]
+        parser = DebugSymbolsManifestParser(self._root)
+        parser.parse_manifest_json(manifest, "manifest.json")
+        with self.assertRaises(ValueError) as cm:
+            parser.deduplicate_entries()
+        self.assertTrue(
+            str(cm.exception).startswith(
+                "Incompatible 'elf_build_id' value between "
+            )
+        )
+
+        # Check that the input manifest is unchanged when there are no duplicates.
+        manifest = [
+            {
+                "label": "//src:label_1",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+            },
+            {
+                "label": "//src:label_2",
+                "debug": "../../prebuilt/.build-id/55/67676767.debug",
+                "elf_build_id": "5567676767",
+            },
+            {
+                "label": "//src:label_3",
+                "debug": "../../prebuilt/.build-id/00/11223344.debug",
+                "elf_build_id": "0011223344",
+            },
+        ]
+        parser = DebugSymbolsManifestParser(self._root)
+        parser.parse_manifest_json(manifest, "manifest.json")
+        parser.deduplicate_entries()
+        self.assertListEqual(parser.entries, manifest)
+
 
 class CommandPoolTest(unittest.TestCase):
     def test_run(self) -> None:
@@ -451,7 +573,10 @@ class CommandPoolTest(unittest.TestCase):
                 max_running = len(running_commands)
             events_log.append((cmd_id, "start", len(running_commands)))
             return subprocess.Popen(
-                cmd_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                cmd_args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
             )
 
         def process_result(

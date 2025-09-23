@@ -656,7 +656,10 @@ build_api_module("debug_symbols") {
     "debug_symbol_files",
     "debug_symbol_manifests",
   ]
-  deps = [ ":default" ]
+  deps = [
+    ":default",
+    "//:prebuilt_binaries",
+  ]
 }
 
 # Lists the board configurations that are defined in this build.
