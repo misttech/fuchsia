@@ -31,6 +31,10 @@ pub struct StartCommand {
     /// specify the device nodename ffx going to monitor
     pub nodename: Option<String>,
 
+    #[argh(option)]
+    /// specify the port ffx monitor going to listen on
+    pub port: Option<u16>,
+
     #[argh(switch, description = "do not connect to targets (local discovery only)")]
     pub no_probe: bool,
 

@@ -45,7 +45,7 @@
     },
     "monitor": {
         "pid_file": "$SHARED_DATA/monitor/ffx_monitor.pid",
-        "port": 8080
+        "port_file": "$SHARED_DATA/monitor/ffx_monitor.port"
     },
     "ssh": {
         "controlmaster": {

@@ -28,10 +28,11 @@ use crate::args::StartCommand;
 
 // Default value of these can be found in //src/developer/ffx/data/config.json
 const CONFIG_PID_FILE: &str = "monitor.pid_file";
-const CONFIG_PORT: &str = "monitor.port";
+const CONFIG_PORT_FILE: &str = "monitor.port_file";
 
 const LOCAL_SERVER_IP_ADDRESS: &str = "127.0.0.1";
 const LOCAL_SERVER_IP_ADDRESS_ARRAY: [u8; 4] = [127, 0, 0, 1];
+const DEFAULT_MONITOR_PORT: u16 = 8080;
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -147,10 +148,9 @@ impl FfxMain for MonitorTool {
             .context
             .get(CONFIG_PID_FILE)
             .map_err(|e| fho::Error::from(anyhow::anyhow!("Failed to get pid file path: {}", e)))?;
-        let port: u16 = self
-            .context
-            .get(CONFIG_PORT)
-            .map_err(|e| fho::Error::from(anyhow::anyhow!("Failed to get port: {}", e)))?;
+        let port_file_path: String = self.context.get(CONFIG_PORT_FILE).map_err(|e| {
+            fho::Error::from(anyhow::anyhow!("Failed to get port file path: {}", e))
+        })?;
         match self.cmd.subcommand {
             SubCommand::Start(cmd) => {
                 let pid = std::process::id();
@@ -158,6 +158,16 @@ impl FfxMain for MonitorTool {
                     fs::create_dir_all(parent).context("creating pid file directory")?;
                 }
                 fs::write(&pid_file_path, pid.to_string()).context("writing pid file")?;
+
+                let port = match cmd.port {
+                    Some(port) => port,
+                    None => DEFAULT_MONITOR_PORT,
+                };
+
+                if let Some(parent) = Path::new(&port_file_path).parent() {
+                    fs::create_dir_all(parent).context("creating pid file directory")?;
+                }
+                fs::write(&port_file_path, port.to_string()).context("writing port file")?;
 
                 let addr = SocketAddr::from((LOCAL_SERVER_IP_ADDRESS_ARRAY, port));
                 writeln!(writer, "Starting server on http://{} with pid {}", addr, pid)
@@ -176,6 +186,9 @@ impl FfxMain for MonitorTool {
                 Ok(())
             }
             SubCommand::Status(_) => {
+                let port_str = fs::read_to_string(&port_file_path).context("reading port file")?;
+                let port: u16 = port_str.trim().parse().context("parsing port")?;
+
                 let url = format!("http://{}:{}/status", LOCAL_SERVER_IP_ADDRESS, port);
                 let client = fuchsia_hyper::new_client();
                 let response = client
