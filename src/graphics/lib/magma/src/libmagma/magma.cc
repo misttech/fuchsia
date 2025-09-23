@@ -330,14 +330,6 @@ magma_status_t magma_connection_execute_command(magma_connection_t connection, u
   return magma::PlatformConnectionClient::cast(connection)->ExecuteCommand(context_id, descriptor);
 }
 
-magma_status_t magma_connection_execute_immediate_commands(
-    magma_connection_t connection, uint32_t context_id, uint64_t command_count,
-    magma_inline_command_buffer* command_buffers) {
-  uint64_t messages_sent;
-  return magma::PlatformConnectionClient::cast(connection)
-      ->ExecuteInlineCommands(context_id, command_count, command_buffers, &messages_sent);
-}
-
 magma_status_t magma_connection_execute_inline_commands(
     magma_connection_t connection, uint32_t context_id, uint64_t command_count,
     magma_inline_command_buffer* command_buffers) {

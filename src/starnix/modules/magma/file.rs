@@ -40,8 +40,6 @@ use magma::{
     virtio_magma_connection_create_semaphore_ctrl_t,
     virtio_magma_connection_create_semaphore_resp_t,
     virtio_magma_connection_execute_command_ctrl_t, virtio_magma_connection_execute_command_resp_t,
-    virtio_magma_connection_execute_immediate_commands_ctrl_t,
-    virtio_magma_connection_execute_immediate_commands_resp_t,
     virtio_magma_connection_execute_inline_commands_ctrl_t,
     virtio_magma_connection_execute_inline_commands_resp_t, virtio_magma_connection_flush_ctrl_t,
     virtio_magma_connection_flush_resp_t, virtio_magma_connection_get_error_ctrl_t,
@@ -73,7 +71,6 @@ use magma::{
     virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_CONTEXT2,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_SEMAPHORE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_COMMAND,
-    virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_INLINE_COMMANDS,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_FLUSH,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_GET_ERROR,
@@ -106,7 +103,6 @@ use magma::{
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_CONTEXT2,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_SEMAPHORE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_COMMAND,
-    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_INLINE_COMMANDS,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_ERROR,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_GET_NOTIFICATION_CHANNEL_HANDLE,
@@ -1103,33 +1099,6 @@ impl FileOps for MagmaFile {
                 response.result_return = status as u64;
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_COMMAND as u32;
-                current_task.write_object(UserRef::new(response_address), &response)
-            }
-            virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS => {
-                let (control, mut response): (
-                    virtio_magma_connection_execute_immediate_commands_ctrl_t,
-                    virtio_magma_connection_execute_immediate_commands_resp_t,
-                ) = read_control_and_response(current_task, &command)?;
-
-                let control = virtio_magma_connection_execute_inline_commands_ctrl_t {
-                    hdr: control.hdr,
-                    connection: control.connection,
-                    context_id: control.context_id,
-                    command_count: control.command_count,
-                    command_buffers: control.command_buffers,
-                };
-                let connection = self.get_connection(control.connection)?;
-
-                let status =
-                    execute_inline_commands(current_task, control, &connection, |semaphore_id| {
-                        self.get_semaphore(semaphore_id)
-                    })?;
-
-                response.hdr.type_ =
-                    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS
-                        as u32;
-                response.result_return = status as u64;
-
                 current_task.write_object(UserRef::new(response_address), &response)
             }
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_INLINE_COMMANDS => {

@@ -191,7 +191,7 @@ unsafe extern "C" {
     pub fn magma_device_release(device: magma_device_t);
 }
 unsafe extern "C" {
-    #[doc = "\n \\brief Returns information describing the magma devices that are available.  Returns:\n        MAGMA_STATUS_MEMORY_ERROR if |device_count_inout| is insufficient;\n        MAGMA_STATUS_INVALID_ARGS if |device_path_size| is insufficient.\n \\param device_namespace Namespace corresponding to the |device_directory_channel|; this should\n        be MAGMA_DEVICE_NAMESPACE.  Used only on Fuchsia.\n \\param device_directory_channel Channel used for reading devices from |device_namespace|.  Used\n        only on Fuchsia.\n \\param device_count_inout The number of array elements in |device_paths_out|. On success, will\n        be set to the number of elements written.\n \\param device_path_size Size of each entry in |device_paths_out|.  PATH_MAX should be\n        sufficient.\n \\param device_paths_out Pointer to storage for magma device paths.  The buffer's size in bytes\n        should be |*device_count_inout| * |device_path_size|.\n"]
+    #[doc = "\n \\brief Returns information describing the magma devices that are available. NOTE - this is\n        appropriate for use only if devices are guaranteed to be present at the time the call is\n        made. On Fuchsia, this guarantee is provided by the loader design for Vulkan ICDs. Other\n        asynchronous environments may require a directory watcher mechanism to handle racy\n        startup conditions. Returns: MAGMA_STATUS_MEMORY_ERROR if |device_count_inout| is\n        insufficient; MAGMA_STATUS_INVALID_ARGS if |device_path_size| is insufficient.\n \\param device_namespace Namespace corresponding to the |device_directory_channel|; this should\n        be MAGMA_DEVICE_NAMESPACE.  Used only on Fuchsia.\n \\param device_directory_channel Channel used for reading devices from |device_namespace|.  Used\n        only on Fuchsia.\n \\param device_count_inout The number of array elements in |device_paths_out|. On success, will\n        be set to the number of elements written.\n \\param device_path_size Size of each entry in |device_paths_out|.  PATH_MAX should be\n        sufficient.\n \\param device_paths_out Pointer to storage for magma device paths.  The buffer's size in bytes\n        should be |*device_count_inout| * |device_path_size|.\n"]
     pub fn magma_enumerate_devices(
         device_namespace: *const ::std::os::raw::c_char,
         device_directory_channel: magma_handle_t,
@@ -727,8 +727,6 @@ pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_UNMAP_BUFFER: virti
     4179;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_COMMAND:
     virtio_magma_ctrl_type = 4176;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS:
-    virtio_magma_ctrl_type = 4129;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_EXECUTE_INLINE_COMMANDS:
     virtio_magma_ctrl_type = 4130;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_FLUSH: virtio_magma_ctrl_type = 4175;
@@ -809,8 +807,6 @@ pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_UNMAP_BUFFER: virt
     8275;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_COMMAND:
     virtio_magma_ctrl_type = 8272;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_IMMEDIATE_COMMANDS:
-    virtio_magma_ctrl_type = 8225;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_EXECUTE_INLINE_COMMANDS:
     virtio_magma_ctrl_type = 8226;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_FLUSH: virtio_magma_ctrl_type = 8271;
@@ -1194,25 +1190,6 @@ pub struct virtio_magma_connection_execute_command_resp {
 }
 pub type virtio_magma_connection_execute_command_resp_t =
     virtio_magma_connection_execute_command_resp;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_connection_execute_immediate_commands_ctrl {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub connection: u64,
-    pub context_id: u32,
-    pub command_count: u64,
-    pub command_buffers: u64,
-}
-pub type virtio_magma_connection_execute_immediate_commands_ctrl_t =
-    virtio_magma_connection_execute_immediate_commands_ctrl;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_connection_execute_immediate_commands_resp {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub result_return: u64,
-}
-pub type virtio_magma_connection_execute_immediate_commands_resp_t =
-    virtio_magma_connection_execute_immediate_commands_resp;
 #[repr(C, packed)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
 pub struct virtio_magma_connection_execute_inline_commands_ctrl {

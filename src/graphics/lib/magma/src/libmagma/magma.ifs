@@ -36,7 +36,6 @@ Symbols:
   - { Name: magma_connection_enable_performance_counter_access, Type: Func }
   - { Name: magma_connection_enable_performance_counters, Type: Func }
   - { Name: magma_connection_execute_command, Type: Func }
-  - { Name: magma_connection_execute_immediate_commands, Type: Func }
   - { Name: magma_connection_execute_inline_commands, Type: Func }
   - { Name: magma_connection_flush, Type: Func }
   - { Name: magma_connection_get_error, Type: Func }
