@@ -98,6 +98,10 @@ class FlatlandPixelTestBase : public ScenicCtfTest {
     zxtest::Test::TearDown();
   }
 
+  // `ScenicCtfTest`:
+  uint32_t DisplayMaxLayerCount() const override { return 4; }
+  bool DisplayComposition() const override { return true; }
+
   // Draws a rectangle of size |width|*|height|, color |color|, opacity |opacity| and origin
   // (|x|,|y|) in |flatland|'s view.
   // Note: |BlockingPresent| must be called after this function to present the rectangle on the
