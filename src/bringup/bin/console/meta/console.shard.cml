@@ -311,6 +311,16 @@
             to: "#console-launcher",
         },
         {
+            service: "fuchsia.power.battery.InfoService",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+        },
+        {
+            service: "fuchsia.power.battery.ChargerService",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+        },
+        {
             protocol: "fuchsia.paver.Paver",
             from: "#paver",
             to: "#console-launcher",

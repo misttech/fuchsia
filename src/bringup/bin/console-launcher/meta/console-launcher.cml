@@ -213,6 +213,14 @@
         },
         { service: "fuchsia.hardware.pty.Service" },
         {
+            service: "fuchsia.power.battery.InfoService",
+            availability: "optional",
+        },
+        {
+            service: "fuchsia.power.battery.ChargerService",
+            availability: "optional",
+        },
+        {
             protocol: [
                 "fuchsia.kernel.Counter",
                 "fuchsia.kernel.DebugBroker",

@@ -375,6 +375,7 @@
                 "fuchsia.hardware.usb.virtualbustest.Service",
                 "fuchsia.input.report.Service",
                 "fuchsia.lowpan.spinel.Service",
+                "fuchsia.power.battery.ChargerService",
                 "fuchsia.power.battery.InfoService",
                 "fuchsia.services.test.Device",
                 "fuchsia.tpm.Service",

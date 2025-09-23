@@ -1,0 +1,25 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/assembly/bootfs_files_for_assembly.gni")
+import("//build/components.gni")
+import("//build/test.gni")
+
+executable("batteryutil") {
+  visibility = [ ":*" ]
+  sources = [
+    "batteryutil.cc",
+    "main.cc",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/component/incoming/cpp",
+  ]
+}
+
+bootfs_files_for_assembly("bootfs") {
+  deps = [ ":batteryutil" ]
+}

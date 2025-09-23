@@ -343,5 +343,15 @@
             from: "parent",
             to: "#shell",
         },
+        {
+            service: "fuchsia.power.battery.InfoService",
+            from: "parent",
+            to: "#shell",
+        },
+        {
+            service: "fuchsia.power.battery.ChargerService",
+            from: "parent",
+            to: "#shell",
+        },
     ],
 }

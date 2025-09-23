@@ -605,6 +605,7 @@ assembly_input_bundle("bootstrap_eng") {
     "//src/devices/gpio/bin/gpioutil:bootfs",
     "//src/devices/i2c/bin:bootfs",
     "//src/devices/power/bin/lspwr:bootfs",
+    "//src/devices/power/bin/batteryutil:bootfs",
     "//src/devices/ram/bin/ram-info:bootfs",
     "//src/devices/registers/bin/register-util:bootfs",
     "//src/devices/serial/bin/serialutil:bootfs",
