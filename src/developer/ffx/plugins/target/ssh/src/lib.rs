@@ -5,6 +5,7 @@
 use addr::TargetIpAddr;
 use anyhow::Result;
 use async_trait::async_trait;
+use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
 use ffx_target_ssh_args::SshCommand;
@@ -23,6 +24,7 @@ pub struct SshTool {
     #[command]
     cmd: SshCommand,
     target_proxy: TargetProxyHolder,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(SshTool);
@@ -36,7 +38,7 @@ impl FfxMain for SshTool {
             .user_message("Timed out getting target ssh address")?
             .user_message("Failed to get target ssh address")?;
 
-        let addr = get_addr(&addr_info)?;
+        let addr = get_addr(&self.context, &addr_info)?;
         let mut ssh_cmd =
             make_ssh_command(self.cmd, addr).bug_context("Building command to ssh to target")?;
 
@@ -75,28 +77,19 @@ impl FfxMain for SshTool {
 /// pretend we're connecting to localhost because user networking is implemented as a port on the
 /// host machine.
 // TODO(https://fxbug.dev/42077822) this should not be required
-fn get_addr(addr_info: &TargetIpAddrInfo) -> fho::Result<TargetIpAddr> {
-    Ok(
-        match (
-            ffx_config::global_env_context()
-                .expect("ffx must run with a global env context")
-                .env_kind(),
-            addr_info,
-        ) {
-            // we only care about 10.* addresses if we're in an isolated environment
-            (
-                EnvironmentKind::Isolated { .. },
-                TargetIpAddrInfo::IpPort(TargetIpPort {
-                    ip: IpAddress::Ipv4(Ipv4Address { addr: [10, ..] }),
-                    port,
-                    ..
-                }),
-            ) => {
-                format!("127.0.0.1:{port}").parse().bug_context("Parsing localhost ssh address")?
-            }
-            _ => TargetIpAddr::from(addr_info),
-        },
-    )
+fn get_addr(ctx: &EnvironmentContext, addr_info: &TargetIpAddrInfo) -> fho::Result<TargetIpAddr> {
+    Ok(match (ctx.env_kind(), addr_info) {
+        // we only care about 10.* addresses if we're in an isolated environment
+        (
+            EnvironmentKind::Isolated { .. },
+            TargetIpAddrInfo::IpPort(TargetIpPort {
+                ip: IpAddress::Ipv4(Ipv4Address { addr: [10, ..] }),
+                port,
+                ..
+            }),
+        ) => format!("127.0.0.1:{port}").parse().bug_context("Parsing localhost ssh address")?,
+        _ => TargetIpAddr::from(addr_info),
+    })
 }
 
 fn make_ssh_command(cmd: SshCommand, addr: TargetIpAddr) -> Result<Command> {
