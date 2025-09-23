@@ -161,12 +161,11 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
     if args.bazel:
         bazel_args = [args.bazel]
     else:
-        bazel_launcher = build_utils.find_bazel_launcher_path(
-            args.fuchsia_dir, build_dir
-        )
-        if not bazel_launcher:
+        bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, build_dir)
+        bazel_launcher = bazel_paths.launcher
+        if not bazel_launcher.exists():
             return error_message("Cannot find Bazel launcher, use --bazel=PATH")
-        bazel_args = [bazel_launcher]
+        bazel_args = [str(bazel_launcher)]
 
     errors: list[str] = []
 

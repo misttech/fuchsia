@@ -282,6 +282,105 @@ class IsLikelyContentHashPathTest(unittest.TestCase):
             )
 
 
+class BazelPathsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = Path(self._td.name) / "fuchsia"
+        self.fuchsia_dir.mkdir()
+        (self.fuchsia_dir / ".jiri_manifest").write_text("")
+
+        self.build_dir = self.fuchsia_dir / "out" / "build_dir"
+        self.build_dir.mkdir(parents=True)
+        (self.fuchsia_dir / ".fx-build-dir").write_text("out/build_dir\n")
+
+        build_utils.BazelPaths.write_topdir_config_for_test(
+            self.fuchsia_dir, "some/top/dir"
+        )
+        self.launcher_path = self.build_dir / "some/top/dir/bazel"
+        self.workspace_path = self.build_dir / "some/top/dir/workspace"
+        self.output_base_path = self.build_dir / "some/top/dir/output_base"
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_new_with_no_valid_fuchsia_or_build_dirs(self) -> None:
+        saved_current_dir = Path.cwd()
+        try:
+            os.chdir(self._td.name)
+
+            # This fails because BazelPaths.new() cannot find a Fuchsia source directory
+            # from the current directory.
+            with self.assertRaises(ValueError) as cm:
+                build_utils.BazelPaths.new()
+            self.assertEqual(
+                str(cm.exception),
+                f"Could not find Fuchsia checkout directory from: {self._td.name}",
+            )
+        finally:
+            os.chdir(saved_current_dir)
+
+    def test_new_with_no_valid_build_dir(self) -> None:
+        saved_current_dir = Path.cwd()
+        (self.fuchsia_dir / ".fx-build-dir").write_text("out/does_not_exist")
+        try:
+            os.chdir(self._td.name)
+
+            # This fails because BazelPaths.new() cannot find a .fx-build-dir file from
+            # the Fuchsia source directory.
+            with self.assertRaises(ValueError) as cm:
+                paths = build_utils.BazelPaths.new(fuchsia_dir=self.fuchsia_dir)
+            self.assertEqual(
+                str(cm.exception),
+                f"Could not detect current build-directory from Fuchsia directory: {self.fuchsia_dir}",
+            )
+        finally:
+            os.chdir(saved_current_dir)
+
+    def test_new_with_fuchsia_dir_only(self) -> None:
+        paths = build_utils.BazelPaths.new(fuchsia_dir=self.fuchsia_dir)
+        self.assertTrue(paths)
+        self.assertEqual(paths.fuchsia_dir, self.fuchsia_dir)
+        self.assertEqual(paths.ninja_build_dir, self.build_dir)
+        self.assertEqual(paths.workspace, self.workspace_path)
+        self.assertEqual(paths.output_base, self.output_base_path)
+        self.assertEqual(paths.launcher, self.launcher_path)
+
+    def test_new_with_build_dir_only(self) -> None:
+        paths = build_utils.BazelPaths.new(build_dir=self.build_dir)
+        self.assertTrue(paths)
+        self.assertEqual(paths.fuchsia_dir, self.fuchsia_dir)
+        self.assertEqual(paths.ninja_build_dir, self.build_dir)
+        self.assertEqual(paths.workspace, self.workspace_path)
+        self.assertEqual(paths.output_base, self.output_base_path)
+        self.assertEqual(paths.launcher, self.launcher_path)
+
+    def test_new_with_fuchsia_and_build_dirs(self) -> None:
+        paths = build_utils.BazelPaths.new(
+            fuchsia_dir=self.fuchsia_dir, build_dir=self.build_dir
+        )
+        self.assertTrue(paths)
+        self.assertEqual(paths.fuchsia_dir, self.fuchsia_dir)
+        self.assertEqual(paths.ninja_build_dir, self.build_dir)
+        self.assertEqual(paths.workspace, self.workspace_path)
+        self.assertEqual(paths.output_base, self.output_base_path)
+        self.assertEqual(paths.launcher, self.launcher_path)
+
+    def test_write_topdir_config_for_test(self) -> None:
+        build_utils.BazelPaths.write_topdir_config_for_test(
+            self.fuchsia_dir, "some/other/topdir"
+        )
+        paths = build_utils.BazelPaths(self.fuchsia_dir, self.build_dir)
+        self.assertEqual(paths.top_dir, self.build_dir / "some/other/topdir")
+
+    def test_constructor(self) -> None:
+        paths = build_utils.BazelPaths(self.fuchsia_dir, self.build_dir)
+        self.assertEqual(paths.fuchsia_dir, self.fuchsia_dir)
+        self.assertEqual(paths.ninja_build_dir, self.build_dir)
+        self.assertEqual(paths.workspace, self.workspace_path)
+        self.assertEqual(paths.output_base, self.output_base_path)
+        self.assertEqual(paths.launcher, self.launcher_path)
+
+
 class MockCurrentTime(object):
     """A mock time.time() implementation used for TimeProfileTest.
 

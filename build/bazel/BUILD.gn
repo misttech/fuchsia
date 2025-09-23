@@ -22,7 +22,7 @@ assert(
     current_toolchain == default_toolchain,
     "This BUILD.gn file should only be parsed in the default toolchain, to prevent generating Bazel workspace multiple times.")
 
-# LINT.IfChange
+# LINT.IfChange(fuchsia_internal_only_idk_hash)
 generate_content_hash_file("fuchsia_internal_only_idk.hash") {
   source_paths = [ "$root_build_dir/sdk/exported/bazel_internal_only_idk" ]
   deps = [ "//sdk:bazel_internal_only_idk" ]

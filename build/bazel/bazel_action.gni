@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_inputs.gni")
-import("//build/bazel/bazel_workspace.gni")
 import("//build/bazel/logging.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/config/clang/clang.gni")
@@ -710,10 +709,10 @@ template("bazel_action") {
     outputs += _dedupe_stamps
 
     args = [
-             "--bazel-launcher",
-             rebase_path(bazel_launcher, root_build_dir),
-             "--workspace-dir",
-             rebase_path(bazel_workspace_dir, root_build_dir),
+             "--build-dir",
+             rebase_path(root_build_dir, root_build_dir),
+             "--fuchsia-dir",
+             rebase_path("//", root_build_dir),
              "--command",
              invoker.command,
              "--gn-target-label",

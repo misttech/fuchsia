@@ -47,6 +47,7 @@ def _get_ninja_output_dir(repo_ctx):
         relative to the current workspace root.
     """
 
+    # LINT.IfChange(bazel_topdir_config_file)
     # The config file at this location contains the location of the TOPDIR
     # used by //build/regenerator.py, e.g. `gen/build/bazel`. This code assumes
     # that the workspace is one of its sub-directories, so compute a
@@ -56,6 +57,8 @@ def _get_ninja_output_dir(repo_ctx):
         repo_ctx,
         "build/bazel/config/bazel_top_dir",
     )
+
+    # LINT.ThenChange(//build/bazel/bazel_workspace.gni:bazel_topdir_config_file)
     top_dir = repo_ctx.read(config_path).strip()
     num_fragments = len(top_dir.split("/"))
     result = ".."

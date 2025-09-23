@@ -16,9 +16,11 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
 
+# LINT.IfChange(gn_targets_dir_symlink)
 # Location of the @gn_targets redirection symlink, relative
 # to the Bazel workspace.
 GN_TARGETS_DIR_SYMLINK = "fuchsia_build_generated/gn_targets_dir"
+# LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
 
 # Separation character used by Bazel for extension-generated repo names.
 #
@@ -351,10 +353,14 @@ def record_fuchsia_workspace(
     python_prebuilt_dir = (
         fuchsia_dir / "prebuilt" / "third_party" / "python3" / host_tag
     )
-    output_base_dir = top_dir / "output_base"
-    output_user_root = top_dir / "output_user_root"
-    workspace_dir = top_dir / "workspace"
-    bazel_launcher = (top_dir / "bazel").resolve()
+    output_base_dir = top_dir / build_utils.BazelPaths.OUTPUT_BASE_FROM_TOP_DIR
+    output_user_root = (
+        top_dir / build_utils.BazelPaths.OUTPUT_USER_ROOT_FROM_TOP_DIR
+    )
+    workspace_dir = top_dir / build_utils.BazelPaths.WORKSPACE_FROM_TOP_DIR
+    bazel_launcher = (
+        top_dir / build_utils.BazelPaths.LAUNCHER_FROM_TOP_DIR
+    ).resolve()
 
     if log:
         log(
@@ -525,12 +531,10 @@ def record_fuchsia_workspace(
     )
     # LINT.ThenChange(//build/info/info.gni)
 
-    # LINT.IfChange
     generated.record_symlink(
         "workspace/fuchsia_build_generated/content_hashes",
         gn_output_dir / "regenerator_outputs" / "bazel_content_hashes",
     )
-    # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel)
 
     # Used when merging the IDK sub-build directories. For other use cases,
     # prefer a symlink with a narrower scope.
@@ -951,9 +955,13 @@ package(
             if file_links:
                 for file in file_links:
                     # Create //_files/{ninja_path} as a symlink to the Ninja output location.
+                    target_file = build_dir / file
+                    if not target_file.exists():
+                        target_file.parent.mkdir(parents=True, exist_ok=True)
+                        target_file.write_text("")
                     generated.record_raw_symlink(
                         f"{build_dir_name}/{file}",
-                        build_dir / file,
+                        target_file,
                     )
                     all_files.append(file)
 
@@ -976,8 +984,9 @@ filegroup(
             dir_link = entry.get("output_directory", "")
             if dir_link:
                 # Create //_files/{ninja_path} as a symlink to the real path.
+                target_dir = build_dir / dir_link
                 generated.record_raw_symlink(
-                    f"{build_dir_name}/{dir_link}", build_dir / dir_link
+                    f"{build_dir_name}/{dir_link}", target_dir
                 )
 
                 # NOTE: allow_empty is necessary when performing queries

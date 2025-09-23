@@ -545,10 +545,15 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    bazel_cmd = build_utils.BazelCommand.from_dirs(
-        fuchsia_dir=args.fuchsia_dir,
-        build_dir=args.build_dir,
-    )
+    bazel_paths = build_utils.BazelPaths.new(args.fuchsia_dir, args.build_dir)
+
+    bazel_launcher = bazel_paths.launcher
+    if not bazel_launcher.exists():
+        parser.error(
+            f"Could not find Bazel launcher script! fuchsia_dir={fuchsia_dir} build_dir={build_dir}"
+        )
+
+    bazel_cmd = build_utils.BazelCommand(bazel_launcher)
 
     # Now query each target to get its executable and runfiles_manifest path
     # in the output base, then load the runfiles manifest.
@@ -569,7 +574,9 @@ def main() -> int:
         test_info = HostTestInfo(test_entry, host_info, args.export_subdir)
         tests_map[test_entry["label"]] = test_info
 
-    context = CommandContext(args, build_dir, tests_map, bazel_cmd)
+    context = CommandContext(
+        args, bazel_paths.ninja_build_dir, tests_map, bazel_cmd
+    )
     return args.func(args, context)
 
 

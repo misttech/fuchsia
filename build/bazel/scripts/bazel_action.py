@@ -16,12 +16,14 @@ import shutil
 import stat
 import sys
 import typing as T
+from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
 import thread_pool_helpers
 import workspace_utils
+from build_utils import FilePath
 
 _BUILD_BAZEL_DIR = os.path.dirname(_SCRIPT_DIR)
 
@@ -30,14 +32,6 @@ _STARLARK_DIR = os.path.join(_BUILD_BAZEL_DIR, "starlark")
 
 # Directory where to find templated files.
 _TEMPLATE_DIR = os.path.join(_BUILD_BAZEL_DIR, "templates")
-
-# A type for the JSON-decoded content describing the @gn_targets repository.
-GnTargetsManifest: T.TypeAlias = list[dict[str, T.Any]]
-
-# The name of the root Bazel workspace as it appears in its MODULE.bazel file.
-# LINT.IfChange
-_BAZEL_ROOT_WORKSPACE_NAME = "_main"
-# LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel)
 
 # A list of built-in Bazel workspaces like @bazel_tools// which are actually
 # stored in the prebuilt Bazel install_base directory with a timestamp *far* in
@@ -326,7 +320,7 @@ def debug(msg: str) -> None:
         print("BAZEL_ACTION_DEBUG: " + msg, file=sys.stderr)
 
 
-def get_input_starlark_file_path(filename: str) -> str:
+def get_input_starlark_file_path(filename: FilePath) -> str:
     """Return the path of a input starlark file for Bazel queries.
 
     Args:
@@ -339,14 +333,14 @@ def get_input_starlark_file_path(filename: str) -> str:
     return result
 
 
-def make_writable(p: str) -> None:
+def make_writable(p: FilePath) -> None:
     file_mode = os.stat(p).st_mode
     is_readonly = file_mode & stat.S_IWUSR == 0
     if is_readonly:
         os.chmod(p, file_mode | stat.S_IWUSR)
 
 
-def copy_writable(src: str, dst: str) -> None:
+def copy_writable(src: FilePath, dst: FilePath) -> None:
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(src, dst)
     make_writable(dst)
@@ -401,7 +395,7 @@ def hardlink_or_copy_writable(
 
 
 def copy_directory_if_changed(
-    src_dir: str, dst_dir: str, tracked_files: list[str]
+    src_dir: FilePath, dst_dir: FilePath, tracked_files: list[FilePath]
 ) -> None:
     """Copy directory from |src_path| to |dst_path| if |tracked_files| have different mtimes.
 
@@ -418,7 +412,7 @@ def copy_directory_if_changed(
     ), "{} is not a dir, but copy dir is called.".format(src_dir)
 
     def all_tracked_files_unchanged(
-        src_dir: str, dst_dir: str, tracked_files: list[str]
+        src_dir: FilePath, dst_dir: FilePath, tracked_files: list[FilePath]
     ) -> bool:
         """Use __mtime__ to determine whether any tracke file has changed.
 
@@ -445,7 +439,7 @@ def copy_directory_if_changed(
     copy_directory_threaded(src_dir, dst_dir)
 
 
-def rmtree_threaded(dirname: str) -> None:
+def rmtree_threaded(dirname: FilePath) -> None:
     """Uses a threadpool to delete all the files in a directory tree faster than shutil.rmtree().
 
     This is about 2x faster than using shutil.rmtree() on its own.
@@ -464,7 +458,7 @@ def rmtree_threaded(dirname: str) -> None:
     shutil.rmtree(dirname)
 
 
-def copy_directory_threaded(src_dir: str, dst_dir: str) -> None:
+def copy_directory_threaded(src_dir: FilePath, dst_dir: FilePath) -> None:
     directories: list[str] = []
     files: list[tuple[str, str]] = []
     for root, dirnames, filenames in os.walk(src_dir):
@@ -512,7 +506,7 @@ def check_if_need_to_copy_file(args: tuple[str, str]) -> bool:
     return True
 
 
-def write_file_if_changed(dst_path: str, content: str) -> None:
+def write_file_if_changed(dst_path: FilePath, content: str) -> None:
     if os.path.exists(dst_path):
         with open(dst_path, "rt") as f:
             current_content = f.read()
@@ -528,7 +522,7 @@ def write_file_if_changed(dst_path: str, content: str) -> None:
         f.write(content)
 
 
-def depfile_quote(path: str) -> str:
+def depfile_quote(path: FilePath) -> str:
     """Quote a path properly for depfiles, if necessary.
 
     shlex.quote() does not work because paths with spaces
@@ -542,12 +536,12 @@ def depfile_quote(path: str) -> str:
        The input file path with proper quoting to be included
        directly in a depfile.
     """
-    return path.replace("\\", "\\\\").replace(" ", "\\ ")
+    return str(path).replace("\\", "\\\\").replace(" ", "\\ ")
 
 
 def get_build_id_dir_files_to_copy(
-    build_id_dir: str,
-) -> list[tuple[str, str]]:
+    build_id_dir: FilePath,
+) -> list[tuple[Path, Path]]:
     """Returns a list of debug symbol files from a source .build-id directory that need
     to be copied to the top-level one."""
     files_to_copy = []
@@ -559,25 +553,9 @@ def get_build_id_dir_files_to_copy(
                 dst_path = os.path.join(".build-id", path, obj)
                 if _DEBUG_BUILD_ID_COPIES:
                     print(f"BUILD_ID {src_path} --> {dst_path}")
-                files_to_copy.append((src_path, dst_path))
+                files_to_copy.append((Path(src_path), Path(dst_path)))
 
     return files_to_copy
-
-
-def find_bazel_output_base(workspace_dir: str) -> str:
-    """Return the path of the Bazel output base."""
-    return os.path.normpath(
-        os.path.join(os.path.dirname(workspace_dir), "output_base")
-    )
-
-
-def find_bazel_execroot(workspace_dir: str) -> str:
-    """Return the path of the Bazel execroot."""
-    return os.path.join(
-        find_bazel_output_base(workspace_dir),
-        "execroot",
-        _BAZEL_ROOT_WORKSPACE_NAME,
-    )
 
 
 def remove_gn_toolchain_suffix(gn_label: str) -> str:
@@ -586,7 +564,7 @@ def remove_gn_toolchain_suffix(gn_label: str) -> str:
 
 
 class BazelLabelMapper(object):
-    """Provides a way to map Bazel labels to file paths.
+    """Provides a way to map Bazel labels to file bazel_paths.
 
     Usage is:
       1) Create instance, passing the path to the Bazel workspace.
@@ -666,7 +644,7 @@ class BazelLabelMapper(object):
                 file_prefix + ".hash",
             )
             if not os.path.exists(hash_file):
-                # LINT.IfChange
+                # LINT.IfChange(fuchsia_build_generated_hashes)
                 hash_file = os.path.join(
                     self._root_workspace,
                     "fuchsia_build_generated",
@@ -1098,10 +1076,14 @@ class PackageOutputsAction(argparse.Action):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--bazel-launcher", required=True, help="Path to Bazel launcher script."
+        "--build-dir",
+        type=Path,
+        help="Specify Ninja build directory (defaults to current directory)",
     )
     parser.add_argument(
-        "--workspace-dir", required=True, help="Bazel workspace path"
+        "--fuchsia-dir",
+        type=Path,
+        help="Specify Fuchsia source directory (defaults to auto-detected)",
     )
     parser.add_argument(
         "--command",
@@ -1115,6 +1097,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--gn-targets-repository-dir",
+        type=Path,
         help="Path of @gn_targets repository directory for this invocation.",
     )
     parser.add_argument(
@@ -1125,6 +1108,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--stamp-files",
+        type=Path,
         default=[],
         nargs="*",
         help="list of stamp files to touch.",
@@ -1132,7 +1116,7 @@ def main() -> int:
     parser.add_argument(
         "--file-outputs",
         action=FileOutputsAction,
-        help="A list of (bazel_path, ninja_path) file paths.",
+        help="A list of (bazel_path, ninja_path) file bazel_paths.",
     )
     parser.add_argument(
         "--directory-outputs",
@@ -1152,6 +1136,7 @@ def main() -> int:
 
     parser.add_argument(
         "--bazel-build-events-log-json",
+        type=Path,
         help="Path to JSON formatted event log for build actions.",
     )
 
@@ -1195,20 +1180,28 @@ def main() -> int:
         )
     args.extra_bazel_args = args.extra_bazel_args[1:]
 
-    if not os.path.exists(args.workspace_dir):
+    try:
+        bazel_paths = build_utils.BazelPaths.new(
+            args.fuchsia_dir, args.build_dir
+        )
+    except ValueError as e:
+        parser.error(str(e))
+
+    build_dir = bazel_paths.ninja_build_dir
+    workspace_dir = bazel_paths.workspace
+    if not workspace_dir.exists():
         return parser.error(
-            "Workspace directory does not exist: %s" % args.workspace_dir
+            f"Workspace directory does not exist: {workspace_dir}"
         )
 
-    if not os.path.exists(args.bazel_launcher):
+    if not bazel_paths.launcher.exists():
         return parser.error(
-            "Bazel launcher does not exist: %s" % args.bazel_launcher
+            f"Bazel launcher does not exist: {bazel_paths.launcher}"
         )
 
     time_profile = build_utils.TimeProfile()
 
-    current_dir = os.getcwd()
-    bazel_output_base_dir = find_bazel_output_base(args.workspace_dir)
+    bazel_output_base_dir = bazel_paths.output_base
 
     jobs = None
     if "--config=remote" in args.extra_bazel_args:
@@ -1233,7 +1226,7 @@ def main() -> int:
         # LINT.IfChange(gn_targets_dir)
         build_utils.force_symlink(
             os.path.join(
-                args.workspace_dir, "fuchsia_build_generated/gn_targets_dir"
+                workspace_dir, "fuchsia_build_generated/gn_targets_dir"
             ),
             os.path.realpath(args.gn_targets_repository_dir),
         )
@@ -1245,7 +1238,7 @@ def main() -> int:
     )
 
     bazel_launcher = build_utils.BazelLauncher(
-        args.bazel_launcher,
+        bazel_paths.launcher,
         log_err=lambda msg: (
             print(f"BAZEL_ACTION_ERROR: {msg}", file=sys.stderr)
             if _DEBUG
@@ -1255,9 +1248,7 @@ def main() -> int:
 
     time_profile.start("query_cache", "loading Bazel query cache")
     query_cache = build_utils.BazelQueryCache(
-        os.path.join(
-            args.workspace_dir, "fuchsia_build_generated/bazel_query_cache"
-        )
+        workspace_dir / "fuchsia_build_generated/bazel_query_cache"
     )
 
     def run_bazel_query(
@@ -1327,9 +1318,6 @@ def main() -> int:
     # include in the depfile for this target, i.e. any changes in these build
     # files should trigger a rebuild of this target.
     genquery_tmpl = os.path.join(_TEMPLATE_DIR, "template.genrule.bazel")
-    output_build_file = os.path.join(
-        args.workspace_dir, "buildfiles_genquery", "BUILD.bazel"
-    )
     with open(genquery_tmpl, "rt") as tmpl:
         output_build_content = tmpl.read().format(
             query_expression=f"buildfiles(deps({query_targets}))",
@@ -1337,6 +1325,7 @@ def main() -> int:
             query_opts='"--output=label"',
         )
 
+    output_build_file = workspace_dir / "buildfiles_genquery/BUILD.bazel"
     write_file_if_changed(output_build_file, output_build_content)
 
     time_profile.start(
@@ -1348,12 +1337,11 @@ def main() -> int:
     if args.bazel_build_events_log_json:
         # Create parent directory to avoid Bazel complaining it cannot
         # write the events log file.
-        os.makedirs(
-            os.path.dirname(args.bazel_build_events_log_json), exist_ok=True
+        args.bazel_build_events_log_json.parent.mkdir(
+            parents=True, exist_ok=True
         )
         cmd_args += [
-            "--build_event_json_file="
-            + os.path.abspath(args.bazel_build_events_log_json),
+            f"--build_event_json_file={args.bazel_build_events_log_json.resolve()}"
         ]
 
     cmd_args += configured_args
@@ -1375,21 +1363,25 @@ def main() -> int:
         cmd_args += ["--config=quiet"]
 
     if _DEBUG:
-        debug("BUILD_CMD: " + " ".join(shlex.quote(c) for c in cmd_args))
+        debug(
+            "BUILD_CMD: "
+            + build_utils.cmd_args_to_string([bazel_paths.launcher] + cmd_args)
+        )
 
     # Save the command.profile.gz data for analysis.
     # Convert '//some/gn:label' into 'obj/some/gn/label.command.profile.gz'
-    command_profile_dest = os.path.join(
-        current_dir,
-        "obj",
-        f"{args.gn_target_label[2:].replace(':', '/')}.command.profile.gz",
+    command_profile_filename = (
+        f"{args.gn_target_label[2:].replace(':', '/')}.command.profile.gz"
     )
-    cmd_args += ["--profile", command_profile_dest]
+    cmd_args += ["--profile", f"{build_dir}/obj/{command_profile_filename}"]
 
     if args.command_file:
         write_file_if_changed(
             args.command_file,
-            " \\\n  ".join(shlex.quote(c) for c in cmd_args) + "\n",
+            " \\\n  ".join(
+                shlex.quote(str(c)) for c in [bazel_paths.launcher] + cmd_args
+            )
+            + "\n",
         )
 
     # When quiet is set, capture both stdout and stderr to avoid printing anything
@@ -1420,13 +1412,12 @@ def main() -> int:
         #
         # NOTE: Path to command.log should be stable, because we explicitly set
         # output_base. See https://bazel.build/run/scripts#command-log.
-        with open(os.path.join(bazel_output_base_dir, "command.log"), "r") as f:
-            if verify_unknown_gn_targets(
-                f.read().splitlines(),
-                args.gn_target_label,
-                args.bazel_targets,
-            ):
-                return 1
+        if verify_unknown_gn_targets(
+            (bazel_output_base_dir / "command.log").read_text().splitlines(),
+            args.gn_target_label,
+            args.bazel_targets,
+        ):
+            return 1
 
         # This is a different error, just print it as is.
         #
@@ -1448,11 +1439,10 @@ def main() -> int:
         # Get the list of input build files from the output of the genquery
         # target that was built along the other requested Bazel targets.
         # Doing this is considerably faster than performing a query here.
-        build_files_query_output = os.path.join(
-            args.workspace_dir, "bazel-bin", "buildfiles_genquery", "genquery"
+        build_files_query_output = (
+            workspace_dir / "bazel-bin/buildfiles_genquery/genquery"
         )
-        with open(build_files_query_output, "r") as f:
-            build_files = f.read().splitlines()
+        build_files = build_files_query_output.read_text().splitlines()
 
         # Perform a cquery to get all source inputs for the targets, this
         # returns a list of Bazel labels followed by "(null)" because these
@@ -1486,38 +1476,36 @@ def main() -> int:
         "Validate output files to copy are actually files.",
     )
 
-    file_copies: list[tuple[str, str]] = []
+    file_copies: list[tuple[Path, Path]] = []
     unwanted_dirs = []
 
     for file_output in args.file_outputs:
-        src_path = os.path.join(args.workspace_dir, file_output.bazel_path)
-        if os.path.isdir(src_path):
+        src_path = workspace_dir / file_output.bazel_path
+        if src_path.is_dir():
             unwanted_dirs.append(src_path)
             continue
-        dst_path = file_output.ninja_path
+        dst_path = Path(file_output.ninja_path)
         file_copies.append((src_path, dst_path))
 
     if unwanted_dirs:
         print(
             "\nDirectories are not allowed in --file-outputs Bazel paths, got directories:\n\n%s\n"
-            % "\n".join(unwanted_dirs)
+            % "\n".join(str(d) for d in unwanted_dirs)
         )
         return 1
 
-    final_symlinks = []
+    final_symlinks: list[tuple[Path, Path]] = []
     for final_symlink_output in args.final_symlink_outputs:
-        src_path = os.path.join(
-            os.path.join(args.workspace_dir, final_symlink_output.bazel_path)
-        )
-        target_path = os.path.realpath(src_path)
-        link_path = final_symlink_output.ninja_path
+        src_path = workspace_dir / final_symlink_output.bazel_path
+        target_path = src_path.resolve()
+        link_path = Path(final_symlink_output.ninja_path)
         final_symlinks.append((target_path, link_path))
 
     if _build_fuchsia_package:
         time_profile.start(
             "package_info", "Run cquery to extract Fuchsia package information"
         )
-        bazel_execroot = find_bazel_execroot(args.workspace_dir)
+        bazel_execroot = bazel_paths.execroot
 
         for entry in args.package_outputs:
             if not (
@@ -1544,7 +1532,7 @@ def main() -> int:
             if entry.archive_path:
                 file_copies.append(
                     (
-                        os.path.join(bazel_execroot, bazel_archive_path),
+                        bazel_execroot / bazel_archive_path,
                         entry.archive_path,
                     )
                 )
@@ -1552,7 +1540,7 @@ def main() -> int:
             if entry.manifest_path:
                 file_copies.append(
                     (
-                        os.path.join(bazel_execroot, bazel_manifest_path),
+                        bazel_execroot / bazel_manifest_path,
                         entry.manifest_path,
                     )
                 )
@@ -1568,7 +1556,7 @@ def main() -> int:
                 for debug_symbol_dir in bazel_debug_symbol_dirs:
                     file_copies.extend(
                         get_build_id_dir_files_to_copy(
-                            os.path.join(bazel_execroot, debug_symbol_dir),
+                            bazel_execroot / debug_symbol_dir,
                         )
                     )
 
@@ -1579,25 +1567,27 @@ def main() -> int:
         "Validate that output directories are ready to be copied.",
     )
 
-    dir_copies = []
-    missing_directories = []
-    unwanted_files = []
-    invalid_tracked_files = []
+    dir_copies: list[tuple[Path, Path, list[FilePath]]] = []
+    missing_directories: list[Path] = []
+    unwanted_files: list[Path] = []
+    invalid_tracked_files: list[Path] = []
 
     for dir_output in args.directory_outputs:
-        src_path = os.path.join(args.workspace_dir, dir_output.bazel_path)
-        if not os.path.exists(src_path):
+        src_path = workspace_dir / dir_output.bazel_path
+        if not src_path.exists():
             missing_directories.append(src_path)
             continue
-        if not os.path.isdir(src_path):
+        if not src_path.is_dir():
             unwanted_files.append(src_path)
             continue
         for tracked_file in dir_output.tracked_files:
-            tracked_file = os.path.join(src_path, tracked_file)
-            if not os.path.isfile(tracked_file):
+            tracked_file = src_path / tracked_file
+            if not tracked_file.is_file():
                 invalid_tracked_files.append(tracked_file)
-        dst_path = dir_output.ninja_path
-        dir_copies.append((src_path, dst_path, dir_output.tracked_files))
+        dst_path = Path(dir_output.ninja_path)
+        dir_copies.append(
+            (src_path, dst_path, [Path(f) for f in dir_output.tracked_files])
+        )
 
         if dir_output.copy_debug_symbols:
             time_profile.start(
@@ -1609,7 +1599,7 @@ def main() -> int:
                     f"DIRECTORY DEBUG SYMBOLS gn={args.gn_target_label} bazel={args.bazel_targets} {src_path} -> {dst_path}"
                 )
 
-            bazel_execroot = find_bazel_execroot(args.workspace_dir)
+            bazel_execroot = bazel_paths.execroot
             debug_symbol_dirs = run_starlark_cquery(
                 args.bazel_targets,
                 "FuchsiaDebugSymbolInfo_debug_symbol_dirs.cquery",
@@ -1617,28 +1607,28 @@ def main() -> int:
             for debug_symbol_dir in debug_symbol_dirs:
                 file_copies.extend(
                     get_build_id_dir_files_to_copy(
-                        os.path.join(bazel_execroot, debug_symbol_dir),
+                        bazel_execroot / debug_symbol_dir,
                     )
                 )
 
     if missing_directories:
         print(
             "\nError: Directory provided to --directory-outputs is missing, got:\n\n%s\n"
-            % "\n".join(missing_directories)
+            % "\n".join(str(d) for d in missing_directories)
         )
         return 1
 
     if unwanted_files:
         print(
             "\nError: Non-directories are not allowed in --directory-outputs Bazel path, got:\n\n%s\n"
-            % "\n".join(unwanted_files)
+            % "\n".join(str(f) for f in unwanted_files)
         )
         return 1
 
     if invalid_tracked_files:
         print(
             "\nError: Missing or non-directory tracked files from --directory-outputs Bazel path:\n\n%s\n"
-            % "\n".join(invalid_tracked_files)
+            % "\n".join(str(f) for f in invalid_tracked_files)
         )
         return 1
 
@@ -1698,16 +1688,22 @@ def main() -> int:
         write_file_if_changed(
             args.path_mapping,
             "\n".join(
-                dst_path
+                str(dst_path)
                 + ":"
-                + os.path.relpath(os.path.realpath(src_path), current_dir)
+                + os.path.relpath(src_path.resolve(), build_dir)
                 for src_path, dst_path in all_copies
             ),
         )
 
     if args.depfile:
         time_profile.start("depfile", "Write Ninja depfile")
-        mapper = BazelLabelMapper(args.workspace_dir, current_dir)
+        # Perform a cquery to get all source inputs for the targets. This
+        # returns a list of Bazel labels followed by "(null)" because these
+        # are never configured during analysis. E.g.:
+        #
+        #  //build/bazel/examples/hello_world:hello_world (null)
+        #
+        mapper = BazelLabelMapper(str(workspace_dir), str(build_dir))
 
         all_inputs = [
             label
@@ -1722,7 +1718,9 @@ def main() -> int:
         ignored_labels = []
         all_sources = set()
         for label in all_inputs:
-            path = mapper.source_label_to_path(label, relative_to=current_dir)
+            path = mapper.source_label_to_path(
+                label, relative_to=str(build_dir)
+            )
             if path:
                 if build_utils.is_likely_content_hash_path(path):
                     debug(f"{path} ::: IGNORED CONTENT HASH NAME")
@@ -1765,8 +1763,8 @@ track all input files that the repository rule may access when it is run.
         write_file_if_changed(args.depfile, depfile_content)
 
         for stamp_file in args.stamp_files:
-            with open(stamp_file, "w") as f:
-                f.write("")
+            stamp_file.parent.mkdir(parents=True, exist_ok=True)
+            stamp_file.write_text("")
 
     time_profile.stop()
     if _DEBUG:

@@ -12,9 +12,7 @@ vendor directory. See `fx help update-bazel-vendor-dir` for details.
 """
 
 module(
-    # LINT.IfChange
     name = "main",
-    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py, //build/bazel/bazel_workspace.gni)
     version = "1",
 )
 
@@ -76,9 +74,9 @@ local_path_override(
 bazel_dep(name = "gn_targets", version = "")
 local_path_override(
     module_name = "gn_targets",
-    # LINT.IfChange(gm_targets_dir)
+    # LINT.IfChange(gn_targets_dir)
     path = "fuchsia_build_generated/gn_targets_dir",
-    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py:gn_targets_dir, //build/assembly/scripts/packages_from_product_assembler.py:gn_targets_dir)
+    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py:gn_targets_dir, //build/assembly/scripts/packages_from_product_assembler.py:gn_targets_dir, //build/bazel/scripts/workspace_utils.py:gn_targets_dir_symlink)
 )
 
 fuchsia_build_config_ext = use_extension("@fuchsia_sdk_common//common:fuchsia_platform_build.bzl", "fuchsia_build_config_ext")
@@ -115,7 +113,7 @@ fuchsia_idk_repository = use_repo_rule(
 # This is used to populate the @internal_sdk repository only.
 fuchsia_idk_repository(
     name = "fuchsia_internal_only_idk",
-    # LINT.IfChange
+    # LINT.IfChange(fuchsia_internal_only_idk_hash)
     content_hash_file = "//:fuchsia_build_generated/fuchsia_internal_only_idk.hash",
     # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py)
     idk_export_dir = "fuchsia_build_generated/ninja_root_build_dir/sdk/exported/bazel_internal_only_idk",

@@ -9,8 +9,9 @@
 # build. A TOPDIR contains several files and directories like workspace/
 # or output_base/
 fx-bazel-top-dir () {
-  # See //build/bazel/config/README.md
+  # LINT.IfChange(bazel_topdir_config_file)
   local INPUT_FILE="${FUCHSIA_DIR}/build/bazel/config/bazel_top_dir"
+  # LINT.ThenChange(//build/bazel/bazel_workspace.gni:bazel_topdir_config_file)
   local TOPDIR
   TOPDIR=$(<"${INPUT_FILE}")
   echo "${FUCHSIA_BUILD_DIR}/${TOPDIR}"

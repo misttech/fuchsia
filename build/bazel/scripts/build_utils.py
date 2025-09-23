@@ -27,6 +27,11 @@ from pathlib import Path
 FilePath: T.TypeAlias = str | os.PathLike[T.Any]
 
 
+# LINT.IfChange(bazel_topdir_config_file)
+_BAZEL_TOPDIR_CONFIG_FROM_FUCHSIA_DIR = "build/bazel/config/bazel_top_dir"
+# LINT.ThenChange(//build/bazel/bazel_workspace.gni:bazel_topdir_config_file)
+
+
 def get_host_platform() -> str:
     """Return host platform name, following Fuchsia conventions."""
     if sys.platform == "linux":
@@ -127,7 +132,7 @@ def get_bazel_relative_topdir(fuchsia_dir: FilePath) -> tuple[str, set[Path]]:
         A (topdir, input_files) pair, where input_files is a set of Path
         values corresponding to the file(s) read by this function.
     """
-    input_file = Path(fuchsia_dir) / "build/bazel/config/bazel_top_dir"
+    input_file = Path(fuchsia_dir) / _BAZEL_TOPDIR_CONFIG_FROM_FUCHSIA_DIR
     assert input_file.exists(), f"Missing input file: {input_file}"
     return input_file.read_text().strip(), {input_file}
 
@@ -367,6 +372,122 @@ def cmd_args_to_string(cmd_args: list[FilePath]) -> str:
         A single string representing the shell-quoted command.
     """
     return " ".join(shlex.quote(str(c)) for c in cmd_args)
+
+
+class BazelPaths(object):
+    """Convenience class used to access important Bazel-related paths."""
+
+    WORKSPACE_FROM_TOP_DIR = "workspace"
+    OUTPUT_BASE_FROM_TOP_DIR = "output_base"
+    OUTPUT_USER_ROOT_FROM_TOP_DIR = "output_user_root"
+    LAUNCHER_FROM_TOP_DIR = "bazel"
+
+    # The name of the root Bazel workspace as it appears in ${output_base}/execroot/.
+    # When BzlMod is enabled, this is always "_main", independent from the
+    # name of the root workspace / module name.
+    WORKSPACE_NAME_FROM_EXECROOT = "_main"
+
+    @staticmethod
+    def new(
+        fuchsia_dir: T.Optional[Path] = None, build_dir: T.Optional[Path] = None
+    ) -> "BazelPaths":
+        """Create new instance.
+
+        Args:
+            fuchsia_dir: Optional Path to the Fuchsia source directory.
+            build_dir: Optional Path to the Ninja build directory.
+        Returns:
+            A new BazelPaths instance.
+        Raises:
+            ValueError if the fuchsia or build directories cannot be
+            properly auto-detected or do not exist.
+        """
+        if fuchsia_dir:
+            fuchsia_dir = fuchsia_dir.resolve()
+        else:
+            fuchsia_dir = find_fuchsia_dir(build_dir)
+
+        if build_dir:
+            build_dir = build_dir.resolve()
+        else:
+            build_dir = find_fx_build_dir(fuchsia_dir)
+            if not build_dir:
+                raise ValueError(
+                    f"Could not detect current build-directory from Fuchsia directory: {fuchsia_dir}"
+                )
+
+        return BazelPaths(fuchsia_dir, build_dir)
+
+    def __init__(self, fuchsia_dir: Path, build_dir: Path) -> None:
+        """Construct new instance. Requires explicit fuchsia_dir and build_dir paths."""
+        bazel_topdir, self._input_files = get_bazel_relative_topdir(fuchsia_dir)
+        self._build_dir = build_dir.resolve()
+        self._top_dir = self._build_dir / bazel_topdir
+        self._fuchsia_dir = fuchsia_dir.resolve()
+
+    @property
+    def top_dir(self) -> Path:
+        """Return the Bazel top directory."""
+        return self._top_dir
+
+    @staticmethod
+    def write_topdir_config_for_test(fuchsia_dir: Path, content: str) -> Path:
+        """Write a Bazel topdir configuration file. Useful for tests.
+
+        Args:
+           fuchsia_dir: Path to Fuchsia source tree.
+           content: Config file content, i.e. path of the Bazel topdir relative
+              to the Ninja build directory.
+        Returns:
+           Path of the config file that was written.
+        """
+        config_file = fuchsia_dir / _BAZEL_TOPDIR_CONFIG_FROM_FUCHSIA_DIR
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(content)
+        return config_file
+
+    @property
+    def fuchsia_dir(self) -> Path:
+        """Return Path to the Fuchsia source directory."""
+        return self._fuchsia_dir
+
+    @property
+    def ninja_build_dir(self) -> Path:
+        """Return Path to the Ninja build directory."""
+        return self._build_dir
+
+    @property
+    def execroot(self) -> Path:
+        """Return the Bazel execroot path."""
+        return (
+            self._top_dir
+            / self.OUTPUT_BASE_FROM_TOP_DIR
+            / "execroot"
+            / self.WORKSPACE_NAME_FROM_EXECROOT
+        )
+
+    @property
+    def output_base(self) -> Path:
+        """Return Path to the Bazel output base."""
+        return self._top_dir / self.OUTPUT_BASE_FROM_TOP_DIR
+
+    @property
+    def workspace(self) -> Path:
+        """Return Path to the Bazel workspace root directory."""
+        return self._top_dir / self.WORKSPACE_FROM_TOP_DIR
+
+    @property
+    def launcher(self) -> Path:
+        """Return Path to the Bazel launcher script."""
+        return self._top_dir / self.LAUNCHER_FROM_TOP_DIR
+
+    @property
+    def input_files(self) -> set[Path]:
+        """Return list of input file paths that were read in the constructor.
+
+        Useful for Ninja depfiles or //build/regenerator.py.
+        """
+        return self._input_files
 
 
 @dataclasses.dataclass
