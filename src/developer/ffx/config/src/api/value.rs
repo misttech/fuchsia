@@ -248,7 +248,7 @@ impl<T: TryConvert> TryConvert for Vec<T> {
                 }
                 None => T::try_convert(ConfigValue(Some(val))).map(|x| vec![x]).ok(),
             })
-            .ok_or_else(|| anyhow!("no configuration Vec<> value found").into())
+            .ok_or(ConfigError::KeyNotFound)
     }
 }
 
@@ -324,5 +324,19 @@ mod tests {
         assert_eq!(proto["object"]["foo"].as_str().unwrap(), "foo-prime");
         assert_eq!(proto["object"]["bar"].as_str().unwrap(), "bar-prime");
         assert_eq!(proto["otherObject"]["yourHonor"].as_str().unwrap(), "I object!");
+    }
+
+    #[fuchsia::test]
+    async fn test_config_error() {
+        let env = crate::test_env().build().await.unwrap();
+        let context = &env.context;
+
+        let err = context.get::<Vec<String>, &str>("Some-key-that-does-not-exist").unwrap_err();
+        match err {
+            ConfigError::KeyNotFound => (),
+            _ => {
+                panic!("Expected KeyNotFound, got {err:?}")
+            }
+        }
     }
 }
