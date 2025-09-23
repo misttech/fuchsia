@@ -1154,30 +1154,103 @@ INSTANTIATE_TEST_SUITE_P(SndRcvBufSockOpt, SndRcvBufSockOpt, testing::Values(SO_
                            return std::string("UNKNOWN(") + std::to_string(info.param) + ")";
                          });
 
-class SocketMarkSockOpt : public testing::TestWithParam<std::tuple<int, int>> {};
+class SocketMarkSockOpt : public testing::TestWithParam<std::tuple<int, int>> {
+ protected:
+  void SetUp() override {
+    if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
+      GTEST_SKIP() << "Need CAP_NET_ADMIN to run SO_MARK tests";
+    }
+
+    auto [domain, type] = GetParam();
+    EXPECT_TRUE(fd_ = fbl::unique_fd(socket(domain, type, 0))) << strerror(errno);
+  }
+
+  fbl::unique_fd fd_;
+};
 
 TEST_P(SocketMarkSockOpt, SetAndGet) {
-  if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
-    GTEST_SKIP() << "Need CAP_NET_ADMIN to run SO_MARK tests";
-  }
-  auto [domain, type] = GetParam();
-  fbl::unique_fd fd;
-  EXPECT_TRUE(fd = fbl::unique_fd(socket(domain, type, 0))) << strerror(errno);
-
   int initial_mark = -1;
   socklen_t optlen = sizeof(initial_mark);
-  ASSERT_EQ(getsockopt(fd.get(), SOL_SOCKET, SO_MARK, &initial_mark, &optlen), 0)
+  ASSERT_EQ(getsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &initial_mark, &optlen), 0)
       << strerror(errno);
   ASSERT_EQ(initial_mark, 0);
 
   int mark = 100;
-  ASSERT_EQ(setsockopt(fd.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)), 0) << strerror(errno);
+  ASSERT_EQ(setsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)), 0) << strerror(errno);
   int retrieved_mark = 0;
   optlen = sizeof(retrieved_mark);
-  ASSERT_EQ(getsockopt(fd.get(), SOL_SOCKET, SO_MARK, &retrieved_mark, &optlen), 0)
+  ASSERT_EQ(getsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &retrieved_mark, &optlen), 0)
       << strerror(errno);
   ASSERT_EQ(optlen, sizeof(mark));
   ASSERT_EQ(mark, retrieved_mark);
+}
+
+TEST_P(SocketMarkSockOpt, NoCapabilities) {
+  if (!test_helper::HasCapability(CAP_NET_RAW)) {
+    GTEST_SKIP() << "Test expects CAP_NET_RAW";
+  }
+
+  test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+  test_helper::UnsetCapabilityEffective(CAP_NET_RAW);
+
+  // `setsockopt(SO_MARK)` must fail without the capability.
+  int mark = 100;
+  EXPECT_EQ(setsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)), -1);
+  EXPECT_EQ(errno, EPERM);
+
+  // The mark should not be set.
+  int value = 1;
+  socklen_t optlen = sizeof(value);
+  EXPECT_EQ(getsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &value, &optlen), 0) << strerror(errno);
+  EXPECT_EQ(value, 0);
+
+  // Restore capabilities.
+  test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
+  test_helper::SetCapabilityEffective(CAP_NET_RAW);
+}
+
+TEST_P(SocketMarkSockOpt, RawCapability) {
+  if (!test_helper::HasCapability(CAP_NET_RAW)) {
+    GTEST_SKIP() << "Test expects CAP_NET_RAW";
+  }
+
+  // Drop the `NET_ADMIN` capability, but keep `NET_RAW`.
+  test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+
+  // `setsockopt(SO_MARK)` should not fail.
+  int mark = 100;
+  ASSERT_EQ(setsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)), 0) << strerror(errno);
+
+  // The mark should be set.
+  int value = 0;
+  socklen_t optlen = sizeof(value);
+  EXPECT_EQ(getsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &value, &optlen), 0) << strerror(errno);
+  EXPECT_EQ(value, mark);
+
+  // Restore capabilities.
+  test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
+}
+
+TEST_P(SocketMarkSockOpt, AdminCapability) {
+  if (!test_helper::HasCapability(CAP_NET_RAW)) {
+    GTEST_SKIP() << "Test expects CAP_NET_RAW";
+  }
+
+  // Drop the `NET_RAW` capability, but keep `NET_ADMIN`.
+  test_helper::UnsetCapabilityEffective(CAP_NET_RAW);
+
+  // `setsockopt(SO_MARK)` should not fail.
+  int mark = 100;
+  ASSERT_EQ(setsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)), 0) << strerror(errno);
+
+  // The mark should be set.
+  int value = 0;
+  socklen_t optlen = sizeof(value);
+  EXPECT_EQ(getsockopt(fd_.get(), SOL_SOCKET, SO_MARK, &value, &optlen), 0) << strerror(errno);
+  EXPECT_EQ(value, mark);
+
+  // Restore capabilities.
+  test_helper::SetCapabilityEffective(CAP_NET_RAW);
 }
 
 INSTANTIATE_TEST_SUITE_P(SocketMarkSockOpt, SocketMarkSockOpt,

@@ -5,6 +5,7 @@
 use crate::bpf::attachments::{SockAddrOp, SockAddrProgramResult, SockOp, SockProgramResult};
 use crate::fs::fuchsia::zxio::{zxio_query_events, zxio_wait_async};
 use crate::mm::{MemoryAccessorExt, UNIFIED_ASPACES_ENABLED};
+use crate::security;
 use crate::task::syscalls::SockFProgPtr;
 use crate::task::{CurrentTask, EventHandler, Task, WaitCanceler, Waiter};
 use crate::vfs::socket::socket::ReadFromSockOptValue as _;
@@ -20,6 +21,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, Locked};
+use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -675,6 +677,14 @@ impl SocketOps for ZxioBackedSocket {
                 Ok(())
             }
             (SOL_SOCKET, SO_MARK) => {
+                // Either `CAP_NET_RAW` or `CAP_NET_ADMIN` is required to set
+                // `SO_MARK`. If `CAP_NET_RAW` is not present, we then check
+                // `CAP_NET_ADMIN` using `check_task_capable`, which will
+                // generate an audit record if the capability is missing.
+                if !security::is_task_capable_noaudit(current_task, CAP_NET_RAW) {
+                    security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+                }
+
                 let mark: u32 = optval.read(current_task)?;
                 let socket_mark = ZxioSocketMark::so_mark(mark);
                 let optval: &[u8; size_of::<zxio_socket_mark>()] =
