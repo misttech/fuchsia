@@ -29,7 +29,6 @@ use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
 use schemars::JsonSchema;
 use serde::Serialize;
-use std::fmt::{Display, Formatter};
 use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -40,29 +39,6 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 
 const SSH_OEM_COMMAND: &str = "add-staged-bootloader-file ssh.authorized_keys";
-
-enum AvoidRebootWarning<'a> {
-    Udp(&'a SocketAddr),
-    Tcp(&'a SocketAddr),
-}
-
-impl Display for AvoidRebootWarning<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let (mode, addr) = match self {
-            Self::Udp(addr) => ("UDP", addr),
-            Self::Tcp(addr) => ("TCP", addr),
-        };
-        write!(
-            f,
-            r"
-Warning: the target does not have a node name and is in {} fastboot mode.
-Rediscovering the target after bootloader reboot will be impossible.
-Please try --no-bootloader-reboot to avoid a reboot.
-Using address {} as node name",
-            mode, addr
-        )
-    }
-}
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -474,10 +450,6 @@ Reboot the Target to the bootloader and re-run this command."
                         let target_name = if let Some(nodename) = &self.target_info.nodename {
                             nodename
                         } else {
-                            if !cmd.no_bootloader_reboot {
-                                writeln!(writer, "{}", AvoidRebootWarning::Udp(&socket_addr))
-                                    .user_message("Error writing user message")?;
-                            }
                             &socket_addr.to_string()
                         };
                         let config = FastbootNetworkConnectionConfig::new_udp().await;
@@ -519,10 +491,6 @@ Reboot the Target to the bootloader and re-run this command."
                         let target_name = if let Some(nodename) = &self.target_info.nodename {
                             nodename
                         } else {
-                            if !cmd.no_bootloader_reboot {
-                                writeln!(writer, "{}", AvoidRebootWarning::Tcp(&socket_addr))
-                                    .user_message("Error writing user message")?;
-                            }
                             &socket_addr.to_string()
                         };
                         let config = FastbootNetworkConnectionConfig::new_tcp().await;
@@ -916,30 +884,6 @@ mod test {
                 &mut writer
             )
             .is_err()
-        );
-    }
-
-    #[test]
-    fn test_avoid_reboot_bootloader_warning() {
-        let udp_addr = "127.0.0.1:0".parse().unwrap();
-        let tcp_addr = "192.168.1.2:22".parse().unwrap();
-        let udp = AvoidRebootWarning::Udp(&udp_addr);
-        let tcp = AvoidRebootWarning::Tcp(&tcp_addr);
-        assert_eq!(
-            udp.to_string(),
-            r"
-Warning: the target does not have a node name and is in UDP fastboot mode.
-Rediscovering the target after bootloader reboot will be impossible.
-Please try --no-bootloader-reboot to avoid a reboot.
-Using address 127.0.0.1:0 as node name",
-        );
-        assert_eq!(
-            tcp.to_string(),
-            r"
-Warning: the target does not have a node name and is in TCP fastboot mode.
-Rediscovering the target after bootloader reboot will be impossible.
-Please try --no-bootloader-reboot to avoid a reboot.
-Using address 192.168.1.2:22 as node name",
         );
     }
 
