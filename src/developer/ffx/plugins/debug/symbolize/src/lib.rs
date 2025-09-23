@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Context;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
+use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fuchsia_async::unblock;
@@ -14,6 +14,8 @@ use std::process::Command;
 pub struct SymbolizeTool {
     #[command]
     cmd: ffx_debug_symbolize_args::SymbolizeCommand,
+
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(SymbolizeTool);
@@ -23,13 +25,8 @@ impl FfxMain for SymbolizeTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let sdk = ffx_config::global_env_context()
-            .context("loading global environment context")?
-            .get_sdk()?;
-        if let Err(e) = symbol_index::ensure_symbol_index_registered(
-            &ffx_config::global_env_context()
-                .ok_or_else(|| anyhow::anyhow!("Failed to get global context"))?,
-        ) {
+        let sdk = self.context.get_sdk()?;
+        if let Err(e) = symbol_index::ensure_symbol_index_registered(&self.context) {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 

@@ -12,6 +12,7 @@ ffx_plugin("ffx_component_debug") {
     "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
     "//sdk/rust/zx-types",
     "//src/developer/debug/ffx_zxdb",
+    "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",

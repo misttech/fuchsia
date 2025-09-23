@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use ffx_config::EnvironmentContext;
 use ffx_debug_crash_args::CrashCommand;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
@@ -20,6 +21,7 @@ pub struct CrashTool {
     limbo_proxy: ProcessLimboProxy,
     #[with(moniker("/core/debugger"))]
     launcher_proxy: fdebugger::LauncherProxy,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(CrashTool);
@@ -29,23 +31,27 @@ impl FfxMain for CrashTool {
     type Writer = SimpleWriter;
 
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
-        crash_tool_impl(self.limbo_proxy, self.launcher_proxy).await?;
+        crash_tool_impl(&self.context, self.limbo_proxy, self.launcher_proxy).await?;
         Ok(())
     }
 }
 
-async fn run_debugger(launcher_proxy: fdebugger::LauncherProxy) -> Result<()> {
-    let mut debugger = Debugger::launch(launcher_proxy).await?;
+async fn run_debugger(
+    ctx: &EnvironmentContext,
+    launcher_proxy: fdebugger::LauncherProxy,
+) -> Result<()> {
+    let mut debugger = Debugger::launch(ctx, launcher_proxy).await?;
     debugger.command.push_str("--auto-attach-limbo");
     debugger.run().await
 }
 
 async fn crash_tool_impl(
+    ctx: &EnvironmentContext,
     limbo_proxy: ProcessLimboProxy,
     launcher_proxy: fdebugger::LauncherProxy,
 ) -> Result<()> {
     limbo_proxy.set_active(true).await?;
-    let run_result = run_debugger(launcher_proxy).await;
+    let run_result = run_debugger(ctx, launcher_proxy).await;
     limbo_proxy.set_active(false).await?;
 
     run_result?;

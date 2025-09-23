@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use errors::ffx_error;
+use ffx_config::EnvironmentContext;
 use fidl_fuchsia_debugger as fdebugger;
-use fuchsia_async::{unblock, Task};
+use fuchsia_async::{Task, unblock};
 use signal_hook::consts::signal::SIGUSR1;
 use signal_hook::iterator::Signals;
 use std::path::PathBuf;
 use std::process::Command;
 
 use crate::debug_agent::{DebugAgentSocket, DebuggerProxy};
-use crate::{spawn_forward_task, CommandBuilder};
+use crate::{CommandBuilder, spawn_forward_task};
 
 pub struct Debugger {
     socket: DebugAgentSocket,
@@ -21,20 +22,18 @@ pub struct Debugger {
 }
 
 impl Debugger {
-    pub async fn launch(debugger_proxy: fdebugger::LauncherProxy) -> Result<Self> {
+    pub async fn launch(
+        ctx: &EnvironmentContext,
+        debugger_proxy: fdebugger::LauncherProxy,
+    ) -> Result<Self> {
         let socket = DebugAgentSocket::create(DebuggerProxy::LauncherProxy(debugger_proxy))?;
-        Debugger::from_socket(socket).await
+        Debugger::from_socket(socket, ctx).await
     }
 
     /// Create a debugger from an existing socket connection to a debug agent.
-    pub async fn from_socket(socket: DebugAgentSocket) -> Result<Self> {
-        let sdk = ffx_config::global_env_context()
-            .context("loading global environment context")?
-            .get_sdk()?;
-        if let Err(e) = symbol_index::ensure_symbol_index_registered(
-            &ffx_config::global_env_context()
-                .ok_or_else(|| anyhow::anyhow!("Failed to get global context"))?,
-        ) {
+    pub async fn from_socket(socket: DebugAgentSocket, ctx: &EnvironmentContext) -> Result<Self> {
+        let sdk = ctx.get_sdk()?;
+        if let Err(e) = symbol_index::ensure_symbol_index_registered(ctx) {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 

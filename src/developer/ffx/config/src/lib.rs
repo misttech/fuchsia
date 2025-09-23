@@ -130,7 +130,7 @@ pub fn global_env_context() -> Option<EnvironmentContext> {
     ENV.lock().unwrap().clone()
 }
 
-pub fn global_env() -> Result<Environment> {
+pub(crate) fn global_env() -> Result<Environment> {
     let context =
         global_env_context().context("Tried to load global environment before configuration")?;
 

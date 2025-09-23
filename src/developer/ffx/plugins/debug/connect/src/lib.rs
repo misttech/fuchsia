@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
+use ffx_config::EnvironmentContext;
 use ffx_debug_connect_args::ConnectCommand;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::util::{self, Agent};
@@ -26,6 +27,7 @@ pub struct ConnectTool {
     cmd: ConnectCommand,
     #[with(moniker("/core/debugger"))]
     launcher_proxy: fdebugger::LauncherProxy,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(ConnectTool);
@@ -35,7 +37,7 @@ impl FfxMain for ConnectTool {
     type Writer = SimpleWriter;
 
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
-        connect_tool_impl(self.cmd, self.launcher_proxy).await?;
+        connect_tool_impl(&self.context, self.cmd, self.launcher_proxy).await?;
         Ok(())
     }
 }
@@ -77,6 +79,7 @@ async fn choose_debug_agent(launcher_proxy: &fdebugger::LauncherProxy) -> Result
 }
 
 async fn connect_tool_impl(
+    ctx: &EnvironmentContext,
     cmd: ConnectCommand,
     launcher_proxy: fdebugger::LauncherProxy,
 ) -> Result<()> {
@@ -98,7 +101,7 @@ async fn connect_tool_impl(
         return Ok(());
     }
 
-    let mut debugger = Debugger::from_socket(socket).await?;
+    let mut debugger = Debugger::from_socket(socket, ctx).await?;
 
     debugger.command.attach_each(&cmd.attach);
     debugger.command.execute_each(&cmd.execute);
@@ -106,9 +109,7 @@ async fn connect_tool_impl(
 
     let command = match cmd.debugger {
         Some(debugger_debugger) => {
-            let sdk = ffx_config::global_env_context()
-                .context("loading global environment context")?
-                .get_sdk()?;
+            let sdk = ctx.get_sdk()?;
             if *sdk.get_version() != sdk::SdkVersion::InTree {
                 // OOT doesn't provide symbols for zxdb.
                 ffx_bail!("--debugger only works in-tree.");

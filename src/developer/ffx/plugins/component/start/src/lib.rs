@@ -10,6 +10,7 @@ use component_debug::query::get_cml_moniker_from_query;
 use errors::ffx_error;
 use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
 use ffx_component_start_args::ComponentStartCommand;
+use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool, deferred};
@@ -24,6 +25,8 @@ pub struct StartTool {
     debugger_proxy: fho::Deferred<fidl_fuchsia_debugger::LauncherProxy>,
 
     rcs: RemoteControlProxyHolder,
+
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(StartTool);
@@ -46,7 +49,7 @@ async fn start_tool_impl(tool: StartTool) -> Result<()> {
     // If the user wants to debug the component, we need to start the debugger with a breakpoint
     // on `_start`, which will give the user a chance to set any further breakpoints they want.
     let maybe_session = if tool.cmd.debug {
-        let mut debugger = Debugger::launch(tool.debugger_proxy.await?).await?;
+        let mut debugger = Debugger::launch(&tool.context, tool.debugger_proxy.await?).await?;
         debugger.command.attach(&format!("{}", moniker));
         debugger.command.break_at("_start");
         let session = debugger.start().await?;

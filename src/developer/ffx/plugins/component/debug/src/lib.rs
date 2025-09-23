@@ -9,6 +9,7 @@ use component_debug::realm::{Runtime, get_runtime};
 use errors::ffx_error;
 use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_debug_args::ComponentDebugCommand;
+use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool};
@@ -24,6 +25,8 @@ pub struct DebugTool {
     debugger_proxy: fidl_fuchsia_debugger::LauncherProxy,
 
     rcs: RemoteControlProxyHolder,
+
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(DebugTool);
@@ -49,7 +52,7 @@ impl FfxMain for DebugTool {
             get_runtime(&instance.moniker, &realm_query).await.unwrap_or(Runtime::Unknown);
         let job_koid = get_job_koid(&runtime).await?;
 
-        let mut debugger = Debugger::launch(self.debugger_proxy).await?;
+        let mut debugger = Debugger::launch(&self.context, self.debugger_proxy).await?;
         debugger.command.attach_job_koid(job_koid);
         debugger.run().await?;
         Ok(())
