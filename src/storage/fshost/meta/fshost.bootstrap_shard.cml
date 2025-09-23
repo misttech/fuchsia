@@ -112,7 +112,7 @@
             availability: "optional",
         },
         {
-            dictionary: "tee_key_management",
+            protocol: "fuchsia.security.keymint.SealingKeys",
             from: "parent",
             to: "#fshost",
             availability: "optional",

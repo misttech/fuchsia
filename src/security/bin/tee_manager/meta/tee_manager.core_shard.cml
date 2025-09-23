@@ -34,4 +34,14 @@
             subdir: "tee_manager",
         },
     ],
+
+    // Expose-from-void all capabilities exposed from `#tee_manager` under the proprietary TEE
+    // manager configuration.
+    expose: [
+        {
+            protocol: "fuchsia.security.keymint.SealingKeys",
+            from: "void",
+            availability: "optional",
+        },
+    ],
 }

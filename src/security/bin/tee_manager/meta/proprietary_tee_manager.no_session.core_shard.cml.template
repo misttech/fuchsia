@@ -7,7 +7,7 @@
     ],
     expose: [
         {
-            dictionary: "tee_key_management",
+            protocol: "fuchsia.security.keymint.SealingKeys",
             from: "#tee_manager",
         },
     ],
