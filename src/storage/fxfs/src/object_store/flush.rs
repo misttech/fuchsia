@@ -98,6 +98,13 @@ impl ObjectStore {
         let keys = lock_keys![LockKey::flush(self.store_object_id())];
         let _guard = Some(filesystem.lock_manager().write_lock(keys).await);
 
+        // After taking the lock, check to see if the store has been deleted.
+        if matches!(*self.lock_state.lock(), LockState::Deleted) {
+            // When we compact, it's possible that the store has been deleted since we gathered the
+            // list of stores that need compacting.  This is benign.
+            return Ok(FlushResult::Ok(LATEST_VERSION));
+        }
+
         match reason {
             Reason::Unlock => {
                 // If we're unlocking, only flush if there are encrypted mutations currently stored

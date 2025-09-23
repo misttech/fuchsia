@@ -3315,16 +3315,18 @@ async fn test_full_disk() {
 #[fuchsia::test]
 async fn test_delete_volume() {
     let mut test = FsckTest::new().await;
+    let store_id;
     {
         let fs = test.filesystem();
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let store = root_volume.new_volume("vol", NO_OWNER, None).await.unwrap();
+        store_id = store.store_object_id();
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let mut transaction = fs
             .clone()
             .new_transaction(
-                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                lock_keys![LockKey::object(store_id, root_directory.object_id())],
                 Options::default(),
             )
             .await
@@ -3347,10 +3349,7 @@ async fn test_delete_volume() {
                     let mut transaction = fs
                         .clone()
                         .new_transaction(
-                            lock_keys![LockKey::object(
-                                store.store_object_id(),
-                                root_directory.object_id()
-                            )],
+                            lock_keys![LockKey::object(store_id, root_directory.object_id())],
                             Options::default(),
                         )
                         .await
@@ -3363,16 +3362,19 @@ async fn test_delete_volume() {
                 }
             },
         );
-    };
+    }
     {
         let fs = test.filesystem();
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let transaction = fs
             .new_transaction(
-                lock_keys![LockKey::object(
-                    root_volume.volume_directory().store().store_object_id(),
-                    root_volume.volume_directory().object_id(),
-                )],
+                lock_keys![
+                    LockKey::object(
+                        root_volume.volume_directory().store().store_object_id(),
+                        root_volume.volume_directory().object_id(),
+                    ),
+                    LockKey::flush(store_id)
+                ],
                 Options { borrow_metadata_space: true, ..Default::default() },
             )
             .await

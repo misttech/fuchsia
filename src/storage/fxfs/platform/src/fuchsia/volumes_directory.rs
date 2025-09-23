@@ -10,7 +10,7 @@ use crate::fuchsia::fxblob::BlobDirectory;
 use crate::fuchsia::memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor};
 use crate::fuchsia::profile::new_profile_state;
 use crate::fuchsia::volume::{FxVolume, FxVolumeAndRoot, MemoryPressureConfig, RootDir};
-use anyhow::{Context, Error, anyhow, bail, ensure};
+use anyhow::{Context, Error, anyhow, ensure};
 use async_trait::async_trait;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
@@ -22,7 +22,7 @@ use futures::{StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
 use fxfs::fsck;
 use fxfs::log::*;
-use fxfs::object_store::transaction::{LockKey, LockKeys, Options, Transaction, lock_keys};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::RootVolume;
 use fxfs::object_store::{Directory, ObjectDescriptor, ObjectStore, StoreOwner};
 use fxfs_crypto::Crypt;
@@ -190,68 +190,12 @@ impl MountedVolumesGuard<'_> {
         }
     }
 
-    /// Acquires a transaction with appropriate locks to remove volume |name|.
-    /// Also returns the object ID of the store which will be deleted.
-    async fn acquire_transaction_for_remove_volume(
-        &self,
-        name: &str,
-    ) -> Result<(u64, Transaction<'_>), Error> {
-        // Since we don't know the store object ID until we've looked it up in the volumes
-        // directory, we need to loop until we have acquired a lock on a store whose ID is the same
-        // as it was in the last iteration.
-        let store = self.volumes_directory.root_volume.volume_directory().store();
-        let mut lock_keys = LockKeys::with_capacity(2);
-        lock_keys.push(LockKey::object(
-            store.store_object_id(),
-            self.volumes_directory.root_volume.volume_directory().object_id(),
-        ));
-        loop {
-            lock_keys.truncate(1);
-            let object_id = match self
-                .volumes_directory
-                .root_volume
-                .volume_directory()
-                .lookup(name)
-                .await?
-                .ok_or(FxfsError::NotFound)?
-            {
-                (object_id, ObjectDescriptor::Volume, _) => object_id,
-                _ => bail!(anyhow!(FxfsError::Inconsistent).context("Expected volume")),
-            };
-            // We have to ensure that the store isn't flushed while we delete it, because deleting
-            // the store will remove references to it from ObjectManager which are then updated by
-            // flushing.
-            lock_keys.push(LockKey::flush(object_id));
-            let transaction = store
-                .filesystem()
-                .new_transaction(
-                    lock_keys.clone(),
-                    Options { borrow_metadata_space: true, ..Default::default() },
-                )
-                .await?;
-
-            // Now that we're locked, ensure that the volume still has the same object ID.
-            match self
-                .volumes_directory
-                .root_volume
-                .volume_directory()
-                .lookup(name)
-                .await?
-                .ok_or(FxfsError::NotFound)?
-            {
-                (second_object_id, ObjectDescriptor::Volume, _)
-                    if second_object_id == object_id =>
-                {
-                    break Ok((object_id, transaction));
-                }
-                (_, ObjectDescriptor::Volume, _) => continue,
-                _ => bail!(anyhow!(FxfsError::Inconsistent).context("Expected volume")),
-            }
-        }
-    }
-
     async fn remove_volume(&mut self, name: &str) -> Result<(), Error> {
-        let (object_id, transaction) = self.acquire_transaction_for_remove_volume(name).await?;
+        let (object_id, transaction) = self
+            .volumes_directory
+            .root_volume
+            .acquire_transaction_for_remove_volume(name, [], false)
+            .await?;
 
         // Cowardly refuse to delete a mounted volume.
         ensure!(!self.mounted_volumes.contains_key(&object_id), FxfsError::AlreadyBound);

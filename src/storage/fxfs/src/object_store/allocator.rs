@@ -1885,8 +1885,8 @@ impl JournalingObject for Allocator {
 
         let fs = self.filesystem.upgrade().unwrap();
         let mut flusher = Flusher::new(self, &fs).await;
-        let new_layer_file = flusher.start().await?;
-        flusher.finish(new_layer_file).await
+        let (new_layer_file, info) = flusher.start().await?;
+        flusher.finish(new_layer_file, info).await
     }
 }
 
@@ -1973,7 +1973,7 @@ impl<'a> Flusher<'a> {
         }
     }
 
-    async fn start(&mut self) -> Result<DataObjectHandle<ObjectStore>, Error> {
+    async fn start(&mut self) -> Result<(DataObjectHandle<ObjectStore>, AllocatorInfo), Error> {
         let object_manager = self.fs.object_manager();
         let mut transaction = self
             .fs
@@ -1997,13 +1997,20 @@ impl<'a> Flusher<'a> {
         // which mutations are applied whilst committing), in which case they'd get lost on replay
         // because the journal will only send mutations that follow this transaction.
         transaction.add(self.allocator.object_id(), Mutation::BeginFlush);
-        transaction.commit().await?;
-        Ok(layer_object_handle)
+        let info = transaction
+            .commit_with_callback(|_| {
+                // We must capture `info` as it is when we start flushing. Subsequent transactions
+                // can end up modifying `info` and we shouldn't capture those here.
+                self.allocator.inner.lock().info.clone()
+            })
+            .await?;
+        Ok((layer_object_handle, info))
     }
 
     async fn finish(
         self,
         layer_object_handle: DataObjectHandle<ObjectStore>,
+        mut info: AllocatorInfo,
     ) -> Result<Version, Error> {
         let object_manager = self.fs.object_manager();
         let txn_options = Self::txn_options(object_manager.metadata_reservation());
@@ -2052,28 +2059,22 @@ impl<'a> Flusher<'a> {
         )
         .await?;
 
-        // We must be careful to take a copy AllocatorInfo here rather than manipulate the
-        // live one. If we remove marked_for_deletion entries prematurely, we may fail any
-        // allocate() calls that are performed before the new version makes it to disk.
-        // Specifically, txn_write() below must allocate space and may fail if we prematurely
-        // clear marked_for_deletion.
-        let (new_info, marked_for_deletion) = {
-            let mut info = self.allocator.inner.lock().info.clone();
+        // Move all the existing layers to the graveyard.
+        for object_id in &info.layers {
+            root_store.add_to_graveyard(&mut transaction, *object_id);
+        }
 
-            // After compaction, since we always do a major compaction, all new layers have
-            // marked_for_deletion objects removed.
-            let marked_for_deletion = std::mem::take(&mut info.marked_for_deletion);
+        // Write out updated info.
 
-            // Move all the existing layers to the graveyard.
-            for object_id in &info.layers {
-                root_store.add_to_graveyard(&mut transaction, *object_id);
-            }
+        // After successfully flushing, all the stores that were marked for deletion at the time of
+        // the BeginFlush transaction, no longer need to be marked for deletion.  There can be
+        // stores that have been deleted since the BeginFlush transaction, but they will be covered
+        // by a MarkForDeletion mutation.
+        let marked_for_deletion = std::mem::take(&mut info.marked_for_deletion);
 
-            info.layers = vec![layer_object_handle.object_id()];
+        info.layers = vec![layer_object_handle.object_id()];
 
-            (info, marked_for_deletion)
-        };
-        new_info.serialize_with_version(&mut serialized_info)?;
+        info.serialize_with_version(&mut serialized_info)?;
 
         let mut buf = object_handle.allocate_buffer(serialized_info.len()).await;
         buf.as_mut_slice()[..serialized_info.len()].copy_from_slice(&serialized_info[..]);
@@ -2101,9 +2102,10 @@ impl<'a> Flusher<'a> {
                 // This means we can also switch to the new AllocatorInfo which clears
                 // marked_for_deletion.
                 let mut inner = self.allocator.inner.lock();
-                inner.info = new_info;
+                inner.info.layers = info.layers;
                 for owner_id in marked_for_deletion {
                     inner.marked_for_deletion.remove(&owner_id);
+                    inner.info.marked_for_deletion.remove(&owner_id);
                 }
             })
             .await?;
@@ -2594,13 +2596,14 @@ mod tests {
 
         const FILE_SIZE: usize = 10_000_000;
 
-        {
+        let mut store_id = {
             let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
             let store =
                 root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
 
             create_file(&store, FILE_SIZE).await;
-        }
+            store.store_object_id()
+        };
 
         fs.close().await.expect("close failed");
         let device = fs.take_device().await;
@@ -2619,10 +2622,13 @@ mod tests {
                 let transaction = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object(
-                            root_vol.volume_directory().store().store_object_id(),
-                            root_vol.volume_directory().object_id(),
-                        )],
+                        lock_keys![
+                            LockKey::object(
+                                root_vol.volume_directory().store().store_object_id(),
+                                root_vol.volume_directory().object_id(),
+                            ),
+                            LockKey::flush(store_id)
+                        ],
                         Options { borrow_metadata_space: true, ..Default::default() },
                     )
                     .await
@@ -2635,6 +2641,7 @@ mod tests {
                 let store =
                     root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
                 create_file(&store, FILE_SIZE).await;
+                store_id = store.store_object_id();
             }
 
             fs.close().await.expect("close failed");
@@ -2644,6 +2651,80 @@ mod tests {
             fs = FxFilesystemBuilder::new().open(device).await.expect("open failed");
         }
 
+        fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test(threads = 4)]
+    async fn test_compaction_delete_race() {
+        let (fs, _allocator) = test_fs().await;
+
+        {
+            const FILE_SIZE: usize = 10_000_000;
+
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store =
+                root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
+
+            create_file(&store, FILE_SIZE).await;
+
+            // Race compaction with deleting a store.
+            let fs_clone = fs.clone();
+
+            // Even though the executor has 4 threads, it's hard to get it to run with
+            // multiple threads. To make this happen, spin up a task that is continually yielding.
+            let yield_task = fasync::Task::spawn(async {
+                loop {
+                    fuchsia_async::yield_now().await;
+                }
+            });
+
+            // Loop for a while to guarantee at least two threads start running.  We still have to
+            // do the above, because otherwise another thread could start but then immediately stop
+            // if there's nothing to do.
+            for _ in 0..100 {
+                fuchsia_async::yield_now().await;
+            }
+
+            let task = fasync::Task::spawn(async move {
+                fs_clone.journal().compact().await.expect("compact failed");
+            });
+
+            // Now we can kill the yield_task.
+            let _ = yield_task.abort();
+
+            // This range is chosen such that it caused this test to fail after quite a low number
+            // of iterations for the bug that this test was introduced for.
+            let sleep = rand::random_range(3000..6000);
+            std::thread::sleep(std::time::Duration::from_micros(sleep));
+            log::info!("sleep {sleep}us");
+
+            let transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(
+                            root_vol.volume_directory().store().store_object_id(),
+                            root_vol.volume_directory().object_id(),
+                        ),
+                        LockKey::flush(store.store_object_id())
+                    ],
+                    Options { borrow_metadata_space: true, ..Default::default() },
+                )
+                .await
+                .expect("new_transaction failed");
+            root_vol.delete_volume("vol", transaction, || {}).await.expect("delete_volume failed");
+
+            task.await;
+        }
+
+        fs.journal().compact().await.expect("compact failed");
+        fs.close().await.expect("close failed");
+
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        let fs = FxFilesystemBuilder::new().open(device).await.expect("open failed");
         fsck(fs.clone()).await.expect("fsck failed");
         fs.close().await.expect("close failed");
     }
@@ -2663,10 +2744,13 @@ mod tests {
                 let transaction = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object(
-                            root_vol.volume_directory().store().store_object_id(),
-                            root_vol.volume_directory().object_id(),
-                        )],
+                        lock_keys![
+                            LockKey::object(
+                                root_vol.volume_directory().store().store_object_id(),
+                                root_vol.volume_directory().object_id(),
+                            ),
+                            LockKey::flush(store.store_object_id())
+                        ],
                         Options { borrow_metadata_space: true, ..Default::default() },
                     )
                     .await

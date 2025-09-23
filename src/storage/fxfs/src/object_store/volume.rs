@@ -5,11 +5,11 @@
 use crate::errors::FxfsError;
 use crate::filesystem::FxFilesystem;
 use crate::object_store::directory::Directory;
-use crate::object_store::transaction::{Mutation, Options, Transaction, lock_keys};
+use crate::object_store::transaction::{LockKeys, Mutation, Options, Transaction, lock_keys};
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::{
-    ChildValue, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectKey, ObjectStore,
-    ObjectValue, StoreOwner, load_store_info,
+    ChildValue, INVALID_OBJECT_ID, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectKey,
+    ObjectStore, ObjectValue, StoreOwner, load_store_info,
 };
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use fxfs_crypto::Crypt;
@@ -236,6 +236,64 @@ impl RootVolume {
     ) -> Result<(), Error> {
         ObjectStore::install_volume(self, src, image_file, dst).await
     }
+
+    /// Acquires a transaction with appropriate locks to remove volume |name|.
+    /// Also returns the object ID of the store which will be deleted.
+    pub async fn acquire_transaction_for_remove_volume(
+        &self,
+        name: &str,
+        extra_keys: impl IntoIterator<Item = LockKey>,
+        allow_not_found: bool,
+    ) -> Result<(u64, Transaction<'_>), Error> {
+        // Since we don't know the store object ID until we've looked it up in the volumes
+        // directory, we need to loop until we have acquired a lock on a store whose ID is the same
+        // as it was in the last iteration.
+        let volume_dir = self.volume_directory();
+        let store = volume_dir.store();
+        let extra_keys = extra_keys.into_iter();
+        let mut lock_keys = Vec::with_capacity(extra_keys.size_hint().1.unwrap_or(2) + 2);
+        lock_keys.extend(extra_keys);
+        lock_keys.push(LockKey::object(store.store_object_id(), volume_dir.object_id()));
+        let orig_len = lock_keys.len();
+        let mut transaction = None;
+        loop {
+            lock_keys.truncate(orig_len);
+            let object_id = match volume_dir.lookup(name).await? {
+                Some((object_id, ObjectDescriptor::Volume, _)) => {
+                    // We have to ensure that the store isn't flushed while we delete it, because
+                    // deleting the store will remove references to it from ObjectManager which are
+                    // then updated by flushing.
+                    lock_keys.push(LockKey::flush(object_id));
+                    object_id
+                }
+                None => {
+                    if allow_not_found {
+                        INVALID_OBJECT_ID
+                    } else {
+                        bail!(FxfsError::NotFound);
+                    }
+                }
+                _ => bail!(anyhow!(FxfsError::Inconsistent).context("Expected volume")),
+            };
+
+            // If the IDs match, return the transaction now.
+            match transaction {
+                Some(result @ (id, _)) if id == object_id => return Ok(result),
+                _ => {}
+            }
+
+            transaction = Some((
+                object_id,
+                store
+                    .filesystem()
+                    .new_transaction(
+                        LockKeys::Vec(lock_keys.clone()),
+                        Options { borrow_metadata_space: true, ..Default::default() },
+                    )
+                    .await?,
+            ));
+        }
+    }
 }
 
 /// Returns the root volume for the filesystem.
@@ -368,7 +426,7 @@ mod tests {
         let store_object_id;
         let parent_objects;
         // Add volume and a file (some data).
-        {
+        let store_id = {
             let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .new_volume("vol", NO_OWNER, Some(crypt.clone()))
@@ -406,7 +464,8 @@ mod tests {
                     .await
                     .expect("Layer file missing? Bug in test.");
             }
-        }
+            store.store_object_id()
+        };
         filesystem.close().await.expect("Close failed");
         let device = filesystem.take_device().await;
         device.reopen(false);
@@ -422,10 +481,13 @@ mod tests {
             let transaction = filesystem
                 .clone()
                 .new_transaction(
-                    lock_keys![LockKey::object(
-                        root.volume_directory().store().store_object_id(),
-                        root.volume_directory().object_id(),
-                    )],
+                    lock_keys![
+                        LockKey::object(
+                            root.volume_directory().store().store_object_id(),
+                            root.volume_directory().object_id(),
+                        ),
+                        LockKey::flush(store_id)
+                    ],
                     Options { borrow_metadata_space: true, ..Default::default() },
                 )
                 .await
@@ -514,17 +576,8 @@ mod tests {
         // Replace "vol" with "vol2", and ensure the filesystem and installed volume passes fsck.
         {
             let root = root_volume(fs.clone()).await.expect("root_volume failed");
-            let mut transaction = fs
-                .clone()
-                .new_transaction(
-                    lock_keys![LockKey::object(
-                        root.volume_directory().store().store_object_id(),
-                        root.volume_directory().object_id(),
-                    )],
-                    Options { borrow_metadata_space: true, ..Default::default() },
-                )
-                .await
-                .expect("new_transaction failed");
+            let mut transaction =
+                root.acquire_transaction_for_remove_volume("vol", [], false).await.unwrap().1;
             root.replace_volume(&mut transaction, "vol2", "vol").await.unwrap();
             transaction.commit().await.unwrap();
             do_fsck(&fs, Some("vol"), None).await;

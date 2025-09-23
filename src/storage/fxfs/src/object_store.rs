@@ -340,6 +340,9 @@ pub enum LockState {
     // Whilst we're unlocking, we will replay encrypted mutations.  The store isn't usable until
     // it's in the Unlocked state.
     Unlocking,
+
+    // The store has been deleted.
+    Deleted,
 }
 
 impl LockState {
@@ -359,6 +362,7 @@ impl fmt::Debug for LockState {
             LockState::Unknown => "Unknown",
             LockState::Locking => "Locking",
             LockState::Unlocking => "Unlocking",
+            LockState::Deleted => "Deleted",
         })
     }
 }
@@ -752,7 +756,8 @@ impl ObjectStore {
             LockState::Invalid
             | LockState::Unencrypted
             | LockState::Locking
-            | LockState::Unlocking => None,
+            | LockState::Unlocking
+            | LockState::Deleted => None,
             LockState::Unlocked { crypt, .. } => Some(crypt.clone()),
             LockState::UnlockedReadOnly(crypt) => Some(crypt.clone()),
             LockState::Unknown => {
@@ -1610,7 +1615,7 @@ impl ObjectStore {
         match &*self.lock_state.lock() {
             LockState::Locked => {}
             LockState::Unencrypted => bail!(FxfsError::InvalidArgs),
-            LockState::Invalid => bail!(FxfsError::Internal),
+            LockState::Invalid | LockState::Deleted => bail!(FxfsError::Internal),
             LockState::Unlocked { .. } | LockState::UnlockedReadOnly(..) => {
                 bail!(FxfsError::AlreadyBound)
             }
@@ -2238,6 +2243,10 @@ impl ObjectStore {
         buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
         self.store_info_handle.get().unwrap().txn_write(transaction, 0u64, buf.as_ref()).await
     }
+
+    pub fn mark_deleted(&self) {
+        *self.lock_state.lock() = LockState::Deleted;
+    }
 }
 
 #[async_trait]
@@ -2265,7 +2274,8 @@ impl JournalingObject for ObjectStore {
             | LockState::Unlocking
             | LockState::Unencrypted
             | LockState::Unlocked { .. }
-            | LockState::UnlockedReadOnly(..) => {}
+            | LockState::UnlockedReadOnly(..)
+            | LockState::Deleted => {}
             lock_state @ _ => panic!("Unexpected lock state: {lock_state:?}"),
         }
         match mutation {

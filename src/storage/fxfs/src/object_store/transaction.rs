@@ -799,63 +799,22 @@ impl<'a> Transaction<'a> {
         // It was considered to change the locks from Vec to BTreeSet since we'll now be searching
         // through it, but given the small set that these locks usually comprise, it probably isn't
         // worth it.
-        if let TxnMutation {
-            mutation:
-                Mutation::ObjectStore { 0: ObjectStoreMutation { item: ObjectItem { key, .. }, op } },
-            object_id: store_object_id,
-            ..
-        } = mutation
-        {
-            match &key.data {
-                ObjectKeyData::Attribute(..) => {
-                    // TODO(https://fxbug.dev/42073914): Check lock requirements.
-                }
-                ObjectKeyData::Child { .. }
-                | ObjectKeyData::EncryptedChild { .. }
-                | ObjectKeyData::CasefoldChild { .. } => {
-                    let id = key.object_id;
-                    if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
-                        && !self.new_objects.contains(&(*store_object_id, id))
-                    {
-                        debug_assert!(
-                            false,
-                            "Not holding required lock for object {id} \
-                                in store {store_object_id}"
-                        );
-                        error!(
-                            "Not holding required lock for object {id} in store \
-                                {store_object_id}"
-                        )
+        match mutation {
+            TxnMutation {
+                mutation:
+                    Mutation::ObjectStore {
+                        0: ObjectStoreMutation { item: ObjectItem { key, .. }, op },
+                    },
+                object_id: store_object_id,
+                ..
+            } => {
+                match &key.data {
+                    ObjectKeyData::Attribute(..) => {
+                        // TODO(https://fxbug.dev/42073914): Check lock requirements.
                     }
-                }
-                ObjectKeyData::GraveyardEntry { .. } => {
-                    // TODO(https://fxbug.dev/42073911): Check lock requirements.
-                }
-                ObjectKeyData::GraveyardAttributeEntry { .. } => {
-                    // TODO(https://fxbug.dev/122974): Check lock requirements.
-                }
-                ObjectKeyData::Keys => {
-                    let id = key.object_id;
-                    if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
-                        && !self.new_objects.contains(&(*store_object_id, id))
-                    {
-                        debug_assert!(
-                            false,
-                            "Not holding required lock for object {id} \
-                                in store {store_object_id}"
-                        );
-                        error!(
-                            "Not holding required lock for object {id} in store \
-                                {store_object_id}"
-                        )
-                    }
-                }
-                ObjectKeyData::Object => match op {
-                    // Insert implies the caller expects no object with which to race
-                    Operation::Insert => {
-                        self.new_objects.insert((*store_object_id, key.object_id));
-                    }
-                    Operation::Merge | Operation::ReplaceOrInsert => {
+                    ObjectKeyData::Child { .. }
+                    | ObjectKeyData::EncryptedChild { .. }
+                    | ObjectKeyData::CasefoldChild { .. } => {
                         let id = key.object_id;
                         if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
                             && !self.new_objects.contains(&(*store_object_id, id))
@@ -863,58 +822,109 @@ impl<'a> Transaction<'a> {
                             debug_assert!(
                                 false,
                                 "Not holding required lock for object {id} \
-                                    in store {store_object_id}"
+                                in store {store_object_id}"
                             );
                             error!(
                                 "Not holding required lock for object {id} in store \
-                                    {store_object_id}"
+                                {store_object_id}"
                             )
                         }
                     }
-                },
-                ObjectKeyData::Project { project_id, property: ProjectProperty::Limit } => {
-                    if !self.txn_locks.contains(&LockKey::ProjectId {
-                        store_object_id: *store_object_id,
-                        project_id: *project_id,
-                    }) {
-                        debug_assert!(
-                            false,
-                            "Not holding required lock for project limit id {project_id} \
+                    ObjectKeyData::GraveyardEntry { .. } => {
+                        // TODO(https://fxbug.dev/42073911): Check lock requirements.
+                    }
+                    ObjectKeyData::GraveyardAttributeEntry { .. } => {
+                        // TODO(https://fxbug.dev/122974): Check lock requirements.
+                    }
+                    ObjectKeyData::Keys => {
+                        let id = key.object_id;
+                        if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
+                            && !self.new_objects.contains(&(*store_object_id, id))
+                        {
+                            debug_assert!(
+                                false,
+                                "Not holding required lock for object {id} \
                                 in store {store_object_id}"
-                        );
-                        error!(
-                            "Not holding required lock for project limit id {project_id} in \
+                            );
+                            error!(
+                                "Not holding required lock for object {id} in store \
+                                {store_object_id}"
+                            )
+                        }
+                    }
+                    ObjectKeyData::Object => match op {
+                        // Insert implies the caller expects no object with which to race
+                        Operation::Insert => {
+                            self.new_objects.insert((*store_object_id, key.object_id));
+                        }
+                        Operation::Merge | Operation::ReplaceOrInsert => {
+                            let id = key.object_id;
+                            if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
+                                && !self.new_objects.contains(&(*store_object_id, id))
+                            {
+                                debug_assert!(
+                                    false,
+                                    "Not holding required lock for object {id} \
+                                    in store {store_object_id}"
+                                );
+                                error!(
+                                    "Not holding required lock for object {id} in store \
+                                    {store_object_id}"
+                                )
+                            }
+                        }
+                    },
+                    ObjectKeyData::Project { project_id, property: ProjectProperty::Limit } => {
+                        if !self.txn_locks.contains(&LockKey::ProjectId {
+                            store_object_id: *store_object_id,
+                            project_id: *project_id,
+                        }) {
+                            debug_assert!(
+                                false,
+                                "Not holding required lock for project limit id {project_id} \
+                                in store {store_object_id}"
+                            );
+                            error!(
+                                "Not holding required lock for project limit id {project_id} in \
                                 store {store_object_id}"
-                        )
+                            )
+                        }
                     }
-                }
-                ObjectKeyData::Project { property: ProjectProperty::Usage, .. } => match op {
-                    Operation::Insert | Operation::ReplaceOrInsert => {
-                        panic!(
-                            "Project usage is all handled by merging deltas, no inserts or \
+                    ObjectKeyData::Project { property: ProjectProperty::Usage, .. } => match op {
+                        Operation::Insert | Operation::ReplaceOrInsert => {
+                            panic!(
+                                "Project usage is all handled by merging deltas, no inserts or \
                                 replacements should be used"
-                        );
-                    }
-                    // Merges are all handled like atomic +/- and serialized by the tree locks.
-                    Operation::Merge => {}
-                },
-                ObjectKeyData::ExtendedAttribute { .. } => {
-                    let id = key.object_id;
-                    if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
-                        && !self.new_objects.contains(&(*store_object_id, id))
-                    {
-                        debug_assert!(
-                            false,
-                            "Not holding required lock for object {id} \
+                            );
+                        }
+                        // Merges are all handled like atomic +/- and serialized by the tree locks.
+                        Operation::Merge => {}
+                    },
+                    ObjectKeyData::ExtendedAttribute { .. } => {
+                        let id = key.object_id;
+                        if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
+                            && !self.new_objects.contains(&(*store_object_id, id))
+                        {
+                            debug_assert!(
+                                false,
+                                "Not holding required lock for object {id} \
                                 in store {store_object_id} while mutating extended attribute"
-                        );
-                        error!(
-                            "Not holding required lock for object {id} in store \
+                            );
+                            error!(
+                                "Not holding required lock for object {id} in store \
                                 {store_object_id} while mutating extended attribute"
-                        )
+                            )
+                        }
                     }
                 }
             }
+            TxnMutation { mutation: Mutation::DeleteVolume, object_id, .. } => {
+                if !self.txn_locks.contains(&LockKey::flush(*object_id)) {
+                    debug_assert!(false, "Not holding required lock for DeleteVolume");
+                    error!("Not holding required lock for DeleteVolume");
+                }
+            }
+            _ => {}
         }
     }
 

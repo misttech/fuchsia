@@ -162,22 +162,17 @@ impl ObjectStore {
         let reservation_update: ReservationUpdate; // Must outlive `activate_volume_txn`.
         let parent_store = self.parent_store.as_ref().unwrap();
 
-        let mut activate_volume_txn = fs
-            .clone()
-            .new_transaction(
-                lock_keys![
-                    LockKey::object(
-                        parent_store.store_object_id(),
-                        self.store_info_handle_object_id().unwrap(),
-                    ),
-                    LockKey::object(
-                        root.volume_directory().store().store_object_id(),
-                        root.volume_directory().object_id(),
-                    ),
-                ],
-                txn_options,
+        let mut activate_volume_txn = root
+            .acquire_transaction_for_remove_volume(
+                dst,
+                [LockKey::object(
+                    parent_store.store_object_id(),
+                    self.store_info_handle_object_id().unwrap(),
+                )],
+                true,
             )
-            .await?;
+            .await?
+            .1;
 
         let new_layer = {
             let handle_options = HandleOptions { skip_journal_checks: true, ..Default::default() };

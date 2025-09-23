@@ -322,7 +322,9 @@ impl ObjectManager {
                     }
                 }
                 Mutation::DeleteVolume => {
-                    inner.stores.remove(&object_id);
+                    if let Some(store) = inner.stores.remove(&object_id) {
+                        store.mark_deleted();
+                    }
                     inner.reservations.remove(&object_id);
                     inner.journal_checkpoints.remove(&object_id);
                     return Ok(());
