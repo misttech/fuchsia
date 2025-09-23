@@ -31,7 +31,7 @@ install_extensions() {
   fi
 
   # TODO(b/442696047) remove this extra flag when gemini unbreaks extensions in the internal binary
-  if [[ -d "/google" ]]; then
+  if [[ -x "/google/bin/releases/gemini-cli/tools/gemini" ]]; then
     $GEMINI_CMD --noenable_sawmill_logging extensions link $FUCHSIA_DIR/.gemini/extensions/rust
   else
     $GEMINI_CMD extensions link .gemini/extensions/rust
