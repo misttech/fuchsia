@@ -7,6 +7,7 @@ use assembly_api::{create_system, product_assembly};
 use async_trait::async_trait;
 use errors::FfxError;
 use ffx_assembly_args::*;
+use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result};
 mod operations;
@@ -17,6 +18,8 @@ use assembly_components as _;
 pub struct AssemblyTool {
     #[command]
     cmd: AssemblyCommand,
+
+    context: EnvironmentContext,
 }
 
 #[async_trait(?Send)]
@@ -31,14 +34,15 @@ impl FfxMain for AssemblyTool {
                 create_system(args.into()).context("Create System").map(|_| ())
             }
             OperationClass::CreateUpdate(args) => {
-                operations::create_update::create_update(args).context("Create Update Package")
+                operations::create_update::create_update(&self.context, args)
+                    .context("Create Update Package")
             }
             OperationClass::Product(args) => {
                 product_assembly(args.into()).context("Product Assembly").map(|_| ())
             }
             OperationClass::SizeCheck(args) => match args.op_class {
                 SizeCheckOperationClass::Package(args) => {
-                    operations::size_check::package::verify_package_budgets(args)
+                    operations::size_check::package::verify_package_budgets(&self.context, args)
                         .context("Package size checker")
                 }
                 SizeCheckOperationClass::Product(args) => {

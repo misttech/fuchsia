@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use assembly_tool::{Tool, ToolCommand, ToolCommandLog, ToolProvider};
-use ffx_config::global_env_context;
+use ffx_config::EnvironmentContext;
 use ffx_config::sdk::Sdk;
 use std::path::PathBuf;
 use std::process::Command;
@@ -23,8 +23,7 @@ pub struct SdkToolProvider {
 impl SdkToolProvider {
     /// Attempt to create a new SdkToolProvider. This will return an Err if the manifest cannot be
     /// found, parsed, or is invalid.
-    pub fn try_new() -> Result<Self> {
-        let ctx = global_env_context().context("loading global environment context")?;
+    pub fn try_new(ctx: &EnvironmentContext) -> Result<Self> {
         Ok(Self { sdk: ctx.get_sdk().context("Reading the SDK")?, log: ToolCommandLog::default() })
     }
 }

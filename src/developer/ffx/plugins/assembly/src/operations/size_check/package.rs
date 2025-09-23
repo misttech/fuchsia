@@ -11,6 +11,7 @@ use assembly_util::{read_config, write_json_file};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::ffx_bail;
 use ffx_assembly_args::PackageSizeCheckArgs;
+use ffx_config::EnvironmentContext;
 use fuchsia_hash::Hash;
 use fuchsia_pkg::PackageManifest;
 use serde::{Deserialize, Serialize};
@@ -92,8 +93,8 @@ struct BudgetResult {
 }
 
 /// Verifies that no package budget is exceeded.
-pub fn verify_package_budgets(args: PackageSizeCheckArgs) -> Result<()> {
-    let sdk_tools = SdkToolProvider::try_new().context("Getting SDK tools")?;
+pub fn verify_package_budgets(ctx: &EnvironmentContext, args: PackageSizeCheckArgs) -> Result<()> {
+    let sdk_tools = SdkToolProvider::try_new(ctx).context("Getting SDK tools")?;
     verify_budgets_with_tools(args, Box::new(sdk_tools))
 }
 

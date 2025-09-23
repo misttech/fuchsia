@@ -12,11 +12,12 @@ use assembly_update_package::{Slot, UpdatePackageBuilder};
 use assembly_update_packages_manifest::UpdatePackagesManifest;
 use epoch::EpochFile;
 use ffx_assembly_args::CreateUpdateArgs;
+use ffx_config::EnvironmentContext;
 use fuchsia_pkg::PackageManifest;
 use fuchsia_url::RepositoryUrl;
 use std::collections::BTreeSet;
 
-pub fn create_update(args: CreateUpdateArgs) -> Result<()> {
+pub fn create_update(ctx: &EnvironmentContext, args: CreateUpdateArgs) -> Result<()> {
     let partitions = PartitionsConfig::from_dir(args.partitions)
         .context("Failed to parse the partitions config")?;
     let epoch: EpochFile = EpochFile::Version1 { epoch: args.epoch };
@@ -87,7 +88,7 @@ pub fn create_update(args: CreateUpdateArgs) -> Result<()> {
         builder.add_slot_images(Slot::Recovery(manifest));
     }
 
-    let tools = SdkToolProvider::try_new()?;
+    let tools = SdkToolProvider::try_new(ctx)?;
     builder.build(Box::new(tools))?;
     Ok(())
 }

@@ -44,7 +44,7 @@ impl FfxMain for ProductCreateTool {
             SdkVersion::InTree => in_tree_sdk_version(),
             SdkVersion::Unknown => return_bug!("Unable to determine SDK version"),
         };
-        let tools = SdkToolProvider::try_new()?;
+        let tools = SdkToolProvider::try_new(&self.ctx)?;
         pb_create_with_sdk_version(self.cmd, &sdk_version, Box::new(tools))
             .await
             .map_err(Into::into)
