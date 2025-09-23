@@ -4,12 +4,12 @@
 
 #include "src/graphics/display/testing/software-compositor/software-compositor.h"
 
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <span>
 
 #include "src/graphics/display/testing/software-compositor/pixel.h"
 
@@ -17,9 +17,9 @@ namespace software_compositor {
 
 namespace {
 
-inline std::pair<cpp20::span<uint8_t>::iterator, cpp20::span<const uint8_t>::iterator> CopyPixel(
-    cpp20::span<uint8_t>::iterator canvas_pixel_it, PixelFormat canvas_pixel_format,
-    cpp20::span<const uint8_t>::iterator source_pixel_it, PixelFormat source_pixel_format) {
+inline std::pair<std::span<uint8_t>::iterator, std::span<const uint8_t>::iterator> CopyPixel(
+    std::span<uint8_t>::iterator canvas_pixel_it, PixelFormat canvas_pixel_format,
+    std::span<const uint8_t>::iterator source_pixel_it, PixelFormat source_pixel_format) {
   if (canvas_pixel_format == source_pixel_format) {
     std::tie(canvas_pixel_it[0], canvas_pixel_it[1], canvas_pixel_it[2], canvas_pixel_it[3]) =
         std::tie(source_pixel_it[0], source_pixel_it[1], source_pixel_it[2], source_pixel_it[3]);
@@ -40,8 +40,8 @@ inline std::pair<cpp20::span<uint8_t>::iterator, cpp20::span<const uint8_t>::ite
 }  // namespace
 
 PixelData OutputImage::At(const Offset2D& offset) const {
-  cpp20::span<const uint8_t> data{reinterpret_cast<const uint8_t*>(buffer.data()),
-                                  static_cast<size_t>(properties.height) * properties.stride_bytes};
+  std::span<const uint8_t> data{reinterpret_cast<const uint8_t*>(buffer.data()),
+                                static_cast<size_t>(properties.height) * properties.stride_bytes};
   const int bytes_per_pixel = GetBytesPerPixel(properties.pixel_format);
   return PixelData::FromRaw(buffer.subspan(
       offset.y * properties.stride_bytes + offset.x * bytes_per_pixel, bytes_per_pixel));
@@ -65,8 +65,8 @@ SoftwareCompositor::SoftwareCompositor(const OutputImage& canvas) : canvas_(canv
 void SoftwareCompositor::ClearCanvas(const PixelData& color, PixelFormat pixel_format) const {
   const PixelData color_to_fill = color.Convert(pixel_format, canvas_.properties.pixel_format);
   for (int row = 0; row < canvas_.properties.height; ++row) {
-    cpp20::span<uint8_t> bytes_to_fill = canvas_.buffer.subspan(
-        row * canvas_.properties.stride_bytes, canvas_.properties.stride_bytes);
+    std::span<uint8_t> bytes_to_fill = canvas_.buffer.subspan(row * canvas_.properties.stride_bytes,
+                                                              canvas_.properties.stride_bytes);
     auto it = bytes_to_fill.begin();
     for (int column = 0; column < canvas_.properties.width; ++column) {
       it = std::copy(color_to_fill.data.begin(), color_to_fill.data.end(), it);
@@ -112,11 +112,11 @@ void SoftwareCompositor::CompositeImage(const InputImage& input_image,
   const int dst_bytes_per_pixel = GetBytesPerPixel(canvas_.properties.pixel_format);
 
   for (int row = 0; row < canvas_destination.height(); row++) {
-    cpp20::span<const uint8_t> source_row =
+    std::span<const uint8_t> source_row =
         input_image.buffer.subspan((row + image_source.y()) * input_image.properties.stride_bytes +
                                        image_source.x() * src_bytes_per_pixel,
                                    /*count=*/image_source.width() * src_bytes_per_pixel);
-    cpp20::span<uint8_t> canvas_row =
+    std::span<uint8_t> canvas_row =
         canvas_.buffer.subspan((row + canvas_destination.y()) * canvas_.properties.stride_bytes +
                                    canvas_destination.x() * dst_bytes_per_pixel,
                                /*count=*/canvas_destination.width() * dst_bytes_per_pixel);
@@ -156,7 +156,7 @@ void SoftwareCompositor::CompositeFallbackColor(
   const int dst_bytes_per_pixel = GetBytesPerPixel(canvas_.properties.pixel_format);
 
   for (int row = 0; row < canvas_destination.height(); row++) {
-    cpp20::span<uint8_t> canvas_row =
+    std::span<uint8_t> canvas_row =
         canvas_.buffer.subspan((row + canvas_destination.y()) * canvas_.properties.stride_bytes +
                                    canvas_destination.x() * dst_bytes_per_pixel,
                                /*count=*/canvas_destination.width() * dst_bytes_per_pixel);
@@ -169,7 +169,7 @@ void SoftwareCompositor::CompositeFallbackColor(
   }
 }
 
-void SoftwareCompositor::CompositeLayers(cpp20::span<const LayerForComposition> layers) const {
+void SoftwareCompositor::CompositeLayers(std::span<const LayerForComposition> layers) const {
   constexpr PixelData kBlack = {0x00, 0x00, 0x00, 0xff};
   ClearCanvas(kBlack, PixelFormat::kRgba8888);
   for (const LayerForComposition& image_layer : layers) {

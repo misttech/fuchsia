@@ -6,7 +6,7 @@
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
 
-#include <chrono>
+#include <span>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -70,7 +70,7 @@ TEST(ClearCanvas, NoConversionBgra) {
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
-    cpp20::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
+    std::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
     std::array<uint8_t, 4> pixel_expected = {1, 2, 3, 255};
     // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
     // figured out.
@@ -103,7 +103,7 @@ TEST(ClearCanvas, ConversionRgbaToBgra) {
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
-    cpp20::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
+    std::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
     std::array<uint8_t, 4> pixel_expected = {3, 2, 1, 255};
     // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
     // figured out.
@@ -136,7 +136,7 @@ TEST(ClearCanvas, ConversionBgraToRgba) {
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
-    cpp20::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
+    std::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
     std::array<uint8_t, 4> pixel_expected = {3, 2, 1, 255};
     // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
     // figured out.
@@ -211,7 +211,7 @@ TEST(CompositeLayers, NoConversionBgra) {
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
-    cpp20::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
+    std::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
     std::array<uint8_t, 4> pixel_expected = {0, 0, 255, 255};
     // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
     // figured out.
@@ -286,7 +286,7 @@ TEST(CompositeLayers, NoConversionRgba) {
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
-    cpp20::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
+    std::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
     std::array<uint8_t, 4> pixel_expected = {255, 0, 0, 255};
     // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
     // figured out.
@@ -425,7 +425,7 @@ TEST(CompositeLayers, ConversionRgbaToBgra) {
   }
 
   for (size_t bytes_index = 0; bytes_index < canvas_bytes.size(); bytes_index += 4) {
-    cpp20::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
+    std::span<uint8_t> pixel_actual(canvas_bytes.begin() + bytes_index, 4);
     std::array<uint8_t, 4> pixel_expected = {255, 0, 0, 255};
     // TODO(https://fxbug.dev/333768776): Revert back to EXPECT_THAT once the clang regression is
     // figured out.

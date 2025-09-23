@@ -5,9 +5,8 @@
 #ifndef SRC_GRAPHICS_DISPLAY_TESTING_SOFTWARE_COMPOSITOR_SOFTWARE_COMPOSITOR_H_
 #define SRC_GRAPHICS_DISPLAY_TESTING_SOFTWARE_COMPOSITOR_SOFTWARE_COMPOSITOR_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/color.h"
@@ -40,7 +39,7 @@ struct OutputImage {
   inline PixelData At(const Offset2D& offset) const;
   inline void SetPixelData(const Offset2D& offset, const PixelData& color) const;
 
-  cpp20::span<uint8_t> buffer;
+  std::span<uint8_t> buffer;
   ImageProperties properties;
 };
 
@@ -51,7 +50,7 @@ struct InputImage {
   static const InputImage kNoInputImage;
 
   // Empty iff the input has no image.
-  cpp20::span<const uint8_t> buffer;
+  std::span<const uint8_t> buffer;
   ImageProperties properties;
 };
 
@@ -138,7 +137,7 @@ class SoftwareCompositor {
   // TODO(https://fxbug.dev/42080652): Instead of providing a separate ClearCanvas()
   // command, we should integrate background filling into
   // CompositeImageLayers().
-  void CompositeLayers(cpp20::span<const LayerForComposition> image_layers) const;
+  void CompositeLayers(std::span<const LayerForComposition> image_layers) const;
 
  private:
   // Composites the `input_image` onto the top of the canvas using given

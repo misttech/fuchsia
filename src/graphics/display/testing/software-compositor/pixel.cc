@@ -7,11 +7,12 @@
 #include <zircon/assert.h>
 
 #include <cstdint>
+#include <span>
 
 namespace software_compositor {
 
 // static
-PixelData PixelData::FromRaw(cpp20::span<const uint8_t> raw) {
+PixelData PixelData::FromRaw(std::span<const uint8_t> raw) {
   ZX_DEBUG_ASSERT(raw.size() == 4);
   PixelData color_raw;
   std::copy(raw.begin(), raw.end(), color_raw.data.begin());

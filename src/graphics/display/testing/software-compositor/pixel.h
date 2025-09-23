@@ -6,12 +6,12 @@
 #define SRC_GRAPHICS_DISPLAY_TESTING_SOFTWARE_COMPOSITOR_PIXEL_H_
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <array>
 #include <cinttypes>
 #include <cstdint>
+#include <span>
 
 namespace software_compositor {
 
@@ -55,7 +55,7 @@ constexpr int GetBytesPerPixel(PixelFormat pixel_format) {
 struct PixelData {
   std::array<uint8_t, 4> data;
 
-  static PixelData FromRaw(cpp20::span<const uint8_t> raw);
+  static PixelData FromRaw(std::span<const uint8_t> raw);
   PixelData Convert(PixelFormat from, PixelFormat to) const;
 };
 

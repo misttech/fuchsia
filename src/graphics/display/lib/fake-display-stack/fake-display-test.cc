@@ -427,7 +427,7 @@ std::pair<zx::vmo, fuchsia_sysmem2::wire::SingleBufferSettings> GetAllocatedBuff
   return {std::move(buffer_collection_info.buffers()[0].vmo()), std::move(settings_clone)};
 }
 
-void FillImageWithColor(cpp20::span<uint8_t> image_buffer, const std::vector<uint8_t>& color_raw,
+void FillImageWithColor(std::span<uint8_t> image_buffer, const std::vector<uint8_t>& color_raw,
                         int width, int height, uint32_t bytes_per_row_divisor) {
   size_t bytes_per_pixel = color_raw.size();
   size_t row_stride_bytes = fbl::round_up(width * bytes_per_pixel, bytes_per_row_divisor);
@@ -696,8 +696,8 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureImage) {
   // Fill the framebuffer.
   fzl::VmoMapper framebuffer_mapper;
   ASSERT_OK(framebuffer_mapper.Map(framebuffer_vmo));
-  cpp20::span<uint8_t> framebuffer_bytes(reinterpret_cast<uint8_t*>(framebuffer_mapper.start()),
-                                         framebuffer_mapper.size());
+  std::span<uint8_t> framebuffer_bytes(reinterpret_cast<uint8_t*>(framebuffer_mapper.start()),
+                                       framebuffer_mapper.size());
   const std::vector<uint8_t> kBlueBgraBytes = {0xff, 0, 0, 0xff};
   FillImageWithColor(framebuffer_bytes, kBlueBgraBytes, kDisplayWidth, kDisplayHeight,
                      framebuffer_settings.image_format_constraints().bytes_per_row_divisor());
@@ -760,12 +760,12 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureImage) {
   {
     fzl::VmoMapper capture_mapper;
     ASSERT_OK(capture_mapper.Map(capture_vmo));
-    cpp20::span<const uint8_t> capture_bytes(
-        reinterpret_cast<const uint8_t*>(capture_mapper.start()), /*count=*/capture_mapper.size());
+    std::span<const uint8_t> capture_bytes(reinterpret_cast<const uint8_t*>(capture_mapper.start()),
+                                           /*count=*/capture_mapper.size());
     zx_cache_flush(capture_bytes.data(), capture_bytes.size(), ZX_CACHE_FLUSH_DATA);
 
     for (int row = 0; row < kDisplayHeight; ++row) {
-      cpp20::span<const uint8_t> capture_row =
+      std::span<const uint8_t> capture_row =
           capture_bytes.subspan(row * capture_row_stride_bytes, capture_row_stride_bytes);
       auto it = capture_row.begin();
       for (int col = 0; col < kDisplayWidth; ++col) {
@@ -888,12 +888,12 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureSolidColorFill) {
   {
     fzl::VmoMapper capture_mapper;
     ASSERT_OK(capture_mapper.Map(capture_vmo));
-    cpp20::span<const uint8_t> capture_bytes(
-        reinterpret_cast<const uint8_t*>(capture_mapper.start()), /*count=*/capture_mapper.size());
+    std::span<const uint8_t> capture_bytes(reinterpret_cast<const uint8_t*>(capture_mapper.start()),
+                                           /*count=*/capture_mapper.size());
     zx_cache_flush(capture_bytes.data(), capture_bytes.size(), ZX_CACHE_FLUSH_DATA);
 
     for (int row = 0; row < kDisplayHeight; ++row) {
-      cpp20::span<const uint8_t> capture_row =
+      std::span<const uint8_t> capture_row =
           capture_bytes.subspan(row * capture_row_stride_bytes, capture_row_stride_bytes);
       auto it = capture_row.begin();
       for (int col = 0; col < kDisplayWidth; ++col) {
@@ -1012,8 +1012,8 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureMultipleImageLayers) {
   // Fill the framebuffers.
   fzl::VmoMapper framebuffer1_mapper;
   ASSERT_OK(framebuffer1_mapper.Map(framebuffer1_vmo));
-  cpp20::span<uint8_t> framebuffer1_bytes(reinterpret_cast<uint8_t*>(framebuffer1_mapper.start()),
-                                          framebuffer1_mapper.size());
+  std::span<uint8_t> framebuffer1_bytes(reinterpret_cast<uint8_t*>(framebuffer1_mapper.start()),
+                                        framebuffer1_mapper.size());
   const std::vector<uint8_t> kBlueBgraBytes = {0xff, 0, 0, 0xff};
   FillImageWithColor(framebuffer1_bytes, kBlueBgraBytes, kDisplayWidth, kDisplayHeight,
                      framebuffer1_settings.image_format_constraints().bytes_per_row_divisor());
@@ -1023,8 +1023,8 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureMultipleImageLayers) {
 
   fzl::VmoMapper framebuffer2_mapper;
   ASSERT_OK(framebuffer2_mapper.Map(framebuffer2_vmo));
-  cpp20::span<uint8_t> framebuffer2_bytes(reinterpret_cast<uint8_t*>(framebuffer2_mapper.start()),
-                                          framebuffer2_mapper.size());
+  std::span<uint8_t> framebuffer2_bytes(reinterpret_cast<uint8_t*>(framebuffer2_mapper.start()),
+                                        framebuffer2_mapper.size());
   const std::vector<uint8_t> kPurpleBgraBytes = {0x88, 0, 0x88, 0xff};
   FillImageWithColor(framebuffer2_bytes, kPurpleBgraBytes, kDisplayWidth / 2, kDisplayHeight / 2,
                      framebuffer2_settings.image_format_constraints().bytes_per_row_divisor());
@@ -1102,12 +1102,12 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureMultipleImageLayers) {
   {
     fzl::VmoMapper capture_mapper;
     ASSERT_OK(capture_mapper.Map(capture_vmo));
-    cpp20::span<const uint8_t> capture_bytes(
-        reinterpret_cast<const uint8_t*>(capture_mapper.start()), /*count=*/capture_mapper.size());
+    std::span<const uint8_t> capture_bytes(reinterpret_cast<const uint8_t*>(capture_mapper.start()),
+                                           /*count=*/capture_mapper.size());
     zx_cache_flush(capture_bytes.data(), capture_bytes.size(), ZX_CACHE_FLUSH_DATA);
 
     for (int row = 0; row < kDisplayHeight; ++row) {
-      cpp20::span<const uint8_t> capture_row =
+      std::span<const uint8_t> capture_row =
           capture_bytes.subspan(row * capture_row_stride_bytes, capture_row_stride_bytes);
       auto it = capture_row.begin();
       for (int col = 0; col < kDisplayWidth; ++col) {

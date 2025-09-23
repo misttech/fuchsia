@@ -15,7 +15,6 @@ source_set("software-compositor") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
-    "//sdk/lib/stdcompat",
     "//src/graphics/display/lib/api-types/cpp",
     "//zircon/system/ulib/zx",
   ]

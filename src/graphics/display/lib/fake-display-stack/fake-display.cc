@@ -33,6 +33,7 @@
 #include <initializer_list>
 #include <limits>
 #include <mutex>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -221,8 +222,8 @@ zx::result<> FakeDisplay::CompositeLayersToCaptureTargetLocked(
 
     software_compositor::InputImage layer_image_to_composite = {
         .buffer =
-            cpp20::span<const uint8_t>(reinterpret_cast<const uint8_t*>(layer_image_mapper.start()),
-                                       layer_image_mapper.size()),
+            std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(layer_image_mapper.start()),
+                                     layer_image_mapper.size()),
         .properties = {
             .width = layer_image->metadata().width(),
             .height = layer_image->metadata().height(),
