@@ -97,8 +97,8 @@ impl DeviceControl for RegistryDevice {
     ) -> Result<Box<dyn RingBuffer>, Error> {
         let (ring_buffer_proxy, ring_buffer_server) = create_proxy::<fadevice::RingBufferMarker>();
 
-        // Request at least 100ms worth of frames (rounding up).
-        let min_frames = format.frames_per_second.div_ceil(10);
+        // Request at least 300ms worth of frames (rounding up).
+        let min_frames = (format.frames_per_second * 3).div_ceil(10);
         let min_bytes = min_frames * format.bytes_per_frame();
 
         let options = fadevice::RingBufferOptions {
@@ -279,6 +279,18 @@ impl Device {
     ) -> Result<fac::PlayerPlayResponse, ControllerError> {
         fuchsia_trace::duration!(c"audio-streaming", c"audio_ffx_daemon::Device::play");
 
+        match fuchsia_scheduler::set_role_for_this_thread("fuchsia.audio.hal.worker") {
+            Ok(_) => log::info!(
+                "********** Applied Scheduler Profile in audio_ffx_daemon::play() **********"
+            ),
+            Err(err) => {
+                log::warn!(
+                    "********** Failed to apply Scheduler Profile in audio_ffx_daemon::play(): {}",
+                    err
+                )
+            }
+        };
+
         // Read header from socket, get the format from the header
         let spec = socket.read_header().await?;
         let format = Format::from(spec);
@@ -314,7 +326,7 @@ impl Device {
         let wakeup_interval = zx::MonotonicDuration::from_millis(10);
 
         // Initially, fill the entire buffer with silence
-        let initial_bytes_of_silence = rb_size_bytes;
+        let initial_bytes_of_silence = rb_size_bytes - consumer_bytes;
 
         let mut next_running_frame_to_write: u64 = 0;
         let silence = vec![format.sample_type.silence_value(); initial_bytes_of_silence as usize];
@@ -323,6 +335,12 @@ impl Device {
             .write_to_frame(next_running_frame_to_write, &silence)
             .context("Failed to pre-write silence to buffer")?;
         next_running_frame_to_write += initial_bytes_of_silence / frame_size;
+        log::info!(
+            "Pre-wrote {} frames of silence to the ring_buffer, next_running_frame {}, rb_frames {}",
+            initial_bytes_of_silence / frame_size,
+            next_running_frame_to_write,
+            rb_size_frames
+        );
 
         // RingBuffer::Start
         let start_time = ring_buffer.start().await?;
@@ -374,9 +392,13 @@ impl Device {
 
         // At time 0, the first safely written frame is just beyond consumer_bytes (which represents
         // the server's driver_transfer_bytes zone, starting at 0 for an outgoing RingBuffer).
-        let first_safe_frame_offset: u64 = (consumer_bytes + frame_size - 1) / frame_size;
-        // `consumer_bytes` should already be frame-aligned, but we make sure of it.
-        // We track this position purely to double-check that we have not underrun our padding.
+        //
+        // Although the theoretical 'first safe frame' is really consumer_bytes / frame_size (and
+        // that is what we should use when -- sometime in the future -- we track underflows and
+        // overflows in `ffx audio`), we pad our starting point by consumer_bytes MORE, for safety.
+        // Also, `consumer_bytes` should already be frame-aligned, but we make sure of it.
+        let start_safe_range_with_padding: u64 =
+            ((consumer_bytes * 2) + frame_size - 1) / frame_size;
 
         // When refilling the buffer, we aim to keep it ENTIRELY full. We cannot fill beyond this
         // offset, since at that point we reach the portion of the buffer allocated to the driver.
@@ -402,14 +424,16 @@ impl Device {
             let first_safe_frame = self.frame_for_running_time(
                 now_nanos,
                 start_time.into_nanos(),
-                first_safe_frame_offset,
+                start_safe_range_with_padding,
                 format.frames_per_second.into(),
             );
             let prev_running_frame_to_write = next_running_frame_to_write;
             if first_safe_frame > next_running_frame_to_write {
                 log::warn!(
-                    "Woke up {} frames too late (in addition to our padding!)",
-                    first_safe_frame - next_running_frame_to_write
+                    "Woke up {} frames too late (in addition to our padding!): start_safe {}, running {}",
+                    first_safe_frame - next_running_frame_to_write,
+                    first_safe_frame,
+                    next_running_frame_to_write
                 );
 
                 // Fill silence ... or is it too late for that?
@@ -447,6 +471,11 @@ impl Device {
                 .vmo_buffer()
                 .write_to_frame(next_running_frame_to_write, &buf)
                 .context("Failed to write to buffer")?;
+            log::debug!(
+                "Wrote audio from frame {} to frame {}",
+                next_running_frame_to_write,
+                next_running_frame_to_write + num_frames_to_write
+            );
             next_running_frame_to_write += num_frames_to_write;
 
             fuchsia_trace::instant!(

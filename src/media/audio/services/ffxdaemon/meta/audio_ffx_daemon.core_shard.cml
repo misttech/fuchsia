@@ -31,6 +31,13 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.scheduler.RoleManager" ],
+            from: "parent",
+            to: "#audio_ffx_daemon",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have been migrated to services. The service capability has been added below.
             directory: "dev-class",
             from: "parent",

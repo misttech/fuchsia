@@ -153,7 +153,11 @@ impl VmoBuffer {
             );
 
             if buf[bytes_until_buffer_end..].len() > self.vmo_size_bytes as usize {
-                log::error!("Remainder of write buffer is too big for the vmo.");
+                log::error!(
+                    "Remainder of write buffer (size {}) is too big for the vmo (size {})",
+                    buf[bytes_until_buffer_end..].len(),
+                    self.vmo_size_bytes
+                );
             }
 
             // Write what remains to the beginning of the buffer.
