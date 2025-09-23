@@ -5,6 +5,7 @@
 #ifndef SRC_LIB_UNWINDER_ARM_EHABI_PARSER_H_
 #define SRC_LIB_UNWINDER_ARM_EHABI_PARSER_H_
 
+#include "gtest/gtest_prod.h"
 #include "src/lib/unwinder/arm_ehabi_module.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
@@ -18,6 +19,9 @@ class ArmEhAbiParser {
   [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
 
  private:
+  FRIEND_TEST(ArmEhAbiParser, CollectInstructionsIndexInline);
+  FRIEND_TEST(ArmEhAbiParser, CollectInstructionsTableLookup);
+
   enum class FrameHandlerType : uint8_t {
     // All instructions are within a single 32 bit word.
     kSu16 = 0x00,
@@ -34,6 +38,14 @@ class ArmEhAbiParser {
   // Given a mask of registers where the bit index corresponds to the register number, pop from the
   // stack (from low register -> high register), and store them in |next|.
   Error SetRegistersFromMask(Memory* stack, uint32_t register_mask, Registers& next);
+
+  // Builds a list of opcodes and data to execute sequentially for unwinding, including any opcodes
+  // that may be embedded in the first data word. The returned data stream does not include any
+  // terminating bytes and there is no checking of validity for any opcodes. An error is returned if
+  // no terminating byte is found for entries in the ARM.extab section. Inlined opcodes do not
+  // require a terminating byte if they fit precisely in the 4 byte data field, so no error is
+  // returned in that case.
+  [[nodiscard]] fit::result<Error, std::vector<uint8_t>> CollectInstructions();
 
   // Parses and returns a vector of bytes in the correct order, starting with |data| at |offset|. If
   // |num_extra_words| is greater than 0, additional data will be read from |stack| at

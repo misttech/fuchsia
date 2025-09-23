@@ -98,6 +98,7 @@ test("unwinder_tests_bin") {
   output_name = "unwinder_tests"
   sources = [
     "arm_ehabi_module_unittest.cc",
+    "arm_ehabi_parser_unittest.cc",
     "dwarf_expr_unittest.cc",
     "memory_unittest.cc",
   ]

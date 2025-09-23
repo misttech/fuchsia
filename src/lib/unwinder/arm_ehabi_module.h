@@ -46,6 +46,7 @@ class ArmEhAbiModule {
 
  private:
   FRIEND_TEST(ArmEhAbiModule, Search);
+  FRIEND_TEST(ArmEhAbiParser, CollectInstructionsTableLookup);
 
   // Performs an upper bounds search for PC in the exidx table.
   Error Search(uint32_t pc, IdxHeader& entry);

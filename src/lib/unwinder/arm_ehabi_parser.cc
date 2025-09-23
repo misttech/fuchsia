@@ -118,22 +118,7 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
     }
   }
 
-  uint32_t data = 0;
-  if (auto result = GetFirstDataWord(); result.is_ok()) {
-    data = result.value();
-  } else {
-    return result.error_value();
-  }
-
-  size_t offset = 0;
-  uint8_t num_extra_words = 0;
-  if (auto result = GetExtraWordsCountAndAdvance(data, offset); result.is_ok()) {
-    num_extra_words = result.value();
-  } else {
-    return result.error_value();
-  }
-
-  if (auto result = ParseToFinished(data, offset, num_extra_words); result.is_ok()) {
+  if (auto result = CollectInstructions(); result.is_ok()) {
     if (auto err = ExecuteInstructions(stack, result.value(), next); err.has_err()) {
       return err;
     }
@@ -157,6 +142,25 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
   }
 
   return err;
+}
+
+fit::result<Error, std::vector<uint8_t>> ArmEhAbiParser::CollectInstructions() {
+  uint32_t data = 0;
+  if (auto result = GetFirstDataWord(); result.is_ok()) {
+    data = result.value();
+  } else {
+    return result;
+  }
+
+  size_t offset = 0;
+  uint8_t num_extra_words = 0;
+  if (auto result = GetExtraWordsCountAndAdvance(data, offset); result.is_ok()) {
+    num_extra_words = result.value();
+  } else {
+    return result;
+  }
+
+  return ParseToFinished(data, offset, num_extra_words);
 }
 
 fit::result<Error, uint8_t> ArmEhAbiParser::GetExtraWordsCountAndAdvance(uint32_t data,
@@ -187,11 +191,13 @@ fit::result<Error, uint8_t> ArmEhAbiParser::GetExtraWordsCountAndAdvance(uint32_
 ArmEhAbiParser::ParsedResult ArmEhAbiParser::ParseWordFromOffset(uint32_t data, size_t offset) {
   uint8_t byte = GetNextByteFromData(data, offset++);
   std::vector<uint8_t> parsed_bytes;
+  parsed_bytes.push_back(byte);
 
-  do {
+  while (offset < 4) {
+    if (byte = GetNextByteFromData(data, offset++); byte == kFinishedIndicator)
+      break;
     parsed_bytes.push_back(byte);
-    byte = GetNextByteFromData(data, offset++);
-  } while (offset <= 4 && byte != kFinishedIndicator);
+  }
 
   return {.data = parsed_bytes, .found_terminator_opcode = byte == kFinishedIndicator};
 }
