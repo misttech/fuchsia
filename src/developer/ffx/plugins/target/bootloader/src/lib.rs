@@ -182,7 +182,7 @@ Reboot the Target to the bootloader and re-run this command."
                 match fastboot_state.connection_state {
                     FastbootConnectionState::Usb => {
                         let proxy = usb_proxy(fastboot_state.serial_number).await?;
-                        bootloader_impl(proxy, self.cmd, &mut writer).await
+                        bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
                     }
                     FastbootConnectionState::Tcp(addrs) => {
                         // We take the first address as when a target is in Fastboot mode and over
@@ -213,7 +213,7 @@ Reboot the Target to the bootloader and re-run this command."
                                 config,
                             )
                             .await?;
-                            bootloader_impl(proxy, self.cmd, &mut writer).await
+                            bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
                         } else {
                             ffx_bail!("Could not get a valid address for target");
                         }
@@ -246,7 +246,7 @@ Reboot the Target to the bootloader and re-run this command."
                                 config,
                             )
                             .await?;
-                            bootloader_impl(proxy, self.cmd, &mut writer).await
+                            bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
                         } else {
                             ffx_bail!("Could not get a valid address for target");
                         }
@@ -448,6 +448,7 @@ async fn handle_variables_for_fastboot(
 }
 
 pub async fn bootloader_impl(
+    ctx: &EnvironmentContext,
     mut fastboot_proxy: impl FastbootInterface,
     mut cmd: BootloaderCommand,
     writer: &mut VerifiedMachineWriter<BootloaderToolMessage>,
@@ -539,7 +540,7 @@ pub async fn bootloader_impl(
     }
 
     let (client, server) = mpsc::channel(1);
-    try_join!(from_manifest(client, cmd, &mut fastboot_proxy), handle_events(writer, server))
+    try_join!(from_manifest(ctx, client, cmd, &mut fastboot_proxy), handle_events(writer, server))
         .map_err(fho::Error::from)?;
     return Ok(());
 }
@@ -551,6 +552,7 @@ pub async fn bootloader_impl(
 mod test {
     use super::*;
     use ffx_bootloader_args::LockCommand;
+    use ffx_config::environment::test_init;
     use ffx_fastboot::common::vars::LOCKED_VAR;
     use ffx_fastboot_interface::test::setup;
     use ffx_writer::Format;
@@ -558,6 +560,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_boot_stages_file_and_calls_boot() -> fho::Result<()> {
+        let test_env = test_init().await?;
         let zbi_file = NamedTempFile::new().expect("tmp access failed");
         let zbi_file_name = zbi_file.path().to_string_lossy().to_string();
         let vbmeta_file = NamedTempFile::new().expect("tmp access failed");
@@ -565,6 +568,7 @@ mod test {
         let (state, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
         bootloader_impl(
+            &test_env.context,
             proxy,
             BootloaderCommand {
                 manifest: None,
@@ -588,11 +592,13 @@ mod test {
 
     #[fuchsia::test]
     async fn test_boot_stages_file_and_calls_boot_with_just_zbi() -> fho::Result<()> {
+        let test_env = test_init().await?;
         let zbi_file = NamedTempFile::new().expect("tmp access failed");
         let zbi_file_name = zbi_file.path().to_string_lossy().to_string();
         let (state, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
         bootloader_impl(
+            &test_env.context,
             proxy,
             BootloaderCommand {
                 manifest: None,
@@ -616,12 +622,14 @@ mod test {
 
     #[fuchsia::test]
     async fn test_boot_fails_with_just_vbmeta() {
+        let test_env = test_init().await.expect("creating test env");
         let vbmeta_file = NamedTempFile::new().expect("tmp access failed");
         let vbmeta_file_name = vbmeta_file.path().to_string_lossy().to_string();
         let (_, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
         assert!(
             bootloader_impl(
+                &test_env.context,
                 proxy,
                 BootloaderCommand {
                     manifest: None,
@@ -643,6 +651,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_lock_calls_oem_command() -> fho::Result<()> {
+        let test_env = test_init().await?;
         let (state, proxy) = setup();
         {
             let mut state = state.lock().unwrap();
@@ -652,6 +661,7 @@ mod test {
         }
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
         bootloader_impl(
+            &test_env.context,
             proxy,
             BootloaderCommand {
                 manifest: None,

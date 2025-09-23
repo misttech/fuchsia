@@ -10,6 +10,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use errors::ffx_bail;
+use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
 use ffx_flash_manifest::{ManifestParams, OemFile};
 use futures::prelude::*;
@@ -582,6 +583,7 @@ pub async fn lock_device(fastboot_interface: &mut impl FastbootInterface) -> Res
 }
 
 pub async fn from_manifest<C, F>(
+    context: &EnvironmentContext,
     messenger: Sender<Event>,
     input: C,
     fastboot_interface: &mut F,
@@ -608,9 +610,7 @@ where
                 )
                 .await
             } else {
-                let sdk = ffx_config::global_env_context()
-                    .context("loading global environment context")?
-                    .get_sdk()?;
+                let sdk = context.get_sdk()?;
                 let mut path = sdk.get_path_prefix().to_path_buf();
                 path.push("flash.json"); // Not actually used, placeholder value needed.
                 match sdk.get_version() {
