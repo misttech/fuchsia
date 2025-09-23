@@ -98,8 +98,6 @@ lazy_static_visibility = [
   "//src/media/stream_processors/test:*",
   "//src/performance/memory/heapdump/instrumentation:*",
   "//src/power/broker:*",
-  "//src/recovery/lib/recovery-ui:*",
-  "//src/recovery/lib/recovery-util:*",
   "//src/storage/fxfs/platform:*",
   "//src/storage/lib/block_client/rust:*",
   "//src/sys/pkg/lib/tuf:*",

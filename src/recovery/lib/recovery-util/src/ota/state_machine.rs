@@ -256,10 +256,10 @@ mod test {
     use crate::ota::state_machine::DataSharingConsent::Unknown;
     use crate::ota::state_machine::{DataSharingConsent, Event, Operation, State, StateMachine};
     use assert_matches::assert_matches;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref STATES: Vec<State> = vec![
+    static STATES: LazyLock<Vec<State>> = LazyLock::new(|| {
+        vec![
             State::Connecting("Network".to_string(), "Password".to_string()),
             State::ConnectionFailed("Network".to_string(), "Password".to_string()),
             State::EnterPassword("Network".to_string()),
@@ -274,8 +274,10 @@ mod test {
             State::Reinstall,
             State::ReinstallRunning { status: None, progress: 50 },
             State::SelectWiFi(vec![]),
-        ];
-        static ref EVENTS: Vec<Event> = vec![
+        ]
+    });
+    static EVENTS: LazyLock<Vec<Event>> = LazyLock::new(|| {
+        vec![
             Event::AddNetwork,
             Event::Cancel,
             Event::ChooseNetwork,
@@ -293,8 +295,8 @@ mod test {
             Event::UserInput("User Input".to_string()),
             Event::UserInputUnsecuredNetwork("Network".to_string()),
             Event::WiFiConnected,
-        ];
-    }
+        ]
+    });
     // TODO(b/258049617): Enable this when variant_count is in the allowed features list
     // This will enable a check to make sure all events and states are used
     // #[test]
