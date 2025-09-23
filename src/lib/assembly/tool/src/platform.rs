@@ -64,6 +64,7 @@ impl Tool for PlatformTool {
             let command = format!("{} {}", path, args.join(" "));
             return Err(anyhow!("{} exited with status: {}", path, output.status)
                 .context(format!("stderr: {}", String::from_utf8_lossy(&output.stderr)))
+                .context(format!("stdout: {}", String::from_utf8_lossy(&output.stdout)))
                 .context(command));
         }
         Ok(())
