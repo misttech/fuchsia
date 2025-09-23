@@ -8,6 +8,7 @@ use std::marker::PhantomData;
 use std::num::NonZero;
 use std::pin::Pin;
 use std::ptr::NonNull;
+use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 
 use fidl_next::Chunk;
@@ -314,12 +315,16 @@ pub struct DriverRecvState(ReadMessageState);
 
 /// The shared part of a driver channel.
 pub struct Shared<D> {
-    channel: DriverChannel<D>,
+    channel: Mutex<DriverChannel<D>>,
 }
 
 impl<D> Shared<D> {
-    fn new(channel: DriverChannel<D>) -> Self {
+    fn new(channel: Mutex<DriverChannel<D>>) -> Self {
         Self { channel }
+    }
+
+    fn get_locked(&self) -> MutexGuard<'_, DriverChannel<D>> {
+        self.channel.lock().unwrap()
     }
 }
 
@@ -332,7 +337,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
     type Error = Status;
 
     fn split(self) -> (Self::Shared, Self::Exclusive) {
-        (Shared::new(self), Exclusive { _phantom: PhantomData })
+        (Shared::new(Mutex::new(self)), Exclusive { _phantom: PhantomData })
     }
 
     type Shared = Shared<D>;
@@ -367,7 +372,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
             let handles = arena.insert_from_iter(handles);
             (Some(data), Some(handles))
         });
-        let result = match shared.channel.channel.write(message) {
+        let result = match shared.get_locked().channel.write(message) {
             Ok(()) => Ok(()),
             Err(Status::PEER_CLOSED) => Err(None),
             Err(e) => Err(Some(e)),
@@ -381,7 +386,8 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
     ) -> Self::RecvFutureState {
         // SAFETY: The `receiver` owns the channel we're using here and will be the same
         // receiver given to `poll_recv`, so must outlive the state object we're constructing.
-        let state = unsafe { ReadMessageState::new(shared.channel.channel.driver_handle()) };
+        let state =
+            unsafe { ReadMessageState::register_read_wait(&mut shared.get_locked().channel) };
         DriverRecvState(state)
     }
 
@@ -392,7 +398,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
         _exclusive: &mut Self::Exclusive,
     ) -> Poll<Result<Self::RecvBuffer, Option<Self::Error>>> {
         use std::task::Poll::*;
-        match future.as_mut().0.poll_with_dispatcher(cx, shared.channel.dispatcher.clone()) {
+        match future.as_mut().0.poll_with_dispatcher(cx, shared.get_locked().dispatcher.clone()) {
             Ready(Ok(maybe_buffer)) => {
                 let buffer = maybe_buffer.map(|buffer| {
                     buffer.map_data(|_, data| {

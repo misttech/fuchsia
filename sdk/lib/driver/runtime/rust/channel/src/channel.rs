@@ -5,10 +5,12 @@
 //! Safe bindings for the driver runtime channel stable ABI
 
 use core::future::Future;
+use std::mem::ManuallyDrop;
+use std::sync::Arc;
 use zx::Status;
 
 use crate::arena::{Arena, ArenaBox};
-use crate::futures::ReadMessageState;
+use crate::futures::{ReadMessageState, ReadMessageStateOp};
 use crate::message::Message;
 use fdf_core::dispatcher::OnDispatcher;
 use fdf_core::handle::{DriverHandle, MixedHandle};
@@ -24,8 +26,34 @@ use core::task::{Context, Poll};
 pub use fdf_sys::fdf_handle_t;
 
 /// Implements a message channel through the Fuchsia Driver Runtime
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct Channel<T: ?Sized + 'static>(pub(crate) DriverHandle, PhantomData<Message<T>>);
+#[derive(Debug)]
+pub struct Channel<T: ?Sized + 'static> {
+    // Note: if we're waiting on a callback we can't drop the handle until
+    // that callback has fired.
+    pub(crate) handle: ManuallyDrop<DriverHandle>,
+    pub(crate) wait_state: Option<Arc<ReadMessageStateOp>>,
+    _p: PhantomData<Message<T>>,
+}
+
+impl<T: ?Sized> Drop for Channel<T> {
+    fn drop(&mut self) {
+        let mut can_drop = true;
+
+        if let Some(current_wait) = &self.wait_state {
+            // channel_dropped() will return true if we can drop the handle ourselves.
+            // otherwise the channel should not be dropped until the callback is called.
+            can_drop = current_wait.set_channel_dropped();
+        }
+
+        if can_drop {
+            // SAFETY: If there's no current wait active, we are the only
+            // owner of the handle.
+            unsafe {
+                ManuallyDrop::drop(&mut self.handle);
+            }
+        };
+    }
+}
 
 impl<T: ?Sized + 'static> Channel<T> {
     /// Creates a new channel pair that can be used to send messages of type `T`
@@ -49,13 +77,34 @@ impl<T: ?Sized + 'static> Channel<T> {
 
     /// Returns a reference to the inner handle of the channel.
     pub fn driver_handle(&self) -> &DriverHandle {
-        &self.0
+        &self.handle
     }
 
     /// Takes the inner handle to the channel. The caller is responsible for ensuring
     /// that the handle is freed.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the channel has previously had a read wait
+    /// registered on it.
     pub fn into_driver_handle(self) -> DriverHandle {
-        self.0
+        assert!(
+            self.wait_state.is_none(),
+            "A read wait has been registered on this channel so it can't be destructured"
+        );
+
+        // SAFETY: We will be forgetting `self` after this, so we can safely
+        // take ownership of the raw handle for reconstituting into a `DriverHandle`
+        // object after.
+        let handle = unsafe { self.handle.get_raw() };
+
+        // we don't want to call drop here because we've taken the handle out of the
+        // object.
+        std::mem::forget(self);
+
+        // SAFETY: We just took this handle from the object we just forgot, so we
+        // are the only owner of it.
+        unsafe { DriverHandle::new_unchecked(handle) }
     }
 
     /// Initializes a [`Channel`] object from the given non-zero handle.
@@ -66,7 +115,11 @@ impl<T: ?Sized + 'static> Channel<T> {
     /// part of a driver runtime channel pair of type `T`.
     unsafe fn from_handle_unchecked(handle: NonZero<fdf_handle_t>) -> Self {
         // SAFETY: caller is responsible for ensuring that it is a valid channel
-        Self(unsafe { DriverHandle::new_unchecked(handle) }, PhantomData)
+        Self {
+            handle: ManuallyDrop::new(unsafe { DriverHandle::new_unchecked(handle) }),
+            wait_state: None,
+            _p: PhantomData,
+        }
     }
 
     /// Initializes a [`Channel`] object from the given [`DriverHandle`],
@@ -77,7 +130,7 @@ impl<T: ?Sized + 'static> Channel<T> {
     /// The caller must ensure that the handle is a [`Channel`]-based handle that is
     /// using type `T` as its wire format.
     pub unsafe fn from_driver_handle(handle: DriverHandle) -> Self {
-        Self(handle, PhantomData)
+        Self { handle: ManuallyDrop::new(handle), wait_state: None, _p: PhantomData }
     }
 
     /// Writes the [`Message`] given to the channel. This will complete asynchronously and can't
@@ -104,7 +157,7 @@ impl<T: ?Sized + 'static> Channel<T> {
         //   the same arena.
         Status::ok(unsafe {
             fdf_channel_write(
-                self.0.get_raw().get(),
+                self.handle.get_raw().get(),
                 0,
                 arena.as_ptr(),
                 data_ptr,
@@ -193,17 +246,25 @@ pub(crate) fn try_read_raw(
 /// # Panic
 ///
 /// Panics if this is not run from a driver framework dispatcher.
-pub(crate) fn read_raw<D>(channel: &mut DriverHandle, dispatcher: D) -> ReadMessageRawFut<D> {
-    // SAFETY: Since the future's lifetime is bound to the original driver handle and it
-    // holds the message state, the message state object can't outlive the handle.
-    ReadMessageRawFut { raw_fut: unsafe { ReadMessageState::new(channel) }, dispatcher }
+///
+/// # Safety
+///
+/// The caller is responsible for ensuring that the channel object's
+/// handle lifetime is longer than the returned future.
+pub(crate) unsafe fn read_raw<T: ?Sized, D>(
+    channel: &mut Channel<T>,
+    dispatcher: D,
+) -> ReadMessageRawFut<D> {
+    // SAFETY: The caller promises that the message state object can't outlive the handle.
+    let raw_fut = unsafe { ReadMessageState::register_read_wait(channel) };
+    ReadMessageRawFut { raw_fut, dispatcher }
 }
 
 impl<T> Channel<T> {
     /// Attempts to read an object of type `T` and a handle set from the channel
     pub fn try_read(&self) -> Result<Option<Message<T>>, Status> {
         // read a message from the channel
-        let Some(message) = try_read_raw(&self.0)? else {
+        let Some(message) = try_read_raw(&self.handle)? else {
             return Ok(None);
         };
         // SAFETY: It is an invariant of Channel<T> that messages sent or received are always of
@@ -216,7 +277,10 @@ impl<T> Channel<T> {
         &mut self,
         dispatcher: D,
     ) -> Result<Option<Message<T>>, Status> {
-        let Some(message) = read_raw(&mut self.0, dispatcher).await? else {
+        // SAFETY: By calling `read_raw` in an async context that holds this channel's lifetime open
+        // beyond the resolution of the future, we ensure that the channel handle outlives the
+        // future state object.
+        let Some(message) = unsafe { read_raw(self, dispatcher) }.await? else {
             return Ok(None);
         };
         // SAFETY: It is an invariant of Channel<T> that messages sent or received are always of
@@ -229,7 +293,7 @@ impl Channel<[u8]> {
     /// Attempts to read an object of type `T` and a handle set from the channel
     pub fn try_read_bytes(&self) -> Result<Option<Message<[u8]>>, Status> {
         // read a message from the channel
-        let Some(message) = try_read_raw(&self.0)? else {
+        let Some(message) = try_read_raw(&self.handle)? else {
             return Ok(None);
         };
         // SAFETY: It is an invariant of Channel<[u8]> that messages sent or received are always of
@@ -243,7 +307,10 @@ impl Channel<[u8]> {
         dispatcher: D,
     ) -> Result<Option<Message<[u8]>>, Status> {
         // read a message from the channel
-        let Some(message) = read_raw(&mut self.0, dispatcher).await? else {
+        // SAFETY: By calling `read_raw` in an async context that holds this channel's lifetime open
+        // beyond the resolution of the future, we ensure that the channel handle outlives the
+        // future state object.
+        let Some(message) = unsafe { read_raw(self, dispatcher) }.await? else {
             return Ok(None);
         };
         // SAFETY: It is an invariant of Channel<[u8]> that messages sent or received are always of
@@ -254,7 +321,33 @@ impl Channel<[u8]> {
 
 impl<T> From<Channel<T>> for MixedHandle {
     fn from(value: Channel<T>) -> Self {
-        MixedHandle::from(value.0)
+        MixedHandle::from(value.into_driver_handle())
+    }
+}
+
+impl<T: ?Sized> std::cmp::Ord for Channel<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.handle.cmp(&other.handle)
+    }
+}
+
+impl<T: ?Sized> std::cmp::PartialOrd for Channel<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: ?Sized> std::cmp::PartialEq for Channel<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle.eq(&other.handle)
+    }
+}
+
+impl<T: ?Sized> std::cmp::Eq for Channel<T> {}
+
+impl<T: ?Sized> std::hash::Hash for Channel<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle.hash(state);
     }
 }
 
@@ -440,7 +533,7 @@ mod tests {
 
     async fn recv_lots_of_bytes_with_cancellations(
         mut rx: Channel<[u8]>,
-        fin_tx: oneshot::Sender<Channel<[u8]>>,
+        fin_tx: oneshot::Sender<()>,
         pending_count: Arc<AtomicU64>,
     ) {
         let mut immediate_count = 0;
@@ -474,12 +567,12 @@ mod tests {
         }
         println!("read total: {count}, immediate: {immediate_count}, pending: {pending_count:?}");
         // send the channel out as well so that the cancellation can finish
-        fin_tx.send(rx).unwrap();
+        fin_tx.send(()).unwrap();
     }
 
     async fn send_lots_of_bytes(
         tx: Channel<[u8]>,
-        fin_rx: oneshot::Receiver<Channel<[u8]>>,
+        fin_rx: oneshot::Receiver<()>,
         pending_count: Arc<AtomicU64>,
     ) {
         // The potential failure modes here are not entirely deterministic, so we want to
