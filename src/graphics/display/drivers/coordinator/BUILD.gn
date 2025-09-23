@@ -119,6 +119,9 @@ source_set("shared") {
 
   # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-vla-cxx-extension" ]
+
+  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
+  assert_no_deps = [ "//src/ui/scenic/lib/display/*" ]
 }
 
 source_set("preferred-scanout-image-type") {

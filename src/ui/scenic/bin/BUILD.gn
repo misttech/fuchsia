@@ -49,6 +49,9 @@ executable("bin") {
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
+
+  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
+  assert_no_deps = [ "//src/graphics/display/lib/api-types/*" ]
 }
 
 source_set("base_deps") {

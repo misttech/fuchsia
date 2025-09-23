@@ -66,6 +66,9 @@ library_public_deps = [
 source_set("cpp") {
   sources = library_sources
   public_deps = library_public_deps
+
+  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
+  assert_no_deps = [ "//src/ui/scenic/lib/display/*" ]
 }
 
 # TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
@@ -76,6 +79,9 @@ source_set("cpp-cxx17") {
   # Remove the C++ language specifier.
   configs -= [ "//build/config:language" ]
   configs += [ ":cxx17" ]
+
+  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
+  assert_no_deps = [ "//src/ui/scenic/lib/display/*" ]
 }
 
 test_sources = [

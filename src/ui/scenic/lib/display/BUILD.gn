@@ -60,6 +60,9 @@ source_set("display") {
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/trace",
   ]
+
+  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
+  assert_no_deps = [ "//src/graphics/display/lib/*" ]
 }
 
 # Temporary: put into its own source_set so that it is easy to remove all

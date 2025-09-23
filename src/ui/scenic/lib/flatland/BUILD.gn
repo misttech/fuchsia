@@ -72,6 +72,9 @@ source_set("flatland") {
   ]
 
   configs += [ "//third_party/glm:enable_experimental" ]
+
+  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
+  assert_no_deps = [ "//src/graphics/display/lib/*" ]
 }
 
 source_set("flatland_types") {
