@@ -34,7 +34,6 @@ using fuchsia_power_broker::ElementRunner;
 using fuchsia_power_broker::ElementSchema;
 using fuchsia_power_broker::LeaseControl;
 using fuchsia_power_broker::Lessor;
-using fuchsia_power_broker::LevelControlChannels;
 using fuchsia_power_broker::LevelDependency;
 using fuchsia_power_broker::Topology;
 using fuchsia_power_broker::wire::BinaryPowerLevel;
