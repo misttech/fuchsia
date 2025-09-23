@@ -19,7 +19,9 @@ where
     U: FnMut(FastbootConnectionState) -> Result<(), InterfaceFactoryError>,
 {
     let discovery = DiscoveryBuilder::default()
-        .set_source(DiscoverySources::MDNS | DiscoverySources::MANUAL)
+        .set_source(
+            DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::FASTBOOT_FILE,
+        )
         .with_fastboot_devices_file_path(fastboot_file_path.clone())
         .build();
     let query = discovery::query::TargetInfoQuery::NodenameOrSerial(target_name.clone());
