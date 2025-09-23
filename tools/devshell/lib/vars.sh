@@ -87,6 +87,17 @@ fi
 # another process is running.
 readonly profile_wrap="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
 
+# If ResultStore is enabled, wrap builds with ResultStore tools.
+RESULTSTORE_ENABLED=0
+readonly fx_resultstore_config="${FUCHSIA_DIR}/.fx/config/resultstore"
+if [[ -f "$fx_resultstore_config" ]]; then
+  # shellcheck source=/dev/null
+  source "$fx_resultstore_config"
+  # This sets RESULTSTORE_ENABLED to 0 or 1.
+fi
+# Use re-client's credentials helper tool to exchange LOAS for OAuth2 tokens.
+readonly credshelper="${PREBUILT_RECLIENT_DIR}/credshelper"
+
 date="$(date +%Y%m%d-%H%M%S)"
 readonly date
 
@@ -166,6 +177,11 @@ function fx-rbe-enabled {
 function recheck-fx-build-needs-auth() {
   # For testing-only, return 1 to indicate that authentication is not needed.
   fx-build-dir-if-present || return 1
+
+  # The ResultStore service requires authentication.
+  if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
+    return 0
+  fi
 
   # This RBE settings file is created at GN gen time.
   local -r rbe_settings_file="${FUCHSIA_BUILD_DIR}/rbe_settings.json"
@@ -1189,8 +1205,48 @@ EOF
     )
   fi
 
+  local resultstore_wrapper=()
+  if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
+    # This path is defined by the 'rsclient' prebuilt package.
+    # See the rsclient entry in manifests/prebuilts.
+    local -r rsclient_prebuilt_dir="${FUCHSIA_DIR}/prebuilt/rsclient/$HOST_PLATFORM"
+    local -r rsproxy_wrap="${rsclient_prebuilt_dir}/bin/rsproxy-wrap.sh"
+    if [[ -x "${rsproxy_wrap}" ]]; then
+      # Select the right rsproxy configuration, depending on the LOAS cert type.
+      # "unrestricted" credentials can use gcert for authentication.
+      local -r rsproxy_bin="${rsclient_prebuilt_dir}/bin/rsproxy"
+      local loas_type
+      loas_type="$(fx-command-run rbe _check_loas_type)"
+      local config_file=""
+      local rsproxy_options=()
+      case "$loas_type" in
+        unrestricted)
+          config_file="${FUCHSIA_DIR}/build/resultstore/fuchsia-resultstore-gcertauth.cfg"
+          rsproxy_options=(
+            --cfg "${config_file}"
+            --credentials_helper "${credshelper}"
+          )
+          ;;
+        restricted)
+          config_file="${FUCHSIA_DIR}/build/resultstore/fuchsia-resultstore.cfg"
+          rsproxy_options=(
+            --cfg "${config_file}"
+          )
+          ;;
+      esac
+      resultstore_wrapper=(
+        "${rsproxy_wrap}"
+        --rsproxy "${rsproxy_bin}"
+        --rsproxy_options
+        "${rsproxy_options[@]}"
+        --
+      )
+    fi
+  fi
+
   local full_cmdline=(
     env -i "${envs[@]}"
+    "${resultstore_wrapper[@]}"
     "${profile_wrapper[@]}"
     "${rbe_wrapper[@]}"
     "${build_command[@]}"
