@@ -134,13 +134,13 @@ pub enum ExampleEnum {
 impl ::fidl_next::Encodable for ExampleEnum {
     type Encoded = WireExampleEnum;
 }
-impl ::std::convert::TryFrom<u32> for ExampleEnum {
+impl ::core::convert::TryFrom<u32> for ExampleEnum {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             1 => Ok(Self::Member),
 
-            _ => Err(Self::Error::new(value.into())),
+            _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
         }
     }
 }

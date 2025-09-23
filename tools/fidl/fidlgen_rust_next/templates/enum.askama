@@ -23,16 +23,15 @@ impl ::fidl_next::Encodable for {{ name }} {
 }
 
 {%- if enm.is_strict %}
-impl ::std::convert::TryFrom<{{ natural_int }}> for {{ name }} {
+impl ::core::convert::TryFrom<{{ natural_int }}> for {{ name }} {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: {{ natural_int }}) -> Result<Self, Self::Error> {
+    fn try_from(value: {{ natural_int }}) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             {% for member in enm.members -%}
                 {{ member.value.value }} => Ok(Self::{{ member.name|camel }}),
             {% endfor %}
-            _ => Err(Self::Error::new(value.into())),
+            _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
         }
-
     }
 }
 {%- else %}

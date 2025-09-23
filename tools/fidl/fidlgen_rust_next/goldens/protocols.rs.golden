@@ -2064,14 +2064,14 @@ pub enum ErrorEnum {
 impl ::fidl_next::Encodable for ErrorEnum {
     type Encoded = WireErrorEnum;
 }
-impl ::std::convert::TryFrom<u32> for ErrorEnum {
+impl ::core::convert::TryFrom<u32> for ErrorEnum {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             1 => Ok(Self::ErrFoo),
             2 => Ok(Self::ErrBar),
 
-            _ => Err(Self::Error::new(value.into())),
+            _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
         }
     }
 }

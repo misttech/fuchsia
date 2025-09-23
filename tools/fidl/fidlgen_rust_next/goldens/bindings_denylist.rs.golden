@@ -7134,13 +7134,13 @@ pub enum OnlyDart {
 impl ::fidl_next::Encodable for OnlyDart {
     type Encoded = WireOnlyDart;
 }
-impl ::std::convert::TryFrom<u32> for OnlyDart {
+impl ::core::convert::TryFrom<u32> for OnlyDart {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             1 => Ok(Self::A),
 
-            _ => Err(Self::Error::new(value.into())),
+            _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
         }
     }
 }
