@@ -9,6 +9,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
 use fidl_next_codec::{Encode, EncodeError, EncoderExt};
+use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
 
@@ -149,14 +150,17 @@ impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
 }
 
 /// A future for a sending a two-way FIDL message.
+#[pin_project(PinnedDrop)]
 pub struct TwoWayRequestFuture<'a, T: Transport> {
     inner: &'a ClientSenderInner<T>,
     index: Option<u32>,
+    #[pin]
     send_future: SendFuture<'a, T>,
 }
 
-impl<T: Transport> Drop for TwoWayRequestFuture<'_, T> {
-    fn drop(&mut self) {
+#[pinned_drop]
+impl<T: Transport> PinnedDrop for TwoWayRequestFuture<'_, T> {
+    fn drop(self: Pin<&mut Self>) {
         if let Some(index) = self.index {
             let mut responses = self.inner.responses.lock().unwrap();
 
@@ -171,18 +175,14 @@ impl<'a, T: Transport> Future for TwoWayRequestFuture<'a, T> {
     type Output = Result<TwoWayResponseFuture<'a, T>, ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: We treat the state as pinned as long as it is sending.
-        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let this = self.project();
 
-        let Some(index) = this.index else {
+        let Some(index) = *this.index else {
             panic!("TwoWayRequestFuture polled after returning `Poll::Ready`");
         };
 
-        // SAFETY: `send_future` is structurally pinned.
-        let send_future = unsafe { Pin::new_unchecked(&mut this.send_future) };
-
-        let result = ready!(send_future.poll(cx));
-        this.index = None;
+        let result = ready!(this.send_future.poll(cx));
+        *this.index = None;
         if let Err(error) = result {
             // The send failed. Free the locker and return an error.
             this.inner.responses.lock().unwrap().free(index);

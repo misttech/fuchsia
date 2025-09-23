@@ -8,6 +8,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 
 use fidl_next_codec::EncodeError;
+use pin_project::pin_project;
 
 use crate::concurrency::cell::UnsafeCell;
 use crate::concurrency::future::AtomicWaker;
@@ -338,8 +339,10 @@ impl<T: Transport> Connection<T> {
     }
 }
 
+#[pin_project]
 pub struct SendEpitaphFuture<'a, T: Transport> {
     shared: &'a T::Shared,
+    #[pin]
     future_state: T::SendFutureState,
 }
 
@@ -347,42 +350,40 @@ impl<T: Transport> Future for SendEpitaphFuture<'_, T> {
     type Output = Result<(), Option<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: We continue to treat `self` as pinned.
-        let this = unsafe { Pin::into_inner_unchecked(self) };
-        // SAFETY: `self` is pinned, and `future_state` is a structurally-pinned
-        // field of `self`.
-        let future_state = unsafe { Pin::new_unchecked(&mut this.future_state) };
-        T::poll_send(future_state, cx, this.shared)
+        let this = self.project();
+        T::poll_send(this.future_state, cx, this.shared)
     }
 }
 
+#[pin_project(project = SendFutureStateProj, project_replace = SendFutureStateProjOwn)]
 enum SendFutureState<T: Transport> {
-    Running { future_state: T::SendFutureState },
+    Running {
+        #[pin]
+        future_state: T::SendFutureState,
+    },
     Stopping,
-    Terminated { error: ProtocolError<T::Error> },
-    Waiting { waker_index: usize },
+    Terminated {
+        error: ProtocolError<T::Error>,
+    },
+    Waiting {
+        waker_index: usize,
+    },
     Finished,
 }
 
-/// A future which sends an encoded message to a connection.
-#[must_use = "futures do nothing unless polled"]
-pub struct SendFuture<'a, T: Transport> {
-    connection: &'a Connection<T>,
-    state: SendFutureState<T>,
-}
-
-impl<T: Transport> SendFuture<'_, T> {
+impl<T: Transport> SendFutureState<T> {
     fn register_termination_waker(
-        &mut self,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
+        connection: &Connection<T>,
         waker_index: Option<usize>,
     ) -> Poll<Result<(), ProtocolError<T::Error>>> {
-        let mut wakers = self.connection.termination_wakers.lock().unwrap();
+        let mut wakers = connection.termination_wakers.lock().unwrap();
 
         // Re-check the state now that we're holding the lock again. This
         // prevents us from adding wakers after termination (which would "leak"
         // them).
-        if let Some(termination_reason) = self.connection.get_termination_reason() {
+        if let Some(termination_reason) = connection.get_termination_reason() {
             Poll::Ready(Err(termination_reason))
         } else {
             let waker = cx.waker().clone();
@@ -401,28 +402,70 @@ impl<T: Transport> SendFuture<'_, T> {
                 // Update the state outside of the mutex lock. If we were
                 // running then a `T::SendFutureState` may be dropped.
                 drop(wakers);
-                self.state = SendFutureState::Waiting { waker_index };
+                self.set(SendFutureState::Waiting { waker_index });
             }
             Poll::Pending
         }
     }
-}
 
-impl<T: NonBlockingTransport> SendFuture<'_, T> {
-    /// Completes the send operation synchronously and without blocking.
-    ///
-    /// Using this method prevents transports from applying backpressure. Prefer
-    /// awaiting when possible to allow for backpressure.
-    ///
-    /// Because failed sends return immediately, `send_immediately` may observe
-    /// transport closure prematurely. This can manifest as this method
-    /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
-    /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
-    /// correctness.
-    pub fn send_immediately(mut self) -> Result<(), ProtocolError<T::Error>> {
-        match replace(&mut self.state, SendFutureState::Finished) {
+    fn poll_with_connection(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        connection: &Connection<T>,
+    ) -> Poll<Result<(), ProtocolError<T::Error>>> {
+        match self.as_mut().project() {
+            SendFutureStateProj::Running { future_state } => {
+                let result = connection.with_shared(
+                    |shared| {
+                        T::poll_send(future_state, cx, shared)
+                            // `Err(Some(error))` =>
+                            //   `Err(Some(TransportError(error)))`
+                            .map_err(|error| error.map(ProtocolError::TransportError))
+                    },
+                    |error| Poll::Ready(Err(error)),
+                );
+
+                let result = match result {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+                    Poll::Ready(Err(None)) => {
+                        self.as_mut().register_termination_waker(cx, connection, None)
+                    }
+                    Poll::Ready(Err(Some(error))) => Poll::Ready(Err(error)),
+                };
+
+                if result.is_ready() {
+                    self.set(Self::Finished);
+                }
+
+                result
+            }
+            SendFutureStateProj::Stopping => self.register_termination_waker(cx, connection, None),
+            SendFutureStateProj::Terminated { .. } => {
+                let state = self.project_replace(Self::Finished);
+                let SendFutureStateProjOwn::Terminated { error } = state else {
+                    // SAFETY: We just checked that our state is Terminated.
+                    unsafe { unreachable_unchecked() }
+                };
+                Poll::Ready(Err(error))
+            }
+            SendFutureStateProj::Waiting { waker_index } => {
+                let waker_index = *waker_index;
+                self.register_termination_waker(cx, connection, Some(waker_index))
+            }
+            SendFutureStateProj::Finished => {
+                panic!("SendFuture polled after returning `Poll::Ready`")
+            }
+        }
+    }
+
+    fn send_immediately(self, connection: &Connection<T>) -> Result<(), ProtocolError<T::Error>>
+    where
+        T: NonBlockingTransport,
+    {
+        match self {
             SendFutureState::Running { mut future_state } => {
-                self.connection.with_shared(
+                connection.with_shared(
                     |shared| {
                         // Connection is running, try to send immediately.
                         T::send_immediately(&mut future_state, shared).map_err(|e| {
@@ -440,7 +483,7 @@ impl<T: NonBlockingTransport> SendFuture<'_, T> {
             SendFutureState::Stopping | SendFutureState::Waiting { waker_index: _ } => {
                 // Try to get the termination reason. If we don't have one yet,
                 // return `Stopped`.
-                Err(self.connection.get_termination_reason().unwrap_or(ProtocolError::Stopped))
+                Err(connection.get_termination_reason().unwrap_or(ProtocolError::Stopped))
             }
             SendFutureState::Terminated { error } => Err(error),
             SendFutureState::Finished => panic!("SendFuture polled after returning `Poll::Ready`"),
@@ -448,68 +491,47 @@ impl<T: NonBlockingTransport> SendFuture<'_, T> {
     }
 }
 
+/// A future which sends an encoded message to a connection.
+#[must_use = "futures do nothing unless polled"]
+#[pin_project]
+pub struct SendFuture<'a, T: Transport> {
+    connection: &'a Connection<T>,
+    #[pin]
+    state: SendFutureState<T>,
+}
+
+impl<T: NonBlockingTransport> SendFuture<'_, T> {
+    /// Completes the send operation synchronously and without blocking.
+    ///
+    /// Using this method prevents transports from applying backpressure. Prefer
+    /// awaiting when possible to allow for backpressure.
+    ///
+    /// Because failed sends return immediately, `send_immediately` may observe
+    /// transport closure prematurely. This can manifest as this method
+    /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
+    /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
+    /// correctness.
+    pub fn send_immediately(self) -> Result<(), ProtocolError<T::Error>> {
+        self.state.send_immediately(self.connection)
+    }
+}
+
 impl<T: Transport> Future for SendFuture<'_, T> {
     type Output = Result<(), ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: We continue to treat `self` as pinned.
-        let this = unsafe { Pin::into_inner_unchecked(self) };
-
-        match &this.state {
-            SendFutureState::Running { .. } => {
-                let result = this.connection.with_shared(
-                    |shared| {
-                        let SendFutureState::Running { future_state } = &mut this.state else {
-                            // SAFETY: We matched on `state` and checked that it
-                            // is Running.
-                            unsafe { unreachable_unchecked() }
-                        };
-                        // SAFETY: `self` is pinned and `future_state` is a
-                        // structurally pinned field of `self`.
-                        let future_state = unsafe { Pin::new_unchecked(future_state) };
-                        T::poll_send(future_state, cx, shared)
-                            // `Err(Some(error))` =>
-                            //   `Err(Some(TransportError(error)))`
-                            .map_err(|error| error.map(ProtocolError::TransportError))
-                    },
-                    |error| Poll::Ready(Err(error)),
-                );
-
-                let result = match result {
-                    Poll::Pending => Poll::Pending,
-                    Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-                    Poll::Ready(Err(None)) => this.register_termination_waker(cx, None),
-                    Poll::Ready(Err(Some(error))) => Poll::Ready(Err(error)),
-                };
-
-                if result.is_ready() {
-                    this.state = SendFutureState::Finished;
-                }
-
-                result
-            }
-            SendFutureState::Stopping => this.register_termination_waker(cx, None),
-            SendFutureState::Terminated { .. } => {
-                let state = replace(&mut this.state, SendFutureState::Finished);
-                let SendFutureState::Terminated { error } = state else {
-                    // SAFETY: We just checked that our state is Terminated.
-                    unsafe { unreachable_unchecked() }
-                };
-                Poll::Ready(Err(error))
-            }
-            SendFutureState::Waiting { waker_index } => {
-                this.register_termination_waker(cx, Some(*waker_index))
-            }
-            SendFutureState::Finished => panic!("SendFuture polled after returning `Poll::Ready`"),
-        }
+        let this = self.project();
+        this.state.poll_with_connection(cx, this.connection)
     }
 }
 
 /// A future which receives an encoded message over the transport.
 #[must_use = "futures do nothing unless polled"]
+#[pin_project]
 pub struct RecvFuture<'a, T: Transport> {
     connection: &'a Connection<T>,
     exclusive: &'a mut T::Exclusive,
+    #[pin]
     future_state: T::RecvFutureState,
 }
 
@@ -517,18 +539,14 @@ impl<T: Transport> Future for RecvFuture<'_, T> {
     type Output = Result<T::RecvBuffer, ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: We continue to treat `self` as pinned
-        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let this = self.project();
 
         // SAFETY: This future is created by `Connection::recv`. The connection
         // will not be terminated until this is completed or canceled, and so
         // `shared` will not be dropped.
         let shared = unsafe { this.connection.get_shared_unchecked() };
 
-        // SAFETY: `self` is pinned, and `future_state` is a structurally-pinned
-        // field of `self`.
-        let future_state = unsafe { Pin::new_unchecked(&mut this.future_state) };
-        let termination_reason = match T::poll_recv(future_state, cx, shared, this.exclusive) {
+        let termination_reason = match T::poll_recv(this.future_state, cx, shared, this.exclusive) {
             Poll::Pending => {
                 // Receive didn't complete, register waker before
                 // re-checking state.

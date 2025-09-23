@@ -33,6 +33,7 @@ _common = {
 
     # Used for atomic wakers, but not for any APIs
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:pin-project",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]
