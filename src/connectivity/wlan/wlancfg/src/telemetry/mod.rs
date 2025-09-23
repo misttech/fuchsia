@@ -1357,10 +1357,11 @@ impl Telemetry {
                 request_time,
                 result_time,
             } => {
-                // Update telemetry module internal state based on the roam result.
-                match &self.connection_state {
-                    ConnectionState::Connected(state) => {
-                        if result.status_code == fidl_ieee80211::StatusCode::Success {
+                if result.status_code == fidl_ieee80211::StatusCode::Success {
+                    match &self.connection_state {
+                        ConnectionState::Connected(state) => {
+                            // Update telemetry module internal state to reflect the start of a new
+                            // BSS connection.
                             self.connection_state = ConnectionState::Connected(ConnectedState {
                                 iface_id,
                                 new_connect_start_time: None,
@@ -1391,24 +1392,26 @@ impl Telemetry {
                             self.last_checked_connection_state = now;
                             // TODO(https://fxbug.dev/135975) Log roam success to Cobalt and Inspect.
                         }
-                        // Log roam event to Inspect
-                        self.log_roam_event_inspect(iface_id, &result, &request);
-
-                        // Log metrics following a roam result
-                        self.stats_logger
-                            .log_roam_result_metrics(
-                                result,
-                                origin_channel,
-                                request,
-                                request_time,
-                                result_time,
-                            )
-                            .await;
-                    }
-                    _ => {
-                        warn!("Received roam event while not connected. Metric may not be logged");
+                        _ => {
+                            warn!(
+                                "Unexpectedly received a successful roam event while telemetry module ConnectionState is not Connected."
+                            );
+                        }
                     }
                 }
+                // Log roam event to Inspect
+                self.log_roam_event_inspect(iface_id, &result, &request);
+
+                // Log metrics following a roam result
+                self.stats_logger
+                    .log_roam_result_metrics(
+                        result,
+                        origin_channel,
+                        request,
+                        request_time,
+                        result_time,
+                    )
+                    .await;
             }
             TelemetryEvent::Disconnected { track_subsequent_downtime, info } => {
                 let mut connect_start_time = None;
