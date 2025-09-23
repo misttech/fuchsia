@@ -75,6 +75,7 @@ cc_source_library://pkg/driver_fake_resource_cpp (unstable)
 cc_source_library://pkg/driver_incoming_cpp
 cc_source_library://pkg/driver_logging_cpp
 cc_source_library://pkg/driver_metadata_cpp (unstable)
+cc_source_library://pkg/driver_mmio_cpp
 cc_source_library://pkg/driver_node_cpp
 cc_source_library://pkg/driver_outgoing_cpp
 cc_source_library://pkg/driver_platform_device_cpp (unstable)

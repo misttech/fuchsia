@@ -18,6 +18,7 @@ group("tests") {
     "fake-object/cpp:tests",
     "fake-resource/cpp:tests",
     "metadata/cpp:tests",
+    "mmio/cpp:tests",
     "mmio/rust:tests",
     "mock-mmio/cpp:tests",
     "mock-mmio/rust:tests",

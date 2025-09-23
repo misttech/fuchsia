@@ -8,7 +8,7 @@ import("//build/test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":mmio-unittest-package" ]
+  deps = []
 }
 
 config("headers.config") {
@@ -22,13 +22,11 @@ sdk_source_set("mmio") {
   stable = true
   public = [
     "include/lib/mmio/mmio-buffer.h",
-    "include/lib/mmio/mmio-internal.h",
     "include/lib/mmio/mmio-ops.h",
     "include/lib/mmio/mmio-pinned-buffer.h",
     "include/lib/mmio/mmio-view.h",
     "include/lib/mmio/mmio.h",
   ]
-  sdk_headers_for_internal_use = [ "include/lib/mmio/mmio-internal.h" ]
   public_configs = [ ":headers.config" ]
   public_deps = [
     # <lib/mmio/mmio.h> has #include <lib/mmio-ptr/mmio-ptr.h>.
@@ -36,33 +34,19 @@ sdk_source_set("mmio") {
 
     # <lib/mmio/mmio.h> has #include <lib/zx/bti.h>.
     # <lib/mmio/mmio-buffer.h> has #include <lib/zx/result.h>.
+    "//sdk/lib/driver/mmio/cpp",
     "//zircon/system/ulib/zx",
   ]
-  sources = [ "mmio-buffer.cc" ]
 }
 
 sdk_source_set("test_helper") {
   category = "internal"
   sdk_name = "mmio-test-helper"
   sources = [ "test-helper.h" ]
-  deps = [ ":mmio" ]
+  deps = [ "//sdk/lib/driver/mmio/testing/cpp" ]
 
   # We want internal SDK elements to have their include path similar when
   # used through an SDK (eg Bazel SDk) or directly (GN/Ninja), so that source
   # code doesn't need to be changed when switching from one to the other.
   include_base = "//"
-}
-
-test("mmio-unittest") {
-  sources = [ "mmio-buffer-test.cc" ]
-  deps = [
-    ":mmio",
-    ":test_helper",
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_package("mmio-unittest-package") {
-  package_name = "mmio-unittest"
-  deps = [ ":mmio-unittest" ]
 }

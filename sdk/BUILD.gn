@@ -801,6 +801,7 @@ sdk_molecule("core_cc_source_libraries") {
     "//sdk/lib/driver/fake-object/cpp:cpp_sdk",
     "//sdk/lib/driver/fake-platform-device/cpp:cpp_sdk",
     "//sdk/lib/driver/metadata/cpp:cpp_sdk",
+    "//sdk/lib/driver/mmio/cpp:cpp_sdk",
     "//sdk/lib/driver/mock-mmio/cpp:cpp_sdk",
     "//sdk/lib/driver/platform-device/cpp:cpp_sdk",
     "//sdk/lib/driver/power/cpp:cpp_sdk",
@@ -970,6 +971,7 @@ if (current_toolchain == default_toolchain) {
       "//sdk/lib/driver/devicetree/visitors/drivers:all-driver-visitors_sdk",
 
       # TODO(https://fxbug.dev/444519345): Promote these to "partner".
+      "//sdk/lib/driver/mmio/testing/cpp:cpp_sdk",
       "//src/devices/lib/mmio:test_helper_sdk",
       "//src/devices/registers/testing/mock-registers:mock-registers_sdk",
       "//src/devices/testing/fake-mmio-reg:fake-mmio-reg_sdk",

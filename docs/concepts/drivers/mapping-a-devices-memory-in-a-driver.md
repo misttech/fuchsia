@@ -177,4 +177,4 @@ should consider this approach.
 [zx-vmo-read]: /reference/syscalls/vmo_read.md
 [zx-vmo-write]: /reference/syscalls/vmo_write.md
 [root-vmar]: /docs/concepts/memory/address_spaces.md#vmars_mappings_and_vmos
-[lib-mmio]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/lib/mmio/include/lib/mmio/mmio.h
+[lib-mmio]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/mmio/cpp/include/lib/mmio/mmio.h

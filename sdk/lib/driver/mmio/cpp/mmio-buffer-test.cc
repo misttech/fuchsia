@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -14,8 +15,6 @@
 #include <optional>
 
 #include <zxtest/zxtest.h>
-
-#include "src/devices/lib/mmio/test-helper.h"
 
 namespace {
 
