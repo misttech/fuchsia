@@ -10,12 +10,26 @@
 #include <thread>
 
 #include <gtest/gtest.h>
+#include <linux/sched.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
+
+// As of this writing, our sysroot's syscall.h lacks the SYS_clone3 definition.
+#ifndef SYS_clone3
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__riscv)
+#define SYS_clone3 435
+#else
+#error SYS_clone3 needs a definition for this architecture.
+#endif
+#endif
+
+pid_t ForkUsingClone3(const clone_args* cl_args, size_t size) {
+  return static_cast<pid_t>(syscall(SYS_clone3, cl_args, size));
+}
 
 // Our Linux sysroot doesn't seem to have pidfd_open() and gettid().
 int DoPidFdOpen(pid_t pid) { return static_cast<int>(syscall(SYS_pidfd_open, pid, 0u)); }
@@ -151,6 +165,41 @@ TEST(PidFdTest, PollWaitsForSecondaryThreadsToo) {
 
   close(pid_fd);
   ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(PidFdTest, PidFdOpenAfterZombification) {
+  struct clone_args ca;
+  bzero(&ca, sizeof(ca));
+
+  ca.flags = CLONE_PIDFD;
+  ca.exit_signal = SIGCHLD;  // Needed in order to wait on the child.
+
+  // Ask for a PID FD through which the child process can be observed.
+  fbl::unique_fd pid_fd;
+  ca.pidfd = reinterpret_cast<uint64_t>(pid_fd.reset_and_get_address());
+
+  auto child_pid = ForkUsingClone3(&ca, sizeof(ca));
+  ASSERT_NE(child_pid, -1);
+  if (child_pid == 0) {
+    exit(0);
+  } else {
+    ASSERT_TRUE(pid_fd.is_valid());
+
+    // Use the `pid_fd` to wait for the child to exit, becoming a zombie.
+    pollfd pfd{.fd = pid_fd.get(), .events = POLLIN};
+    ASSERT_EQ(poll(&pfd, 1, -1), 1);
+
+    // Connect a new PID-FD, which should be immediately in the signalled state.
+    auto new_pid_fd = fbl::unique_fd(DoPidFdOpen(child_pid));
+    ASSERT_TRUE(new_pid_fd.is_valid()) << strerror(errno);
+    pfd = {.fd = new_pid_fd.get(), .events = POLLIN};
+    EXPECT_EQ(poll(&pfd, 1, 0), 1);
+
+    // Now reap the zombie child process.
+    int wait_status = 0;
+    pid_t wait_result = waitpid(child_pid, &wait_status, 0);
+    EXPECT_EQ(wait_result, child_pid);
+  }
 }
 
 }  // namespace
