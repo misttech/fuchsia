@@ -661,14 +661,14 @@ pub use arch32::*;
 mod test {
     use super::*;
     use crate::mm::PAGE_SIZE;
-    use crate::testing::*;
+    use crate::testing::{map_memory, spawn_kernel_and_run};
     use crate::time::utc::UtcClockOverrideGuard;
     use fuchsia_runtime::{UtcDuration, UtcTimeline};
     use starnix_types::ownership::OwnedRef;
     use starnix_uapi::signals;
     use starnix_uapi::user_address::UserAddress;
     use test_util::{assert_geq, assert_leq};
-    use zx::{BootTimeline, Clock, ClockUpdate, HandleBased};
+    use zx::{self as zx, BootTimeline, Clock, ClockUpdate, HandleBased};
 
     // TODO(https://fxbug.dev/356911500): Use types below from fuchsia_runtime
     type UtcClock = Clock<BootTimeline, UtcTimeline>;
@@ -676,136 +676,140 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_nanosleep_without_remainder() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
-
-        let thread = std::thread::spawn({
-            let task = current_task.weak_task();
-            move || {
-                let task = task.upgrade().expect("task must be alive");
-                // Wait until the task is in nanosleep, and interrupt it.
-                while !task.read().is_blocked() {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+        spawn_kernel_and_run(|locked, current_task| {
+            let thread = std::thread::spawn({
+                let task = current_task.weak_task();
+                move || {
+                    let task = task.upgrade().expect("task must be alive");
+                    // Wait until the task is in nanosleep, and interrupt it.
+                    while !task.read().is_blocked() {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    task.interrupt();
                 }
-                task.interrupt();
-            }
+            });
+
+            let duration = timespec_from_duration(zx::MonotonicDuration::from_seconds(60));
+            let address = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                std::mem::size_of::<timespec>() as u64,
+            );
+            let address_ptr = UserRef::<timespec>::from(address);
+            current_task.write_object(address_ptr, &duration).expect("write_object");
+
+            // nanosleep will be interrupted by the current thread and should not fail with EFAULT
+            // because the remainder pointer is null.
+            assert_eq!(
+                sys_nanosleep(locked, current_task, address_ptr.into(), UserRef::default().into()),
+                error!(ERESTART_RESTARTBLOCK)
+            );
+
+            thread.join().expect("join");
         });
-
-        let duration = timespec_from_duration(zx::MonotonicDuration::from_seconds(60));
-        let address = map_memory(
-            locked,
-            &current_task,
-            UserAddress::default(),
-            std::mem::size_of::<timespec>() as u64,
-        );
-        let address_ptr = UserRef::<timespec>::from(address);
-        current_task.write_object(address_ptr, &duration).expect("write_object");
-
-        // nanosleep will be interrupted by the current thread and should not fail with EFAULT
-        // because the remainder pointer is null.
-        assert_eq!(
-            sys_nanosleep(locked, &mut current_task, address_ptr.into(), UserRef::default().into()),
-            error!(ERESTART_RESTARTBLOCK)
-        );
-
-        thread.join().expect("join");
     }
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_relative_to_slow_clock() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
+            let _test_clock_guard = UtcClockOverrideGuard::new(
+                test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            );
 
-        let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
-        let _test_clock_guard = UtcClockOverrideGuard::new(
-            test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        );
+            // Slow |test_clock| down and verify that we sleep long enough.
+            let slow_clock_update = UtcClockUpdate::builder().rate_adjust(-1000).build();
+            test_clock.update(slow_clock_update).unwrap();
 
-        // Slow |test_clock| down and verify that we sleep long enough.
-        let slow_clock_update = UtcClockUpdate::builder().rate_adjust(-1000).build();
-        test_clock.update(slow_clock_update).unwrap();
+            let before = test_clock.read().unwrap();
 
-        let before = test_clock.read().unwrap();
+            let tv = timespec { tv_sec: 1, tv_nsec: 0 };
 
-        let tv = timespec { tv_sec: 1, tv_nsec: 0 };
+            let remaining = UserRef::new(UserAddress::default());
 
-        let remaining = UserRef::new(UserAddress::default());
-
-        super::clock_nanosleep_relative_to_utc(
-            locked,
-            &mut current_task,
-            tv,
-            false,
-            remaining.into(),
-        )
-        .unwrap();
-        let elapsed = test_clock.read().unwrap() - before;
-        assert!(elapsed >= UtcDuration::from_seconds(1));
+            super::clock_nanosleep_relative_to_utc(
+                locked,
+                current_task,
+                tv,
+                false,
+                remaining.into(),
+            )
+            .unwrap();
+            let elapsed = test_clock.read().unwrap() - before;
+            assert!(elapsed >= UtcDuration::from_seconds(1));
+        });
     }
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_interrupted_relative_to_fast_utc_clock() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
+            let _test_clock_guard = UtcClockOverrideGuard::new(
+                test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            );
 
-        let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
-        let _test_clock_guard = UtcClockOverrideGuard::new(
-            test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        );
+            // Speed |test_clock| up.
+            let slow_clock_update = UtcClockUpdate::builder().rate_adjust(1000).build();
+            test_clock.update(slow_clock_update).unwrap();
 
-        // Speed |test_clock| up.
-        let slow_clock_update = UtcClockUpdate::builder().rate_adjust(1000).build();
-        test_clock.update(slow_clock_update).unwrap();
+            let before = test_clock.read().unwrap();
 
-        let before = test_clock.read().unwrap();
+            let tv = timespec { tv_sec: 2, tv_nsec: 0 };
 
-        let tv = timespec { tv_sec: 2, tv_nsec: 0 };
+            let remaining = {
+                let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+                UserRef::new(addr)
+            };
 
-        let remaining = {
-            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-            UserRef::new(addr)
-        };
+            // Interrupt the sleep roughly halfway through. The actual interruption might be before the
+            // sleep starts, during the sleep, or after.
+            let interruption_target =
+                zx::MonotonicInstant::get() + zx::MonotonicDuration::from_seconds(1);
 
-        // Interrupt the sleep roughly halfway through. The actual interruption might be before the
-        // sleep starts, during the sleep, or after.
-        let interruption_target =
-            zx::MonotonicInstant::get() + zx::MonotonicDuration::from_seconds(1);
+            let thread_group = OwnedRef::downgrade(current_task.thread_group());
+            let thread_join_handle = std::thread::Builder::new()
+                .name("clock_nanosleep_interruptor".to_string())
+                .spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_nanos(
+                        (interruption_target - zx::MonotonicInstant::get()).into_nanos() as u64,
+                    ));
+                    if let Some(thread_group) = thread_group.upgrade() {
+                        let signal = signals::SIGALRM;
+                        thread_group
+                            .write()
+                            .send_signal(crate::signals::SignalInfo::default(signal));
+                    }
+                })
+                .unwrap();
 
-        let thread_group = OwnedRef::downgrade(current_task.thread_group());
-        let thread_join_handle = std::thread::Builder::new()
-            .name("clock_nanosleep_interruptor".to_string())
-            .spawn(move || {
-                interruption_target.sleep();
-                if let Some(thread_group) = thread_group.upgrade() {
-                    let signal = signals::SIGALRM;
-                    thread_group.write().send_signal(crate::signals::SignalInfo::default(signal));
-                }
-            })
-            .unwrap();
+            let result = super::clock_nanosleep_relative_to_utc(
+                locked,
+                current_task,
+                tv,
+                false,
+                remaining.into(),
+            );
 
-        let result = super::clock_nanosleep_relative_to_utc(
-            locked,
-            &mut current_task,
-            tv,
-            false,
-            remaining.into(),
-        );
+            // We can't know deterministically if our interrupter thread will be able to interrupt our sleep.
+            // If it did, result should be ERESTART_RESTARTBLOCK and |remaining| will be populated.
+            // If it didn't, the result will be OK and |remaining| will not be touched.
+            let mut remaining_written = Default::default();
+            if result.is_err() {
+                assert_eq!(result, error!(ERESTART_RESTARTBLOCK));
+                remaining_written = current_task.read_object(remaining).unwrap();
+            }
+            assert_leq!(
+                duration_from_timespec::<zx::MonotonicTimeline>(remaining_written).unwrap(),
+                zx::MonotonicDuration::from_seconds(2)
+            );
+            let elapsed = test_clock.read().unwrap() - before;
+            thread_join_handle.join().unwrap();
 
-        // We can't know deterministically if our interrupter thread will be able to interrupt our sleep.
-        // If it did, result should be ERESTART_RESTARTBLOCK and |remaining| will be populated.
-        // If it didn't, the result will be OK and |remaining| will not be touched.
-        let mut remaining_written = Default::default();
-        if result.is_err() {
-            assert_eq!(result, error!(ERESTART_RESTARTBLOCK));
-            remaining_written = current_task.read_object(remaining).unwrap();
-        }
-        assert_leq!(
-            duration_from_timespec::<zx::MonotonicTimeline>(remaining_written).unwrap(),
-            zx::MonotonicDuration::from_seconds(2)
-        );
-        let elapsed = test_clock.read().unwrap() - before;
-        thread_join_handle.join().unwrap();
-
-        assert_geq!(
-            elapsed + duration_from_timespec(remaining_written).unwrap(),
-            UtcDuration::from_seconds(2)
-        );
+            assert_geq!(
+                elapsed + duration_from_timespec(remaining_written).unwrap(),
+                UtcDuration::from_seconds(2)
+            );
+        });
     }
 }
