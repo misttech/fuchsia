@@ -555,17 +555,22 @@ Error CfiParser::Step(Memory* stack, RegisterID return_address_register, const R
           next.Set(reg, val);
         }
         break;
-      case RegisterLocation::Type::kOffset:
-        if (uint64_t val; stack->Read(cfa + location.offset, val).ok()) {
+      case RegisterLocation::Type::kOffset: {
+        uint64_t val = 0;
+        const uint64_t size = address_size_ == Module::AddressSize::k32Bit ? 4 : 8;
+        if (stack->ReadBytes(cfa + location.offset, size, &val).ok()) {
           next.Set(reg, val);
         }
         break;
+      }
       case RegisterLocation::Type::kValOffset:
         next.Set(reg, cfa + location.offset);
         break;
       case RegisterLocation::Type::kExpression:
         if (uint64_t loc; location.expression.Eval(stack, current, {cfa}, loc).ok()) {
-          if (uint64_t val; stack->Read(loc, val).ok()) {
+          uint64_t val = 0;
+          const uint64_t size = address_size_ == Module::AddressSize::k32Bit ? 4 : 8;
+          if (stack->ReadBytes(loc, size, &val).ok()) {
             next.Set(reg, val);
           }
         }
