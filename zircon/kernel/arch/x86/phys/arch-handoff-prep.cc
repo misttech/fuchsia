@@ -54,12 +54,12 @@ void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) 
       "jmpq *%[entry]"
       :
       // Prepare %rax, %rcx, %rdx for the wrmsr.
-      : "c"(arch::X86Msr::IA32_GS_BASE),   // "c" -> %rcx
-        "a"(gsbase_low),                   // "a" -> %rax
-        "d"(gsbase_high),                  // "d" -> %rdx
-        [entry] "r"(kernel_.entry()),      //
-        "D"(handoff_),                     // "D" -> %rdi
-        [rsp] "r"(abi.machine_stack_top),  //
+      : "c"(arch::X86Msr::IA32_GS_BASE),      // "c" -> %rcx
+        "a"(gsbase_low),                      // "a" -> %rax
+        "d"(gsbase_high),                     // "d" -> %rdx
+        [entry] "r"(kernel_virtual_entry()),  //
+        "D"(handoff_),                        // "D" -> %rdi
+        [rsp] "r"(abi.machine_stack_top),     //
         "m"(*handoff_)  // Ensures no store to the handoff can be regarded as dead
   );
   __UNREACHABLE;

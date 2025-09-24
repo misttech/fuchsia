@@ -58,7 +58,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     unpatched = add_one.Load(memalloc::Type::kPhysElf, {}, false);
     add_one.Relocate();
 
-    printf("%s: Calling %#" PRIx64 "...", gSymbolize->name(), add_one.entry());
+    printf("%s: Calling %p...", gSymbolize->name(), add_one.ImageEntry<TestFn>());
     uint64_t value = add_one.Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue + 1, "unpatched add-one: got %" PRIu64 " != expected %" PRIu64,
                   value, kValue + 1);
@@ -95,7 +95,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     auto result = add_one.ForEachPatch<ExpectedCase>(patch);
     ZX_ASSERT(result.is_ok());
 
-    printf("%s: Calling %#" PRIx64 "...", gSymbolize->name(), add_one.entry());
+    printf("%s: Calling %p...", gSymbolize->name(), add_one.ImageEntry<TestFn>());
     uint64_t value = add_one.Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue, "nop-patched add-one: got %" PRIu64 " != expected %" PRIu64,
                   value, kValue);
@@ -133,7 +133,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     ZX_ASSERT_MSG(result.is_ok(), "%.*s", static_cast<int>(result.error_value().reason.size()),
                   result.error_value().reason.data());
 
-    printf("%s: Calling %#" PRIx64 "...", gSymbolize->name(), multiply.entry());
+    printf("%s: Calling %p...", gSymbolize->name(), multiply.ImageEntry<TestFn>());
     uint64_t value = multiply.Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue * 2, "multiply_by_two got %" PRIu64 " != expected %" PRIu64,
                   value, kValue * 2);
@@ -171,7 +171,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     ZX_ASSERT_MSG(result.is_ok(), "%.*s", static_cast<int>(result.error_value().reason.size()),
                   result.error_value().reason.data());
 
-    printf("%s: Calling %#" PRIx64 "...", gSymbolize->name(), multiply.entry());
+    printf("%s: Calling %p...", gSymbolize->name(), multiply.ImageEntry<TestFn>());
     uint64_t value = multiply.Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue * 10, "multiply_by_ten got %" PRIu64 " != expected %" PRIu64,
                   value, kValue * 10);

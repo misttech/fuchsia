@@ -75,7 +75,7 @@ void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) 
       "mv a0, %[handoff]\n"
       "jr %[entry]"
       :                                                    //
-      : [entry] "r"(kernel_.entry()),                      //
+      : [entry] "r"(kernel_virtual_entry()),               //
         [handoff] "r"(handoff_),                           //
         [sp] "r"(abi.machine_stack_top),                   //
         [shadow_call_sp] "r"(abi.shadow_call_stack_base),  //

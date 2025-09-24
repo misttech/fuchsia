@@ -252,7 +252,7 @@ void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) 
       "mov x0, %[handoff]\n"
       "br %[entry]"
       :                                                    //
-      : [entry] "r"(kernel_.entry()),                      //
+      : [entry] "r"(kernel_virtual_entry()),               //
         [handoff] "r"(handoff_),                           //
         [tp] "r"(abi.thread_abi_pointer),                  //
         [sp] "r"(abi.machine_stack_top),                   //

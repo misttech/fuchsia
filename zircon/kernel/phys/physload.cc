@@ -122,7 +122,7 @@ void LogSerial(FILE* out = stdout) {
 
   if (gBootOptions->phys_verbose) {
     Allocation::GetPool().PrintMemoryRanges(symbolize.name());
-    symbolize.LogHandoff(next_elf.name(), next_elf.entry());
+    symbolize.LogHandoff(next_elf.name(), next_elf.entry() + next_elf.load_bias());
   }
 
   // Call into the entry point.  It must not return, but it will keep using the

@@ -13,11 +13,8 @@
 
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
-#include <phys/zircon-info-note.h>
 
-namespace {
-
-constexpr ZirconAbiSpec kZirconAbiSpec{
+extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
     .machine_stack =
         {
             .size_bytes = 0x1000,
@@ -42,13 +39,9 @@ constexpr ZirconAbiSpec kZirconAbiSpec{
 #endif
 };
 
-ZIRCON_INFO_NOTE ZirconInfoNote<kZirconAbiSpec> kZirconAbiSpecNote;
-
-}  // namespace
-
 PhysHandoff* gPhysHandoff = nullptr;
 
-void PhysbootHandoff(PhysHandoff* handoff) {
+[[clang::cfi_unchecked_callee]] void PhysbootHandoff(PhysHandoff* handoff) {
   // Check that the stack is aligned.
   uintptr_t stack_pointer = reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
   ZX_ASSERT((stack_pointer & (elfldltl::AbiTraits<>::kStackAlignment<uintptr_t> - 1)) == 0);

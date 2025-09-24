@@ -72,11 +72,12 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     return 1;
   }
 
-  printf("Calling virtual entry point %#" PRIx64 "...\n", elf.entry());
+  auto entry = reinterpret_cast<decltype(GetInt)*>(elf.entry() + elf.load_bias());
+  printf("Calling virtual entry point %p...\n", entry);
 
   // We should now be able to access GetInt()!
   constexpr int kExpected = 42;
-  if (int actual = elf.Call<decltype(GetInt)>(); actual != kExpected) {
+  if (int actual = entry(); actual != kExpected) {
     printf("FAILED: Expected %d; got %d\n", kExpected, actual);
     return 1;
   }

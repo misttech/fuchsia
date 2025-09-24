@@ -449,9 +449,11 @@ class HandoffPrep {
   // and no more logging is permitted.
   [[noreturn]] void ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info);
 
+  auto kernel_virtual_entry() const { return abi_spec_->entry; }
+
   const ElfImage kernel_;
   PhysHandoff* handoff_ = nullptr;
-  ZirconAbiSpec abi_spec_{};
+  const ZirconAbiSpec* abi_spec_ = nullptr;
   TemporaryDataAllocator temporary_data_allocator_;
   PermanentDataAllocator permanent_data_allocator_;
   VirtualAddressAllocator first_class_mapping_allocator_;

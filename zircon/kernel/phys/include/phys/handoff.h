@@ -417,9 +417,6 @@ static_assert(offsetof(PhysHandoff, kernel_physical_load_address) ==
               PHYS_HANDOFF_KERNEL_PHYSICAL_LOAD_ADDRESS);
 #pragma GCC diagnostic pop
 
-// This is the entry point function for the ELF kernel.
-extern "C" [[noreturn]] void PhysbootHandoff(PhysHandoff* handoff);
-
 #endif  // __ASSEMBLER__
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_

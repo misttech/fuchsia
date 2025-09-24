@@ -13,6 +13,7 @@
 #include <lib/zbitl/view.h>
 #include <platform.h>
 #include <zircon/assert.h>
+#include <zircon/compiler.h>
 #include <zircon/rights.h>
 
 #include <fbl/ref_ptr.h>
@@ -25,7 +26,6 @@
 #include <object/vm_object_dispatcher.h>
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
-#include <phys/zircon-info-note.h>
 #include <platform/timer.h>
 #include <vm/handoff-end.h>
 #include <vm/kstack.h>
@@ -39,9 +39,14 @@ PhysHandoff* gPhysHandoff;
 vaddr_t gPhysmapBase;
 size_t gPhysmapSize;
 
-namespace {
-
-constexpr ZirconAbiSpec kZirconAbiSpec{
+// This is declared as `extern "C" constinit const` so the compiler knows that
+// it needs to be defined for real to satisfy link-time references (from -e).
+// But the compiler still knows it's constexpr (or const would be enough) and
+// so it could substitute reads from its members for their known initializers.
+// The members initialized here (and the declared-initialized const members)
+// are only read by physboot and not by the kernel, so there are no references
+// into this for the compiler to optimize anyway.
+extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
     .machine_stack = kMachineStack,
 #if __has_feature(shadow_call_stack)
     .shadow_call_stack = kShadowCallStack,
@@ -51,9 +56,7 @@ constexpr ZirconAbiSpec kZirconAbiSpec{
 #endif
 };
 
-// The mechanism to convey the ABI specification to physboot: we encode it as
-// an ELF note, to be parsed by physboot at hand-off prep time.
-ZIRCON_INFO_NOTE ZirconInfoNote<kZirconAbiSpec> kZirconAbiSpecNote;
+namespace {
 
 paddr_t gKernelPhysicalLoadAddress;
 

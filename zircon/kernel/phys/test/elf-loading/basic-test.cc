@@ -83,7 +83,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
   printf("Symbolizer context for both modules expected, repeating:\n");
   symbolize.ContextAlways();
 
-  printf("Calling entry point %#" PRIx64 "...\n", elf.entry());
+  printf("Calling entry point %p...\n", elf.ImageEntry<decltype(GetInt)>());
 
   // We should now be able to access GetInt()!
   constexpr int kExpected = 42;

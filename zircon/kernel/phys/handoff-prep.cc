@@ -99,10 +99,16 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
   handoff_ = New(handoff, ac);
   ZX_ASSERT_MSG(ac.check(), "Failed to allocate PhysHandoff!");
 
-  ktl::optional spec = kernel_.GetZirconInfo<ZirconAbiSpec>();
-  ZX_ASSERT_MSG(spec, "no Zircon ELF note containing the ZirconAbiSpec!");
-  spec->AssertValid<ZX_PAGE_SIZE>();
-  abi_spec_ = *spec;
+  // The kernel's Ehdr::e_entry actually points to its kZirconAbiSpec.  The
+  // physical image is where it will stay even when mapped virtually (where it
+  // will be read-only).  Stash the direct pointer into the image to use later.
+  abi_spec_ = kernel.ImageEntry<const ZirconAbiSpec>();
+  if (!abi_spec_) [[unlikely]] {
+    ZX_PANIC("ZirconAbiSpec (e_entry) address %#" PRIx64 " invalid for image", kernel.entry());
+  }
+
+  // Check that this isn't clearly garbled data somehow.
+  abi_spec_->AssertValid<ZX_PAGE_SIZE>();
 }
 
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
@@ -418,8 +424,8 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
 
   // One last log before the next line where we effectively disable logging
   // altogether.
-  debugf("%s: Handing off at physical load address %#" PRIxPTR ", entry %#" PRIx64 "...\n",
-         gSymbolize->name(), kernel_.physical_load_address(), kernel_.entry());
+  debugf("%s: Handing off at physical load address %#" PRIxPTR ", entry %p...\n",
+         gSymbolize->name(), kernel_.physical_load_address(), abi_spec_->entry);
 
   // Hand-off the serial driver. There may be no more logging beyond this point.
   handoff()->uart = ktl::move(uart).TakeUart();

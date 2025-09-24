@@ -287,14 +287,14 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
   {
     // Machine stack.
     ktl::span machine_stack =
-        PublishStackVmar(abi_spec_.machine_stack, memalloc::Type::kBootMachineStack);
+        PublishStackVmar(abi_spec_->machine_stack, memalloc::Type::kBootMachineStack);
     abi.machine_stack_top = elfldltl::AbiTraits<>::InitialStackPointer(
         reinterpret_cast<uintptr_t>(machine_stack.data()), machine_stack.size_bytes());
 
     // Shadow call stack.
-    if (abi_spec_.shadow_call_stack.size_bytes > 0) {
+    if (abi_spec_->shadow_call_stack.size_bytes > 0) {
       ktl::span shadow_call_stack =
-          PublishStackVmar(abi_spec_.shadow_call_stack, memalloc::Type::kBootShadowCallStack);
+          PublishStackVmar(abi_spec_->shadow_call_stack, memalloc::Type::kBootShadowCallStack);
       abi.shadow_call_stack_base = reinterpret_cast<uintptr_t>(shadow_call_stack.data());
     }
 
@@ -316,9 +316,9 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
     thread_abi->stack_guard = 0xdeadbeeffeedface;
 
     // Unsafe stack.
-    if (abi_spec_.unsafe_stack.size_bytes > 0) {
+    if (abi_spec_->unsafe_stack.size_bytes > 0) {
       ktl::span unsafe_stack =
-          PublishStackVmar(abi_spec_.unsafe_stack, memalloc::Type::kBootUnsafeStack);
+          PublishStackVmar(abi_spec_->unsafe_stack, memalloc::Type::kBootUnsafeStack);
       uintptr_t unsafe_stack_top =
           reinterpret_cast<uintptr_t>(unsafe_stack.data()) + unsafe_stack.size_bytes();
       thread_abi->unsafe_stack_pointer = unsafe_stack_top;

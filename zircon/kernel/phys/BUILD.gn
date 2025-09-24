@@ -653,7 +653,6 @@ if (toolchain_environment == "kernel.phys" ||
     deps = [
       ":allocation",
       ":handoff",
-      ":zircon-info-note",
       "//src/lib/llvm-profdata",
 
       # Indirect dep via circular :symbolize dep.
@@ -721,15 +720,6 @@ source_set("zbi") {
   ]
   public_configs = [ ":includes" ]
   sources = [ "$arch_phys/include/phys/arch/zbi.h" ]
-}
-
-source_set("zircon-info-note") {
-  public = [ "include/phys/zircon-info-note.h" ]
-  public_deps = [
-    "//src/lib/elfldltl",
-    "//zircon/kernel/lib/special-sections",
-  ]
-  public_configs = [ ":includes" ]
 }
 
 config("includes") {
@@ -996,7 +986,11 @@ if (is_kernel) {
 
   config("physboot.kernel.config") {
     visibility = [ ":*" ]
-    ldflags = [ "-Wl,-e,PhysbootHandoff" ]
+    ldflags = [
+      # The <phys/zircon-abi-spec.h> data structure is used in lieu of the
+      # entry point.  physboot will actually jump to *kZirconAbiSpec.entry.
+      "-Wl,-e,kZirconAbiSpec",
+    ]
     configs = [ ":phys-elf-module.config" ]
   }
 

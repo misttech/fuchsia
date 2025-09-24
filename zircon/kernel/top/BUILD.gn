@@ -38,7 +38,6 @@ source_set("top") {
     "//zircon/kernel/lib/version",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
-    "//zircon/kernel/phys:zircon-info-note",
     "//zircon/kernel/platform",
   ]
 }

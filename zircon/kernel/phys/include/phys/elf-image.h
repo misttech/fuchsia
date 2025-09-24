@@ -7,7 +7,6 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_
 
-#include <inttypes.h>
 #include <lib/code-patching/code-patching.h>
 #include <lib/elfldltl/init-fini.h>
 #include <lib/elfldltl/load.h>
@@ -75,6 +74,7 @@ class ElfImage {
   LoadInfo& load_info() { return load_info_; }
   const LoadInfo& load_info() const { return load_info_; }
 
+  elfldltl::DirectMemory& image() { return image_; }
   const elfldltl::DirectMemory& image() const { return image_; }
 
   uintptr_t load_bias() const {
@@ -100,7 +100,17 @@ class ElfImage {
     };
   }
 
-  uint64_t entry() const { return entry_ + load_bias(); }
+  uint64_t entry() const { return entry_; }
+
+  // The entry point is some sort of pointer into the image.  It could be a
+  // function pointer or a data pointer.  Note that when it's a function
+  // pointer, the type parameter should be a _function_ (not pointer) type and
+  // should include the [[clang::cfi_unchecked_callee]] attribute _in the type_
+  // if it's intended!
+  template <typename T>
+  T* ImageEntry() const {
+    return image_.GetPointer<T>(entry_);
+  }
 
   const elfldltl::InitFiniInfo<>& init_info() const { return init_info_; }
 
@@ -113,24 +123,6 @@ class ElfImage {
   ktl::optional<ktl::string_view> interp() const { return interp_; }
 
   const ktl::optional<elfldltl::ElfNote>& build_id() const { return build_id_; }
-
-  const ktl::optional<elfldltl::ElfNote>& zircon_info() const { return zircon_info_; }
-
-  template <typename T, uint32_t NoteType = 0>
-  ktl::optional<T> GetZirconInfo() const {
-    if (zircon_info_) {
-      ZX_ASSERT_MSG(zircon_info_->type == NoteType,
-                    "ZirconInfo note has type %" PRIu32 ", expected %" PRIu32, zircon_info_->type,
-                    NoteType);
-      ZX_ASSERT_MSG(zircon_info_->desc.size_bytes() == sizeof(T),
-                    "ZirconInfo note has descsz %zu, expected %zu", zircon_info_->desc.size_bytes(),
-                    sizeof(T));
-      T info;
-      memcpy(&info, zircon_info_->desc.data(), sizeof(info));
-      return info;
-    }
-    return ktl::nullopt;
-  }
 
   bool has_patches() const { return !patches().empty(); }
 
@@ -253,8 +245,7 @@ class ElfImage {
   template <typename F, typename... Args>
   decltype(auto) Call(Args&&... args) const {
     static_assert(ktl::is_function_v<F>);
-    F* fnptr = reinterpret_cast<F*>(static_cast<uintptr_t>(entry()));
-    return (*fnptr)(ktl::forward<Args>(args)...);
+    return ImageEntry<F>()(ktl::forward<Args>(args)...);
   }
 
   // Call the image's entry point as a [[noreturn]] function type F.
@@ -313,7 +304,6 @@ class ElfImage {
   ktl::span<const Elf::Dyn> dynamic_;
   elfldltl::InitFiniInfo<> init_info_;
   ktl::optional<elfldltl::ElfNote> build_id_;
-  ktl::optional<elfldltl::ElfNote> zircon_info_;
   ktl::optional<ktl::string_view> interp_;
   code_patching::Patcher patcher_;
   ktl::optional<uintptr_t> load_bias_;
