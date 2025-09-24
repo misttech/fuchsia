@@ -3258,10 +3258,16 @@ pub fn sys_io_uring_enter(
     to_submit: u32,
     min_complete: u32,
     flags: u32,
-    _sig: UserRef<sigset_t>,
+    _sig: UserRef<SigSet>,
+    sigset_size: usize,
 ) -> Result<u32, Errno> {
     if !current_task.kernel().features.io_uring {
         return error!(ENOSYS);
+    }
+    if !_sig.is_null() {
+        if sigset_size != std::mem::size_of::<SigSet>() {
+            return error!(EINVAL);
+        }
     }
     let file = current_task.files.get(fd)?;
     let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;

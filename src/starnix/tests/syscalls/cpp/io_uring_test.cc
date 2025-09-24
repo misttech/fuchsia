@@ -31,7 +31,8 @@ int io_uring_setup(uint32_t entries, io_uring_params* params) {
 }
 
 int io_uring_enter(int fd, int to_submit, int min_complete, int flags, sigset_t* sigset) {
-  return static_cast<int>(syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sigset));
+  return static_cast<int>(
+      syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sigset, sizeof(sigset_t)));
 }
 
 TEST(IoUringTest, IoUringReadWrite) {
