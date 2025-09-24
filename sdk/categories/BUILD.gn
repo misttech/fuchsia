@@ -68,22 +68,24 @@ if (is_host || is_fidl_toolchain) {
       visibility += [
         "${target}_compile_fidlc",
         "${target}_lint",
-        "${target}_rust.actual",
-        "${target}_rust.actual.rust_compilation_deps",
-        "${target}_rust.aux.deps.deps",
-        "${target}_rust.aux.deps.transdeps",
-        "${target}_rust.rustdoc",
-        "${target}_rust_common.actual",
-        "${target}_rust_common.actual.rust_compilation_deps",
-        "${target}_rust_common.aux.deps.deps",
-        "${target}_rust_common.aux.deps.transdeps",
-        "${target}_rust_common.rustdoc",
-        "${target}_rust_fdomain.actual",
-        "${target}_rust_fdomain.actual.rust_compilation_deps",
-        "${target}_rust_fdomain.aux.deps.deps",
-        "${target}_rust_fdomain.aux.deps.transdeps",
-        "${target}_rust_fdomain.rustdoc",
       ]
+
+      foreach(rust_fidl_suffix,
+              [
+                "",
+                "_common",
+                "_fdomain",
+                "_next",
+                "_fdomain_next",
+              ]) {
+        visibility += [
+          "${target}_rust${rust_fidl_suffix}.actual",
+          "${target}_rust${rust_fidl_suffix}.actual.rust_compilation_deps",
+          "${target}_rust${rust_fidl_suffix}.aux.deps.deps",
+          "${target}_rust${rust_fidl_suffix}.aux.deps.transdeps",
+          "${target}_rust${rust_fidl_suffix}.rustdoc",
+        ]
+      }
     }
 
     # FIDL libraries in an SDK category are compiled for each frozen API level,
