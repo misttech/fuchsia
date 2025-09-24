@@ -6,6 +6,7 @@ group("power") {
   testonly = true
   deps = [
     "optimistic_lease_management",
+    "state_recorder",
     "suspend_config",
     "wake_lease",
   ]

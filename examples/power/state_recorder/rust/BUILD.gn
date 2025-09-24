@@ -38,7 +38,7 @@ fuchsia_package("package") {
   deps = [ ":component" ]
 }
 
-group("example") {
+group("rust") {
   testonly = true
   deps = [ ":package" ]
 }

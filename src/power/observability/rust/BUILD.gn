@@ -33,11 +33,6 @@ fuchsia_unittest_package("state_recorder_unittests") {
   deps = [ ":state_recorder_test" ]
 }
 
-group("example") {
-  testonly = true
-  deps = [ "example" ]
-}
-
 group("tests") {
   testonly = true
   deps = [ ":state_recorder_unittests" ]

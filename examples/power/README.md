@@ -18,6 +18,11 @@ Concepts from https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0250_po
 
 Examples below include recommended unit and integration tests.
 
+## State Recorder
+
+Record timeseries of state transitions to Inspect and trace using a standardized
+format.
+
 ### Taking a Wake Lease
 
 Prevent system suspend by requesting a wake lease from the System Activity Governor.

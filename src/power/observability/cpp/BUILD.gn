@@ -16,11 +16,6 @@ source_set("state_recorder") {
   ]
 }
 
-group("example") {
-  testonly = true
-  deps = [ "example" ]
-}
-
 group("tests") {
   testonly = true
   deps = [ "tests" ]

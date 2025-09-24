@@ -29,6 +29,7 @@ fuchsia_package("state_recorder_cpp_example") {
   deps = [ ":component" ]
 }
 
-group("example") {
+group("cpp") {
+  testonly = true
   deps = [ ":state_recorder_cpp_example" ]
 }
