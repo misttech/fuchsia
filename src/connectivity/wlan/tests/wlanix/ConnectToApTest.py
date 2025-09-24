@@ -43,6 +43,12 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
                         password=generate_random_password(),
                     ),
                 ),
+                (
+                    Security(
+                        security_mode=SecurityMode.WPA3,
+                        password=generate_random_password(),
+                    ),
+                ),
             ],
         )
 
@@ -158,9 +164,14 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
                 ssid=list(ssid.encode("ascii"))
             )
             if password:
-                supplicant_sta_network_proxy.set_psk_passphrase(
-                    passphrase=list(password.encode("ascii"))
-                )
+                if security.security_mode == SecurityMode.WPA3:
+                    supplicant_sta_network_proxy.set_sae_password(
+                        password=list(password.encode("ascii"))
+                    )
+                else:
+                    supplicant_sta_network_proxy.set_psk_passphrase(
+                        passphrase=list(password.encode("ascii"))
+                    )
 
             try:
                 (await supplicant_sta_network_proxy.select()).unwrap()
