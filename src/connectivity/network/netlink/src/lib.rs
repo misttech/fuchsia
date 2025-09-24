@@ -28,10 +28,10 @@ pub(crate) mod util;
 use std::num::NonZeroU64;
 
 use fuchsia_component::client::connect_to_protocol;
+use futures::StreamExt as _;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::future::Future;
-use futures::{FutureExt as _, StreamExt as _};
 use net_types::ip::{Ipv4, Ipv6};
 use netlink_packet_route::RouteNetlinkMessage;
 use protocol_family::route::NetlinkRouteNotifiedGroup;
@@ -39,7 +39,7 @@ use {
     fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_ndp as fnet_ndp,
     fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
 };
 
 use crate::client::{AsyncWorkItem, ClientIdGenerator, ClientTable, InternalClient};
@@ -347,7 +347,7 @@ async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverP
     let route_clients = ClientTable::default();
     let (unified_request_sink, unified_request_stream) = mpsc::channel(1);
 
-    let unified_event_loop = fasync::Task::spawn({
+    let unified_event_loop = {
         let route_clients = route_clients.clone();
         async move {
             let NetlinkWorkerDiscoverableProtocols {
@@ -383,25 +383,20 @@ async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverP
 
             event_loop.run(on_initialized, feature_flags).await;
         }
-    });
+    };
 
-    let _: Vec<()> = futures::future::join_all([
+    let route_client_receiver_loop = async move {
         // Accept new NETLINK_ROUTE clients.
-        {
-            let route_clients = route_clients.clone();
-            fasync::Task::spawn(async move {
-                connect_new_clients::<NetlinkRoute, _, _>(
-                    route_clients,
-                    route_client_receiver,
-                    NetlinkRouteRequestHandler { unified_request_sink },
-                )
-                .await;
-                panic!("route_client_receiver stream unexpectedly finished")
-            })
-        },
-        unified_event_loop,
-    ])
-    .await;
+        connect_new_clients::<NetlinkRoute, _, _>(
+            route_clients,
+            route_client_receiver,
+            NetlinkRouteRequestHandler { unified_request_sink },
+        )
+        .await;
+        panic!("route_client_receiver stream unexpectedly finished");
+    };
+
+    futures::future::join(unified_event_loop, route_client_receiver_loop).await;
 }
 
 /// Receives clients from the given receiver, adding them to the given table.
@@ -418,22 +413,25 @@ async fn connect_new_clients<
     request_handler_impl: F::RequestHandler<S>,
 ) {
     client_receiver
-        // Drive each client concurrently with `for_each_concurrent`. Note that
-        // because each client is spawned in a separate Task, they will run in
-        // parallel.
-        .for_each_concurrent(None, |ClientWithReceiver { client, receiver }| {
+        // Drive each client concurrently with `for_each_concurrent`.
+        .for_each_concurrent(None, async |ClientWithReceiver { client, receiver }| {
             client_table.add_client(client.clone());
-            spawn_client_request_handler::<F, S, R>(client, receiver, request_handler_impl.clone())
-                .then(|client| futures::future::ready(client_table.remove_client(client)))
+            let client = run_client_request_handler::<F, S, R>(
+                client,
+                receiver,
+                request_handler_impl.clone(),
+            )
+            .await;
+            client_table.remove_client(client);
         })
-        .await
+        .await;
 }
 
-/// Spawns a [`Task`] to handle requests from the given client.
+/// Reads messages from the `receiver` and handles them using the `handler`.
 ///
 /// The task terminates when the underlying `Receiver` closes, yielding the
 /// original client.
-fn spawn_client_request_handler<
+async fn run_client_request_handler<
     F: ProtocolFamily,
     S: Sender<F::InnerMessage>,
     R: Receiver<F::InnerMessage>,
@@ -441,34 +439,34 @@ fn spawn_client_request_handler<
     client: InternalClient<F, S>,
     receiver: R,
     handler: F::RequestHandler<S>,
-) -> fasync::Task<InternalClient<F, S>> {
+) -> InternalClient<F, S> {
     // State needed to handle an individual request, that is cycled through the
     // `fold` combinator below.
     struct FoldState<C, H> {
         client: C,
         handler: H,
     }
-    fasync::Task::spawn(
-        // Use `fold` for two reasons. First, it processes requests serially,
-        // ensuring requests are handled in order. Second, it allows us to
-        // "hand-off" the client/handler from one request to the other, avoiding
-        // copies for each request.
-        receiver
-            .fold(
-                FoldState { client, handler },
-                |FoldState { mut client, mut handler }, req| async {
-                    log_debug!("{} Received request: {:?}", client, req);
-                    handler.handle_request(req, &mut client).await;
-                    FoldState { client, handler }
-                },
-            )
-            .map(|FoldState { client, handler: _ }: FoldState<_, _>| client),
-    )
+
+    // Use `fold` for two reasons. First, it processes requests serially,
+    // ensuring requests are handled in order. Second, it allows us to
+    // "hand-off" the client/handler from one request to the other, avoiding
+    // copies for each request.
+    let FoldState { client, handler: _ } = receiver
+        .fold(FoldState { client, handler }, |FoldState { mut client, mut handler }, req| async {
+            log_debug!("{} Received request: {:?}", client, req);
+            handler.handle_request(req, &mut client).await;
+            FoldState { client, handler }
+        })
+        .await;
+
+    client
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_async as fasync;
+    use futures::FutureExt as _;
 
     use assert_matches::assert_matches;
     use std::pin::pin;
@@ -479,7 +477,7 @@ mod tests {
     };
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_spawn_client_request_handler() {
+    async fn test_run_client_request_handler() {
         let (mut req_sender, req_receiver) = mpsc::channel(0);
         let (mut client_sink, client, async_work_drain_task) =
             crate::client::testutil::new_fake_client::<FakeProtocolFamily>(
@@ -490,7 +488,7 @@ mod tests {
 
         {
             let mut client_task = pin!(
-                spawn_client_request_handler::<FakeProtocolFamily, _, _>(
+                run_client_request_handler::<FakeProtocolFamily, _, _>(
                     client,
                     req_receiver,
                     FakeNetlinkRequestHandler,
