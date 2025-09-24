@@ -1,0 +1,412 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "src/ui/scenic/lib/display/coordinator_proxy.h"
+
+#include <lib/trace/event.h>
+
+#include <algorithm>
+
+#include "src/ui/scenic/lib/utils/fidl_array_cast.h"
+
+namespace display {
+
+CoordinatorProxy::CoordinatorProxy(
+    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator,
+    inspect::Node inspect_node)
+    : coordinator_(std::move(coordinator)), inspect_node_(std::move(inspect_node)) {
+  FX_DCHECK(coordinator_);
+  inspect_api_calls_received_ = inspect_node_.CreateUint("API Calls Received", 0);
+  inspect_api_calls_sent_ = inspect_node_.CreateUint("API Calls Sent", 0);
+  inspect_apply_config_calls_received_ = inspect_node_.CreateUint("ApplyConfig Calls Received", 0);
+  inspect_apply_config_calls_sent_ = inspect_node_.CreateUint("ApplyConfig Calls Sent", 0);
+  inspect_check_config_calls_skipped_ = inspect_node_.CreateUint("CheckConfig Calls Skipped", 0);
+  inspect_check_config_calls_sent_ = inspect_node_.CreateUint("CheckConfig Calls Sent", 0);
+  inspect_check_config_cache_size_ = inspect_node_.CreateUint("CheckConfig Cache Size", 0);
+  inspect_import_image_count_ = inspect_node_.CreateUint("Imported Images (total)", 0);
+  inspect_current_image_count_ = inspect_node_.CreateUint("Imported Images (current)", 0);
+  inspect_import_event_count_ = inspect_node_.CreateUint("Imported Events (total)", 0);
+  inspect_current_event_count_ = inspect_node_.CreateUint("Imported Events (current)", 0);
+}
+
+zx::result<> CoordinatorProxy::ImportImage(types::Extent2 image_dimensions,
+                                           uint32_t image_tiling_type,
+                                           WireBufferCollectionId buffer_collection_id,
+                                           uint32_t buffer_index, ImageId image_id) {
+  IncrementImportImageCallsSent();
+  FX_DCHECK(!images_.contains(image_id)) << "Not expecting to find image_id=" << image_id.value();
+
+  fuchsia_hardware_display_types::wire::ImageMetadata image_metadata{
+      .dimensions = image_dimensions.ToWire(),
+      .tiling_type = image_tiling_type,
+  };
+
+  const auto import_image_result = coordinator_->sync()->ImportImage(
+      image_metadata, buffer_collection_id, buffer_index, image_id.ToFidl());
+  if (!import_image_result.ok()) {
+    FX_LOGS(ERROR) << "ImportImage transport error: " << import_image_result.status_string();
+    return zx::error(import_image_result.status());
+  }
+  if (import_image_result->is_error()) {
+    const zx_status_t error_value = import_image_result->error_value();
+    FX_LOGS(ERROR) << "ImportImage method error: " << zx_status_get_string(error_value);
+    return zx::error(error_value);
+  }
+
+  images_.insert(image_id);
+  UpdateCurrentImageCount();
+  return zx::ok();
+}
+
+void CoordinatorProxy::ReleaseImage(const ImageId& image_id) {
+  FX_DCHECK(images_.erase(image_id)) << "Expected to find image_id=" << image_id.value();
+  UpdateCurrentImageCount();
+
+  fidl::OneWayStatus result = coordinator_->sync()->ReleaseImage(image_id.ToFidl());
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Failed to call FIDL ReleaseImage method: " << result.status_string();
+  }
+}
+
+void CoordinatorProxy::ImportEvent(zx::event event, const EventId& event_id) {
+  IncrementImportEventCallsSent();
+  FX_DCHECK(!events_.contains(event_id)) << "Not expecting to find event_id=" << event_id.value();
+
+  fidl::OneWayStatus result =
+      coordinator_->sync()->ImportEvent(std::move(event), event_id.ToFidl());
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Failed to call FIDL ImportEvent method: " << result.status_string();
+  }
+
+  events_.insert(event_id);
+  UpdateCurrentEventCount();
+}
+
+EventId CoordinatorProxy::ImportEvent(const zx::event& event) {
+  static EventId id_generator(1);
+
+  zx::event copied_event;
+  zx_status_t status = event.duplicate(ZX_RIGHT_SAME_RIGHTS, &copied_event);
+  if (status != ZX_OK) {
+    FX_LOGS(ERROR) << "Failed to duplicate display controller event: "
+                   << zx_status_get_string(status);
+    return kInvalidEventId;
+  }
+
+  EventId id = id_generator++;
+  ImportEvent(std::move(copied_event), id);
+  return id;
+}
+
+void CoordinatorProxy::ReleaseEvent(const EventId& event_id) {
+  FX_DCHECK(events_.erase(event_id)) << "Expected to find event_id=" << event_id.value();
+  UpdateCurrentEventCount();
+
+  fidl::OneWayStatus result = coordinator_->sync()->ReleaseEvent(event_id.ToFidl());
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent method: " << result.status_string();
+  }
+}
+
+LayerId CoordinatorProxy::CreateLayer() {
+  IncrementApiCallsReceived();
+  IncrementApiCallsSent();
+
+  const auto create_layer_result = coordinator_->sync()->CreateLayer();
+
+  if (!create_layer_result.ok()) {
+    FX_LOGS(ERROR) << "CreateLayer transport error: " << create_layer_result.status_string();
+    return kInvalidLayerId;
+  }
+  if (create_layer_result->is_error()) {
+    FX_LOGS(ERROR) << "CreateLayer method error: "
+                   << zx_status_get_string(create_layer_result->error_value());
+    return kInvalidLayerId;
+  }
+
+  LayerId layer_id((*create_layer_result)->layer_id);
+  FX_DCHECK(!layers_.contains(layer_id));
+  layers_.try_emplace(layer_id);
+  return layer_id;
+}
+
+void CoordinatorProxy::DestroyLayer(const LayerId& layer_id) {
+  IncrementApiCallsReceived();
+  IncrementApiCallsSent();
+
+  FX_DCHECK(layers_.contains(layer_id));
+  layers_.erase(layer_id);
+
+  // The FIDL API requires that the layer is not in use by an applied/draft state.
+  FX_DCHECK(std::ranges::find(applied_display_layers_, layer_id) == applied_display_layers_.end());
+  FX_DCHECK(std::ranges::find(draft_display_layers_, layer_id) == draft_display_layers_.end());
+
+  const fidl::OneWayStatus status = coordinator_->sync()->DestroyLayer(layer_id.ToFidl());
+
+  FX_DCHECK(status.ok()) << "Failed to call FIDL DestroyLayer method: " << status.status_string();
+}
+
+void CoordinatorProxy::SetDisplayMode(const DisplayId& display_id, const DisplayMode& mode) {
+  CheckDisplayId(display_id);
+  IncrementApiCallsReceived();
+
+  draft_display_mode_ = mode;
+}
+
+void CoordinatorProxy::SetDisplayColorConversion(const DisplayId& display_id,
+                                                 const std::array<float, 3>& preoffsets,
+                                                 const std::array<float, 9>& coefficients,
+                                                 const std::array<float, 3>& postoffsets) {
+  CheckDisplayId(display_id);
+  IncrementApiCallsReceived();
+
+  draft_color_conversion_preoffsets_ = preoffsets;
+  draft_color_conversion_coefficients_ = coefficients;
+  draft_color_conversion_postoffsets_ = postoffsets;
+}
+
+void CoordinatorProxy::SetDisplayLayers(const DisplayId& display_id,
+                                        const std::span<const LayerId>& layer_ids) {
+  CheckDisplayId(display_id);
+  IncrementApiCallsReceived();
+
+  draft_display_layers_.assign(layer_ids.begin(), layer_ids.end());
+}
+
+void CoordinatorProxy::SetLayerPrimaryConfig(const LayerId& layer_id,
+                                             const Extent2& image_dimensions,
+                                             uint32_t image_tiling_type) {
+  IncrementApiCallsReceived();
+
+  GetLayer(layer_id).SetPrimaryConfig(image_dimensions, image_tiling_type);
+}
+
+void CoordinatorProxy::SetLayerPrimaryPosition(const LayerId& layer_id, const RotateFlip& transform,
+                                               const Rectangle& image_source,
+                                               const Rectangle& display_destination) {
+  IncrementApiCallsReceived();
+
+  GetLayer(layer_id).SetPrimaryPosition(transform, image_source, display_destination);
+}
+
+void CoordinatorProxy::SetLayerPrimaryAlpha(const LayerId& layer_id, const BlendMode& blend_mode,
+                                            float alpha_value) {
+  IncrementApiCallsReceived();
+
+  GetLayer(layer_id).SetPrimaryAlpha(blend_mode, alpha_value);
+}
+
+void CoordinatorProxy::SetLayerImage(const LayerId& layer_id, const ImageId& image_id,
+                                     const EventId& wait_event_id) {
+  IncrementApiCallsReceived();
+
+  GetLayer(layer_id).SetLayerImage(image_id, wait_event_id);
+}
+
+void CoordinatorProxy::SetLayerColorConfig(const LayerId& layer_id, const WireColor& color,
+                                           const Rectangle& display_destination) {
+  IncrementApiCallsReceived();
+
+  GetLayer(layer_id).SetColorConfig(color, display_destination);
+}
+
+zx::result<> CoordinatorProxy::ApplyConfig(const WireConfigStamp& config_stamp) {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::ApplyConfig");
+  IncrementApplyConfigCallsReceived();
+
+  // Set `temp_display_spec_` to have the values we need.
+  UpdateTempDisplaySpecForApplyConfig();
+
+  // If an equivalent spec is already in `check_config_cache_` we can skip calling the FIDL method.
+  const auto check_config_it = check_config_cache_.find(temp_display_spec_);
+  const bool has_cached_check_config = check_config_it != check_config_cache_.end();
+
+  if (has_cached_check_config && !check_config_it->second) {
+    // Check config would fail, so we can return immediately.
+    IncrementCheckConfigCallSkipped();
+    ResetDraftState();
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
+  // We always need to send diffs (between the draft and applied states) to the Coordinator,
+  // regardless of whether we need to do a FIDL round-trip `CheckConfig()`.
+  SendDiffsToCoordinator();
+
+  if (has_cached_check_config) {
+    // Nothing to do: we know `CheckConfig()` would succeed if we called it, because if the cached
+    // result was a failure we would have returned early above.
+    IncrementCheckConfigCallSkipped();
+  } else {
+    // There was no cached result, so a round-trip FIDL call is necessary.
+    // This result will be cached.
+    const WireConfigResult status = FidlCheckConfig();
+    if (status != WireConfigResult::kOk) {
+      // Cache the failed state and cleanup before returning an error.  Because we already sent the
+      // diffs to the display coordinator, we need a FIDL `DiscardConfig()` in addition to resetting
+      // the draft state.
+      CacheCheckConfigResult(false);
+      ResetDraftState();
+      FidlDiscardConfig();
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+
+    // Cache the successful result; next time we won't need to call the FIDL `CheckConfig()`.
+    CacheCheckConfigResult(true);
+  }
+
+  // We know the config is valid, so now we can call `ApplyConfig()`.
+  FidlApplyConfig(config_stamp);
+
+  // The draft config has become the applied config.
+  AcceptDraftState();
+
+  return zx::ok();
+}
+
+internal::Layer& CoordinatorProxy::GetLayer(const LayerId& layer_id) {
+  auto it = layers_.find(layer_id);
+  FX_DCHECK(it != layers_.end()) << "Layer " << layer_id.value()
+                                 << " not found in CoordinatorProxy.";
+  return it->second;
+}
+
+void CoordinatorProxy::CheckDisplayId(const DisplayId& display_id) {
+  FX_DCHECK(display_id != kInvalidDisplayId);
+  FX_DCHECK(display_id_ == kInvalidDisplayId || display_id_ == display_id)
+      << "New display id=" << display_id.value()
+      << " differs from previously-seen display id=" << display_id_.value();
+  display_id_ = display_id;
+}
+
+void CoordinatorProxy::ResetDraftState() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::ResetDraftState");
+
+  draft_display_layers_ = applied_display_layers_;
+  draft_display_mode_ = applied_display_mode_;
+  draft_color_conversion_preoffsets_ = applied_color_conversion_preoffsets_;
+  draft_color_conversion_coefficients_ = applied_color_conversion_coefficients_;
+  draft_color_conversion_postoffsets_ = applied_color_conversion_postoffsets_;
+
+  for (auto& layer : layers_) {
+    layer.second.ResetDraftState();
+  }
+}
+
+void CoordinatorProxy::AcceptDraftState() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::AcceptDraftState");
+
+  applied_display_layers_ = draft_display_layers_;
+  applied_display_mode_ = draft_display_mode_;
+  applied_color_conversion_preoffsets_ = draft_color_conversion_preoffsets_;
+  applied_color_conversion_coefficients_ = draft_color_conversion_coefficients_;
+  applied_color_conversion_postoffsets_ = draft_color_conversion_postoffsets_;
+
+  for (auto& layer : layers_) {
+    layer.second.AcceptDraftState();
+  }
+}
+
+void CoordinatorProxy::SendDiffsToCoordinator() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::SendDiffsToCoordinator");
+
+  // We send diffs for all layers, even those that aren't in the list set by `SetDisplayLayers()`.
+  // This matches the semantics implemented by the display coordinator, and is sensible: doing
+  // otherwise would complicate both the user's mental model and the state tracking implementation.
+  for (auto& [id, layer] : layers_) {
+    uint64_t api_calls_sent_for_layer = layer.SendDiffsToCoordinator(id, *coordinator_);
+    IncrementApiCallsSent(api_calls_sent_for_layer);
+  }
+
+  if (draft_display_layers_ != applied_display_layers_) {
+    IncrementApiCallsSent();
+
+    // Safe: see static_asserts in types::IdType<>.
+    auto wire_layer_ids = fidl::VectorView<WireLayerId>::FromExternal(
+        reinterpret_cast<WireLayerId*>(draft_display_layers_.data()), draft_display_layers_.size());
+
+    const fidl::OneWayStatus status =
+        coordinator_->sync()->SetDisplayLayers(display_id_.ToFidl(), wire_layer_ids);
+
+    FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayLayers method: "
+                           << status.status_string();
+  }
+  if (draft_display_mode_ != applied_display_mode_) {
+    IncrementApiCallsSent();
+
+    const fidl::OneWayStatus status =
+        coordinator_->sync()->SetDisplayMode(display_id_.ToFidl(), draft_display_mode_.ToWire());
+
+    FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayMode method: "
+                           << status.status_string();
+  }
+
+  if (draft_color_conversion_preoffsets_ != applied_color_conversion_preoffsets_ ||
+      draft_color_conversion_coefficients_ != applied_color_conversion_coefficients_ ||
+      draft_color_conversion_postoffsets_ != applied_color_conversion_postoffsets_) {
+    IncrementApiCallsSent();
+
+    const fidl::OneWayStatus status = coordinator_->sync()->SetDisplayColorConversion(
+        display_id_.ToFidl(),
+        utils::ReinterpretStdArrayAsFidlArray(draft_color_conversion_preoffsets_),
+        utils::ReinterpretStdArrayAsFidlArray(draft_color_conversion_coefficients_),
+        utils::ReinterpretStdArrayAsFidlArray(draft_color_conversion_postoffsets_));
+
+    FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayColorConversion method: "
+                           << status.status_string();
+  }
+}
+
+void CoordinatorProxy::UpdateTempDisplaySpecForApplyConfig() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::UpdateTempDisplaySpecForApplyConfig");
+
+  // This is the only method allowed to mutate `temp_display_spec_`.  It is const everywhere else.
+  internal::DisplaySpec& spec = const_cast<internal::DisplaySpec&>(temp_display_spec_);
+
+  spec.layers.clear();
+  for (LayerId& layer_id : draft_display_layers_) {
+    spec.layers.push_back(GetLayer(layer_id).draft_spec());
+  }
+  spec.display_mode = draft_display_mode_;
+  spec.color_conversion_preoffsets = draft_color_conversion_preoffsets_;
+  spec.color_conversion_coefficients = draft_color_conversion_coefficients_;
+  spec.color_conversion_postoffsets = draft_color_conversion_postoffsets_;
+}
+
+void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::FidlApplyConfig");
+
+  IncrementApplyConfigCallsSent();
+
+  fidl::Arena arena;
+  const fidl::OneWayStatus result = coordinator_->sync()->ApplyConfig3(
+      fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
+          .stamp(config_stamp)
+          .Build());
+  FX_DCHECK(result.ok()) << "Failed to call FIDL ApplyConfig method: " << result.status_string();
+}
+
+void CoordinatorProxy::FidlDiscardConfig() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::FidlDiscardConfig");
+
+  const fidl::OneWayStatus result = coordinator_->sync()->DiscardConfig();
+  FX_DCHECK(result.ok()) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
+}
+
+WireConfigResult CoordinatorProxy::FidlCheckConfig() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::FidlCheckConfig");
+
+  IncrementCheckConfigCallsSent();
+
+  const auto status = coordinator_->sync()->CheckConfig();
+  FX_DCHECK(status.ok()) << "Failed to call FIDL CheckConfig method: " << status.status_string();
+
+  return status->res;
+}
+
+void CoordinatorProxy::CacheCheckConfigResult(bool success) {
+  check_config_cache_[temp_display_spec_] = success;
+  inspect_check_config_cache_size_.Set(check_config_cache_.size());
+}
+
+}  // namespace display

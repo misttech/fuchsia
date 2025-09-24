@@ -57,6 +57,15 @@ class IdType {
   using ValueType = typename IdTraits::ValueType;
   using FidlType = typename IdTraits::FidlType;
 
+  // These static_asserts guarantee that it is safe to say e.g.
+  //    std::array<ValueType, 10> values;
+  //    auto view = fidl::VectorView<FidlType>::FromExternal(
+  //        reinterpret_cast<FidlType*>(values.data()), values.size());
+  static_assert(sizeof(ValueType) == sizeof(FidlType));
+  static_assert(alignof(ValueType) == alignof(FidlType));
+  static_assert(std::is_standard_layout_v<ValueType>, "Value type must be standard-layout");
+  static_assert(std::is_standard_layout_v<FidlType>, "FIDL type must be standard-layout");
+
   constexpr IdType() noexcept = default;
 
   constexpr explicit IdType(const ValueType& int_value) noexcept : value_(int_value) {}

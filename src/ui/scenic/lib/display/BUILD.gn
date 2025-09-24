@@ -20,6 +20,8 @@ source_set("display") {
   sources = [
     "color_converter.cc",
     "color_converter.h",
+    "coordinator_proxy.cc",
+    "coordinator_proxy.h",
     "display.cc",
     "display.h",
     "display_coordinator_listener.cc",
@@ -28,8 +30,10 @@ source_set("display") {
     "display_manager.h",
     "display_power_manager.cc",
     "display_power_manager.h",
-    "fidl_id_types.h",
-    "fidl_typedefs.h",
+    "display_spec.h",
+    "layer.cc",
+    "layer.h",
+    "layer_spec.h",
     "util.cc",
     "util.h",
   ]

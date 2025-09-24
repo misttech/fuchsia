@@ -10,13 +10,16 @@ group("tests") {
   public_deps = [ ":unittests" ]
 }
 
+# fx test //src/ui/scenic:display_unittests
 cc_test_executable("unittests") {
   output_name = "display_unittests"
   testonly = true
   sources = [
+    "coordinator_proxy_unittest.cc",
     "display_coordinator_listener_unittest.cc",
     "display_manager_unittest.cc",
     "display_power_manager_unittest.cc",
+    "display_spec_unittest.cc",
     "singleton_display_service_unittest.cc",
   ]
   deps = [
@@ -33,6 +36,7 @@ cc_test_executable("unittests") {
     "//src/ui/scenic/lib/display:singleton_display_service",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/inspect",
+    "//zircon/system/ulib/sync:sync-cpp",
   ]
   public_deps = [ "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp" ]
 }

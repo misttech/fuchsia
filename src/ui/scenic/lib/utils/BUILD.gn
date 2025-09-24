@@ -21,6 +21,7 @@ source_set("utils") {
     "dispatcher_holder.h",
     "escher_provider.cc",
     "escher_provider.h",
+    "fidl_array_cast.h",
     "helpers.cc",
     "helpers.h",
     "logging.h",
