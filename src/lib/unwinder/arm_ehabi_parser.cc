@@ -10,6 +10,9 @@
 #include "src/lib/unwinder/arm_ehabi_module.h"
 #include "src/lib/unwinder/registers.h"
 
+#define LOG_DEBUG(...)
+// #define LOG_DEBUG(...) fprintf(stderr, __VA_ARGS__);
+
 namespace unwinder {
 namespace {
 constexpr uint32_t kExIdxCantUnwind = 1;
@@ -119,6 +122,7 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
   }
 
   if (auto result = CollectInstructions(); result.is_ok()) {
+    LOG_DEBUG("Executing %zu instructions\n", result.value().size());
     if (auto err = ExecuteInstructions(stack, result.value(), next); err.has_err()) {
       return err;
     }
@@ -140,6 +144,8 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
       err = Error("Could not set PC from LR!");
     }
   }
+
+  LOG_DEBUG("%s => %s\n", current.Describe().c_str(), next.Describe().c_str());
 
   return err;
 }
@@ -279,6 +285,7 @@ Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8
         sp += (static_cast<uint32_t>(byte) << 2) + 4;
       }
 
+      LOG_DEBUG("SP_OFFSET [0x%" PRIx8 "]: new sp: 0x%" PRIx64 "\n", byte, sp);
       if (auto err = next.SetSP(sp); err.has_err()) {
         return err;
       }
@@ -293,6 +300,8 @@ Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8
           uint32_t register_mask = (((static_cast<uint32_t>(byte & 0x0f)) << 12) |
                                     (static_cast<uint32_t>(bytes[++i])) << 4);
 
+          LOG_DEBUG("SET_REGS_FROM_MASK [0x%" PRIx8 "]: mask: 0x%" PRIx32 "\n", byte,
+                    register_mask);
           if (auto err = SetRegistersFromMask(stack, register_mask, next); err.has_err()) {
             return err;
           }
@@ -309,6 +318,9 @@ Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8
           if (auto err = next.Get(static_cast<RegisterID>(reg), val); err.has_err()) {
             return err;
           }
+
+          LOG_DEBUG("SP_REG [0x%" PRIx8 "]: from reg: %" PRId32 " val: 0x%" PRIx64 "\n", byte, reg,
+                    val);
 
           if (auto err = next.SetSP(val); err.has_err()) {
             return err;
@@ -330,6 +342,9 @@ Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8
             register_mask |= 1 << 14;
           }
 
+          LOG_DEBUG("SET_REGS_FROM_MASK [0x%" PRIx8 "]: mask: 0x%" PRIx32 "\n", byte,
+                    register_mask);
+
           if (auto err = SetRegistersFromMask(stack, register_mask, next); err.has_err()) {
             return err;
           }
@@ -337,7 +352,7 @@ Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8
           break;
         }
         default: {
-          return Error("OP %#x not implemented yet", byte);
+          return Error("OP 0x%" PRIx8 " not implemented yet", byte);
         }
       }
     }
@@ -364,6 +379,7 @@ Error ArmEhAbiParser::SetRegistersFromMask(Memory* stack, uint32_t register_mask
         set_sp = true;
       }
 
+      LOG_DEBUG("POP_REG: reg: %" PRId64 " new val: 0x%" PRIx32 "\n", i, val);
       next.Set(static_cast<RegisterID>(i), val);
     }
   }
