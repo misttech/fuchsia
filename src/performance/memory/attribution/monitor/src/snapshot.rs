@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use attribution_processing::digest::BucketDefinition;
 use attribution_processing::AttributionData;
+use attribution_processing::digest::BucketDefinition;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use fuchsia_trace::duration;
 use futures::AsyncWriteExt;
 use stalls::MemoryStallMetrics;
+use stalls::refaults::RefaultProvider;
 use traces::CATEGORY_MEMORY_CAPTURE;
 
 /// AttributionSnapshot holds and serves a snapshot of the memory of a Fuchsia system, to be sent
@@ -19,6 +20,7 @@ impl AttributionSnapshot {
         attribution_data: AttributionData,
         kernel_statistics: fplugin::KernelStatistics,
         memory_stalls: MemoryStallMetrics,
+        refault_provider: impl RefaultProvider,
         bucket_definitions: &[BucketDefinition],
     ) -> AttributionSnapshot {
         AttributionSnapshot(fplugin::Snapshot {
@@ -36,6 +38,7 @@ impl AttributionSnapshot {
             performance_metrics: Some(fplugin::PerformanceImpactMetrics {
                 some_memory_stalls_ns: memory_stalls.some.as_nanos().try_into().ok(),
                 full_memory_stalls_ns: memory_stalls.full.as_nanos().try_into().ok(),
+                page_refaults: Some(refault_provider.get_count()),
                 ..Default::default()
             }),
             bucket_definitions: Some(
@@ -69,7 +72,7 @@ impl AttributionSnapshot {
 #[cfg(test)]
 pub mod tests {
     // use super::*;
-    use crate::snapshot::{fplugin, AttributionSnapshot};
+    use crate::snapshot::{AttributionSnapshot, fplugin};
 
     #[fuchsia::test]
     async fn test_serve_socket_gets_closed() {

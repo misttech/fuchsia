@@ -166,6 +166,7 @@ async fn serve_client_stream(
                     attribution_data_provider.clone(),
                     kernel_stats_proxy.clone(),
                     stall_provider.clone(),
+                    refault_tracker.clone(),
                     bucket_definitions.clone(),
                     snapshot,
                 )
@@ -201,6 +202,7 @@ async fn provide_snapshot(
     attribution_data_provider: Arc<AttributionDataProviderImpl>,
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
+    refault_tracker: impl RefaultProvider,
     bucket_definitions: Arc<[BucketDefinition]>,
     snapshot: zx::Socket,
 ) -> Result<(), Error> {
@@ -219,6 +221,7 @@ async fn provide_snapshot(
         attribution_data,
         kernel_stats,
         memory_stalls,
+        refault_tracker,
         &*bucket_definitions,
     );
     attribution_snapshot.serve(snapshot).await
