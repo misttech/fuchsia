@@ -46,6 +46,11 @@ rustc_binary("bin") {
     "src/main.rs",
     "src/region.rs",
   ]
+  test_deps = [
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:tempfile",
+  ]
 }
 
 fuchsia_component("component") {
@@ -62,4 +67,5 @@ fuchsia_package("package") {
 # Run with `fx test kernel-collector-unittests`.
 fuchsia_unittest_package("kernel-collector-unittests") {
   deps = [ ":bin_test" ]
+  manifest = "meta/kernel_collector_unittests.cml"
 }

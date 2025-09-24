@@ -290,10 +290,12 @@ mod tests {
     use fidl::endpoints::{create_proxy, create_proxy_and_stream};
     use fuchsia_async as fasync;
     use futures::pin_mut;
+    use heapdump_snapshot::ThreadInfo;
     use heapdump_vmo::allocations_table_v1::AllocationsTableWriter;
     use heapdump_vmo::resources_table_v1::ResourcesTableWriter;
     use itertools::{Itertools, assert_equal};
     use std::pin::Pin;
+    use std::rc::Rc;
     use test_case::test_case;
     use zx::HandleBased;
 
@@ -491,15 +493,29 @@ mod tests {
         });
 
         // Verify that it contains our test allocation.
-        let foobar_allocation = received_snapshot.allocations.remove(&foobar_address).unwrap();
+        let foobar_allocation = received_snapshot.allocations.swap_remove(
+            received_snapshot
+                .allocations
+                .iter()
+                .position(|alloc| alloc.address == Some(foobar_address))
+                .unwrap(),
+        );
         assert_eq!(foobar_allocation.size, foobar_size);
-        assert_eq!(foobar_allocation.thread_info.koid, FAKE_THREAD_KOID);
-        assert_eq!(foobar_allocation.thread_info.name.as_str(), FAKE_THREAD_NAME);
+        assert_eq!(
+            foobar_allocation.thread_info,
+            Some(Rc::new(ThreadInfo {
+                koid: FAKE_THREAD_KOID,
+                name: FAKE_THREAD_NAME.to_string()
+            }))
+        );
         assert_eq!(foobar_allocation.stack_trace.program_addresses, foobar_stack_trace);
-        assert_eq!(foobar_allocation.timestamp, foobar_timestamp);
+        assert_eq!(foobar_allocation.timestamp, Some(foobar_timestamp));
         if with_contents {
             // Verify that it has the expected contents.
-            assert_eq!(foobar_allocation.contents.expect("contents must be set"), *foobar);
+            assert_eq!(
+                foobar_allocation.contents.as_ref().expect("contents must be set"),
+                &foobar.to_vec()
+            );
         } else {
             // Verify that it has no contents.
             assert_matches!(foobar_allocation.contents, None);
@@ -580,12 +596,23 @@ mod tests {
             })
         };
         let mut snapshot_one = receive_named_snapshot_fn("snapshot-one");
-        let allocation = snapshot_one.allocations.remove(&FAKE_ALLOCATION_ADDRESS).unwrap();
+        let allocation = snapshot_one.allocations.swap_remove(
+            snapshot_one
+                .allocations
+                .iter()
+                .position(|alloc| alloc.address == Some(FAKE_ALLOCATION_ADDRESS))
+                .unwrap(),
+        );
         assert_eq!(allocation.size, FAKE_ALLOCATION_SIZE);
-        assert_eq!(allocation.thread_info.koid, FAKE_THREAD_KOID);
-        assert_eq!(allocation.thread_info.name.as_str(), FAKE_THREAD_NAME);
+        assert_eq!(
+            allocation.thread_info,
+            Some(Rc::new(ThreadInfo {
+                koid: FAKE_THREAD_KOID,
+                name: FAKE_THREAD_NAME.to_string()
+            }))
+        );
         assert_eq!(allocation.stack_trace.program_addresses, FAKE_ALLOCATION_STACK_TRACE);
-        assert_eq!(allocation.timestamp, FAKE_ALLOCATION_TIMESTAMP);
+        assert_eq!(allocation.timestamp, Some(FAKE_ALLOCATION_TIMESTAMP));
         assert!(snapshot_one.allocations.is_empty(), "no other allocations should exist");
         assert_executable_regions_valid_for_fake_process(&snapshot_one.executable_regions);
 

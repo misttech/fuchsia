@@ -69,8 +69,11 @@ async fn snapshot(remote_control: RemoteControlProxyHolder, cmd: SnapshotCommand
             }
         }
 
-        for (address, info) in &snapshot.allocations {
+        for info in &snapshot.allocations {
             if let Some(ref data) = info.contents {
+                let address = info.address.ok_or(ffx_error!(
+                    "Cannot to create an output file for an allocation without address."
+                ))?;
                 let path = contents_dir.join(format!("0x{:x}", address));
                 match std::fs::File::create(&path) {
                     Ok(mut file) => file.write_all(&data)?,

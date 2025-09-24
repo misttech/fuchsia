@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use std::fs::File;
+use std::path::Path;
 
 use anyhow::Context;
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
@@ -47,8 +48,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // Map the heap profile VMO in memory once for all.
     let file = File::open(KERNEL_HEAP_PROFILE_PATH)?;
     let region = Region::new(&fdio::get_vmo_exact_from_file(&file)?)?;
-
-    let kernel_collector = KernelCollector::new(&region);
+    let symbol_path = Path::new("/boot/kernel/i/logs/physboot");
+    let kernel_collector = KernelCollector::new(&region, &symbol_path);
     service_fs
         .for_each_concurrent(None, |request: IncomingRequest| async {
             match request {

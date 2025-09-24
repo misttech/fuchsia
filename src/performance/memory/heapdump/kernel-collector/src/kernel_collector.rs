@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs;
+use std::path::Path;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use std::sync::atomic::{AtomicU32, AtomicU64};
 
@@ -13,9 +14,6 @@ use futures::StreamExt;
 use crate::Region;
 use anyhow::{Context, Ok, anyhow, bail, ensure};
 use log::{info, warn};
-use zx::MonotonicInstant;
-
-const SYMBOLIZER_FILE_PATH: &str = "/boot/kernel/i/logs/physboot";
 
 // Header for the profile mapped from kernel memory.
 #[repr(C)]
@@ -236,17 +234,18 @@ fn collect_profile(region: &Region) -> anyhow::Result<Vec<ProfileEntry>> {
 
 pub struct KernelCollector<'a> {
     region: &'a Region,
+    symbol_path: &'a Path,
 }
 
 impl<'a> KernelCollector<'a> {
-    pub fn new(region: &'a Region) -> Self {
-        Self { region }
+    pub fn new(region: &'a Region, symbol_path: &'a Path) -> Self {
+        Self { region, symbol_path }
     }
 
     pub async fn serve_client_stream(
         &self,
         mut stream: fheapdump_client::CollectorRequestStream,
-    ) -> Result<(), anyhow::Error> {
+    ) -> anyhow::Result<()> {
         while let Some(request) = stream.next().await.transpose()? {
             match request {
                 fheapdump_client::CollectorRequest::TakeLiveSnapshot { payload, .. } => {
@@ -260,11 +259,13 @@ impl<'a> KernelCollector<'a> {
                             let mut profile = collect_profile(self.region)?;
                             // Stream the heap profile back to the caller.
                             let mut streamer = heapdump_snapshot::Streamer::new(receiver);
-                            let text = fs::read_to_string(SYMBOLIZER_FILE_PATH).context(
-                                format!("Read kernel symbol file {SYMBOLIZER_FILE_PATH}"),
-                            )?;
+                            let text = fs::read_to_string(self.symbol_path).context(format!(
+                                "Read kernel symbol file {0:?}",
+                                self.symbol_path
+                            ))?;
                             let regions = parse_symbolizer_log(&text).context(format!(
-                                "Read kernel symbol file {SYMBOLIZER_FILE_PATH}"
+                                "Read kernel symbol file {0:?}",
+                                self.symbol_path
                             ))?;
 
                             for region in regions {
@@ -274,18 +275,11 @@ impl<'a> KernelCollector<'a> {
                                     )
                                     .await?
                             }
-                            streamer = streamer
-                                .push_element(fheapdump_client::SnapshotElement::ThreadInfo(
-                                    fheapdump_client::ThreadInfo {
-                                        koid: Some(0),
-                                        name: Some("undefined".to_owned()),
-                                        thread_info_key: Some(0),
-                                        ..Default::default()
-                                    },
-                                ))
-                                .await?;
                             let mut trace_index = 0;
                             while let Some(value) = profile.pop() {
+                                if value.live_bytes == 0 {
+                                    continue;
+                                }
                                 streamer = streamer
                                     .push_element(fheapdump_client::SnapshotElement::StackTrace(
                                         fheapdump_client::StackTrace {
@@ -297,9 +291,7 @@ impl<'a> KernelCollector<'a> {
                                     .await?
                                     .push_element(fheapdump_client::SnapshotElement::Allocation(
                                         fheapdump_client::Allocation {
-                                            thread_info_key: Some(0),
-                                            timestamp: Some(MonotonicInstant::from_nanos(0)),
-                                            address: Some(trace_index),
+                                            count: Some(value.live_count),
                                             size: Some(value.live_bytes),
                                             stack_trace_key: Some(trace_index),
                                             ..Default::default()
@@ -336,11 +328,12 @@ impl<'a> KernelCollector<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
-
-    use zx::Vmo;
-
     use super::*;
+    use fidl_fuchsia_memory_heapdump_client::CollectorMarker;
+    use fuchsia_async::Task;
+    use std::io::Write;
+    use std::mem;
+    use zx::Vmo;
 
     #[test]
     fn test_parse_hex() {
@@ -404,7 +397,7 @@ mod tests {
             file_offset: Some(0xffffffff80000000),
             build_id: Some(BuildId {
                 value: vec![0x00,0x1c,0x12,0x2d,0x7c,0x44,0x43,0x41,0x65,0xb2,0xe7,0x5e,0x98,0x76,0xdb,0x26,0x50,0x81,0x7d,0x5a]}),
-
+            vaddr: Some(0xffffffff80100000),
             ..Default::default()
         }]);
 
@@ -441,15 +434,15 @@ mod tests {
             ").is_err());
     }
 
+    fn to_region(input: &[u64]) -> Region {
+        let bytes: Vec<u8> = input.iter().flat_map(|&n| n.to_ne_bytes()).collect();
+        let vmo = Vmo::create(bytes.len().try_into().unwrap()).unwrap();
+        vmo.write(&bytes, 0).unwrap();
+        Region::new(&vmo).unwrap()
+    }
+
     #[test]
     fn test_collect_profile() {
-        fn to_region(input: &[u64]) -> Region {
-            let bytes: Vec<u8> = input.iter().flat_map(|&n| n.to_ne_bytes()).collect();
-            let vmo = Vmo::create(bytes.len().try_into().unwrap()).unwrap();
-            vmo.write(&bytes, 0).unwrap();
-            Region::new(&vmo).unwrap()
-        }
-
         assert_eq!(
             collect_profile(&to_region(&[0x0])).unwrap_err().to_string(),
             "profiler version mismatch (actual=0 expected=1)"
@@ -570,5 +563,84 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn create_test_collector_task_and_client()
+    -> (Task<anyhow::Result<()>>, fheapdump_client::CollectorProxy) {
+        let (proxy, request_stream) = fidl::endpoints::create_proxy_and_stream::<CollectorMarker>();
+        const HEADER: u64 = 0x00000000_00000001;
+        let collector_worker = Task::local(async move {
+            let mut symbol_file = tempfile::NamedTempFile::new().unwrap();
+            symbol_file.write_all(b"
+                {{{reset}}}
+                {{{module:0:kernel:elf:001c122d7c44434165b2e75e9876db2650817d5a}}}
+                {{{mmap:0xffffffff00100000:0x326d60:load:0:rx:0xffffffff80100000}}}
+                {{{mmap:0xffffffff00427000:0xb1000:load:0:r:0xffffffff80427000}}}
+                {{{mmap:0xffffffff004d8000:0x95a8:load:0:rw:0xffffffff804d8000}}}
+                {{{mmap:0xffffffff004e2000:0x504000:load:0:rw:0xffffffff804e2000}}}
+                Memory profile: {{{dumpfile:memory-profile:i/memory-profile/d/heap.bin}}} maximum 4194304 bytes.
+                ").unwrap();
+
+            let region = to_region(&[
+                HEADER, /*BufferEntry*/ 100, 200, 300, 400, 4, /*backtrace*/ 10, 20, 30,
+                40, /*BufferEntry*/ 10, 20, 30, 40, 4, /*backtrace*/ 1, 2, 3, 4,
+                /*zero*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]);
+            let collector = KernelCollector::new(&region, &symbol_file.path());
+            collector.serve_client_stream(request_stream).await
+        });
+        (collector_worker, proxy)
+    }
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_kernel_collector_fail_list_stored_snapshots() {
+        let (collector_worker, client) = create_test_collector_task_and_client();
+        client.list_stored_snapshots(Default::default()).unwrap();
+        let result = collector_worker.await;
+        assert!(format!("{result:?}").contains("Not supported by kernel collector."));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_kernel_collector_fail_download_snapshot() {
+        let (collector_worker, client) = create_test_collector_task_and_client();
+        client.download_stored_snapshot(Default::default()).unwrap();
+        let result = collector_worker.await;
+        assert!(format!("{result:?}").contains("Not supported by kernel collector."));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_kernel_collector() {
+        let (collector_worker, client) = create_test_collector_task_and_client();
+        let (receiver_client, receiver_stream) = fidl::endpoints::create_request_stream();
+        client
+            .take_live_snapshot(fheapdump_client::CollectorTakeLiveSnapshotRequest {
+                receiver: Some(receiver_client),
+                process_selector: Some(fheapdump_client::ProcessSelector::ByKoid(1)),
+                ..Default::default()
+            })
+            .unwrap();
+        let received_snapshot =
+            heapdump_snapshot::Snapshot::receive_from(receiver_stream).await.unwrap();
+        assert_eq!(2, received_snapshot.allocations.len());
+        let (one, two) = (&received_snapshot.allocations[0], &received_snapshot.allocations[1]);
+        let (one, two) = if one.count < two.count { (&one, &two) } else { (&two, &one) };
+
+        assert_eq!(None, one.address);
+        assert_eq!(10, one.count);
+        assert_eq!(20, one.size);
+        assert_eq!(None, one.thread_info);
+        assert_eq!(vec![1, 2, 3, 4], one.stack_trace.program_addresses);
+        assert_eq!(None, one.timestamp);
+        assert_eq!(None, one.contents);
+
+        assert_eq!(None, two.address);
+        assert_eq!(100, two.count);
+        assert_eq!(200, two.size);
+        assert_eq!(None, two.thread_info);
+        assert_eq!(vec![10, 20, 30, 40], two.stack_trace.program_addresses);
+        assert_eq!(None, two.timestamp);
+        assert_eq!(None, two.contents);
+
+        drop(client);
+        collector_worker.await.unwrap();
     }
 }

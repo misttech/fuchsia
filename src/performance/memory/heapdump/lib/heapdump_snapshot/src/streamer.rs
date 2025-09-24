@@ -85,8 +85,10 @@ mod tests {
     use fuchsia_async as fasync;
     use maplit::hashmap;
     use std::collections::HashMap;
+    use std::rc::Rc;
     use test_case::test_case;
 
+    use crate::ThreadInfo;
     use crate::snapshot::Snapshot;
 
     // Generate an allocation hash map with a huge number of entries, to test that pagination splits
@@ -180,15 +182,27 @@ mod tests {
         // Receive the snapshot we just transmitted and verify that the allocations and the
         // executable region we received match those that were sent.
         let mut received_snapshot = receive_worker.await.unwrap();
+        let mut received_allocations: HashMap<u64, &crate::snapshot::Allocation> =
+            received_snapshot
+                .allocations
+                .iter()
+                .map(|alloc| (alloc.address.unwrap(), alloc))
+                .collect();
         for (address, size) in &allocations {
-            let allocation = received_snapshot.allocations.remove(address).unwrap();
+            let allocation = received_allocations.remove(address).unwrap();
+
             assert_eq!(allocation.size, *size);
-            assert_eq!(allocation.thread_info.koid, FAKE_THREAD_KOID);
-            assert_eq!(allocation.thread_info.name, FAKE_THREAD_NAME);
+            assert_eq!(
+                allocation.thread_info,
+                Some(Rc::new(ThreadInfo {
+                    koid: FAKE_THREAD_KOID,
+                    name: FAKE_THREAD_NAME.to_owned()
+                }))
+            );
             assert_eq!(allocation.stack_trace.program_addresses, FAKE_STACK_TRACE_ADDRESSES);
-            assert_eq!(allocation.timestamp, FAKE_TIMESTAMP);
+            assert_eq!(allocation.timestamp, Some(FAKE_TIMESTAMP));
         }
-        assert!(received_snapshot.allocations.is_empty(), "all the entries have been removed");
+        assert!(received_allocations.is_empty(), "all the entries have been removed");
         let region = received_snapshot.executable_regions.remove(&FAKE_REGION_ADDRESS).unwrap();
         assert_eq!(region.name, FAKE_REGION_NAME);
         assert_eq!(region.size, FAKE_REGION_SIZE);

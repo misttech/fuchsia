@@ -149,7 +149,7 @@ fn build_profile(snapshot: &Snapshot, with_tags: bool, symbolize: bool) -> Resul
     // Fill the Locations with all the program addresses referenced in the snapshot and store their
     // assigned IDs.
     let mut address_to_location_id = HashMap::new();
-    for info in snapshot.allocations.values() {
+    for info in &snapshot.allocations {
         for address in &info.stack_trace.program_addresses {
             let next_id = address_to_location_id.len() as u64 + 1;
             if let Entry::Vacant(e) = address_to_location_id.entry(*address) {
@@ -190,55 +190,59 @@ fn build_profile(snapshot: &Snapshot, with_tags: bool, symbolize: bool) -> Resul
 
     // Fill the Samples.
     if with_tags {
-        for (address, info) in &snapshot.allocations {
+        for info in &snapshot.allocations {
             // Cast into a pprof-friendly type.
             let size = info.size as i64;
 
             let location_ids = addresses_to_location_ids(&info.stack_trace.program_addresses);
+            let mut label = vec![];
+            if let Some(address) = info.address {
+                label.push(pprof::Label {
+                    key: st.intern("address"),
+                    str: st.intern(&format!("0x{:x}", address)),
+                    ..Default::default()
+                })
+            }
+            label.push(pprof::Label {
+                key: st.intern("bytes"),
+                num: size,
+                num_unit: st.intern("bytes"),
+                ..Default::default()
+            });
+            if let Some(timestamp) = &info.timestamp {
+                label.push(pprof::Label {
+                    key: st.intern("timestamp"),
+                    num: timestamp.into_nanos(),
+                    num_unit: st.intern("nanoseconds"),
+                    ..Default::default()
+                });
+            }
+            if let Some(thread_info) = &info.thread_info {
+                label.push(pprof::Label {
+                    key: st.intern("thread"),
+                    str: st.intern(&format!("{}[{}]", thread_info.name, thread_info.koid)),
+                    ..Default::default()
+                });
+            }
+
             pprof.sample.push(pprof::Sample {
                 location_id: location_ids,
-                value: vec![1, size],
-                label: vec![
-                    pprof::Label {
-                        key: st.intern("address"),
-                        str: st.intern(&format!("0x{:x}", address)),
-                        ..Default::default()
-                    },
-                    pprof::Label {
-                        key: st.intern("bytes"),
-                        num: size,
-                        num_unit: st.intern("bytes"),
-                        ..Default::default()
-                    },
-                    pprof::Label {
-                        key: st.intern("timestamp"),
-                        num: info.timestamp.into_nanos(),
-                        num_unit: st.intern("nanoseconds"),
-                        ..Default::default()
-                    },
-                    pprof::Label {
-                        key: st.intern("thread"),
-                        str: st.intern(&format!(
-                            "{}[{}]",
-                            info.thread_info.name, info.thread_info.koid
-                        )),
-                        ..Default::default()
-                    },
-                ],
+                value: vec![info.count as i64, size],
+                label,
                 ..Default::default()
             });
         }
     } else {
         // Group allocations with the same stack trace (to make the resulting profile smaller).
         let grouped_allocations =
-            snapshot.allocations.values().into_group_map_by(|allocation_info| {
+            snapshot.allocations.iter().into_group_map_by(|allocation_info| {
                 addresses_to_location_ids(&allocation_info.stack_trace.program_addresses)
             });
 
         for (location_ids, allocations_info) in grouped_allocations {
             // Compute totals and cast into pprof-friendly types.
-            let size = allocations_info.iter().fold(0, |sum, elem| sum + elem.size) as i64;
-            let count = allocations_info.len() as i64;
+            let size = allocations_info.iter().map(|alloc| alloc.size).sum::<u64>() as i64;
+            let count = allocations_info.iter().map(|alloc| alloc.count).sum::<u64>() as i64;
 
             pprof.sample.push(pprof::Sample {
                 location_id: location_ids,
@@ -310,18 +314,20 @@ mod tests {
     // Placeholder allocations for the fake profile:
     const ALLOC_1_ADDRESS: u64 = 0x611000;
     const ALLOC_1_SIZE: i64 = 0x1800;
+    const ALLOC_1_COUNT: u64 = 1;
     const ALLOC_1_THREAD_KOID: u64 = 1234;
     const ALLOC_1_THREAD_NAME: &str = "thread-1";
     const ALLOC_1_TIMESTAMP: fidl::MonotonicInstant =
         fidl::MonotonicInstant::from_nanos(8777777777778);
     const ALLOC_2_ADDRESS: u64 = 0x624000;
     const ALLOC_2_SIZE: i64 = 0x30;
+    const ALLOC_2_COUNT: u64 = 1;
     const ALLOC_2_THREAD_KOID: u64 = 5678;
     const ALLOC_2_THREAD_NAME: &str = "thread-2";
     const ALLOC_2_TIMESTAMP: fidl::MonotonicInstant =
         fidl::MonotonicInstant::from_nanos(9333333333333);
-    const ALLOC_3_ADDRESS: u64 = 0x756000;
     const ALLOC_3_SIZE: i64 = 0xC000;
+    const ALLOC_3_COUNT: u64 = 3;
     const ALLOC_3_THREAD_KOID: u64 = 9999;
     const ALLOC_3_THREAD_NAME: &str = "thread-3";
     const ALLOC_3_TIMESTAMP: fidl::MonotonicInstant =
@@ -332,35 +338,41 @@ mod tests {
         let stack_trace_b = Rc::new(StackTrace { program_addresses: STACK_TRACE_B.to_vec() });
 
         Snapshot {
-            allocations: hashmap![
-                ALLOC_1_ADDRESS => Allocation {
+            allocations: vec![
+                Allocation {
+                    address: Some(ALLOC_1_ADDRESS),
                     size: ALLOC_1_SIZE.try_into().unwrap(),
-                    thread_info: Rc::new(ThreadInfo {
+                    count: ALLOC_1_COUNT,
+                    thread_info: Some(Rc::new(ThreadInfo {
                         koid: ALLOC_1_THREAD_KOID,
                         name: ALLOC_1_THREAD_NAME.to_string(),
-                    }),
+                    })),
                     stack_trace: stack_trace_a.clone(),
-                    timestamp: ALLOC_1_TIMESTAMP,
+                    timestamp: Some(ALLOC_1_TIMESTAMP),
                     contents: None,
                 },
-                ALLOC_2_ADDRESS => Allocation {
+                Allocation {
+                    address: Some(ALLOC_2_ADDRESS),
                     size: ALLOC_2_SIZE.try_into().unwrap(),
-                    thread_info: Rc::new(ThreadInfo {
+                    count: ALLOC_2_COUNT,
+                    thread_info: Some(Rc::new(ThreadInfo {
                         koid: ALLOC_2_THREAD_KOID,
                         name: ALLOC_2_THREAD_NAME.to_string(),
-                    }),
+                    })),
                     stack_trace: stack_trace_b.clone(),
-                    timestamp: ALLOC_2_TIMESTAMP,
+                    timestamp: Some(ALLOC_2_TIMESTAMP),
                     contents: None,
                 },
-                ALLOC_3_ADDRESS => Allocation {
+                Allocation {
+                    address: None,
                     size: ALLOC_3_SIZE.try_into().unwrap(),
-                    thread_info: Rc::new(ThreadInfo {
+                    count: ALLOC_3_COUNT,
+                    thread_info: Some(Rc::new(ThreadInfo {
                         koid: ALLOC_3_THREAD_KOID,
                         name: ALLOC_3_THREAD_NAME.to_string(),
-                    }),
+                    })),
                     stack_trace: stack_trace_b.clone(),
-                    timestamp: ALLOC_3_TIMESTAMP,
+                    timestamp: Some(ALLOC_3_TIMESTAMP),
                     contents: None,
                 },
             ],
@@ -383,9 +395,58 @@ mod tests {
         }
     }
 
+    struct ProfileHelper<'a> {
+        profile: &'a pprof::Profile,
+        address_idx: Option<i64>,
+        bytes_idx: Option<i64>,
+        timestamp_idx: Option<i64>,
+        thread_idx: Option<i64>,
+    }
+    impl<'a> ProfileHelper<'a> {
+        fn new(profile: &'a pprof::Profile) -> ProfileHelper<'a> {
+            let lookup = |text: &str| {
+                (&profile.string_table).iter().position(|s| s == text).map(|i| i as i64)
+            };
+            ProfileHelper {
+                profile,
+                address_idx: lookup("address"),
+                bytes_idx: lookup("bytes"),
+                timestamp_idx: lookup("timestamp"),
+                thread_idx: lookup("thread"),
+            }
+        }
+        fn address(&self, sample: &'a pprof::Sample) -> Option<&'a String> {
+            sample
+                .label
+                .iter()
+                .find(|l| l.key == self.address_idx.unwrap())
+                .map(|l| &self.profile.string_table[usize::try_from(l.str).unwrap()])
+        }
+        fn bytes(&self, sample: &'a pprof::Sample) -> Option<i64> {
+            self.bytes_idx.and_then(|bytes_idx| {
+                sample.label.iter().find(|l| l.key == bytes_idx).map(|l| l.num)
+            })
+        }
+        fn timestamp(&self, sample: &'a pprof::Sample) -> Option<i64> {
+            self.timestamp_idx.and_then(|timestamp_idx| {
+                sample.label.iter().find(|l| l.key == timestamp_idx).map(|l| l.num)
+            })
+        }
+        fn thread(&self, sample: &'a pprof::Sample) -> Option<&'a String> {
+            self.thread_idx.and_then(|thread_idx| {
+                sample
+                    .label
+                    .iter()
+                    .find(|l| l.key == thread_idx)
+                    .map(|l| &self.profile.string_table[usize::try_from(l.str).unwrap()])
+            })
+        }
+    }
+
     fn assert_profile_matches_fake_snapshot(profile: &pprof::Profile, with_tags: bool) {
         // Helper function to access the string table.
         let st = |index: i64| profile.string_table[usize::try_from(index).unwrap()].as_str();
+        let h = ProfileHelper::new(profile);
 
         // Helper function to resolce location IDs.
         let loc = |location_id: u64| profile.location.iter().find(|e| e.id == location_id).unwrap();
@@ -403,58 +464,59 @@ mod tests {
         if with_tags {
             // Verify the tags' labels.
             for sample in &profile.sample {
-                assert_eq!(sample.value.len(), profile.sample_type.len());
-                assert_eq!(sample.label.len(), 4);
-                assert_eq!(st(sample.label[0].key), "address");
-                assert_eq!(st(sample.label[1].key), "bytes");
-                assert_eq!(st(sample.label[1].num_unit), "bytes");
-                assert_eq!(st(sample.label[2].key), "timestamp");
-                assert_eq!(st(sample.label[2].num_unit), "nanoseconds");
-                assert_eq!(st(sample.label[3].key), "thread");
+                for label in &sample.label {
+                    match st(label.key) {
+                        "address" => {}
+                        "bytes" => assert_eq!(st(label.num_unit), "bytes"),
+                        "timestamp" => assert_eq!(st(label.num_unit), "nanoseconds"),
+                        "thread" => {}
+                        _ => unreachable!(),
+                    }
+                }
             }
 
             // Identify the three allocations from their sizes (which are unique in our sample snapshot)
             // and verify them.
             assert_eq!(profile.sample.len(), 3);
             let allocation1 =
-                profile.sample.iter().find(|s| s.label[1].num == ALLOC_1_SIZE).unwrap();
-            assert_eq!(allocation1.value[0], 1);
+                profile.sample.iter().find(|s| h.bytes(s) == Some(ALLOC_1_SIZE)).unwrap();
+            assert_eq!(allocation1.value[0], ALLOC_1_COUNT as i64);
             assert_eq!(allocation1.value[1], ALLOC_1_SIZE);
-            assert_eq!(st(allocation1.label[0].str), format!("0x{:x}", ALLOC_1_ADDRESS));
+            assert_eq!(h.address(allocation1), Some(&format!("0x{:x}", ALLOC_1_ADDRESS)));
             assert_eq!(allocation1.location_id.len(), STACK_TRACE_A.len());
             assert_eq!(loc(allocation1.location_id[0]).address, STACK_TRACE_A[0]);
             assert_eq!(loc(allocation1.location_id[1]).address, STACK_TRACE_A[1]);
             assert_eq!(loc(allocation1.location_id[2]).address, STACK_TRACE_A[2]);
-            assert_eq!(allocation1.label[2].num, ALLOC_1_TIMESTAMP.into_nanos());
+            assert_eq!(h.timestamp(allocation1), Some(ALLOC_1_TIMESTAMP.into_nanos()));
             assert_eq!(
-                st(allocation1.label[3].str),
-                format!("{}[{}]", ALLOC_1_THREAD_NAME, ALLOC_1_THREAD_KOID)
+                h.thread(allocation1),
+                Some(&format!("{}[{}]", ALLOC_1_THREAD_NAME, ALLOC_1_THREAD_KOID))
             );
             let allocation2 =
-                profile.sample.iter().find(|s| s.label[1].num == ALLOC_2_SIZE).unwrap();
-            assert_eq!(allocation2.value[0], 1);
+                profile.sample.iter().find(|s| h.bytes(s) == Some(ALLOC_2_SIZE)).unwrap();
+            assert_eq!(allocation2.value[0], ALLOC_2_COUNT as i64);
             assert_eq!(allocation2.value[1], ALLOC_2_SIZE);
-            assert_eq!(st(allocation2.label[0].str), format!("0x{:x}", ALLOC_2_ADDRESS));
+            assert_eq!(h.address(allocation2), Some(&format!("0x{:x}", ALLOC_2_ADDRESS)));
             assert_eq!(allocation2.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(allocation2.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(allocation2.location_id[1]).address, STACK_TRACE_B[1]);
-            assert_eq!(allocation2.label[2].num, ALLOC_2_TIMESTAMP.into_nanos());
+            assert_eq!(h.timestamp(allocation2), Some(ALLOC_2_TIMESTAMP.into_nanos()));
             assert_eq!(
-                st(allocation2.label[3].str),
-                format!("{}[{}]", ALLOC_2_THREAD_NAME, ALLOC_2_THREAD_KOID)
+                h.thread(allocation2),
+                Some(&format!("{}[{}]", ALLOC_2_THREAD_NAME, ALLOC_2_THREAD_KOID))
             );
             let allocation3 =
-                profile.sample.iter().find(|s| s.label[1].num == ALLOC_3_SIZE).unwrap();
-            assert_eq!(allocation3.value[0], 1);
+                profile.sample.iter().find(|s| h.bytes(s) == Some(ALLOC_3_SIZE)).unwrap();
+            assert_eq!(allocation3.value[0], ALLOC_3_COUNT as i64);
             assert_eq!(allocation3.value[1], ALLOC_3_SIZE);
-            assert_eq!(st(allocation3.label[0].str), format!("0x{:x}", ALLOC_3_ADDRESS));
+            assert_eq!(h.address(allocation3), None);
             assert_eq!(allocation3.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(allocation3.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(allocation3.location_id[1]).address, STACK_TRACE_B[1]);
-            assert_eq!(allocation3.label[2].num, ALLOC_3_TIMESTAMP.into_nanos());
+            assert_eq!(h.timestamp(allocation3), Some(ALLOC_3_TIMESTAMP.into_nanos()));
             assert_eq!(
-                st(allocation3.label[3].str),
-                format!("{}[{}]", ALLOC_3_THREAD_NAME, ALLOC_3_THREAD_KOID)
+                h.thread(allocation3),
+                Some(&format!("{}[{}]", ALLOC_3_THREAD_NAME, ALLOC_3_THREAD_KOID))
             );
         } else {
             // Verify that the samples were aggregated by stack trace correctly.
@@ -462,13 +524,13 @@ mod tests {
             let MinMax(group1, group2) = profile.sample.iter().minmax_by_key(|e| e.value[0]) else {
                 unreachable!();
             };
-            assert_eq!(group1.value[0], 1); // i.e. allocation1
+            assert_eq!(group1.value[0], ALLOC_1_COUNT as i64);
             assert_eq!(group1.value[1], ALLOC_1_SIZE);
             assert_eq!(group1.location_id.len(), STACK_TRACE_A.len());
             assert_eq!(loc(group1.location_id[0]).address, STACK_TRACE_A[0]);
             assert_eq!(loc(group1.location_id[1]).address, STACK_TRACE_A[1]);
             assert_eq!(loc(group1.location_id[2]).address, STACK_TRACE_A[2]);
-            assert_eq!(group2.value[0], 2); // i.e. allocation2 and allocation3
+            assert_eq!(group2.value[0], (ALLOC_2_COUNT + ALLOC_3_COUNT) as i64);
             assert_eq!(group2.value[1], ALLOC_2_SIZE + ALLOC_3_SIZE);
             assert_eq!(group2.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(group2.location_id[0]).address, STACK_TRACE_B[0]);
@@ -532,5 +594,169 @@ mod tests {
         // Verify that it can be decoded correctly.
         let profile = pprof::Profile::decode(&buf[..]).unwrap();
         assert_profile_matches_fake_snapshot(&profile, with_tags);
+    }
+
+    fn generate_fake_aggregated_snapshot() -> Snapshot {
+        let stack_trace_a = Rc::new(StackTrace { program_addresses: STACK_TRACE_A.to_vec() });
+        let stack_trace_b = Rc::new(StackTrace { program_addresses: STACK_TRACE_B.to_vec() });
+
+        Snapshot {
+            allocations: vec![
+                Allocation {
+                    address: None,
+                    size: ALLOC_1_SIZE.try_into().unwrap(),
+                    count: ALLOC_1_COUNT,
+                    thread_info: None,
+                    stack_trace: stack_trace_a.clone(),
+                    timestamp: None,
+                    contents: None,
+                },
+                Allocation {
+                    address: None,
+                    size: ALLOC_2_SIZE.try_into().unwrap(),
+                    count: ALLOC_2_COUNT,
+                    thread_info: None,
+                    stack_trace: stack_trace_b.clone(),
+                    timestamp: None,
+                    contents: None,
+                },
+                Allocation {
+                    address: None,
+                    size: ALLOC_3_SIZE.try_into().unwrap(),
+                    count: ALLOC_3_COUNT,
+                    thread_info: None,
+                    stack_trace: stack_trace_b.clone(),
+                    timestamp: None,
+                    contents: None,
+                },
+            ],
+            executable_regions: hashmap![
+                MAP_1_ADDRESS => ExecutableRegion {
+                    name: MAP_1_NAME.to_string(),
+                    size: MAP_1_SIZE,
+                    file_offset: MAP_1_FILE_OFFSET,
+                    vaddr: Some(MAP_1_VADDR),
+                    build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
+                },
+                MAP_2_ADDRESS => ExecutableRegion {
+                    name: MAP_2_NAME.to_string(),
+                    size: MAP_2_SIZE,
+                    file_offset: MAP_2_FILE_OFFSET,
+                    vaddr: Some(MAP_2_VADDR),
+                    build_id: hex::decode(MAP_2_BUILD_ID).unwrap(),
+                },
+            ],
+        }
+    }
+
+    fn assert_profile_matches_fake_aggregated_snapshot(profile: &pprof::Profile, with_tags: bool) {
+        // Helper function to access the string table.
+        let st = |index: i64| profile.string_table[usize::try_from(index).unwrap()].as_str();
+
+        // Helper function to resolce location IDs.
+        let loc = |location_id: u64| profile.location.iter().find(|e| e.id == location_id).unwrap();
+
+        // Verify the string table.
+        assert_eq!(st(0), "", "The first entry in the string table should always be empty");
+
+        // Verify that samples' data format.
+        assert_eq!(profile.sample_type.len(), 2);
+        assert_eq!(st(profile.sample_type[0].r#type), "objects");
+        assert_eq!(st(profile.sample_type[0].unit), "count");
+        assert_eq!(st(profile.sample_type[1].r#type), "allocated");
+        assert_eq!(st(profile.sample_type[1].unit), "bytes");
+
+        if with_tags {
+            // Verify the tags' labels.
+
+            for sample in &profile.sample {
+                assert_eq!(sample.value.len(), profile.sample_type.len());
+                assert_eq!(sample.label.len(), 1);
+                assert_eq!(st(sample.label[0].key), "bytes");
+                assert_eq!(st(sample.label[0].num_unit), "bytes");
+            }
+
+            // Identify the three allocations from their sizes (which are unique in our sample snapshot)
+            // and verify them.
+            assert_eq!(profile.sample.len(), 3);
+            let allocation1 =
+                profile.sample.iter().find(|s| s.label[0].num == ALLOC_1_SIZE).unwrap();
+            assert_eq!(allocation1.value[0], ALLOC_1_COUNT as i64);
+            assert_eq!(allocation1.value[1], ALLOC_1_SIZE);
+            assert_eq!(allocation1.location_id.len(), STACK_TRACE_A.len());
+            assert_eq!(loc(allocation1.location_id[0]).address, STACK_TRACE_A[0]);
+            assert_eq!(loc(allocation1.location_id[1]).address, STACK_TRACE_A[1]);
+            assert_eq!(loc(allocation1.location_id[2]).address, STACK_TRACE_A[2]);
+
+            let allocation2 =
+                profile.sample.iter().find(|s| s.label[0].num == ALLOC_2_SIZE).unwrap();
+            assert_eq!(allocation2.value[0], ALLOC_2_COUNT as i64);
+            assert_eq!(allocation2.value[1], ALLOC_2_SIZE);
+            assert_eq!(allocation2.location_id.len(), STACK_TRACE_B.len());
+            assert_eq!(loc(allocation2.location_id[0]).address, STACK_TRACE_B[0]);
+            assert_eq!(loc(allocation2.location_id[1]).address, STACK_TRACE_B[1]);
+
+            let allocation3 =
+                profile.sample.iter().find(|s| s.label[0].num == ALLOC_3_SIZE).unwrap();
+            assert_eq!(allocation3.value[0], ALLOC_3_COUNT as i64);
+            assert_eq!(allocation3.value[1], ALLOC_3_SIZE);
+            assert_eq!(allocation3.location_id.len(), STACK_TRACE_B.len());
+            assert_eq!(loc(allocation3.location_id[0]).address, STACK_TRACE_B[0]);
+            assert_eq!(loc(allocation3.location_id[1]).address, STACK_TRACE_B[1]);
+        } else {
+            // Verify that the samples were aggregated by stack trace correctly.
+            assert_eq!(profile.sample.len(), 2);
+            let MinMax(group1, group2) = profile.sample.iter().minmax_by_key(|e| e.value[0]) else {
+                unreachable!();
+            };
+            assert_eq!(group1.value[0], ALLOC_1_COUNT as i64);
+            assert_eq!(group1.value[1], ALLOC_1_SIZE);
+            assert_eq!(group1.location_id.len(), STACK_TRACE_A.len());
+            assert_eq!(loc(group1.location_id[0]).address, STACK_TRACE_A[0]);
+            assert_eq!(loc(group1.location_id[1]).address, STACK_TRACE_A[1]);
+            assert_eq!(loc(group1.location_id[2]).address, STACK_TRACE_A[2]);
+            assert_eq!(group2.value[0], (ALLOC_2_COUNT + ALLOC_3_COUNT) as i64);
+            assert_eq!(group2.value[1], ALLOC_2_SIZE + ALLOC_3_SIZE);
+            assert_eq!(group2.location_id.len(), STACK_TRACE_B.len());
+            assert_eq!(loc(group2.location_id[0]).address, STACK_TRACE_B[0]);
+            assert_eq!(loc(group2.location_id[1]).address, STACK_TRACE_B[1]);
+        }
+
+        // Identify the mappings from their addresses and verify them.
+        assert_eq!(profile.mapping.len(), 2);
+        assert_eq!(profile.mapping.iter().filter(|m| m.id == 0).next(), None, "ID 0 is reserved");
+        let mapping1 = profile.mapping.iter().find(|m| m.memory_start == MAP_1_ADDRESS).unwrap();
+        assert_eq!(mapping1.memory_limit, MAP_1_ADDRESS + MAP_1_SIZE);
+        assert_eq!(mapping1.file_offset, MAP_1_FILE_OFFSET);
+        assert_eq!(st(mapping1.filename), MAP_1_NAME);
+        assert_eq!(st(mapping1.build_id), MAP_1_BUILD_ID);
+        let mapping2 = profile.mapping.iter().find(|m| m.memory_start == MAP_2_ADDRESS).unwrap();
+        assert_eq!(mapping2.memory_limit, MAP_2_ADDRESS + MAP_2_SIZE);
+        assert_eq!(mapping2.file_offset, MAP_2_FILE_OFFSET);
+        assert_eq!(st(mapping2.filename), MAP_2_NAME);
+        assert_eq!(st(mapping2.build_id), MAP_2_BUILD_ID);
+
+        // Identify the locations from their addresses and verify them.
+        assert_eq!(profile.location.len(), 5);
+        assert_eq!(profile.location.iter().filter(|l| l.id == 0).next(), None, "ID 0 is reserved");
+        let loc1 = profile.location.iter().find(|l| l.address == LOC_1_ADDRESS).unwrap();
+        assert_eq!(loc1.mapping_id, mapping1.id, "LOC_1_ADDRESS belongs to mapping 1");
+        let loc2 = profile.location.iter().find(|l| l.address == LOC_2_ADDRESS).unwrap();
+        assert_eq!(loc2.mapping_id, mapping2.id, "LOC_2_ADDRESS belongs to mapping 2");
+        let loc3 = profile.location.iter().find(|l| l.address == LOC_3_ADDRESS).unwrap();
+        assert_eq!(loc3.mapping_id, mapping2.id, "LOC_3_ADDRESS belongs to mapping 2");
+        let loc4 = profile.location.iter().find(|l| l.address == LOC_4_ADDRESS).unwrap();
+        assert_eq!(loc4.mapping_id, 0, "LOC_4_ADDRESS does not belong to any mapping");
+        let loc5 = profile.location.iter().find(|l| l.address == LOC_5_ADDRESS).unwrap();
+        assert_eq!(loc5.mapping_id, 0, "LOC_5_ADDRESS does not belong to any mapping");
+    }
+
+    /// Verifies that the protobuf message generated by `build_profile` contains correct data.
+    #[test_case(true ; "with tags")]
+    #[test_case(false ; "aggregated")]
+    fn test_build_profile_from_aggregated_snapshot(with_tags: bool) {
+        let snapshot = generate_fake_aggregated_snapshot();
+        let profile = build_profile(&snapshot, with_tags, false).unwrap();
+        assert_profile_matches_fake_aggregated_snapshot(&profile, with_tags);
     }
 }

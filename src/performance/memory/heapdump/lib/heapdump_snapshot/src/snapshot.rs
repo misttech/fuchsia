@@ -4,7 +4,7 @@
 
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
 use futures::StreamExt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::Error;
@@ -13,26 +13,31 @@ use crate::Error;
 #[derive(Debug)]
 pub struct Snapshot {
     /// All the live allocations in the analyzed process, indexed by memory address.
-    pub allocations: HashMap<u64, Allocation>,
+    pub allocations: Vec<Allocation>,
 
     /// All the executable memory regions in the analyzed process, indexed by start address.
     pub executable_regions: HashMap<u64, ExecutableRegion>,
 }
 
-/// Information about an allocated memory block and, optionally, its contents.
+/// Information about one or more allocated memory blocks.
 #[derive(Debug)]
 pub struct Allocation {
-    /// Block size, in bytes.
+    pub address: Option<u64>,
+
+    /// Number of allocations that have been aggregated into this `Allocation` instance.
+    pub count: u64,
+
+    /// Total size, in bytes.
     pub size: u64,
 
-    /// The allocating thread.
-    pub thread_info: Rc<ThreadInfo>,
+    /// Allocating thread.
+    pub thread_info: Option<Rc<ThreadInfo>>,
 
-    /// The stack trace of the allocation site.
+    /// Stack trace of the allocation site.
     pub stack_trace: Rc<StackTrace>,
 
     /// Allocation timestamp, in nanoseconds.
-    pub timestamp: fidl::MonotonicInstant,
+    pub timestamp: Option<fidl::MonotonicInstant>,
 
     /// Memory dump of this block's contents.
     pub contents: Option<Vec<u8>>,
@@ -68,7 +73,7 @@ pub struct ExecutableRegion {
 }
 
 /// Information identifying a specific thread.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ThreadInfo {
     /// The thread's koid.
     pub koid: zx_types::zx_koid_t,
@@ -105,7 +110,16 @@ impl Snapshot {
     pub async fn receive_from(
         mut stream: fheapdump_client::SnapshotReceiverRequestStream,
     ) -> Result<Snapshot, Error> {
-        let mut allocations: HashMap<u64, (u64, u64, u64, fidl::MonotonicInstant)> = HashMap::new();
+        struct AllocationValue {
+            address: Option<u64>,
+            count: u64,
+            size: u64,
+            thread_info_key: Option<u64>,
+            stack_trace_key: u64,
+            timestamp: Option<fidl::MonotonicInstant>,
+        }
+        let mut allocation_addresses: HashSet<u64> = HashSet::new();
+        let mut allocations: Vec<AllocationValue> = vec![];
         let mut thread_infos: HashMap<u64, Rc<ThreadInfo>> = HashMap::new();
         let mut stack_traces: HashMap<u64, Vec<u64>> = HashMap::new();
         let mut executable_regions: HashMap<u64, ExecutableRegion> = HashMap::new();
@@ -134,24 +148,30 @@ impl Snapshot {
                 for element in batch {
                     match element {
                         fheapdump_client::SnapshotElement::Allocation(allocation) => {
-                            let address = read_field!(allocation => Allocation, address)?;
+                            if let Some(address) = allocation.address {
+                                if !allocation_addresses.insert(address) {
+                                    return Err(Error::ConflictingElement {
+                                        element_type: "Allocation",
+                                    });
+                                }
+                            }
+
+                            #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                            let count = 1;
+                            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                            let count = allocation.count.unwrap_or(1);
+
                             let size = read_field!(allocation => Allocation, size)?;
-                            let timestamp = read_field!(allocation => Allocation, timestamp)?;
-                            let thread_info_key =
-                                read_field!(allocation => Allocation, thread_info_key)?;
                             let stack_trace_key =
                                 read_field!(allocation => Allocation, stack_trace_key)?;
-                            if allocations
-                                .insert(
-                                    address,
-                                    (size, thread_info_key, stack_trace_key, timestamp),
-                                )
-                                .is_some()
-                            {
-                                return Err(Error::ConflictingElement {
-                                    element_type: "Allocation",
-                                });
-                            }
+                            allocations.push(AllocationValue {
+                                address: allocation.address,
+                                count,
+                                size,
+                                thread_info_key: allocation.thread_info_key,
+                                stack_trace_key,
+                                timestamp: allocation.timestamp,
+                            });
                         }
                         fheapdump_client::SnapshotElement::StackTrace(stack_trace) => {
                             let stack_trace_key =
@@ -215,26 +235,46 @@ impl Snapshot {
                         (key, Rc::new(StackTrace { program_addresses }))
                     })
                     .collect();
-                let mut final_allocations = HashMap::new();
-                for (address, (size, thread_info_key, stack_trace_key, timestamp)) in allocations {
-                    let thread_info = thread_infos
-                        .get(&thread_info_key)
-                        .ok_or(Error::InvalidCrossReference { element_type: "ThreadInfo" })?
-                        .clone();
+                let mut final_allocations = vec![];
+                for AllocationValue {
+                    address,
+                    count,
+                    size,
+                    thread_info_key,
+                    stack_trace_key,
+                    timestamp,
+                } in allocations
+                {
+                    let thread_info = match thread_info_key {
+                        Some(key) => Some(
+                            thread_infos
+                                .get(&key)
+                                .ok_or(Error::InvalidCrossReference { element_type: "ThreadInfo" })?
+                                .clone(),
+                        ),
+                        None => None,
+                    };
                     let stack_trace = final_stack_traces
                         .get(&stack_trace_key)
                         .ok_or(Error::InvalidCrossReference { element_type: "StackTrace" })?
                         .clone();
-                    let contents = match contents.remove(&address) {
-                        Some(data) if data.len() as u64 != size => {
-                            return Err(Error::ConflictingElement { element_type: "BlockContents" })
+                    let contents = address.and_then(|address| contents.remove(&address));
+                    if let Some(data) = &contents {
+                        if data.len() as u64 != size {
+                            return Err(Error::ConflictingElement {
+                                element_type: "BlockContents",
+                            });
                         }
-                        other => other,
-                    };
-                    final_allocations.insert(
+                    }
+                    final_allocations.push(Allocation {
                         address,
-                        Allocation { size, thread_info, stack_trace, timestamp, contents },
-                    );
+                        count,
+                        size,
+                        thread_info,
+                        stack_trace,
+                        timestamp,
+                        contents,
+                    });
                 }
 
                 return Ok(Snapshot { allocations: final_allocations, executable_regions });
@@ -384,19 +424,44 @@ mod tests {
 
         // Receive the snapshot we just transmitted and verify its contents.
         let mut received_snapshot = receive_worker.await.unwrap();
-        let allocation1 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_1_ADDRESS).unwrap();
+        let allocation1 = received_snapshot.allocations.swap_remove(
+            received_snapshot
+                .allocations
+                .iter()
+                .position(|alloc| alloc.address == Some(FAKE_ALLOCATION_1_ADDRESS))
+                .unwrap(),
+        );
         assert_eq!(allocation1.size, FAKE_ALLOCATION_1_SIZE);
-        assert_eq!(allocation1.thread_info.koid, FAKE_THREAD_1_KOID);
-        assert_eq!(allocation1.thread_info.name, FAKE_THREAD_1_NAME);
+        assert_eq!(
+            allocation1.thread_info,
+            Some(Rc::new(ThreadInfo {
+                koid: FAKE_THREAD_1_KOID,
+                name: FAKE_THREAD_1_NAME.to_owned()
+            }))
+        );
         assert_eq!(allocation1.stack_trace.program_addresses, FAKE_STACK_TRACE_2_ADDRESSES);
-        assert_eq!(allocation1.timestamp, FAKE_ALLOCATION_1_TIMESTAMP);
-        assert_eq!(allocation1.contents.expect("contents must be set"), FAKE_ALLOCATION_1_CONTENTS);
-        let allocation2 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_2_ADDRESS).unwrap();
+        assert_eq!(allocation1.timestamp, Some(FAKE_ALLOCATION_1_TIMESTAMP));
+        assert_eq!(
+            allocation1.contents.as_ref().expect("contents must be set"),
+            &FAKE_ALLOCATION_1_CONTENTS.to_vec()
+        );
+        let allocation2 = received_snapshot.allocations.swap_remove(
+            received_snapshot
+                .allocations
+                .iter()
+                .position(|alloc| alloc.address == Some(FAKE_ALLOCATION_2_ADDRESS))
+                .unwrap(),
+        );
         assert_eq!(allocation2.size, FAKE_ALLOCATION_2_SIZE);
-        assert_eq!(allocation2.thread_info.koid, FAKE_THREAD_2_KOID);
-        assert_eq!(allocation2.thread_info.name, FAKE_THREAD_2_NAME);
+        assert_eq!(
+            allocation2.thread_info,
+            Some(Rc::new(ThreadInfo {
+                koid: FAKE_THREAD_2_KOID,
+                name: FAKE_THREAD_2_NAME.to_owned()
+            }))
+        );
         assert_eq!(allocation2.stack_trace.program_addresses, FAKE_STACK_TRACE_1_ADDRESSES);
-        assert_eq!(allocation2.timestamp, FAKE_ALLOCATION_2_TIMESTAMP);
+        assert_eq!(allocation2.timestamp, Some(FAKE_ALLOCATION_2_TIMESTAMP));
         assert_matches!(allocation2.contents, None, "no contents are sent for this allocation");
         assert!(received_snapshot.allocations.is_empty(), "all the entries have been removed");
         let region1 = received_snapshot.executable_regions.remove(&FAKE_REGION_1_ADDRESS).unwrap();
@@ -501,19 +566,44 @@ mod tests {
 
         // Receive the snapshot we just transmitted and verify its contents.
         let mut received_snapshot = receive_worker.await.unwrap();
-        let allocation1 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_1_ADDRESS).unwrap();
+        let allocation1 = received_snapshot.allocations.swap_remove(
+            received_snapshot
+                .allocations
+                .iter()
+                .position(|alloc| alloc.address == Some(FAKE_ALLOCATION_1_ADDRESS))
+                .unwrap(),
+        );
         assert_eq!(allocation1.size, FAKE_ALLOCATION_1_SIZE);
-        assert_eq!(allocation1.thread_info.koid, FAKE_THREAD_1_KOID);
-        assert_eq!(allocation1.thread_info.name, FAKE_THREAD_1_NAME);
+        assert_eq!(
+            allocation1.thread_info,
+            Some(Rc::new(ThreadInfo {
+                koid: FAKE_THREAD_1_KOID,
+                name: FAKE_THREAD_1_NAME.to_owned()
+            }))
+        );
         assert_eq!(allocation1.stack_trace.program_addresses, FAKE_STACK_TRACE_2_ADDRESSES);
-        assert_eq!(allocation1.timestamp, FAKE_ALLOCATION_1_TIMESTAMP);
-        assert_eq!(allocation1.contents.expect("contents must be set"), FAKE_ALLOCATION_1_CONTENTS);
-        let allocation2 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_2_ADDRESS).unwrap();
+        assert_eq!(allocation1.timestamp, Some(FAKE_ALLOCATION_1_TIMESTAMP));
+        assert_eq!(
+            allocation1.contents.as_ref().expect("contents must be set"),
+            &FAKE_ALLOCATION_1_CONTENTS.to_vec()
+        );
+        let allocation2 = received_snapshot.allocations.swap_remove(
+            received_snapshot
+                .allocations
+                .iter()
+                .position(|alloc| alloc.address == Some(FAKE_ALLOCATION_2_ADDRESS))
+                .unwrap(),
+        );
         assert_eq!(allocation2.size, FAKE_ALLOCATION_2_SIZE);
-        assert_eq!(allocation2.thread_info.koid, FAKE_THREAD_2_KOID);
-        assert_eq!(allocation2.thread_info.name, FAKE_THREAD_2_NAME);
+        assert_eq!(
+            allocation2.thread_info,
+            Some(Rc::new(ThreadInfo {
+                koid: FAKE_THREAD_2_KOID,
+                name: FAKE_THREAD_2_NAME.to_owned()
+            }))
+        );
         assert_eq!(allocation2.stack_trace.program_addresses, FAKE_STACK_TRACE_1_ADDRESSES);
-        assert_eq!(allocation2.timestamp, FAKE_ALLOCATION_2_TIMESTAMP);
+        assert_eq!(allocation2.timestamp, Some(FAKE_ALLOCATION_2_TIMESTAMP));
         assert_matches!(allocation2.contents, None, "no contents are sent for this allocation");
         assert!(received_snapshot.allocations.is_empty(), "all the entries have been removed");
         let region1 = received_snapshot.executable_regions.remove(&FAKE_REGION_1_ADDRESS).unwrap();
@@ -529,16 +619,16 @@ mod tests {
         assert!(received_snapshot.executable_regions.is_empty(), "all entries have been removed");
     }
 
-    #[test_case(|allocation| allocation.address = None => matches
-        Err(Error::MissingField { container: "Allocation", field: "address" }) ; "address")]
     #[test_case(|allocation| allocation.size = None => matches
         Err(Error::MissingField { container: "Allocation", field: "size" }) ; "size")]
-    #[test_case(|allocation| allocation.thread_info_key = None => matches
-        Err(Error::MissingField { container: "Allocation", field: "thread_info_key" }) ; "thread_info_key")]
     #[test_case(|allocation| allocation.stack_trace_key = None => matches
         Err(Error::MissingField { container: "Allocation", field: "stack_trace_key" }) ; "stack_trace_key")]
+    #[test_case(|allocation| allocation.address = None => matches
+        Ok(_) ; "address_is_optional")]
+    #[test_case(|allocation| allocation.thread_info_key = None => matches
+        Ok(_) ; "thread_info_is_optional")]
     #[test_case(|allocation| allocation.timestamp = None => matches
-        Err(Error::MissingField { container: "Allocation", field: "timestamp" }) ; "timestamp")]
+        Ok(_) ; "timestamp_is_optional")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
     #[fasync::run_singlethreaded(test)]
@@ -939,8 +1029,12 @@ mod tests {
         fut.await.unwrap();
 
         // Verify that the stack trace has been reconstructed correctly.
-        let mut received_snapshot = receive_worker.await.unwrap();
-        let allocation1 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_1_ADDRESS).unwrap();
+        let received_snapshot = receive_worker.await.unwrap();
+        let allocation1 = received_snapshot
+            .allocations
+            .iter()
+            .find(|a| a.address == Some(FAKE_ALLOCATION_1_ADDRESS))
+            .unwrap();
         assert_eq!(allocation1.stack_trace.program_addresses, []);
     }
 
@@ -989,8 +1083,12 @@ mod tests {
         fut.await.unwrap();
 
         // Verify that the stack trace has been reconstructed correctly.
-        let mut received_snapshot = receive_worker.await.unwrap();
-        let allocation1 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_1_ADDRESS).unwrap();
+        let received_snapshot = receive_worker.await.unwrap();
+        let allocation1 = received_snapshot
+            .allocations
+            .iter()
+            .find(|alloc| alloc.address == Some(FAKE_ALLOCATION_1_ADDRESS))
+            .unwrap();
         assert_eq!(allocation1.stack_trace.program_addresses, [1111, 2222, 3333]);
     }
 
@@ -1034,9 +1132,13 @@ mod tests {
         fut.await.unwrap();
 
         // Verify that the allocation has been reconstructed correctly.
-        let mut received_snapshot = receive_worker.await.unwrap();
-        let allocation1 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_1_ADDRESS).unwrap();
-        assert_eq!(allocation1.contents.expect("contents must be set"), []);
+        let received_snapshot = receive_worker.await.unwrap();
+        let allocation1 = received_snapshot
+            .allocations
+            .iter()
+            .find(|alloc| alloc.address == Some(FAKE_ALLOCATION_1_ADDRESS))
+            .unwrap();
+        assert_eq!(allocation1.contents.as_ref().expect("contents must be set"), &vec![]);
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -1093,9 +1195,13 @@ mod tests {
         fut.await.unwrap();
 
         // Verify that the allocation's block contents have been reconstructed correctly.
-        let mut received_snapshot = receive_worker.await.unwrap();
-        let allocation1 = received_snapshot.allocations.remove(&FAKE_ALLOCATION_1_ADDRESS).unwrap();
-        assert_eq!(allocation1.contents.expect("contents must be set"), FAKE_ALLOCATION_1_CONTENTS);
+        let received_snapshot = receive_worker.await.unwrap();
+        let allocation1 = received_snapshot
+            .allocations
+            .iter()
+            .find(|a| a.address == Some(FAKE_ALLOCATION_1_ADDRESS))
+            .unwrap();
+        assert_eq!(allocation1.contents, Some(FAKE_ALLOCATION_1_CONTENTS.to_vec()));
     }
 
     #[fasync::run_singlethreaded(test)]

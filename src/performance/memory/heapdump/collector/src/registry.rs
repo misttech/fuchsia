@@ -297,12 +297,15 @@ fn start_detached_task(fut: impl futures::Future<Output = anyhow::Result<()>> + 
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::*;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream};
     use futures::channel::oneshot;
     use futures::pin_mut;
+    use heapdump_snapshot::ThreadInfo;
     use itertools::{Itertools, assert_equal};
     use test_case::test_case;
     use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
@@ -462,18 +465,27 @@ mod tests {
         ) {
             let mut received_snapshot =
                 heapdump_snapshot::Snapshot::receive_from(src).await.unwrap();
-
-            let allocation =
-                received_snapshot.allocations.remove(&FAKE_ALLOCATION_ADDRESS).unwrap();
+            let allocation = received_snapshot.allocations.swap_remove(
+                received_snapshot
+                    .allocations
+                    .iter()
+                    .position(|alloc| alloc.address == Some(FAKE_ALLOCATION_ADDRESS))
+                    .unwrap(),
+            );
             assert_eq!(allocation.size, FAKE_ALLOCATION_SIZE);
-            assert_eq!(allocation.thread_info.koid, FAKE_ALLOCATION_THREAD_INFO_KOID);
-            assert_eq!(allocation.thread_info.name, FAKE_ALLOCATION_THREAD_INFO_NAME);
+            assert_eq!(
+                allocation.thread_info,
+                Some(Rc::new(ThreadInfo {
+                    koid: FAKE_ALLOCATION_THREAD_INFO_KOID,
+                    name: FAKE_ALLOCATION_THREAD_INFO_NAME.to_string()
+                }))
+            );
             assert_eq!(allocation.stack_trace.program_addresses, FAKE_ALLOCATION_STACK_TRACE);
-            assert_eq!(allocation.timestamp, FAKE_ALLOCATION_TIMESTAMP);
+            assert_eq!(allocation.timestamp, Some(FAKE_ALLOCATION_TIMESTAMP));
             if expect_contents {
                 assert_eq!(
-                    allocation.contents.expect("contents must be set"),
-                    FAKE_ALLOCATION_CONTENTS
+                    allocation.contents.as_ref().expect("contents must be set"),
+                    &FAKE_ALLOCATION_CONTENTS.to_vec()
                 );
             } else {
                 assert_matches!(allocation.contents, None);
