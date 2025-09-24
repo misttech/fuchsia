@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Error};
+use anyhow::{Context, Result};
 use attribution_data::AttributionDataProviderImpl;
 use attribution_processing::AttributionDataProvider;
 use attribution_processing::digest::BucketDefinition;
@@ -12,7 +12,7 @@ use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use log::{error, info, warn};
 use memory_monitor2_config::Config;
 use resources::Job;
@@ -50,7 +50,7 @@ const INTROSPECTOR_PATH: &str = "/svc/fuchsia.component.Introspector.root";
 // 1. set `logging_minimum_severity = "debug"`
 // 2. run `fx log --severity trace --moniker core/memory_monitor2`
 #[fuchsia::main(logging_minimum_severity = "info")]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<()> {
     info!("Starting memory_monitor 2");
     let mut service_fs = ServiceFs::new();
 
@@ -97,17 +97,31 @@ async fn main() -> Result<(), Error> {
 
     let attribution_data_provider = AttributionDataProviderImpl::new(attribution_client, root_job);
     let bucket_definitions: Arc<[BucketDefinition]> = read_bucket_definitions().into();
+    let config = Config::take_from_startup_handle();
     // Serves Fuchsia component inspection protocol
     // https://fuchsia.dev/fuchsia-src/development/diagnostics/inspect
-    let _inspect_nodes_service = inspect_nodes::start_service(
-        attribution_data_provider.clone(),
+    let _inspect_nodes_service = fuchsia_async::Task::spawn(inspect_nodes::serve(
         kernel_stats.clone(),
         stall_provider.clone(),
-        Config::take_from_startup_handle(),
-        connect_to_protocol::<fpressure::ProviderMarker>()
-            .context("Failed to connect to the memory pressure provider")?,
-        bucket_definitions.clone(),
-    )?;
+        Config { ..config }, // Config is not Clone
+    )?);
+
+    let _pressure_service = fuchsia_async::Task::spawn(
+        pressure_monitoring::serve_to_inspect(
+            config,
+            attribution_data_provider.clone(),
+            stall_provider.clone(),
+            kernel_stats.clone(),
+            connect_to_protocol::<fpressure::ProviderMarker>()
+                .context("Failed to connect to the memory pressure provider")?,
+            bucket_definitions.clone(),
+            fuchsia_inspect::component::inspector().root().create_child("logger"),
+        )
+        .map(|r| match r {
+            Ok(_) => error!("Digest service exited without error"),
+            Err(e) => error!("Digest service failed: {:?}", e),
+        }),
+    );
 
     let metric_event_logger_factory =
         connect_to_protocol::<fmetrics::MetricEventLoggerFactoryMarker>()?;
@@ -158,7 +172,7 @@ async fn serve_client_stream(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
     refault_tracker: impl RefaultProvider,
-) -> Result<(), Error> {
+) -> Result<()> {
     while let Some(request) = stream.next().await.transpose()? {
         match request {
             fattribution_plugin::MemoryMonitorRequest::GetSnapshot { snapshot, control_handle } => {
@@ -205,7 +219,7 @@ async fn provide_snapshot(
     refault_tracker: impl RefaultProvider,
     bucket_definitions: Arc<[BucketDefinition]>,
     snapshot: zx::Socket,
-) -> Result<(), Error> {
+) -> Result<()> {
     duration!(CATEGORY_MEMORY_CAPTURE, c"provide_snapshot");
     let attribution_data = attribution_data_provider.get_attribution_data().await?;
 
@@ -249,7 +263,7 @@ async fn provide_statistics(
     stall_provider: impl StallProvider,
     refault_tracker: impl RefaultProvider,
     responder: fattribution_plugin::MemoryMonitorGetSystemStatisticsResponder,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     let kernel_stats = fattribution_plugin::KernelStatistics {
         memory_stats: Some(kernel_stats_proxy.get_memory_stats().await?),
         compression_stats: Some(kernel_stats_proxy.get_memory_stats_compression().await?),

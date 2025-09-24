@@ -30,6 +30,7 @@ rustc_binary("bin") {
     ":cobalt",
     ":inspect_nodes",
     ":memory-monitor2-config",
+    ":pressure_monitoring",
     ":stalls",
     ":traces",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -40,6 +41,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/rust/zx",
     "//sdk/rust/zx-types",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
@@ -84,24 +86,17 @@ rustc_library("inspect_nodes") {
     ":memory-monitor2-config",
     ":stalls",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
-    "//sdk/fidl/fuchsia.memorypressure:fuchsia.memorypressure_rust",
-    "//sdk/rust/zx",
-    "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//src/performance/memory/attribution/processing",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
-    "//sdk/rust/zx",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
   ]
 }
@@ -180,6 +175,32 @@ rustc_library("cobalt") {
   ]
 }
 
+rustc_library("pressure_monitoring") {
+  edition = "2024"
+  with_unit_tests = true
+  source_root = "src/pressure_monitoring/lib.rs"
+
+  sources = [ "src/pressure_monitoring/lib.rs" ]
+  deps = [
+    ":memory-monitor2-config",
+    ":stalls",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+    "//sdk/fidl/fuchsia.memorypressure:fuchsia.memorypressure_rust",
+    "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/contrib/rust",
+    "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//src/performance/memory/attribution/processing",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+  ]
+  test_deps = [
+    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+  ]
+}
+
 fuchsia_component_manifest("memory-monitor2-manifest") {
   component_name = "memory_monitor2"
   manifest = "meta/memory_monitor2.cml"
@@ -221,6 +242,11 @@ fuchsia_unittest_package("memory-monitor2-stalls-tests") {
 fuchsia_unittest_package("memory-monitor2-cobalt-tests") {
   package_name = "memory-monitor2-cobalt-tests"
   deps = [ ":cobalt_test" ]
+}
+
+fuchsia_unittest_package("memory-monitor2-pressure-monitoring-tests") {
+  package_name = "memory-monitor2-pressure-monitoring-tests"
+  deps = [ ":pressure_monitoring_test" ]
 }
 
 rustc_staticlib("memory-monitor2-trace-rust-cpp-lib") {
@@ -284,6 +310,7 @@ group("tests") {
   deps = [
     ":memory-monitor2-cobalt-tests",
     ":memory-monitor2-inspect-tests",
+    ":memory-monitor2-pressure-monitoring-tests",
     ":memory-monitor2-stalls-tests",
     ":memory-monitor2-tests",
     ":memory-monitor2-trace-test-pkg",
