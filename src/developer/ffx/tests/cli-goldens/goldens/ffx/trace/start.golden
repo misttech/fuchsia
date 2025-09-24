@@ -70,7 +70,7 @@
       "optionality": "optional",
       "long": "--output",
       "short": null,
-      "description": "name of output trace file.  Defaults to trace.fxt.",
+      "description": "name of output trace file.  Defaults to trace.fxt. Cannot be used with --background.  To specify the output file with background mode, pass --output to `ffx trace stop` instead.\"",
       "hidden": false
     },
     {

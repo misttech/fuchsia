@@ -207,9 +207,10 @@ pub struct Start {
     #[argh(option)]
     pub duration: Option<u32>,
 
-    /// name of output trace file.  Defaults to trace.fxt.
-    #[argh(option, default = "String::from(\"trace.fxt\")")]
-    pub output: String,
+    /// name of output trace file.  Defaults to trace.fxt. Cannot be used with --background. 
+    /// To specify the output file with background mode, pass --output to `ffx trace stop` instead."
+    #[argh(option)]
+    pub output: Option<String>,
 
     /// whether to run the trace in the background. Defaults to false,
     /// which means the trace will run in "interactive" mode.

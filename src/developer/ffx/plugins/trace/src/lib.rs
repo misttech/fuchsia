@@ -375,6 +375,11 @@ pub async fn trace(
             }
         }
         TraceSubCommand::Start(opts) => {
+            if opts.background && opts.output.is_some() {
+                ffx_bail!(
+                    "The option '--output' cannot be used with background tracing. Use `ffx trace stop --output` instead."
+                );
+            }
             let triggers = if opts.trigger.is_empty() { None } else { Some(opts.trigger) };
             if triggers.is_some() && !opts.background {
                 ffx_bail!(
@@ -395,7 +400,10 @@ pub async fn trace(
                 defer_transfer: Some(defer_transfer),
                 ..ffx_trace::map_categories_to_providers(&expanded_categories)
             };
-            let output = canonical_path(opts.output)?;
+            let output = canonical_path(
+                opts.output
+                    .unwrap_or_else(|| target_spec.unwrap_or_else(|| "trace.fxt".to_owned())),
+            )?;
 
             let options = TraceOptions {
                 duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
@@ -1057,7 +1065,7 @@ mod tests {
                     categories: vec!["invalid_categories".to_string()],
                     duration: Some(1),
                     buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: fake_trace_file_name,
+                    output: Some(fake_trace_file_name),
                     background: false,
                     verbose: false,
                     trigger: vec![],
@@ -1197,7 +1205,7 @@ mod tests {
                     categories: vec!["platypus".to_string(), "beaver".to_string()],
                     duration: None,
                     buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: "foo.txt".to_string(),
+                    output: None,
                     background: true,
                     verbose: false,
                     trigger: vec![],
@@ -1223,52 +1231,6 @@ Triggers:
 - bar : Terminate\n";
         let want = Regex::new(regex_str).unwrap();
         assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
-    }
-
-    #[fuchsia::test]
-    async fn test_start_with_long_path() {
-        let env = ffx_config::test_init().await.unwrap();
-        let test_buffers = TestBuffers::default();
-        let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec!["platypus".to_string(), "beaver".to_string()],
-                    duration: None,
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: "long_directory_name_0123456789abcdef_1123456789abcdef_2123456789abcdef_3123456789abcdef_4123456789abcdef_5123456789abcdef_6123456789abcdef_7123456789abcdef_8123456789abcdef_9123456789abcdef_a123456789abcdef_b123456789abcdef_c123456789abcdef_d123456789abcdef_e123456789abcdef_f123456789abcdef/trace.fxt".to_string(),
-                    background: true,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                }),
-            },
-            writer,
-        )
-        .await;
-        let output = test_buffers.into_stdout_str();
-        // This doesn't find `/.../foo.txt` for the tracing status, since the faked
-        // proxy has no state.
-        let regex_str = "Tracing categories: \\[beaver,platypus\\]...
-To manually stop the trace, use `ffx trace stop`
-Current tracing status:
-Task Id: 2468
-Total Duration: infinite
-Remaining Duration: infinite
-Categories: beaver,platypus
-Triggers:
-- foo : Terminate
-- bar : Terminate\n";
-        let want = Regex::new(regex_str).unwrap();
-        assert!(
-            want.is_match(&output),
-            "Actual -----\n\"{}\"------\ndidn't match expected ------\n{}",
-            output,
-            regex_str
-        );
     }
 
     #[fuchsia::test]
@@ -1360,7 +1322,7 @@ Triggers:
                     categories: vec!["platypus".to_string(), "beaver".to_string()],
                     duration: None,
                     buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: "foo.txt".to_string(),
+                    output: None,
                     background: true,
                     verbose: true,
                     trigger: vec![],
@@ -1436,8 +1398,8 @@ Triggers:
                     categories: vec![],
                     duration: Some(5),
                     buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: "foober.fxt".to_owned(),
-                    background: true,
+                    output: Some("foober.fxt".to_owned()),
+                    background: false,
                     verbose: false,
                     trigger: vec![],
                     no_symbolize: false,
@@ -1466,7 +1428,7 @@ Triggers:
                     categories: vec![],
                     duration: Some(1),
                     buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: "foober.fxt".to_owned(),
+                    output: Some("foober.fxt".to_owned()),
                     background: false,
                     verbose: false,
                     trigger: vec![],
@@ -1499,7 +1461,7 @@ Triggers:
                     categories: vec![],
                     buffering_mode: tracing::BufferingMode::Oneshot,
                     duration: None,
-                    output: "foober.fxt".to_owned(),
+                    output: Some("foober.fxt".to_owned()),
                     background: false,
                     verbose: false,
                     trigger: vec![],
@@ -1533,7 +1495,7 @@ Triggers:
                     categories: vec![],
                     buffering_mode: tracing::BufferingMode::Oneshot,
                     duration: None,
-                    output: "foober.fxt".to_owned(),
+                    output: Some("foober.fxt".to_owned()),
                     background: false,
                     verbose: false,
                     trigger: vec![],
