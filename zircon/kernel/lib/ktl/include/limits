@@ -82,9 +82,9 @@ class numeric_limits {};
 
 SPECIALIZE_INT(bool, false, true, 1, false, true);
 #if CHAR_MIN == 0
-SPECIALIZE_SIGNED(char, CHAR_MIN, CHAR_MAX);
-#else
 SPECIALIZE_UNSIGNED(char, CHAR_MIN, CHAR_MAX);
+#else
+SPECIALIZE_SIGNED(char, CHAR_MIN, CHAR_MAX);
 #endif
 SPECIALIZE_SIGNED(signed char, SCHAR_MIN, SCHAR_MAX);
 SPECIALIZE_UNSIGNED(unsigned char, 0, UCHAR_MAX);
