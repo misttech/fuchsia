@@ -822,6 +822,29 @@ impl VolumesDirectory {
     ) {
         self.on_volume_added.set(Box::new(callback)).ok().unwrap();
     }
+
+    pub async fn install_volume(
+        self: &Arc<Self>,
+        src: &str,
+        image_file: &str,
+        dst: &str,
+    ) -> Result<(), Error> {
+        let guard = self.lock().await;
+        info!("installing {src}/{image_file} -> {dst}");
+        for (_, MountedVolume { name, .. }) in guard.mounted_volumes.iter() {
+            if name == src {
+                return Err(zx::Status::ALREADY_BOUND)
+                    .with_context(|| format!("volume {src} is already mounted"));
+            }
+            if name == dst {
+                return Err(zx::Status::ALREADY_BOUND)
+                    .with_context(|| format!("volume {dst} is already mounted"));
+            }
+        }
+        guard.volumes_directory.root_volume.install_volume(&src, &image_file, &dst).await?;
+        info!("install complete");
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -834,8 +857,9 @@ impl StoreOwner for VolumesDirectory {
 #[cfg(test)]
 mod tests {
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
-    use crate::fuchsia::testing::{TestFixture, open_file_checked};
+    use crate::fuchsia::testing::{self, TestFixture, open_dir_checked, open_file_checked};
     use crate::fuchsia::volumes_directory::VolumesDirectory;
+    use crate::testing::TestFixtureOptions;
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeMarker, VolumeProxy};
@@ -861,8 +885,40 @@ mod tests {
     use vfs::directory::entry_container::Directory;
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path;
+    use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+
+    async fn write_image_to_file(image: DeviceHolder, file: fio::FileProxy) {
+        file.resize(image.size()).await.unwrap().expect("resize failed");
+        let vmo = TempClonable::new(
+            file.get_backing_memory(fio::VmoFlags::SHARED_BUFFER | fio::VmoFlags::WRITE)
+                .await
+                .unwrap()
+                .expect("get backing memory failed"),
+        );
+
+        const CHUNK_READ_SIZE: usize = 131_072; /* 128 KiB */
+        let mut buff = image.allocate_buffer(CHUNK_READ_SIZE).await;
+        let total = image.size();
+        let mut offset = 0;
+        while offset < total {
+            let amount = std::cmp::min(total - offset, CHUNK_READ_SIZE as u64);
+            image.read(offset, buff.as_mut()).await.expect("image read failed");
+            {
+                // *NOTE*: We have to unblock our write to the VMO since it's pager backed and could
+                // be running on the same thread as the filesystem is.
+                let vmo = vmo.temp_clone();
+                let data = buff.as_slice()[0..amount as usize].to_vec();
+                let offset = offset;
+                unblock(move || vmo.write(&data, offset)).await.expect("vmo write failed");
+            }
+            offset += amount;
+        }
+        assert_eq!(offset, total);
+        file.sync().await.unwrap().expect("sync failed");
+        file.close().await.unwrap().expect("close failed");
+    }
 
     #[fuchsia::test]
     async fn test_volume_creation() {
@@ -2351,5 +2407,120 @@ mod tests {
         .await
         .expect("fsck_volume failed");
         filesystem.close().await.expect("Filesystem close");
+    }
+
+    /// Tests writing a partition image and installing a volume contained within.
+    #[fuchsia::test(threads = 10)]
+    async fn test_volume_installation() {
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(1024, 4096)),
+            TestFixtureOptions { format: true, encrypted: false, ..Default::default() },
+        )
+        .await;
+
+        // Create a file "foo" in the existing volume "vol". This should be gone after installation.
+        {
+            let file = open_file_checked(
+                fixture.root(),
+                "foo",
+                fio::Flags::PROTOCOL_FILE | fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                &Default::default(),
+            )
+            .await;
+            file.write("Hello, world!".as_bytes()).await.unwrap().expect("write failed");
+        };
+
+        // Create another in-memory partition image with a different set of files.
+        let image = {
+            let inner_fixture = TestFixture::open(
+                DeviceHolder::new(FakeDevice::new(512, 4096)),
+                TestFixtureOptions { format: true, encrypted: false, ..Default::default() },
+            )
+            .await;
+            let file = open_file_checked(
+                inner_fixture.root(),
+                "bar",
+                fio::Flags::PROTOCOL_FILE | fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                &Default::default(),
+            )
+            .await;
+            file.write("Well, this is new...".as_bytes()).await.unwrap().expect("write failed");
+            file.close().await.unwrap().expect("close error");
+            inner_fixture.close().await
+        };
+
+        // Write the partition image to a file "install" in a new volume called "src".
+        {
+            let (src_out_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+            fixture
+                .volumes_directory()
+                .create_and_serve_volume("src", server_end, Default::default())
+                .await
+                .unwrap();
+            let src_root = open_dir_checked(
+                &src_out_dir,
+                "root",
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+                Default::default(),
+            )
+            .await;
+            let file = open_file_checked(
+                &src_root,
+                "image",
+                fio::Flags::PROTOCOL_FILE | fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                &Default::default(),
+            )
+            .await;
+            write_image_to_file(image, file).await;
+        };
+
+        // Installation should not be possible yet since both volumes are still mounted.
+        assert!(
+            fixture.volumes_directory().install_volume("src", "image", "vol").await.is_err(),
+            "volume installation should fail while either src/dst is still mounted"
+        );
+
+        // Now let's re-mount the filesystem manually without a fixture, install the volumes, and
+        // spin up a new fixture to verify the result.
+        let device = fixture.close().await;
+        let fs = FxFilesystem::open(device).await.unwrap();
+        {
+            let root = root_volume(fs.clone()).await.unwrap();
+            root.install_volume("src", "image", "vol").await.unwrap();
+        }
+        fs.close().await.unwrap();
+        let device = fs.take_device().await;
+        device.reopen(/*read_only*/ true);
+        let fixture = TestFixture::open(
+            device,
+            TestFixtureOptions { encrypted: false, format: false, ..Default::default() },
+        )
+        .await;
+
+        // Ensure that the "src" volume is now gone, and the old file "foo" is gone from "vol".
+        assert!(
+            fixture.volumes_directory().mount_volume("src", None, false).await.is_err(),
+            "src volume should be deleted after installation"
+        );
+        assert!(
+            testing::open_file(
+                fixture.volume_out_dir(),
+                "foo",
+                fio::PERM_READABLE,
+                &Default::default()
+            )
+            .await
+            .is_err(),
+            "foo should be deleted after installation"
+        );
+
+        // Check that we can find the contents of "vol" that we installed from the image.
+        let file =
+            open_file_checked(fixture.root(), "bar", fio::PERM_READABLE, &Default::default()).await;
+        let data = file.read(fio::MAX_TRANSFER_SIZE).await.unwrap().expect("read failed");
+        assert_eq!(String::from_utf8(data).unwrap(), "Well, this is new...");
+        file.close().await.unwrap().unwrap();
+
+        fixture.close().await;
     }
 }

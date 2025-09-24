@@ -16,7 +16,10 @@ use fidl_fuchsia_fs_startup::{
     CheckOptions, StartOptions, StartupMarker, StartupRequest, StartupRequestStream, VolumesMarker,
     VolumesRequest, VolumesRequestStream,
 };
-use fidl_fuchsia_fxfs::{DebugMarker, DebugRequestStream};
+use fidl_fuchsia_fxfs::{
+    DebugMarker, DebugRequestStream, VolumeInstallerMarker, VolumeInstallerRequest,
+    VolumeInstallerRequestStream,
+};
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fs_inspect::{FsInspect, FsInspectTree, InfoData, UsageData};
@@ -184,6 +187,21 @@ impl Component {
                 async move {
                     if let Some(me) = weak.upgrade() {
                         let _ = me.handle_admin_requests(requests).await;
+                    }
+                }
+            }),
+        )?;
+
+        let weak = Arc::downgrade(&self);
+        svc_dir.add_entry(
+            VolumeInstallerMarker::PROTOCOL_NAME,
+            vfs::service::host(move |requests| {
+                let weak = weak.clone();
+                async move {
+                    if let Some(me) = weak.upgrade() {
+                        if let Err(error) = me.handle_volume_installer_requests(requests).await {
+                            error!(error:?; "failed to handle VolumeInstaller requests");
+                        }
                     }
                 }
             }),
@@ -492,6 +510,31 @@ impl Component {
                 self.shutdown().await;
             }
             None => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_volume_installer_requests(
+        &self,
+        mut stream: VolumeInstallerRequestStream,
+    ) -> Result<(), Error> {
+        let volumes =
+            if let State::Running(RunningState { ref volumes, .. }) = &*self.state.lock().await {
+                volumes.clone()
+            } else {
+                let _ = stream.into_inner().0.shutdown_with_epitaph(zx::Status::BAD_STATE);
+                return Err(zx::Status::BAD_STATE).context("fxfs component not running");
+            };
+        while let Some(request) = stream.try_next().await.context("reading request")? {
+            match request {
+                VolumeInstallerRequest::Install { src, image_file, dst, responder } => {
+                    let response = volumes.install_volume(&src, &image_file, &dst).await;
+                    responder.send(response.map_err(|error| {
+                        error!(error:?; "install failed");
+                        map_to_raw_status(error)
+                    }))?;
+                }
+            }
         }
         Ok(())
     }

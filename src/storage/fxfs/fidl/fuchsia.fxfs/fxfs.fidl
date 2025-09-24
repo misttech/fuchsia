@@ -307,3 +307,20 @@ closed protocol FileBackedVolumeProvider {
         server_end server_end:fuchsia.hardware.block.volume.Volume;
     });
 };
+
+
+/// Allows installing a volume from an fxfs partition image.
+@discoverable
+closed protocol VolumeInstaller {
+    /// Using the partition image in `image_file` contained in the volume `src`, overwrites the
+    /// volume `dst` with a volume of the same name from the image. On success, `src` will no longer
+    /// exist. There must be no objects in `src` other than the image that contain extents.
+    /// Neither `src` nor `dst` can be mounted or otherwise in-use.
+    ///
+    /// *WARNING*: This will delete the existing contents of `dst`.
+    strict Install(struct {
+        src fuchsia.io.Name;
+        image_file fuchsia.io.Name;
+        dst fuchsia.io.Name;
+    }) -> () error zx.Status;
+};
