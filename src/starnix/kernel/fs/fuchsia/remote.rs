@@ -1730,7 +1730,7 @@ mod test {
     use crate::mm::PAGE_SIZE;
     use crate::testing::*;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
-    use crate::vfs::socket::SocketMessageFlags;
+    use crate::vfs::socket::{SocketFile, SocketMessageFlags};
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
     use fidl::endpoints::Proxy;
@@ -1740,29 +1740,31 @@ mod test {
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
     use starnix_uapi::file_mode::{AccessCheck, mode};
+    use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use zx::HandleBased;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (s1, s2) = zx::Socket::create_datagram();
-        s2.write(&vec![0]).expect("write");
-        let file = new_remote_file(locked, &current_task, s1.into(), OpenFlags::RDWR)
-            .expect("new_remote_file");
-        assert!(file.node().is_sock());
-        let socket_ops = file.downcast_file::<SocketFile>().unwrap();
-        let flags = SocketMessageFlags::CTRUNC
-            | SocketMessageFlags::TRUNC
-            | SocketMessageFlags::NOSIGNAL
-            | SocketMessageFlags::CMSG_CLOEXEC;
-        let mut buffer = VecOutputBuffer::new(1024);
-        let info = socket_ops
-            .recvmsg(locked, &current_task, &file, &mut buffer, flags, None)
-            .expect("recvmsg");
-        assert!(info.ancillary_data.is_empty());
-        assert_eq!(info.message_length, 1);
+        spawn_kernel_and_run(|locked, current_task| {
+            let (s1, s2) = zx::Socket::create_datagram();
+            s2.write(&vec![0]).expect("write");
+            let file = new_remote_file(locked, &current_task, s1.into(), OpenFlags::RDWR)
+                .expect("new_remote_file");
+            assert!(file.node().is_sock());
+            let socket_ops = file.downcast_file::<SocketFile>().unwrap();
+            let flags = SocketMessageFlags::CTRUNC
+                | SocketMessageFlags::TRUNC
+                | SocketMessageFlags::NOSIGNAL
+                | SocketMessageFlags::CMSG_CLOEXEC;
+            let mut buffer = VecOutputBuffer::new(1024);
+            let info = socket_ops
+                .recvmsg(locked, &current_task, &file, &mut buffer, flags, None)
+                .expect("recvmsg");
+            assert!(info.ancillary_data.is_empty());
+            assert_eq!(info.message_length, 1);
+        });
     }
 
     #[::fuchsia::test]
