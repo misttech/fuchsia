@@ -6,18 +6,15 @@ use fuchsia_inspect::{Inspector, Node as InspectNode};
 use fuchsia_sync::Mutex as SyncMutex;
 use futures::channel::mpsc;
 use futures::lock::Mutex as AsyncMutex;
-use futures::{select, Future, FutureExt as _, StreamExt as _};
+use futures::{Future, FutureExt as _, StreamExt as _, select};
 use log::{error, info, warn};
 use std::sync::Arc;
 use {async_channel as mpmc, fuchsia_async as fasync};
 
 use crate::experimental::clock::{Timed, Timestamp};
-use crate::experimental::series::buffer::BufferStrategy;
 use crate::experimental::series::interpolation::Interpolation;
-use crate::experimental::series::statistic::{Metadata, Statistic};
-use crate::experimental::series::{
-    FoldError, Interpolator, MatrixSampler, SerializedBuffer, TimeMatrix,
-};
+use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
+use crate::experimental::series::{Interpolator, MatrixSampler, SerializedBuffer, TimeMatrix};
 use crate::experimental::vec1::Vec1;
 
 // TODO(https://fxbug.dev/375489301): It is not possible to inject a mock time matrix into this
@@ -89,8 +86,8 @@ pub fn serve_time_matrix_inspection(
     (client, server)
 }
 
-pub trait ServedTimeMatrix: Interpolator<Error = FoldError> + Send {
-    fn fold_buffered_samples(&mut self) -> Result<(), Self::Error>;
+pub trait ServedTimeMatrix: Interpolator + Send {
+    fn fold_buffered_samples(&mut self) -> Result<(), FoldError>;
 }
 
 pub struct BufferedSampler<T, M>
@@ -119,16 +116,14 @@ impl<T, M> Interpolator for BufferedSampler<T, M>
 where
     M: MatrixSampler<T>,
 {
-    type Error = FoldError;
-
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> {
+    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
         self.matrix.interpolate(timestamp)
     }
 
     fn interpolate_and_get_buffers(
         &mut self,
         timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, Self::Error> {
+    ) -> Result<SerializedBuffer, FoldError> {
         self.matrix.interpolate_and_get_buffers(timestamp)
     }
 }
@@ -138,7 +133,7 @@ where
     T: Send,
     M: MatrixSampler<T> + Send,
 {
-    fn fold_buffered_samples(&mut self) -> Result<(), Self::Error> {
+    fn fold_buffered_samples(&mut self) -> Result<(), FoldError> {
         let mut errors = vec![];
         loop {
             match self.receiver.try_recv() {
@@ -176,7 +171,7 @@ pub trait InspectSender {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>;
 
@@ -197,7 +192,7 @@ pub trait InspectSender {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>;
 }
@@ -226,7 +221,7 @@ impl TimeMatrixClient {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
         R: 'static + Clone + Fn(&InspectNode) + Send + Sync,
@@ -257,7 +252,7 @@ impl InspectSender for TimeMatrixClient {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
     {
@@ -273,7 +268,7 @@ impl InspectSender for TimeMatrixClient {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
     {
@@ -356,7 +351,7 @@ fn record_lazy_time_matrix_with<F>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyBytesProperty};
+    use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
     use fuchsia_async as fasync;
     use futures::task::Poll;
     use std::mem;

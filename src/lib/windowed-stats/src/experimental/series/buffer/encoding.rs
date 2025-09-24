@@ -7,9 +7,9 @@
 use byteorder::WriteBytesExt;
 use std::io;
 
-use crate::experimental::series::buffer::{Buffer, BufferStrategy, RingBuffer};
+use crate::experimental::series::buffer::RingBuffer;
 use crate::experimental::series::interpolation::Interpolation;
-use crate::experimental::series::statistic::{Aggregation, Statistic};
+use crate::experimental::series::statistic::{Aggregation, SerialStatistic};
 
 /// Describes the encoding of a [`RingBuffer`] type.
 ///
@@ -42,7 +42,7 @@ pub trait Payload: Copy {
 }
 
 pub mod compression {
-    use crate::experimental::series::buffer::encoding::{payload, Compression};
+    use crate::experimental::series::buffer::encoding::{Compression, payload};
 
     #[derive(Debug)]
     pub enum Uncompressed {}
@@ -148,14 +148,15 @@ pub mod payload {
 
 /// Serializes the type descriptors a `Statistic`'s associated buffer.
 ///
-/// Given a `Statistic` and `BufferStrategy` type `F` and `Interpolation` type `P`, this function
-/// writes the associated buffer's type descriptors to the `Write` target `write`.
+/// Given a `Statistic` type `F` and `Interpolation` type `P` with a configured buffer, this
+/// function writes the associated buffer's type descriptors to the `Write` target `write`.
 pub fn serialize_buffer_type_descriptors<F, P>(write: impl io::Write) -> io::Result<()>
 where
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation,
 {
-    type BufferEncoding<F, P> = <Buffer<F, P> as RingBuffer<Aggregation<F>>>::Encoding;
+    type BufferEncoding<F, P> =
+        <<F as SerialStatistic<P>>::Buffer as RingBuffer<Aggregation<F>>>::Encoding;
 
     <BufferEncoding<F, P> as Encoding<Aggregation<F>>>::serialize(write)
 }

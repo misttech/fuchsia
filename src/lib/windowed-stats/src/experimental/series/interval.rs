@@ -11,12 +11,11 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
+use crate::experimental::Vec1;
 use crate::experimental::clock::{Duration, DurationExt as _, Quanta, QuantaExt as _, Tick};
 use crate::experimental::series::buffer::Capacity;
 use crate::experimental::series::interpolation::InterpolationState;
-use crate::experimental::series::statistic::{Statistic, StatisticExt as _};
-use crate::experimental::series::Fill;
-use crate::experimental::Vec1;
+use crate::experimental::series::statistic::{FoldError, Statistic, StatisticExt as _};
 
 /// An interval that has elapsed during a [`Tick`].
 ///
@@ -44,7 +43,7 @@ impl ElapsedInterval {
         self,
         statistic: &mut F,
         interpolation: &mut P,
-    ) -> Result<Option<(NonZeroUsize, F::Aggregation)>, F::Error>
+    ) -> Result<Option<(NonZeroUsize, F::Aggregation)>, FoldError>
     where
         F: Statistic,
         P: InterpolationState<F::Aggregation, FillSample = F::Sample>,
@@ -85,7 +84,7 @@ impl<T> PendingInterval<T> {
     ///
     /// [`Interpolation`]: crate::experimental::series::interpolation::Interpolation
     /// [`Statistic`]: crate::experimental::series::statistic::Statistic
-    fn fold<F, P>(self, statistic: &mut F, interpolation: &mut P) -> Result<(), F::Error>
+    fn fold<F, P>(self, statistic: &mut F, interpolation: &mut P) -> Result<(), FoldError>
     where
         T: Clone,
         F: Statistic<Sample = T>,
@@ -108,7 +107,7 @@ impl<T> PendingInterval<PhantomData<T>> {
     ///
     /// [`Interpolation`]: crate::experimental::series::interpolation::Interpolation
     /// [`Statistic`]: crate::experimental::series::statistic::Statistic
-    fn interpolate<F, P>(self, statistic: &mut F, interpolation: &mut P) -> Result<(), F::Error>
+    fn interpolate<F, P>(self, statistic: &mut F, interpolation: &mut P) -> Result<(), FoldError>
     where
         T: Clone,
         F: Statistic<Sample = T>,
@@ -135,7 +134,7 @@ impl<T> IntervalExpiration<T> {
         self,
         statistic: &mut F,
         interpolation: &mut P,
-    ) -> Result<Option<(NonZeroUsize, F::Aggregation)>, F::Error>
+    ) -> Result<Option<(NonZeroUsize, F::Aggregation)>, FoldError>
     where
         T: Clone,
         F: Statistic<Sample = T>,
@@ -157,7 +156,7 @@ impl<T> IntervalExpiration<PhantomData<T>> {
         self,
         statistic: &mut F,
         interpolation: &mut P,
-    ) -> Result<Option<(NonZeroUsize, F::Aggregation)>, F::Error>
+    ) -> Result<Option<(NonZeroUsize, F::Aggregation)>, FoldError>
     where
         T: Clone,
         F: Statistic<Sample = T>,
@@ -437,20 +436,12 @@ impl From<SamplingInterval> for SamplingProfile {
     }
 }
 
-fn fill_non_zero_with<S, T, F>(
-    sampler: &mut S,
-    n: Option<NonZeroUsize>,
-    f: F,
-) -> Result<(), S::Error>
+fn fill_non_zero_with<S, F>(sampler: &mut S, n: Option<NonZeroUsize>, f: F) -> Result<(), FoldError>
 where
-    S: Fill<T>,
-    F: FnOnce() -> T,
+    S: Statistic,
+    F: FnOnce() -> S::Sample,
 {
-    if let Some(n) = n {
-        sampler.fill(f(), n)
-    } else {
-        Ok(())
-    }
+    if let Some(n) = n { sampler.fill(f(), n) } else { Ok(()) }
 }
 
 #[cfg(test)]
@@ -460,8 +451,8 @@ mod tests {
     use std::sync::mpsc::{self, Receiver, Sender};
 
     use crate::experimental::clock::{ObservationTime, Timestamp};
+    use crate::experimental::series::Counter;
     use crate::experimental::series::buffer::Capacity;
-    use crate::experimental::series::{Counter, Fill, Sampler};
 
     const SAMPLE: u64 = 1337u64;
 
@@ -612,6 +603,17 @@ mod tests {
         type Sample = u64;
         type Aggregation = u64;
 
+        fn fold(&mut self, sample: u64) -> Result<(), FoldError> {
+            self.0.send(MockStatisticCall::Fold { sample }).unwrap();
+            Ok(())
+        }
+
+        fn fill(&mut self, sample: u64, n: NonZeroUsize) -> Result<(), FoldError> {
+            // Tests assert against `n` as a `usize` instead of `NonZeroUsize`.
+            self.0.send(MockStatisticCall::Fill { sample, n: n.get() }).unwrap();
+            Ok(())
+        }
+
         fn reset(&mut self) {
             self.0.send(MockStatisticCall::Reset).unwrap();
         }
@@ -619,23 +621,6 @@ mod tests {
         fn aggregation(&self) -> Option<Self::Aggregation> {
             self.0.send(MockStatisticCall::Aggregation).unwrap();
             Some(100)
-        }
-    }
-
-    impl Fill<u64> for MockStatistic {
-        fn fill(&mut self, sample: u64, n: NonZeroUsize) -> Result<(), Self::Error> {
-            // Tests assert against `n` as a `usize` instead of `NonZeroUsize`.
-            self.0.send(MockStatisticCall::Fill { sample, n: n.get() }).unwrap();
-            Ok(())
-        }
-    }
-
-    impl Sampler<u64> for MockStatistic {
-        type Error = ();
-
-        fn fold(&mut self, sample: u64) -> Result<(), Self::Error> {
-            self.0.send(MockStatisticCall::Fold { sample }).unwrap();
-            Ok(())
         }
     }
 

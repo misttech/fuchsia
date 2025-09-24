@@ -17,13 +17,24 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Write};
 use std::num::NonZeroUsize;
 
+use crate::experimental::series::SamplingInterval;
 use crate::experimental::series::buffer::encoding::Encoding;
 use crate::experimental::series::interpolation::Interpolation;
-use crate::experimental::series::statistic::Aggregation;
-use crate::experimental::series::SamplingInterval;
 
 use Capacity::MinSamples;
 
+// The choice of ring buffer is determined by three types associated with a time matrix:
+//
+//   1. The data semantic.
+//   2. The aggregation.
+//   3. The interpolation.
+//
+// Because of this, this trait is implemented by `DataSemantic` types like `Gauge` for various
+// aggregation and interpolation input types. For each supported triple, there is an associated
+// ring buffer. In type bounds, this is typically expressed via the `SerialStatistic` trait, which
+// is implemented for any and all `Statistic` types with an associated data semantic type that
+// implements `BufferStrategy` for its associated aggregation type. See the blanket implementation
+// for `SerialStatistic`.
 /// A type that can construct a [`RingBuffer`] associated with an aggregation type and
 /// interpolation.
 ///
@@ -39,12 +50,6 @@ where
         Self::Buffer::with_capacity(interval.capacity())
     }
 }
-
-/// The associated [`RingBuffer`] type of a [`BufferStrategy`].
-///
-/// [`BufferStrategy`]: crate::experimental::series::buffer::BufferStrategy
-/// [`RingBuffer`]: crate::experimental::series::buffer::RingBuffer
-pub type Buffer<F, P> = <F as BufferStrategy<Aggregation<F>, P>>::Buffer;
 
 /// A fixed-capacity circular ring buffer.
 pub trait RingBuffer<A> {

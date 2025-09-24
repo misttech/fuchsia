@@ -5,12 +5,11 @@
 use std::marker::PhantomData;
 
 use crate::experimental::clock::Timed;
-use crate::experimental::event::reactor::{Context, Reactor};
 use crate::experimental::event::Event;
-use crate::experimental::series::buffer::BufferStrategy;
+use crate::experimental::event::reactor::{Context, Reactor};
 use crate::experimental::series::interpolation::Interpolation;
-use crate::experimental::series::statistic::{Metadata, Statistic};
-use crate::experimental::series::{FoldError, MatrixSampler, SamplingProfile, TimeMatrix};
+use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic, Statistic};
+use crate::experimental::series::{MatrixSampler, SamplingProfile, TimeMatrix};
 use crate::experimental::serve::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
 
 /// A type that maps the presence of an optional builder field to another type.
@@ -67,11 +66,7 @@ where
         T: Clone,
     {
         move |event: Timed<Event<T>>, _: Context<'_, S>| {
-            if let Some(sample) = event.to_timed_sample() {
-                matrix.fold(sample)
-            } else {
-                Ok(())
-            }
+            if let Some(sample) = event.to_timed_sample() { matrix.fold(sample) } else { Ok(()) }
         }
     }
 }
@@ -90,7 +85,7 @@ where
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
     {
@@ -139,7 +134,7 @@ where
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
     {

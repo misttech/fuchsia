@@ -16,11 +16,11 @@ mod reactor;
 
 use crate::experimental::clock::Timed;
 
-pub use crate::experimental::event::builder::{sample_data_record, SampleDataRecord};
+pub use crate::experimental::event::builder::{SampleDataRecord, sample_data_record};
 pub use crate::experimental::event::reactor::{
-    and, fail, filter_map_data_record, map_data_record, map_state, on_data_record, or, respond,
-    then, with_state, And, AndChain, Context, Fail, FilterMapDataRecord, Inspect, IntoReactor,
-    MapError, MapResponse, Or, OrChain, Reactor, Respond, Then, ThenChain, WithState,
+    And, AndChain, Context, Fail, FilterMapDataRecord, Inspect, IntoReactor, MapError, MapResponse,
+    Or, OrChain, Reactor, Respond, Then, ThenChain, WithState, and, fail, filter_map_data_record,
+    map_data_record, map_state, on_data_record, or, respond, then, with_state,
 };
 
 /// Extension methods for [`Reactor`] types.
@@ -194,17 +194,17 @@ impl<T> DataEvent<T> {
 pub(crate) mod harness {
     use fuchsia_async as fasync;
     use fuchsia_inspect::{Inspector, Node};
-    use futures::task::Poll;
     use futures::Future;
+    use futures::task::Poll;
     use std::fmt::Debug;
     use std::marker::PhantomData;
     use std::pin::Pin;
 
     use crate::experimental::clock::Timed;
     use crate::experimental::event::{self, Context, Event, Reactor};
+    use crate::experimental::series::SamplingProfile;
     use crate::experimental::series::interpolation::LastSample;
-    use crate::experimental::series::statistic::{Max, Sum};
-    use crate::experimental::series::{FoldError, SamplingProfile};
+    use crate::experimental::series::statistic::{FoldError, Max, Sum};
     use crate::experimental::serve::TimeMatrixClient;
 
     pub const TIME_ZERO: fasync::MonotonicInstant = fasync::MonotonicInstant::from_nanos(0);
@@ -423,7 +423,7 @@ pub(crate) mod harness {
 
 #[cfg(test)]
 mod tests {
-    use diagnostics_assertions::{assert_data_tree, AnyBytesProperty};
+    use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
     use std::pin::pin;
 
     use crate::experimental::clock::Timed;
@@ -431,10 +431,10 @@ mod tests {
     use crate::experimental::event::{
         self, Context, DataEvent, Event, Reactor, ReactorExt as _, SuspendEvent, SystemEvent,
     };
+    use crate::experimental::series::SamplingProfile;
     use crate::experimental::series::interpolation::LastSample;
     use crate::experimental::series::metadata::BitSetMap;
     use crate::experimental::series::statistic::{Max, Sum, Union};
-    use crate::experimental::series::SamplingProfile;
     use crate::experimental::serve;
 
     #[test]

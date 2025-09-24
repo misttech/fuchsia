@@ -13,82 +13,34 @@ pub mod metadata;
 pub mod statistic;
 
 use derivative::Derivative;
-use std::convert::Infallible;
 use std::fmt::{Debug, Display};
 use std::io;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use thiserror::Error;
 
-use crate::experimental::clock::{
-    MonotonicityError, ObservationTime, Tick, Timed, Timestamp, TimestampExt,
-};
+use crate::experimental::Vec1;
+use crate::experimental::clock::{ObservationTime, Tick, Timed, Timestamp, TimestampExt};
 use crate::experimental::series::buffer::{
-    encoding, Buffer, BufferStrategy, DeltaSimple8bRle, DeltaZigzagSimple8bRle, RingBuffer,
-    Simple8bRle, Uncompressed, ZigzagSimple8bRle,
+    BufferStrategy, DeltaSimple8bRle, DeltaZigzagSimple8bRle, RingBuffer, Simple8bRle,
+    Uncompressed, ZigzagSimple8bRle, encoding,
 };
 use crate::experimental::series::interpolation::{
     Constant, Interpolation, InterpolationFor, InterpolationState, LastAggregation, LastSample,
 };
 use crate::experimental::series::metadata::{BitSetIndex, Metadata};
-use crate::experimental::series::statistic::{OverflowError, PostAggregation, Statistic};
-use crate::experimental::Vec1;
+use crate::experimental::series::statistic::{
+    FoldError, PostAggregation, SerialStatistic, Statistic,
+};
 
 pub use crate::experimental::series::buffer::Capacity;
 pub use crate::experimental::series::interval::{SamplingInterval, SamplingProfile};
 
-/// Sample folding error.
-///
-/// Describes errors that occur when folding a sample into a [`Sampler`].
-///
-/// [`Sampler`]: crate::experimental::series::Sampler
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum FoldError {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    Monotonicity(#[from] MonotonicityError),
-    #[error(transparent)]
-    Overflow(#[from] OverflowError),
-    // TODO(https://fxbug.dev/432323121): Provide the data that could not be sent into the channel
-    //                                    here. This requires an input type parameter on
-    //                                    `FoldError`, a `dyn Any` trait object, etc.
-    #[error("timed sample dropped: channel is closed or buffer is exhausted")]
-    Buffer,
-    #[error("failed to fold one or more buffered samples")]
-    Flush(Vec1<FoldError>),
-}
-
-impl From<Infallible> for FoldError {
-    fn from(_: Infallible) -> Self {
-        unreachable!()
-    }
-}
-
-/// A type that folds samples into an aggregation or some other state.
-pub trait Sampler<T> {
-    /// The type of error that can occur when [folding samples][`Sampler::fold`] into the sampler.
-    ///
-    /// [`Sampler::fold`]: crate::experimental::series::Sampler::fold
-    type Error;
-
-    fn fold(&mut self, sample: T) -> Result<(), Self::Error>;
-}
-
-/// A [`Sampler`] that can efficiently fold one or more of a particular sample.
-pub trait Fill<T>: Sampler<T> {
-    fn fill(&mut self, sample: T, n: NonZeroUsize) -> Result<(), Self::Error>;
-}
-
 pub trait Interpolator {
-    type Error;
-
     /// Interpolates samples to the given timestamp.
     ///
     /// This function queries the aggregations of the series. Typically, the timestamp is the
     /// current time.
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), Self::Error>;
+    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError>;
 
     /// Interpolates samples to the given timestamp and gets the serialized aggregation buffers.
     ///
@@ -97,7 +49,7 @@ pub trait Interpolator {
     fn interpolate_and_get_buffers(
         &mut self,
         timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, Self::Error>;
+    ) -> Result<SerializedBuffer, FoldError>;
 }
 
 /// A buffered round-robin sampler over [timed samples][`Timed`] (e.g., a [`TimeMatrix`]).
@@ -107,9 +59,8 @@ pub trait Interpolator {
 ///
 /// [`Timed`]: crate::experimental::clock::Timed
 /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
-pub trait MatrixSampler<T>:
-    Interpolator<Error = FoldError> + Sampler<Timed<T>, Error = FoldError>
-{
+pub trait MatrixSampler<T>: Interpolator {
+    fn fold(&mut self, sample: Timed<T>) -> Result<(), FoldError>;
 }
 
 /// A type that describes the semantics of data folded by `Sampler`s.
@@ -274,7 +225,7 @@ where
         &'i mut self,
         interpolation: &'i mut P,
         tick: Tick,
-    ) -> impl 'i + Iterator<Item = Result<(NonZeroUsize, F::Aggregation), F::Error>>
+    ) -> impl 'i + Iterator<Item = Result<(NonZeroUsize, F::Aggregation), FoldError>>
     where
         P: InterpolationState<F::Aggregation, FillSample = F::Sample>,
     {
@@ -300,7 +251,7 @@ where
         interpolation: &'i mut P,
         tick: Tick,
         sample: F::Sample,
-    ) -> impl 'i + Iterator<Item = Result<(NonZeroUsize, F::Aggregation), F::Error>>
+    ) -> impl 'i + Iterator<Item = Result<(NonZeroUsize, F::Aggregation), FoldError>>
     where
         P: InterpolationState<F::Aggregation, FillSample = F::Sample>,
     {
@@ -333,26 +284,24 @@ where
 /// the buffer.
 #[derive(Derivative)]
 #[derivative(
-    Clone(bound = "F: Clone, Buffer<F, P>: Clone, P::State<F>: Clone,"),
+    Clone(bound = "F: Clone, F::Buffer: Clone, P::State<F>: Clone,"),
     Debug(bound = "F: Debug,
-                   F::Sample: Debug,
-                   F::Aggregation: Debug,
-                   Buffer<F, P>: Debug,
+                   F::Buffer: Debug,
                    P::State<F>: Debug,")
 )]
 struct BufferedTimeSeries<F, P>
 where
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
 {
-    buffer: Buffer<F, P>,
+    buffer: F::Buffer,
     interpolation: P::State<F>,
     series: TimeSeries<F>,
 }
 
 impl<F, P> BufferedTimeSeries<F, P>
 where
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
 {
     pub fn new(interpolation: P::State<F>, series: TimeSeries<F>) -> Self {
@@ -368,7 +317,7 @@ where
     /// Returns an error if sampling fails.
     ///
     /// [`Tick`]: crate::experimental::clock::Tick
-    fn interpolate(&mut self, tick: Tick) -> Result<(), F::Error> {
+    fn interpolate(&mut self, tick: Tick) -> Result<(), FoldError> {
         for aggregation in
             self.series.interpolate_and_get_aggregations(&mut self.interpolation, tick)
         {
@@ -390,7 +339,7 @@ where
     /// Returns an error if sampling fails.
     ///
     /// [`Tick`]: crate::experimental::clock::Tick
-    fn fold(&mut self, tick: Tick, sample: F::Sample) -> Result<(), F::Error> {
+    fn fold(&mut self, tick: Tick, sample: F::Sample) -> Result<(), FoldError> {
         for aggregation in
             self.series.fold_and_get_aggregations(&mut self.interpolation, tick, sample)
         {
@@ -426,16 +375,14 @@ pub struct SerializedBuffer {
 /// time matrix must be the same, but the sampling intervals can and should differ.
 #[derive(Derivative)]
 #[derivative(
-    Clone(bound = "F: Clone, Buffer<F, P>: Clone, P::State<F>: Clone,"),
+    Clone(bound = "F: Clone, F::Buffer: Clone, P::State<F>: Clone,"),
     Debug(bound = "F: Debug,
-                   F::Sample: Debug,
-                   F::Aggregation: Debug,
-                   Buffer<F, P>: Debug,
+                   F::Buffer: Debug,
                    P::State<F>: Debug,")
 )]
 pub struct TimeMatrix<F, P>
 where
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
 {
     created: Timestamp,
@@ -445,7 +392,7 @@ where
 
 impl<F, P> TimeMatrix<F, P>
 where
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
 {
     fn from_series_with<Q>(series: impl Into<Vec1<TimeSeries<F>>>, mut interpolation: Q) -> Self
@@ -492,10 +439,7 @@ where
     pub fn fold_and_get_buffers(
         &mut self,
         sample: Timed<F::Sample>,
-    ) -> Result<SerializedBuffer, FoldError>
-    where
-        FoldError: From<F::Error>,
-    {
+    ) -> Result<SerializedBuffer, FoldError> {
         self.fold(sample)?;
         let series_buffers = self
             .buffers
@@ -520,7 +464,7 @@ where
         buffer.write_u8(1)?; // Version number.
         buffer.write_u32::<LittleEndian>(created_timestamp)?; // Matrix creation time.
         buffer.write_u32::<LittleEndian>(end_timestamp)?; // Last observed or interpolated sample
-                                                          // time.
+        // time.
         encoding::serialize_buffer_type_descriptors::<F, P>(&mut buffer)?; // Buffer descriptors.
 
         for series in series_buffers {
@@ -542,8 +486,8 @@ where
 
 impl<F, R, P, A> TimeMatrix<PostAggregation<F, R>, P>
 where
-    PostAggregation<F, R>: BufferStrategy<A, P>,
-    F: Default + Statistic,
+    PostAggregation<F, R>: SerialStatistic<P, Aggregation = A>,
+    F: Default + SerialStatistic<P>,
     R: Clone + Fn(F::Aggregation) -> A,
     P: InterpolationFor<PostAggregation<F, R>>,
     A: Clone,
@@ -569,7 +513,7 @@ where
 
 impl<F, P> Default for TimeMatrix<F, P>
 where
-    F: BufferStrategy<F::Aggregation, P> + Default + Statistic,
+    F: Default + SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
     P::State<F>: Default,
 {
@@ -580,13 +524,10 @@ where
 
 impl<F, P> Interpolator for TimeMatrix<F, P>
 where
-    FoldError: From<F::Error>,
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
 {
-    type Error = FoldError;
-
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> {
+    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
         let tick = self.last.tick(timestamp.into(), false)?;
         Ok(for buffer in self.buffers.iter_mut() {
             buffer.interpolate(tick)?;
@@ -596,7 +537,7 @@ where
     fn interpolate_and_get_buffers(
         &mut self,
         timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, Self::Error> {
+    ) -> Result<SerializedBuffer, FoldError> {
         self.interpolate(timestamp)?;
         let series_buffers = self
             .buffers
@@ -606,29 +547,18 @@ where
     }
 }
 
-impl<F, P> Sampler<Timed<F::Sample>> for TimeMatrix<F, P>
+impl<F, P> MatrixSampler<F::Sample> for TimeMatrix<F, P>
 where
-    FoldError: From<F::Error>,
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
+    F: SerialStatistic<P>,
     P: Interpolation<FillSample<F> = F::Sample>,
 {
-    type Error = FoldError;
-
-    fn fold(&mut self, sample: Timed<F::Sample>) -> Result<(), Self::Error> {
+    fn fold(&mut self, sample: Timed<F::Sample>) -> Result<(), FoldError> {
         let (timestamp, sample) = sample.into();
         let tick = self.last.tick(timestamp, true)?;
         Ok(for buffer in self.buffers.iter_mut() {
             buffer.fold(tick, sample.clone())?;
         })
     }
-}
-
-impl<F, P> MatrixSampler<F::Sample> for TimeMatrix<F, P>
-where
-    FoldError: From<F::Error>,
-    F: BufferStrategy<F::Aggregation, P> + Statistic,
-    P: Interpolation<FillSample<F> = F::Sample>,
-{
 }
 
 #[cfg(test)]
@@ -640,9 +570,7 @@ mod tests {
     use crate::experimental::series::statistic::{
         ArithmeticMean, LatchMax, Max, PostAggregation, Sum, Transform, Union,
     };
-    use crate::experimental::series::{
-        Interpolator, MatrixSampler, Sampler, SamplingProfile, TimeMatrix,
-    };
+    use crate::experimental::series::{Interpolator, MatrixSampler, SamplingProfile, TimeMatrix};
 
     fn fold_and_interpolate_f32(sampler: &mut impl MatrixSampler<f32>) {
         sampler.fold(Timed::now(0.0)).unwrap();

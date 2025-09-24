@@ -10,12 +10,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::experimental::clock::{Timed, Timestamp};
-use crate::experimental::series::buffer::BufferStrategy;
 use crate::experimental::series::interpolation::Interpolation;
-use crate::experimental::series::statistic::{Metadata, Statistic};
-use crate::experimental::series::{
-    FoldError, Interpolator, MatrixSampler, Sampler, SerializedBuffer, TimeMatrix,
-};
+use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
+use crate::experimental::series::{Interpolator, MatrixSampler, SerializedBuffer, TimeMatrix};
 use crate::experimental::serve::{
     BufferedSampler, InspectSender, InspectedTimeMatrix, ServedTimeMatrix,
 };
@@ -119,7 +116,7 @@ impl InspectSender for MockTimeMatrixClient {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
     {
@@ -141,7 +138,7 @@ impl InspectSender for MockTimeMatrixClient {
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
-        F: BufferStrategy<F::Aggregation, P> + Statistic,
+        F: SerialStatistic<P>,
         F::Sample: Send,
         P: Interpolation<FillSample<F> = F::Sample>,
     {
@@ -164,30 +161,28 @@ impl<T> MockTimeMatrix<T> {
     }
 }
 
-impl<T: Send + 'static> Sampler<Timed<T>> for MockTimeMatrix<T> {
-    type Error = FoldError;
-
-    fn fold(&mut self, sample: Timed<T>) -> Result<(), Self::Error> {
-        let sample = sample.map(|v| Box::new(v) as DynamicSample);
-        self.calls.lock().push((self.name.clone(), TimeMatrixCall::Fold(sample)));
-        Ok(())
-    }
-}
-
 impl<T> Interpolator for MockTimeMatrix<T> {
-    type Error = FoldError;
-
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> {
+    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
         self.calls.lock().push((self.name.clone(), TimeMatrixCall::Interpolate(timestamp)));
         Ok(())
     }
+
     fn interpolate_and_get_buffers(
         &mut self,
         timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, Self::Error> {
+    ) -> Result<SerializedBuffer, FoldError> {
         self.interpolate(timestamp)?;
         Ok(SerializedBuffer { data_semantic: "mock".to_string(), data: vec![] })
     }
 }
 
-impl<T: Send + 'static> MatrixSampler<T> for MockTimeMatrix<T> {}
+impl<T> MatrixSampler<T> for MockTimeMatrix<T>
+where
+    T: 'static + Send,
+{
+    fn fold(&mut self, sample: Timed<T>) -> Result<(), FoldError> {
+        let sample = sample.map(|v| Box::new(v) as DynamicSample);
+        self.calls.lock().push((self.name.clone(), TimeMatrixCall::Fold(sample)));
+        Ok(())
+    }
+}
