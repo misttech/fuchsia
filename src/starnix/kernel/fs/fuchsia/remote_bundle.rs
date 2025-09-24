@@ -526,138 +526,140 @@ fn to_fs_node_info(metadata_node: &ext4_metadata::Node) -> FsNodeInfo {
 #[cfg(test)]
 mod test {
     use crate::fs::fuchsia::RemoteBundle;
-    use crate::testing::create_kernel_task_and_unlocked;
+    use crate::testing::spawn_kernel_and_run_with_pkgfs;
     use crate::vfs::buffers::VecOutputBuffer;
     use crate::vfs::{
         DirectoryEntryType, DirentSink, FileSystemOptions, FsStr, LookupContext, Namespace,
         SymlinkMode, SymlinkTarget,
     };
-    use fidl_fuchsia_io as fio;
     use starnix_uapi::errors::Errno;
     use starnix_uapi::file_mode::{AccessCheck, FileMode};
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::{ino_t, off_t};
     use std::collections::{HashMap, HashSet};
+    use {fidl_fuchsia_io as fio, zx};
 
     #[::fuchsia::test]
     async fn test_read_image() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
-        let (server, client) = zx::Channel::create();
-        fdio::open("/pkg", rights, server).expect("failed to open /pkg");
-        let fs = RemoteBundle::new_fs(
-            locked,
-            &kernel,
-            &fio::DirectorySynchronousProxy::new(client),
-            FileSystemOptions { source: "data/test-image".into(), ..Default::default() },
-            rights,
-        )
-        .expect("new_fs failed");
-        let ns = Namespace::new(fs);
-        let root = ns.root();
-        let mut context = LookupContext::default().with(SymlinkMode::NoFollow);
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
+            let (server, client) = zx::Channel::create();
+            fdio::open("/pkg", rights, server).expect("failed to open /pkg");
+            let fs = RemoteBundle::new_fs(
+                locked,
+                &kernel,
+                &fio::DirectorySynchronousProxy::new(client),
+                FileSystemOptions { source: "data/test-image".into(), ..Default::default() },
+                rights,
+            )
+            .expect("new_fs failed");
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+            let mut context = LookupContext::default().with(SymlinkMode::NoFollow);
 
-        let test_dir = root
-            .lookup_child(locked, &current_task, &mut context, "foo".into())
-            .expect("lookup failed");
+            let test_dir = root
+                .lookup_child(locked, &current_task, &mut context, "foo".into())
+                .expect("lookup failed");
 
-        let test_file = test_dir
-            .lookup_child(locked, &current_task, &mut context, "file".into())
-            .expect("lookup failed")
-            .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
-            .expect("open failed");
+            let test_file = test_dir
+                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .expect("lookup failed")
+                .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
+                .expect("open failed");
 
-        let mut buffer = VecOutputBuffer::new(64);
-        assert_eq!(test_file.read(locked, &current_task, &mut buffer).expect("read failed"), 6);
-        let buffer: Vec<u8> = buffer.into();
-        assert_eq!(&buffer[..6], b"hello\n");
+            let mut buffer = VecOutputBuffer::new(64);
+            assert_eq!(test_file.read(locked, &current_task, &mut buffer).expect("read failed"), 6);
+            let buffer: Vec<u8> = buffer.into();
+            assert_eq!(&buffer[..6], b"hello\n");
 
-        assert_eq!(
-            &test_file
-                .node()
-                .get_xattr(locked, &current_task, &test_dir.mount, "user.a".into(), usize::MAX)
-                .expect("get_xattr failed")
-                .unwrap(),
-            "apple"
-        );
-        assert_eq!(
-            &test_file
-                .node()
-                .get_xattr(locked, &current_task, &test_dir.mount, "user.b".into(), usize::MAX)
-                .expect("get_xattr failed")
-                .unwrap(),
-            "ball"
-        );
-        assert_eq!(
-            test_file
-                .node()
-                .list_xattrs(locked, &current_task, usize::MAX)
-                .expect("list_xattr failed")
-                .unwrap()
-                .into_iter()
-                .collect::<HashSet<_>>(),
-            ["user.a".into(), "user.b".into()].into_iter().collect::<HashSet<_>>(),
-        );
+            assert_eq!(
+                &test_file
+                    .node()
+                    .get_xattr(locked, &current_task, &test_dir.mount, "user.a".into(), usize::MAX)
+                    .expect("get_xattr failed")
+                    .unwrap(),
+                "apple"
+            );
+            assert_eq!(
+                &test_file
+                    .node()
+                    .get_xattr(locked, &current_task, &test_dir.mount, "user.b".into(), usize::MAX)
+                    .expect("get_xattr failed")
+                    .unwrap(),
+                "ball"
+            );
+            assert_eq!(
+                test_file
+                    .node()
+                    .list_xattrs(locked, &current_task, usize::MAX)
+                    .expect("list_xattr failed")
+                    .unwrap()
+                    .into_iter()
+                    .collect::<HashSet<_>>(),
+                ["user.a".into(), "user.b".into()].into_iter().collect::<HashSet<_>>(),
+            );
 
-        {
-            let info = test_file.node().info();
-            assert_eq!(info.mode, FileMode::from_bits(0o100640));
-            assert_eq!(info.uid, 49152); // These values come from the test image generated in
-            assert_eq!(info.gid, 24403); // ext4_to_pkg.
-        }
+            {
+                let info = test_file.node().info();
+                assert_eq!(info.mode, FileMode::from_bits(0o100640));
+                assert_eq!(info.uid, 49152); // These values come from the test image generated in
+                assert_eq!(info.gid, 24403); // ext4_to_pkg.
+            }
 
-        let test_symlink = test_dir
-            .lookup_child(locked, &current_task, &mut context, "symlink".into())
-            .expect("lookup failed");
+            let test_symlink = test_dir
+                .lookup_child(locked, &current_task, &mut context, "symlink".into())
+                .expect("lookup failed");
 
-        if let SymlinkTarget::Path(target) =
-            test_symlink.readlink(locked, &current_task).expect("readlink failed")
-        {
-            assert_eq!(&target, "file");
-        } else {
-            panic!("unexpected symlink type");
-        }
+            if let SymlinkTarget::Path(target) =
+                test_symlink.readlink(locked, &current_task).expect("readlink failed")
+            {
+                assert_eq!(&target, "file");
+            } else {
+                panic!("unexpected symlink type");
+            }
 
-        let opened_dir = test_dir
-            .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
-            .expect("open failed");
+            let opened_dir = test_dir
+                .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
+                .expect("open failed");
 
-        struct Sink {
-            offset: off_t,
-            entries: HashMap<Vec<u8>, (ino_t, DirectoryEntryType)>,
-        }
-
-        impl DirentSink for Sink {
-            fn add(
-                &mut self,
-                inode_num: ino_t,
+            struct Sink {
                 offset: off_t,
-                entry_type: DirectoryEntryType,
-                name: &FsStr,
-            ) -> Result<(), Errno> {
-                assert_eq!(offset, self.offset + 1);
-                self.entries.insert(name.to_vec(), (inode_num, entry_type));
-                self.offset = offset;
-                Ok(())
+                entries: HashMap<Vec<u8>, (ino_t, DirectoryEntryType)>,
             }
 
-            fn offset(&self) -> off_t {
-                self.offset
+            impl DirentSink for Sink {
+                fn add(
+                    &mut self,
+                    inode_num: ino_t,
+                    offset: off_t,
+                    entry_type: DirectoryEntryType,
+                    name: &FsStr,
+                ) -> Result<(), Errno> {
+                    assert_eq!(offset, self.offset + 1);
+                    self.entries.insert(name.to_vec(), (inode_num, entry_type));
+                    self.offset = offset;
+                    Ok(())
+                }
+
+                fn offset(&self) -> off_t {
+                    self.offset
+                }
             }
-        }
 
-        let mut sink = Sink { offset: 0, entries: HashMap::new() };
-        opened_dir.readdir(locked, &current_task, &mut sink).expect("readdir failed");
+            let mut sink = Sink { offset: 0, entries: HashMap::new() };
+            opened_dir.readdir(locked, &current_task, &mut sink).expect("readdir failed");
 
-        assert_eq!(
-            sink.entries,
-            [
-                (b".".into(), (test_dir.entry.node.ino, DirectoryEntryType::DIR)),
-                (b"..".into(), (root.entry.node.ino, DirectoryEntryType::DIR)),
-                (b"file".into(), (test_file.node().ino, DirectoryEntryType::REG)),
-                (b"symlink".into(), (test_symlink.entry.node.ino, DirectoryEntryType::LNK))
-            ]
-            .into()
-        );
+            assert_eq!(
+                sink.entries,
+                [
+                    (b".".into(), (test_dir.entry.node.ino, DirectoryEntryType::DIR)),
+                    (b"..".into(), (root.entry.node.ino, DirectoryEntryType::DIR)),
+                    (b"file".into(), (test_file.node().ino, DirectoryEntryType::REG)),
+                    (b"symlink".into(), (test_symlink.entry.node.ino, DirectoryEntryType::LNK))
+                ]
+                .into()
+            );
+        });
     }
 }
