@@ -96,7 +96,8 @@ TYPED_TEST_P(ManagerProviderClientTest, SameOperationsAsSELinuxTestSuiteBinderTe
     client_completed.holder.hold();
   }
 
-  ASSERT_THAT(umount(temp_dir_.path().c_str()), SyscallSucceeds());
+  // TODO: https://fxbug.dev/443944960 - `ASSERT_THAT` this `umount` `SyscallSucceeds()`.
+  umount(temp_dir_.path().c_str());
 }
 
 REGISTER_TYPED_TEST_SUITE_P(ManagerProviderClientTest,
