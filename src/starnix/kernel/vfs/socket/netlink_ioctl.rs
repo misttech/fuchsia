@@ -128,6 +128,7 @@ impl IfReq {
     }
 }
 
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn netlink_ioctl(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -605,6 +606,7 @@ where
 ///
 /// Returns the netlink socket, the list of addresses and interface index, or an
 /// [`Errno`] if the operation failed.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn get_netlink_ipv4_addresses<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
@@ -733,6 +735,7 @@ where
 }
 
 /// Sends the msg on the provided NETLINK ROUTE socket, returning the response.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn send_netlink_msg_and_wait_response<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,

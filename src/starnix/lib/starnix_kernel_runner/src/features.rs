@@ -405,6 +405,7 @@ pub fn parse_features(
 }
 
 /// Runs all the features that are enabled in `system_task.kernel()`.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn run_container_features(
     locked: &mut Locked<Unlocked>,
     system_task: &CurrentTask,

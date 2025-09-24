@@ -446,6 +446,7 @@ where
     })?
 }
 
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn execute_task<L, F, G>(
     locked: &mut Locked<L>,
     task_builder: TaskBuilder,

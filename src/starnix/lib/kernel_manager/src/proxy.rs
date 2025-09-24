@@ -172,6 +172,7 @@ async fn start_proxy(
 ///
 /// If `message_counter` is `Some`, it will be incremented by one when writing the message to the
 /// write_channel.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn forward_message(
     signals: &zx::Signals,
     read_channel: &zx::Channel,

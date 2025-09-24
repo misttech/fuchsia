@@ -255,6 +255,7 @@ impl TryFrom<&Program> for febpf::VerifiedProgram {
 }
 
 /// Links maps referenced by FD, replacing them with by-index references.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn link_maps_fds(
     current_task: &CurrentTask,
     code: &mut Vec<EbpfInstruction>,

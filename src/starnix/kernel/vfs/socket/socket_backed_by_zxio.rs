@@ -704,6 +704,7 @@ impl SocketOps for ZxioBackedSocket {
         }
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn getsockopt(
         &self,
         _locked: &mut Locked<FileOpsCore>,

@@ -792,6 +792,7 @@ where
 }
 
 /// For all ptrace requests that require an attached tracee
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn ptrace_dispatch<L>(
     locked: &mut Locked<L>,
     current_task: &mut CurrentTask,

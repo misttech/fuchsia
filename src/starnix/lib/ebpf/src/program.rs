@@ -567,6 +567,7 @@ where
 
 /// Rewrites the code to ensure mapped fields are correctly handled. Returns
 /// runnable `EbpfProgram<C>`.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn link_program_internal<C: EbpfProgramContext, T: ArgumentTypeChecker<C>>(
     program: &VerifiedEbpfProgram,
     struct_mappings: &[StructMapping],

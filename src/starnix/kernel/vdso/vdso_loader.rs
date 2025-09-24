@@ -220,6 +220,7 @@ fn load_vdso_arch32_from_file() -> Result<Arc<MemoryObject>, Errno> {
     Ok(Arc::new(MemoryObject::from(vdso_vmo)))
 }
 
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn load_time_values_memory() -> Result<Arc<MemoryObject>, Errno> {
     const FILENAME: &str = "time_values";
     const DIR: &str = "/boot/kernel";

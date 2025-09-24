@@ -569,6 +569,7 @@ struct PerfRecordSample {
 //
 // Results in:
 // PerfRecordSample { pid: 1234, tid: 5555, nr: 3, ips: [0x1111, 0x2222, 0x3333] }
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn parse_perf_record_sample_format(backtrace: &str) -> Option<PerfRecordSample> {
     let mut pid: Option<u32> = None;
     let mut tid: Option<u32> = None;
@@ -749,6 +750,7 @@ async fn collect_sample(
     };
 }
 
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn sys_perf_event_open(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,

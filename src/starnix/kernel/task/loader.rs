@@ -468,6 +468,7 @@ fn resolve_script(
 /// ASCII newline character or null-byte, or else it is considered truncated and parsing will fail.
 /// If the byte string is empty or contains only whitespace, parsing fails.
 /// If successful, the returned `Vec` will have at least one element (the interpreter path).
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn parse_interpreter_line(line: &[u8]) -> Result<Vec<CString>, Errno> {
     // Assuming the byte string starts with "#!", truncate the input to end at the first newline or
     // null-byte. If not found, assume the input was truncated and fail parsing.
@@ -578,6 +579,7 @@ fn get_hwcap(is_arch32: bool) -> u32 {
 
 /// Loads a resolved ELF into memory, along with an interpreter if one is defined, and initializes
 /// the stack.
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn load_executable(
     current_task: &CurrentTask,
     resolved_elf: ResolvedElf,
@@ -864,6 +866,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn exec_hello_starnix(
         locked: &mut Locked<Unlocked>,
         current_task: &mut CurrentTask,

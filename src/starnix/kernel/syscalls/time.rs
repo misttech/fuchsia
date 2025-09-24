@@ -298,6 +298,7 @@ fn clock_nanosleep_relative_to_utc(
     }
 }
 
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn clock_nanosleep_boot_with_deadline(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
