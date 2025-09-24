@@ -3986,209 +3986,212 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_brk() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mm = current_task.mm().unwrap();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mm = current_task.mm().unwrap();
 
-        // Look up the given addr in the mappings table.
-        let get_range = |addr: UserAddress| {
-            let state = mm.state.read();
-            state.mappings.get(addr).map(|(range, mapping)| (range.clone(), mapping.clone()))
-        };
+            // Look up the given addr in the mappings table.
+            let get_range = |addr: UserAddress| {
+                let state = mm.state.read();
+                state.mappings.get(addr).map(|(range, mapping)| (range.clone(), mapping.clone()))
+            };
 
-        // Initialize the program break.
-        let base_addr = mm
-            .set_brk(locked, &current_task, UserAddress::default())
-            .expect("failed to set initial program break");
-        assert!(base_addr > UserAddress::default());
+            // Initialize the program break.
+            let base_addr = mm
+                .set_brk(locked, &current_task, UserAddress::default())
+                .expect("failed to set initial program break");
+            assert!(base_addr > UserAddress::default());
 
-        // Page containing the program break address should not be mapped.
-        assert_eq!(get_range(base_addr), None);
+            // Page containing the program break address should not be mapped.
+            assert_eq!(get_range(base_addr), None);
 
-        // Growing it by a single byte results in that page becoming mapped.
-        let addr0 = mm
-            .set_brk(locked, &current_task, (base_addr + 1u64).unwrap())
-            .expect("failed to grow brk");
-        assert!(addr0 > base_addr);
-        let (range0, _) = get_range(base_addr).expect("base_addr should be mapped");
-        assert_eq!(range0.start, base_addr);
-        assert_eq!(range0.end, (base_addr + *PAGE_SIZE).unwrap());
+            // Growing it by a single byte results in that page becoming mapped.
+            let addr0 = mm
+                .set_brk(locked, &current_task, (base_addr + 1u64).unwrap())
+                .expect("failed to grow brk");
+            assert!(addr0 > base_addr);
+            let (range0, _) = get_range(base_addr).expect("base_addr should be mapped");
+            assert_eq!(range0.start, base_addr);
+            assert_eq!(range0.end, (base_addr + *PAGE_SIZE).unwrap());
 
-        // Grow the program break by another byte, which won't be enough to cause additional pages to be mapped.
-        let addr1 = mm
-            .set_brk(locked, &current_task, (base_addr + 2u64).unwrap())
-            .expect("failed to grow brk");
-        assert_eq!(addr1, (base_addr + 2u64).unwrap());
-        let (range1, _) = get_range(base_addr).expect("base_addr should be mapped");
-        assert_eq!(range1.start, range0.start);
-        assert_eq!(range1.end, range0.end);
+            // Grow the program break by another byte, which won't be enough to cause additional pages to be mapped.
+            let addr1 = mm
+                .set_brk(locked, &current_task, (base_addr + 2u64).unwrap())
+                .expect("failed to grow brk");
+            assert_eq!(addr1, (base_addr + 2u64).unwrap());
+            let (range1, _) = get_range(base_addr).expect("base_addr should be mapped");
+            assert_eq!(range1.start, range0.start);
+            assert_eq!(range1.end, range0.end);
 
-        // Grow the program break by a non-trival amount and observe the larger mapping.
-        let addr2 = mm
-            .set_brk(locked, &current_task, (base_addr + 24893u64).unwrap())
-            .expect("failed to grow brk");
-        assert_eq!(addr2, (base_addr + 24893u64).unwrap());
-        let (range2, _) = get_range(base_addr).expect("base_addr should be mapped");
-        assert_eq!(range2.start, base_addr);
-        assert_eq!(range2.end, addr2.round_up(*PAGE_SIZE).unwrap());
+            // Grow the program break by a non-trival amount and observe the larger mapping.
+            let addr2 = mm
+                .set_brk(locked, &current_task, (base_addr + 24893u64).unwrap())
+                .expect("failed to grow brk");
+            assert_eq!(addr2, (base_addr + 24893u64).unwrap());
+            let (range2, _) = get_range(base_addr).expect("base_addr should be mapped");
+            assert_eq!(range2.start, base_addr);
+            assert_eq!(range2.end, addr2.round_up(*PAGE_SIZE).unwrap());
 
-        // Shrink the program break and observe the smaller mapping.
-        let addr3 = mm
-            .set_brk(locked, &current_task, (base_addr + 14832u64).unwrap())
-            .expect("failed to shrink brk");
-        assert_eq!(addr3, (base_addr + 14832u64).unwrap());
-        let (range3, _) = get_range(base_addr).expect("base_addr should be mapped");
-        assert_eq!(range3.start, base_addr);
-        assert_eq!(range3.end, addr3.round_up(*PAGE_SIZE).unwrap());
+            // Shrink the program break and observe the smaller mapping.
+            let addr3 = mm
+                .set_brk(locked, &current_task, (base_addr + 14832u64).unwrap())
+                .expect("failed to shrink brk");
+            assert_eq!(addr3, (base_addr + 14832u64).unwrap());
+            let (range3, _) = get_range(base_addr).expect("base_addr should be mapped");
+            assert_eq!(range3.start, base_addr);
+            assert_eq!(range3.end, addr3.round_up(*PAGE_SIZE).unwrap());
 
-        // Shrink the program break close to zero and observe the smaller mapping.
-        let addr4 = mm
-            .set_brk(locked, &current_task, (base_addr + 3u64).unwrap())
-            .expect("failed to drastically shrink brk");
-        assert_eq!(addr4, (base_addr + 3u64).unwrap());
-        let (range4, _) = get_range(base_addr).expect("base_addr should be mapped");
-        assert_eq!(range4.start, base_addr);
-        assert_eq!(range4.end, addr4.round_up(*PAGE_SIZE).unwrap());
+            // Shrink the program break close to zero and observe the smaller mapping.
+            let addr4 = mm
+                .set_brk(locked, &current_task, (base_addr + 3u64).unwrap())
+                .expect("failed to drastically shrink brk");
+            assert_eq!(addr4, (base_addr + 3u64).unwrap());
+            let (range4, _) = get_range(base_addr).expect("base_addr should be mapped");
+            assert_eq!(range4.start, base_addr);
+            assert_eq!(range4.end, addr4.round_up(*PAGE_SIZE).unwrap());
 
-        // Shrink the program break to zero and observe that the mapping is entirely gone.
-        let addr5 = mm
-            .set_brk(locked, &current_task, base_addr)
-            .expect("failed to drastically shrink brk to zero");
-        assert_eq!(addr5, base_addr);
-        assert_eq!(get_range(base_addr), None);
+            // Shrink the program break to zero and observe that the mapping is entirely gone.
+            let addr5 = mm
+                .set_brk(locked, &current_task, base_addr)
+                .expect("failed to drastically shrink brk to zero");
+            assert_eq!(addr5, base_addr);
+            assert_eq!(get_range(base_addr), None);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_mm_exec() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mm = current_task.mm().unwrap();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mm = current_task.mm().unwrap();
 
-        let has = |addr: UserAddress| -> bool {
-            let state = mm.state.read();
-            state.mappings.get(addr).is_some()
-        };
+            let has = |addr: UserAddress| -> bool {
+                let state = mm.state.read();
+                state.mappings.get(addr).is_some()
+            };
 
-        let brk_addr = mm
-            .set_brk(locked, &current_task, UserAddress::default())
-            .expect("failed to set initial program break");
-        assert!(brk_addr > UserAddress::default());
+            let brk_addr = mm
+                .set_brk(locked, &current_task, UserAddress::default())
+                .expect("failed to set initial program break");
+            assert!(brk_addr > UserAddress::default());
 
-        // Allocate a single page of BRK space, so that the break base address is mapped.
-        let _ = mm
-            .set_brk(locked, &current_task, (brk_addr + 1u64).unwrap())
-            .expect("failed to grow program break");
-        assert!(has(brk_addr));
+            // Allocate a single page of BRK space, so that the break base address is mapped.
+            let _ = mm
+                .set_brk(locked, &current_task, (brk_addr + 1u64).unwrap())
+                .expect("failed to grow program break");
+            assert!(has(brk_addr));
 
-        let mapped_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        assert!(mapped_addr > UserAddress::default());
-        assert!(has(mapped_addr));
+            let mapped_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            assert!(mapped_addr > UserAddress::default());
+            assert!(has(mapped_addr));
 
-        let node = current_task.lookup_path_from_root(locked, "/".into()).unwrap();
-        let new_mm = mm.exec(node, ArchWidth::Arch64).expect("failed to exec memory manager");
-        *current_task.mm.as_ref().unwrap().lock() = new_mm;
+            let node = current_task.lookup_path_from_root(locked, "/".into()).unwrap();
+            let new_mm = mm.exec(node, ArchWidth::Arch64).expect("failed to exec memory manager");
+            *current_task.mm.as_ref().unwrap().lock() = new_mm;
 
-        assert!(!has(brk_addr));
-        assert!(!has(mapped_addr));
+            assert!(!has(brk_addr));
+            assert!(!has(mapped_addr));
 
-        // Check that the old addresses are actually available for mapping.
-        let brk_addr2 = map_memory(locked, &current_task, brk_addr, *PAGE_SIZE);
-        assert_eq!(brk_addr, brk_addr2);
-        let mapped_addr2 = map_memory(locked, &current_task, mapped_addr, *PAGE_SIZE);
-        assert_eq!(mapped_addr, mapped_addr2);
+            // Check that the old addresses are actually available for mapping.
+            let brk_addr2 = map_memory(locked, &current_task, brk_addr, *PAGE_SIZE);
+            assert_eq!(brk_addr, brk_addr2);
+            let mapped_addr2 = map_memory(locked, &current_task, mapped_addr, *PAGE_SIZE);
+            assert_eq!(mapped_addr, mapped_addr2);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_get_contiguous_mappings_at() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mm = current_task.mm().unwrap();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mm = current_task.mm().unwrap();
 
-        // Create four one-page mappings with a hole between the third one and the fourth one.
-        let page_size = *PAGE_SIZE as usize;
-        let addr_a = (mm.base_addr + 10 * page_size).unwrap();
-        let addr_b = (mm.base_addr + 11 * page_size).unwrap();
-        let addr_c = (mm.base_addr + 12 * page_size).unwrap();
-        let addr_d = (mm.base_addr + 14 * page_size).unwrap();
-        assert_eq!(map_memory(locked, &current_task, addr_a, *PAGE_SIZE), addr_a);
-        assert_eq!(map_memory(locked, &current_task, addr_b, *PAGE_SIZE), addr_b);
-        assert_eq!(map_memory(locked, &current_task, addr_c, *PAGE_SIZE), addr_c);
-        assert_eq!(map_memory(locked, &current_task, addr_d, *PAGE_SIZE), addr_d);
+            // Create four one-page mappings with a hole between the third one and the fourth one.
+            let page_size = *PAGE_SIZE as usize;
+            let addr_a = (mm.base_addr + 10 * page_size).unwrap();
+            let addr_b = (mm.base_addr + 11 * page_size).unwrap();
+            let addr_c = (mm.base_addr + 12 * page_size).unwrap();
+            let addr_d = (mm.base_addr + 14 * page_size).unwrap();
+            assert_eq!(map_memory(locked, &current_task, addr_a, *PAGE_SIZE), addr_a);
+            assert_eq!(map_memory(locked, &current_task, addr_b, *PAGE_SIZE), addr_b);
+            assert_eq!(map_memory(locked, &current_task, addr_c, *PAGE_SIZE), addr_c);
+            assert_eq!(map_memory(locked, &current_task, addr_d, *PAGE_SIZE), addr_d);
 
-        {
+            {
+                let mm_state = mm.state.read();
+                // Verify that requesting an unmapped address returns an empty iterator.
+                assert_equal(
+                    mm_state.get_contiguous_mappings_at((addr_a - 100u64).unwrap(), 50).unwrap(),
+                    vec![],
+                );
+                assert_equal(
+                    mm_state.get_contiguous_mappings_at((addr_a - 100u64).unwrap(), 200).unwrap(),
+                    vec![],
+                );
+
+                // Verify that requesting zero bytes returns an empty iterator.
+                assert_equal(mm_state.get_contiguous_mappings_at(addr_a, 0).unwrap(), vec![]);
+
+                // Verify errors.
+                assert_eq!(
+                    mm_state
+                        .get_contiguous_mappings_at(UserAddress::from(100), usize::MAX)
+                        .err()
+                        .unwrap(),
+                    errno!(EFAULT)
+                );
+                assert_eq!(
+                    mm_state
+                        .get_contiguous_mappings_at((mm_state.max_address() + 1u64).unwrap(), 0)
+                        .err()
+                        .unwrap(),
+                    errno!(EFAULT)
+                );
+            }
+
+            assert_eq!(mm.get_mapping_count(), 2);
             let mm_state = mm.state.read();
-            // Verify that requesting an unmapped address returns an empty iterator.
+            let (map_a, map_b) = {
+                let mut it = mm_state.mappings.iter();
+                (it.next().unwrap().1, it.next().unwrap().1)
+            };
+
             assert_equal(
-                mm_state.get_contiguous_mappings_at((addr_a - 100u64).unwrap(), 50).unwrap(),
-                vec![],
+                mm_state.get_contiguous_mappings_at(addr_a, page_size).unwrap(),
+                vec![(map_a, page_size)],
             );
+
             assert_equal(
-                mm_state.get_contiguous_mappings_at((addr_a - 100u64).unwrap(), 200).unwrap(),
-                vec![],
+                mm_state.get_contiguous_mappings_at(addr_a, page_size / 2).unwrap(),
+                vec![(map_a, page_size / 2)],
             );
 
-            // Verify that requesting zero bytes returns an empty iterator.
-            assert_equal(mm_state.get_contiguous_mappings_at(addr_a, 0).unwrap(), vec![]);
+            assert_equal(
+                mm_state.get_contiguous_mappings_at(addr_a, page_size * 3).unwrap(),
+                vec![(map_a, page_size * 3)],
+            );
 
-            // Verify errors.
-            assert_eq!(
+            assert_equal(
+                mm_state.get_contiguous_mappings_at(addr_b, page_size).unwrap(),
+                vec![(map_a, page_size)],
+            );
+
+            assert_equal(
+                mm_state.get_contiguous_mappings_at(addr_d, page_size).unwrap(),
+                vec![(map_b, page_size)],
+            );
+
+            // Verify that results stop if there is a hole.
+            assert_equal(
                 mm_state
-                    .get_contiguous_mappings_at(UserAddress::from(100), usize::MAX)
-                    .err()
+                    .get_contiguous_mappings_at((addr_a + page_size / 2).unwrap(), page_size * 10)
                     .unwrap(),
-                errno!(EFAULT)
+                vec![(map_a, page_size * 2 + page_size / 2)],
             );
-            assert_eq!(
-                mm_state
-                    .get_contiguous_mappings_at((mm_state.max_address() + 1u64).unwrap(), 0)
-                    .err()
-                    .unwrap(),
-                errno!(EFAULT)
+
+            // Verify that results stop at the last mapped page.
+            assert_equal(
+                mm_state.get_contiguous_mappings_at(addr_d, page_size * 10).unwrap(),
+                vec![(map_b, page_size)],
             );
-        }
-
-        assert_eq!(mm.get_mapping_count(), 2);
-        let mm_state = mm.state.read();
-        let (map_a, map_b) = {
-            let mut it = mm_state.mappings.iter();
-            (it.next().unwrap().1, it.next().unwrap().1)
-        };
-
-        assert_equal(
-            mm_state.get_contiguous_mappings_at(addr_a, page_size).unwrap(),
-            vec![(map_a, page_size)],
-        );
-
-        assert_equal(
-            mm_state.get_contiguous_mappings_at(addr_a, page_size / 2).unwrap(),
-            vec![(map_a, page_size / 2)],
-        );
-
-        assert_equal(
-            mm_state.get_contiguous_mappings_at(addr_a, page_size * 3).unwrap(),
-            vec![(map_a, page_size * 3)],
-        );
-
-        assert_equal(
-            mm_state.get_contiguous_mappings_at(addr_b, page_size).unwrap(),
-            vec![(map_a, page_size)],
-        );
-
-        assert_equal(
-            mm_state.get_contiguous_mappings_at(addr_d, page_size).unwrap(),
-            vec![(map_b, page_size)],
-        );
-
-        // Verify that results stop if there is a hole.
-        assert_equal(
-            mm_state
-                .get_contiguous_mappings_at((addr_a + page_size / 2).unwrap(), page_size * 10)
-                .unwrap(),
-            vec![(map_a, page_size * 2 + page_size / 2)],
-        );
-
-        // Verify that results stop at the last mapped page.
-        assert_equal(
-            mm_state.get_contiguous_mappings_at(addr_d, page_size * 10).unwrap(),
-            vec![(map_b, page_size)],
-        );
+        });
     }
 
     #[::fuchsia::test]
