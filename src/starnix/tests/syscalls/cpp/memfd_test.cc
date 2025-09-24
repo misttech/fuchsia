@@ -17,6 +17,7 @@
 
 #include "fault_test.h"
 #include "fault_test_suite.h"
+#include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 #if !defined(__NR_memfd_create)
 #if defined(__x86_64__)
@@ -34,12 +35,24 @@
 #define MFD_ALLOW_SEALING 0x0002U
 #endif
 
+#if !defined(MFD_NOEXEC_SEAL)
+#define MFD_NOEXEC_SEAL 0x0008U
+#endif
+
+#if !defined(MFD_EXEC)
+#define MFD_EXEC 0x0010U
+#endif
+
 #if !defined(F_SEAL_FUTURE_WRITE)
 #define F_SEAL_FUTURE_WRITE 0x0010
 #endif
 
 #if !defined(F_ADD_SEALS)
 #define F_ADD_SEALS 1033
+#endif
+
+#if !defined(F_SEAL_EXEC)
+#define F_SEAL_EXEC 0x0020
 #endif
 
 namespace {
@@ -96,6 +109,54 @@ TEST_F(MemfdTest, MapWritableThenSealFutureWrite) {
 
   // `F_SEAL_FUTURE_WRITE` should still succeed when there are writable mappings.
   ASSERT_EQ(fcntl(fd_.get(), F_ADD_SEALS, F_SEAL_FUTURE_WRITE), 0);
+}
+
+TEST_F(MemfdTest, ChmodWithNOEXEC) {
+  auto fd = fbl::unique_fd(
+      static_cast<int>(syscall(__NR_memfd_create, "memfd_no_exec", MFD_NOEXEC_SEAL)));
+
+  // Setting the memfd that has the exec seal to executable should fail.
+  ASSERT_EQ(fchmod(fd.get(), S_IRWXU | S_IRWXG | S_IRWXO), -1);
+
+  // Setting the memfd that does not have the exec seal to executable should succeed.
+  ASSERT_EQ(fchmod(fd_.get(), S_IRWXU | S_IRWXG | S_IRWXO), 0);
+}
+
+TEST_F(MemfdTest, MapExecutableWithNOEXEC) {
+  auto fd = fbl::unique_fd(
+      static_cast<int>(syscall(__NR_memfd_create, "memfd_no_exec", MFD_NOEXEC_SEAL)));
+
+  // Map the fd with the noexec seal.
+  addr_ = mmap(0, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd.get(), 0);
+  ASSERT_EQ(addr_, MAP_FAILED);
+
+  // Map the default memfd that does not have the exec seal.
+  addr_ = mmap(0, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd_.get(), 0);
+  ASSERT_NE(addr_, MAP_FAILED);
+}
+
+TEST_F(MemfdTest, MapNonExecutableWithNOEXEC) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "This test does not work on host in CQ";
+  }
+  auto fd = fbl::unique_fd(
+      static_cast<int>(syscall(__NR_memfd_create, "memfd_no_exec", MFD_NOEXEC_SEAL)));
+  addr_ = mmap(0, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0);
+  ASSERT_NE(addr_, MAP_FAILED);
+}
+
+TEST_F(MemfdTest, CreateExecutableThenSealThenMap) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "This test does not work on host in CQ";
+  }
+  auto fd = fbl::unique_fd(
+      static_cast<int>(syscall(__NR_memfd_create, "memfd_no_exec", MFD_EXEC | MFD_ALLOW_SEALING)));
+  ASSERT_EQ(fcntl(fd.get(), F_ADD_SEALS, F_SEAL_EXEC), 0);
+
+  addr_ = mmap(0, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd.get(), 0);
+  ASSERT_EQ(addr_, MAP_FAILED);
+
+  ASSERT_EQ(fchmod(fd.get(), S_IRWXU | S_IRWXG | S_IRWXO), -1);
 }
 
 INSTANTIATE_TEST_SUITE_P(MemfdFaultTest, FaultFileTest, ::testing::Values(CreateMemFd));

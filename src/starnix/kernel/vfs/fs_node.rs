@@ -44,6 +44,7 @@ use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
+use starnix_uapi::seal_flags::SealFlags;
 use starnix_uapi::signals::SIGXFSZ;
 use starnix_uapi::{
     FALLOC_FL_COLLAPSE_RANGE, FALLOC_FL_INSERT_RANGE, FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE,
@@ -2063,6 +2064,19 @@ impl FsNode {
         let mut new_info = info.clone();
         mutator(&mut new_info)?;
 
+        let new_access = new_info.mode.user_access()
+            | new_info.mode.group_access()
+            | new_info.mode.other_access();
+
+        if new_access.intersects(Access::EXEC) {
+            let write_guard_state = self.write_guard_state.lock();
+            if let Ok(seals) = write_guard_state.get_seals() {
+                if seals.contains(SealFlags::NO_EXEC) {
+                    return error!(EPERM);
+                }
+            }
+        }
+
         // `mutator`s should not update the attribute change time, which is managed by this API.
         assert_eq!(info.time_status_change, new_info.time_status_change);
         if *info == new_info {
@@ -2714,6 +2728,7 @@ fn check_access(
     } else {
         mode.other_access()
     };
+
     if granted.contains(access) {
         return Ok(());
     }

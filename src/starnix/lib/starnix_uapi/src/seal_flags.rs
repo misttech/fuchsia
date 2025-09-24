@@ -15,5 +15,6 @@ bitflags! {
       const GROW = uapi::F_SEAL_GROW;
       const SHRINK = uapi::F_SEAL_SHRINK;
       const SEAL = uapi::F_SEAL_SEAL;
+      const NO_EXEC = uapi::F_SEAL_EXEC;
     }
 }

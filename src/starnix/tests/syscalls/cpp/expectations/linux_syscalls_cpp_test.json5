@@ -84,6 +84,8 @@
                 "InputTest.DevicePropertiesMatchTouchProperties",
                 "InputTest.DeviceCanBeRegisteredWithEpoll",
                 "InputTest.DevicePropertiesMatchMouseWheelProperties",
+                "MemfdTest.CreateExecutableThenSealThenMap",
+                "MemfdTest.MapNonExecutableWithNOEXEC",
 
                 // TODO(https://fxbug.dev/436908596)
                 "Mmap.FixedAddressTooLow",

@@ -1495,9 +1495,17 @@ impl FileObjectState {
         self.flags.lock().can_write()
     }
 
-    /// Returns false if the file was opened from a "noexec" mount.
+    /// Returns false if the file is not allowed to be executed.
     pub fn can_exec(&self) -> bool {
-        !self.name.to_passive().mount.flags().contains(MountFlags::NOEXEC)
+        let mounted_no_exec = self.name.to_passive().mount.flags().contains(MountFlags::NOEXEC);
+        let no_exec_seal = self
+            .node()
+            .write_guard_state
+            .lock()
+            .get_seals()
+            .map(|seals| seals.contains(SealFlags::NO_EXEC))
+            .unwrap_or(false);
+        !(mounted_no_exec || no_exec_seal)
     }
 
     // Notifies watchers on the current node and its parent about an event.

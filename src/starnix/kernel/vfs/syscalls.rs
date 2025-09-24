@@ -63,9 +63,9 @@ use starnix_uapi::{
     F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_OWNER_PGRP, F_OWNER_PID,
     F_OWNER_TID, F_SETFD, F_SETFL, F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN,
     F_SETOWN_EX, F_SETSIG, FIOCLEX, FIONCLEX, IN_CLOEXEC, IN_NONBLOCK, MFD_ALLOW_SEALING,
-    MFD_CLOEXEC, MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB, MFD_NOEXEC_SEAL, NAME_MAX, O_CLOEXEC,
-    O_CREAT, O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN, POLLOUT,
-    POLLPRI, POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED,
+    MFD_CLOEXEC, MFD_EXEC, MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB, MFD_NOEXEC_SEAL, NAME_MAX,
+    O_CLOEXEC, O_CREAT, O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN,
+    POLLOUT, POLLPRI, POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED,
     POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL, POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL,
     POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK, TFD_TIMER_ABSTIME,
     TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE, aio_context_t, errno,
@@ -1825,7 +1825,12 @@ pub fn sys_memfd_create(
     const HUGE_SHIFTED_MASK: u32 = MFD_HUGE_MASK << MFD_HUGE_SHIFT;
 
     if flags
-        & !(MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_HUGETLB | HUGE_SHIFTED_MASK | MFD_NOEXEC_SEAL)
+        & !(MFD_CLOEXEC
+            | MFD_ALLOW_SEALING
+            | MFD_HUGETLB
+            | HUGE_SHIFTED_MASK
+            | MFD_NOEXEC_SEAL
+            | MFD_EXEC)
         != 0
     {
         track_stub!(TODO("https://fxbug.dev/322875665"), "memfd_create unknown flags", flags);
@@ -1841,15 +1846,18 @@ pub fn sys_memfd_create(
         None
     };
 
-    if flags & !MFD_NOEXEC_SEAL != 0 {
-        track_stub!(TODO("https://fxbug.dev/408561758"), "MFD_NOEXEC_SEAL");
-    }
-
     let name = current_task
         .read_c_string_to_vec(user_name, MEMFD_NAME_MAX_LEN)
         .map_err(|e| if e == ENAMETOOLONG { errno!(EINVAL) } else { e })?;
 
-    let seals = if flags & (MFD_ALLOW_SEALING | MFD_NOEXEC_SEAL) != 0 {
+    // This behavior matches MEMFD_NOEXEC_SCOPE_EXEC, which states:
+    //   > memfd_create() without MFD_EXEC nor MFD_NOEXEC_SEAL acts like MFD_EXEC was set.
+    //
+    // This behavior can be changed on Linux via sysctl vm.memfd_noexec, which is pid namespaced.
+    // We do not currently support changing this behavior.
+    let seals = if flags & MFD_NOEXEC_SEAL != 0 {
+        SealFlags::NO_EXEC
+    } else if flags & MFD_ALLOW_SEALING != 0 {
         SealFlags::empty()
     } else {
         // Forbid sealing, by sealing the seal operation.
