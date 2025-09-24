@@ -45,19 +45,22 @@ pub struct MonitorTool {
 
 type Cache = Arc<Mutex<HashMap<String, serde_json::Value>>>;
 
-async fn start_server(addr: SocketAddr, cmd: StartCommand) -> anyhow::Result<()> {
+async fn start_server(
+    context: &EnvironmentContext,
+    addr: SocketAddr,
+    cmd: StartCommand,
+) -> anyhow::Result<()> {
     let cache = Arc::new(Mutex::new(HashMap::new()));
 
     let cache_for_task = cache.clone();
+    let context_clone = context.clone();
     tokio::spawn(async move {
         loop {
+            let ctx = context_clone.clone();
             let cmd_clone = cmd.clone();
-            let res = spawn_blocking(|| {
-                let context = ffx_config::global_env_context()
-                    .context("loading global environment context")
-                    .unwrap();
+            let res = spawn_blocking(move || {
                 fuchsia_async::LocalExecutor::new()
-                    .run_singlethreaded(collect_target_status(&context, cmd_clone))
+                    .run_singlethreaded(collect_target_status(&ctx, cmd_clone))
             })
             .await;
 
@@ -173,7 +176,7 @@ impl FfxMain for MonitorTool {
                 writeln!(writer, "Starting server on http://{} with pid {}", addr, pid)
                     .context("writing start message")?;
 
-                start_server(addr, cmd).await.map_err(fho::Error::from)
+                start_server(&self.context, addr, cmd).await.map_err(fho::Error::from)
             }
             SubCommand::Stop(_) => {
                 let pid_str = fs::read_to_string(&pid_file_path).context("reading pid file")?;
