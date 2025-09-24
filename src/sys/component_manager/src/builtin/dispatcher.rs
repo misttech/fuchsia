@@ -18,6 +18,7 @@ use sandbox::{Dict, Router};
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
+use vfs::ExecutionScope;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
@@ -55,7 +56,7 @@ pub struct Dispatcher {
     capability_store_proxy: fsandbox::CapabilityStoreProxy,
     sandbox_retriever_proxy: finternal::ComponentSandboxRetrieverProxy,
     config: Arc<Config>,
-    task_group: cm_util::TaskGroup,
+    scope: ExecutionScope,
 }
 
 impl Dispatcher {
@@ -130,14 +131,14 @@ impl Dispatcher {
             capability_store_proxy,
             sandbox_retriever_proxy,
             config,
-            task_group: cm_util::TaskGroup::new(),
+            scope: ExecutionScope::new(),
         });
 
         let mut fs = server::ServiceFs::new();
         fs.dir("svc").add_fidl_service(move |stream: fsandbox::DictionaryRouterRequestStream| {
             let self_clone = self_.clone();
             let logger = logger.clone();
-            self_.task_group.spawn(async move {
+            self_.scope.spawn(async move {
                 if let Err(err) = self_clone.handle_router_stream(stream).await {
                     logger.log(err);
                 }
@@ -337,7 +338,7 @@ impl Dispatcher {
             .await
             .expect("FIDL error talking to ourselves")
             .expect("failed to start child");
-        self.task_group.spawn(async move {
+        self.scope.spawn(async move {
             let mut event_stream = execution_controller_proxy.take_event_stream();
             match event_stream.next().await {
                 Some(Ok(fcomponent::ExecutionControllerEvent::OnStop { .. })) => {

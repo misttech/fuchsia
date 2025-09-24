@@ -246,8 +246,7 @@ async fn get_resolved_declaration(
         fidl::endpoints::create_endpoints::<fsys::ManifestBytesIteratorMarker>();
 
     // Attach the iterator task to the scope root.
-    let task_group = scope_root.nonblocking_task_group();
-    task_group.spawn(serve_manifest_bytes_iterator(server_end, bytes));
+    scope_root.execution_scope.spawn(serve_manifest_bytes_iterator(server_end, bytes));
 
     Ok(client_end)
 }
@@ -326,8 +325,7 @@ async fn resolve_declaration(
         fidl::endpoints::create_endpoints::<fsys::ManifestBytesIteratorMarker>();
 
     // Attach the iterator task to the scope root.
-    let task_group = scope_root.nonblocking_task_group();
-    task_group.spawn(serve_manifest_bytes_iterator(server_end, bytes));
+    scope_root.execution_scope.spawn(serve_manifest_bytes_iterator(server_end, bytes));
     Ok(client_end)
 }
 
@@ -486,7 +484,7 @@ async fn connect_to_storage_admin(
         .ok_or(fsys::ConnectToStorageAdminError::InstanceNotFound)?;
 
     let storage_admin = StorageAdmin::new();
-    let task_group = instance.nonblocking_task_group();
+    let scope = instance.execution_scope.clone();
 
     let storage_decl = {
         let state = instance.lock_state().await;
@@ -503,7 +501,7 @@ async fn connect_to_storage_admin(
             .clone()
     };
 
-    task_group.spawn(async move {
+    scope.spawn(async move {
         if let Err(error) =
             storage_admin.serve(storage_decl, instance.as_weak(), server_end.into_stream()).await
         {
@@ -545,8 +543,7 @@ async fn get_all_instances(
         fidl::endpoints::create_endpoints::<fsys::InstanceIteratorMarker>();
 
     // Attach the iterator task to the scope root.
-    let task_group = scope_root.nonblocking_task_group();
-    task_group.spawn(serve_instance_iterator(server_end, instances));
+    scope_root.execution_scope.spawn(serve_instance_iterator(server_end, instances));
 
     Ok(client_end)
 }
@@ -832,7 +829,13 @@ mod tests {
     async fn override_structured_config_test() {
         let (config, config_values, checksum) = new_config_decl();
 
-        let components = vec![("root", ComponentDeclBuilder::new().config(config).build())];
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new().child(ChildBuilder::new().name("top").eager()).build(),
+            ),
+            ("top", ComponentDeclBuilder::new().config(config).build()),
+        ];
 
         let test = TestEnvironmentBuilder::new()
             .set_components(components)
@@ -844,7 +847,7 @@ mod tests {
 
         test.model.start().await;
 
-        let config = query.get_structured_config("./").await.unwrap().unwrap();
+        let config = query.get_structured_config("top").await.unwrap().unwrap();
 
         // Component should have one config field with right value
         assert_eq!(config.fields.len(), 1);
@@ -859,7 +862,7 @@ mod tests {
         // Override the config field value
         config_override_proxy
             .set_structured_config(
-                "./",
+                "top",
                 &[fcdecl::ConfigOverride {
                     key: Some("my_field".to_string()),
                     value: Some(fcdecl::ConfigValue::Single(fcdecl::ConfigSingleValue::Bool(
@@ -872,9 +875,10 @@ mod tests {
             .unwrap()
             .unwrap();
         // Unresolve and restart the component so that the configuration override will take effect.
-        test.model.root().unresolve().await.unwrap();
-        test.model.root().ensure_started(&StartReason::Root).await.unwrap();
-        let config = query.get_structured_config("./").await.unwrap().unwrap();
+        let top = test.model.root().find_and_maybe_resolve(&"top".parse().unwrap()).await.unwrap();
+        top.unresolve().await.unwrap();
+        top.ensure_started(&StartReason::Root).await.unwrap();
+        let config = query.get_structured_config("top").await.unwrap().unwrap();
 
         // Component should have one config field with the override value
         assert_eq!(config.fields.len(), 1);

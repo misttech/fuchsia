@@ -41,6 +41,7 @@ use runner::StartInfo;
 use runner::component::StopInfo;
 use std::path::Path;
 use std::sync::Arc;
+use vfs::execution_scope::ExecutionScope;
 use zx::{self as zx, AsHandleRef, HandleBased};
 use {
     fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
@@ -108,6 +109,9 @@ pub struct ElfRunner {
 
     /// Tracks reporting memory changes to an observer.
     memory_reporter: MemoryReporter,
+
+    /// Tasks that support the runner are launched in this scope
+    scope: ExecutionScope,
 }
 
 /// The job for a component.
@@ -139,9 +143,18 @@ impl ElfRunner {
         utc_clock: Option<Arc<UtcClock>>,
         crash_records: CrashRecords,
     ) -> ElfRunner {
-        let components = ComponentSet::new();
+        let scope = ExecutionScope::new();
+        let components = ComponentSet::new(scope.clone());
         let memory_reporter = MemoryReporter::new(components.clone());
-        ElfRunner { job, launcher_connector, utc_clock, crash_records, components, memory_reporter }
+        ElfRunner {
+            job,
+            launcher_connector,
+            utc_clock,
+            crash_records,
+            components,
+            memory_reporter,
+            scope,
+        }
     }
 
     /// Returns a UTC clock handle.
@@ -315,6 +328,7 @@ impl ElfRunner {
         let job = self.create_job(&program_config)?;
 
         crash_handler::run_exceptions_server(
+            &self.scope,
             job.top(),
             moniker.clone(),
             resolved_url.clone(),
@@ -404,7 +418,7 @@ impl ElfRunner {
         );
 
         // Add stdout and stderr handles that forward to syslog.
-        let (stdout_and_stderr_tasks, stdout_and_stderr_handles) =
+        let (local_scope, stdout_and_stderr_handles) =
             bind_streams_to_syslog(&ns, program_config.stdout_sink, program_config.stderr_sink);
         handle_infos.extend(stdout_and_stderr_handles);
 
@@ -546,7 +560,7 @@ impl ElfRunner {
             process,
             lifecycle_client,
             program_config.main_process_critical,
-            stdout_and_stderr_tasks,
+            local_scope,
             resolved_url.clone(),
             outgoing_directory,
             program_config,
@@ -577,7 +591,7 @@ impl ScopedElfRunner {
     pub fn serve(&self, mut stream: fcrunner::ComponentRunnerRequestStream) {
         let runner = self.runner.clone();
         let checker = self.checker.clone();
-        fasync::Task::spawn(async move {
+        self.scope().spawn(async move {
             while let Ok(Some(request)) = stream.try_next().await {
                 match request {
                     fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } => {
@@ -588,8 +602,7 @@ impl ScopedElfRunner {
                     }
                 }
             }
-        })
-        .detach();
+        });
     }
 
     pub async fn start(
@@ -598,6 +611,10 @@ impl ScopedElfRunner {
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
     ) {
         start(&self.runner, self.checker.clone(), start_info, server_end).await
+    }
+
+    pub(crate) fn scope(&self) -> &ExecutionScope {
+        &self.runner.scope
     }
 }
 
@@ -667,7 +684,7 @@ async fn start(
     let (server_stream, control) = server_end.into_stream_and_control_handle();
 
     // Spawn a future that watches for the process to exit
-    fasync::Task::spawn({
+    runner.scope.spawn({
         let resolved_url = resolved_url.clone();
         async move {
             fasync::OnSignals::new(&proc_copy.as_handle_ref(), zx::Signals::PROCESS_TERMINATED)
@@ -703,8 +720,7 @@ async fn start(
             };
             termination_tx.send(stop_info).unwrap_or_else(|_| warn!("error sending done signal"));
         }
-    })
-    .detach();
+    });
 
     let mut elf_component = elf_component;
     runner.components.clone().add(&mut elf_component);
@@ -714,7 +730,7 @@ async fn start(
     // component's main process exits. The controller then sets the
     // epitaph on the controller channel, closes it, and stops
     // serving the protocol.
-    fasync::Task::spawn(async move {
+    runner.scope.spawn(async move {
         if let Some(component_diagnostics) = component_diagnostics {
             control.send_on_publish_diagnostics(component_diagnostics).unwrap_or_else(
                 |error| warn!(url:% = resolved_url, error:%; "sending diagnostics failed"),
@@ -723,8 +739,7 @@ async fn start(
         runner::component::Controller::new(elf_component, server_stream, control)
             .serve(termination_fn)
             .await;
-    })
-    .detach();
+    });
 }
 
 #[cfg(test)]
@@ -949,7 +964,7 @@ mod tests {
             process,
             lifecycle_client,
             critical,
-            Vec::new(),
+            ExecutionScope::new(),
             "".to_string(),
             None,
             Default::default(),

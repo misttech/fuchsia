@@ -36,7 +36,6 @@ use cm_rust::{
     UseStorageDecl,
 };
 use cm_types::{Name, Url};
-use cm_util::TaskGroup;
 use component_id_index::InstanceId;
 use config_encoder::ConfigFields;
 use directed_graph::DirectedGraph;
@@ -319,11 +318,8 @@ pub struct ComponentInstance {
     state: Mutex<InstanceState>,
     /// Actions on the instance that must eventually be completed.
     actions: ActionsManager,
-    /// Tasks owned by this component instance that will be cancelled if the component is
-    /// destroyed.
-    nonblocking_task_group: TaskGroup,
     /// The ExecutionScope for this component. Pseudo directories should be hosted with this scope
-    /// to tie their life-time to that of the component. Tasks can block component destruction by
+    /// to tie their lifetime to that of the component. Tasks can block component destruction by
     /// using `active_guard()`.
     pub execution_scope: ExecutionScope,
 }
@@ -390,7 +386,6 @@ impl ComponentInstance {
             state: Mutex::new(InstanceState::Unresolved(UnresolvedInstanceState::new(input))),
             actions: ActionsManager::new(),
             hooks,
-            nonblocking_task_group: TaskGroup::new(),
             persistent_storage,
             execution_scope,
         });
@@ -407,12 +402,6 @@ impl ComponentInstance {
     /// Locks and returns the instance's action set.
     pub fn actions(&self) -> &ActionsManager {
         &self.actions
-    }
-
-    /// Returns a group for this instance where tasks can be run scoped to this instance. Tasks run
-    /// in this group will be cancelled when the component is destroyed.
-    pub fn nonblocking_task_group(&self) -> TaskGroup {
-        self.nonblocking_task_group.clone()
     }
 
     /// Returns true if the component is started, i.e. when it has a runtime.

@@ -6,11 +6,11 @@ use super::config::StreamSink;
 use super::logger::{LogWriter, OutputLevel, SyslogWriter, create_namespace_logger};
 use diagnostics_log::Publisher;
 use fuchsia_runtime::{HandleInfo, HandleType};
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use log::warn;
 use namespace::Namespace;
 use socket_parsing::{NewlineChunker, NewlineChunkerError};
-use std::future::Future;
+use vfs::ExecutionScope;
 use zx::HandleBased;
 use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
@@ -35,8 +35,8 @@ pub fn bind_streams_to_syslog(
     ns: &Namespace,
     stdout_sink: StreamSink,
     stderr_sink: StreamSink,
-) -> (Vec<fasync::Task<()>>, Vec<fproc::HandleInfo>) {
-    let mut tasks: Vec<fasync::Task<()>> = Vec::new();
+) -> (ExecutionScope, Vec<fproc::HandleInfo>) {
+    let scope = ExecutionScope::new();
     let mut handles: Vec<fproc::HandleInfo> = Vec::new();
 
     let mut logger = None;
@@ -49,7 +49,7 @@ pub fn bind_streams_to_syslog(
             handles.push(handle_info);
 
             if let Some(logger) = logger.get_or_insert_with(|| create_namespace_logger(ns)) {
-                tasks.push(forward_socket_to_syslog(logger.clone(), socket, level));
+                scope.spawn(forward_socket_to_syslog(logger.clone(), socket, level));
             }
         }
     };
@@ -57,23 +57,21 @@ pub fn bind_streams_to_syslog(
     forward_stream(stdout_sink, STDOUT_FD, OutputLevel::Info);
     forward_stream(stderr_sink, STDERR_FD, OutputLevel::Warn);
 
-    (tasks, handles)
+    (scope, handles)
 }
 
 fn forward_socket_to_syslog(
     logger: impl Future<Output = Option<Publisher>> + Send + 'static,
     socket: fasync::Socket,
     level: OutputLevel,
-) -> fasync::Task<()> {
-    let task = fasync::Task::spawn(async move {
+) -> impl Future<Output = ()> + 'static {
+    async move {
         let Some(logger) = logger.await else { return };
         let mut writer = SyslogWriter::new(logger, level);
         if let Err(error) = drain_lines(socket, &mut writer).await {
             warn!(error:%; "Draining output stream failed");
         }
-    });
-
-    task
+    }
 }
 
 fn new_socket_bound_to_fd(fd: i32) -> Result<(fasync::Socket, fproc::HandleInfo), zx::Status> {

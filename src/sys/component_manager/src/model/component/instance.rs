@@ -414,7 +414,7 @@ impl ResolvedInstanceState {
         let program_escrow = if decl.get_runner().is_some() {
             let escrow = escrow::Actor::new(
                 component.moniker.clone(),
-                &component.nonblocking_task_group(),
+                &component.execution_scope,
                 component.as_weak(),
             );
             Some(escrow)
@@ -563,7 +563,7 @@ impl ResolvedInstanceState {
                 subscriber: component.moniker.clone(),
                 route_metadata,
                 sender,
-                weak_task_group: component.nonblocking_task_group().as_weak(),
+                weak_scope: component.execution_scope.as_weak(),
                 filter: use_event_stream_decl.filter.clone(),
             });
             component.hooks.install(capability_requested_hook.hooks());
@@ -987,7 +987,7 @@ impl ResolvedInstanceState {
         if let Some(controller) = controller {
             let stream = controller.into_stream();
             child
-                .nonblocking_task_group()
+                .execution_scope
                 .spawn(controller::run_controller(WeakComponentInstance::new(&child), stream));
         }
         Ok(child)
@@ -1316,11 +1316,11 @@ impl ProgramRuntime {
             terminated_fut.await;
             if let Ok(component) = component.upgrade() {
                 let stop_nf = component.actions().register_no_wait(StopAction::new(false)).await;
-                component.nonblocking_task_group().spawn(fasync::Task::spawn(async move {
+                component.execution_scope.spawn(async move {
                     let _ = stop_nf.await.map_err(
                         |err| warn!(err:%; "Watching for program termination: Stop failed"),
                     );
-                }));
+                });
             }
         });
         Self { program, exit_listener }

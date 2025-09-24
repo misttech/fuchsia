@@ -14,7 +14,6 @@ use ::routing::rights::Rights;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
 use cm_types::RelativePath;
-use cm_util::WeakTaskGroup;
 use fidl::AsyncChannel;
 use fidl::endpoints::{ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
@@ -32,7 +31,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
-use vfs::execution_scope::ExecutionScope;
+use vfs::execution_scope::{ExecutionScope, WeakExecutionScope};
 use vfs::path::Path;
 use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -42,8 +41,8 @@ pub fn take_handle_as_stream<P: ProtocolMarker>(channel: zx::Channel) -> P::Requ
     P::RequestStream::from_channel(channel)
 }
 
-/// Waits for a new message on a receiver, and launches a new async task on a `WeakTaskGroup` to
-/// handle each new message from the receiver.
+/// Waits for a new message on a receiver, and launches a new async task on a `WeakExecutionScope`
+/// to handle each new message from the receiver.
 #[derive(Clone)]
 pub struct LaunchTaskOnReceive {
     capability_source: CapabilitySource,
@@ -58,10 +57,11 @@ pub struct LaunchTaskOnReceive {
             + Send
             + 'static,
     >,
-    // Note that we explicitly need a `WeakTaskGroup` because if our `run` call is scheduled on the
-    // same task group as we'll be launching tasks on then if we held a strong reference we would
-    // inadvertently give the task group a strong reference to itself and make it un-droppable.
-    task_group: WeakTaskGroup,
+    // Note that we explicitly need a WeakExecutionScope because if our `run` call is scheduled on
+    // the same task group as we'll be launching tasks on then if we held a strong reference we
+    // would inadvertently give the task group a strong reference to itself and make it
+    // un-droppable.
+    scope: WeakExecutionScope,
     policy: Option<GlobalPolicyChecker>,
     task_name: String,
 }
@@ -79,7 +79,7 @@ fn cm_unexpected() -> RouterError {
 impl LaunchTaskOnReceive {
     pub fn new(
         capability_source: CapabilitySource,
-        task_group: WeakTaskGroup,
+        scope: WeakExecutionScope,
         task_name: impl Into<String>,
         policy: Option<GlobalPolicyChecker>,
         task_to_launch: Arc<
@@ -94,7 +94,7 @@ impl LaunchTaskOnReceive {
                 + 'static,
         >,
     ) -> Self {
-        Self { capability_source, task_to_launch, task_group, policy, task_name: task_name.into() }
+        Self { capability_source, task_to_launch, scope, policy, task_name: task_name.into() }
     }
 
     pub fn into_sender(self: Arc<Self>, target: WeakComponentInstance) -> Connector {
@@ -262,7 +262,7 @@ impl LaunchTaskOnReceive {
 
         let fut = (self.task_to_launch)(channel, instance, relative_path, flags);
         let task_name = self.task_name.clone();
-        self.task_group.spawn(async move {
+        self.scope.spawn(async move {
             if let Err(error) = fut.await {
                 warn!(error:%; "{} failed", task_name);
             }
@@ -279,7 +279,7 @@ impl LaunchTaskOnReceive {
         let weak_component = WeakComponentInstance::new(component);
         LaunchTaskOnReceive::new(
             capability_source.clone(),
-            component.nonblocking_task_group().as_weak(),
+            component.execution_scope.as_weak(),
             "framework hook dispatcher",
             Some(component.context.policy().clone()),
             Arc::new(move |channel, target, _, _| {
@@ -297,7 +297,7 @@ impl LaunchTaskOnReceive {
                                     fio::Flags::PROTOCOL_SERVICE.to_object_request(channel);
                                 provider
                                     .open(
-                                        component.nonblocking_task_group(),
+                                        component.execution_scope.clone(),
                                         OpenRequest::new(
                                             component.execution_scope.clone(),
                                             fio::Flags::PROTOCOL_SERVICE,
