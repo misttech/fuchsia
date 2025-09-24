@@ -30,14 +30,11 @@ use fxfs::object_store::{
 };
 use fxfs::round::{round_down, round_up};
 use fxfs::serialized_types::BlobMetadata;
-use lazy_static::lazy_static;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use zx::{self as zx, HandleBased as _, Status};
 
-lazy_static! {
-    static ref RING_BUFFER_SIZE: u64 = 64 * (zx::system_get_page_size() as u64);
-}
+static RING_BUFFER_SIZE: LazyLock<u64> = LazyLock::new(|| 64 * (zx::system_get_page_size() as u64));
 
 const PAYLOAD_BUFFER_FLUSH_THRESHOLD: usize = 131_072; /* 128 KiB */
 

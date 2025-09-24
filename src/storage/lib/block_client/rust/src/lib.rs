@@ -16,7 +16,6 @@ use fidl_fuchsia_hardware_block_volume::VolumeProxy;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::executor::block_on;
-use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
@@ -24,8 +23,8 @@ use std::mem::MaybeUninit;
 use std::num::NonZero;
 use std::ops::{DerefMut, Range};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker};
 use zx::sys::zx_handle_t;
 use zx::{self as zx, HandleBased as _};
@@ -70,9 +69,8 @@ fn opcode_str(opcode: u8) -> &'static str {
 // Generates a trace ID that will be unique across the system (as long as |request_id| isn't
 // reused within this process).
 fn generate_trace_flow_id(request_id: u32) -> u64 {
-    lazy_static! {
-        static ref SELF_HANDLE: zx_handle_t = fuchsia_runtime::process_self().raw_handle();
-    };
+    static SELF_HANDLE: LazyLock<zx_handle_t> =
+        LazyLock::new(|| fuchsia_runtime::process_self().raw_handle());
     *SELF_HANDLE as u64 + (request_id as u64) << 32
 }
 
