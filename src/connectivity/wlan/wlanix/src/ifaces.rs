@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::pin::pin;
 use std::sync::Arc;
-use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 use wlan_common::bss::BssDescription;
 use wlan_common::scan::{Compatibility, CompatibilityExt as _};
@@ -265,22 +264,25 @@ pub(crate) enum ScanEnd {
     Cancelled,
 }
 
-#[derive(Copy, Clone, Debug, Display, Eq, PartialEq, Ord, PartialOrd, Hash, EnumIter)]
-#[repr(u32)] // For use with discrete_states_from_enum.
+#[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
+#[repr(u8)]
 enum StaIfacePowerLevel {
     Suspended = 0,
     Normal = 1,
     NoPowerSavings = 2,
 }
 
-static STA_IFACE_POWER_LEVELS: power_observability_state_recorder::DiscreteStates =
-    power_observability_state_recorder::discrete_states_from_enum!(StaIfacePowerLevel);
+impl From<StaIfacePowerLevel> for u64 {
+    fn from(value: StaIfacePowerLevel) -> Self {
+        value as Self
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct PowerState {
     suspend_mode_enabled: bool,
     power_save_enabled: bool,
-    recorder: Option<power_observability_state_recorder::StateRecorder>,
+    recorder: Option<power_observability_state_recorder::StateRecorder<StaIfacePowerLevel>>,
 }
 
 #[async_trait]
@@ -342,11 +344,6 @@ impl SmeClientIface {
         telemetry_sender: TelemetrySender,
     ) -> Self {
         let element_name = format!("wlanix-sta-iface-{iface_id}-supplicant-power");
-        let state_metadata = power_observability_state_recorder::DiscreteStateMetadata {
-            name: power_observability_state_recorder::lazy_static_cstr(&element_name),
-            trace_category: power_observability_state_recorder::lazy_static_cstr("power"),
-            states: &STA_IFACE_POWER_LEVELS,
-        };
 
         // As an initial guess as to an appropriate number, keep up to 100 samples in the circular
         // buffer for power observability purposes.
@@ -356,9 +353,10 @@ impl SmeClientIface {
         // don't rely on this, it's only for reporting here, so even if it's wrong it won't
         // cause logic errors. So far, this is a safe assumption based on the drivers we have.
         // TODO(https://fxbug.dev/378878423): Read this from the driver at initialization.
-        let initial_level = StaIfacePowerLevel::NoPowerSavings as u32;
+        let initial_level = StaIfacePowerLevel::NoPowerSavings;
         let recorder = match power_observability_state_recorder::StateRecorder::new(
-            state_metadata,
+            element_name,
+            power_observability_state_recorder::lazy_static_cstr("power").unwrap(),
             initial_level,
             NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
         ) {
@@ -399,7 +397,7 @@ impl SmeClientIface {
     /// interfaces exist.
     async fn update_power_level(&self, new_level: StaIfacePowerLevel) -> Result<(), Error> {
         if let Some(recorder) = &mut self.power_state.lock().await.recorder {
-            recorder.record_transition(new_level as u32);
+            recorder.record_transition(new_level);
             self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
                 iface_id: self.iface_id,
                 iface_power_level: match new_level {
@@ -1200,16 +1198,9 @@ mod tests {
                 power_save_enabled: false,
                 recorder: Some(
                     power_observability_state_recorder::StateRecorder::new(
-                        power_observability_state_recorder::DiscreteStateMetadata {
-                            name: power_observability_state_recorder::lazy_static_cstr(
-                                "test_state",
-                            ),
-                            trace_category: power_observability_state_recorder::lazy_static_cstr(
-                                "test",
-                            ),
-                            states: &STA_IFACE_POWER_LEVELS,
-                        },
-                        0,
+                        "test_state".into(),
+                        power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
+                        StaIfacePowerLevel::NoPowerSavings,
                         1,
                     )
                     .expect("StateRecorder construction failed"),
@@ -1431,19 +1422,12 @@ mod tests {
                 power_save_enabled: false,
                 recorder: Some(
                     power_observability_state_recorder::StateRecorder::new(
-                        power_observability_state_recorder::DiscreteStateMetadata {
-                            name: power_observability_state_recorder::lazy_static_cstr(
-                                "test_state",
-                            ),
-                            trace_category: power_observability_state_recorder::lazy_static_cstr(
-                                "test",
-                            ),
-                            states: &STA_IFACE_POWER_LEVELS,
-                        },
-                        0,
+                        "test_state".into(),
+                        power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
+                        StaIfacePowerLevel::NoPowerSavings,
                         1,
                     )
-                    .expect("State recorder construction failed"),
+                    .expect("StateRecorder construction failed"),
                 ),
             })),
             telemetry_sender: TelemetrySender::new(telemetry_sender),

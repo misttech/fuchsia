@@ -22,9 +22,8 @@ Inspect data for all recorded states will be placed in a node named
 inspector's root. Each recorded state will be given a distinct node.
 
 The key elements of the data are:
-    - The name of the entity. This must be unique per-component to avoid data
-      collisions. (TODO(b/444757040): Update to per-inspector once the Rust
-      API is consistent with the C++ API.)
+    - The name of the entity. Both the C++ and Rust APIs guard against name
+      collisions.
     - Metadata that describes a mapping of enumerated state values to state
       names.
     - Transition history, which records timestamped state transitions. Because
@@ -87,8 +86,8 @@ like this in its Inspect hierarchy:
 
 ### Trace
 
-Trace data is recorded to a global track named according to the entity name and
-PID, as seen here:
+Trace data is recorded to a global track, whose name includes the recorder name,
+the PID, and an identifier unique to the recorder.
 
 ![Sample trace output for a stateful entity called "fan_speed"](trace_example.png)
 

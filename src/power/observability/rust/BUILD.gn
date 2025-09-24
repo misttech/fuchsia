@@ -15,15 +15,16 @@ rustc_library("state_recorder") {
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:strum",
     "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
     "//src/lib/fuchsia",
-    "//third_party/rust_crates:strum",
     "//third_party/rust_crates:strum_macros",
   ]
 }

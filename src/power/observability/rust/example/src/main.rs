@@ -8,13 +8,23 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component::inspector;
 use futures::StreamExt;
 use futures::channel::mpsc;
-use state_recorder::{DiscreteStateMetadata, DiscreteStates, StateRecorder, discrete_states};
+use state_recorder::StateRecorder;
+use strum::IntoEnumIterator;
+use strum_macros::{Display, EnumIter, FromRepr};
 
-static FAN_SPEED: DiscreteStates = discrete_states!(
-    0 => c"OFF",
-    1 => c"LOW",
-    2 => c"HIGH"
-);
+#[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[repr(u8)]
+enum FanSpeed {
+    OFF = 0,
+    LOW = 1,
+    HIGH = 2,
+}
+
+impl From<FanSpeed> for u64 {
+    fn from(value: FanSpeed) -> Self {
+        value as Self
+    }
+}
 
 #[fuchsia::main(logging_tags = ["power_observability", "example"])]
 async fn main() -> Result<(), Error> {
@@ -28,22 +38,18 @@ async fn main() -> Result<(), Error> {
         inspect_runtime::publish(inspector(), inspect_runtime::PublishOptions::default());
     inspector().root().record_string("version", "foo");
 
-    let metadata = DiscreteStateMetadata {
-        name: c"fan_speed",
-        trace_category: c"power_example",
-        states: &FAN_SPEED,
-    };
-
-    let mut recorder =
-        StateRecorder::new(metadata.clone(), 0, 10).expect("StateRecorder construction failed");
+    let mut recorder = StateRecorder::new("fan_speed".into(), c"power_example", FanSpeed::OFF, 10)
+        .expect("StateRecorder construction failed");
 
     let (mut sender, mut receiver) = mpsc::channel(10);
 
     // Simulate some state transitions
     fasync::Task::local(async move {
-        for i in 1u32..100 {
-            sender.try_send(i % 3).unwrap();
-            fasync::Timer::new(std::time::Duration::from_secs(1)).await;
+        for _ in 0..30 {
+            for value in FanSpeed::iter() {
+                sender.try_send(value).unwrap();
+                fasync::Timer::new(std::time::Duration::from_secs(1)).await;
+            }
         }
     })
     .detach();

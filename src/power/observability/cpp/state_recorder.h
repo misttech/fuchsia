@@ -16,12 +16,13 @@
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 namespace power_observability {
 
@@ -54,20 +55,21 @@ class StateRecorderManager final {
 
   zx::result<inspect::Node> RegisterName(std::string& name) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (names_in_use_.contains(name)) {
+    if (std::ranges::find(names_in_use_, name) != names_in_use_.end()) {
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
-    names_in_use_.insert(name);
+    names_in_use_.push_back(name);
     return zx::ok(recorders_root_.CreateChild(name));
   }
 
   void UnregisterName(std::string& name) {
     std::lock_guard<std::mutex> lock(mutex_);
-    names_in_use_.erase(name);
+    std::erase(names_in_use_, name);
   }
 
  private:
-  std::unordered_set<std::string> names_in_use_ __TA_GUARDED(mutex_);
+  // Represents a set, but implemented using a vector due to expected small number of elements.
+  std::vector<std::string> names_in_use_ __TA_GUARDED(mutex_);
   inspect::Node recorders_root_;
   std::mutex mutex_;
 };
