@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.input.focaltech/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pin/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
-#include <lib/focaltech/focaltech.h>
 
-#include <string>
 #include <cinttypes>
+#include <string>
 
 #include <bind/fuchsia/amlogic/platform/s905d2/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
@@ -118,24 +118,28 @@ const std::vector kGpioInitProperties = std::vector{
 
 zx::result<> AddFocaltechTouch(
     fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus) {
-  static const FocaltechMetadata device_info = {
-      .device_id = FOCALTECH_DEVICE_FT3X27,
+  static const fuchsia_hardware_input_focaltech::Metadata kDeviceInfo({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt3X27,
       .needs_firmware = false,
-  };
+  });
 
-  fpbus::Node dev;
-  dev.name() = "focaltech_touch";
-  dev.vid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC;
-  dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
-  dev.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_FOCALTOUCH;
-  dev.metadata() = std::vector<fpbus::Metadata>{
-      {{
-          .id = std::to_string(DEVICE_METADATA_PRIVATE),
-          .data = std::vector<uint8_t>(
-              reinterpret_cast<const uint8_t*>(&device_info),
-              reinterpret_cast<const uint8_t*>(&device_info) + sizeof(device_info)),
-      }},
-  };
+  fit::result persisted_metadata = fidl::Persist(kDeviceInfo);
+  if (persisted_metadata.is_error()) {
+    FDF_LOG(ERROR, "Failed to persist focaltech metadata: %s",
+            persisted_metadata.error_value().FormatDescription().c_str());
+    return zx::error(persisted_metadata.error_value().status());
+  }
+
+  fpbus::Node node({.name = "focaltech_touch",
+                    .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
+                    .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
+                    .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_FOCALTOUCH,
+                    .metadata = std::vector<fpbus::Metadata>{
+                        {{
+                            .id = fuchsia_hardware_input_focaltech::Metadata::kSerializableName,
+                            .data = std::move(persisted_metadata.value()),
+                        }},
+                    }});
 
   auto parents = std::vector{
       fuchsia_driver_framework::ParentSpec2{{
@@ -162,7 +166,7 @@ zx::result<> AddFocaltechTouch(
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('FOCL');
   fdf::WireUnownedResult result = pbus.buffer(arena)->AddCompositeNodeSpec(
-      fidl::ToWire(fidl_arena, dev), fidl::ToWire(fidl_arena, composite_node_spec));
+      fidl::ToWire(fidl_arena, node), fidl::ToWire(fidl_arena, composite_node_spec));
   if (!result.ok()) {
     FDF_LOG(ERROR, "Failed to send AddCompositeNodeSpec request: %s", result.status_string());
     return zx::error(result.status());

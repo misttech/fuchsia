@@ -83,9 +83,9 @@ uint8_t FtDevice::CalculateEcc(std::span<const uint8_t> buffer, uint8_t initial)
   return initial;
 }
 
-zx_status_t FtDevice::UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata,
-                                             display::PanelType panel_type) {
-  if (!metadata.needs_firmware) {
+zx_status_t FtDevice::UpdateFirmwareIfNeeded(
+    const fuchsia_hardware_input_focaltech::Metadata& metadata, display::PanelType panel_type) {
+  if (!metadata.needs_firmware()) {
     return ZX_OK;
   }
 

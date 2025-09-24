@@ -45,17 +45,18 @@ source_set("common") {
   ]
   deps = [
     "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/platform-device/cpp",
     "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
     ":focaltech_touch_bind",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/input_report_reader",
     "//src/devices/i2c/lib/i2c-channel",
-    "//src/devices/lib/focaltech",
     "//src/graphics/display/lib/device-protocol-display",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
@@ -126,6 +127,7 @@ test("focaltech-test-bin") {
   deps = [
     ":common",
     "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/devices/i2c/testing/fake-i2c",

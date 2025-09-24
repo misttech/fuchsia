@@ -4,10 +4,10 @@
 
 #include "../focaltech-visitor.h"
 
+#include <fidl/fuchsia.hardware.input.focaltech/cpp/fidl.h>
 #include <lib/driver/devicetree/testing/visitor-test-helper.h>
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
 #include <lib/driver/devicetree/visitors/registry.h>
-#include <lib/focaltech/focaltech.h>
 
 #include <cstdint>
 
@@ -51,9 +51,12 @@ TEST(FocaltechVisitorTest, TestMetadataAndBindProperty) {
       ASSERT_TRUE(metadata);
       ASSERT_EQ(1lu, metadata->size());
       std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      auto device_info = reinterpret_cast<FocaltechMetadata*>(metadata_blob.data());
-      EXPECT_EQ(device_info->device_id, static_cast<uint32_t>(FOCALTECH_DEVICE_FT6336));
-      EXPECT_TRUE(device_info->needs_firmware);
+
+      fit::result device_info =
+          fidl::Unpersist<fuchsia_hardware_input_focaltech::Metadata>(metadata_blob);
+      ASSERT_TRUE(device_info.is_ok());
+      EXPECT_EQ(device_info->device_id(), fuchsia_hardware_input_focaltech::DeviceId::kFt6336);
+      EXPECT_TRUE(device_info->needs_firmware());
     }
   }
 

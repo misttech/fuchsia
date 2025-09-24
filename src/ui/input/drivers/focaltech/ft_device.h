@@ -6,12 +6,12 @@
 #define SRC_UI_INPUT_DRIVERS_FOCALTECH_FT_DEVICE_H_
 
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
+#include <fidl/fuchsia.hardware.input.focaltech/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
-#include <lib/focaltech/focaltech.h>
 #include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/stdcompat/span.h>
@@ -167,7 +167,7 @@ class FtDevice : public fdf::DriverBase,
 
   void LogRegisterValue(uint8_t addr, std::string_view name);
 
-  zx_status_t UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata,
+  zx_status_t UpdateFirmwareIfNeeded(const fuchsia_hardware_input_focaltech::Metadata& metadata,
                                      display::PanelType panel_type);
 
   void DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> server);

@@ -7,9 +7,9 @@
 #include <lib/ddk/metadata.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-i2c/fake-i2c.h>
-#include <lib/focaltech/focaltech.h>
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -166,13 +166,13 @@ class FakeFtDevice : public fake_i2c::FakeI2c {
 
 class FtDeviceTestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(zx::interrupt interrupt, const FocaltechMetadata& metadata,
+  void Init(zx::interrupt interrupt, const fuchsia_hardware_input_focaltech::Metadata& metadata,
             const std::optional<display::PanelType>& panel_type) {
     interrupt_gpio_.SetInterrupt(zx::ok(std::move(interrupt)));
 
+    pdev_.AddFidlMetadata(fuchsia_hardware_input_focaltech::Metadata::kSerializableName, metadata);
+
     device_server_.Initialize("pdev", std::nullopt, {});
-    device_server_.AddMetadata(DEVICE_METADATA_PRIVATE, reinterpret_cast<const void*>(&metadata),
-                               sizeof(metadata));
     if (panel_type.has_value()) {
       device_server_.AddMetadata(DEVICE_METADATA_DISPLAY_PANEL_TYPE, &panel_type.value(),
                                  sizeof(panel_type.value()));
@@ -189,6 +189,8 @@ class FtDeviceTestEnvironment : public fdf_testing::Environment {
                                                        "gpio-reset"));
     EXPECT_OK(to_driver_vfs.AddService<fgpio::Service>(interrupt_gpio_.CreateInstanceHandler(),
                                                        "gpio-int"));
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        pdev_.GetInstanceHandler(dispatcher), "pdev"));
 
     return zx::ok();
   }
@@ -202,6 +204,7 @@ class FtDeviceTestEnvironment : public fdf_testing::Environment {
   fake_gpio::FakeGpio interrupt_gpio_;
   fake_gpio::FakeGpio reset_gpio_;
   compat::DeviceServer device_server_;
+  fdf_fake::FakePDev pdev_;
 };
 
 class FixtureConfig final {
@@ -215,7 +218,7 @@ class FocaltechTest : public testing::Test {
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
  protected:
-  void StartDriver(const FocaltechMetadata& metadata,
+  void StartDriver(const fuchsia_hardware_input_focaltech::Metadata& metadata,
                    const std::optional<display::PanelType>& panel_type = std::nullopt) {
     zx::interrupt interrupt;
     ASSERT_EQ(ZX_OK, zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
@@ -311,10 +314,10 @@ void VerifyDescriptor(const fuchsia_input_report::wire::DeviceDescriptor& descri
 }
 
 TEST_F(FocaltechTest, Metadata3x27) {
-  static constexpr FocaltechMetadata kFt3x27Metadata = {
-      .device_id = FOCALTECH_DEVICE_FT3X27,
+  static const fuchsia_hardware_input_focaltech::Metadata kFt3x27Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt3X27,
       .needs_firmware = false,
-  };
+  });
   StartDriver(kFt3x27Metadata);
 
   input_device()->GetDescriptor().ThenExactlyOnce(
@@ -326,10 +329,10 @@ TEST_F(FocaltechTest, Metadata3x27) {
 }
 
 TEST_F(FocaltechTest, Metadata5726) {
-  static constexpr FocaltechMetadata kFt5726Metadata = {
-      .device_id = FOCALTECH_DEVICE_FT5726,
+  static const fuchsia_hardware_input_focaltech::Metadata kFt5726Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt5726,
       .needs_firmware = false,
-  };
+  });
   StartDriver(kFt5726Metadata);
 
   input_device()->GetDescriptor().ThenExactlyOnce(
@@ -341,10 +344,10 @@ TEST_F(FocaltechTest, Metadata5726) {
 }
 
 TEST_F(FocaltechTest, Metadata6336) {
-  static constexpr FocaltechMetadata kFt6336Metadata = {
-      .device_id = FOCALTECH_DEVICE_FT6336,
+  static const fuchsia_hardware_input_focaltech::Metadata kFt6336Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt6336,
       .needs_firmware = false,
-  };
+  });
   StartDriver(kFt6336Metadata);
 
   input_device()->GetDescriptor().ThenExactlyOnce(
@@ -356,10 +359,10 @@ TEST_F(FocaltechTest, Metadata6336) {
 }
 
 TEST_F(FocaltechTest, Firmware5726) {
-  static constexpr FocaltechMetadata kFt5726Metadata = {
-      .device_id = FOCALTECH_DEVICE_FT5726,
+  static const fuchsia_hardware_input_focaltech::Metadata kFt5726Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt5726,
       .needs_firmware = true,
-  };
+  });
   static constexpr display::PanelType kPanelType = display::PanelType::kBoeTv101wxmFitipowerJd9365;
   StartDriver(kFt5726Metadata, kPanelType);
 
@@ -369,10 +372,10 @@ TEST_F(FocaltechTest, Firmware5726) {
 }
 
 TEST_F(FocaltechTest, Firmware5726UpToDate) {
-  static constexpr FocaltechMetadata kFt5726Metadata = {
-      .device_id = FOCALTECH_DEVICE_FT5726,
+  static const fuchsia_hardware_input_focaltech::Metadata kFt5726Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt5726,
       .needs_firmware = true,
-  };
+  });
   constexpr display::PanelType kPanelType = display::PanelType::kBoeTv101wxmFitipowerJd9364;
   StartDriver(kFt5726Metadata, kPanelType);
 
@@ -381,10 +384,10 @@ TEST_F(FocaltechTest, Firmware5726UpToDate) {
 }
 
 TEST_F(FocaltechTest, Touch) {
-  static constexpr FocaltechMetadata kFt6336Metadata = {
-      .device_id = FOCALTECH_DEVICE_FT6336,
+  static const fuchsia_hardware_input_focaltech::Metadata kFt6336Metadata({
+      .device_id = fuchsia_hardware_input_focaltech::DeviceId::kFt6336,
       .needs_firmware = false,
-  };
+  });
   StartDriver(kFt6336Metadata);
 
   auto reader_endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();

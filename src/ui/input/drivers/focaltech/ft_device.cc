@@ -7,6 +7,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/process.h>
@@ -210,13 +211,28 @@ zx::result<> FtDevice::Start() {
   irq_handler_.set_object(irq_.get());
   irq_handler_.Begin(dispatcher());
 
-  zx::result metadata =
-      compat::GetMetadata<FocaltechMetadata>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  zx::result pdev_client =
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  if (pdev_client.is_error()) {
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
+    return pdev_client.take_error();
+  }
+  fdf::PDev pdev(std::move(pdev_client.value()));
+
+  zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_input_focaltech::Metadata>();
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
   }
-  const FocaltechMetadata& device_info = *metadata.value();
+  const fuchsia_hardware_input_focaltech::Metadata& device_info = metadata.value();
+  if (!device_info.device_id().has_value()) {
+    fdf::error("Metadata missing `device_id` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!device_info.needs_firmware().has_value()) {
+    fdf::error("Metadata missing `needs_firmware` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
 
   display::PanelType panel_type = display::PanelType::kUnknown;
   zx::result panel_type_result = compat::GetMetadata<display::PanelType>(
@@ -229,25 +245,30 @@ zx::result<> FtDevice::Start() {
     fdf::error("Failed to get panel type: {}", panel_type_result);
     return panel_type_result.take_error();
   }
-
-  if (device_info.device_id == FOCALTECH_DEVICE_FT3X27) {
-    x_max_ = kFt3x27XMax;
-    y_max_ = kFt3x27YMax;
-  } else if (device_info.device_id == FOCALTECH_DEVICE_FT6336) {
-    x_max_ = kFt6336XMax;
-    y_max_ = kFt6336YMax;
-  } else if (device_info.device_id == FOCALTECH_DEVICE_FT5726) {
-    x_max_ = kFt5726XMax;
-    y_max_ = kFt5726YMax;
-  } else if (device_info.device_id == FOCALTECH_DEVICE_FT5336) {
-    // Currently we assume the panel to be always Khadas TS050. If this changes,
-    // we may need extra information from the metadata to determine which HID
-    // report descriptor to use.
-    x_max_ = kFt5336XMax;
-    y_max_ = kFt5336YMax;
-  } else {
-    fdf::error("focaltouch: unknown device ID {}", device_info.device_id);
-    return zx::error(ZX_ERR_INTERNAL);
+  fuchsia_hardware_input_focaltech::DeviceId device_id = device_info.device_id().value();
+  switch (device_id) {
+    case fuchsia_hardware_input_focaltech::DeviceId::kFt3X27:
+      x_max_ = kFt3x27XMax;
+      y_max_ = kFt3x27YMax;
+      break;
+    case fuchsia_hardware_input_focaltech::DeviceId::kFt6336:
+      x_max_ = kFt6336XMax;
+      y_max_ = kFt6336YMax;
+      break;
+    case fuchsia_hardware_input_focaltech::DeviceId::kFt5726:
+      x_max_ = kFt5726XMax;
+      y_max_ = kFt5726YMax;
+      break;
+    case fuchsia_hardware_input_focaltech::DeviceId::kFt5336:
+      // Currently we assume the panel to be always Khadas TS050. If this changes,
+      // we may need extra information from the metadata to determine which HID
+      // report descriptor to use.
+      x_max_ = kFt5336XMax;
+      y_max_ = kFt5336YMax;
+      break;
+    default:
+      fdf::error("Unkown device ID {}", static_cast<uint32_t>(device_id));
+      return zx::error(ZX_ERR_INTERNAL);
   }
 
   // Reset the chip -- should be low for at least 1ms, and the chip should take at most 200ms to
@@ -295,7 +316,7 @@ zx::result<> FtDevice::Start() {
   LogRegisterValue(FTS_REG_RELEASE_ID_LOW, "RELEASE_ID_LOW");
   LogRegisterValue(FTS_REG_IC_VERSION, "IC_VERSION");
 
-  node_.CreateBool("needs_firmware_update", device_info.needs_firmware, &values_);
+  node_.CreateBool("needs_firmware_update", device_info.needs_firmware().value(), &values_);
   node_.CreateUint("panel_type", static_cast<uint32_t>(panel_type), &values_);
   fdf::info("Panel type: {}", static_cast<uint32_t>(panel_type));
 
