@@ -45,15 +45,6 @@ extern "C" {
         extended_pstate_addr: usize,
     ) -> zx::sys::zx_status_t;
 
-    /// `zx_restricted_bind_state` system call.
-    fn zx_restricted_bind_state(
-        options: u32,
-        out_vmo_handle: *mut zx::sys::zx_handle_t,
-    ) -> zx::sys::zx_status_t;
-
-    /// `zx_restricted_unbind_state` system call.
-    fn zx_restricted_unbind_state(options: u32) -> zx::sys::zx_status_t;
-
     /// Sets the process handle used to create new threads, for the current thread.
     fn thrd_set_zx_process(handle: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
 
@@ -518,8 +509,9 @@ where
                 clippy::undocumented_unsafe_blocks,
                 reason = "Force documented unsafe blocks in Starnix"
             )]
-            let status =
-                zx::Status::from_raw(unsafe { zx_restricted_bind_state(0, &mut out_vmo_handle) });
+            let status = zx::Status::from_raw(unsafe {
+                zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle)
+            });
             match { status } {
                 zx::Status::OK => {
                     // We've successfully attached the VMO to the current thread. This VMO will be
@@ -543,7 +535,7 @@ where
                     clippy::undocumented_unsafe_blocks,
                     reason = "Force documented unsafe blocks in Starnix"
                 )]
-                unsafe { zx_restricted_unbind_state(0); }
+                unsafe { zx::sys::zx_restricted_unbind_state(0); }
             }
 
             // Map the restricted state VMO and arrange for it to be unmapped later.
