@@ -10,7 +10,6 @@
         runner: "driver",
         binary: "driver/dwc3.so",
         bind: "meta/bind/dwc3.bindbc",
-        colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         service_connect_validation: "true",
         default_dispatcher_scheduler_role: "fuchsia.devices.usb.drivers.dwc3.interrupt",
