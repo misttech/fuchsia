@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::{fs, io};
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_brightness::{
     ControlRequest as BrightnessControlRequest, ControlWatchAutoBrightnessAdjustmentResponder,
@@ -16,12 +16,12 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future::{AbortHandle, Abortable};
 use futures::lock::Mutex;
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
+use std::sync::LazyLock;
 use watch_handler::{Sender, WatchHandler};
-use zx::sys::ZX_ERR_NOT_SUPPORTED;
 use zx::MonotonicDuration;
+use zx::sys::ZX_ERR_NOT_SUPPORTED;
 
 use crate::sender_channel::SenderChannel;
 use lib::backlight::BacklightControl;
@@ -82,32 +82,31 @@ impl From<fidl_fuchsia_ui_brightness::BrightnessTable> for BrightnessTable {
 
 //This is the default table, and a default curve will be generated base on this table.
 //This will be replaced once SetBrightnessTable is called.
-lazy_static! {
-    static ref BRIGHTNESS_TABLE: Arc<Mutex<BrightnessTable>> = {
-        Arc::new(Mutex::new(BrightnessTable {
-            points: vec![
-                BrightnessPoint { ambient_lux: 0., display_nits: 0. },
-                BrightnessPoint { ambient_lux: 10., display_nits: 3.33 },
-                BrightnessPoint { ambient_lux: 30., display_nits: 8.7 },
-                BrightnessPoint { ambient_lux: 60., display_nits: 18.27 },
-                BrightnessPoint { ambient_lux: 100., display_nits: 32.785 },
-                BrightnessPoint { ambient_lux: 150., display_nits: 36.82 },
-                BrightnessPoint { ambient_lux: 210., display_nits: 75.0 },
-                BrightnessPoint { ambient_lux: 250., display_nits: 124.16 },
-                BrightnessPoint { ambient_lux: 300., display_nits: 162.96 },
-                BrightnessPoint { ambient_lux: 340., display_nits: 300. },
-            ],
-        }))
-    };
-}
+static BRIGHTNESS_TABLE: LazyLock<Arc<Mutex<BrightnessTable>>> = LazyLock::new(|| {
+    Arc::new(Mutex::new(BrightnessTable {
+        points: vec![
+            BrightnessPoint { ambient_lux: 0., display_nits: 0. },
+            BrightnessPoint { ambient_lux: 10., display_nits: 3.33 },
+            BrightnessPoint { ambient_lux: 30., display_nits: 8.7 },
+            BrightnessPoint { ambient_lux: 60., display_nits: 18.27 },
+            BrightnessPoint { ambient_lux: 100., display_nits: 32.785 },
+            BrightnessPoint { ambient_lux: 150., display_nits: 36.82 },
+            BrightnessPoint { ambient_lux: 210., display_nits: 75.0 },
+            BrightnessPoint { ambient_lux: 250., display_nits: 124.16 },
+            BrightnessPoint { ambient_lux: 300., display_nits: 162.96 },
+            BrightnessPoint { ambient_lux: 340., display_nits: 300. },
+        ],
+    }))
+});
 
-lazy_static! {
-    static ref AUTO_BRIGHTNESS_ADJUSTMENT: Arc<Mutex<f32>> = Arc::new(Mutex::new(1.0));
-    static ref GET_BRIGHTNESS_FAILED_FIRST: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
-    static ref LAST_SET_BRIGHTNESS: Arc<Mutex<f32>> = Arc::new(Mutex::new(1.0));
-    static ref BRIGHTNESS_CHANGE_DURATION: Arc<Mutex<MonotonicDuration>> =
-        Arc::new(Mutex::new(MonotonicDuration::from_millis(BRIGHTNESS_CHANGE_DURATION_MS)));
-}
+static AUTO_BRIGHTNESS_ADJUSTMENT: LazyLock<Arc<Mutex<f32>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(1.0)));
+static GET_BRIGHTNESS_FAILED_FIRST: LazyLock<Arc<Mutex<bool>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(true)));
+static LAST_SET_BRIGHTNESS: LazyLock<Arc<Mutex<f32>>> = LazyLock::new(|| Arc::new(Mutex::new(1.0)));
+static BRIGHTNESS_CHANGE_DURATION: LazyLock<Arc<Mutex<MonotonicDuration>>> = LazyLock::new(|| {
+    Arc::new(Mutex::new(MonotonicDuration::from_millis(BRIGHTNESS_CHANGE_DURATION_MS)))
+});
 
 pub struct WatcherCurrentResponder {
     watcher_current_responder: ControlWatchCurrentBrightnessResponder,

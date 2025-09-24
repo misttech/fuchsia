@@ -4,8 +4,8 @@
 
 use super::{data, data_import_from_chromiumos};
 use fidl_fuchsia_input_report as fidl_input_report;
-use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// Mouse have a sensor that tells how far they moved in "counts", depends
 /// on sensor, mouse will report different CPI (counts per inch). Currently,
@@ -89,35 +89,33 @@ impl VendorProducts {
     }
 }
 
-lazy_static! {
-    static ref DB: HashMap<String, VendorProducts> = {
-        let mut models: Vec<MouseModel> = Vec::new();
-        for m in data::MODELS {
-            models.push(MouseModel::new(m.0, m.1, m.2, m.3));
-        }
-        for m in data_import_from_chromiumos::MODELS {
-            models.push(MouseModel::new(m.0, m.1, m.2, m.3));
-        }
+static DB: LazyLock<HashMap<String, VendorProducts>> = LazyLock::new(|| {
+    let mut models: Vec<MouseModel> = Vec::new();
+    for m in data::MODELS {
+        models.push(MouseModel::new(m.0, m.1, m.2, m.3));
+    }
+    for m in data_import_from_chromiumos::MODELS {
+        models.push(MouseModel::new(m.0, m.1, m.2, m.3));
+    }
 
-        let mut db: HashMap<String, VendorProducts> = HashMap::new();
+    let mut db: HashMap<String, VendorProducts> = HashMap::new();
 
-        for m in models {
-            let vendor_id = m.vendor_id.to_owned();
-            match db.get_mut(&vendor_id) {
-                Some(v) => {
-                    v.add(m);
-                }
-                None => {
-                    let mut v = VendorProducts::new();
-                    v.add(m);
-                    db.insert(vendor_id, v);
-                }
+    for m in models {
+        let vendor_id = m.vendor_id.to_owned();
+        match db.get_mut(&vendor_id) {
+            Some(v) => {
+                v.add(m);
+            }
+            None => {
+                let mut v = VendorProducts::new();
+                v.add(m);
+                db.insert(vendor_id, v);
             }
         }
+    }
 
-        db
-    };
-}
+    db
+});
 
 /// "Standard" mouse CPI and polling rate.
 const DEFAULT_MODEL: MouseModel = MouseModel {

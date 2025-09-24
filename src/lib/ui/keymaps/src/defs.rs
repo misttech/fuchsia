@@ -10,20 +10,20 @@
 
 use crate::{LockStateChecker, ModifierChecker};
 use fidl_fuchsia_ui_input3::{LockState, Modifiers};
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Standard [qwerty] keymap.
-    ///
-    /// The value of this array at index `u`, where `u` is the usage, can be:
-    ///
-    ///  * `None` if the key maps to no `char` (Esc key)
-    ///  * `Some((c, None))` if the key maps to `c`, but does not map to any `char` when shift is pressed
-    ///  * `Some((c, Some(cs)))` if the key maps to `c` when shift is not pressed and to `cs` when it is
-    ///    pressed
-    ///
-    /// [qwerty]: https://en.wikipedia.org/wiki/Keyboard_layout#QWERTY-based_Latin-script_keyboard_layouts
-    pub(crate) static ref QWERTY_MAP: Vec<Option<KeyLevels>> = vec![
+/// Standard [qwerty] keymap.
+///
+/// The value of this array at index `u`, where `u` is the usage, can be:
+///
+///  * `None` if the key maps to no `char` (Esc key)
+///  * `Some((c, None))` if the key maps to `c`, but does not map to any `char` when shift is pressed
+///  * `Some((c, Some(cs)))` if the key maps to `c` when shift is not pressed and to `cs` when it is
+///    pressed
+///
+/// [qwerty]: https://en.wikipedia.org/wiki/Keyboard_layout#QWERTY-based_Latin-script_keyboard_layouts
+pub(crate) static QWERTY_MAP: LazyLock<Vec<Option<KeyLevels>>> = LazyLock::new(|| {
+    vec![
         // 0x00
         None,
         None,
@@ -149,12 +149,14 @@ lazy_static! {
         Some(('9', None).into()),
         Some(('0', None).into()),
         Some(('.', None).into()),
-    ];
+    ]
+});
 
-    /// Standard [dvorak] keymap.
-    ///
-    /// [dvorak]: https://en.wikipedia.org/wiki/Dvorak_keyboard_layout
-    pub(crate) static ref DVORAK_MAP: Vec<Option<KeyLevels>> = vec![
+/// Standard [dvorak] keymap.
+///
+/// [dvorak]: https://en.wikipedia.org/wiki/Dvorak_keyboard_layout
+pub(crate) static DVORAK_MAP: LazyLock<Vec<Option<KeyLevels>>> = LazyLock::new(|| {
+    vec![
         // 0x00
         None,
         None,
@@ -280,11 +282,13 @@ lazy_static! {
         Some(('9', None).into()),
         Some(('0', None).into()),
         Some(('.', None).into()),
-    ];
+    ]
+});
 
-    /// TODO(75723): This map is incomplete, and is here only temporarily for
-    /// kicks.
-    pub(crate) static ref FR_AZERTY_MAP: Vec<Option<KeyLevels>> = vec![
+/// TODO(75723): This map is incomplete, and is here only temporarily for
+/// kicks.
+pub(crate) static FR_AZERTY_MAP: LazyLock<Vec<Option<KeyLevels>>> = LazyLock::new(|| {
+    vec![
         // 0x00
         None,
         None,
@@ -344,10 +348,10 @@ lazy_static! {
         Some((' ', Some(' ')).into()),
         Some((')', Some('°')).into()),
         Some(('=', Some('+')).into()),
-        Some(('\u{0302}', Some('\u{0308}')).into()),  // Unicode combining characters circumflex and dieresis.
+        Some(('\u{0302}', Some('\u{0308}')).into()), // Unicode combining characters circumflex and dieresis.
         // 0x30
         Some(('$', Some('£')).into()),
-        Some(('\\', Some('|')).into()),  // Not present on French Azerty?
+        Some(('\\', Some('|')).into()), // Not present on French Azerty?
         None,
         Some(('m', Some('M'), true).into()),
         // 0x34
@@ -410,12 +414,14 @@ lazy_static! {
         Some(('9', None).into()),
         Some(('0', None).into()),
         Some(('.', None).into()),
-    ];
+    ]
+});
 
-    /// Standard [colemak] keymap.
-    ///
-    /// [colemak]: https://en.wikipedia.org/wiki/Keyboard_layout#Colemak
-    pub(crate) static ref COLEMAK_MAP: Vec<Option<KeyLevels>> = vec![
+/// Standard [colemak] keymap.
+///
+/// [colemak]: https://en.wikipedia.org/wiki/Keyboard_layout#Colemak
+pub(crate) static COLEMAK_MAP: LazyLock<Vec<Option<KeyLevels>>> = LazyLock::new(|| {
+    vec![
         // 0x00
         None,
         None,
@@ -541,8 +547,8 @@ lazy_static! {
         Some(('9', None).into()),
         Some(('0', None).into()),
         Some(('.', None).into()),
-    ];
-}
+    ]
+});
 
 /// Levels corresponding to each defined key.
 pub struct KeyLevels {

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use fidl_fuchsia_input::{Key, KeymapId};
 use fidl_fuchsia_ui_input3::{KeyEventType, KeyMeaning, LockState, Modifiers, NonPrintableKey};
-use lazy_static::lazy_static;
 use log::{debug, error};
 use std::collections::{self, HashMap};
+use std::sync::LazyLock;
 
 mod defs;
 
@@ -15,19 +15,19 @@ pub mod config;
 pub mod inverse_keymap;
 pub mod usages;
 
-lazy_static! {
-    /// A US QWERTY keymap.
-    pub static ref US_QWERTY: Keymap<'static> = Keymap::new(&defs::QWERTY_MAP);
+/// A US QWERTY keymap.
+pub static US_QWERTY: LazyLock<Keymap<'static>> = LazyLock::new(|| Keymap::new(&defs::QWERTY_MAP));
 
-    /// A US DVORAK keymap.
-    pub static ref US_DVORAK: Keymap<'static> = Keymap::new(&defs::DVORAK_MAP);
+/// A US DVORAK keymap.
+pub static US_DVORAK: LazyLock<Keymap<'static>> = LazyLock::new(|| Keymap::new(&defs::DVORAK_MAP));
 
-    /// A FR AZERTY keymap.
-    pub static ref FR_AZERTY: Keymap<'static> = Keymap::new(&defs::FR_AZERTY_MAP);
+/// A FR AZERTY keymap.
+pub static FR_AZERTY: LazyLock<Keymap<'static>> =
+    LazyLock::new(|| Keymap::new(&defs::FR_AZERTY_MAP));
 
-    /// A US COLEMAK keymap.
-    pub static ref US_COLEMAK: Keymap<'static> = Keymap::new(&defs::COLEMAK_MAP);
-}
+/// A US COLEMAK keymap.
+pub static US_COLEMAK: LazyLock<Keymap<'static>> =
+    LazyLock::new(|| Keymap::new(&defs::COLEMAK_MAP));
 
 /// Gets a keymap based on the supplied `keymap` selector.  If no keymap is
 /// found the fallback is always US QWERTY.

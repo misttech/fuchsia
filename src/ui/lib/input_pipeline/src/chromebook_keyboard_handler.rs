@@ -24,10 +24,11 @@ use fidl_fuchsia_ui_input3::KeyEventType;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_trace as ftrace;
 use keymaps::KeyState;
-use lazy_static::lazy_static;
 use maplit::hashmap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::LazyLock;
 
 /// The vendor ID denoting the internal Chromebook keyboard.
 const VENDOR_ID: u32 = 0x18d1; // Google
@@ -46,11 +47,11 @@ struct KeyPair {
     with_search: Key,
 }
 
-lazy_static! {
-    // Map key is the original key code produced by the keyboard.  The map value
-    // are the possible remapped keys, depending on whether Search key is
-    // actuated.
-    static ref REMAPPED_KEYS: std::collections::HashMap<Key, KeyPair> = hashmap! {
+// Map key is the original key code produced by the keyboard.  The map value
+// are the possible remapped keys, depending on whether Search key is
+// actuated.
+static REMAPPED_KEYS: LazyLock<HashMap<Key, KeyPair>> = LazyLock::new(|| {
+    hashmap! {
         Key::F1 => KeyPair{ without_search: Key::AcBack, with_search: Key::F1 },
         Key::F2 => KeyPair{ without_search: Key::AcRefresh, with_search: Key::F2},
         Key::F3 => KeyPair{ without_search: Key::AcFullScreenView, with_search: Key::F3 },
@@ -67,8 +68,8 @@ lazy_static! {
         Key::Down => KeyPair{ without_search: Key::Down, with_search: Key::PageDown },
         Key::Dot => KeyPair{ without_search: Key::Dot, with_search: Key::Insert },
         Key::Backspace => KeyPair{ without_search: Key::Backspace, with_search: Key::Delete },
-    };
-}
+    }
+});
 
 /// A Chromebook dedicated keyboard handler.
 ///
@@ -417,34 +418,35 @@ fn into_unhandled_input_event(
 mod tests {
     use super::*;
     use crate::testing_utilities::create_input_event;
+    use std::sync::LazyLock;
     use test_case::test_case;
 
-    lazy_static! {
-        static ref MATCHING_KEYBOARD_DESCRIPTOR: InputDeviceDescriptor =
-            InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
-                keys: vec![],
-                device_information: fidl_fuchsia_input_report::DeviceInformation {
-                    vendor_id: Some(VENDOR_ID),
-                    product_id: Some(PRODUCT_ID),
-                    version: Some(42),
-                    polling_rate: Some(1000),
-                    ..Default::default()
-                },
-                device_id: 43,
-            });
-        static ref MISMATCHING_KEYBOARD_DESCRIPTOR: InputDeviceDescriptor =
-            InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
-                keys: vec![],
-                device_information: fidl_fuchsia_input_report::DeviceInformation {
-                    vendor_id: Some(VENDOR_ID + 10),
-                    product_id: Some(PRODUCT_ID),
-                    version: Some(42),
-                    polling_rate: Some(1000),
-                    ..Default::default()
-                },
-                device_id: 43,
-            });
-    }
+    static MATCHING_KEYBOARD_DESCRIPTOR: LazyLock<InputDeviceDescriptor> = LazyLock::new(|| {
+        InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
+            keys: vec![],
+            device_information: fidl_fuchsia_input_report::DeviceInformation {
+                vendor_id: Some(VENDOR_ID),
+                product_id: Some(PRODUCT_ID),
+                version: Some(42),
+                polling_rate: Some(1000),
+                ..Default::default()
+            },
+            device_id: 43,
+        })
+    });
+    static MISMATCHING_KEYBOARD_DESCRIPTOR: LazyLock<InputDeviceDescriptor> = LazyLock::new(|| {
+        InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
+            keys: vec![],
+            device_information: fidl_fuchsia_input_report::DeviceInformation {
+                vendor_id: Some(VENDOR_ID + 10),
+                product_id: Some(PRODUCT_ID),
+                version: Some(42),
+                polling_rate: Some(1000),
+                ..Default::default()
+            },
+            device_id: 43,
+        })
+    });
 
     async fn run_all_events<T: UnhandledInputHandler>(
         handler: &Rc<T>,

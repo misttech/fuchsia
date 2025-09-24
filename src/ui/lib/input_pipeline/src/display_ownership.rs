@@ -11,27 +11,27 @@ use fidl_fuchsia_ui_input3::KeyEventType;
 use fuchsia_async::{OnSignals, Task};
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use keymaps::KeyState;
-use lazy_static::lazy_static;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::LazyLock;
 use zx::{AsHandleRef, MonotonicDuration, MonotonicInstant, Signals, Status};
 
-lazy_static! {
-    // The signal value corresponding to the `DISPLAY_OWNED_SIGNAL`.  Same as zircon's signal
-    // USER_0.
-    static ref DISPLAY_OWNED: Signals = Signals::from_bits(fcomp::SIGNAL_DISPLAY_OWNED)
-        .expect("static init should not fail")    ;
+// The signal value corresponding to the `DISPLAY_OWNED_SIGNAL`.  Same as zircon's signal
+// USER_0.
+static DISPLAY_OWNED: LazyLock<Signals> = LazyLock::new(|| {
+    Signals::from_bits(fcomp::SIGNAL_DISPLAY_OWNED).expect("static init should not fail")
+});
 
-    // The signal value corresponding to the `DISPLAY_NOT_OWNED_SIGNAL`.  Same as zircon's signal
-    // USER_1.
-    static ref DISPLAY_UNOWNED: Signals = Signals::from_bits(fcomp::SIGNAL_DISPLAY_NOT_OWNED)
-        .expect("static init should not fail")    ;
+// The signal value corresponding to the `DISPLAY_NOT_OWNED_SIGNAL`.  Same as zircon's signal
+// USER_1.
+static DISPLAY_UNOWNED: LazyLock<Signals> = LazyLock::new(|| {
+    Signals::from_bits(fcomp::SIGNAL_DISPLAY_NOT_OWNED).expect("static init should not fail")
+});
 
-    // Any display-related signal.
-    static ref ANY_DISPLAY_EVENT: Signals = *DISPLAY_OWNED | *DISPLAY_UNOWNED;
-}
+// Any display-related signal.
+static ANY_DISPLAY_EVENT: LazyLock<Signals> = LazyLock::new(|| *DISPLAY_OWNED | *DISPLAY_UNOWNED);
 
 // Stores the last received ownership signals.
 #[derive(Debug, Clone, PartialEq)]
@@ -167,7 +167,9 @@ impl DisplayOwnership {
                     }
                 }
             }
-            log::warn!("display loop exiting and will no longer monitor display changes - this is not expected");
+            log::warn!(
+                "display loop exiting and will no longer monitor display changes - this is not expected"
+            );
         });
         log::info!("Display ownership handler installed");
         let inspect_status = InputHandlerStatus::new(
