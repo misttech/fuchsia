@@ -836,585 +836,618 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_mmap_with_colliding_hint() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let page_size = *PAGE_SIZE;
+        spawn_kernel_and_run(|locked, current_task| {
+            let page_size = *PAGE_SIZE;
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), page_size);
-        match do_mmap(
-            locked,
-            &current_task,
-            mapped_address,
-            page_size as usize,
-            PROT_READ,
-            MAP_PRIVATE | MAP_ANONYMOUS,
-            FdNumber::from_raw(-1),
-            0,
-        ) {
-            Ok(address) => {
-                assert_ne!(address, mapped_address);
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), page_size);
+            match do_mmap(
+                locked,
+                &current_task,
+                mapped_address,
+                page_size as usize,
+                PROT_READ,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                FdNumber::from_raw(-1),
+                0,
+            ) {
+                Ok(address) => {
+                    assert_ne!(address, mapped_address);
+                }
+                error => {
+                    panic!("mmap with colliding hint failed: {error:?}");
+                }
             }
-            error => {
-                panic!("mmap with colliding hint failed: {error:?}");
-            }
-        }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_mmap_with_fixed_collision() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let page_size = *PAGE_SIZE;
+        spawn_kernel_and_run(|locked, current_task| {
+            let page_size = *PAGE_SIZE;
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), page_size);
-        match do_mmap(
-            locked,
-            &current_task,
-            mapped_address,
-            page_size as usize,
-            PROT_READ,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
-            FdNumber::from_raw(-1),
-            0,
-        ) {
-            Ok(address) => {
-                assert_eq!(address, mapped_address);
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), page_size);
+            match do_mmap(
+                locked,
+                &current_task,
+                mapped_address,
+                page_size as usize,
+                PROT_READ,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
+                FdNumber::from_raw(-1),
+                0,
+            ) {
+                Ok(address) => {
+                    assert_eq!(address, mapped_address);
+                }
+                error => {
+                    panic!("mmap with fixed collision failed: {error:?}");
+                }
             }
-            error => {
-                panic!("mmap with fixed collision failed: {error:?}");
-            }
-        }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_mmap_with_fixed_noreplace_collision() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let page_size = *PAGE_SIZE;
+        spawn_kernel_and_run(|locked, current_task| {
+            let page_size = *PAGE_SIZE;
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), page_size);
-        match do_mmap(
-            locked,
-            &current_task,
-            mapped_address,
-            page_size as usize,
-            PROT_READ,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
-            FdNumber::from_raw(-1),
-            0,
-        ) {
-            Err(errno) => {
-                assert_eq!(errno, EEXIST);
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), page_size);
+            match do_mmap(
+                locked,
+                &current_task,
+                mapped_address,
+                page_size as usize,
+                PROT_READ,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+                FdNumber::from_raw(-1),
+                0,
+            ) {
+                Err(errno) => {
+                    assert_eq!(errno, EEXIST);
+                }
+                result => {
+                    panic!("mmap with fixed_noreplace collision failed: {result:?}");
+                }
             }
-            result => {
-                panic!("mmap with fixed_noreplace collision failed: {result:?}");
-            }
-        }
+        });
     }
 
     /// It is ok to call munmap with an address that is a multiple of the page size, and
     /// a non-zero length.
     #[::fuchsia::test]
     async fn test_munmap() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            assert_eq!(
+                sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize),
+                Ok(())
+            );
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        assert_eq!(sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize), Ok(()));
-
-        // Verify that the memory is no longer readable.
-        assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
+            // Verify that the memory is no longer readable.
+            assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
+        });
     }
 
     /// It is ok to call munmap on an unmapped range.
     #[::fuchsia::test]
     async fn test_munmap_not_mapped() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        assert_eq!(sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize), Ok(()));
-        assert_eq!(sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize), Ok(()));
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            assert_eq!(
+                sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize),
+                Ok(())
+            );
+            assert_eq!(
+                sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize),
+                Ok(())
+            );
+        });
     }
 
     /// It is an error to call munmap with a length of 0.
     #[::fuchsia::test]
     async fn test_munmap_0_length() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        assert_eq!(sys_munmap(locked, &current_task, mapped_address, 0), error!(EINVAL));
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            assert_eq!(sys_munmap(locked, &current_task, mapped_address, 0), error!(EINVAL));
+        });
     }
 
     /// It is an error to call munmap with an address that is not a multiple of the page size.
     #[::fuchsia::test]
     async fn test_munmap_not_aligned() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            assert_eq!(
+                sys_munmap(
+                    locked,
+                    &current_task,
+                    (mapped_address + 1u64).unwrap(),
+                    *PAGE_SIZE as usize
+                ),
+                error!(EINVAL)
+            );
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        assert_eq!(
-            sys_munmap(
-                locked,
-                &current_task,
-                (mapped_address + 1u64).unwrap(),
-                *PAGE_SIZE as usize
-            ),
-            error!(EINVAL)
-        );
-
-        // Verify that the memory is still readable.
-        assert!(current_task.read_memory_to_array::<5>(mapped_address).is_ok());
+            // Verify that the memory is still readable.
+            assert!(current_task.read_memory_to_array::<5>(mapped_address).is_ok());
+        });
     }
 
     /// The entire page should be unmapped, not just the range [address, address + length).
     #[::fuchsia::test]
     async fn test_munmap_unmap_partial() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            assert_eq!(
+                sys_munmap(locked, &current_task, mapped_address, (*PAGE_SIZE as usize) / 2),
+                Ok(())
+            );
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        assert_eq!(
-            sys_munmap(locked, &current_task, mapped_address, (*PAGE_SIZE as usize) / 2),
-            Ok(())
-        );
-
-        // Verify that memory can't be read in either half of the page.
-        assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
-        assert_eq!(
-            current_task.read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE - 2)).unwrap()),
-            error!(EFAULT)
-        );
+            // Verify that memory can't be read in either half of the page.
+            assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
+            assert_eq!(
+                current_task
+                    .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE - 2)).unwrap()),
+                error!(EFAULT)
+            );
+        });
     }
 
     /// All pages that intersect the munmap range should be unmapped.
     #[::fuchsia::test]
     async fn test_munmap_multiple_pages() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
+            assert_eq!(
+                sys_munmap(locked, &current_task, mapped_address, (*PAGE_SIZE as usize) + 1),
+                Ok(())
+            );
 
-        let mapped_address =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
-        assert_eq!(
-            sys_munmap(locked, &current_task, mapped_address, (*PAGE_SIZE as usize) + 1),
-            Ok(())
-        );
-
-        // Verify that neither page is readable.
-        assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
-        assert_eq!(
-            current_task.read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap()),
-            error!(EFAULT)
-        );
+            // Verify that neither page is readable.
+            assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
+            assert_eq!(
+                current_task
+                    .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap()),
+                error!(EFAULT)
+            );
+        });
     }
 
     /// Only the pages that intersect the munmap range should be unmapped.
     #[::fuchsia::test]
     async fn test_munmap_one_of_many_pages() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
+            assert_eq!(
+                sys_munmap(locked, &current_task, mapped_address, (*PAGE_SIZE as usize) - 1),
+                Ok(())
+            );
 
-        let mapped_address =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
-        assert_eq!(
-            sys_munmap(locked, &current_task, mapped_address, (*PAGE_SIZE as usize) - 1),
-            Ok(())
-        );
-
-        // Verify that the second page is still readable.
-        assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
-        assert!(
-            current_task
-                .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap())
-                .is_ok()
-        );
+            // Verify that the second page is still readable.
+            assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
+            assert!(
+                current_task
+                    .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap())
+                    .is_ok()
+            );
+        });
     }
 
     /// Unmap the middle page of a mapping.
     #[::fuchsia::test]
     async fn test_munmap_middle_page() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            assert_eq!(
+                sys_munmap(
+                    locked,
+                    &current_task,
+                    (mapped_address + *PAGE_SIZE).unwrap(),
+                    *PAGE_SIZE as usize
+                ),
+                Ok(())
+            );
 
-        let mapped_address =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        assert_eq!(
-            sys_munmap(
-                locked,
-                &current_task,
-                (mapped_address + *PAGE_SIZE).unwrap(),
-                *PAGE_SIZE as usize
-            ),
-            Ok(())
-        );
-
-        // Verify that the first and third pages are still readable.
-        assert!(current_task.read_memory_to_vec(mapped_address, 5).is_ok());
-        assert_eq!(
-            current_task.read_memory_to_vec((mapped_address + *PAGE_SIZE).unwrap(), 5),
-            error!(EFAULT)
-        );
-        assert!(
-            current_task
-                .read_memory_to_vec((mapped_address + (*PAGE_SIZE * 2)).unwrap(), 5)
-                .is_ok()
-        );
+            // Verify that the first and third pages are still readable.
+            assert!(current_task.read_memory_to_vec(mapped_address, 5).is_ok());
+            assert_eq!(
+                current_task.read_memory_to_vec((mapped_address + *PAGE_SIZE).unwrap(), 5),
+                error!(EFAULT)
+            );
+            assert!(
+                current_task
+                    .read_memory_to_vec((mapped_address + (*PAGE_SIZE * 2)).unwrap(), 5)
+                    .is_ok()
+            );
+        });
     }
 
     /// Unmap a range of pages that includes disjoint mappings.
     #[::fuchsia::test]
     async fn test_munmap_many_mappings() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_addresses: Vec<_> = std::iter::repeat_with(|| {
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE)
+            })
+            .take(3)
+            .collect();
+            let min_address = *mapped_addresses.iter().min().unwrap();
+            let max_address = *mapped_addresses.iter().max().unwrap();
+            let unmap_length = (max_address - min_address) + *PAGE_SIZE as usize;
 
-        let mapped_addresses: Vec<_> = std::iter::repeat_with(|| {
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE)
-        })
-        .take(3)
-        .collect();
-        let min_address = *mapped_addresses.iter().min().unwrap();
-        let max_address = *mapped_addresses.iter().max().unwrap();
-        let unmap_length = (max_address - min_address) + *PAGE_SIZE as usize;
+            assert_eq!(sys_munmap(locked, &current_task, min_address, unmap_length), Ok(()));
 
-        assert_eq!(sys_munmap(locked, &current_task, min_address, unmap_length), Ok(()));
-
-        // Verify that none of the mapped pages are readable.
-        for mapped_address in mapped_addresses {
-            assert_eq!(current_task.read_memory_to_vec(mapped_address, 5), error!(EFAULT));
-        }
+            // Verify that none of the mapped pages are readable.
+            for mapped_address in mapped_addresses {
+                assert_eq!(current_task.read_memory_to_vec(mapped_address, 5), error!(EFAULT));
+            }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_msync_validates_address_range() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 3 pages and test that ranges covering these pages return no error.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0), Ok(()));
+            assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0), Ok(()));
+            assert_eq!(
+                sys_msync(
+                    locked,
+                    &current_task,
+                    (addr + *PAGE_SIZE).unwrap(),
+                    *PAGE_SIZE as usize * 2,
+                    0
+                ),
+                Ok(())
+            );
 
-        // Map 3 pages and test that ranges covering these pages return no error.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0), Ok(()));
-        assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0), Ok(()));
-        assert_eq!(
-            sys_msync(
-                locked,
-                &current_task,
-                (addr + *PAGE_SIZE).unwrap(),
-                *PAGE_SIZE as usize * 2,
-                0
-            ),
-            Ok(())
-        );
+            // Unmap the middle page and test that ranges covering that page return ENOMEM.
+            sys_munmap(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE as usize)
+                .expect("unmap middle");
+            assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize, 0), Ok(()));
+            assert_eq!(
+                sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0),
+                error!(ENOMEM)
+            );
+            assert_eq!(
+                sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0),
+                error!(ENOMEM)
+            );
+            assert_eq!(
+                sys_msync(
+                    locked,
+                    &current_task,
+                    (addr + *PAGE_SIZE).unwrap(),
+                    *PAGE_SIZE as usize * 2,
+                    0
+                ),
+                error!(ENOMEM)
+            );
+            assert_eq!(
+                sys_msync(
+                    locked,
+                    &current_task,
+                    (addr + (*PAGE_SIZE * 2)).unwrap(),
+                    *PAGE_SIZE as usize,
+                    0
+                ),
+                Ok(())
+            );
 
-        // Unmap the middle page and test that ranges covering that page return ENOMEM.
-        sys_munmap(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE as usize)
-            .expect("unmap middle");
-        assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize, 0), Ok(()));
-        assert_eq!(
-            sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0),
-            error!(ENOMEM)
-        );
-        assert_eq!(
-            sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0),
-            error!(ENOMEM)
-        );
-        assert_eq!(
-            sys_msync(
-                locked,
-                &current_task,
-                (addr + *PAGE_SIZE).unwrap(),
-                *PAGE_SIZE as usize * 2,
-                0
-            ),
-            error!(ENOMEM)
-        );
-        assert_eq!(
-            sys_msync(
-                locked,
-                &current_task,
-                (addr + (*PAGE_SIZE * 2)).unwrap(),
-                *PAGE_SIZE as usize,
-                0
-            ),
-            Ok(())
-        );
-
-        // Map the middle page back and test that ranges covering the three pages
-        // (spanning multiple ranges) return no error.
-        assert_eq!(
-            map_memory(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE),
-            (addr + *PAGE_SIZE).unwrap()
-        );
-        assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0), Ok(()));
-        assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0), Ok(()));
-        assert_eq!(
-            sys_msync(
-                locked,
-                &current_task,
-                (addr + *PAGE_SIZE).unwrap(),
-                *PAGE_SIZE as usize * 2,
-                0
-            ),
-            Ok(())
-        );
+            // Map the middle page back and test that ranges covering the three pages
+            // (spanning multiple ranges) return no error.
+            assert_eq!(
+                map_memory(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE),
+                (addr + *PAGE_SIZE).unwrap()
+            );
+            assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0), Ok(()));
+            assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0), Ok(()));
+            assert_eq!(
+                sys_msync(
+                    locked,
+                    &current_task,
+                    (addr + *PAGE_SIZE).unwrap(),
+                    *PAGE_SIZE as usize * 2,
+                    0
+                ),
+                Ok(())
+            );
+        });
     }
 
     /// Shrinks an entire range.
     #[::fuchsia::test]
     async fn test_mremap_shrink_whole_range_from_end() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 2 pages.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
 
-        // Map 2 pages.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            // Shrink the mapping from 2 to 1 pages.
+            assert_eq!(
+                remap_memory(
+                    locked,
+                    &current_task,
+                    addr,
+                    *PAGE_SIZE * 2,
+                    *PAGE_SIZE,
+                    0,
+                    UserAddress::default()
+                ),
+                Ok(addr)
+            );
 
-        // Shrink the mapping from 2 to 1 pages.
-        assert_eq!(
-            remap_memory(
-                locked,
-                &current_task,
-                addr,
-                *PAGE_SIZE * 2,
-                *PAGE_SIZE,
-                0,
-                UserAddress::default()
-            ),
-            Ok(addr)
-        );
-
-        check_page_eq(&current_task, addr, 'a');
-        check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+            check_page_eq(&current_task, addr, 'a');
+            check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+        });
     }
 
     /// Shrinks part of a range, introducing a hole in the middle.
     #[::fuchsia::test]
     async fn test_mremap_shrink_partial_range() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 3 pages.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
 
-        // Map 3 pages.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-        fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // Shrink the first 2 pages down to 1, creating a hole.
+            assert_eq!(
+                remap_memory(
+                    locked,
+                    &current_task,
+                    addr,
+                    *PAGE_SIZE * 2,
+                    *PAGE_SIZE,
+                    0,
+                    UserAddress::default()
+                ),
+                Ok(addr)
+            );
 
-        // Shrink the first 2 pages down to 1, creating a hole.
-        assert_eq!(
-            remap_memory(
-                locked,
-                &current_task,
-                addr,
-                *PAGE_SIZE * 2,
-                *PAGE_SIZE,
-                0,
-                UserAddress::default()
-            ),
-            Ok(addr)
-        );
-
-        check_page_eq(&current_task, addr, 'a');
-        check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
-        check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            check_page_eq(&current_task, addr, 'a');
+            check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+            check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+        });
     }
 
     /// Shrinking doesn't care if the range specified spans multiple mappings.
     #[::fuchsia::test]
     async fn test_mremap_shrink_across_ranges() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 3 pages, unmap the middle, then map the middle again. This will leave us with
+            // 3 contiguous mappings.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            assert_eq!(
+                sys_munmap(
+                    locked,
+                    &current_task,
+                    (addr + *PAGE_SIZE).unwrap(),
+                    *PAGE_SIZE as usize
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                map_memory(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE),
+                (addr + *PAGE_SIZE).unwrap()
+            );
 
-        // Map 3 pages, unmap the middle, then map the middle again. This will leave us with
-        // 3 contiguous mappings.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        assert_eq!(
-            sys_munmap(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE as usize),
-            Ok(())
-        );
-        assert_eq!(
-            map_memory(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE),
-            (addr + *PAGE_SIZE).unwrap()
-        );
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
 
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-        fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // Remap over all three mappings, shrinking to 1 page.
+            assert_eq!(
+                remap_memory(
+                    locked,
+                    &current_task,
+                    addr,
+                    *PAGE_SIZE * 3,
+                    *PAGE_SIZE,
+                    0,
+                    UserAddress::default()
+                ),
+                Ok(addr)
+            );
 
-        // Remap over all three mappings, shrinking to 1 page.
-        assert_eq!(
-            remap_memory(
-                locked,
-                &current_task,
-                addr,
-                *PAGE_SIZE * 3,
-                *PAGE_SIZE,
-                0,
-                UserAddress::default()
-            ),
-            Ok(addr)
-        );
-
-        check_page_eq(&current_task, addr, 'a');
-        check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
-        check_unmapped(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap());
+            check_page_eq(&current_task, addr, 'a');
+            check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+            check_unmapped(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap());
+        });
     }
 
     /// Grows a mapping in-place.
     #[::fuchsia::test]
     async fn test_mremap_grow_in_place() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 3 pages, unmap the middle, leaving a hole.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            assert_eq!(
+                sys_munmap(
+                    locked,
+                    &current_task,
+                    (addr + *PAGE_SIZE).unwrap(),
+                    *PAGE_SIZE as usize
+                ),
+                Ok(())
+            );
 
-        // Map 3 pages, unmap the middle, leaving a hole.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-        fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
-        assert_eq!(
-            sys_munmap(locked, &current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE as usize),
-            Ok(())
-        );
+            // Grow the first page in-place into the middle.
+            assert_eq!(
+                remap_memory(
+                    locked,
+                    &current_task,
+                    addr,
+                    *PAGE_SIZE,
+                    *PAGE_SIZE * 2,
+                    0,
+                    UserAddress::default()
+                ),
+                Ok(addr)
+            );
 
-        // Grow the first page in-place into the middle.
-        assert_eq!(
-            remap_memory(
-                locked,
-                &current_task,
-                addr,
-                *PAGE_SIZE,
-                *PAGE_SIZE * 2,
-                0,
-                UserAddress::default()
-            ),
-            Ok(addr)
-        );
+            check_page_eq(&current_task, addr, 'a');
 
-        check_page_eq(&current_task, addr, 'a');
+            // The middle page should be new, and not just pointing to the original middle page filled
+            // with 'b'.
+            check_page_ne(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
 
-        // The middle page should be new, and not just pointing to the original middle page filled
-        // with 'b'.
-        check_page_ne(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-
-        check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+        });
     }
 
     /// Tries to grow a set of pages that cannot fit, and forces a move.
     #[::fuchsia::test]
     async fn test_mremap_grow_maymove() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 3 pages.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
 
-        // Map 3 pages.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-        fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // Grow the first two pages by 1, forcing a move.
+            let new_addr = remap_memory(
+                locked,
+                &current_task,
+                addr,
+                *PAGE_SIZE * 2,
+                *PAGE_SIZE * 3,
+                MREMAP_MAYMOVE,
+                UserAddress::default(),
+            )
+            .expect("failed to mremap");
 
-        // Grow the first two pages by 1, forcing a move.
-        let new_addr = remap_memory(
-            locked,
-            &current_task,
-            addr,
-            *PAGE_SIZE * 2,
-            *PAGE_SIZE * 3,
-            MREMAP_MAYMOVE,
-            UserAddress::default(),
-        )
-        .expect("failed to mremap");
+            assert_ne!(new_addr, addr, "mremap did not move the mapping");
 
-        assert_ne!(new_addr, addr, "mremap did not move the mapping");
+            // The first two pages should have been moved.
+            check_unmapped(&current_task, addr);
+            check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
 
-        // The first two pages should have been moved.
-        check_unmapped(&current_task, addr);
-        check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+            // The third page should still be present.
+            check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
 
-        // The third page should still be present.
-        check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // The moved pages should have the same contents.
+            check_page_eq(&current_task, new_addr, 'a');
+            check_page_eq(&current_task, (new_addr + *PAGE_SIZE).unwrap(), 'b');
 
-        // The moved pages should have the same contents.
-        check_page_eq(&current_task, new_addr, 'a');
-        check_page_eq(&current_task, (new_addr + *PAGE_SIZE).unwrap(), 'b');
-
-        // The newly grown page should not be the same as the original third page.
-        check_page_ne(&current_task, (new_addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // The newly grown page should not be the same as the original third page.
+            check_page_ne(&current_task, (new_addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+        });
     }
 
     /// Shrinks a set of pages and move them to a fixed location.
     #[::fuchsia::test]
     async fn test_mremap_shrink_fixed() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Map 2 pages which will act as the destination.
+            let dst_addr =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
+            fill_page(&current_task, dst_addr, 'y');
+            fill_page(&current_task, (dst_addr + *PAGE_SIZE).unwrap(), 'z');
 
-        // Map 2 pages which will act as the destination.
-        let dst_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
-        fill_page(&current_task, dst_addr, 'y');
-        fill_page(&current_task, (dst_addr + *PAGE_SIZE).unwrap(), 'z');
+            // Map 3 pages.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
 
-        // Map 3 pages.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-        fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // Shrink the first two pages and move them to overwrite the mappings at `dst_addr`.
+            let new_addr = remap_memory(
+                locked,
+                &current_task,
+                addr,
+                *PAGE_SIZE * 2,
+                *PAGE_SIZE,
+                MREMAP_MAYMOVE | MREMAP_FIXED,
+                dst_addr,
+            )
+            .expect("failed to mremap");
 
-        // Shrink the first two pages and move them to overwrite the mappings at `dst_addr`.
-        let new_addr = remap_memory(
-            locked,
-            &current_task,
-            addr,
-            *PAGE_SIZE * 2,
-            *PAGE_SIZE,
-            MREMAP_MAYMOVE | MREMAP_FIXED,
-            dst_addr,
-        )
-        .expect("failed to mremap");
+            assert_eq!(new_addr, dst_addr, "mremap did not move the mapping");
 
-        assert_eq!(new_addr, dst_addr, "mremap did not move the mapping");
+            // The first two pages should have been moved.
+            check_unmapped(&current_task, addr);
+            check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
 
-        // The first two pages should have been moved.
-        check_unmapped(&current_task, addr);
-        check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+            // The third page should still be present.
+            check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
 
-        // The third page should still be present.
-        check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            // The first moved page should have the same contents.
+            check_page_eq(&current_task, new_addr, 'a');
 
-        // The first moved page should have the same contents.
-        check_page_eq(&current_task, new_addr, 'a');
-
-        // The second page should be part of the original dst mapping.
-        check_page_eq(&current_task, (new_addr + *PAGE_SIZE).unwrap(), 'z');
+            // The second page should be part of the original dst mapping.
+            check_page_eq(&current_task, (new_addr + *PAGE_SIZE).unwrap(), 'z');
+        });
     }
 
     /// Clobbers the middle of an existing mapping with mremap to a fixed location.
     #[::fuchsia::test]
     async fn test_mremap_clobber_memory_mapping() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let dst_memory = MemoryObject::from(zx::Vmo::create(2 * *PAGE_SIZE).unwrap());
+            dst_memory.write(&['x' as u8].repeat(*PAGE_SIZE as usize), 0).unwrap();
+            dst_memory.write(&['y' as u8].repeat(*PAGE_SIZE as usize), *PAGE_SIZE).unwrap();
 
-        let dst_memory = MemoryObject::from(zx::Vmo::create(2 * *PAGE_SIZE).unwrap());
-        dst_memory.write(&['x' as u8].repeat(*PAGE_SIZE as usize), 0).unwrap();
-        dst_memory.write(&['y' as u8].repeat(*PAGE_SIZE as usize), *PAGE_SIZE).unwrap();
+            let dst_addr = current_task
+                .mm()
+                .unwrap()
+                .map_memory(
+                    DesiredAddress::Any,
+                    dst_memory.into(),
+                    0,
+                    2 * (*PAGE_SIZE as usize),
+                    ProtectionFlags::READ,
+                    Access::rwx(),
+                    MappingOptions::empty(),
+                    MappingName::None,
+                )
+                .unwrap();
 
-        let dst_addr = current_task
-            .mm()
-            .unwrap()
-            .map_memory(
-                DesiredAddress::Any,
-                dst_memory.into(),
-                0,
-                2 * (*PAGE_SIZE as usize),
-                ProtectionFlags::READ,
-                Access::rwx(),
-                MappingOptions::empty(),
-                MappingName::None,
+            // Map 3 pages.
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
+            fill_page(&current_task, addr, 'a');
+            fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
+            fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+
+            // Overwrite the second page of the mapping with the second page of the anonymous mapping.
+            let remapped_addr = sys_mremap(
+                locked,
+                &*current_task,
+                (addr + *PAGE_SIZE).unwrap(),
+                *PAGE_SIZE as usize,
+                *PAGE_SIZE as usize,
+                MREMAP_FIXED | MREMAP_MAYMOVE,
+                (dst_addr + *PAGE_SIZE).unwrap(),
             )
             .unwrap();
 
-        // Map 3 pages.
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 3);
-        fill_page(&current_task, addr, 'a');
-        fill_page(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
-        fill_page(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
+            assert_eq!(remapped_addr, (dst_addr + *PAGE_SIZE).unwrap());
 
-        // Overwrite the second page of the mapping with the second page of the anonymous mapping.
-        let remapped_addr = sys_mremap(
-            locked,
-            &*current_task,
-            (addr + *PAGE_SIZE).unwrap(),
-            *PAGE_SIZE as usize,
-            *PAGE_SIZE as usize,
-            MREMAP_FIXED | MREMAP_MAYMOVE,
-            (dst_addr + *PAGE_SIZE).unwrap(),
-        )
-        .unwrap();
+            check_page_eq(&current_task, addr, 'a');
+            check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
+            check_page_eq(&current_task, (addr + (2 * *PAGE_SIZE)).unwrap(), 'c');
 
-        assert_eq!(remapped_addr, (dst_addr + *PAGE_SIZE).unwrap());
-
-        check_page_eq(&current_task, addr, 'a');
-        check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
-        check_page_eq(&current_task, (addr + (2 * *PAGE_SIZE)).unwrap(), 'c');
-
-        check_page_eq(&current_task, dst_addr, 'x');
-        check_page_eq(&current_task, (dst_addr + *PAGE_SIZE).unwrap(), 'b');
+            check_page_eq(&current_task, dst_addr, 'x');
+            check_page_eq(&current_task, (dst_addr + *PAGE_SIZE).unwrap(), 'b');
+        });
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -1422,35 +1455,37 @@ mod tests {
     async fn test_map_32_bit() {
         use starnix_uapi::PROT_WRITE;
 
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let page_size = *PAGE_SIZE;
+        spawn_kernel_and_run(|locked, current_task| {
+            let page_size = *PAGE_SIZE;
 
-        for _i in 0..256 {
-            match do_mmap(
-                locked,
-                &current_task,
-                UserAddress::from(0),
-                page_size as usize,
-                PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT,
-                FdNumber::from_raw(-1),
-                0,
-            ) {
-                Ok(address) => {
-                    let memory_end = address.ptr() + page_size as usize;
-                    assert!(memory_end <= 0x80000000);
-                }
-                error => {
-                    panic!("mmap with MAP_32BIT failed: {error:?}");
+            for _i in 0..256 {
+                match do_mmap(
+                    locked,
+                    &current_task,
+                    UserAddress::from(0),
+                    page_size as usize,
+                    PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT,
+                    FdNumber::from_raw(-1),
+                    0,
+                ) {
+                    Ok(address) => {
+                        let memory_end = address.ptr() + page_size as usize;
+                        assert!(memory_end <= 0x80000000);
+                    }
+                    error => {
+                        panic!("mmap with MAP_32BIT failed: {error:?}");
+                    }
                 }
             }
-        }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_membarrier() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        assert_eq!(sys_membarrier(locked, &current_task, 0, 0, 0), Ok(0));
-        assert_eq!(sys_membarrier(locked, &current_task, 3, 0, 0), error!(EINVAL));
+        spawn_kernel_and_run(|locked, current_task| {
+            assert_eq!(sys_membarrier(locked, &current_task, 0, 0, 0), Ok(0));
+            assert_eq!(sys_membarrier(locked, &current_task, 3, 0, 0), error!(EINVAL));
+        });
     }
 }
