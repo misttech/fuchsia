@@ -6172,13 +6172,41 @@ mod tests {
 
     use super::*;
     use packet::ParsablePacket;
-    use rand::rngs::mock::StepRng;
+    use rand::RngCore;
     use test_case::test_case;
     use testconsts::*;
     use testutil::{
         REBIND_TEST_STATE, RENEW_TEST_STATE, RenewRebindTestState, TestIa, TestIaNa, TestIaPd,
         TestMessageBuilder, handle_renew_or_rebind_timer,
     };
+
+    #[derive(Debug)]
+    struct StepRng {
+        state: u64,
+        increment: u64,
+    }
+
+    impl StepRng {
+        pub fn new(initial: u64, increment: u64) -> Self {
+            Self { state: initial, increment: increment }
+        }
+    }
+
+    impl RngCore for StepRng {
+        fn next_u32(&mut self) -> u32 {
+            self.next_u64() as u32
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            let r = self.state;
+            self.state = self.state.wrapping_add(self.increment);
+            r
+        }
+
+        fn fill_bytes(&mut self, _dst: &mut [u8]) {
+            unimplemented!();
+        }
+    }
 
     #[test]
     fn send_information_request_and_receive_reply() {

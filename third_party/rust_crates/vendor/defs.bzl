@@ -435,7 +435,7 @@ _NORMAL_DEPENDENCIES = {
             "prost": Label("//third_party/rust_crates/vendor/prost-0.11.0:prost"),
             "prost-build": Label("//third_party/rust_crates/vendor/prost-build-0.11.1:prost_build"),
             "prost-types": Label("//third_party/rust_crates/vendor/prost-types-0.11.1:prost_types"),
-            "rand": Label("//third_party/rust_crates/vendor/rand-0.9.1:rand"),
+            "rand": Label("//third_party/rust_crates/vendor/rand-0.9.2:rand"),
             "rand_core": Label("//third_party/rust_crates/vendor/rand_core-0.9.3:rand_core"),
             "rand_xorshift": Label("//third_party/rust_crates/vendor/rand_xorshift-0.4.0:rand_xorshift"),
             "rapidhash": Label("//third_party/rust_crates/vendor/rapidhash-1.4.0:rapidhash"),

@@ -165,8 +165,34 @@ mod tests {
     use fs_management::Minfs;
     use fuchsia_async as fasync;
     use ramdevice_client::RamdiskClient;
-    use rand::Rng as _;
-    use rand::rngs::mock::StepRng;
+    use rand::{Rng as _, RngCore};
+
+    struct StepRng {
+        state: u64,
+        increment: u64,
+    }
+
+    impl StepRng {
+        pub fn new(initial: u64, increment: u64) -> Self {
+            Self { state: initial, increment: increment }
+        }
+    }
+
+    impl RngCore for StepRng {
+        fn next_u32(&mut self) -> u32 {
+            self.next_u64() as u32
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            let r = self.state;
+            self.state = self.state.wrapping_add(self.increment);
+            r
+        }
+
+        fn fill_bytes(&mut self, dst: &mut [u8]) {
+            rand_core::impls::fill_bytes_via_next(self, dst)
+        }
+    }
 
     // this fixture will have to get updated any time the generation logic changes. depending on the
     // nature of the change, the comparison logic may have to be changed as well.

@@ -48,6 +48,7 @@ rustc_library("blackout-target") {
   test_deps = [
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/ramdevice_client/rust:ramdevice_client",
+    "//third_party/rust_crates:rand_core",
   ]
 
   sources = [
