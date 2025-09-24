@@ -351,68 +351,69 @@ impl InflightVmsplicedPayloads {
 mod tests {
     use super::*;
     use crate::mm::PAGE_SIZE;
-    use crate::testing::create_kernel_and_task;
+    use crate::testing::spawn_kernel_and_run;
     use crate::vfs::VecOutputBuffer;
 
     #[::fuchsia::test]
     async fn lifecycle() {
-        const NUM_PAGES: u64 = 3;
-        let page_size = *PAGE_SIZE;
+        spawn_kernel_and_run(|_locked, current_task| {
+            const NUM_PAGES: u64 = 3;
+            let page_size = *PAGE_SIZE;
 
-        let (_kernel, current_task) = create_kernel_and_task();
-        let mm = current_task.mm().unwrap();
+            let mm = current_task.mm().unwrap();
 
-        assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
+            assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
 
-        let memory_size = page_size * NUM_PAGES;
-        let memory = Arc::new(MemoryObject::Vmo(zx::Vmo::create(memory_size).unwrap()));
-        let mut bytes = vec![0; memory_size as usize];
-        for i in 0..NUM_PAGES {
-            bytes[(page_size * i) as usize..][..(page_size as usize)].fill('A' as u8 + i as u8)
-        }
-        memory.write(&bytes, 0).unwrap();
+            let memory_size = page_size * NUM_PAGES;
+            let memory = Arc::new(MemoryObject::Vmo(zx::Vmo::create(memory_size).unwrap()));
+            let mut bytes = vec![0; memory_size as usize];
+            for i in 0..NUM_PAGES {
+                bytes[(page_size * i) as usize..][..(page_size as usize)].fill('A' as u8 + i as u8)
+            }
+            memory.write(&bytes, 0).unwrap();
 
-        let payload = VmsplicePayload::new(
-            Arc::downgrade(&mm),
-            VmsplicePayloadSegment {
-                addr_offset: UserAddress::NULL,
-                length: (page_size * NUM_PAGES) as usize,
-                memory: Arc::clone(&memory),
-                memory_offset: 0,
-            },
-        );
-        assert_eq!(mm.inflight_vmspliced_payloads.payloads.lock().len(), 1);
-        assert_eq!(payload.segments.lock().len(), 1);
-
-        // A unmapping a different `MemoryObject` should do nothing.
-        {
-            let memory = Arc::new(MemoryObject::Vmo(zx::Vmo::create(page_size).unwrap()));
-            mm.inflight_vmspliced_payloads
-                .handle_unmapping(&memory, &(UserAddress::NULL..(u64::MAX.into())))
-                .unwrap();
+            let payload = VmsplicePayload::new(
+                Arc::downgrade(&mm),
+                VmsplicePayloadSegment {
+                    addr_offset: UserAddress::NULL,
+                    length: (page_size * NUM_PAGES) as usize,
+                    memory: Arc::clone(&memory),
+                    memory_offset: 0,
+                },
+            );
+            assert_eq!(mm.inflight_vmspliced_payloads.payloads.lock().len(), 1);
             assert_eq!(payload.segments.lock().len(), 1);
-        }
 
-        mm.inflight_vmspliced_payloads
-            .handle_unmapping(&memory, &(UserAddress::NULL..page_size.into()))
-            .unwrap();
-        {
-            let segments = payload.segments.lock();
-            assert_eq!(segments.len(), 2);
-            assert!(!Arc::ptr_eq(&segments[0].memory, &memory));
-            assert!(Arc::ptr_eq(&segments[1].memory, &memory));
-        }
-        let mut got = VecOutputBuffer::new(memory_size as usize);
-        payload.copy_to_user(&mut got).unwrap();
-        assert_eq!(got.data(), &bytes);
+            // A unmapping a different `MemoryObject` should do nothing.
+            {
+                let memory = Arc::new(MemoryObject::Vmo(zx::Vmo::create(page_size).unwrap()));
+                mm.inflight_vmspliced_payloads
+                    .handle_unmapping(&memory, &(UserAddress::NULL..(u64::MAX.into())))
+                    .unwrap();
+                assert_eq!(payload.segments.lock().len(), 1);
+            }
 
-        std::mem::drop(payload);
+            mm.inflight_vmspliced_payloads
+                .handle_unmapping(&memory, &(UserAddress::NULL..page_size.into()))
+                .unwrap();
+            {
+                let segments = payload.segments.lock();
+                assert_eq!(segments.len(), 2);
+                assert!(!Arc::ptr_eq(&segments[0].memory, &memory));
+                assert!(Arc::ptr_eq(&segments[1].memory, &memory));
+            }
+            let mut got = VecOutputBuffer::new(memory_size as usize);
+            payload.copy_to_user(&mut got).unwrap();
+            assert_eq!(got.data(), &bytes);
 
-        // Run the unmapping again to ensure payload is dropped.
-        mm.inflight_vmspliced_payloads
-            .handle_unmapping(&memory, &(UserAddress::NULL..page_size.into()))
-            .unwrap();
+            std::mem::drop(payload);
 
-        assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
+            // Run the unmapping again to ensure payload is dropped.
+            mm.inflight_vmspliced_payloads
+                .handle_unmapping(&memory, &(UserAddress::NULL..page_size.into()))
+                .unwrap();
+
+            assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
+        });
     }
 }
