@@ -18,6 +18,7 @@ use crate::vfs::socket::{
 use crate::vfs::{FdFlags, FdNumber, FileHandle, FsString, LookupContext};
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
+use starnix_types::augmented::Augmented;
 use starnix_types::time::duration_from_timespec;
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_NET_BIND_SERVICE;
@@ -34,11 +35,15 @@ use starnix_uapi::{
     MSG_CTRUNC, MSG_DONTWAIT, MSG_TRUNC, MSG_WAITFORONE, SHUT_RD, SHUT_RDWR, SHUT_WR, SOCK_CLOEXEC,
     SOCK_NONBLOCK, UIO_MAXIOV, errno, error, socklen_t, uapi,
 };
+use std::ops::Deref;
 
 uapi::check_arch_independent_layout! {
     socklen_t {}
 }
 
+/// A `msghdr` can be augmented with a `UserBuffer`. In that case, the `UserBuffer` is used for
+/// the I/O, instead of the `iovec` fields from the `msghdr`.
+pub type WithAlternateBuffer<T> = Augmented<T, UserBuffer>;
 pub type MsgHdrPtr = MappingMultiArchUserRef<MsgHdr, uapi::msghdr, uapi::arch32::msghdr>;
 
 pub struct MsgHdr {
@@ -493,8 +498,11 @@ pub fn sys_socketpair(
 
 fn read_iovec_from_msghdr(
     current_task: &CurrentTask,
-    message_header: &MsgHdr,
+    message_header: WithAlternateBuffer<&MsgHdr>,
 ) -> Result<UserBuffers, Errno> {
+    if let WithAlternateBuffer::WithAux(_, b) = message_header {
+        return Ok(UserBuffers::from_buf([b]));
+    }
     let iovec_count = message_header.iovlen;
 
     // In `CurrentTask::read_iovec()` the same check fails with `EINVAL`. This works for all
@@ -511,23 +519,25 @@ fn recvmsg_internal<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
     file: &FileHandle,
-    user_message_header: MsgHdrPtr,
+    user_message_header: WithAlternateBuffer<MsgHdrPtr>,
     flags: u32,
     deadline: Option<zx::MonotonicInstant>,
 ) -> Result<usize, Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let mut message_header = current_task.read_multi_arch_object(user_message_header)?;
+    let user_message_header_addr = user_message_header.deref().clone();
+    let mut message_header =
+        user_message_header.map(|h| current_task.read_multi_arch_object(h)).transpose()?;
     let result = recvmsg_internal_with_header(
         locked,
         current_task,
         file,
-        &mut message_header,
+        message_header.as_mut(),
         flags,
         deadline,
     )?;
-    current_task.write_multi_arch_object(user_message_header, message_header)?;
+    current_task.write_multi_arch_object(user_message_header_addr, message_header.extract())?;
     Ok(result)
 }
 
@@ -535,14 +545,14 @@ fn recvmsg_internal_with_header<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
     file: &FileHandle,
-    message_header: &mut MsgHdr,
+    mut message_header: WithAlternateBuffer<&mut MsgHdr>,
     flags: u32,
     deadline: Option<zx::MonotonicInstant>,
 ) -> Result<usize, Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let iovec = read_iovec_from_msghdr(current_task, &message_header)?;
+    let iovec = read_iovec_from_msghdr(current_task, message_header.as_unmut())?;
 
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
     let socket_ops = file.downcast_file::<SocketFile>().unwrap();
@@ -633,6 +643,21 @@ pub fn sys_recvmsg(
     user_message_header: MsgHdrPtr,
     flags: u32,
 ) -> Result<usize, Errno> {
+    recvmsg_impl(locked, current_task, fd, user_message_header.into(), flags)
+}
+
+/// Implementation of `recvmsg`.
+///
+/// This function is used by `sys_recvmsg`, but can also be called from other parts of the kernel
+/// that need to override the `iovec` from the `msghdr`. For example, when using `io_uring` with
+/// ring buffers.
+pub fn recvmsg_impl(
+    locked: &mut Locked<Unlocked>,
+    current_task: &CurrentTask,
+    fd: FdNumber,
+    user_message_header: WithAlternateBuffer<MsgHdrPtr>,
+    flags: u32,
+) -> Result<usize, Errno> {
     let file = current_task.files.get(fd)?;
     if !file.node().is_sock() {
         return error!(ENOTSOCK);
@@ -673,7 +698,7 @@ pub fn sys_recvmmsg(
             locked,
             current_task,
             &file,
-            &mut current_mmsghdr.hdr,
+            (&mut current_mmsghdr.hdr).into(),
             flags,
             deadline,
         ) {
@@ -769,7 +794,7 @@ where
         message_header.name,
         message_header.name_len as usize,
     )?;
-    let iovec = read_iovec_from_msghdr(current_task, &message_header)?;
+    let iovec = read_iovec_from_msghdr(current_task, message_header.into())?;
 
     let mut next_message_offset: usize = 0;
     let mut ancillary_data = Vec::new();

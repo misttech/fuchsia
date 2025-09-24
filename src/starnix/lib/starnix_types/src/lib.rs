@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod arch;
+pub mod augmented;
 pub mod convert;
 pub mod futex_address;
 pub mod math;

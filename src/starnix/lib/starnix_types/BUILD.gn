@@ -14,6 +14,7 @@ rustc_library("starnix_types") {
 
   sources = [
     "src/arch.rs",
+    "src/augmented.rs",
     "src/convert.rs",
     "src/errors.rs",
     "src/futex_address.rs",
