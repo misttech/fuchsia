@@ -1343,11 +1343,11 @@ mod test {
         assert_eq!(
             events_10,
             vec![
-                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 10),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 20),
+                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1),
                 make_uapi_input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0),
             ]
         );
@@ -1355,11 +1355,11 @@ mod test {
         assert_eq!(
             events_11,
             vec![
-                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 2),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 30),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 40),
+                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1),
                 make_uapi_input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0),
             ]
         );

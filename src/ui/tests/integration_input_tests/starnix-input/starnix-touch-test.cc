@@ -213,12 +213,12 @@ TEST_F(StarnixTouchTest, Tap) {
 
   {
     auto events = GetTouchEventSequenceOfLen(out_socket, kDownUpNumEvents);
-    ExpectBtnTouch(events[0], 1);
-    ExpectLocationPhaseAndSlot(events[1], static_cast<float>(display_width()) / 4.f,
+    ExpectLocationPhaseAndSlot(events[0], static_cast<float>(display_width()) / 4.f,
                                static_cast<float>(display_height()) / 4.f,
                                fuchsia_ui_pointer::EventPhase::kAdd, 0);
-    ExpectBtnTouch(events[2], 0);
-    ExpectLocationPhaseAndSlot(events[3], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[1], 1);
+    ExpectLocationPhaseAndSlot(events[2], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[3], 0);
   }
 
   // Bottom-right.
@@ -226,12 +226,12 @@ TEST_F(StarnixTouchTest, Tap) {
 
   {
     auto events = GetTouchEventSequenceOfLen(out_socket, kDownUpNumEvents);
-    ExpectBtnTouch(events[0], 1);
-    ExpectLocationPhaseAndSlot(events[1], 3 * static_cast<float>(display_width()) / 4.f,
+    ExpectLocationPhaseAndSlot(events[0], 3 * static_cast<float>(display_width()) / 4.f,
                                3 * static_cast<float>(display_height()) / 4.f,
                                fuchsia_ui_pointer::EventPhase::kAdd, 0);
-    ExpectBtnTouch(events[2], 0);
-    ExpectLocationPhaseAndSlot(events[3], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[1], 1);
+    ExpectLocationPhaseAndSlot(events[2], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[3], 0);
   }
 
   WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);
@@ -261,12 +261,12 @@ TEST_F(StarnixTouchTest, EventsDuringFileCloseAreIgnored) {
   InjectInput(TapLocation::kTopLeft);
   {
     auto events = GetTouchEventSequenceOfLen(out_socket, kDownUpNumEvents);
-    ExpectBtnTouch(events[0], 1);
-    ExpectLocationPhaseAndSlot(events[1], static_cast<float>(display_width()) / 4.f,
+    ExpectLocationPhaseAndSlot(events[0], static_cast<float>(display_width()) / 4.f,
                                static_cast<float>(display_height()) / 4.f,
                                fuchsia_ui_pointer::EventPhase::kAdd, 0);
-    ExpectBtnTouch(events[2], 0);
-    ExpectLocationPhaseAndSlot(events[3], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[1], 1);
+    ExpectLocationPhaseAndSlot(events[2], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[3], 0);
   }
 
   FX_LOGS(INFO) << "device file closed";
@@ -294,12 +294,12 @@ TEST_F(StarnixTouchTest, EventsDuringFileCloseAreIgnored) {
   InjectInput(TapLocation::kBottomRight);
   {
     auto events = GetTouchEventSequenceOfLen(out_socket, kDownUpNumEvents);
-    ExpectBtnTouch(events[0], 1);
-    ExpectLocationPhaseAndSlot(events[1], 3 * static_cast<float>(display_width()) / 4.f,
+    ExpectLocationPhaseAndSlot(events[0], 3 * static_cast<float>(display_width()) / 4.f,
                                3 * static_cast<float>(display_height()) / 4.f,
                                fuchsia_ui_pointer::EventPhase::kAdd, 0);
-    ExpectBtnTouch(events[2], 0);
-    ExpectLocationPhaseAndSlot(events[3], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[1], 1);
+    ExpectLocationPhaseAndSlot(events[2], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[3], 0);
   }
 
   WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);
@@ -331,12 +331,12 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
   InjectInput(TapLocation::kTopLeft);
   {
     auto events = GetTouchEventSequenceOfLen(out_socket, kDownUpNumEvents);
-    ExpectBtnTouch(events[0], 1);
-    ExpectLocationPhaseAndSlot(events[1], static_cast<float>(display_width()) / 4.f,
+    ExpectLocationPhaseAndSlot(events[0], static_cast<float>(display_width()) / 4.f,
                                static_cast<float>(display_height()) / 4.f,
                                fuchsia_ui_pointer::EventPhase::kAdd, 0);
-    ExpectBtnTouch(events[2], 0);
-    ExpectLocationPhaseAndSlot(events[3], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[1], 1);
+    ExpectLocationPhaseAndSlot(events[2], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[3], 0);
   }
 
   FX_LOGS(INFO) << "device file closed";
@@ -389,8 +389,8 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
     ExpectLocationPhaseAndSlot(events[0], 3 * static_cast<float>(display_width()) / 4.f,
                                3 * static_cast<float>(display_height()) / 4.f,
                                fuchsia_ui_pointer::EventPhase::kChange, 0);
-    ExpectBtnTouch(events[1], 0);
-    ExpectLocationPhaseAndSlot(events[2], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectLocationPhaseAndSlot(events[1], 0.0, 0.0, fuchsia_ui_pointer::EventPhase::kRemove, 0);
+    ExpectBtnTouch(events[2], 0);
   }
 
   WaitForMessageFromInputDump(out_socket, relay_api::kWaitForStdinMessage);

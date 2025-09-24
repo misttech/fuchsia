@@ -1208,11 +1208,11 @@ mod test {
         assert_eq!(
             events,
             vec![
-                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 0),
+                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1),
                 make_uapi_input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0),
             ]
         );
@@ -1306,9 +1306,9 @@ mod test {
         assert_eq!(
             events,
             vec![
-                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, -1),
+                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 0),
                 make_uapi_input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0),
             ]
         );
@@ -1434,9 +1434,9 @@ mod test {
         assert_eq!(
             events,
             vec![
-                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 0),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 1),
                 make_uapi_input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, -1),
+                make_uapi_input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 0),
                 make_uapi_input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0),
             ]
         );
@@ -1473,11 +1473,11 @@ mod test {
         assert_eq!(
             events,
             vec![
-                make_uapi_input_event_with_timestamp(uapi::EV_KEY, uapi::BTN_TOUCH, 1, 1),
                 make_uapi_input_event_with_timestamp(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0, 1),
                 make_uapi_input_event_with_timestamp(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1, 1),
                 make_uapi_input_event_with_timestamp(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 0, 1),
                 make_uapi_input_event_with_timestamp(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 0, 1),
+                make_uapi_input_event_with_timestamp(uapi::EV_KEY, uapi::BTN_TOUCH, 1, 1),
                 make_uapi_input_event_with_timestamp(uapi::EV_SYN, uapi::SYN_REPORT, 0, 1),
                 make_uapi_input_event_with_timestamp(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0, 100),
                 make_uapi_input_event_with_timestamp(
