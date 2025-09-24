@@ -698,46 +698,56 @@ impl CgroupOps for Cgroup {
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use starnix_core::testing::{create_kernel_and_task, create_kernel_task_and_unlocked};
+    use starnix_core::testing::spawn_kernel_and_run;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
 
     #[::fuchsia::test]
     async fn cgroup_path_from_root() {
-        let (_, _current_task) = create_kernel_and_task();
-        let root = CgroupRoot::new();
+        spawn_kernel_and_run(|_, _| {
+            let root = CgroupRoot::new();
 
-        let test_cgroup = root.new_child("test".into()).expect("new_child on root cgroup succeeds");
-        let child_cgroup =
-            test_cgroup.new_child("child".into()).expect("new_child on non-root cgroup succeeds");
+            let test_cgroup =
+                root.new_child("test".into()).expect("new_child on root cgroup succeeds");
+            let child_cgroup = test_cgroup
+                .new_child("child".into())
+                .expect("new_child on non-root cgroup succeeds");
 
-        assert_eq!(path_from_root(Some(Arc::downgrade(&test_cgroup))), Ok("/test".into()));
-        assert_eq!(path_from_root(Some(Arc::downgrade(&child_cgroup))), Ok("/test/child".into()));
+            assert_eq!(path_from_root(Some(Arc::downgrade(&test_cgroup))), Ok("/test".into()));
+            assert_eq!(
+                path_from_root(Some(Arc::downgrade(&child_cgroup))),
+                Ok("/test/child".into())
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn cgroup_clone_task_in_frozen_cgroup() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root = &kernel.cgroups.cgroup2;
+            let cgroup = root.new_child("test".into()).expect("new_child on root cgroup succeeds");
 
-        let root = &kernel.cgroups.cgroup2;
-        let cgroup = root.new_child("test".into()).expect("new_child on root cgroup succeeds");
+            let process = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            cgroup
+                .add_process(locked.cast_locked(), process.thread_group())
+                .expect("add process to cgroup");
+            cgroup.freeze(locked.cast_locked());
+            assert_eq!(cgroup.get_pids(&kernel).first(), Some(process.get_pid()).as_ref());
+            assert_eq!(
+                root.get_cgroup(process.thread_group()).unwrap().as_ptr(),
+                Arc::as_ptr(&cgroup)
+            );
 
-        let process = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        cgroup
-            .add_process(locked.cast_locked(), process.thread_group())
-            .expect("add process to cgroup");
-        cgroup.freeze(locked.cast_locked());
-        assert_eq!(cgroup.get_pids(&kernel).first(), Some(process.get_pid()).as_ref());
-        assert_eq!(root.get_cgroup(process.thread_group()).unwrap().as_ptr(), Arc::as_ptr(&cgroup));
+            let thread = process.clone_task_for_test(
+                locked,
+                (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64,
+                Some(SIGCHLD),
+            );
 
-        let thread = process.clone_task_for_test(
-            locked,
-            (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64,
-            Some(SIGCHLD),
-        );
-
-        let thread_state = thread.read();
-        let kernel_signals = thread_state.kernel_signals_for_test();
-        assert_matches!(kernel_signals.front(), Some(KernelSignal::Freeze(_)));
+            let thread_state = thread.read();
+            let kernel_signals = thread_state.kernel_signals_for_test();
+            assert_matches!(kernel_signals.front(), Some(KernelSignal::Freeze(_)));
+        });
     }
 }
