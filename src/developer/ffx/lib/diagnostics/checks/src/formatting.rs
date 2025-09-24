@@ -26,7 +26,8 @@ impl AsDiagnosticMessage for u8 {
             v if v == DiscoverySources::USB_VSOCK.bits() => "",
             v if v == DiscoverySources::USB_FASTBOOT.bits() => "",
             b => panic!(
-                "Un-handled bit type: {b}. This may be a failure from the discovery library of ffx"
+                "Un-handled bit type: {b}. This may be a failure from the discovery library of ffx. Please report this to {}",
+                errors::BUG_REPORT_URL
             ),
         }
         .to_owned()

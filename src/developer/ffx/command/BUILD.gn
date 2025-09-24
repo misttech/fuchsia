@@ -24,6 +24,9 @@ rustc_library("lib") {
     # to be more like FhoEnv
     "//src/developer/ffx/lib/fho/testing:*",
 
+    # Necessary for checking if enhanced analytics is enabled.
+    "//src/developer/ffx/lib/diagnostics/*",
+
     # E2E tests that parse the JSON ArgsInfo
     "//src/developer/ffx/tests/cli-goldens:*",
     "//src/developer/ffx/tests/help-json:*",

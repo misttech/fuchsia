@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fuchsia_hyper::{new_https_client, HttpsClient};
+use fuchsia_hyper::{HttpsClient, new_https_client};
 use hyper::body::HttpBody;
 use hyper::{Body, Method, Request};
 use std::collections::{BTreeMap, HashMap};
@@ -309,11 +309,7 @@ impl GA4MetricsService {
     // only when user is opted in.
     // Used to encode level for analytics.
     fn opted_in_metrics_level(&self) -> u64 {
-        if self.opt_in_status() == MetricsStatus::OptedInEnhanced {
-            2
-        } else {
-            1
-        }
+        if self.opt_in_status() == MetricsStatus::OptedInEnhanced { 2 } else { 1 }
     }
 
     fn get_url(&self) -> String {

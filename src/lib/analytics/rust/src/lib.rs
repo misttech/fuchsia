@@ -7,7 +7,7 @@ mod ga4_metrics_service;
 pub mod metrics_state;
 mod notice;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use futures::lock::Mutex;
 use metrics_state::MetricsStatus;
 use std::collections::BTreeMap;
@@ -17,7 +17,7 @@ use std::sync::{Arc, OnceLock};
 use std::ops::DerefMut;
 
 use crate::env_info::{is_analytics_disabled_by_env, migrate_legacy_folder};
-use crate::ga4_event::GA4Value;
+pub use crate::ga4_event::GA4Value;
 use crate::ga4_metrics_service::*;
 use crate::metrics_state::{MetricsState, UNKNOWN_VERSION};
 

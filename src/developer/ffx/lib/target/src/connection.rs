@@ -40,7 +40,6 @@ pub enum ConnectionError {
     ConnectionStartError(String, String),
     #[error("internal error: {0}")]
     InternalError(#[from] anyhow::Error),
-    // TODO(b/339266778): change knock errors to non-fidl types.
     #[error("knock error: {0:?}")]
     KnockError(#[source] anyhow::Error),
     #[error("Overnet isn't supported for this target")]

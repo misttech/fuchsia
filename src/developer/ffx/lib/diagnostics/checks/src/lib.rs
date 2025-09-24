@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use check_analytics::{PointOfFailure, ResultExt};
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, FastbootConnectionState, TargetHandle, TargetState};
-use fdomain_fuchsia_hwinfo::{ProductInfo, ProductProxy};
+use fdomain_client::fidl::DiscoverableProtocolMarker as _;
+use fdomain_fuchsia_hwinfo::{ProductInfo, ProductMarker, ProductProxy};
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{Check, CheckExt, CheckFut, Notifier};
 use ffx_fastboot_connection_factory::{
@@ -19,12 +21,58 @@ use std::path::PathBuf;
 use std::time::Duration;
 use termion::{color, style};
 
+mod check_analytics;
 mod discovery_stream;
 mod formatting;
 
 pub use discovery_stream::{DiagnosticsResolver, NotifierMessage, SingleTargetResolver};
 
+pub async fn check_analytics<N>(notifier: &mut N) -> fho::Result<()>
+where
+    N: Notifier + std::marker::Unpin,
+{
+    // For the time being only enable enhanced analytics for internal users.
+    if ffx_command::send_enhanced_analytics().await {
+        notifier.info("Analytics enabled.")?;
+    } else {
+        notifier.info("Analytics NOT enabled. Skipping.")?;
+    }
+    Ok(())
+}
+
 pub async fn run_diagnostics_with_handle<N>(
+    env_context: &EnvironmentContext,
+    target_handle: TargetHandle,
+    notifier: &mut N,
+    product_timeout: Duration,
+) -> fho::Result<()>
+where
+    N: Notifier + std::marker::Unpin,
+{
+    check_analytics(notifier).await?;
+    run_diagnostics_with_handle_inner(env_context, target_handle, notifier, product_timeout).await
+}
+
+pub async fn run_diagnostics<N>(
+    env: &EnvironmentContext,
+    notifier: &mut N,
+    product_timeout: Duration,
+) -> fho::Result<()>
+where
+    N: Notifier + std::marker::Unpin,
+{
+    check_analytics(notifier).await?;
+    let (target, notifier) = GetTargetSpecifier::new(&env)
+        .check_with_notifier((), notifier)
+        .and_then_check(ResolveTarget::<N>::new(&env))
+        .await?;
+    run_diagnostics_with_handle_inner(&env, target, notifier, product_timeout).await?;
+    Ok(())
+}
+
+/// Helper function so that both `run_diagnostics_with_handle` and `run_diagnostics`, as top level
+/// functions, can invoke `check_analytics` exactly once.
+async fn run_diagnostics_with_handle_inner<N>(
     env_context: &EnvironmentContext,
     target_handle: TargetHandle,
     notifier: &mut N,
@@ -46,23 +94,6 @@ where
         }
     }
     notifier.on_success("All checks passed.")?;
-    Ok(())
-}
-
-pub async fn run_diagnostics<N>(
-    env: &EnvironmentContext,
-    notifier: &mut N,
-    product_timeout: Duration,
-) -> fho::Result<()>
-where
-    N: Notifier + std::marker::Unpin,
-{
-    let (target, notifier) = GetTargetSpecifier::new(&env)
-        .check_with_notifier((), notifier)
-        .and_then_check(ResolveTarget::<N>::new(&env))
-        .await?;
-
-    run_diagnostics_with_handle(&env, target, notifier, product_timeout).await?;
     Ok(())
 }
 
@@ -168,7 +199,13 @@ where
         _input: Self::Input,
         _notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
-        Box::pin(async move { ffx_target::get_target_specifier(self.0).await.map(Into::into) })
+        Box::pin(async move {
+            ffx_target::get_target_specifier(self.0)
+                .await
+                .map(Into::<Self::Output>::into)
+                .or_analytics(PointOfFailure::GetTargetSpecifier)
+                .await
+        })
     }
 }
 
@@ -302,12 +339,17 @@ where
             let (notifier_sender, mut notification_stream) = futures::channel::mpsc::unbounded();
             let resolver = R::from_sources_and_notifier_sender(sources, notifier_sender);
             let (targets, ()) =
-                futures::join!(resolver.discovered_targets(input, self.ctx), async {
+                futures::join!(resolver.discovered_targets(input.clone(), self.ctx), async {
                     while let Some(NotifierMessage { ty, msg }) = notification_stream.next().await {
                         let _ = notifier.update_status(ty, msg);
                     }
                 });
-            let mut targets = targets?;
+            let mut targets = targets
+                .or_analytics(PointOfFailure::DiscoveryFailure {
+                    query: input.clone(),
+                    discovery_sources: sources,
+                })
+                .await?;
             if targets.is_empty() {
                 notifier.info(format!(
                     "{}{}No matching devices were found.{} Ensure the diagnostics logs don't contain your device before proceeding to debugging.",
@@ -334,9 +376,19 @@ where
                         notifier.info(additional_message)?;
                     }
                 }
+                check_analytics::mark_point_of_failure(PointOfFailure::NoMatchingTargets {
+                    query: input.clone(),
+                    discovery_sources: sources,
+                })
+                .await;
                 return Err(anyhow::anyhow!("Unable to find any matching devices"));
             }
             if targets.len() > 1 {
+                check_analytics::mark_point_of_failure(PointOfFailure::TooManyMatchingTargets {
+                    query: input,
+                    discovery_sources: sources,
+                })
+                .await;
                 return Err(anyhow::anyhow!(
                     "Too many targets. You may need to be more specific in the device you are checking. Found: {targets:?}"
                 ));
@@ -346,8 +398,9 @@ where
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait SshConnectorProvider {
-    fn connector_for_target<N>(
+    async fn connector_for_target<N>(
         &self,
         ctx: EnvironmentContext,
         handle: TargetHandle,
@@ -360,7 +413,7 @@ pub trait SshConnectorProvider {
 struct DefaultSshConnectorProvider;
 
 impl SshConnectorProvider for DefaultSshConnectorProvider {
-    fn connector_for_target<N>(
+    async fn connector_for_target<N>(
         &self,
         ctx: EnvironmentContext,
         handle: TargetHandle,
@@ -369,13 +422,26 @@ impl SshConnectorProvider for DefaultSshConnectorProvider {
     where
         N: Notifier + Sized,
     {
-        let resolution = ffx_target::Resolution::from_target_handle(handle)?;
-        // Probably want to report the address to which we're connecting.
-        let connector = ConnectorHolder(SshConnector::new(
-            netext::ScopedSocketAddr::from_socket_addr(resolution.addr()?)?,
-            &ctx,
-        )?);
-        notifier.info(format!("Executing the command: `{}`", connector.0.fdomain_command()?))?;
+        let resolution = ffx_target::Resolution::from_target_handle(handle.clone())
+            .or_analytics(PointOfFailure::TargetHandleInBadState { state: handle.state.clone() })
+            .await?;
+        let addr = resolution
+            .addr()
+            .or_analytics(PointOfFailure::TargetDoesntSupportNetworking {
+                state: handle.state.clone(),
+            })
+            .await?;
+        let addr = netext::ScopedSocketAddr::from_socket_addr(addr)
+            .or_analytics(PointOfFailure::TargetAddressBadScope)
+            .await?;
+        // Note the error here is not checked because the original source only ever returns `Ok()`.
+        let connector = ConnectorHolder(SshConnector::new(addr, &ctx)?);
+        let fdomain_command = connector
+            .0
+            .fdomain_command()
+            .or_analytics(PointOfFailure::UnableToBuildFDomainCommand)
+            .await?;
+        notifier.info(format!("Executing the command: `{}`", fdomain_command))?;
         Ok(connector)
     }
 }
@@ -444,17 +510,28 @@ where
         notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
         Box::pin(async {
-            let connector =
-                self.conn_provider.connector_for_target(self.ctx.clone(), input, notifier)?;
-            Connection::new(connector).await.map_err(|e| {
-                anyhow::anyhow!(
-                    "\nUnable to connect to ssh. Consider running the above `ssh` command and evaluating the output.\nIn addition, consult https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon\nUnderlying error: {}",
-                    match e {
-                        ConnectionError::ConnectionStartError(_, s) => anyhow::anyhow!("{}", s),
-                        _ => e.into(),
-                    }
-                )
-            })
+            // All analytics/errors are handled inside this function.
+            let connector = self
+                .conn_provider
+                .connector_for_target(self.ctx.clone(), input.clone(), notifier)
+                .await?;
+            match Connection::new(connector).await {
+                Ok(res) => Ok(res),
+                Err(e) => {
+                    check_analytics::mark_point_of_failure(PointOfFailure::SshConnectionFailed {
+                        state: input.state,
+                        reason: &e,
+                    })
+                    .await;
+                    Err(anyhow::anyhow!(
+                        "\nUnable to connect to ssh. Consider running the above `ssh` command and evaluating the output.\nIn addition, consult https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon\nUnderlying error: {}",
+                        match e {
+                            ConnectionError::ConnectionStartError(_, s) => anyhow::anyhow!("{}", s),
+                            _ => e.into(),
+                        }
+                    ))
+                }
+            }
         })
     }
 }
@@ -500,15 +577,29 @@ where
         _notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
         Box::pin(async move {
-            let proxy = input.rcs_proxy_fdomain().await?;
+            let proxy = input
+                .rcs_proxy_fdomain()
+                .await
+                .or_else_analytics(|e| PointOfFailure::FailedToConnectRCS { error: e })
+                .await?;
+            let moniker = "/core/hwinfo";
             let product_proxy: ProductProxy = target_holders::fdomain::open_moniker_fdomain(
                 &proxy,
                 rcs::OpenDirType::ExposedDir,
-                "/core/hwinfo",
+                moniker,
                 self.timeout,
             )
+            .await
+            .or_analytics(PointOfFailure::FailedToOpenHWInfoComponent {
+                moniker,
+                protocol: ProductMarker::PROTOCOL_NAME,
+            })
             .await?;
-            let info = product_proxy.get_info().await?;
+            let info = product_proxy
+                .get_info()
+                .await
+                .or_else_analytics(|e| PointOfFailure::UnableToGetInfo { error: e })
+                .await?;
             Ok(info)
         })
     }
@@ -547,19 +638,25 @@ where
         input: Self::Input,
         _notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
-        Box::pin(async {
+        Box::pin(async move {
             // Example handle: [TargetHandle { node_name: None, state: Fastboot(FastbootTargetState
             // { serial_number: "", connection_state: Tcp([TargetIpAddr(127.0.0.1:38957)]) }),
             // manual: false, orig
             // in: FastbootTcp }]
             let fastboot_state = match input.state {
                 TargetState::Fastboot(ref s) => s,
-                _ => return Err(anyhow::anyhow!("received non-fastboot target handle: {input:?}")),
+                _ => {
+                    check_analytics::mark_point_of_failure(
+                        PointOfFailure::NonFastbootTargetHandle { handle: input.clone() },
+                    )
+                    .await;
+                    return Err(anyhow::anyhow!("received non-fastboot target handle: {input:?}"));
+                }
             };
             let connection_kind = match &fastboot_state.connection_state {
                 FastbootConnectionState::Usb => {
                     let discovery::TargetState::Fastboot(discovery::FastbootTargetState {
-                        serial_number,
+                        ref serial_number,
                         ..
                     }) = input.state
                     else {
@@ -567,21 +664,31 @@ where
                             "input in incorrect state. Expecting Fastboot state instead found: {input:?}"
                         );
                     };
-                    FastbootConnectionKind::Usb(serial_number)
+                    FastbootConnectionKind::Usb(serial_number.to_owned())
                 }
                 // This assumes the first address in the array will a.) exist, and b.) be the _most
                 // correct_ address from which we're selecting.
                 FastbootConnectionState::Tcp(v) => FastbootConnectionKind::Tcp(
-                    input.node_name.unwrap_or_else(|| "".to_owned()),
+                    input.node_name.clone().unwrap_or_else(|| "".to_owned()),
                     v[0].into(),
                 ),
                 FastbootConnectionState::Udp(v) => FastbootConnectionKind::Udp(
-                    input.node_name.unwrap_or_else(|| "".to_owned()),
+                    input.node_name.clone().unwrap_or_else(|| "".to_owned()),
                     v[0].into(),
                 ),
             };
-            let mut interface = self.factory.build_interface(connection_kind).await?;
-            interface.get_var("serialno").await.map_err(Into::into)
+            let mut interface = self
+                .factory
+                .build_interface(connection_kind)
+                .await
+                .or_analytics(PointOfFailure::CreatingFastbootInterface { handle: input.clone() })
+                .await?;
+            interface
+                .get_var("serialno")
+                .await
+                .or_analytics(PointOfFailure::FastbootQueryingSerialNo { handle: input.clone() })
+                .await
+                .map_err(Into::into)
         })
     }
 }
@@ -773,7 +880,7 @@ mod test {
     where
         R: TargetConnector + 'static,
     {
-        fn connector_for_target<N>(
+        async fn connector_for_target<N>(
             &self,
             _ctx: EnvironmentContext,
             _handle: TargetHandle,
