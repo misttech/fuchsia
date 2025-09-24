@@ -73,6 +73,7 @@ syscall_tests = [
   "memfd_test",
   "mmap_test",
   "mount_test",
+  "netlink_test",
   "overlayfs_test",
   "perf_event_open_test",
   "pidfd_test",

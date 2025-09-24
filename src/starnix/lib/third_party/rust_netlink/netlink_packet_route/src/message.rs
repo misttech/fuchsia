@@ -331,7 +331,6 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[non_exhaustive]
 pub enum RouteNetlinkMessage {
     NewLink(LinkMessage),
     DelLink(LinkMessage),

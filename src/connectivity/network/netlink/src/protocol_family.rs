@@ -1166,6 +1166,8 @@ pub mod route {
                 | DelTrafficChain(_)
                 | NewNsId(_)
                 | DelNsId(_)
+                | NewNeighbourDiscoveryUserOption(_)
+                | NewPrefix(_)
                 // TODO(https://issues.fuchsia.dev/285127790): Implement NewNeighbour.
                 | NewNeighbour(_)
                 // TODO(https://issues.fuchsia.dev/285127790): Implement DelNeighbour.
@@ -1219,7 +1221,6 @@ pub mod route {
                         )
                     }
                 },
-                req => panic!("unexpected RouteNetlinkMessage: {:?}", req),
             }
         }
     }
@@ -1401,9 +1402,12 @@ mod test {
     use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
+    use netlink_packet_route::neighbour_discovery_user_option::{
+        NeighbourDiscoveryIcmpType, NeighbourDiscoveryIcmpV6Type,
+        NeighbourDiscoveryUserOptionHeader, NeighbourDiscoveryUserOptionMessage,
+    };
     use netlink_packet_route::route::{RouteAddress, RouteAttribute, RouteMessage, RouteType};
     use netlink_packet_route::rule::RuleMessage;
-    use netlink_packet_route::tc::TcMessage;
     use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
     use test::testutil::AF_PACKET;
     use test_case::test_case;
@@ -1428,6 +1432,19 @@ mod test {
         header
     }
 
+    fn neighbour_discovery_user_option_msg() -> NeighbourDiscoveryUserOptionMessage {
+        NeighbourDiscoveryUserOptionMessage::new(
+            NeighbourDiscoveryUserOptionHeader::new(
+                0,
+                NeighbourDiscoveryIcmpType::Inet6(
+                    NeighbourDiscoveryIcmpV6Type::NeighbourAdvertisement,
+                ),
+            ),
+            Default::default(),
+            Default::default(),
+        )
+    }
+
     /// Tests that unhandled requests are treated as a no-op.
     ///
     /// Get requests are responded to with a Done message if the dump flag
@@ -1435,56 +1452,72 @@ mod test {
     /// requests are responded to with an Ack message if the ack flag is set
     /// or nothing.
     #[test_case(
-        RouteNetlinkMessage::GetTrafficChain,
+        RouteNetlinkMessage::GetTrafficChain(Default::default()),
         0,
-        None; "get_with_no_flags")]
+        None; "get_tc__with_no_flags")]
     #[test_case(
-        RouteNetlinkMessage::GetTrafficChain,
+        RouteNetlinkMessage::GetTrafficChain(Default::default()),
         NLM_F_ACK,
-        Some(ExpectedResponse::Ack); "get_with_ack_flag")]
+        Some(ExpectedResponse::Ack); "get_tc_with_ack_flag")]
     #[test_case(
-        RouteNetlinkMessage::GetTrafficChain,
+        RouteNetlinkMessage::GetTrafficChain(Default::default()),
         NLM_F_DUMP,
-        Some(ExpectedResponse::Done); "get_with_dump_flag")]
+        Some(ExpectedResponse::Done); "get_tc_with_dump_flag")]
     #[test_case(
-        RouteNetlinkMessage::GetTrafficChain,
+        RouteNetlinkMessage::GetTrafficChain(Default::default()),
         NLM_F_ACK | NLM_F_DUMP,
-        Some(ExpectedResponse::Done); "get_with_ack_and_dump_flag")]
+        Some(ExpectedResponse::Done); "get_tc_with_ack_and_dump_flag")]
     #[test_case(
-        RouteNetlinkMessage::NewTrafficChain,
+        RouteNetlinkMessage::NewTrafficChain(Default::default()),
         0,
-        None; "new_with_no_flags")]
+        None; "new_tc_with_no_flags")]
     #[test_case(
-        RouteNetlinkMessage::NewTrafficChain,
+        RouteNetlinkMessage::NewTrafficChain(Default::default()),
         NLM_F_DUMP,
-        None; "new_with_dump_flag")]
+        None; "new_tc_with_dump_flag")]
     #[test_case(
-        RouteNetlinkMessage::NewTrafficChain,
+        RouteNetlinkMessage::NewTrafficChain(Default::default()),
         NLM_F_ACK,
-        Some(ExpectedResponse::Ack); "new_with_ack_flag")]
+        Some(ExpectedResponse::Ack); "new_tc_with_ack_flag")]
     #[test_case(
-        RouteNetlinkMessage::NewTrafficChain,
+        RouteNetlinkMessage::NewTrafficChain(Default::default()),
         NLM_F_ACK | NLM_F_DUMP,
-        Some(ExpectedResponse::Ack); "new_with_ack_and_dump_flags")]
+        Some(ExpectedResponse::Ack); "new_tc_with_ack_and_dump_flags")]
     #[test_case(
-        RouteNetlinkMessage::DelTrafficChain,
+        RouteNetlinkMessage::DelTrafficChain(Default::default()),
         0,
-        None; "del_with_no_flags")]
+        None; "deltc_with_no_flags")]
     #[test_case(
-        RouteNetlinkMessage::DelTrafficChain,
+        RouteNetlinkMessage::DelTrafficChain(Default::default()),
         NLM_F_DUMP,
-        None; "del_with_dump_flag")]
+        None; "del_tc_with_dump_flag")]
     #[test_case(
-        RouteNetlinkMessage::DelTrafficChain,
+        RouteNetlinkMessage::DelTrafficChain(Default::default()),
         NLM_F_ACK,
-        Some(ExpectedResponse::Ack); "del_with_ack_flag")]
+        Some(ExpectedResponse::Ack); "del_tc_with_ack_flag")]
     #[test_case(
-        RouteNetlinkMessage::DelTrafficChain,
+        RouteNetlinkMessage::DelTrafficChain(Default::default()),
         NLM_F_ACK | NLM_F_DUMP,
-        Some(ExpectedResponse::Ack); "del_with_ack_and_dump_flags")]
+        Some(ExpectedResponse::Ack); "del_tc_with_ack_and_dump_flags")]
+    #[test_case(
+        RouteNetlinkMessage::NewNeighbourDiscoveryUserOption(neighbour_discovery_user_option_msg()),
+        NLM_F_ACK,
+        Some(ExpectedResponse::Ack); "new_neighbour_user_option_with_ack_flag")]
+    #[test_case(
+        RouteNetlinkMessage::NewNeighbourDiscoveryUserOption(neighbour_discovery_user_option_msg()),
+        0,
+        None; "new_neighbour_user_option_no_flags")]
+    #[test_case(
+        RouteNetlinkMessage::NewPrefix(Default::default()),
+        NLM_F_ACK,
+        Some(ExpectedResponse::Ack); "new_prefix_with_ack_flag")]
+    #[test_case(
+        RouteNetlinkMessage::NewPrefix(Default::default()),
+        0,
+        None; "new_prefix_no_flags")]
     #[fuchsia::test]
     async fn test_handle_unsupported_request_response(
-        tc_fn: fn(TcMessage) -> RouteNetlinkMessage,
+        inner_message: RouteNetlinkMessage,
         flags: u16,
         expected_response: Option<ExpectedResponse>,
     ) {
@@ -1503,10 +1536,7 @@ mod test {
 
         handler
             .handle_request(
-                NetlinkMessage::new(
-                    header,
-                    NetlinkPayload::InnerMessage(tc_fn(TcMessage::default())),
-                ),
+                NetlinkMessage::new(header, NetlinkPayload::InnerMessage(inner_message)),
                 &mut client,
             )
             .await;
