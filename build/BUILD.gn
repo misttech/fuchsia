@@ -393,6 +393,15 @@ group("non_hermetic_deps") {
   # hermetic_action_ignored_prefixes in
   # emulator_support_assembly_input_bundle()
   visibility += [ "//src/microfuchsia:*" ]
+
+  # Starnix VM-backed tests, which use //boards.
+  visibility += [
+    "//bundles/buildbot/virtualization:starnix_linux_vm_assembly.image_assembler",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_assembly.product_assembler",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_assembly_config",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_bundle_product_bundle",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_bundle_transfer_manifest",
+  ]
 }
 
 # Build targets that use the legacy zx_library and zx_host_tool templates

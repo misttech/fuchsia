@@ -61,10 +61,19 @@ group("benchmarks") {
   ]
 }
 
+# Top-level test group for Linux VM tests. Developers can target this group using --with to build
+# and run the tests across a variety of Fuchsia products and configurations. Infra uses a layer of
+# misdirection at //bundles/buildbot/virtualization to target these tests, so that we can isolate
+# the product bundle and avoid unnecessary build and runtime bloat.
 group("linux_vm_tests") {
   testonly = true
   deps = [
     "syscalls:linux_vm_tests",
+
+    # This group of tests is not directly dependent on the interactive_debian_guest_pkg, but pulling
+    # this dependency here ensures that local developers have built the package, and have it
+    # available at runtime for the repo server. Adding this dependency in the correct place within
+    # the Starnix test runner would add blanket size bloat (+240 MB) across infra.
     "//src/virtualization/lib/guest_interaction/interactive_debian_guest:interactive_debian_guest_pkg",
   ]
 }
