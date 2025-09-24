@@ -13,12 +13,13 @@
 edition = "2021"
 rust-version = "1.65"
 name = "rsa"
-version = "0.9.7"
+version = "0.9.8"
 authors = [
     "RustCrypto Developers",
     "dignifiedquire <dignifiedquire@gmail.com>",
 ]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -49,8 +50,32 @@ rustdoc-args = [
     "docsrs",
 ]
 
-[profile.dev]
-opt-level = 2
+[features]
+default = [
+    "std",
+    "pem",
+    "u64_digit",
+]
+getrandom = ["rand_core/getrandom"]
+hazmat = []
+nightly = ["num-bigint/nightly"]
+pem = [
+    "pkcs1/pem",
+    "pkcs8/pem",
+]
+pkcs5 = ["pkcs8/encryption"]
+serde = [
+    "dep:serde",
+    "num-bigint/serde",
+]
+std = [
+    "digest/std",
+    "pkcs1/std",
+    "pkcs8/std",
+    "rand_core/std",
+    "signature/std",
+]
+u64_digit = ["num-bigint/u64_digit"]
 
 [lib]
 name = "rsa"
@@ -205,29 +230,5 @@ version = "0.10.7"
 features = ["oid"]
 default-features = false
 
-[features]
-default = [
-    "std",
-    "pem",
-    "u64_digit",
-]
-getrandom = ["rand_core/getrandom"]
-hazmat = []
-nightly = ["num-bigint/nightly"]
-pem = [
-    "pkcs1/pem",
-    "pkcs8/pem",
-]
-pkcs5 = ["pkcs8/encryption"]
-serde = [
-    "dep:serde",
-    "num-bigint/serde",
-]
-std = [
-    "digest/std",
-    "pkcs1/std",
-    "pkcs8/std",
-    "rand_core/std",
-    "signature/std",
-]
-u64_digit = ["num-bigint/u64_digit"]
+[profile.dev]
+opt-level = 2

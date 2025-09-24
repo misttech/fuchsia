@@ -206,7 +206,7 @@ ref-cast = "1.0.24"
 regex = "1.7.3"
 regex-syntax = "0.8.5"
 ring = "0.17.8"
-rsa = { version = "0.9.7", default-features = false }
+rsa = { version = "0.9.8", default-features = false }
 rustc-hash = "1.0.1"
 rustls = { version = "0.21.12", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.4"

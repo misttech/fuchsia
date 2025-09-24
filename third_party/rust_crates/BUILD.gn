@@ -821,7 +821,7 @@ group("ring") {
 }
 
 group("rsa") {
-  public_deps = [ ":rsa-v0_9_7" ]
+  public_deps = [ ":rsa-v0_9_8" ]
 }
 
 import("//build/icu/icu_rustc_library.gni")
@@ -14921,18 +14921,18 @@ rustc_library("ringbuf-v0_4_8") {
   applicable_licenses = [ ":ringbuf-v0_4_8.license" ]
 }
 
-license("rsa-v0_9_7.license") {
+license("rsa-v0_9_8.license") {
   public_package_name = "rsa"
   license_files = [
-    "//third_party/rust_crates/vendor/rsa-0.9.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rsa-0.9.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rsa-0.9.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rsa-0.9.8/LICENSE-MIT",
   ]
 }
 
-rustc_library("rsa-v0_9_7") {
+rustc_library("rsa-v0_9_8") {
   crate_name = "rsa"
-  source_root = "//third_party/rust_crates/vendor/rsa-0.9.7/src/lib.rs"
-  output_name = "rsa-d1c22a657a5872ef"
+  source_root = "//third_party/rust_crates/vendor/rsa-0.9.8/src/lib.rs"
+  output_name = "rsa-32c9d8ef4963d2ac"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -14956,8 +14956,8 @@ rustc_library("rsa-v0_9_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d1c22a657a5872ef",
-    "-Cextra-filename=-d1c22a657a5872ef",
+    "-Cmetadata=32c9d8ef4963d2ac",
+    "-Cextra-filename=-32c9d8ef4963d2ac",
   ]
 
   aliased_deps = {
@@ -14965,7 +14965,7 @@ rustc_library("rsa-v0_9_7") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rsa-v0_9_7.license" ]
+  applicable_licenses = [ ":rsa-v0_9_8.license" ]
 }
 
 license("rust_icu_common-v5_0_0.license") {
