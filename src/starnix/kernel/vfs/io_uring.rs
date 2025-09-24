@@ -42,7 +42,11 @@ use starnix_uapi::{
     io_uring_op_IORING_OP_STATX, io_uring_op_IORING_OP_SYNC_FILE_RANGE,
     io_uring_op_IORING_OP_TIMEOUT, io_uring_op_IORING_OP_TIMEOUT_REMOVE,
     io_uring_op_IORING_OP_WRITE, io_uring_op_IORING_OP_WRITE_FIXED, io_uring_op_IORING_OP_WRITEV,
-    io_uring_params, io_uring_sqe, off_t, socklen_t, uapi,
+    io_uring_params, io_uring_sqe, io_uring_sqe_flags_bit_IOSQE_ASYNC_BIT,
+    io_uring_sqe_flags_bit_IOSQE_BUFFER_SELECT_BIT,
+    io_uring_sqe_flags_bit_IOSQE_CQE_SKIP_SUCCESS_BIT, io_uring_sqe_flags_bit_IOSQE_FIXED_FILE_BIT,
+    io_uring_sqe_flags_bit_IOSQE_IO_DRAIN_BIT, io_uring_sqe_flags_bit_IOSQE_IO_HARDLINK_BIT,
+    io_uring_sqe_flags_bit_IOSQE_IO_LINK_BIT, off_t, socklen_t, uapi,
 };
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -79,6 +83,17 @@ bitflags! {
         /// will have no effect.
         // TODO(https://fxbug.dev/297431387): Implement these flags.
         const IgnoredFlags = starnix_uapi::IORING_SETUP_COOP_TASKRUN | starnix_uapi::IORING_SETUP_SINGLE_ISSUER | starnix_uapi::IORING_SETUP_DEFER_TASKRUN;
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    struct SqEntryFlags: u8 {
+        const FIXED_FILE = 1 << io_uring_sqe_flags_bit_IOSQE_FIXED_FILE_BIT;
+        const IO_DRAIN = 1 << io_uring_sqe_flags_bit_IOSQE_IO_DRAIN_BIT;
+        const IO_LINK = 1 << io_uring_sqe_flags_bit_IOSQE_IO_LINK_BIT;
+        const IO_HARDLINK = 1 << io_uring_sqe_flags_bit_IOSQE_IO_HARDLINK_BIT;
+        const ASYNC = 1 << io_uring_sqe_flags_bit_IOSQE_ASYNC_BIT;
+        const BUFFER_SELECT = 1 << io_uring_sqe_flags_bit_IOSQE_BUFFER_SELECT_BIT;
+        const CQE_SKIP_SUCCESS = 1 << io_uring_sqe_flags_bit_IOSQE_CQE_SKIP_SUCCESS_BIT;
     }
 }
 
@@ -784,6 +799,7 @@ impl IoUringFileObject {
         current_task: &CurrentTask,
         entry: &SqEntry,
     ) -> Result<SyscallResult, Errno> {
+        let _flags = SqEntryFlags::from_bits(entry.flags).ok_or_else(|| errno!(EINVAL))?;
         match Op::from_code(entry.opcode as io_uring_op)? {
             Op::NOP => Ok(SUCCESS),
             Op::ReadV => {
