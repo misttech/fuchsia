@@ -5,6 +5,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use cm_util::TaskGroup;
 use fasync::Task;
 use fidl::endpoints::{ServerEnd, create_proxy};
 use futures::channel::{mpsc, oneshot};
@@ -13,7 +14,6 @@ use futures::{FutureExt, StreamExt, select};
 use log::warn;
 use moniker::Moniker;
 use std::pin::pin;
-use vfs::ExecutionScope;
 use vfs::directory::entry::OpenRequest;
 use vfs::remote::remote_dir;
 use zx::AsHandleRef;
@@ -92,7 +92,7 @@ impl Actor {
     /// typically be run in a non-blocking task group of the component.
     pub fn new(
         moniker: Moniker,
-        scope: &ExecutionScope,
+        scope: &TaskGroup,
         starter: impl Start + Send + Sync + 'static,
     ) -> Actor {
         let (sender, receiver) = mpsc::unbounded();
@@ -102,7 +102,7 @@ impl Actor {
         let actor = ActorImpl {
             starter: Arc::new(starter),
             outgoing_dir: outgoing_dir.clone(),
-            nonblocking_start_task: ExecutionScope::new(),
+            nonblocking_start_task: TaskGroup::new(),
         };
         scope.spawn(actor.run(escrow, receiver));
         let handle = Actor { sender, outgoing_dir, moniker };
@@ -178,7 +178,7 @@ struct ActorImpl {
     // still runs for a while. We should not drop the task lest it cancels the
     // start process in an inconsistent state, so the rest of the `start_task`
     // is tracked here.
-    nonblocking_start_task: ExecutionScope,
+    nonblocking_start_task: TaskGroup,
 }
 
 #[derive(Debug)]
@@ -330,6 +330,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use cm_util::TaskGroup;
     use fidl_fuchsia_io as fio;
     use fuchsia_async::{self as fasync, TestExecutor};
     use futures::StreamExt;
@@ -365,24 +366,24 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     #[should_panic(expected = "double start")]
     async fn double_start() {
-        let scope = ExecutionScope::new();
-        let actor = Actor::new(Moniker::root(), &scope, MustNotStart);
+        let task_group = TaskGroup::new();
+        let actor = Actor::new(Moniker::root(), &task_group, MustNotStart);
 
         _ = actor.will_start().await;
         _ = actor.will_start().await;
-        scope.wait().await;
+        task_group.join().await;
     }
 
     #[fuchsia::test(allow_stalls = false)]
     #[should_panic(expected = "double stop")]
     async fn double_stop() {
-        let scope = ExecutionScope::new();
-        let actor = Actor::new(Moniker::root(), &scope, MustNotStart);
+        let task_group = TaskGroup::new();
+        let actor = Actor::new(Moniker::root(), &task_group, MustNotStart);
 
         _ = actor.will_start().await;
         _ = actor.did_stop(None);
         _ = actor.did_stop(None);
-        scope.wait().await;
+        task_group.join().await;
     }
 
     struct MockStart {
@@ -392,12 +393,12 @@ mod tests {
 
     /// Creates an `Actor` that owns a `MockStart` and uses it to start the component.
     fn new_mock_start_actor(
-        scope: &ExecutionScope,
+        task_group: &TaskGroup,
         start_tx: mpsc::UnboundedSender<(StartReason, EscrowedState)>,
     ) -> Arc<Actor> {
         let mock_start = MockStart { start_tx, actor: Mutex::new(None) };
         let mock_start = Arc::new(mock_start);
-        let actor = Actor::new(Moniker::root(), scope, mock_start.clone());
+        let actor = Actor::new(Moniker::root(), task_group, mock_start.clone());
         let actor = Arc::new(actor);
         *mock_start.actor.try_lock().unwrap() = Some(Arc::downgrade(&actor));
         actor
@@ -420,9 +421,9 @@ mod tests {
 
     #[fuchsia::test(allow_stalls = false)]
     async fn open_outgoing_while_stopped() {
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
         let (start_tx, mut start_rx) = mpsc::unbounded();
-        let actor = new_mock_start_actor(&scope, start_tx);
+        let actor = new_mock_start_actor(&task_group, start_tx);
 
         let (_, server_end) = zx::Channel::create();
 
@@ -447,15 +448,15 @@ mod tests {
         assert_eq!(dir_entry.0, "foo");
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
         assert_matches!(start_rx.next().await, None);
     }
 
     #[fuchsia::test(allow_stalls = false)]
     async fn open_outgoing_while_running() {
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
         let (start_tx, mut start_rx) = mpsc::unbounded();
-        let actor = new_mock_start_actor(&scope, start_tx);
+        let actor = new_mock_start_actor(&task_group, start_tx);
 
         let escrow = actor.will_start().await;
         assert!(escrow.is_some());
@@ -483,15 +484,15 @@ mod tests {
         assert_eq!(open.0, "foo");
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
         assert_matches!(start_rx.next().await, None);
     }
 
     #[fuchsia::test(allow_stalls = false)]
     async fn open_outgoing_before_stopped() {
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
         let (start_tx, mut start_rx) = mpsc::unbounded();
-        let actor = new_mock_start_actor(&scope, start_tx);
+        let actor = new_mock_start_actor(&task_group, start_tx);
 
         let escrow = actor.will_start().await;
         assert!(escrow.is_some());
@@ -521,14 +522,14 @@ mod tests {
         assert_matches!(TestExecutor::poll_until_stalled(start_rx.next()).await, Poll::Ready(_));
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
     }
 
     #[fuchsia::test(allow_stalls = false)]
     async fn open_outgoing_after_stopped() {
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
         let (start_tx, mut start_rx) = mpsc::unbounded();
-        let actor = new_mock_start_actor(&scope, start_tx);
+        let actor = new_mock_start_actor(&task_group, start_tx);
 
         let escrow = actor.will_start().await;
         assert!(escrow.is_some());
@@ -556,13 +557,13 @@ mod tests {
         assert_matches!(TestExecutor::poll_until_stalled(start_rx.next()).await, Poll::Ready(_));
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
     }
 
     #[fuchsia::test(allow_stalls = false)]
     async fn stop_without_escrow() {
-        let scope = ExecutionScope::new();
-        let actor = Actor::new(Moniker::root(), &scope, MustNotStart);
+        let task_group = TaskGroup::new();
+        let actor = Actor::new(Moniker::root(), &task_group, MustNotStart);
 
         let escrow = actor.will_start().await;
         let (client_end, server_end) = zx::Channel::create();
@@ -606,7 +607,7 @@ mod tests {
         assert_eq!(open.0, "bar");
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
     }
 
     struct BlockingStart {
@@ -630,12 +631,12 @@ mod tests {
 
     #[fuchsia::test(allow_stalls = false)]
     async fn start_failed_before_reaping_escrow() {
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
         let (start_tx, mut start_rx) = mpsc::unbounded();
         let (result_tx, result_rx) = mpsc::unbounded();
         let actor = Actor::new(
             Moniker::root(),
-            &scope,
+            &task_group,
             BlockingStart { start_tx, result_rx: Mutex::new(result_rx) },
         );
 
@@ -666,17 +667,17 @@ mod tests {
         fasync::OnSignals::new(&client_end, zx::Signals::CHANNEL_PEER_CLOSED).await.unwrap();
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
     }
 
     #[fuchsia::test(allow_stalls = false)]
     async fn start_failed_after_reaping_escrow() {
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
         let (start_tx, mut start_rx) = mpsc::unbounded();
         let (result_tx, result_rx) = mpsc::unbounded();
         let actor = Actor::new(
             Moniker::root(),
-            &scope,
+            &task_group,
             BlockingStart { start_tx, result_rx: Mutex::new(result_rx) },
         );
 
@@ -711,6 +712,6 @@ mod tests {
         assert_eq!(open.0, "foo");
 
         drop(actor);
-        scope.wait().await;
+        task_group.join().await;
     }
 }

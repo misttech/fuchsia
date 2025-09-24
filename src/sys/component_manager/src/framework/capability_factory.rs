@@ -7,6 +7,7 @@ use crate::sandbox_util::take_handle_as_stream;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use cm_types::{Name, RelativePath};
+use cm_util::WeakTaskGroup;
 use fidl::endpoints::{ClientEnd, ProtocolMarker, Proxy, ServerEnd, create_endpoints};
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
@@ -22,7 +23,6 @@ use sandbox::{
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use vfs::WeakExecutionScope;
 use zx::AsHandleRef;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 use {fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_io as fio};
@@ -62,10 +62,12 @@ pub fn serve(
     async move {
         let source_component = weak_source_component.upgrade()?;
         let remote_capabilities = source_component.context.remote_capabilities().clone();
-        let weak_scope = source_component.execution_scope.as_weak();
+        let weak_task_group = source_component.nonblocking_task_group().as_weak();
         let stream = take_handle_as_stream::<fruntime::CapabilityFactoryMarker>(channel);
         let moniker = source_component.moniker.clone();
-        CapabilityFactory { remote_capabilities, weak_scope, moniker }.handle_stream(stream).await
+        CapabilityFactory { remote_capabilities, weak_task_group, moniker }
+            .handle_stream(stream)
+            .await
     }
     .boxed()
 }
@@ -73,7 +75,7 @@ pub fn serve(
 #[derive(Clone)]
 pub struct CapabilityFactory {
     pub remote_capabilities: Arc<Mutex<RemotedRuntimeCapabilities>>,
-    pub weak_scope: WeakExecutionScope,
+    pub weak_task_group: WeakTaskGroup,
     pub moniker: Moniker,
 }
 
@@ -92,7 +94,7 @@ impl CapabilityFactory {
                     let connector = Connector::new_sendable(RemoteReceiver {
                         remote_receiver: receiver_client_end.into_proxy(),
                     });
-                    self.weak_scope
+                    self.weak_task_group
                         .spawn(self.clone().serve_connector(connector, connector_server_end));
                 }
                 fruntime::CapabilityFactoryRequest::CreateDirConnector {
@@ -103,7 +105,7 @@ impl CapabilityFactory {
                     let dir_connector = DirConnector::new_sendable(RemoteDirReceiver {
                         remote_receiver: dir_receiver_client_end.into_proxy(),
                     });
-                    self.weak_scope.spawn(
+                    self.weak_task_group.spawn(
                         self.clone().serve_dir_connector(dir_connector, dir_connector_server_end),
                     );
                 }
@@ -112,7 +114,7 @@ impl CapabilityFactory {
                     ..
                 } => {
                     let dictionary = Dict::new();
-                    self.weak_scope
+                    self.weak_task_group
                         .spawn(self.clone().serve_dictionary(dictionary, dictionary_server_end));
                 }
                 fruntime::CapabilityFactoryRequest::CreateConnectorRouter {
@@ -124,7 +126,7 @@ impl CapabilityFactory {
                         router_proxy: router_client_end.into_proxy(),
                         factory: self.clone(),
                     });
-                    self.weak_scope
+                    self.weak_task_group
                         .spawn(self.clone().serve_connector_router(router, router_server_end));
                 }
                 fruntime::CapabilityFactoryRequest::CreateDirConnectorRouter {
@@ -136,7 +138,7 @@ impl CapabilityFactory {
                         router_proxy: router_client_end.into_proxy(),
                         factory: self.clone(),
                     });
-                    self.weak_scope
+                    self.weak_task_group
                         .spawn(self.clone().serve_dir_connector_router(router, router_server_end));
                 }
                 fruntime::CapabilityFactoryRequest::CreateDictionaryRouter {
@@ -148,7 +150,7 @@ impl CapabilityFactory {
                         router_proxy: router_client_end.into_proxy(),
                         factory: self.clone(),
                     });
-                    self.weak_scope
+                    self.weak_task_group
                         .spawn(self.clone().serve_dictionary_router(router, router_server_end));
                 }
                 fruntime::CapabilityFactoryRequest::CreateDataRouter {
@@ -160,7 +162,7 @@ impl CapabilityFactory {
                         router_proxy: router_client_end.into_proxy(),
                         factory: self.clone(),
                     });
-                    self.weak_scope
+                    self.weak_task_group
                         .spawn(self.clone().serve_data_router(router, router_server_end));
                 }
                 unknown_request => {
@@ -176,7 +178,7 @@ impl CapabilityFactory {
     async fn store_instance_token(&self, token: WeakInstanceToken) -> fruntime::WeakInstanceToken {
         let (our_instance_token, their_instance_token) = zx::EventPair::create();
         self.store_remote(&our_instance_token, token).await;
-        self.weak_scope.spawn(async move {
+        self.weak_task_group.spawn(async move {
             // Move our end of the event pair into a new task that stays alive until the other end
             // of the event pair is closed. We use `expect` here because we've created the event
             // pair and thus surely have the rights to do this.
@@ -292,7 +294,7 @@ impl CapabilityFactory {
                         let _ = connector.send(Message { channel });
                     }
                     fruntime::ConnectorRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_connector(
+                        self.weak_task_group.spawn(self.clone().serve_connector(
                             connector.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -323,7 +325,7 @@ impl CapabilityFactory {
                         let _ = dir_connector.send(channel, RelativePath::dot(), None);
                     }
                     fruntime::DirConnectorRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_dir_connector(
+                        self.weak_task_group.spawn(self.clone().serve_dir_connector(
                             dir_connector.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -348,7 +350,7 @@ impl CapabilityFactory {
             while let Some(Ok(request)) = stream.next().await {
                 match request {
                     fruntime::DictionaryRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_dictionary(
+                        self.weak_task_group.spawn(self.clone().serve_dictionary(
                             dictionary.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -394,7 +396,7 @@ impl CapabilityFactory {
                     }
                     fruntime::DictionaryRequest::IterateKeys { key_iterator, .. } => {
                         let iterator_stream = key_iterator.into_stream();
-                        self.weak_scope.spawn(
+                        self.weak_task_group.spawn(
                             self.clone()
                                 .handle_key_iterator_stream(dictionary.clone(), iterator_stream),
                         );
@@ -425,25 +427,26 @@ impl CapabilityFactory {
             }
             Capability::ConnectorRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
-                self.weak_scope
+                self.weak_task_group
                     .spawn(self.clone().serve_connector_router(router, router_server_end));
                 fruntime::Capability::ConnectorRouter(client_end)
             }
             Capability::DirConnectorRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
-                self.weak_scope
+                self.weak_task_group
                     .spawn(self.clone().serve_dir_connector_router(router, router_server_end));
                 fruntime::Capability::DirConnectorRouter(client_end)
             }
             Capability::DictionaryRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
-                self.weak_scope
+                self.weak_task_group
                     .spawn(self.clone().serve_dictionary_router(router, router_server_end));
                 fruntime::Capability::DictionaryRouter(client_end)
             }
             Capability::DataRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
-                self.weak_scope.spawn(self.clone().serve_data_router(router, router_server_end));
+                self.weak_task_group
+                    .spawn(self.clone().serve_data_router(router, router_server_end));
                 fruntime::Capability::DataRouter(client_end)
             }
             Capability::Data(data) => match data {
@@ -514,7 +517,7 @@ impl CapabilityFactory {
             while let Some(Ok(request)) = stream.next().await {
                 match request {
                     fruntime::ConnectorRouterRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_connector_router(
+                        self.weak_task_group.spawn(self.clone().serve_connector_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -534,7 +537,7 @@ impl CapabilityFactory {
                         };
                         match router.route(maybe_route_request, false).await {
                             Ok(RouterResponse::Capability(connector)) => {
-                                self.weak_scope.spawn(
+                                self.weak_task_group.spawn(
                                     self.clone().serve_connector(connector, connector_server_end),
                                 );
                                 let _ = responder.send(Ok(fruntime::RouterResponse::Success));
@@ -571,7 +574,7 @@ impl CapabilityFactory {
             while let Some(Ok(request)) = stream.next().await {
                 match request {
                     fruntime::DirConnectorRouterRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_dir_connector_router(
+                        self.weak_task_group.spawn(self.clone().serve_dir_connector_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -591,7 +594,7 @@ impl CapabilityFactory {
                         };
                         match router.route(maybe_route_request, false).await {
                             Ok(RouterResponse::Capability(dir_connector)) => {
-                                self.weak_scope.spawn(
+                                self.weak_task_group.spawn(
                                     self.clone().serve_dir_connector(
                                         dir_connector,
                                         dir_connector_server_end,
@@ -631,7 +634,7 @@ impl CapabilityFactory {
             while let Some(Ok(request)) = stream.next().await {
                 match request {
                     fruntime::DictionaryRouterRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_dictionary_router(
+                        self.weak_task_group.spawn(self.clone().serve_dictionary_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -651,7 +654,7 @@ impl CapabilityFactory {
                         };
                         match router.route(maybe_route_request, false).await {
                             Ok(RouterResponse::Capability(dictionary)) => {
-                                self.weak_scope.spawn(
+                                self.weak_task_group.spawn(
                                     self.clone()
                                         .serve_dictionary(dictionary, dictionary_server_end),
                                 );
@@ -689,7 +692,7 @@ impl CapabilityFactory {
             while let Some(Ok(request)) = stream.next().await {
                 match request {
                     fruntime::DataRouterRequest::Clone { request, .. } => {
-                        self.weak_scope.spawn(self.clone().serve_data_router(
+                        self.weak_task_group.spawn(self.clone().serve_data_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
@@ -830,7 +833,7 @@ impl Remotable for Connector {
 
     async fn to_remote(self, factory: &CapabilityFactory) -> Self::RemotedType {
         let (client_end, server_end) = create_endpoints();
-        factory.weak_scope.spawn(factory.clone().serve_connector(self, server_end));
+        factory.weak_task_group.spawn(factory.clone().serve_connector(self, server_end));
         client_end
     }
 
@@ -868,7 +871,7 @@ impl Remotable for DirConnector {
 
     async fn to_remote(self, factory: &CapabilityFactory) -> Self::RemotedType {
         let (client_end, server_end) = create_endpoints();
-        factory.weak_scope.spawn(factory.clone().serve_dir_connector(self, server_end));
+        factory.weak_task_group.spawn(factory.clone().serve_dir_connector(self, server_end));
         client_end
     }
 
@@ -906,7 +909,7 @@ impl Remotable for Dict {
 
     async fn to_remote(self, factory: &CapabilityFactory) -> Self::RemotedType {
         let (client_end, server_end) = create_endpoints();
-        factory.weak_scope.spawn(factory.clone().serve_dictionary(self, server_end));
+        factory.weak_task_group.spawn(factory.clone().serve_dictionary(self, server_end));
         client_end
     }
 
@@ -1022,22 +1025,21 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use vfs::ExecutionScope;
+    use cm_util::TaskGroup;
 
     fn new_factory_connection()
-    -> (fruntime::CapabilityFactoryProxy, Arc<Mutex<RemotedRuntimeCapabilities>>, ExecutionScope)
-    {
-        let scope = ExecutionScope::new();
+    -> (fruntime::CapabilityFactoryProxy, Arc<Mutex<RemotedRuntimeCapabilities>>, TaskGroup) {
+        let task_group = TaskGroup::new();
         let remote_capabilities = Arc::new(Mutex::new(HashMap::new()));
         let capability_factory = CapabilityFactory {
             remote_capabilities: remote_capabilities.clone(),
-            weak_scope: scope.as_weak(),
+            weak_task_group: task_group.as_weak(),
             moniker: Moniker::root(),
         };
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fruntime::CapabilityFactoryMarker>();
-        scope.spawn(async move { capability_factory.handle_stream(stream).await.unwrap() });
-        (proxy, remote_capabilities, scope)
+        task_group.spawn(async move { capability_factory.handle_stream(stream).await.unwrap() });
+        (proxy, remote_capabilities, task_group)
     }
 
     fn create_connector(
@@ -1103,7 +1105,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_connector_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (connector_proxy, mut receiver_stream) = create_connector(&proxy);
 
         test_connector_is_connected(&connector_proxy, &mut receiver_stream).await;
@@ -1118,7 +1120,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_dir_connector_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (dir_connector_proxy, mut dir_receiver_stream) = create_dir_connector(&proxy);
 
         test_dir_connector_is_connected(&dir_connector_proxy, &mut dir_receiver_stream).await;
@@ -1133,7 +1135,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_dictionary_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (dictionary_proxy, dictionary_server_end) =
             fidl::endpoints::create_proxy::<fruntime::DictionaryMarker>();
         proxy.create_dictionary(dictionary_server_end).unwrap();
@@ -1153,7 +1155,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn insert_get_remove_dictionary_test() {
-        let (proxy, _remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, _remote_capabilities, _task_group) = new_factory_connection();
         let (dictionary_proxy, dictionary_server_end) =
             fidl::endpoints::create_proxy::<fruntime::DictionaryMarker>();
         proxy.create_dictionary(dictionary_server_end).unwrap();
@@ -1172,7 +1174,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn iterate_keys_dictionary_test() {
-        let (proxy, _remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, _remote_capabilities, _task_group) = new_factory_connection();
         let (dictionary_proxy, dictionary_server_end) =
             fidl::endpoints::create_proxy::<fruntime::DictionaryMarker>();
         proxy.create_dictionary(dictionary_server_end).unwrap();
@@ -1211,7 +1213,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_connector_router_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (router_client_end, mut router_stream) =
             fidl::endpoints::create_request_stream::<fruntime::ConnectorRouterMarker>();
         let (router_proxy, router_server_end) =
@@ -1249,7 +1251,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_dir_connector_router_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (router_client_end, mut router_stream) =
             fidl::endpoints::create_request_stream::<fruntime::DirConnectorRouterMarker>();
         let (router_proxy, router_server_end) =
@@ -1289,7 +1291,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_dictionary_router_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (router_client_end, mut router_stream) =
             fidl::endpoints::create_request_stream::<fruntime::DictionaryRouterMarker>();
         let (router_proxy, router_server_end) =
@@ -1328,7 +1330,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn create_data_router_test() {
-        let (proxy, remote_capabilities, _scope) = new_factory_connection();
+        let (proxy, remote_capabilities, _task_group) = new_factory_connection();
         let (router_client_end, mut router_stream) =
             fidl::endpoints::create_request_stream::<fruntime::DataRouterMarker>();
         let (router_proxy, router_server_end) =

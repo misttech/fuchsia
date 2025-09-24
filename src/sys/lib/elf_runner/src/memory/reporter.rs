@@ -7,7 +7,10 @@ use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
 use futures::TryStreamExt;
 use std::sync::Arc;
 use zx::AsHandleRef;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution};
+use {
+    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
+    fuchsia_async as fasync,
+};
 
 use crate::ComponentSet;
 use crate::component::ElfComponentInfo;
@@ -55,7 +58,7 @@ impl MemoryReporter {
 
     pub fn serve(&self, mut stream: fattribution::ProviderRequestStream) {
         let subscriber = self.server.new_observer(stream.control_handle());
-        self.components.scope().spawn(async move {
+        fasync::Task::spawn(async move {
             while let Ok(Some(request)) = stream.try_next().await {
                 match request {
                     fattribution::ProviderRequest::Get { responder } => {
@@ -71,7 +74,8 @@ impl MemoryReporter {
                     }
                 }
             }
-        });
+        })
+        .detach();
     }
 
     fn build_new_attribution(component: &ElfComponentInfo) -> Vec<fattribution::AttributionUpdate> {

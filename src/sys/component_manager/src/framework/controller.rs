@@ -140,7 +140,7 @@ pub async fn serve_controller(
                 // (even if unlikely) that the subtask completes and cancels this task before the
                 // code to send the response executes.
                 responder.send(Ok(()))?;
-                parent.execution_scope.clone().spawn(async move {
+                parent.nonblocking_task_group().spawn(async move {
                     let child_name =
                         moniker.leaf().expect("we already checked this is not the root component");
                     if let Err(err) = parent.remove_dynamic_child(&child_name).await {

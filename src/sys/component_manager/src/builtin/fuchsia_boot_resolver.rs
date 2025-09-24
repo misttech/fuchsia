@@ -511,6 +511,7 @@ mod tests {
     use ::routing::resolving::ResolvedPackage;
     use assert_matches::assert_matches;
     use cm_rust::{FidlIntoNative, NativeIntoFidl};
+    use cm_util::TaskGroup;
     use fidl::endpoints::{create_endpoints, create_proxy};
     use fidl::persist;
     use fuchsia_async::Task;
@@ -617,11 +618,12 @@ mod tests {
         let resolver_provider =
             Box::new(ComponentResolverCapabilityProvider::new(resolver.clone()));
         let (client_channel, server_channel) = create_endpoints::<fresolution::ResolverMarker>();
+        let task_group = TaskGroup::new();
         let scope = ExecutionScope::new();
         let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server_channel);
         resolver_provider
             .open(
-                scope.clone(),
+                task_group.clone(),
                 OpenRequest::new(
                     scope.clone(),
                     fio::Flags::PROTOCOL_SERVICE,

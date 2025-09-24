@@ -7,13 +7,13 @@ use ::routing::bedrock::sandbox_construction::EventStreamFilter;
 use async_trait::async_trait;
 use cm_rust::{EventScope, FidlIntoNative};
 use cm_types::Name;
+use cm_util::WeakTaskGroup;
 use errors::ModelError;
 use fidl::endpoints::Proxy;
 use futures::channel::mpsc;
 use hooks::{Event, EventPayload, EventType, HasEventType, Hook, HooksRegistration, TransferEvent};
 use moniker::{ExtendedMoniker, Moniker};
 use std::sync::{Arc, Weak};
-use vfs::WeakExecutionScope;
 use zx::HandleBased;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as finternal};
 
@@ -26,7 +26,7 @@ pub struct HookObserver {
     pub subscriber: Moniker,
     pub route_metadata: finternal::EventStreamRouteMetadata,
     pub sender: mpsc::UnboundedSender<fcomponent::Event>,
-    pub weak_scope: WeakExecutionScope,
+    pub weak_task_group: WeakTaskGroup,
     pub filter: EventStreamFilter,
 }
 
@@ -109,7 +109,7 @@ impl HookObserver {
                 if let Some(receiver) = receiver.take() {
                     let name = name.clone();
                     let sender = self.sender.clone();
-                    self.weak_scope.spawn(async move {
+                    self.weak_task_group.spawn(async move {
                         while let Some(message) = receiver.receive().await {
                             let payload = fcomponent::EventPayload::CapabilityRequested(
                                 fcomponent::CapabilityRequestedPayload {

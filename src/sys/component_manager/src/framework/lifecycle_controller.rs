@@ -365,10 +365,6 @@ mod tests {
         let components = vec![
             (
                 "root",
-                ComponentDeclBuilder::new().child(ChildBuilder::new().name("top").eager()).build(),
-            ),
-            (
-                "top",
                 ComponentDeclBuilder::new().child(ChildBuilder::new().name("a").eager()).build(),
             ),
             ("a", ComponentDeclBuilder::new().child(ChildBuilder::new().name("b").eager()).build()),
@@ -377,32 +373,29 @@ mod tests {
 
         let test_model_result =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-        let lifecycle_proxy = lifecycle_controller(&test_model_result).await;
         let root = test_model_result.model.root();
-        let top = root.find_and_maybe_resolve(&["top"].try_into().unwrap()).await.unwrap();
+        let lifecycle_proxy = lifecycle_controller(&test_model_result).await;
 
-        // We (un)resolve `top` instead of `.` because unresolving `.` would have the
-        // effect of closing the server endpoint of the `lifecycle_proxy` bound to it.
-        lifecycle_proxy.resolve_instance("top").await.unwrap().unwrap();
-        let component_a = top.find_and_maybe_resolve(&["a"].try_into().unwrap()).await.unwrap();
+        lifecycle_proxy.resolve_instance(".").await.unwrap().unwrap();
+        let component_a = root.find_and_maybe_resolve(&["a"].try_into().unwrap()).await.unwrap();
         let component_b =
-            top.find_and_maybe_resolve(&["a", "b"].try_into().unwrap()).await.unwrap();
+            root.find_and_maybe_resolve(&["a", "b"].try_into().unwrap()).await.unwrap();
         assert!(is_resolved(&component_a).await);
         assert!(is_resolved(&component_b).await);
 
-        lifecycle_proxy.unresolve_instance("top").await.unwrap().unwrap();
-        assert!(is_discovered(&top).await);
+        lifecycle_proxy.unresolve_instance(".").await.unwrap().unwrap();
+        assert!(is_discovered(&root).await);
         assert!(is_shutdown(&component_a).await);
         assert!(is_shutdown(&component_b).await);
 
         assert_eq!(
-            lifecycle_proxy.unresolve_instance("nonesuch").await.unwrap(),
+            lifecycle_proxy.unresolve_instance("./nonesuch").await.unwrap(),
             Err(fsys::UnresolveError::InstanceNotFound)
         );
 
         // Unresolve again, which is ok because UnresolveAction is idempotent.
-        assert_eq!(lifecycle_proxy.unresolve_instance("top").await.unwrap(), Ok(()));
-        assert!(is_discovered(&top).await);
+        assert_eq!(lifecycle_proxy.unresolve_instance(".").await.unwrap(), Ok(()));
+        assert!(is_discovered(&root).await);
         assert!(is_shutdown(&component_a).await);
         assert!(is_shutdown(&component_b).await);
     }

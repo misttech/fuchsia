@@ -58,19 +58,16 @@ use {
     maplit::btreemap,
     moniker::{ChildName, ExtendedMoniker, Moniker},
     router_error::{DowncastErrorForTest, RouterError},
-    routing::{RouteRequest, RouteSource, component_instance::ComponentInstanceInterface},
+    routing::component_instance::ComponentInstanceInterface,
+    routing::{RouteRequest, RouteSource},
     routing_test_helpers::{
         RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
     },
     sandbox::{Connector, Router, RouterResponse, WeakInstanceToken},
-    std::time::Duration,
     std::{
         collections::HashSet,
         pin::pin,
-        sync::{
-            Arc, Weak,
-            atomic::{AtomicBool, Ordering},
-        },
+        sync::{Arc, Weak},
         task::Poll,
     },
     vfs::{execution_scope::ExecutionScope, pseudo_directory, service},
@@ -81,32 +78,14 @@ instantiate_common_routing_tests! { RoutingTestBuilder }
 
 #[test]
 fn component_teardown_processes_final_request() {
-    use std::sync::mpsc;
-
     // We will replace the target component's ExecutionScope with one with a custom executor that
     // we can run manually.
-    let (ehandle_tx, ehandle_rx) = mpsc::channel();
-    let (run_scope_executor_tx, run_scope_executor_rx) = mpsc::channel::<()>();
-    let (started_ack_tx, started_ack_rx) = mpsc::channel::<()>();
-    let component_started = Arc::new(AtomicBool::new(false));
-    let component_started2 = component_started.clone();
-
+    let (ehandle_tx, ehandle_rx) = std::sync::mpsc::channel();
+    let (run_scope_executor_tx, run_scope_executor_rx) = std::sync::mpsc::channel::<()>();
     // Spawn a new thread for the new executor because there is a one executor per thread rule.
     let _scope_executor_thread = std::thread::spawn(move || {
         let mut executor = fasync::TestExecutor::new();
         ehandle_tx.send(fasync::EHandle::local()).unwrap();
-
-        // Arranging the sequence of operations in the right order is a little tricky. The executor
-        // needs to run initially to start the component, because the escrow agent spawns a task on
-        // the executor. Wait for a component started signal from the test
-        executor.run_singlethreaded(async move {
-            while !component_started2.load(Ordering::Relaxed) {
-                fasync::Timer::new(Duration::from_millis(10)).await;
-            }
-        });
-        started_ack_tx.send(()).unwrap();
-
-        // Now block the executor until the test allows it to proceed.
         run_scope_executor_rx.recv().unwrap();
         executor.run_singlethreaded(std::future::pending::<()>());
     });
@@ -145,7 +124,6 @@ fn component_teardown_processes_final_request() {
         )
         .await
         .unwrap();
-        component_started.store(true, Ordering::Relaxed);
 
         let resolved_url = RoutingTest::resolved_url("leaf");
         test.mock_runner.wait_for_url(&resolved_url).await;
@@ -163,11 +141,9 @@ fn component_teardown_processes_final_request() {
         (test, echo_proxy, destroy_fut)
     });
 
-    _ = started_ack_rx.recv().unwrap();
     // The future that destroys the component should stall at the point it has told the component's
-    // execution scope to shutdown and is waiting for its tasks to drain. Because we've gotten the
-    // started ACK from the other thread, we know we aren't running the ExecutionScope's executor
-    // any more, that wait should stall.
+    // execution scope to shutdown and is waiting for its tasks to drain. Since we aren't running
+    // the ExecutionScope's executor yet, that wait should stall.
     let mut destroy_fut = pin!(destroy_fut);
     assert!(executor.run_until_stalled(&mut destroy_fut).is_pending());
 

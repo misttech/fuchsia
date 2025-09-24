@@ -19,6 +19,7 @@ rustc_library("util") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-sync",
     "//src/storage/lib/vfs/rust:vfs",
@@ -26,13 +27,12 @@ rustc_library("util") {
     "//third_party/rust_crates:pin-project",
   ]
 
-  test_deps = [ "//src/lib/fuchsia-async" ]
-
   sources = [
     "src/abortable_scope.rs",
     "src/channel.rs",
     "src/io.rs",
     "src/lib.rs",
+    "src/task_group.rs",
   ]
 }
 

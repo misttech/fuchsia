@@ -189,7 +189,7 @@ impl RealmCapabilityProvider {
     ) -> Result<(), fcomponent::Error> {
         match Self::get_child(component, child.clone()).await? {
             Some(child) => {
-                child.execution_scope.spawn(framework::controller::run_controller(
+                child.nonblocking_task_group().spawn(framework::controller::run_controller(
                     child.as_weak(),
                     controller.into_stream(),
                 ));

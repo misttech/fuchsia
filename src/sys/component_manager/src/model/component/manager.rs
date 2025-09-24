@@ -5,14 +5,15 @@
 use crate::model::component::ComponentInstance;
 use ::routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use ::routing::component_instance::TopInstanceInterface;
+use cm_util::TaskGroup;
 use errors::RebootError;
 use fidl::endpoints::{self};
 use fuchsia_component::client;
 use log::warn;
 use std::sync::{Arc, Mutex};
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
-use vfs::{ExecutionScope, ToObjectRequest};
 use {
     fidl_fuchsia_hardware_power_statecontrol as fstatecontrol, fidl_fuchsia_io as fio,
     fuchsia_async as fasync,
@@ -36,8 +37,8 @@ pub struct ComponentManagerInstance {
     /// The list of capabilities offered from component manager as built-in capabilities.
     pub builtin_capabilities: BuiltinCapabilities,
 
-    /// Scope owned by component manager's instance.
-    execution_scope: ExecutionScope,
+    /// Tasks owned by component manager's instance.
+    task_group: TaskGroup,
 
     /// Mutable state for component manager's instance.
     state: Mutex<ComponentManagerInstanceState>,
@@ -62,13 +63,13 @@ impl ComponentManagerInstance {
             namespace_capabilities,
             builtin_capabilities,
             state: Mutex::new(ComponentManagerInstanceState::new()),
-            execution_scope: ExecutionScope::new(),
+            task_group: TaskGroup::new(),
         }
     }
 
-    /// Returns a scope for component manager's instance
-    pub fn execution_scope(&self) -> &ExecutionScope {
-        &self.execution_scope
+    /// Returns a group where tasks can be run scoped to this instance
+    pub fn task_group(&self) -> TaskGroup {
+        self.task_group.clone()
     }
 
     #[cfg(all(test, feature = "src_model_tests"))]

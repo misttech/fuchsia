@@ -10,8 +10,8 @@ use crate::model::component::WeakComponentInstance;
 use ::routing::capability_source::InternalCapability;
 use ::routing::error::ComponentInstanceError;
 use async_trait::async_trait;
+use cm_util::TaskGroup;
 use errors::{CapabilityProviderError, PkgDirError};
-use vfs::ExecutionScope;
 use vfs::directory::entry::OpenRequest;
 use vfs::remote::remote_dir;
 
@@ -29,7 +29,7 @@ impl PkgDirectoryProvider {
 impl CapabilityProvider for PkgDirectoryProvider {
     async fn open(
         self: Box<Self>,
-        _scope: ExecutionScope,
+        _task_group: TaskGroup,
         open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError> {
         let component = self.scope.upgrade().map_err(|_| {

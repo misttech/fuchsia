@@ -7,6 +7,7 @@ use crate::model::events::hook_observer::HookObserver;
 use crate::model::events::{forward_capability_requested_events, names_from_filter};
 use async_trait::async_trait;
 use cm_types::Name;
+use cm_util::TaskGroup;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fuchsia_inspect::Inspector;
@@ -28,7 +29,6 @@ use sandbox::{
 use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::task::Poll;
-use vfs::ExecutionScope;
 use zx::sys::{ZX_CHANNEL_MAX_MSG_BYTES, ZX_CHANNEL_MAX_MSG_HANDLES};
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as finternal};
 
@@ -75,7 +75,7 @@ impl Routable<Connector> for EventStreamUseRouter {
         let target_component = self.component.upgrade().map_err(RoutingError::from)?;
         let (connector, use_receiver) =
             EventStreamUseReceiver::new(routed_dictionaries, target_component.clone());
-        target_component.execution_scope.spawn(use_receiver.run());
+        target_component.nonblocking_task_group().spawn(use_receiver.run());
         Ok(RouterResponse::Capability(connector))
     }
 }
@@ -145,11 +145,11 @@ impl EventStreamUseReceiver {
                 return;
             };
             let (hooks, mpsc_receiver) = self.set_up_hooks(&target_component).await;
-            target_component.execution_scope.spawn(Self::handle_stream(
+            target_component.nonblocking_task_group().spawn(Self::handle_stream(
                 message.channel,
                 mpsc_receiver,
                 hooks,
-            ));
+            ))
         }
     }
 
@@ -190,23 +190,25 @@ impl EventStreamUseReceiver {
                     .expect("missing capability requested receiver")
                     .clone();
                 Self::maybe_send_component_manager_inspect_event(
-                    target_component.execution_scope.clone(),
+                    target_component.nonblocking_task_group(),
                     &mpsc_sender,
                     target_component.context.inspector(),
                     &route_metadata,
                     filter,
                 );
-                target_component.execution_scope.spawn(forward_capability_requested_events(
-                    mpsc_sender.clone(),
-                    capability_requested_receiver_lock,
-                ));
+                target_component.nonblocking_task_group().spawn(
+                    forward_capability_requested_events(
+                        mpsc_sender.clone(),
+                        capability_requested_receiver_lock,
+                    ),
+                );
             } else {
                 let hook_observer = Arc::new(HookObserver {
                     event_type,
                     subscriber: target_component.moniker.clone(),
                     route_metadata,
                     sender: mpsc_sender.clone(),
-                    weak_scope: target_component.execution_scope.as_weak(),
+                    weak_task_group: target_component.nonblocking_task_group().as_weak(),
                     filter: filter.clone(),
                 });
                 target_component.hooks.install(hook_observer.hooks());
@@ -285,7 +287,7 @@ impl EventStreamUseReceiver {
     /// sink. This function will check to see if these conditions apply, and then generate that
     /// event if so.
     fn maybe_send_component_manager_inspect_event(
-        scope: ExecutionScope,
+        task_group: TaskGroup,
         sender: &mpsc::UnboundedSender<fcomponent::Event>,
         inspector: &Inspector,
         route_metadata: &finternal::EventStreamRouteMetadata,
@@ -311,7 +313,7 @@ impl EventStreamUseReceiver {
             log::warn!("failed to publish component manager inspect tree");
             return;
         };
-        scope.spawn(server_task);
+        task_group.spawn(server_task);
 
         let event = fcomponent::Event {
             header: Some(fcomponent::EventHeader {

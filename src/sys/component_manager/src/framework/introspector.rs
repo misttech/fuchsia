@@ -8,6 +8,7 @@ use ::routing::RouteRequest;
 use anyhow::Context;
 use async_trait::async_trait;
 use cm_types::Name;
+use cm_util::TaskGroup;
 use errors::CapabilityProviderError;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component as fcomponent;
@@ -17,7 +18,6 @@ use moniker::{ExtendedMoniker, Moniker};
 use routing::capability_source::InternalCapability;
 use routing::error::RoutingError;
 use routing::policy::PolicyError;
-use vfs::ExecutionScope;
 use vfs::directory::entry::OpenRequest;
 
 use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider};
@@ -211,7 +211,7 @@ struct AccessDeniedCapabilityProvider {
 impl CapabilityProvider for AccessDeniedCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _scope: ExecutionScope,
+        _task_group: TaskGroup,
         _open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError> {
         let err = RoutingError::from(PolicyError::CapabilityUseDisallowed {

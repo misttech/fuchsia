@@ -6,14 +6,15 @@ use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use ::routing::capability_source::InternalCapability;
 use ::routing::component_instance::ComponentInstanceInterface;
 use async_trait::async_trait;
+use cm_util::TaskGroup;
 use errors::CapabilityProviderError;
 use fidl::handle::Channel;
 use fidl_fuchsia_io as fio;
 use std::sync;
 use std::sync::Arc;
-use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
+use vfs::ToObjectRequest;
 
 /// The server-side of a capability implements this trait.
 /// Multiple `CapabilityProvider` objects can compose with one another for a single
@@ -29,7 +30,7 @@ pub trait CapabilityProvider: Send + Sync {
     /// the appropriate directory.
     async fn open(
         self: Box<Self>,
-        scope: ExecutionScope,
+        task_group: TaskGroup,
         open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError>;
 }
@@ -48,7 +49,7 @@ pub trait InternalCapabilityProvider: Send + Sync {
 impl<T: InternalCapabilityProvider + 'static> CapabilityProvider for T {
     async fn open(
         self: Box<Self>,
-        scope: ExecutionScope,
+        task_group: TaskGroup,
         open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError> {
         let this = sync::Mutex::new(Some(self));
@@ -56,7 +57,7 @@ impl<T: InternalCapabilityProvider + 'static> CapabilityProvider for T {
             move |_scope: ExecutionScope, server_end: fuchsia_async::Channel| {
                 let mut this = this.lock().unwrap();
                 let this = this.take().expect("vfs open shouldn't be called more than once");
-                scope.spawn(this.open_protocol(server_end.into_zx_channel()));
+                task_group.spawn(this.open_protocol(server_end.into_zx_channel()));
             },
         );
         open_request.open_service(service).map_err(|e| CapabilityProviderError::VfsOpenError(e))
@@ -96,11 +97,15 @@ pub async fn open_framework(
     instance: &Arc<ComponentInstance>,
     server: Channel,
 ) -> Result<(), CapabilityProviderError> {
-    let scope = instance.execution_scope.clone();
+    let task_group = instance.nonblocking_task_group();
     let weak_instance = instance.as_weak();
     const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
     let mut object_request = FLAGS.to_object_request(server);
-    let open_request =
-        OpenRequest::new(scope.clone(), FLAGS, vfs::path::Path::dot(), &mut object_request);
-    this.new_provider(weak_instance.clone(), weak_instance).open(scope, open_request).await
+    let open_request = OpenRequest::new(
+        instance.execution_scope.clone(),
+        FLAGS,
+        vfs::path::Path::dot(),
+        &mut object_request,
+    );
+    this.new_provider(weak_instance.clone(), weak_instance).open(task_group, open_request).await
 }

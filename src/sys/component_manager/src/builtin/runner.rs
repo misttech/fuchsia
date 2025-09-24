@@ -8,8 +8,8 @@ use ::routing::policy::ScopedPolicyChecker;
 use async_trait::async_trait;
 use cm_config::SecurityPolicy;
 use cm_types::Name;
+use cm_util::TaskGroup;
 use errors::CapabilityProviderError;
-use vfs::ExecutionScope;
 
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
@@ -89,7 +89,7 @@ impl RunnerCapabilityProvider {
 impl CapabilityProvider for RunnerCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _scope: ExecutionScope,
+        _task_group: TaskGroup,
         open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError> {
         self.factory
@@ -110,9 +110,9 @@ mod tests {
     use cm_rust_testing::*;
     use futures::prelude::*;
     use moniker::Moniker;
-    use vfs::ToObjectRequest;
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path;
+    use vfs::ToObjectRequest;
     use {fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio};
 
     fn sample_start_info(name: &str) -> fcrunner::ComponentStartInfo {
@@ -142,11 +142,12 @@ mod tests {
         // Open a connection to the provider.
         let (client, server) = fidl::endpoints::create_proxy::<fcrunner::ComponentRunnerMarker>();
         let server = server.into_channel();
+        let task_group = TaskGroup::new();
         let scope = ExecutionScope::new();
         let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server);
         provider
             .open(
-                scope.clone(),
+                task_group.clone(),
                 OpenRequest::new(
                     scope.clone(),
                     fio::Flags::PROTOCOL_SERVICE,

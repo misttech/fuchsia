@@ -140,7 +140,7 @@ fn not_found_logging(component: &Arc<ComponentInstance>) -> UnboundedSender<Stri
     let (sender, mut receiver) = unbounded();
     let component_for_logger: WeakComponentInstance = component.as_weak();
 
-    component.execution_scope.spawn(async move {
+    component.nonblocking_task_group().spawn(async move {
         while let Some(path) = receiver.next().await {
             match component_for_logger.upgrade() {
                 Ok(target) => {

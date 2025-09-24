@@ -358,7 +358,7 @@ impl RoutingTest {
 
             let launch = LaunchTaskOnReceive::new(
                 capability_source,
-                top_instance.execution_scope().as_weak(),
+                top_instance.task_group().as_weak(),
                 name.clone(),
                 Some(model.root().context.policy().clone()),
                 Arc::new(move |server_end, _, _, _| {

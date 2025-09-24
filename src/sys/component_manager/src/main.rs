@@ -113,7 +113,7 @@ fn main() {
 #[cfg(feature = "heapdump")]
 fn connect_to_heapdump(builtin_environment: &BuiltinEnvironment) {
     let model = builtin_environment.model.clone();
-    builtin_environment.model.top_instance().execution_scope().spawn(async move {
+    model.top_instance().task_group().spawn(async move {
         let heapdump_router = model.top_instance().get_root_exposed_capability_router(
             cm_types::Name::new("fuchsia.memory.heapdump.process.Registry").unwrap(),
         );

@@ -19,14 +19,14 @@ use cm_types::RelativePath;
 use component_id_index::InstanceId;
 use derivative::Derivative;
 use errors::{ModelError, StorageError};
-use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl::endpoints::{create_proxy, ServerEnd};
 use futures::FutureExt;
 use moniker::Moniker;
 use sandbox::Dict;
 use std::path::PathBuf;
 use std::sync::Arc;
-use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
+use vfs::ToObjectRequest;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
 
 // TODO: The `use` declaration for storage implicitly carries these rights. While this is
@@ -423,7 +423,7 @@ pub fn build_storage_admin_dictionary(
                 storage_decl.name.clone(),
                 LaunchTaskOnReceive::new(
                     capability_source,
-                    component.execution_scope.as_weak(),
+                    component.nonblocking_task_group().as_weak(),
                     "storage admin protocol",
                     Some(component.context.policy().clone()),
                     Arc::new(move |channel, _target, _, _| {
@@ -451,8 +451,8 @@ mod tests {
     use cm_rust::*;
     use cm_rust_testing::*;
     use fidl_fuchsia_io as fio;
-    use rand::Rng;
     use rand::distr::Alphanumeric;
+    use rand::Rng;
 
     #[fuchsia::test]
     async fn open_isolated_storage_test() {
@@ -592,11 +592,9 @@ mod tests {
         let _: Vec<_> = dir.query().await.expect("failed to open directory");
 
         // check that an instance-ID based directory was created:
-        assert!(
-            test_helpers::list_directory(&test.test_dir_proxy)
-                .await
-                .contains(&instance_id.to_string())
-        );
+        assert!(test_helpers::list_directory(&test.test_dir_proxy)
+            .await
+            .contains(&instance_id.to_string()));
 
         // check that a moniker-based directory was NOT created:
         assert!(!test_helpers::list_directory_recursive(&test.test_dir_proxy).await.contains(
@@ -840,11 +838,9 @@ mod tests {
         let _: Vec<_> = dir.query().await.expect("failed to open directory");
 
         // check that an instance-ID based directory was created:
-        assert!(
-            test_helpers::list_directory(&test.test_dir_proxy)
-                .await
-                .contains(&instance_id.to_string())
-        );
+        assert!(test_helpers::list_directory(&test.test_dir_proxy)
+            .await
+            .contains(&instance_id.to_string()));
 
         assert_eq!(test_helpers::list_directory(&dir).await, Vec::<String>::new());
         test_helpers::write_file(&dir, "file", "hippos").await;
@@ -866,11 +862,9 @@ mod tests {
         .expect("failed to delete child's isolated storage");
 
         // check that an instance-ID based directory was deleted:
-        assert!(
-            !test_helpers::list_directory(&test.test_dir_proxy)
-                .await
-                .contains(&instance_id.to_string())
-        );
+        assert!(!test_helpers::list_directory(&test.test_dir_proxy)
+            .await
+            .contains(&instance_id.to_string()));
 
         // Error -- tried to delete nonexistent storage.
         let err = delete_isolated_storage(

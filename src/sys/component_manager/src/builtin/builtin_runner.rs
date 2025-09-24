@@ -7,7 +7,7 @@ use ::routing::capability_source::InternalCapability;
 use async_trait::async_trait;
 use cm_config::SecurityPolicy;
 use cm_types::Name;
-use cm_util::{AbortHandle, AbortableScope};
+use cm_util::{AbortHandle, AbortableScope, TaskGroup};
 use elf_runner::crash_info::CrashRecords;
 use elf_runner::process_launcher::NamespaceConnector;
 use fidl::endpoints;
@@ -57,7 +57,7 @@ pub type BuiltinProgramGen = Box<dyn Fn() -> BuiltinProgramFn + Send + Sync + 's
 /// if it uses the builtin runner.
 pub struct BuiltinRunner {
     root_job: zx::Unowned<'static, zx::Job>,
-    scope: ExecutionScope,
+    task_group: TaskGroup,
     program: BuiltinProgramGen,
 }
 
@@ -112,10 +112,10 @@ impl BuiltinRunner {
     ///   Each builtin runner can only run a single program.
     pub fn new(
         root_job: zx::Unowned<'static, zx::Job>,
-        scope: ExecutionScope,
+        task_group: TaskGroup,
         program: BuiltinProgramGen,
     ) -> Self {
-        Self { root_job, scope, program }
+        Self { root_job, task_group, program }
     }
 
     /// Starts a builtin component.
@@ -314,7 +314,7 @@ impl BuiltinRunnerFactory for BuiltinRunner {
         open_request.open_service(endpoint(move |_scope, server_end| {
             let runner = self.clone();
             let mut stream = fcrunner::ComponentRunnerRequestStream::from_channel(server_end);
-            runner.clone().scope.spawn(async move {
+            runner.clone().task_group.spawn(async move {
                 while let Ok(Some(request)) = stream.try_next().await {
                     match request {
                         fcrunner::ComponentRunnerRequest::Start {
@@ -323,7 +323,7 @@ impl BuiltinRunnerFactory for BuiltinRunner {
                             Ok((program, on_exit)) => {
                                 let (stream, control) = controller.into_stream_and_control_handle();
                                 let controller = Controller::new(program, stream, control);
-                                runner.scope.spawn(controller.serve(on_exit));
+                                runner.task_group.spawn(controller.serve(on_exit));
                             }
                             Err(err) => {
                                 warn!("Builtin runner failed to run component: {err}");
@@ -461,7 +461,8 @@ impl Controllable for BuiltinProgram {
 
 /// The program of the ELF runner component.
 struct ElfRunnerProgram {
-    scope: ExecutionScope,
+    task_group: TaskGroup,
+    execution_scope: ExecutionScope,
     output: Dict,
     job: zx::Job,
 }
@@ -486,14 +487,14 @@ impl ElfRunnerProgram {
         );
         let inner = Arc::new(Inner { resources, elf_runner: Arc::new(elf_runner) });
 
-        let scope = ExecutionScope::new();
+        let task_group = TaskGroup::new();
 
         let inner_clone = inner.clone();
         let elf_runner = Arc::new(LaunchTaskOnReceive::new(
             CapabilitySource::Builtin(BuiltinSource {
                 capability: InternalCapability::Runner(Name::new("elf").unwrap()),
             }),
-            scope.as_weak(),
+            task_group.as_weak(),
             fcrunner::ComponentRunnerMarker::PROTOCOL_NAME,
             None,
             Arc::new(move |server_end, _, _, _| {
@@ -513,7 +514,7 @@ impl ElfRunnerProgram {
                     Name::new(fattribution::ProviderMarker::PROTOCOL_NAME).unwrap(),
                 ),
             }),
-            scope.as_weak(),
+            task_group.as_weak(),
             fattribution::ProviderMarker::PROTOCOL_NAME,
             None,
             Arc::new(move |server_end, _, _, _| {
@@ -540,13 +541,13 @@ impl ElfRunnerProgram {
         };
         output.insert(SVC.parse().unwrap(), Capability::Dictionary(svc)).ok();
 
-        let this = Self { scope, output, job };
+        let this = Self { task_group, execution_scope: ExecutionScope::new(), output, job };
         this
     }
 
     /// Serves requests coming from `outgoing_dir` using `self.output`.
     fn serve_outgoing(&self, outgoing_dir: ServerEnd<fio::DirectoryMarker>) {
-        let scope = self.scope.clone();
+        let scope = self.execution_scope.clone();
         let dir_entry = self.output.clone().try_into_directory_entry(scope.clone()).unwrap();
         let client_end = serve_directory(dir_entry, &scope, fio::PERM_READABLE).unwrap();
         let dir_proxy = client_end.into_proxy();
@@ -563,9 +564,9 @@ impl ElfRunnerProgram {
                 }
             }
         }
-        let scope = self.scope.clone();
+        let task_group = self.task_group.clone();
         drop(self);
-        scope.wait().await;
+        task_group.join().await;
     }
 }
 
@@ -573,7 +574,7 @@ impl ElfRunnerProgram {
 impl Drop for ElfRunnerProgram {
     fn drop(&mut self) {
         _ = self.job.kill();
-        self.scope.shutdown();
+        self.execution_scope.shutdown();
     }
 }
 
@@ -676,8 +677,8 @@ mod tests {
         root_job: zx::Unowned<'static, zx::Job>,
         program: BuiltinProgramGen,
     ) -> Arc<BuiltinRunner> {
-        let scope = ExecutionScope::new();
-        Arc::new(BuiltinRunner::new(root_job, scope, program))
+        let task_group = TaskGroup::new();
+        Arc::new(BuiltinRunner::new(root_job, task_group, program))
     }
 
     fn make_start_info(

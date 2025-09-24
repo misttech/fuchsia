@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use cm_rust::{Availability, CapabilityTypeName};
 use cm_types::{FLAGS_MAX_POSSIBLE_RIGHTS, Name};
+use cm_util::TaskGroup;
 use errors::{CapabilityProviderError, OpenError};
 use fidl_fuchsia_io as fio;
 use moniker::Moniker;
@@ -19,7 +20,6 @@ use routing::rights::Rights;
 use routing::{DictExt, GenericRouterResponse};
 use sandbox::{Dict, RemotableCapability, Request};
 use std::collections::HashMap;
-use vfs::ExecutionScope;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path as VfsPath;
 use vfs::remote::remote_dir;
@@ -43,7 +43,7 @@ impl DefaultComponentCapabilityProvider {
 impl CapabilityProvider for DefaultComponentCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _scope: ExecutionScope,
+        _task_group: TaskGroup,
         open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError> {
         let source = self.target.upgrade()?.find_absolute(&self.source).await?;
@@ -126,7 +126,7 @@ pub struct NamespaceCapabilityProvider {
 impl CapabilityProvider for NamespaceCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _scope: ExecutionScope,
+        _task_group: TaskGroup,
         mut open_request: OpenRequest<'_>,
     ) -> Result<(), CapabilityProviderError> {
         let path = self.path.to_path_buf();

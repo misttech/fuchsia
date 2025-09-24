@@ -3,17 +3,18 @@
 // found in the LICENSE file.
 
 use crate::{ElfComponent, ElfComponentInfo};
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use id::Id;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use vfs::ExecutionScope;
 
 /// [`ComponentSet`] tracks all the components executing inside an ELF runner,
 /// and presents an iterator over those components. It does this under the
 /// constraint that each component may go out of scope concurrently due to
 /// stopping on its own, or being stopped by the `ComponentController` protocol
 /// or any other reason.
+#[derive(Default)]
 pub struct ComponentSet {
     inner: Mutex<HashMap<Id, Weak<ElfComponentInfo>>>,
 
@@ -22,8 +23,6 @@ pub struct ComponentSet {
     /// These callbacks need to be behind a [Mutex] as it isn't guaranteed they
     /// will be called on the same thread as [ComponentSet].
     callbacks: Mutex<ComponentSetCallbacks>,
-
-    scope: ExecutionScope,
 }
 
 #[derive(Default)]
@@ -33,12 +32,8 @@ struct ComponentSetCallbacks {
 }
 
 impl ComponentSet {
-    pub fn new(scope: ExecutionScope) -> Arc<Self> {
-        Arc::new(Self { inner: Default::default(), callbacks: Default::default(), scope })
-    }
-
-    pub(crate) fn scope(&self) -> &ExecutionScope {
-        &self.scope
+    pub fn new() -> Arc<Self> {
+        Default::default()
     }
 
     pub fn set_callbacks(
@@ -56,9 +51,10 @@ impl ComponentSet {
     /// The component will remove itself from the set when it is dropped.
     pub fn add(self: Arc<Self>, component: &mut ElfComponent) {
         let mut inner = self.inner.lock();
+        let component_set = Arc::downgrade(&self.clone());
         let id = Id::new(component.info().get_moniker().clone());
         let id_clone = id.clone();
-        component.set_on_drop(self.on_component_drop(id_clone));
+        component.set_on_drop(ComponentSet::on_component_drop(component_set, id_clone));
         inner.insert(id, Arc::downgrade(component.info()));
         if let Some(cb) = self.callbacks.lock().on_new_component.as_ref() {
             cb(component.info().as_ref());
@@ -81,12 +77,13 @@ impl ComponentSet {
     }
 
     /// Callback when a component is removed from the set.
-    fn on_component_drop(self: &Arc<Self>, id_clone: Id) -> impl FnOnce(&ElfComponentInfo) + use<> {
-        let scope = self.scope.clone();
-        let component_set = Arc::downgrade(self);
+    fn on_component_drop(
+        component_set: Weak<ComponentSet>,
+        id_clone: Id,
+    ) -> impl FnOnce(&ElfComponentInfo) {
         move |info| {
             let token = info.copy_instance_token().unwrap();
-            scope.spawn(async move {
+            fasync::Task::spawn(async move {
                 let Some(component_set) = component_set.upgrade() else {
                     return;
                 };
@@ -97,7 +94,8 @@ impl ComponentSet {
                 if let Some(cb) = component_set.callbacks.lock().on_removed_component.as_ref() {
                     cb(token);
                 };
-            });
+            })
+            .detach()
         }
     }
 }
@@ -163,7 +161,6 @@ pub mod id {
 mod tests {
     use super::*;
 
-    use fuchsia_async as fasync;
     use futures::FutureExt;
     use moniker::Moniker;
     use std::future;
@@ -177,7 +174,7 @@ mod tests {
     fn test_add_remove_component() {
         // Use a test executor so that we can run until stalled.
         let mut exec = fasync::TestExecutor::new();
-        let components = ComponentSet::new(ExecutionScope::new());
+        let components = ComponentSet::new();
 
         // The component set starts out empty.
         let count = Arc::new(AtomicUsize::new(0));
@@ -221,6 +218,7 @@ mod tests {
         let process = fuchsia_runtime::process_self().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
         let lifecycle_channel = None;
         let main_process_critical = false;
+        let tasks = vec![];
         let component_url = "hello".to_string();
         let fake_component = ElfComponent::new(
             runtime_dir,
@@ -229,7 +227,7 @@ mod tests {
             process,
             lifecycle_channel,
             main_process_critical,
-            ExecutionScope::new(),
+            tasks,
             component_url,
             None,
             Default::default(),

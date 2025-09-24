@@ -24,7 +24,7 @@ use futures::Future;
 use futures::task::{self, Poll};
 use std::future::poll_fn;
 use std::pin::Pin;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::task::Context;
 
 #[cfg(target_os = "fuchsia")]
@@ -66,10 +66,6 @@ impl ExecutionScope {
     /// [`ExecutionScope`] object.
     pub fn build() -> ExecutionScopeParams {
         ExecutionScopeParams::default()
-    }
-
-    pub fn as_weak(&self) -> WeakExecutionScope {
-        WeakExecutionScope { executor: Arc::downgrade(&self.executor) }
     }
 
     /// Sends a `task` to be executed in this execution scope.  This is very similar to
@@ -166,24 +162,6 @@ impl ExecutionScopeParams {
                 #[cfg(not(target_os = "fuchsia"))]
                 scope: Mutex::new(None),
             }),
-        }
-    }
-}
-
-/// Holds a weak reference to the internal `ExecutionScope`, and can spawn futures on it as long as
-/// the reference is still valid.
-#[derive(Clone)]
-pub struct WeakExecutionScope {
-    executor: Weak<Executor>,
-}
-
-impl WeakExecutionScope {
-    /// Adds a task to the referenced [`ExecutionScope`]. The task is dropped if there are no more
-    /// strong references to the original task group.
-    pub fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
-        let executor = self.executor.upgrade();
-        if let Some(executor) = executor {
-            _ = executor.scope().spawn(task)
         }
     }
 }
