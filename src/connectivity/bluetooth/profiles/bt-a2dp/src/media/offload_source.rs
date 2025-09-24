@@ -29,7 +29,7 @@ pub struct Builder {
 fn build_sbc_source() -> MediaCodecConfig {
     use bt_a2dp::media_types::*;
     let sbc_codec_info = SbcCodecInfo::new(
-        SbcSamplingFrequency::FREQ48000HZ,
+        SbcSamplingFrequency::FREQ44100HZ,
         SbcChannelMode::JOINT_STEREO,
         SbcBlockCount::MANDATORY_SRC,
         SbcSubBands::MANDATORY_SRC,
@@ -277,7 +277,7 @@ impl RunningTask {
             fuchsia_audio_device::codec::CodecDirection::Output,
             DaiSupportedFormats {
                 number_of_channels: vec![codec_config.channel_count().unwrap() as u32],
-                sample_formats: vec![DaiSampleFormat::PcmUnsigned],
+                sample_formats: vec![DaiSampleFormat::PcmSigned],
                 frame_formats: vec![DaiFrameFormat::FrameFormatStandard(
                     DaiFrameFormatStandard::I2S,
                 )],

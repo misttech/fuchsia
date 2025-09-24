@@ -9,7 +9,7 @@ use bt_avdtp::{
 };
 use fidl_fuchsia_bluetooth::ChannelParameters;
 use fidl_fuchsia_bluetooth_bredr::{
-    ConnectParameters, L2capParameters, ProfileDescriptor, ProfileProxy, PSM_AVDTP,
+    ConnectParameters, L2capParameters, PSM_AVDTP, ProfileDescriptor, ProfileProxy,
 };
 use fuchsia_async::{self as fasync, DurationExt};
 use fuchsia_bluetooth::inspect::DebugExt;
@@ -21,7 +21,7 @@ use futures::channel::mpsc;
 use futures::future::{BoxFuture, Either};
 use futures::stream::FuturesUnordered;
 use futures::task::{Context, Poll, Waker};
-use futures::{select, Future, FutureExt, StreamExt};
+use futures::{Future, FutureExt, StreamExt, select};
 use log::{debug, info, trace, warn};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::pin::Pin;
@@ -985,7 +985,7 @@ impl PeerInner {
                         match self.suspend_local_stream(&seid) {
                             Ok(_remote_id) => {}
                             Err(avdtp::Error::RequestInvalid(code)) => {
-                                break 'result responder.reject(&seid, code)
+                                break 'result responder.reject(&seid, code);
                             }
                             Err(_e) => break 'result responder.reject(&seid, ErrorCode::BadState),
                         }
@@ -1124,8 +1124,8 @@ mod tests {
     use crate::media_types::*;
     use crate::stream::tests::{make_sbc_endpoint, sbc_mediacodec_capability};
 
-    fn fake_metrics(
-    ) -> (bt_metrics::MetricsLogger, fidl_fuchsia_metrics::MetricEventLoggerRequestStream) {
+    fn fake_metrics()
+    -> (bt_metrics::MetricsLogger, fidl_fuchsia_metrics::MetricEventLoggerRequestStream) {
         let (c, s) = fidl::endpoints::create_proxy_and_stream::<
             fidl_fuchsia_metrics::MetricEventLoggerMarker,
         >();
