@@ -661,6 +661,10 @@ zx::result<> GptDevicePartitioner::ResetPartitionTables(
     ERROR("Failed to reset partitions table: %s\n", result.FormatDescription().c_str());
     return zx::error(result.status());
   }
+  if (result->is_error()) {
+    ERROR("Failed to reset partitions table: %s\n", zx_status_get_string(result->error_value()));
+    return zx::error(result->error_value());
+  }
   return zx::ok();
 }
 

@@ -2284,7 +2284,21 @@ void PaverServiceUefiTest::AssetTest(paver::PartitionScheme scheme,
       TestReadWriteAsset(*gpt_dev, std::move(data_sink), configuration, asset, block_start));
 }
 
-TEST_F(PaverServiceUefiTest, InitializePartitionTables) {
+// PaverServiceUefiTest but with a fshost ramdisk image, which is necessary to allow modification
+// of the GPT at runtime. Non-ramdisk boots actively use the GPT so updating it at runtime would
+// cause all sorts of unpredictable things to happen.
+class PaverServiceUefiTestWithRamdisk : public PaverServiceUefiTest {
+  IsolatedDevmgr::Args DevmgrArgs() override {
+    IsolatedDevmgr::Args args;
+    args.enable_storage_host = true;
+    args.fshost_config.emplace_back(
+        component_testing::ConfigCapability{.name = "fuchsia.fshost.RamdiskImage",
+                                            .value = component_testing::ConfigValue::Bool(true)});
+    return args;
+  }
+};
+
+TEST_F(PaverServiceUefiTestWithRamdisk, InitializePartitionTables) {
   std::unique_ptr<BlockDevice> gpt_dev;
   // 64GiB disk.
   constexpr uint64_t block_count = (64LU << 30) / kBlockSize;
@@ -2301,7 +2315,7 @@ TEST_F(PaverServiceUefiTest, InitializePartitionTables) {
   ASSERT_OK(result.value().status);
 }
 
-TEST_F(PaverServiceUefiTest, InitializePartitionTablesMultipleDevicesOneGpt) {
+TEST_F(PaverServiceUefiTestWithRamdisk, InitializePartitionTablesMultipleDevicesOneGpt) {
   std::unique_ptr<BlockDevice> gpt_dev1, gpt_dev2;
   // 64GiB disk.
   constexpr uint64_t block_count = (64LU << 30) / kBlockSize;
