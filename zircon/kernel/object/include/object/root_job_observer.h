@@ -32,6 +32,9 @@ class RootJobObserver final : public SignalObserver {
   using Callback = fit::inline_function<void(), 3 * sizeof(void*)>;
   RootJobObserver(fbl::RefPtr<JobDispatcher> root_job, Handle* root_job_handle, Callback callback);
 
+  // Record that any critical process is in some stage of being torn down.
+  static void SetCriticalProcessDying();
+  static bool GetCriticalProcessDying();
   // Record the dead process responsible for getting the root job killed.
   static void CriticalProcessKill(fbl::RefPtr<ProcessDispatcher> dead_process);
 

@@ -239,12 +239,12 @@ void BusTransactionInitiatorDispatcher::PrintQuarantineWarningLocked(BtiPageLeak
   }
 
   // If we're being torn down for reasons other than the root job being killed
-  // over a critical process dying then fire off a Kernel OOPS to flag the
+  // over a critical process dying then fire off a DRIVER OOPS to flag the
   // improper handling of pinned pages.
-  if (RootJobObserver::GetCriticalProcessKoid() == ZX_KOID_INVALID) {
-    printf("KERN: Bus Transaction Initiator (ID 0x%lx, name \"%s\") has leaked %" PRIu64
-           " pages in %zu VMOs. Leak was caused by %s. The last handle was closed by process "
-           "\"%s\", and thread \"%s\"\n",
-           bti_id_, bti_name, leaked_pages, num_entries, leak_cause, proc_name, thread_name);
+  if (!RootJobObserver::GetCriticalProcessDying()) {
+    DRIVER_OOPS("Bus Transaction Initiator (ID 0x%lx, name \"%s\") has leaked %" PRIu64
+                " pages in %zu VMOs. Leak was caused by %s. The last handle was closed by process "
+                "\"%s\", and thread \"%s\"\n",
+                bti_id_, bti_name, leaked_pages, num_entries, leak_cause, proc_name, thread_name);
   }
 }

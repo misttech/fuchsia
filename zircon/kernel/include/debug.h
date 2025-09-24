@@ -62,7 +62,15 @@ void spin_cycles(uint32_t usecs);
 //
 // A KERNEL_OOPS indicates the presence of a bug, however, the bug may not be in
 // the kernel itself.
+// LINT.IfChange
 #define KERNEL_OOPS(fmt, ...) printf("\nZIRCON KERNEL OOPS\n" fmt, ##__VA_ARGS__)
+// LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
+
+// Similar to KERNEL_OOPS, except used for egregious driver circumstances
+// detected by the kernel.
+// LINT.IfChange
+#define DRIVER_OOPS(fmt, ...) printf("\nDRIVER OOPS\n" fmt, ##__VA_ARGS__)
+// LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
 
 __END_CDECLS
 

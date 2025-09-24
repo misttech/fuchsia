@@ -24,6 +24,7 @@
 #include <object/diagnostics.h>
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
+#include <object/root_job_observer.h>
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
@@ -317,6 +318,7 @@ void ProcessDispatcher::Exit(int64_t retcode) {
         DEBUG_ASSERT(status == ZX_OK);
         printf("KERN: process '%s' (%lu) critical to root job exited %ld\n", pname, get_koid(),
                retcode);
+        RootJobObserver::SetCriticalProcessDying();
       }
     }
 
@@ -351,6 +353,7 @@ void ProcessDispatcher::Kill(int64_t retcode) {
         DEBUG_ASSERT(status == ZX_OK);
         printf("KERN: process '%s' (%lu) critical to root job killed with %ld\n", pname, get_koid(),
                retcode);
+        RootJobObserver::SetCriticalProcessDying();
       }
     }
 

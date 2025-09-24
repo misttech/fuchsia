@@ -14,6 +14,7 @@
 
 #include <kernel/mutex.h>
 #include <ktl/array.h>
+#include <ktl/atomic.h>
 #include <object/root_job_observer.h>
 #include <platform/halt_helper.h>
 #include <platform/halt_token.h>
@@ -25,6 +26,7 @@ namespace {
 DECLARE_SINGLETON_MUTEX(CriticalProcessNameLock);
 char gCriticalProcessName[ZX_MAX_NAME_LEN] __TA_GUARDED(CriticalProcessNameLock::Get());
 zx_koid_t gCriticalProcessKoid __TA_GUARDED(CriticalProcessNameLock::Get()) = ZX_KOID_INVALID;
+ktl::atomic<bool> gCriticalProcessDying = false;
 
 // May or may not return.
 void Halt() {
@@ -93,6 +95,14 @@ void RootJobObserver::OnMatch(zx_signals_t signals) {
 }
 
 void RootJobObserver::OnCancel(zx_signals_t signals) {}
+
+void RootJobObserver::SetCriticalProcessDying() {
+  gCriticalProcessDying.store(true, ktl::memory_order_release);
+}
+
+bool RootJobObserver::GetCriticalProcessDying() {
+  return gCriticalProcessDying.load(ktl::memory_order_acquire);
+}
 
 void RootJobObserver::CriticalProcessKill(fbl::RefPtr<ProcessDispatcher> dead_process) {
   Guard<Mutex> guard(CriticalProcessNameLock::Get());

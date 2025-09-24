@@ -551,6 +551,7 @@ func fuchsiaLogChecks() []FailureModeCheck {
 				{startString: "[===UBSAN EXCEPT BLOCK START===]", endString: "[===UBSAN EXCEPT BLOCK END===]"},
 			}},
 			// Match specific OOPS types before finally matching the generic type.
+			&stringInLogCheck{String: "DRIVER OOPS", Type: lt, AttributeToTest: true, ExceptBlocks: oopsExceptBlocks},
 			&stringInLogCheck{String: "lockup_detector: no heartbeat from", Type: lt, AttributeToTest: true, ExceptBlocks: oopsExceptBlocks},
 			&stringInLogCheck{String: "ZIRCON KERNEL OOPS", Type: lt, AttributeToTest: true, ExceptBlocks: oopsExceptBlocks},
 			&stringInLogCheck{String: "ZIRCON KERNEL PANIC", AttributeToTest: true, Type: lt, ExceptBlocks: []*logBlock{
