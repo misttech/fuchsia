@@ -49,13 +49,6 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
         super().teardown_test()
 
     def test_flatland(self) -> None:
-        # The tile app only works on vulkan renderer.
-        if self.dut.scenic.renderer != "vulkan":
-            LOGGER.info(
-                f"skip flatlan benchmark on {self.dut.scenic.renderer} renderer"
-            )
-            return
-
         # Add flatland-rainbow tile
         self.dut.session.add_component(TILE_URL)
 
