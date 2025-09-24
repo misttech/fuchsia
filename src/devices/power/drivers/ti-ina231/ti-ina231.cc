@@ -5,13 +5,14 @@
 #include "ti-ina231.h"
 
 #include <endian.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <ddktl/fidl.h>
-#include <fbl/auto_lock.h>
+
+#include "ti-ina231-metadata.h"
 
 namespace {
 
@@ -42,7 +43,7 @@ constexpr float kVoltsPerBit = kMicrovoltsToVolts / kMicrovoltsPerBit;
 
 namespace power_sensor {
 
-enum class Ina231Device::Register : uint8_t {
+enum class TiIna231::Register : uint8_t {
   kConfigurationReg = 0,
   kBusVoltageReg = 2,
   kPowerReg = 3,
@@ -51,82 +52,8 @@ enum class Ina231Device::Register : uint8_t {
   kAlertLimitReg = 7,
 };
 
-zx_status_t Ina231Device::Create(void* ctx, zx_device_t* parent) {
-  ddk::I2cChannel i2c(parent, "i2c");
-  if (!i2c.is_valid()) {
-    zxlogf(ERROR, "Failed to get I2C protocol");
-    return ZX_ERR_NO_RESOURCES;
-  }
-
-  std::string name;
-  if (auto result = i2c.GetName(); result.ok()) {
-    name = std::string(result.value()->name.data(), result.value()->name.size());
-  }
-
-  Ina231Metadata metadata = {};
-  size_t actual = 0;
-  zx_status_t status = device_get_fragment_metadata(parent, "pdev", DEVICE_METADATA_PRIVATE,
-                                                    &metadata, sizeof(metadata), &actual);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to get metadata: %d", status);
-    return status;
-  }
-  if (actual != sizeof(metadata)) {
-    zxlogf(ERROR, "Expected %zu bytes of metadata, got %zu", sizeof(metadata), actual);
-    return ZX_ERR_NO_RESOURCES;
-  }
-  if (metadata.shunt_resistance_microohm == 0) {
-    zxlogf(ERROR, "Shunt resistance cannot be zero");
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  auto dev = std::make_unique<Ina231Device>(parent, metadata.shunt_resistance_microohm,
-                                            std::move(i2c), std::move(name));
-  if ((status = dev->Init(metadata)) != ZX_OK) {
-    return status;
-  }
-
-  auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-  if (endpoints.is_error()) {
-    return endpoints.status_value();
-  }
-
-  std::array offers = {
-      fuchsia_hardware_power_sensor::Service::Name,
-  };
-
-  zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::POWER_SENSOR_DOMAIN, metadata.power_sensor_domain),
-  };
-  dev->outgoing_server_end_ = std::move(endpoints->server);
-  status = dev->DdkAdd(ddk::DeviceAddArgs("ti-ina231")
-                           .set_str_props(props)
-                           .set_fidl_service_offers(offers)
-                           .set_outgoing_dir(endpoints->client.TakeChannel())
-                           .set_proto_id(ZX_PROTOCOL_POWER_SENSOR)
-                           .forward_metadata(parent, DEVICE_METADATA_PRIVATE));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "DdkAdd failed: %d", status);
-    return status;
-  }
-
-  [[maybe_unused]] auto* _ = dev.release();
-  return ZX_OK;
-}
-
-zx_status_t Ina231Device::PowerSensorConnectServer(zx::channel server) {
-  fidl::BindServer(loop_.dispatcher(),
-                   fidl::ServerEnd<fuchsia_hardware_power_sensor::Device>(std::move(server)), this);
-  return ZX_OK;
-}
-
-void Ina231Device::GetPowerWatts(GetPowerWattsCompleter::Sync& completer) {
-  zx::result<uint16_t> power_reg;
-
-  {
-    fbl::AutoLock lock(&i2c_lock_);
-    power_reg = Read16(Register::kPowerReg);
-  }
+void TiIna231::GetPowerWatts(GetPowerWattsCompleter::Sync& completer) {
+  zx::result<uint16_t> power_reg = Read16(Register::kPowerReg);
 
   if (power_reg.is_error()) {
     completer.Close(power_reg.error_value());
@@ -136,13 +63,10 @@ void Ina231Device::GetPowerWatts(GetPowerWattsCompleter::Sync& completer) {
   const uint64_t power = (power_reg.value() * kPowerResolution) / shunt_resistor_uohms_;
   completer.ReplySuccess(static_cast<float>(power) / kFixedPointFactor);
 }
-void Ina231Device::GetVoltageVolts(GetVoltageVoltsCompleter::Sync& completer) {
+void TiIna231::GetVoltageVolts(GetVoltageVoltsCompleter::Sync& completer) {
   zx::result<uint16_t> voltage_reg;
 
-  {
-    fbl::AutoLock lock(&i2c_lock_);
-    voltage_reg = Read16(Register::kBusVoltageReg);
-  }
+  voltage_reg = Read16(Register::kBusVoltageReg);
 
   if (voltage_reg.is_error()) {
     completer.Close(voltage_reg.error_value());
@@ -152,92 +76,147 @@ void Ina231Device::GetVoltageVolts(GetVoltageVoltsCompleter::Sync& completer) {
   completer.ReplySuccess(static_cast<float>(voltage_reg.value()) / kVoltsPerBit);
 }
 
-void Ina231Device::GetSensorName(GetSensorNameCompleter::Sync& completer) {
+void TiIna231::GetSensorName(GetSensorNameCompleter::Sync& completer) {
   completer.Reply(fidl::StringView::FromExternal(name_));
 }
 
-zx_status_t Ina231Device::Init(const Ina231Metadata& metadata) {
-  {
-    zx_status_t status = loop_.StartThread("TI INA231 loop thread");
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to start thread: %d", status);
-      return status;
-    }
+zx::result<> TiIna231::Start() {
+  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming(), "i2c");
+  if (i2c.is_error()) {
+    fdf::error("Failed to create i2c channel: {}", i2c);
+    return i2c.take_error();
+  }
+
+  i2c_ = std::move(i2c.value());
+  fidl::WireResult name = i2c_.GetName();
+  if (name.ok() && name->is_ok()) {
+    name_ = name.value()->name.get();
+  }
+
+  zx::result metadata_result =
+      compat::GetMetadata<Ina231Metadata>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  if (metadata_result.is_error()) {
+    fdf::error("Failed to get metadata: {}", metadata_result);
+    return metadata_result.take_error();
+  }
+  Ina231Metadata& metadata = *metadata_result.value();
+
+  shunt_resistor_uohms_ = metadata.shunt_resistance_microohm;
+  if (shunt_resistor_uohms_ == 0) {
+    fdf::error("Shunt resistance cannot be zero");
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   // Keep only the bits that are not defined in the datasheet, and clear the reset bit.
   constexpr uint16_t kConfigurationRegMask = 0x7000;
 
-  fbl::AutoLock lock(&i2c_lock_);
-
-  auto status = Write16(Register::kCalibrationReg, kCalibrationValue);
-  if (status.is_error()) {
-    return status.error_value();
+  if (zx::result result = Write16(Register::kCalibrationReg, kCalibrationValue);
+      result.is_error()) {
+    return result.take_error();
   }
 
   if (metadata.alert == Ina231Metadata::kAlertBusUnderVoltage) {
     const uint64_t alert_limit_reg_value = metadata.bus_voltage_limit_microvolt / kMicrovoltsPerBit;
     if (alert_limit_reg_value > UINT16_MAX) {
-      zxlogf(ERROR, "Bus voltage limit is out of range");
-      return ZX_ERR_OUT_OF_RANGE;
+      fdf::error("Bus voltage limit is out of range");
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
 
-    if ((status = Write16(Register::kAlertLimitReg, alert_limit_reg_value)).is_error()) {
-      return status.error_value();
+    if (zx::result result =
+            Write16(Register::kAlertLimitReg, static_cast<uint16_t>(alert_limit_reg_value));
+        result.is_error()) {
+      return result.take_error();
     }
   }
 
-  if ((status = Write16(Register::kMaskEnableReg, metadata.alert)).is_error()) {
-    return status.error_value();
+  if (zx::result result = Write16(Register::kMaskEnableReg, metadata.alert); result.is_error()) {
+    return result.take_error();
   }
 
-  const zx::result<uint16_t> config_status = Read16(Register::kConfigurationReg);
+  zx::result<uint16_t> config_status = Read16(Register::kConfigurationReg);
   if (config_status.is_error()) {
-    return config_status.error_value();
+    return config_status.take_error();
   }
 
-  const uint16_t metadata_value = metadata.mode | (metadata.shunt_voltage_conversion_time << 3) |
-                                  (metadata.bus_voltage_conversion_time << 6) |
-                                  (metadata.averages << 9);
-  const uint16_t configuration_reg_value =
+  const int metadata_value = metadata.mode | (metadata.shunt_voltage_conversion_time << 3) |
+                             (metadata.bus_voltage_conversion_time << 6) | (metadata.averages << 9);
+  const int configuration_reg_value =
       (config_status.value() & kConfigurationRegMask) | metadata_value;
-  if ((status = Write16(Register::kConfigurationReg, configuration_reg_value)).is_error()) {
-    return status.error_value();
+  if (zx::result result =
+          Write16(Register::kConfigurationReg, static_cast<uint16_t>(configuration_reg_value));
+      result.is_error()) {
+    return result.take_error();
   }
 
-  return ZX_OK;
+  fuchsia_hardware_power_sensor::Service::InstanceHandler handler({
+      .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+  zx::result result =
+      outgoing()->AddService<fuchsia_hardware_power_sensor::Service>(std::move(handler));
+  if (result.is_error()) {
+    fdf::error("Failed to add power-sensor service: {}", result);
+    return result.take_error();
+  }
+
+  zx::result connector = devfs_connector_.Bind(dispatcher());
+  if (connector.is_error()) {
+    fdf::error("Failed to bind devfs connector: {}", connector);
+    return connector.take_error();
+  }
+
+  fuchsia_driver_framework::DevfsAddArgs devfs_args({
+      .connector = std::move(connector.value()),
+      .class_name = "power-sensor",
+      .connector_supports = fuchsia_device_fs::ConnectionType::kDevice,
+  });
+
+  const std::vector<fuchsia_driver_framework::Offer> offers = {
+      fdf::MakeOffer2<fuchsia_hardware_power_sensor::Service>(component::kDefaultInstance)};
+
+  const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
+      fdf::MakeProperty2(bind_fuchsia::POWER_SENSOR_DOMAIN, metadata.power_sensor_domain),
+  };
+
+  zx::result child = AddChild(kChildNodeName, devfs_args, properties, offers);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return child.take_error();
+  }
+  child_ = std::move(child.value());
+
+  return zx::ok();
 }
 
-zx::result<uint16_t> Ina231Device::Read16(Register reg) {
+zx::result<uint16_t> TiIna231::Read16(Register reg) {
   const uint8_t address = static_cast<uint8_t>(reg);
-  uint16_t value = 0;
-  zx_status_t status = i2c_.WriteReadSync(&address, sizeof(address),
-                                          reinterpret_cast<uint8_t*>(&value), sizeof(value));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "I2C read failed: %d", status);
-    return zx::error(status);
+  const std::array<uint8_t, 1> write_data = {address};
+  std::array<uint8_t, 2> read_data;
+  zx::result result = i2c_.WriteReadSync(write_data, read_data);
+  if (result.is_error()) {
+    fdf::error("I2C read failed: {}", result);
+    return result.take_error();
   }
+  const int value =
+      (static_cast<uint16_t>(read_data[1]) << 8) | static_cast<uint16_t>(read_data[0]);
   return zx::ok(betoh16(value));
 }
 
-zx::result<> Ina231Device::Write16(Register reg, uint16_t value) {
-  uint8_t buffer[] = {static_cast<uint8_t>(reg), static_cast<uint8_t>(value >> 8),
-                      static_cast<uint8_t>(value & 0xff)};
-  zx_status_t status = i2c_.WriteSync(buffer, sizeof(buffer));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "I2C write failed: %d", status);
-    return zx::error(status);
+zx::result<> TiIna231::Write16(Register reg, uint16_t value) {
+  const std::array<uint8_t, 3> write_data = {static_cast<uint8_t>(reg),
+                                             static_cast<uint8_t>(value >> 8),
+                                             static_cast<uint8_t>(value & 0xff)};
+  zx::result result = i2c_.WriteSync(write_data);
+  if (result.is_error()) {
+    fdf::error("I2C write failed: {}", result);
+    return result.take_error();
   }
   return zx::ok();
 }
 
-static constexpr zx_driver_ops_t ti_ina231_driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = Ina231Device::Create;
-  return ops;
-}();
+void TiIna231::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_power_sensor::Device> server) {
+  bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
+}
 
 }  // namespace power_sensor
 
-ZIRCON_DRIVER(ti_ina231, power_sensor::ti_ina231_driver_ops, "ti-ina231", "0.1");
+FUCHSIA_DRIVER_EXPORT(power_sensor::TiIna231);

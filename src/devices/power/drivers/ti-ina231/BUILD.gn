@@ -11,18 +11,26 @@ source_set("metadata") {
   public = [ "ti-ina231-metadata.h" ]
 }
 
-group("common") {
-  public_deps = [
-    ":bind",
-    "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_cpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
+source_set("common") {
+  configs += [
+    "//build/config:all_source",
+    "//build/config/fuchsia:enable_zircon_asserts",
+  ]
+  sources = [
+    "ti-ina231.cc",
+    "ti-ina231.h",
+  ]
+  deps = [
+    ":metadata",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/i2c/lib/i2c-channel-legacy",
-    "//src/devices/lib/driver",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/zircon-internal",
+    "//src/lib/ddk:ddk_metadata",
+  ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
+    "//src/devices/i2c/lib/i2c-channel",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -39,14 +47,11 @@ driver_bind_rules("bind") {
 }
 
 fuchsia_cc_driver("ti-ina231-driver") {
-  legacy = true
   output_name = "ti-ina231"
-  configs += [
-    "//build/config:all_source",
-    "//build/config/fuchsia:enable_zircon_asserts",
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
   ]
-  sources = [ "ti-ina231.cc" ]
-  deps = [ ":common" ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
@@ -55,7 +60,10 @@ fuchsia_cc_driver("ti-ina231-driver") {
 fuchsia_driver_component("ti-ina231") {
   info = "meta/ti-ina231-info.json"
   component_name = "ti-ina231"
-  deps = [ ":ti-ina231-driver" ]
+  deps = [
+    ":bind",
+    ":ti-ina231-driver",
+  ]
   manifest = "meta/ti-ina231.cml"
 }
 
@@ -67,20 +75,16 @@ fuchsia_driver_package("package") {
 
 test("ti-ina231-test-bin") {
   output_name = "ti-ina231-test"
-  configs += [ "//build/config:all_source" ]
-  sources = [
-    "ti-ina231-test.cc",
-    "ti-ina231.cc",
-  ]
+  sources = [ "ti-ina231-test.cc" ]
   deps = [
     ":common",
+    ":metadata",
+    "//sdk/lib/driver/testing/cpp",
     "//src/devices/i2c/testing/fake-i2c",
-    "//src/devices/testing/mock-ddk",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/ddk:ddk_metadata",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
   ]
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
 }
 
 fuchsia_unittest_package("ti-ina231-test") {

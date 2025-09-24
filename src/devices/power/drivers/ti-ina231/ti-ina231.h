@@ -6,61 +6,51 @@
 #define SRC_DEVICES_POWER_DRIVERS_TI_INA231_TI_INA231_H_
 
 #include <fidl/fuchsia.hardware.power.sensor/cpp/wire.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/zircon-internal/thread_annotations.h>
+#include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/zx/result.h>
 
 #include <string>
 
-#include <ddktl/device.h>
-#include <fbl/mutex.h>
-
-#include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
-#include "ti-ina231-metadata.h"
+#include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
 
 namespace power_sensor {
 
-namespace power_sensor_fidl = fuchsia_hardware_power_sensor;
-
-class Ina231Device;
-using DeviceType =
-    ddk::Device<Ina231Device, ddk::Messageable<fuchsia_hardware_power_sensor::Device>::Mixin>;
-
-class Ina231Device : public DeviceType {
+class TiIna231 : public fdf::DriverBase,
+                 public fidl::WireServer<fuchsia_hardware_power_sensor::Device> {
  public:
-  Ina231Device(zx_device_t* parent, uint32_t shunt_resistor_uohms, ddk::I2cChannel i2c,
-               std::string name)
-      : DeviceType(parent),
-        shunt_resistor_uohms_(shunt_resistor_uohms),
-        loop_(&kAsyncLoopConfigNeverAttachToThread),
-        i2c_(std::move(i2c)),
-        name_(std::move(name)) {}
+  static constexpr std::string_view kDriverName = "ti_ina231";
+  static constexpr std::string_view kChildNodeName = "ti-ina231";
 
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
+  TiIna231(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
-  void DdkRelease() { delete this; }
+  // fdf::DriverBase implementation.
+  zx::result<> Start() override;
 
-  zx_status_t PowerSensorConnectServer(zx::channel server);
-
+  // fidl::WireServer<fuchsia_hardware_power_sensor::Device> implementation.
   void GetPowerWatts(GetPowerWattsCompleter::Sync& completer) override;
   void GetVoltageVolts(GetVoltageVoltsCompleter::Sync& completer) override;
   void GetSensorName(GetSensorNameCompleter::Sync& completer) override;
 
-  // Visible for testing.
-  zx_status_t Init(const Ina231Metadata& metadata);
-
  private:
   enum class Register : uint8_t;
 
-  zx::result<uint16_t> Read16(Register reg) TA_REQ(i2c_lock_);
-  zx::result<> Write16(Register reg, uint16_t value) TA_REQ(i2c_lock_);
+  void DevfsConnect(fidl::ServerEnd<fuchsia_hardware_power_sensor::Device> server);
 
-  const uint32_t shunt_resistor_uohms_;
-  async::Loop loop_;
-  fbl::Mutex i2c_lock_;
-  ddk::I2cChannel i2c_ TA_GUARDED(i2c_lock_);
-  fidl::ServerEnd<fuchsia_io::Directory> outgoing_server_end_;
-  const std::string name_;
+  zx::result<uint16_t> Read16(Register reg);
+  zx::result<> Write16(Register reg, uint16_t value);
+
+  uint64_t shunt_resistor_uohms_;
+  i2c::I2cChannel i2c_;
+  std::string name_;
+
+  driver_devfs::Connector<fuchsia_hardware_power_sensor::Device> devfs_connector_{
+      fit::bind_member<&TiIna231::DevfsConnect>(this)};
+  compat::SyncInitializedDeviceServer compat_server_;
+  fidl::ServerBindingGroup<fuchsia_hardware_power_sensor::Device> bindings_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
 };
 
 }  // namespace power_sensor

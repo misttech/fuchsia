@@ -87,7 +87,11 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
   }
 
   void GetName(GetNameCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (!name_.has_value()) {
+      completer.ReplyError(ZX_ERR_BAD_STATE);
+      return;
+    }
+    completer.ReplySuccess(fidl::StringView::FromExternal(name_.value()));
   }
 
   fuchsia_hardware_i2c::Service::InstanceHandler CreateInstanceHandler(
@@ -99,6 +103,8 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
 
     return fuchsia_hardware_i2c::Service::InstanceHandler({.device = std::move(device_handler)});
   }
+
+  void set_name(std::optional<std::string> name) { name_ = std::move(name); }
 
  protected:
   // The main function to be overriden for a specific fake. This is called on each
@@ -126,6 +132,9 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
   zx::interrupt irq_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_i2c::Device> bindings_;
+
+ private:
+  std::optional<std::string> name_;
 };
 
 }  // namespace fake_i2c
