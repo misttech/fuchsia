@@ -15,12 +15,21 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
     },
+    capabilities: [
+        { service: "fuchsia.boot.metadata.PartitionMap" },
+    ],
     use: [
         {
             service: [
                 "fuchsia.boot.metadata.PartitionMap",
                 "fuchsia.hardware.platform.device.Service",
             ],
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.boot.metadata.PartitionMap",
+            from: "self",
         },
     ],
 }

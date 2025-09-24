@@ -183,13 +183,11 @@ zx::result<std::string> NandDevice::Init(
   }
   if (info.export_partition_map) {
     const fuchsia_boot_metadata::PartitionMap partition_map = ExtractPartitionMap(info);
-    const fit::result persisted = fidl::Persist(partition_map);
-    if (persisted.is_error()) {
-      fdf::error("Failed to persist nand config: {}", persisted.error_value().FormatDescription());
-      return zx::error(persisted.error_value().status());
+    zx::result result = partition_map_metadata_server_.Serve(*outgoing, dispatcher_, partition_map);
+    if (result.is_error()) {
+      fdf::error("Failed to serve partition map: {}", result);
+      return result.take_error();
     }
-    compat_server_.inner().AddMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
-                                       persisted.value().size());
   }
   if (info.export_nand_config) {
     const fuchsia_hardware_nand::Config nand_config = ExtractNandConfig(info);
@@ -214,6 +212,10 @@ zx::result<std::string> NandDevice::Init(
   });
 
   std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+  std::optional partition_map_offer = partition_map_metadata_server_.CreateOffer();
+  if (partition_map_offer.has_value()) {
+    offers.emplace_back(std::move(partition_map_offer.value()));
+  }
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
       fdf::MakeProperty2(bind_fuchsia::PROTOCOL,

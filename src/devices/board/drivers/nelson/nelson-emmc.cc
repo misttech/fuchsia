@@ -61,7 +61,7 @@ static const std::vector<fpbus::Bti> emmc_btis{
 
 static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
     {{
-        .zbi_type = DEVICE_METADATA_PARTITION_MAP,
+        .zbi_type = ZBI_TYPE_DRV_PARTITION_MAP,
         .zbi_extra = 0,
     }},
 };

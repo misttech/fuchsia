@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
@@ -49,7 +50,7 @@ class FakeNand : public ddk::NandProtocol<FakeNand> {
 class NandpartTestEnvironment : public fdf_testing::Environment {
  public:
   void Init(const fuchsia_hardware_nand::Config& nand_config,
-            const fuchsia_boot_metadata::PartitionMap& partition_map) {
+            fuchsia_boot_metadata::PartitionMap partition_map) {
     device_server_.Initialize("default", std::nullopt, nand_.GetBanjoConfig());
 
     {
@@ -59,20 +60,14 @@ class NandpartTestEnvironment : public fdf_testing::Environment {
                                  persisted.value().size());
     }
 
-    {
-      fit::result persisted = fidl::Persist(partition_map);
-      ASSERT_TRUE(persisted.is_ok());
-      device_server_.AddMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
-                                 persisted.value().size());
-    }
+    partition_map_ = std::move(partition_map);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    if (zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs); status != ZX_OK) {
-      return zx::error(status);
-    }
+    EXPECT_OK(device_server_.Serve(dispatcher, &to_driver_vfs));
+    EXPECT_OK(partition_map_metadata_server_.Serve(to_driver_vfs, dispatcher, partition_map_));
 
     return zx::ok();
   }
@@ -80,6 +75,8 @@ class NandpartTestEnvironment : public fdf_testing::Environment {
  private:
   FakeNand nand_;
   compat::DeviceServer device_server_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
+  fuchsia_boot_metadata::PartitionMap partition_map_;
 };
 
 class FixtureConfig final {

@@ -281,7 +281,7 @@ TEST_F(PlatformBusTest, EmptyPartitionMapMetadata) {
 
   const std::vector<fuchsia_hardware_platform_bus::BootMetadata> kBootMetadata{
       {{
-          .zbi_type = DEVICE_METADATA_PARTITION_MAP,
+          .zbi_type = ZBI_TYPE_DRV_PARTITION_MAP,
           .zbi_extra = 0,
       }},
   };
@@ -328,7 +328,7 @@ TEST_F(PlatformBusTest, PartitionMapMetadata) {
 
   const std::vector<fuchsia_hardware_platform_bus::BootMetadata> kBootMetadata{
       {{
-          .zbi_type = DEVICE_METADATA_PARTITION_MAP,
+          .zbi_type = ZBI_TYPE_DRV_PARTITION_MAP,
           .zbi_extra = 0,
       }},
   };

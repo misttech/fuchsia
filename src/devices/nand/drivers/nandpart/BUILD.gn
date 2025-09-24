@@ -26,6 +26,7 @@ source_set("common") {
     "nandpart.h",
   ]
   deps = [
+    "//sdk/lib/driver/metadata/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
     "//src/devices/lib/dev-operation",
@@ -80,6 +81,7 @@ test("nandpart-test-bin") {
   ]
   deps = [
     ":common",
+    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//sdk/lib/fdio",

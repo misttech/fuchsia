@@ -16,14 +16,6 @@
 // serialized using the convention for FIDL data persistence, which
 // adds wire format metadata in front of the encoded content.
 
-// Partition map for raw block device.
-// Content: bootdata_partition_map_t
-#define DEVICE_METADATA_PARTITION_MAP 0x5452506D  // mPRT
-static_assert(DEVICE_METADATA_PARTITION_MAP == ZBI_TYPE_DRV_PARTITION_MAP, "");
-
-// maximum size of DEVICE_METADATA_PARTITION_MAP data
-#define METADATA_PARTITION_MAP_MAX 4096
-
 // Platform board private data (for board driver)
 // type: ???
 #define DEVICE_METADATA_BOARD_PRIVATE 0x524F426D  // mBOR

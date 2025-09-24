@@ -7,10 +7,9 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
-#include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
-#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/zbi-format/partition.h>
 #include <lib/zbi-format/zbi.h>
 #include <stdio.h>
@@ -115,8 +114,7 @@ zx::result<> Driver::Start() {
   }
   ddk::BlockImplProtocolClient block_impl(block_impl_result.value());
 
-  zx::result metadata = compat::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
-      incoming(), DEVICE_METADATA_PARTITION_MAP);
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(incoming());
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();

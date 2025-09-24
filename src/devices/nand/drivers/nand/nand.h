@@ -5,10 +5,12 @@
 #ifndef SRC_DEVICES_NAND_DRIVERS_NAND_NAND_H_
 #define SRC_DEVICES_NAND_DRIVERS_NAND_NAND_H_
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/vmo/types.h>
@@ -104,6 +106,7 @@ class NandDriver : public fdf::DriverBase, public ddk::NandProtocol<NandDriver> 
   compat::BanjoServer nand_server_{ZX_PROTOCOL_NAND, this, &nand_protocol_ops_};
   compat::SyncInitializedDeviceServer compat_server_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
 };
 
 }  // namespace nand

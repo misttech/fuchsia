@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_NAND_DRIVERS_AML_RAWNAND_AML_RAWNAND_H_
 #define SRC_DEVICES_NAND_DRIVERS_AML_RAWNAND_AML_RAWNAND_H_
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/nandinfo/c/banjo.h>
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
 #include <lib/ddk/device.h>
@@ -22,6 +23,7 @@
 #include <utility>
 
 #include <ddktl/device.h>
+#include <ddktl/metadata_server.h>
 #include <ddktl/suspend-txn.h>
 #include <ddktl/unbind-txn.h>
 #include <fbl/bits.h>
@@ -202,6 +204,10 @@ class AmlRawNand : public DeviceType, public ddk::RawNandProtocol<AmlRawNand, dd
   // If true, the driver is the process of being stopped, and no attempts to access the NAND
   // controller or device should be made.
   bool shutdown_ __TA_GUARDED(mutex_) = false;
+
+  async_dispatcher_t* dispatcher_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
+  ddk::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
+  component::OutgoingDirectory outgoing_{dispatcher_};
 };
 
 }  // namespace amlrawnand

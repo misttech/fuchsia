@@ -9,6 +9,7 @@
 #include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/operation/nand.h>
 #include <lib/stdcompat/span.h>
 #include <lib/sync/completion.h>
@@ -96,8 +97,7 @@ zx::result<> Driver::Start() {
   }
 
   // Query parent for partition map.
-  zx::result metadata = compat::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
-      incoming(), DEVICE_METADATA_PARTITION_MAP);
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(incoming());
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata.status_string());
     return metadata.take_error();

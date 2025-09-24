@@ -6,6 +6,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zbi-format/partition.h>
@@ -207,8 +208,8 @@ TEST_F(RamNandTest, ExportPartitionMap) {
 
   const std::string device_name = CreateDevice(std::move(config));
 
-  zx::result partition_map_result = compat::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
-      CreateFromDriverVfs(), DEVICE_METADATA_PARTITION_MAP, device_name);
+  zx::result partition_map_result = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
+      driver_test().ConnectToDriverSvcDir(), device_name);
   ASSERT_OK(partition_map_result);
   const fuchsia_boot_metadata::PartitionMap& partition_map = partition_map_result.value();
   ASSERT_TRUE(partition_map.block_count().has_value());
@@ -252,8 +253,8 @@ TEST_F(RamNandTest, AddMetadata) {
       from_driver_vfs, DEVICE_METADATA_PRIVATE, device_name);
   ASSERT_OK(nand_config);
 
-  zx::result partition_map = compat::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
-      from_driver_vfs, DEVICE_METADATA_PARTITION_MAP, device_name);
+  zx::result partition_map = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
+      driver_test().ConnectToDriverSvcDir(), device_name);
   ASSERT_OK(partition_map);
   EXPECT_TRUE(partition_map.value().partitions().has_value());
   EXPECT_TRUE(partition_map.value().partitions().value().empty());

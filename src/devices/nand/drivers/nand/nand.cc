@@ -310,7 +310,7 @@ zx::result<> NandDriver::Start() {
   // need to set deadline profiles for all threads that the blobfs-pager-thread interacts with in
   // order to service page requests.
   static constexpr std::string_view kRoleName = "fuchsia.devices.nand.drivers.nand.device";
-  zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
+  zx::result transaction_dispatcher = fdf::SynchronizedDispatcher::Create(
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "transaction-performer",
       [this](fdf_dispatcher_t*) {
         if (prepare_stop_completer_.has_value()) {
@@ -319,21 +319,27 @@ zx::result<> NandDriver::Start() {
         }
       },
       kRoleName);
-  if (dispatcher.is_error()) {
-    fdf::error("Failed to create dispatcher: {}", dispatcher);
-    return dispatcher.take_error();
+  if (transaction_dispatcher.is_error()) {
+    fdf::error("Failed to create dispatcher: {}", transaction_dispatcher);
+    return transaction_dispatcher.take_error();
   }
-  transaction_performer_dispatcher_ = std::move(dispatcher.value());
+  transaction_performer_dispatcher_ = std::move(transaction_dispatcher.value());
 
   compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_NAND};
   banjo_config.callbacks[ZX_PROTOCOL_NAND] = nand_server_.callback();
 
   zx::result result = compat_server_.Initialize(
       incoming(), outgoing(), node_name(), kChildNodeName,
-      compat::ForwardMetadata::Some({DEVICE_METADATA_PRIVATE, DEVICE_METADATA_PARTITION_MAP}),
-      std::move(banjo_config));
+      compat::ForwardMetadata::Some({DEVICE_METADATA_PRIVATE}), std::move(banjo_config));
   if (result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
+    return result.take_error();
+  }
+
+  if (zx::result result =
+          partition_map_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+      result.is_error()) {
+    fdf::error("Failed to forward partition map: {}", result);
     return result.take_error();
   }
 
@@ -343,7 +349,11 @@ zx::result<> NandDriver::Start() {
       fdf::MakeProperty2(bind_fuchsia::NAND_CLASS, NAND_CLASS_PARTMAP),
   };
 
-  const std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+  std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+  std::optional partition_map_offer = partition_map_metadata_server_.CreateOffer();
+  if (partition_map_offer.has_value()) {
+    offers.emplace_back(std::move(partition_map_offer.value()));
+  }
 
   zx::result child = AddChild(kChildNodeName, properties, offers);
   if (child.is_error()) {

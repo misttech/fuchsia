@@ -13,6 +13,7 @@
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -159,6 +160,8 @@ class NandDevice : public ddk::NandProtocol<NandDevice>,
   async_dispatcher_t* dispatcher_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_nand::RamNand> bindings_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_{
+      device_name_};
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(NandDevice);
 };

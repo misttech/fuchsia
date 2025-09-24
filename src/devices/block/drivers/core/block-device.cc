@@ -15,6 +15,8 @@
 #include <threads.h>
 #include <zircon/threads.h>
 
+#include <ddktl/metadata_server.h>
+
 #include "src/devices/block/drivers/core/server.h"
 
 zx_status_t BlockDevice::DdkGetProtocol(uint32_t proto_id, void* out_protocol) {
@@ -365,9 +367,12 @@ zx_status_t BlockDevice::Bind(void* ctx, zx_device_t* dev) {
   }
 
   // Check to see if we have a ZBI partition map.
-  zx::result partition_map = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
-      dev, DEVICE_METADATA_PARTITION_MAP);
-  if (partition_map.is_ok()) {
+  zx::result partition_map = ddk::GetMetadataIfExists<fuchsia_boot_metadata::PartitionMap>(dev);
+  if (partition_map.is_error()) {
+    zxlogf(ERROR, "Failed to get partition map: %s", partition_map.status_string());
+    return partition_map.status_value();
+  }
+  if (partition_map.value().has_value()) {
     bdev->has_bootpart_ = true;
   }
 

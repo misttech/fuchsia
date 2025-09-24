@@ -16,9 +16,19 @@
         allowed_scheduler_roles: [ "fuchsia.devices.nand.drivers.nand.device" ],
         fallback: "false",
     },
+    capabilities: [
+        { service: "fuchsia.boot.metadata.PartitionMap" },
+    ],
     use: [
         {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
+        },
+        { service: "fuchsia.boot.metadata.PartitionMap" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.boot.metadata.PartitionMap",
+            from: "self",
         },
     ],
 }

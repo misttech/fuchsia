@@ -20,9 +20,9 @@ source_set("common") {
     "bootpart.h",
   ]
   deps = [
+    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/zbi-format",
     "//src/devices/block/lib/common",
-    "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
@@ -62,8 +62,8 @@ test("bootpart-test-bin") {
   sources = [ "bootpart-test.cc" ]
   deps = [
     ":common",
+    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
-    "//src/lib/ddk:ddk_metadata",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gmock",

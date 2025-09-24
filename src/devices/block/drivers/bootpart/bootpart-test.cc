@@ -4,8 +4,8 @@
 
 #include "bootpart.h"
 
-#include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <algorithm>
@@ -85,21 +85,16 @@ const std::string kLongName = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 class BootpartTestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(const fuchsia_boot_metadata::PartitionMap& partition_map) {
+  void Init(fuchsia_boot_metadata::PartitionMap partition_map) {
     device_server_.Initialize("default", std::nullopt, block_device_.GetBanjoConfig());
-
-    fit::result persisted = fidl::Persist(partition_map);
-    ASSERT_TRUE(persisted.is_ok());
-    device_server_.AddMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
-                               persisted.value().size());
+    partition_map_ = std::move(partition_map);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    if (zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs); status != ZX_OK) {
-      return zx::error(status);
-    }
+    EXPECT_OK(device_server_.Serve(dispatcher, &to_driver_vfs));
+    EXPECT_OK(partition_map_metadata_server_.Serve(to_driver_vfs, dispatcher, partition_map_));
 
     return zx::ok();
   }
@@ -109,6 +104,8 @@ class BootpartTestEnvironment : public fdf_testing::Environment {
  private:
   FakeBlockDevice block_device_;
   compat::DeviceServer device_server_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
+  fuchsia_boot_metadata::PartitionMap partition_map_;
 };
 
 class FixtureConfig final {
@@ -119,21 +116,10 @@ class FixtureConfig final {
 
 class BootPartitionTest : public ::testing::Test {
  public:
+  static const fuchsia_boot_metadata::PartitionMap kPartitionMap;
+
   void SetUp() override {
-    // Set up partition 0.
-    fuchsia_boot_metadata::Partition& partition0 =
-        partition_map_.partitions().value().emplace_back(fuchsia_boot_metadata::Partition{
-            {.first_block = 0, .last_block = 11, .name = "This is partition 0"}});
-    memset(partition0.type_guid().data(), 'T', partition0.type_guid().size());
-    memset(partition0.unique_guid().data(), 'I', partition0.unique_guid().size());
-
-    // Set up partition 1.
-    fuchsia_boot_metadata::Partition& partition1 = partition_map_.partitions().value().emplace_back(
-        fuchsia_boot_metadata::Partition{{.first_block = 12, .last_block = 23, .name = kLongName}});
-    memset(partition1.type_guid().data(), 'U', partition1.type_guid().size());
-    memset(partition1.unique_guid().data(), 'J', partition1.unique_guid().size());
-
-    driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(partition_map_); });
+    driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(kPartitionMap); });
 
     ASSERT_OK(driver_test_.StartDriver());
   }
@@ -142,7 +128,6 @@ class BootPartitionTest : public ::testing::Test {
 
  protected:
   Driver& driver() { return *driver_test_.driver(); }
-  const fuchsia_boot_metadata::PartitionMap& partition_map() const { return partition_map_; }
 
   template <typename BanjoClient>
   BanjoClient ConnectToBanjo(size_t partition_index) {
@@ -175,12 +160,32 @@ class BootPartitionTest : public ::testing::Test {
 
  private:
   fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
-  fuchsia_boot_metadata::PartitionMap partition_map_{{.partitions{{}}}};
 };
 
+const fuchsia_boot_metadata::PartitionMap BootPartitionTest::kPartitionMap = {
+    {.partitions = std::vector<fuchsia_boot_metadata::Partition>{
+         {{
+             .type_guid = {'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T',
+                           'T', 'T'},
+             .unique_guid = {'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I', 'I',
+                             'I', 'I'},
+             .first_block = 0,
+             .last_block = 11,
+             .name = "This is partition 0",
+         }},
+         {{
+             .type_guid = {'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U', 'U',
+                           'U', 'U'},
+             .unique_guid = {'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J', 'J',
+                             'J', 'J'},
+             .first_block = 12,
+             .last_block = 23,
+             .name = kLongName,
+         }},
+     }}};
+
 TEST_F(BootPartitionTest, BlockPartitionOps) {
-  const std::vector<fuchsia_boot_metadata::Partition>& partitions =
-      partition_map().partitions().value();
+  std::span<const fuchsia_boot_metadata::Partition> partitions = kPartitionMap.partitions().value();
   for (size_t i = 0; i < partitions.size(); ++i) {
     const fuchsia_boot_metadata::Partition& partition = partitions[i];
     ddk::BlockPartitionProtocolClient partition_client =
@@ -188,14 +193,14 @@ TEST_F(BootPartitionTest, BlockPartitionOps) {
 
     guid_t guid_type{};
     EXPECT_OK(partition_client.GetGuid(GUIDTYPE_TYPE, &guid_type));
-    for (size_t i = 0; i < GUID_LENGTH; i++) {
-      EXPECT_EQ(reinterpret_cast<char*>(&guid_type)[i], partition.type_guid()[i]);
+    for (size_t j = 0; j < GUID_LENGTH; j++) {
+      EXPECT_EQ(reinterpret_cast<char*>(&guid_type)[j], partition.type_guid()[j]);
     }
 
     guid_t guid_instance{};
     EXPECT_OK(partition_client.GetGuid(GUIDTYPE_INSTANCE, &guid_instance));
-    for (uint32_t i = 0; i < GUID_LENGTH; i++) {
-      EXPECT_EQ(reinterpret_cast<char*>(&guid_instance)[i], partition.unique_guid()[i]);
+    for (uint32_t j = 0; j < GUID_LENGTH; j++) {
+      EXPECT_EQ(reinterpret_cast<char*>(&guid_instance)[j], partition.unique_guid()[j]);
     }
 
     char name[MAX_PARTITION_NAME_LENGTH];
@@ -211,8 +216,7 @@ TEST_F(BootPartitionTest, BlockPartitionOps) {
 }
 
 TEST_F(BootPartitionTest, BlockImplOpsPassedThrough) {
-  const std::vector<fuchsia_boot_metadata::Partition>& partitions =
-      partition_map().partitions().value();
+  std::span<const fuchsia_boot_metadata::Partition> partitions = kPartitionMap.partitions().value();
   for (size_t i = 0; i < partitions.size(); ++i) {
     ddk::BlockImplProtocolClient block_client = ConnectToBanjo<ddk::BlockImplProtocolClient>(i);
 

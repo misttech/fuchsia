@@ -58,7 +58,7 @@ static const std::vector<fpbus::Bti> raw_nand_btis{
 
 static const std::vector<fpbus::BootMetadata> raw_nand_boot_metadata{
     {{
-        .zbi_type = DEVICE_METADATA_PARTITION_MAP,
+        .zbi_type = ZBI_TYPE_DRV_PARTITION_MAP,
         .zbi_extra = 0,
     }},
 };

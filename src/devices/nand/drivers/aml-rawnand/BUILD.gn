@@ -46,11 +46,14 @@ source_set("common") {
     "onfi.cc",
     "onfi.h",
   ]
+  deps = [
+    "//sdk/lib/driver/platform-device/cpp",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
   public_deps = [
     ":aml-rawnand-bind",
     "//sdk/banjo/fuchsia.hardware.rawnand:fuchsia.hardware.rawnand_banjo_cpp",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
-    "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/mmio",
     "//src/lib/ddk",

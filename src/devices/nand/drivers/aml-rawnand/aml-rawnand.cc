@@ -4,7 +4,6 @@
 
 #include "src/devices/nand/drivers/aml-rawnand/aml-rawnand.h"
 
-#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/nandinfo/c/banjo.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
@@ -1032,8 +1031,21 @@ zx_status_t AmlRawNand::Init() {
 }
 
 zx_status_t AmlRawNand::Bind() {
+  auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+
+  zx::result result = outgoing_.Serve(std::move(server));
+  if (result.is_error()) {
+    zxlogf(ERROR, "Failed to serve outgoing directory: %s", result.status_string());
+    return result.status_value();
+  }
+
+  std::array fidl_service_offers = {
+      ddk::MetadataServer<fuchsia_boot_metadata::PartitionMap>::kFidlServiceName};
+
   ddk::DeviceAddArgs add_args{"aml-raw_nand"};
-  add_args.forward_metadata(parent(), DEVICE_METADATA_PRIVATE);
+  add_args.forward_metadata(parent(), DEVICE_METADATA_PRIVATE)
+      .set_outgoing_dir(client.TakeChannel())
+      .set_fidl_service_offers(fidl_service_offers);
 
   zx::result metadata =
       ddk::GetMetadataIfExists<fuchsia_boot_metadata::PartitionMap>(parent(), "pdev");
@@ -1041,15 +1053,18 @@ zx_status_t AmlRawNand::Bind() {
     zxlogf(ERROR, "Failed to get partition map: %s", metadata.status_string());
   }
   if (metadata.value().has_value()) {
-    fit::result persisted = fidl::Persist(metadata.value().value());
-    if (persisted.is_error()) {
-      zxlogf(ERROR, "Failed to persist partition map: %s",
-             persisted.error_value().FormatDescription().c_str());
-      return persisted.error_value().status();
+    zx_status_t status = partition_map_metadata_server_.SetMetadata(metadata.value().value());
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Failed to set metadata for partition map metadata server: %s",
+             zx_status_get_string(status));
+      return status;
     }
-    // TODO(b/356394645): Use `ddk::MetadataServer` instead to forward metadata once all retrievers
-    // stop using `device_get_metadata()` to retrieve the partition map.
-    add_args.add_metadata(DEVICE_METADATA_PARTITION_MAP, persisted.value());
+
+    status = partition_map_metadata_server_.Serve(outgoing_, dispatcher_);
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Failed to serve partition map: %s", zx_status_get_string(status));
+      return status;
+    }
   }
 
   zx_status_t status = DdkAdd(add_args);
