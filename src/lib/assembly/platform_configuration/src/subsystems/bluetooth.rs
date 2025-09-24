@@ -12,6 +12,19 @@ use assembly_config_schema::platform_settings::bluetooth_config::{
 };
 use assembly_config_schema::platform_settings::media_config::{AudioConfig, PlatformMediaConfig};
 
+fn get_source_type_str(sink_and_source: &A2dpSinkAndSourceConfig) -> String {
+    match sink_and_source {
+        A2dpSinkAndSourceConfig::Enabled(A2dpSinkAndSourceDefaultEnabled { enabled: true }) => {
+            "audio_out".to_owned()
+        }
+        A2dpSinkAndSourceConfig::Source(A2dpSourceOnly { source })
+        | A2dpSinkAndSourceConfig::SinkAndSource(A2dpSinkAndSource { source, .. }) => {
+            serde_json::Value::from(*source).as_str().unwrap().to_string()
+        }
+        _ => "none".to_owned(),
+    }
+}
+
 pub(crate) struct BluetoothSubsystemConfig;
 impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
     for BluetoothSubsystemConfig
@@ -67,17 +80,6 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
         if let A2dpConfig::Enabled(a2dp) = profiles.a2dp {
             builder.platform_bundle("bluetooth_a2dp");
 
-            let source_type_str = match a2dp.sink_and_source {
-                A2dpSinkAndSourceConfig::Enabled(A2dpSinkAndSourceDefaultEnabled {
-                    enabled: true,
-                }) => "audio_out".to_owned(),
-                A2dpSinkAndSourceConfig::Source(A2dpSourceOnly { source })
-                | A2dpSinkAndSourceConfig::SinkAndSource(A2dpSinkAndSource { source, .. }) => {
-                    serde_json::Value::from(source).to_string()
-                }
-                _ => "none".to_owned(),
-            };
-
             let mut a2dp_config = builder.package("bt-a2dp").component("meta/bt-a2dp.cm")?;
             a2dp_config
                 .field("domain", "Bluetooth")?
@@ -86,7 +88,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 .field("initiator_delay", 500)?
                 .field("channel_mode", "basic")?
                 .field("enable_sink", a2dp.sink_enabled())?
-                .field("source_type", source_type_str)?;
+                .field("source_type", get_source_type_str(&a2dp.sink_and_source))?;
         }
         if profiles.avrcp.enabled {
             builder.platform_bundle("bluetooth_avrcp");
@@ -194,5 +196,36 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use assembly_config_schema::platform_settings::bluetooth_config::{
+        A2dpSinkAndSource, A2dpSinkAndSourceConfig, A2dpSinkAndSourceDefaultEnabled, A2dpSinkOnly,
+        A2dpSinkType, A2dpSourceOnly, A2dpSourceType,
+    };
+
+    #[test]
+    fn test_a2dp_source_type_str() {
+        let config =
+            A2dpSinkAndSourceConfig::Enabled(A2dpSinkAndSourceDefaultEnabled { enabled: true });
+        assert_eq!(get_source_type_str(&config), "audio_out");
+        let config =
+            A2dpSinkAndSourceConfig::Source(A2dpSourceOnly { source: A2dpSourceType::AudioOut });
+        assert_eq!(get_source_type_str(&config), "audio_out");
+        let config =
+            A2dpSinkAndSourceConfig::Source(A2dpSourceOnly { source: A2dpSourceType::BigBen });
+        assert_eq!(get_source_type_str(&config), "big_ben");
+        let config = A2dpSinkAndSourceConfig::SinkAndSource(A2dpSinkAndSource {
+            source: A2dpSourceType::Offload,
+            sink: A2dpSinkType::MediaPlayer,
+        });
+        assert_eq!(get_source_type_str(&config), "offload");
+        let config =
+            A2dpSinkAndSourceConfig::Sink(A2dpSinkOnly { sink: A2dpSinkType::MediaPlayer });
+        assert_eq!(get_source_type_str(&config), "none");
     }
 }
