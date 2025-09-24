@@ -87,6 +87,24 @@
                 "navigation",
                 "browser",
                 "__metadata"
+            ],
+            "starnix-ui": [
+                "app",
+                "benchmark",
+                "blobfs",
+                "cpu",
+                "driver_dispatcher",
+                "gfx",
+                "input",
+                "kernel:ipc",
+                "kernel:meta",
+                "kernel:sched",
+                "kernel:vm",
+                "magma",
+                "memory:kernel",
+                "starnix:atrace",
+                "starnix:binder",
+                "starnix:pager"
             ]
         }
     }
