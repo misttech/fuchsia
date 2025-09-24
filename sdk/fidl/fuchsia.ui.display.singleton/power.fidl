@@ -6,7 +6,7 @@ library fuchsia.ui.display.singleton;
 using zx;
 
 /// Controls the power state of the default display device.
-@available(added=HEAD)
+@available(added=NEXT)
 @discoverable
 open protocol DisplayPower {
     /// Set the power state of the default connected display device to `power_on`.
