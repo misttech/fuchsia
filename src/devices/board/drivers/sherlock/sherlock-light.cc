@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.light/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/binding.h>
@@ -23,7 +24,6 @@
 #include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
-#include <ddktl/metadata/light-sensor.h>
 #include <soc/aml-t931/t931-pwm.h>
 
 #include "sherlock-gpios.h"
@@ -40,23 +40,33 @@ zx_status_t Sherlock::LightInit() {
           fuchsia_hardware_gpio::BufferMode::kInput),
   }}));
 
-  metadata::LightSensorParams params = {};
   // TODO(kpt): Insert the right parameters here.
-  params.integration_time_us = 711'680;
-  params.gain = 64;
-  params.polling_time_us = 700'000;
-  const std::vector<fpbus::Metadata> kTcs3400Metadata{
-      {{.id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&params),
-                                     reinterpret_cast<uint8_t*>(&params) + sizeof(params))}},
-  };
+  static const fuchsia_hardware_lightsensor::Metadata kLightSensorMetadata({
+      .gain = 64,
+      .integration_time = zx::usec(711'680).get(),
+      .polling_time = zx::usec(700'000).get(),
+  });
 
-  fpbus::Node tcs3400_light_node;
-  tcs3400_light_node.name() = "tcs3400_light";
-  tcs3400_light_node.vid() = PDEV_VID_GENERIC;
-  tcs3400_light_node.pid() = PDEV_PID_GENERIC;
-  tcs3400_light_node.did() = PDEV_DID_TCS3400_LIGHT;
-  tcs3400_light_node.metadata() = kTcs3400Metadata;
+  fit::result persisted_light_sensor_metadata = fidl::Persist(kLightSensorMetadata);
+  if (!persisted_light_sensor_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to persist light sensor metadata: %s",
+           persisted_light_sensor_metadata.error_value().FormatDescription().c_str());
+    return persisted_light_sensor_metadata.error_value().status();
+  }
+
+  const fpbus::Node tcs3400_light_node({
+      .name = "tcs3400_light",
+      .vid = PDEV_VID_GENERIC,
+      .pid = PDEV_PID_GENERIC,
+      .did = PDEV_DID_TCS3400_LIGHT,
+      .metadata =
+          std::vector<fpbus::Metadata>{
+              {{
+                  .id = std::to_string(DEVICE_METADATA_PRIVATE),
+                  .data = std::move(persisted_light_sensor_metadata.value()),
+              }},
+          },
+  });
 
   const auto kI2cBindRules = std::vector{
       fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,

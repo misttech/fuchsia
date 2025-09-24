@@ -5,6 +5,7 @@
 #include "tcs3400.h"
 
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
+#include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
@@ -16,15 +17,12 @@
 #include <lib/mock-i2c/mock-i2c.h>
 #include <lib/zx/clock.h>
 
-#include <ddktl/metadata/light-sensor.h>
 #include <fbl/auto_lock.h>
 #include <fbl/mutex.h>
 #include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <zxtest/zxtest.h>
 
-#include "lib/inspect/cpp/hierarchy.h"
 #include "src/devices/gpio/testing/fake-gpio/fake-gpio.h"
-#include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "tcs3400-regs.h"
 
@@ -109,14 +107,17 @@ class Tcs3400Test : public inspect::InspectTestHelper, public zxtest::Test {
   void SetUp() override {
     ASSERT_OK(incoming_loop_.StartThread("incoming-ns-thread"));
 
-    constexpr metadata::LightSensorParams kLightSensorMetadata = {
+    static const fuchsia_hardware_lightsensor::Metadata kLightSensorMetadata({
         .gain = 16,
-        .integration_time_us = 615'000,
-        .polling_time_us = 0,
-    };
+        .integration_time = zx::usec(615'680).get(),
+        .polling_time = zx::usec(0).get(),
+    });
 
-    fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kLightSensorMetadata,
-                              sizeof(kLightSensorMetadata));
+    const fit::result persisted_light_sensor_metadata = fidl::Persist(kLightSensorMetadata);
+    ASSERT_TRUE(persisted_light_sensor_metadata.is_ok());
+
+    fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_light_sensor_metadata->data(),
+                              persisted_light_sensor_metadata->size());
 
     // Create i2c fragment.
     auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
@@ -912,25 +913,27 @@ class Tcs3400MetadataTest : public zxtest::Test {
  protected:
   void SetGainTest(uint8_t gain, uint8_t again_register) {
     // integration_time_us = 612'000 for atime = 36.
-    SetGainAndIntegrationTest(gain, 612'000, again_register, 36);
+    SetGainAndIntegrationTest(gain, zx::usec(612'000), again_register, 36);
   }
 
-  void SetIntegrationTest(uint32_t integration_time_us, uint8_t atime_register) {
+  void SetIntegrationTest(zx::duration integration_time, uint8_t atime_register) {
     // gain = 1 for again = 0x00.
-    SetGainAndIntegrationTest(1, integration_time_us, 0x00, atime_register);
+    SetGainAndIntegrationTest(1, integration_time, 0x00, atime_register);
   }
 
-  void SetGainAndIntegrationTest(uint8_t gain, uint32_t integration_time_us, uint8_t again_register,
-                                 uint8_t atime_register) {
-    const metadata::LightSensorParams metadata = {
-        .gain = gain,
-        .integration_time_us = integration_time_us,
-    };
+  void SetGainAndIntegrationTest(uint8_t gain, zx::duration integration_time,
+                                 uint8_t again_register, uint8_t atime_register) {
+    const fuchsia_hardware_lightsensor::Metadata metadata(
+        {.gain = gain, .integration_time = integration_time.get(), .polling_time = 0});
+
+    const fit::result persisted_metadata = fidl::Persist(metadata);
+    ASSERT_TRUE(persisted_metadata.is_ok());
 
     std::shared_ptr<MockDevice> fake_parent = MockDevice::FakeRootParent();
     fdf::UnownedSynchronizedDispatcher dispatcher =
         fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
-    fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, &metadata, sizeof(metadata));
+    fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata->data(),
+                             persisted_metadata->size());
 
     async::Loop incoming_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
     EXPECT_OK(incoming_loop.StartThread("incoming-ns-thread"));
@@ -1003,18 +1006,19 @@ TEST_F(Tcs3400MetadataTest, Gain) {
 }
 
 TEST_F(Tcs3400MetadataTest, IntegrationTime) {
-  SetIntegrationTest(750'000, 0x01);  // Invalid integration time sets atime = 1.
-  SetIntegrationTest(708'900, 0x01);
-  SetIntegrationTest(706'120, 0x02);
-  SetIntegrationTest(703'340, 0x03);
-  SetIntegrationTest(2'780, 0xFF);
+  SetIntegrationTest(zx::usec(750'000), 0x01);  // Invalid integration time sets atime = 1.
+  SetIntegrationTest(zx::usec(708'900), 0x01);
+  SetIntegrationTest(zx::usec(706'120), 0x02);
+  SetIntegrationTest(zx::usec(703'340), 0x03);
+  SetIntegrationTest(zx::usec(2'780), 0xFF);
 }
 
 TEST(Tcs3400Test, TooManyI2cErrors) {
   std::shared_ptr<MockDevice> fake_parent = MockDevice::FakeRootParent();
-  metadata::LightSensorParams parameters = {};
-  parameters.gain = 64;
-  parameters.integration_time_us = 708'900;  // For atime = 0x01.
+  static const fuchsia_hardware_lightsensor::Metadata kMetadata({
+      .gain = 64,
+      .integration_time = zx::usec(708'900).get(),  // For atime = 0x01.
+  });
 
   async::Loop incoming_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
   ASSERT_OK(incoming_loop.StartThread("incoming-ns-thread"));
@@ -1046,8 +1050,11 @@ TEST(Tcs3400Test, TooManyI2cErrors) {
   Tcs3400Device device(fake_parent.get(), nullptr, std::move(i2c_endpoints->client),
                        std::move(gpio_endpoints->client));
 
-  fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, &parameters,
-                           sizeof(metadata::LightSensorParams));
+  const fit::result persisted_metadata = fidl::Persist(kMetadata);
+  ASSERT_TRUE(persisted_metadata.is_ok());
+
+  fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata->data(),
+                           persisted_metadata->size());
   EXPECT_NOT_OK(device.InitMetadata());
 }
 

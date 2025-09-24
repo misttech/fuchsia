@@ -4,6 +4,7 @@
 
 #include "tcs3400.h"
 
+#include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/ddk/binding_driver.h>
@@ -18,7 +19,6 @@
 #include <zircon/syscalls/port.h>
 
 #include <ddktl/fidl.h>
-#include <ddktl/metadata/light-sensor.h>
 #include <fbl/auto_lock.h>
 
 #include "lib/inspect/cpp/vmo/types.h"
@@ -29,14 +29,14 @@ constexpr zx_duration_t INTERRUPTS_HYSTERESIS = ZX_MSEC(100);
 constexpr uint8_t SAMPLES_TO_TRIGGER = 0x01;
 
 // Repeat saturated log line every two minutes
-constexpr zx::duration kSaturatedLogTimeSecs = zx::sec(120);
+constexpr zx::duration kSaturatedLogTime = zx::sec(120);
 // Bright, not saturated values to return when saturated
 constexpr uint16_t kMaxSaturationRed = 21'067;
 constexpr uint16_t kMaxSaturationGreen = 20'395;
 constexpr uint16_t kMaxSaturationBlue = 20'939;
 constexpr uint16_t kMaxSaturationClear = 65'085;
 
-constexpr int64_t kIntegrationTimeStepSizeMicroseconds = 2780;
+constexpr zx::duration kIntegrationTimeStepSize = zx::usec(2780);
 constexpr int64_t kMinIntegrationTimeStep = 1;
 constexpr int64_t kMaxIntegrationTimeStep = 256;
 
@@ -70,8 +70,8 @@ constexpr fuchsia_input_report::wire::Axis kSensitivityAxis = {
 };
 
 constexpr fuchsia_input_report::wire::Axis kSamplingRateAxis = {
-    .range = {.min = kIntegrationTimeStepSizeMicroseconds,
-              .max = kIntegrationTimeStepSizeMicroseconds * kMaxIntegrationTimeStep},
+    .range = {.min = kIntegrationTimeStepSize.to_usecs(),
+              .max = kIntegrationTimeStepSize.to_usecs() * kMaxIntegrationTimeStep},
     .unit =
         {
             .type = fuchsia_input_report::wire::UnitType::kSeconds,
@@ -262,7 +262,7 @@ zx::result<Tcs3400InputReport> Tcs3400Device::ReadInputRpt() {
     report.blue = kMaxSaturationBlue;
     report.illuminance = kMaxSaturationClear;
     saturatedReading = true;
-    if (!isSaturated_ || zx::clock::get_monotonic() - lastSaturatedLog_ >= kSaturatedLogTimeSecs) {
+    if (!isSaturated_ || zx::clock::get_monotonic() - lastSaturatedLog_ >= kSaturatedLogTime) {
       zxlogf(INFO, "sensor is saturated via status register");
       lastSaturatedLog_ = zx::clock::get_monotonic();
     }
@@ -290,7 +290,7 @@ void Tcs3400Device::Configure() {
 
   again_ = static_cast<uint8_t>(feature_report.sensitivity);
 
-  const int64_t atime = feature_report.integration_time_us / kIntegrationTimeStepSizeMicroseconds;
+  const int64_t atime = feature_report.integration_time_us / kIntegrationTimeStepSize.to_usecs();
   atime_ = static_cast<uint8_t>(kMaxIntegrationTimeStep - atime);
 
   struct Setup {
@@ -504,7 +504,7 @@ void Tcs3400Device::SetFeatureReport(SetFeatureReportRequestView request,
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
-  const int64_t atime = report.sensor().sampling_rate() / kIntegrationTimeStepSizeMicroseconds;
+  const int64_t atime = report.sensor().sampling_rate() / kIntegrationTimeStepSize.to_usecs();
   if (atime < 1 || atime > 256) {
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
@@ -519,7 +519,7 @@ void Tcs3400Device::SetFeatureReport(SetFeatureReportRequestView request,
     feature_rpt_.sensitivity = report.sensor().sensitivity()[0];
     feature_rpt_.threshold_high = report.sensor().threshold_high()[0];
     feature_rpt_.threshold_low = report.sensor().threshold_low()[0];
-    feature_rpt_.integration_time_us = atime * kIntegrationTimeStepSizeMicroseconds;
+    feature_rpt_.integration_time_us = atime * kIntegrationTimeStepSize.to_usecs();
     feature_report = feature_rpt_;
   }
   inspect_reports_.CreateEntry(
@@ -623,34 +623,46 @@ zx_status_t Tcs3400Device::InitGain(uint8_t gain) {
 }
 
 zx_status_t Tcs3400Device::InitMetadata() {
-  metadata::LightSensorParams parameters = {};
-  size_t actual = {};
-  auto status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &parameters,
-                                    sizeof(metadata::LightSensorParams), &actual);
-  if (status != ZX_OK || sizeof(metadata::LightSensorParams) != actual) {
-    zxlogf(ERROR, "Failed to get metadata: %s", zx_status_get_string(status));
-    return status;
+  zx::result metadata_result = ddk::GetEncodedMetadata<fuchsia_hardware_lightsensor::Metadata>(
+      parent(), DEVICE_METADATA_PRIVATE);
+  if (metadata_result.is_error()) {
+    zxlogf(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
+    return metadata_result.status_value();
+  }
+  const fuchsia_hardware_lightsensor::Metadata& metadata = metadata_result.value();
+  if (!metadata.integration_time().has_value()) {
+    zxlogf(ERROR, "Metadata missing `integration_time` field");
+    return ZX_ERR_INTERNAL;
+  }
+  if (!metadata.gain().has_value()) {
+    zxlogf(ERROR, "Metadata missing `gain` field");
+    return ZX_ERR_INTERNAL;
+  }
+  if (!metadata.polling_time().has_value()) {
+    zxlogf(ERROR, "Metadata missing `polling_time` field");
+    return ZX_ERR_INTERNAL;
   }
 
   // ATIME = 256 - Integration Time / 2.78 ms.
-  int64_t atime = parameters.integration_time_us / kIntegrationTimeStepSizeMicroseconds;
+  zx::duration integration_time(metadata.integration_time().value());
+  int64_t atime = integration_time.get() / kIntegrationTimeStepSize.get();
   if (atime < kMinIntegrationTimeStep || atime > kMaxIntegrationTimeStep) {
     atime = kMaxIntegrationTimeStep - 1;
-    zxlogf(WARNING, "Invalid integration time (%u) using atime = 1",
-           parameters.integration_time_us);
+    zxlogf(WARNING, "Invalid integration time (%lius) using atime = 1",
+           integration_time.to_usecs());
   }
   atime_ = static_cast<uint8_t>(kMaxIntegrationTimeStep - atime);
 
   zxlogf(DEBUG, "atime (%u)", atime_);
   {
-    status = WriteReg(TCS_I2C_ATIME, atime_);
+    zx_status_t status = WriteReg(TCS_I2C_ATIME, atime_);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Setting integration time failed %d", status);
       return status;
     }
   }
 
-  status = InitGain(parameters.gain);
+  zx_status_t status = InitGain(metadata.gain().value());
   if (status != ZX_OK) {
     return status;
   }
@@ -665,10 +677,10 @@ zx_status_t Tcs3400Device::InitMetadata() {
     feature_rpt_.threshold_low = 0x0000;
     feature_rpt_.threshold_high = 0xFFFF;
     feature_rpt_.sensitivity = again_;
-    feature_rpt_.report_interval_us = parameters.polling_time_us;
+    feature_rpt_.report_interval_us = zx::duration(metadata.polling_time().value()).to_usecs();
     feature_rpt_.reporting_state =
         fuchsia_input_report::wire::SensorReportingState::kReportAllEvents;
-    feature_rpt_.integration_time_us = atime * kIntegrationTimeStepSizeMicroseconds;
+    feature_rpt_.integration_time_us = atime * kIntegrationTimeStepSize.to_usecs();
     feature_report = feature_rpt_;
   }
   inspect_reports_.CreateEntry(

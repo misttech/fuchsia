@@ -19,17 +19,15 @@ driver_bind_rules("tcs3400_light_bind") {
   ]
 }
 
-fuchsia_cc_driver("ams-light-driver") {
-  legacy = true
-  output_name = "ams-light"
-  configs += [
-    "//build/config:all_source",
-    "//build/config/fuchsia:enable_zircon_asserts",
+source_set("common") {
+  sources = [
+    "tcs3400-regs.h",
+    "tcs3400.cc",
+    "tcs3400.h",
   ]
-  sources = [ "tcs3400.cc" ]
   deps = [
-    ":tcs3400_light_bind",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.lightsensor:fuchsia.hardware.lightsensor_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
@@ -37,19 +35,34 @@ fuchsia_cc_driver("ams-light-driver") {
     "//src/devices/i2c/lib/i2c-channel-legacy",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
   ]
+  public_deps = [
+    "//src/lib/ddk",
+    "//src/lib/ddktl",
+  ]
+}
+
+fuchsia_cc_driver("ams-light-driver") {
+  legacy = true
+  output_name = "ams-light"
+  configs += [
+    "//build/config:all_source",
+    "//build/config/fuchsia:enable_zircon_asserts",
+  ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("ams-light") {
   component_name = "ams-light"
-  deps = [ ":ams-light-driver" ]
+  deps = [
+    ":ams-light-driver",
+    ":tcs3400_light_bind",
+  ]
   info = "meta/ams-light-info.json"
   manifest = "meta/ams-light.cml"
 }
@@ -63,14 +76,12 @@ fuchsia_driver_package("package") {
 test("ams-light-test-bin") {
   configs += [ "//build/config:all_source" ]
   output_name = "ams-light-test"
-  sources = [
-    "tcs3400-test.cc",
-    "tcs3400.cc",
-  ]
+  sources = [ "tcs3400-test.cc" ]
   deps = [
-    ":tcs3400_light_bind",
+    ":common",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
+    "//sdk/fidl/fuchsia.hardware.lightsensor:fuchsia.hardware.lightsensor_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -86,7 +97,6 @@ test("ams-light-test-bin") {
     "//src/devices/i2c/testing/mock-i2c",
     "//src/devices/lib/mmio",
     "//src/devices/testing/mock-ddk",
-    "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/mock-function",
