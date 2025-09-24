@@ -159,22 +159,26 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                                 // The root node of xattr-labeled filesystems should be labeled at
                                 // creation in principle. Distinguishing creation of the root of the
                                 // filesystem from re-instantiation of the `FsNode` representing an
-                                // existing root is tricky, so we work-around the issue by writing
-                                // the `root_sid` label here, if available, or the filesystem label.
-                                let root_sid = label.mount_sids.root_context;
-                                let root_or_fs_sid = root_sid.unwrap_or(label.sid);
-                                let root_context = security_server
-                                    .sid_to_security_context(root_or_fs_sid)
-                                    .unwrap();
-                                fs_node.ops().set_xattr(
-                                    locked.cast_locked::<FileOpsCore>(),
-                                    fs_node,
-                                    current_task,
-                                    XATTR_NAME_SELINUX.to_bytes().into(),
-                                    root_context.as_slice().into(),
-                                    XattrOp::Create,
-                                )?;
-                                Some(root_or_fs_sid)
+                                // existing root is tricky, so this logic attempts to set a label
+                                // if the root node lacks one, and the filesystem has "rootcontext="
+                                // set in its mount parameters.
+                                let maybe_root_sid = label.mount_sids.root_context;
+                                if let Some(root_sid) = maybe_root_sid {
+                                    let root_context =
+                                        security_server.sid_to_security_context(root_sid).unwrap();
+                                    fs_node.ops().set_xattr(
+                                        locked.cast_locked::<FileOpsCore>(),
+                                        fs_node,
+                                        current_task,
+                                        XATTR_NAME_SELINUX.to_bytes().into(),
+                                        root_context.as_slice().into(),
+                                        XattrOp::Create,
+                                    )?;
+                                }
+
+                                // Apply the appropriate in-memory label to the `FsNode`.
+                                let node_sid = maybe_root_sid.unwrap_or(default_sid);
+                                Some(node_sid)
                             } else {
                                 // TODO: https://fxbug.dev/334094811 - Determine how to handle errors besides
                                 // `ENODATA` (no such xattr).
