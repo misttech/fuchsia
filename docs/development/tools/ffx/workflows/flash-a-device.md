@@ -20,10 +20,9 @@ Fastboot) typically requires instructions that are specific to the type and
 maker of the device, which is not covered in this guide.
 
 Fuchsia prebuilt images can be obtained from various sources, such as Google
-Cloud Storage and project repositories. Additionally,
-[custom prebuilt images][generate-a-build] can be generated from a Fuchsia
-source checkout. In either case, the prebuilt image used for flashing must
-match the target device.
+Cloud Storage and project repositories. Additionally, custom prebuilt images can
+be generated from a Fuchsia source checkout. In either case, the prebuilt image
+used for flashing must match the target device.
 
 ## Flash the device {:#flash-the-device}
 
@@ -157,4 +156,3 @@ After rebooting, the device boots into Fastboot mode.
 [fastboot-src]: https://android.googlesource.com/platform/system/core/+/master/fastboot/
 [android-flash]: https://source.android.com/setup/build/running
 [ffx-target-flash]: https://fuchsia.dev/reference/tools/sdk/ffx#flash
-[generate-a-build]: /docs/development/build/fx.md#generating-a-build-archive
