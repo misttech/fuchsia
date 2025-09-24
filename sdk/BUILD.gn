@@ -961,6 +961,7 @@ if (current_toolchain == default_toolchain) {
       ":version_history_sdk($default_toolchain)",
 
       # TODO(https://fxbug.dev/376105715): Promote devicetree to "partner".
+      # Remove the `fbl` dependency from `devicetree`.
       "//sdk/lib/driver/devicetree/manager:manager_sdk",
       "//sdk/lib/driver/devicetree/manager:manager-test-helper_sdk",
       "//sdk/lib/driver/devicetree/testing:board-test-helper_sdk",
@@ -972,15 +973,15 @@ if (current_toolchain == default_toolchain) {
       "//sdk/lib/driver/devicetree/visitors/drivers:all-driver-visitors_sdk",
 
       # TODO(https://fxbug.dev/444519345): Promote these to "partner".
+      # Remove the `fbl` dependency from `mock-mmio-reg`.
       "//sdk/lib/driver/mmio/testing/cpp:cpp_sdk",
       "//src/devices/lib/mmio:test_helper_sdk",
       "//src/devices/registers/testing/mock-registers:mock-registers_sdk",
       "//src/devices/testing/fake-mmio-reg:fake-mmio-reg_sdk",
       "//src/devices/testing/mock-mmio-reg:mock-mmio-reg_sdk",
 
-      # TODO(https://fxbug.dev/444521390): Eliminate vendor dependencies on fzl
-      # or promote it to "partner".
-      "//zircon/system/ulib/fzl:fzl_sdk",
+      # TODO(https://fxbug.dev/444521390): Eliminate vendor dependencies on fbl.
+      "//zircon/system/ulib/fbl:fbl_sdk",
     ]
   }
 

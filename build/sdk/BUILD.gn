@@ -190,10 +190,9 @@ _internal_source_sets_list = [
   "//third_party/vboot_reference/firmware/lib:gpt_misc",
   "//third_party/vboot_reference/firmware/lib:headers",
 
-  # TODO(https://fxbug.dev/444521390): Eliminate vendor dependencies on fzl
-  # or promote it to "partner". Make `fbl` not `sdk_publishable`.
+  # TODO(https://fxbug.dev/444521390): Eliminate dependencies on `fbl` from
+  # `devicetree` and `mock-mmio-reg`.
   "//zircon/system/ulib/fbl:fbl",
-  "//zircon/system/ulib/fzl:fzl",
 ]
 
 # Ensure the lists are mutually exclusive.
