@@ -13,6 +13,7 @@ idk_cc_source_library_zx(
         "include/lib/stdcompat/bit.h",
         "include/lib/stdcompat/cstddef.h",
         "include/lib/stdcompat/functional.h",
+        "include/lib/stdcompat/inplace_vector.h",
         "include/lib/stdcompat/iterator.h",
         "include/lib/stdcompat/memory.h",
         "include/lib/stdcompat/optional.h",

@@ -34,6 +34,7 @@ group("tests") {
 stdcompat_test_sources = [
   "algorithm_test.cc",
   "array_test.cc",
+  "inplace_vector_test.cc",
 
   # TODO(https://fxbug.dev/352337748): disable test to unblock clang roll.
   # "atomic_test.cc",
