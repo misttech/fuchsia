@@ -176,6 +176,7 @@ def main(argv: Sequence[str]) -> int:
     bazelrc_content: str = ""
     # platform excerpt from template.bazelrc
     bazelrc_content += """
+common --enable_bzlmod=false --enable_workspace=true
 build --platforms=//build/bazel/platforms:{default_platform}
 build --host_platform=//build/bazel/platforms:{host_platform}
 import remote_services.bazelrc
