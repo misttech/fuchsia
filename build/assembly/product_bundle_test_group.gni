@@ -19,13 +19,6 @@ import("//build/python/python_action.gni")
 #   tests = [ ... ]
 # }
 
-# In order to declare one of these targets, you must make them available
-# in your product.gni:
-#   product_bundle_test_groups = [ "//path/to:target" ]
-
-# This ensures that gn can "discover" the target and resolve the
-# generated_file() at gn-time.
-#
 #
 # Parameters:
 #
@@ -52,18 +45,6 @@ template("product_bundle_test_group") {
   assert(defined(invoker.tests) || defined(invoker.target_tests) ||
              defined(invoker.host_tests),
          "Either 'tests' or 'target_tests' or 'host_tests' must be defined")
-
-  # Ensure this template is only used in approved locations.
-  # This ensures that they are resolved by gn-gen.
-  # See root_patterns in the //.gn file.
-  _valid_targets = product_bundle_test_groups
-  if (!label_matches(":$target_name", _valid_targets)) {
-    print("")
-    print(
-        "ERROR: All product_bundle_test_group()s must be added to the gn argument: product_bundle_test_groups")
-    print("")
-    assert(false)
-  }
 
   # The test_spec should always be generate in the default toolchain even if
   # these are e2e (host) tests, because we want to avoid accidentally creating

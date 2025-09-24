@@ -32,5 +32,3 @@ assembly_board_configs = [ "//boards" ]
 
 # List these products in products.json, and upload to CIPD.
 assembly_product_configs = [ "//products" ]
-
-product_bundle_test_groups = [ "//bundles/buildbot/minimal/arm64" ]
