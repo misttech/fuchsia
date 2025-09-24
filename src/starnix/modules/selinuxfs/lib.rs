@@ -738,7 +738,7 @@ impl SeLinuxApiOps for AccessApi {
                     std::panic::Location::caller(),
                 );
                 let audit_message = format!(
-                    "avc: todo_deny {{ ACCESS_API }} scontext={scontext_str:?} tcontext={tcontext_str:?} tclass={tclass_id} requested={requested:?}",
+                    "avc: todo_deny {{ ACCESS_API }} bug={todo_bug} scontext={scontext_str:?} tcontext={tcontext_str:?} tclass={tclass_id} requested={requested:?}",
                 );
                 kernel.audit_logger().audit_log(AUDIT_AVC as u16, || audit_message);
             } else {
