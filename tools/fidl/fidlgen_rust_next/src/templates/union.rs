@@ -8,6 +8,7 @@ use super::{Context, Contextual, filters};
 use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
 use fidl_ir::Union;
+use fidl_ir_util::TypeShapeExt;
 
 #[derive(Template)]
 #[template(path = "union.askama", whitespace = "preserve")]
@@ -31,7 +32,7 @@ pub struct UnionTemplate<'a> {
 
 impl<'a> UnionTemplate<'a> {
     pub fn new(union_: &'a Union, context: Context<'a>) -> Self {
-        let is_static = union_.shape.max_out_of_line == 0;
+        let is_static = union_.shape.is_static();
         let base_name = union_.name.decl_name().camel();
         let wire_name = format!("Wire{base_name}");
         let wire_optional_name = format!("WireOptional{base_name}");
@@ -70,7 +71,7 @@ impl<'a> UnionTemplate<'a> {
     }
 
     fn has_only_static_members(&self) -> bool {
-        self.union_.members.iter().all(|m| m.ty.shape.max_out_of_line == 0)
+        self.union_.members.iter().all(|m| m.ty.shape.is_static())
     }
 }
 

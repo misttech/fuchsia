@@ -14,12 +14,13 @@ pub enum FlexibleUnion {
 }
 
 impl ::fidl_next::Encodable for FlexibleUnion {
-    type Encoded = WireFlexibleUnion;
+    type Encoded = WireFlexibleUnion<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::Encode<___E> for FlexibleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode(
@@ -31,7 +32,7 @@ where
 
         match self {
             Self::Field(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, i32>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, i32>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -46,6 +47,7 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexibleUnion
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode_ref(
@@ -57,7 +59,7 @@ where
 
         match self {
             Self::Field(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, &i32>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, &i32>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -70,7 +72,7 @@ where
 }
 
 impl ::fidl_next::EncodableOption for FlexibleUnion {
-    type EncodedOption = WireOptionalFlexibleUnion;
+    type EncodedOption = WireOptionalFlexibleUnion<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::EncodeOption<___E> for FlexibleUnion
@@ -121,9 +123,9 @@ where
     }
 }
 
-impl ::fidl_next::FromWire<WireFlexibleUnion> for FlexibleUnion {
+impl<'de> ::fidl_next::FromWire<WireFlexibleUnion<'de>> for FlexibleUnion {
     #[inline]
-    fn from_wire(wire: WireFlexibleUnion) -> Self {
+    fn from_wire(wire: WireFlexibleUnion<'de>) -> Self {
         let wire = ::core::mem::ManuallyDrop::new(wire);
         match wire.raw.ordinal() {
             1 => Self::Field(::fidl_next::FromWire::from_wire(unsafe {
@@ -135,13 +137,13 @@ impl ::fidl_next::FromWire<WireFlexibleUnion> for FlexibleUnion {
     }
 }
 
-impl ::fidl_next::IntoNatural for WireFlexibleUnion {
+impl<'de> ::fidl_next::IntoNatural for WireFlexibleUnion<'de> {
     type Natural = FlexibleUnion;
 }
 
-impl ::fidl_next::FromWireRef<WireFlexibleUnion> for FlexibleUnion {
+impl<'de> ::fidl_next::FromWireRef<WireFlexibleUnion<'de>> for FlexibleUnion {
     #[inline]
-    fn from_wire_ref(wire: &WireFlexibleUnion) -> Self {
+    fn from_wire_ref(wire: &WireFlexibleUnion<'de>) -> Self {
         match wire.raw.ordinal() {
             1 => Self::Field(::fidl_next::FromWireRef::from_wire_ref(unsafe {
                 wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
@@ -152,9 +154,9 @@ impl ::fidl_next::FromWireRef<WireFlexibleUnion> for FlexibleUnion {
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalFlexibleUnion> for FlexibleUnion {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>> for FlexibleUnion {
     #[inline]
-    fn from_wire_option(wire: WireOptionalFlexibleUnion) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalFlexibleUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
             Some(::fidl_next::FromWire::from_wire(inner))
         } else {
@@ -163,23 +165,22 @@ impl ::fidl_next::FromWireOption<WireOptionalFlexibleUnion> for FlexibleUnion {
     }
 }
 
-impl ::fidl_next::IntoNatural for WireOptionalFlexibleUnion {
+impl<'de> ::fidl_next::IntoNatural for WireOptionalFlexibleUnion<'de> {
     type Natural = ::core::option::Option<FlexibleUnion>;
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalFlexibleUnion> for Box<FlexibleUnion> {
+impl<'de> ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>> for Box<FlexibleUnion> {
     #[inline]
-    fn from_wire_option(wire: WireOptionalFlexibleUnion) -> Option<Self> {
-        <FlexibleUnion as ::fidl_next::FromWireOption<WireOptionalFlexibleUnion>>::from_wire_option(
-            wire,
-        )
-        .map(Box::new)
+    fn from_wire_option(wire: WireOptionalFlexibleUnion<'de>) -> Option<Self> {
+        <
+            FlexibleUnion as ::fidl_next::FromWireOption<WireOptionalFlexibleUnion<'de>>
+        >::from_wire_option(wire).map(Box::new)
     }
 }
 
-impl ::fidl_next::FromWireOptionRef<WireOptionalFlexibleUnion> for Box<FlexibleUnion> {
+impl<'de> ::fidl_next::FromWireOptionRef<WireOptionalFlexibleUnion<'de>> for Box<FlexibleUnion> {
     #[inline]
-    fn from_wire_option_ref(wire: &WireOptionalFlexibleUnion) -> Option<Self> {
+    fn from_wire_option_ref(wire: &WireOptionalFlexibleUnion<'de>) -> Option<Self> {
         if let Some(inner) = wire.as_ref() {
             Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
         } else {
@@ -190,12 +191,12 @@ impl ::fidl_next::FromWireOptionRef<WireOptionalFlexibleUnion> for Box<FlexibleU
 
 /// The wire type corresponding to [`FlexibleUnion`].
 #[repr(transparent)]
-pub struct WireFlexibleUnion {
+pub struct WireFlexibleUnion<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-impl Drop for WireFlexibleUnion {
+impl<'de> Drop for WireFlexibleUnion<'de> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             1 => {
@@ -207,8 +208,8 @@ impl Drop for WireFlexibleUnion {
     }
 }
 
-unsafe impl ::fidl_next::Wire for WireFlexibleUnion {
-    type Decoded<'de> = WireFlexibleUnion;
+unsafe impl ::fidl_next::Wire for WireFlexibleUnion<'static> {
+    type Decoded<'de> = WireFlexibleUnion<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -225,7 +226,7 @@ pub mod flexible_union {
     }
 }
 
-impl WireFlexibleUnion {
+impl<'de> WireFlexibleUnion<'de> {
     pub fn as_ref(&self) -> crate::flexible_union::Ref<'_> {
         match self.raw.ordinal() {
             1 => crate::flexible_union::Ref::Field(unsafe {
@@ -237,25 +238,10 @@ impl WireFlexibleUnion {
     }
 }
 
-impl Clone for WireFlexibleUnion {
-    fn clone(&self) -> Self {
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<::fidl_next::WireI32>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexibleUnion
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexibleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -263,18 +249,16 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, ::fidl_next::WireI32>(
-                raw, decoder,
-            )?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, ::fidl_next::WireI32>(raw, decoder)?,
 
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireFlexibleUnion {
+impl<'de> ::core::fmt::Debug for WireFlexibleUnion<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self.raw.ordinal() {
             1 => unsafe { self.raw.get().deref_unchecked::<::fidl_next::WireI32>().fmt(f) },
@@ -284,13 +268,13 @@ impl ::core::fmt::Debug for WireFlexibleUnion {
 }
 
 #[repr(transparent)]
-pub struct WireOptionalFlexibleUnion {
+pub struct WireOptionalFlexibleUnion<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-unsafe impl ::fidl_next::Wire for WireOptionalFlexibleUnion {
-    type Decoded<'de> = WireOptionalFlexibleUnion;
+unsafe impl ::fidl_next::Wire for WireOptionalFlexibleUnion<'static> {
+    type Decoded<'de> = WireOptionalFlexibleUnion<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -299,7 +283,7 @@ unsafe impl ::fidl_next::Wire for WireOptionalFlexibleUnion {
     }
 }
 
-impl WireOptionalFlexibleUnion {
+impl<'de> WireOptionalFlexibleUnion<'de> {
     pub fn is_some(&self) -> bool {
         self.raw.is_some()
     }
@@ -308,11 +292,11 @@ impl WireOptionalFlexibleUnion {
         self.raw.is_none()
     }
 
-    pub fn as_ref(&self) -> Option<&WireFlexibleUnion> {
+    pub fn as_ref(&self) -> Option<&WireFlexibleUnion<'de>> {
         if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
-    pub fn into_option(self) -> Option<WireFlexibleUnion> {
+    pub fn into_option(self) -> Option<WireFlexibleUnion<'de>> {
         if self.is_some() {
             Some(WireFlexibleUnion { raw: self.raw, _phantom: ::core::marker::PhantomData })
         } else {
@@ -321,32 +305,10 @@ impl WireOptionalFlexibleUnion {
     }
 }
 
-impl Clone for WireOptionalFlexibleUnion {
-    fn clone(&self) -> Self {
-        if self.is_none() {
-            return WireOptionalFlexibleUnion {
-                raw: ::fidl_next::RawWireUnion::absent(),
-                _phantom: ::core::marker::PhantomData,
-            };
-        }
-
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<::fidl_next::WireI32>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalFlexibleUnion
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalFlexibleUnion<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -354,19 +316,17 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, ::fidl_next::WireI32>(
-                raw, decoder,
-            )?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, ::fidl_next::WireI32>(raw, decoder)?,
 
             0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireOptionalFlexibleUnion {
+impl<'de> ::core::fmt::Debug for WireOptionalFlexibleUnion<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         self.as_ref().fmt(f)
     }

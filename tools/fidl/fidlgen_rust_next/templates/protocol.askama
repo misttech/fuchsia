@@ -98,7 +98,7 @@ pub mod {{ module_name }} {
         {% for method in protocol.methods %}
             {% if let Some(args) = self.get_method_args_struct(method) %}
                 {% let method_type_name = filters::escape_camel(method.name) %}
-                {% let is_static = args.shape.max_out_of_line == 0 %}
+                {% let is_static = args.shape.is_static() %}
 
                 pub struct {{ method_type_name }}<
                     {% for i in 0..args.members.len() %}
@@ -199,7 +199,7 @@ pub mod {{ module_name }} {
                 {% match method.kind %}
                     {% when ProtocolMethodKind::OneWay %}
                         {% if let Some(args) = self.get_method_args_struct(method) %}
-                            {% let is_static = args.shape.max_out_of_line == 0 %}
+                            {% let is_static = args.shape.is_static() %}
 
                             {{ self.doc_string(method.attributes) -}}
                             pub fn {{ method_name }}(
@@ -255,7 +255,7 @@ pub mod {{ module_name }} {
                         {% endif %}
                     {% when ProtocolMethodKind::TwoWay %}
                         {% if let Some(args) = self.get_method_args_struct(method) %}
-                            {% let is_static = args.shape.max_out_of_line == 0 %}
+                            {% let is_static = args.shape.is_static() %}
 
                             {{ self.doc_string(method.attributes) -}}
                             pub fn {{ method_name }}(
@@ -330,7 +330,7 @@ pub mod {{ module_name }} {
 
                 {% if method.kind == ProtocolMethodKind::Event %}
                     {% if let Some(args) = self.get_method_args_struct(method) %}
-                        {% let is_static = args.shape.max_out_of_line == 0 %}
+                        {% let is_static = args.shape.is_static() %}
 
                         {{ self.doc_string(method.attributes) -}}
                         pub fn {{ method_name }}(

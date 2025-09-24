@@ -48,3 +48,13 @@ impl LibraryExt for Library {
         }
     }
 }
+
+pub trait TypeShapeExt {
+    fn is_static(&self) -> bool;
+}
+
+impl TypeShapeExt for TypeShape {
+    fn is_static(&self) -> bool {
+        self.max_out_of_line == 0 && !self.has_flexible_envelope
+    }
+}

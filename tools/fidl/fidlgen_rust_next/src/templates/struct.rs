@@ -8,6 +8,7 @@ use super::{Context, Contextual, filters};
 use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
 use fidl_ir::{Struct, TypeKind};
+use fidl_ir_util::TypeShapeExt;
 
 #[derive(Template)]
 #[template(path = "struct.askama", whitespace = "preserve")]
@@ -27,7 +28,7 @@ pub struct StructTemplate<'a> {
 
 impl<'a> StructTemplate<'a> {
     pub fn new(strct: &'a Struct, context: Context<'a>) -> Self {
-        let is_static = strct.shape.max_out_of_line == 0;
+        let is_static = strct.shape.is_static();
         let base_name = strct.name.decl_name().camel();
         let wire_name = format!("Wire{base_name}");
 

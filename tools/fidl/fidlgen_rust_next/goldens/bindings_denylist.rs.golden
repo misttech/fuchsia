@@ -390,12 +390,13 @@ pub enum ShouldNeverAppearInAnyBinding6 {
 }
 
 impl ::fidl_next::Encodable for ShouldNeverAppearInAnyBinding6 {
-    type Encoded = WireShouldNeverAppearInAnyBinding6;
+    type Encoded = WireShouldNeverAppearInAnyBinding6<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::Encode<___E> for ShouldNeverAppearInAnyBinding6
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode(
@@ -407,7 +408,7 @@ where
 
         match self {
             Self::A(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, bool>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -422,6 +423,7 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ShouldNeverAppearInAnyBinding6
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode_ref(
@@ -433,7 +435,7 @@ where
 
         match self {
             Self::A(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, &bool>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -446,7 +448,7 @@ where
 }
 
 impl ::fidl_next::EncodableOption for ShouldNeverAppearInAnyBinding6 {
-    type EncodedOption = WireOptionalShouldNeverAppearInAnyBinding6;
+    type EncodedOption = WireOptionalShouldNeverAppearInAnyBinding6<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ShouldNeverAppearInAnyBinding6
@@ -497,9 +499,11 @@ where
     }
 }
 
-impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding6> for ShouldNeverAppearInAnyBinding6 {
+impl<'de> ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding6<'de>>
+    for ShouldNeverAppearInAnyBinding6
+{
     #[inline]
-    fn from_wire(wire: WireShouldNeverAppearInAnyBinding6) -> Self {
+    fn from_wire(wire: WireShouldNeverAppearInAnyBinding6<'de>) -> Self {
         let wire = ::core::mem::ManuallyDrop::new(wire);
         match wire.raw.ordinal() {
             1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
@@ -511,15 +515,15 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding6> for ShouldNeverAp
     }
 }
 
-impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding6 {
+impl<'de> ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding6<'de> {
     type Natural = ShouldNeverAppearInAnyBinding6;
 }
 
-impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding6>
+impl<'de> ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding6<'de>>
     for ShouldNeverAppearInAnyBinding6
 {
     #[inline]
-    fn from_wire_ref(wire: &WireShouldNeverAppearInAnyBinding6) -> Self {
+    fn from_wire_ref(wire: &WireShouldNeverAppearInAnyBinding6<'de>) -> Self {
         match wire.raw.ordinal() {
             1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
                 wire.raw.get().deref_unchecked::<bool>()
@@ -530,11 +534,11 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding6>
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6>
+impl<'de> ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6<'de>>
     for ShouldNeverAppearInAnyBinding6
 {
     #[inline]
-    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding6) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding6<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
             Some(::fidl_next::FromWire::from_wire(inner))
         } else {
@@ -543,27 +547,29 @@ impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6>
     }
 }
 
-impl ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding6 {
+impl<'de> ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding6<'de> {
     type Natural = ::core::option::Option<ShouldNeverAppearInAnyBinding6>;
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6>
+impl<'de> ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding6<'de>>
     for Box<ShouldNeverAppearInAnyBinding6>
 {
     #[inline]
-    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding6) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding6<'de>) -> Option<Self> {
         <ShouldNeverAppearInAnyBinding6 as ::fidl_next::FromWireOption<
-            WireOptionalShouldNeverAppearInAnyBinding6,
+            WireOptionalShouldNeverAppearInAnyBinding6<'de>,
         >>::from_wire_option(wire)
         .map(Box::new)
     }
 }
 
-impl ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding6>
+impl<'de> ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding6<'de>>
     for Box<ShouldNeverAppearInAnyBinding6>
 {
     #[inline]
-    fn from_wire_option_ref(wire: &WireOptionalShouldNeverAppearInAnyBinding6) -> Option<Self> {
+    fn from_wire_option_ref(
+        wire: &WireOptionalShouldNeverAppearInAnyBinding6<'de>,
+    ) -> Option<Self> {
         if let Some(inner) = wire.as_ref() {
             Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
         } else {
@@ -574,12 +580,12 @@ impl ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding6>
 
 /// The wire type corresponding to [`ShouldNeverAppearInAnyBinding6`].
 #[repr(transparent)]
-pub struct WireShouldNeverAppearInAnyBinding6 {
+pub struct WireShouldNeverAppearInAnyBinding6<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-impl Drop for WireShouldNeverAppearInAnyBinding6 {
+impl<'de> Drop for WireShouldNeverAppearInAnyBinding6<'de> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             1 => {
@@ -591,8 +597,8 @@ impl Drop for WireShouldNeverAppearInAnyBinding6 {
     }
 }
 
-unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding6 {
-    type Decoded<'de> = WireShouldNeverAppearInAnyBinding6;
+unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding6<'static> {
+    type Decoded<'de> = WireShouldNeverAppearInAnyBinding6<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -609,7 +615,7 @@ pub mod should_never_appear_in_any_binding6 {
     }
 }
 
-impl WireShouldNeverAppearInAnyBinding6 {
+impl<'de> WireShouldNeverAppearInAnyBinding6<'de> {
     pub fn as_ref(&self) -> crate::should_never_appear_in_any_binding6::Ref<'_> {
         match self.raw.ordinal() {
             1 => crate::should_never_appear_in_any_binding6::Ref::A(unsafe {
@@ -621,25 +627,10 @@ impl WireShouldNeverAppearInAnyBinding6 {
     }
 }
 
-impl Clone for WireShouldNeverAppearInAnyBinding6 {
-    fn clone(&self) -> Self {
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<bool>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding6
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding6<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -647,16 +638,16 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, bool>(raw, decoder)?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
 
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding6 {
+impl<'de> ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding6<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self.raw.ordinal() {
             1 => unsafe { self.raw.get().deref_unchecked::<bool>().fmt(f) },
@@ -666,13 +657,13 @@ impl ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding6 {
 }
 
 #[repr(transparent)]
-pub struct WireOptionalShouldNeverAppearInAnyBinding6 {
+pub struct WireOptionalShouldNeverAppearInAnyBinding6<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding6 {
-    type Decoded<'de> = WireOptionalShouldNeverAppearInAnyBinding6;
+unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding6<'static> {
+    type Decoded<'de> = WireOptionalShouldNeverAppearInAnyBinding6<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -681,7 +672,7 @@ unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding6 {
     }
 }
 
-impl WireOptionalShouldNeverAppearInAnyBinding6 {
+impl<'de> WireOptionalShouldNeverAppearInAnyBinding6<'de> {
     pub fn is_some(&self) -> bool {
         self.raw.is_some()
     }
@@ -690,11 +681,11 @@ impl WireOptionalShouldNeverAppearInAnyBinding6 {
         self.raw.is_none()
     }
 
-    pub fn as_ref(&self) -> Option<&WireShouldNeverAppearInAnyBinding6> {
+    pub fn as_ref(&self) -> Option<&WireShouldNeverAppearInAnyBinding6<'de>> {
         if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
-    pub fn into_option(self) -> Option<WireShouldNeverAppearInAnyBinding6> {
+    pub fn into_option(self) -> Option<WireShouldNeverAppearInAnyBinding6<'de>> {
         if self.is_some() {
             Some(WireShouldNeverAppearInAnyBinding6 {
                 raw: self.raw,
@@ -706,32 +697,10 @@ impl WireOptionalShouldNeverAppearInAnyBinding6 {
     }
 }
 
-impl Clone for WireOptionalShouldNeverAppearInAnyBinding6 {
-    fn clone(&self) -> Self {
-        if self.is_none() {
-            return WireOptionalShouldNeverAppearInAnyBinding6 {
-                raw: ::fidl_next::RawWireUnion::absent(),
-                _phantom: ::core::marker::PhantomData,
-            };
-        }
-
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<bool>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalShouldNeverAppearInAnyBinding6
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalShouldNeverAppearInAnyBinding6<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -739,17 +708,17 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, bool>(raw, decoder)?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
 
             0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding6 {
+impl<'de> ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding6<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         self.as_ref().fmt(f)
     }
@@ -950,7 +919,7 @@ pub struct WireAllowedDeniedResponse<'de> {
 
     pub should_never_appear_in_any_binding_5: crate::WireShouldNeverAppearInAnyBinding5<'de>,
 
-    pub should_never_appear_in_any_binding_6: crate::WireShouldNeverAppearInAnyBinding6,
+    pub should_never_appear_in_any_binding_6: crate::WireShouldNeverAppearInAnyBinding6<'de>,
 }
 
 unsafe impl ::fidl_next::Wire for WireAllowedDeniedResponse<'static> {
@@ -1630,12 +1599,13 @@ pub enum ShouldNeverAppearInAnyBinding3 {
 }
 
 impl ::fidl_next::Encodable for ShouldNeverAppearInAnyBinding3 {
-    type Encoded = WireShouldNeverAppearInAnyBinding3;
+    type Encoded = WireShouldNeverAppearInAnyBinding3<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::Encode<___E> for ShouldNeverAppearInAnyBinding3
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode(
@@ -1647,7 +1617,7 @@ where
 
         match self {
             Self::A(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, bool>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -1662,6 +1632,7 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ShouldNeverAppearInAnyBinding3
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode_ref(
@@ -1673,7 +1644,7 @@ where
 
         match self {
             Self::A(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, &bool>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -1686,7 +1657,7 @@ where
 }
 
 impl ::fidl_next::EncodableOption for ShouldNeverAppearInAnyBinding3 {
-    type EncodedOption = WireOptionalShouldNeverAppearInAnyBinding3;
+    type EncodedOption = WireOptionalShouldNeverAppearInAnyBinding3<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ShouldNeverAppearInAnyBinding3
@@ -1737,9 +1708,11 @@ where
     }
 }
 
-impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding3> for ShouldNeverAppearInAnyBinding3 {
+impl<'de> ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding3<'de>>
+    for ShouldNeverAppearInAnyBinding3
+{
     #[inline]
-    fn from_wire(wire: WireShouldNeverAppearInAnyBinding3) -> Self {
+    fn from_wire(wire: WireShouldNeverAppearInAnyBinding3<'de>) -> Self {
         let wire = ::core::mem::ManuallyDrop::new(wire);
         match wire.raw.ordinal() {
             1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
@@ -1751,15 +1724,15 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding3> for ShouldNeverAp
     }
 }
 
-impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding3 {
+impl<'de> ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding3<'de> {
     type Natural = ShouldNeverAppearInAnyBinding3;
 }
 
-impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding3>
+impl<'de> ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding3<'de>>
     for ShouldNeverAppearInAnyBinding3
 {
     #[inline]
-    fn from_wire_ref(wire: &WireShouldNeverAppearInAnyBinding3) -> Self {
+    fn from_wire_ref(wire: &WireShouldNeverAppearInAnyBinding3<'de>) -> Self {
         match wire.raw.ordinal() {
             1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
                 wire.raw.get().deref_unchecked::<bool>()
@@ -1770,11 +1743,11 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding3>
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3>
+impl<'de> ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3<'de>>
     for ShouldNeverAppearInAnyBinding3
 {
     #[inline]
-    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding3) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding3<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
             Some(::fidl_next::FromWire::from_wire(inner))
         } else {
@@ -1783,27 +1756,29 @@ impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3>
     }
 }
 
-impl ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding3 {
+impl<'de> ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding3<'de> {
     type Natural = ::core::option::Option<ShouldNeverAppearInAnyBinding3>;
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3>
+impl<'de> ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding3<'de>>
     for Box<ShouldNeverAppearInAnyBinding3>
 {
     #[inline]
-    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding3) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding3<'de>) -> Option<Self> {
         <ShouldNeverAppearInAnyBinding3 as ::fidl_next::FromWireOption<
-            WireOptionalShouldNeverAppearInAnyBinding3,
+            WireOptionalShouldNeverAppearInAnyBinding3<'de>,
         >>::from_wire_option(wire)
         .map(Box::new)
     }
 }
 
-impl ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding3>
+impl<'de> ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding3<'de>>
     for Box<ShouldNeverAppearInAnyBinding3>
 {
     #[inline]
-    fn from_wire_option_ref(wire: &WireOptionalShouldNeverAppearInAnyBinding3) -> Option<Self> {
+    fn from_wire_option_ref(
+        wire: &WireOptionalShouldNeverAppearInAnyBinding3<'de>,
+    ) -> Option<Self> {
         if let Some(inner) = wire.as_ref() {
             Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
         } else {
@@ -1814,12 +1789,12 @@ impl ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding3>
 
 /// The wire type corresponding to [`ShouldNeverAppearInAnyBinding3`].
 #[repr(transparent)]
-pub struct WireShouldNeverAppearInAnyBinding3 {
+pub struct WireShouldNeverAppearInAnyBinding3<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-impl Drop for WireShouldNeverAppearInAnyBinding3 {
+impl<'de> Drop for WireShouldNeverAppearInAnyBinding3<'de> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             1 => {
@@ -1831,8 +1806,8 @@ impl Drop for WireShouldNeverAppearInAnyBinding3 {
     }
 }
 
-unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding3 {
-    type Decoded<'de> = WireShouldNeverAppearInAnyBinding3;
+unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding3<'static> {
+    type Decoded<'de> = WireShouldNeverAppearInAnyBinding3<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1849,7 +1824,7 @@ pub mod should_never_appear_in_any_binding3 {
     }
 }
 
-impl WireShouldNeverAppearInAnyBinding3 {
+impl<'de> WireShouldNeverAppearInAnyBinding3<'de> {
     pub fn as_ref(&self) -> crate::should_never_appear_in_any_binding3::Ref<'_> {
         match self.raw.ordinal() {
             1 => crate::should_never_appear_in_any_binding3::Ref::A(unsafe {
@@ -1861,25 +1836,10 @@ impl WireShouldNeverAppearInAnyBinding3 {
     }
 }
 
-impl Clone for WireShouldNeverAppearInAnyBinding3 {
-    fn clone(&self) -> Self {
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<bool>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding3
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding3<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -1887,16 +1847,16 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, bool>(raw, decoder)?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
 
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding3 {
+impl<'de> ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding3<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self.raw.ordinal() {
             1 => unsafe { self.raw.get().deref_unchecked::<bool>().fmt(f) },
@@ -1906,13 +1866,13 @@ impl ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding3 {
 }
 
 #[repr(transparent)]
-pub struct WireOptionalShouldNeverAppearInAnyBinding3 {
+pub struct WireOptionalShouldNeverAppearInAnyBinding3<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding3 {
-    type Decoded<'de> = WireOptionalShouldNeverAppearInAnyBinding3;
+unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding3<'static> {
+    type Decoded<'de> = WireOptionalShouldNeverAppearInAnyBinding3<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1921,7 +1881,7 @@ unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding3 {
     }
 }
 
-impl WireOptionalShouldNeverAppearInAnyBinding3 {
+impl<'de> WireOptionalShouldNeverAppearInAnyBinding3<'de> {
     pub fn is_some(&self) -> bool {
         self.raw.is_some()
     }
@@ -1930,11 +1890,11 @@ impl WireOptionalShouldNeverAppearInAnyBinding3 {
         self.raw.is_none()
     }
 
-    pub fn as_ref(&self) -> Option<&WireShouldNeverAppearInAnyBinding3> {
+    pub fn as_ref(&self) -> Option<&WireShouldNeverAppearInAnyBinding3<'de>> {
         if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
-    pub fn into_option(self) -> Option<WireShouldNeverAppearInAnyBinding3> {
+    pub fn into_option(self) -> Option<WireShouldNeverAppearInAnyBinding3<'de>> {
         if self.is_some() {
             Some(WireShouldNeverAppearInAnyBinding3 {
                 raw: self.raw,
@@ -1946,32 +1906,10 @@ impl WireOptionalShouldNeverAppearInAnyBinding3 {
     }
 }
 
-impl Clone for WireOptionalShouldNeverAppearInAnyBinding3 {
-    fn clone(&self) -> Self {
-        if self.is_none() {
-            return WireOptionalShouldNeverAppearInAnyBinding3 {
-                raw: ::fidl_next::RawWireUnion::absent(),
-                _phantom: ::core::marker::PhantomData,
-            };
-        }
-
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<bool>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalShouldNeverAppearInAnyBinding3
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalShouldNeverAppearInAnyBinding3<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -1979,17 +1917,17 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, bool>(raw, decoder)?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
 
             0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding3 {
+impl<'de> ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding3<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         self.as_ref().fmt(f)
     }
@@ -2195,7 +2133,7 @@ pub struct WireDeniedShouldNeverAppearInAnyBindingRequest<'de> {
 
     pub should_never_appear_in_any_binding_2: crate::WireShouldNeverAppearInAnyBinding2<'de>,
 
-    pub should_never_appear_in_any_binding_3: crate::WireShouldNeverAppearInAnyBinding3,
+    pub should_never_appear_in_any_binding_3: crate::WireShouldNeverAppearInAnyBinding3<'de>,
 }
 
 unsafe impl ::fidl_next::Wire for WireDeniedShouldNeverAppearInAnyBindingRequest<'static> {
@@ -2275,7 +2213,7 @@ pub mod denied {
         where
             T0: ::fidl_next::Encodable<Encoded = crate::WireShouldNeverAppearInAnyBinding1>,
             T1: ::fidl_next::Encodable<Encoded = crate::WireShouldNeverAppearInAnyBinding2<'static>>,
-            T2: ::fidl_next::Encodable<Encoded = crate::WireShouldNeverAppearInAnyBinding3>,
+            T2: ::fidl_next::Encodable<Encoded = crate::WireShouldNeverAppearInAnyBinding3<'static>>,
         {
             type Encoded = crate::WireDeniedShouldNeverAppearInAnyBindingRequest<'static>;
         }
@@ -2290,7 +2228,10 @@ pub mod denied {
                     ___E,
                     Encoded = crate::WireShouldNeverAppearInAnyBinding2<'static>,
                 >,
-            T2: ::fidl_next::Encode<___E, Encoded = crate::WireShouldNeverAppearInAnyBinding3>,
+            T2: ::fidl_next::Encode<
+                    ___E,
+                    Encoded = crate::WireShouldNeverAppearInAnyBinding3<'static>,
+                >,
         {
             #[inline]
             fn encode(
@@ -2363,7 +2304,7 @@ pub mod denied {
 
                 should_never_appear_in_any_binding_3: impl ::fidl_next::Encode<
                     <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WireShouldNeverAppearInAnyBinding3,
+                    Encoded = crate::WireShouldNeverAppearInAnyBinding3<'static>,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
@@ -2871,12 +2812,13 @@ pub enum ShouldNeverAppearInAnyBinding9 {
 }
 
 impl ::fidl_next::Encodable for ShouldNeverAppearInAnyBinding9 {
-    type Encoded = WireShouldNeverAppearInAnyBinding9;
+    type Encoded = WireShouldNeverAppearInAnyBinding9<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::Encode<___E> for ShouldNeverAppearInAnyBinding9
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode(
@@ -2888,7 +2830,7 @@ where
 
         match self {
             Self::A(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, bool>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -2903,6 +2845,7 @@ where
 unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ShouldNeverAppearInAnyBinding9
 where
     ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    ___E: ::fidl_next::Encoder,
 {
     #[inline]
     fn encode_ref(
@@ -2914,7 +2857,7 @@ where
 
         match self {
             Self::A(value) => {
-                ::fidl_next::RawWireUnion::encode_as_static::<___E, &bool>(value, 1, encoder, raw)?
+                ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
             }
 
             Self::UnknownOrdinal_(ordinal) => {
@@ -2927,7 +2870,7 @@ where
 }
 
 impl ::fidl_next::EncodableOption for ShouldNeverAppearInAnyBinding9 {
-    type EncodedOption = WireOptionalShouldNeverAppearInAnyBinding9;
+    type EncodedOption = WireOptionalShouldNeverAppearInAnyBinding9<'static>;
 }
 
 unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ShouldNeverAppearInAnyBinding9
@@ -2978,9 +2921,11 @@ where
     }
 }
 
-impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding9> for ShouldNeverAppearInAnyBinding9 {
+impl<'de> ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding9<'de>>
+    for ShouldNeverAppearInAnyBinding9
+{
     #[inline]
-    fn from_wire(wire: WireShouldNeverAppearInAnyBinding9) -> Self {
+    fn from_wire(wire: WireShouldNeverAppearInAnyBinding9<'de>) -> Self {
         let wire = ::core::mem::ManuallyDrop::new(wire);
         match wire.raw.ordinal() {
             1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
@@ -2992,15 +2937,15 @@ impl ::fidl_next::FromWire<WireShouldNeverAppearInAnyBinding9> for ShouldNeverAp
     }
 }
 
-impl ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding9 {
+impl<'de> ::fidl_next::IntoNatural for WireShouldNeverAppearInAnyBinding9<'de> {
     type Natural = ShouldNeverAppearInAnyBinding9;
 }
 
-impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding9>
+impl<'de> ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding9<'de>>
     for ShouldNeverAppearInAnyBinding9
 {
     #[inline]
-    fn from_wire_ref(wire: &WireShouldNeverAppearInAnyBinding9) -> Self {
+    fn from_wire_ref(wire: &WireShouldNeverAppearInAnyBinding9<'de>) -> Self {
         match wire.raw.ordinal() {
             1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
                 wire.raw.get().deref_unchecked::<bool>()
@@ -3011,11 +2956,11 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding9>
     }
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9>
+impl<'de> ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9<'de>>
     for ShouldNeverAppearInAnyBinding9
 {
     #[inline]
-    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding9) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding9<'de>) -> Option<Self> {
         if let Some(inner) = wire.into_option() {
             Some(::fidl_next::FromWire::from_wire(inner))
         } else {
@@ -3024,27 +2969,29 @@ impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9>
     }
 }
 
-impl ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding9 {
+impl<'de> ::fidl_next::IntoNatural for WireOptionalShouldNeverAppearInAnyBinding9<'de> {
     type Natural = ::core::option::Option<ShouldNeverAppearInAnyBinding9>;
 }
 
-impl ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9>
+impl<'de> ::fidl_next::FromWireOption<WireOptionalShouldNeverAppearInAnyBinding9<'de>>
     for Box<ShouldNeverAppearInAnyBinding9>
 {
     #[inline]
-    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding9) -> Option<Self> {
+    fn from_wire_option(wire: WireOptionalShouldNeverAppearInAnyBinding9<'de>) -> Option<Self> {
         <ShouldNeverAppearInAnyBinding9 as ::fidl_next::FromWireOption<
-            WireOptionalShouldNeverAppearInAnyBinding9,
+            WireOptionalShouldNeverAppearInAnyBinding9<'de>,
         >>::from_wire_option(wire)
         .map(Box::new)
     }
 }
 
-impl ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding9>
+impl<'de> ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding9<'de>>
     for Box<ShouldNeverAppearInAnyBinding9>
 {
     #[inline]
-    fn from_wire_option_ref(wire: &WireOptionalShouldNeverAppearInAnyBinding9) -> Option<Self> {
+    fn from_wire_option_ref(
+        wire: &WireOptionalShouldNeverAppearInAnyBinding9<'de>,
+    ) -> Option<Self> {
         if let Some(inner) = wire.as_ref() {
             Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
         } else {
@@ -3055,12 +3002,12 @@ impl ::fidl_next::FromWireOptionRef<WireOptionalShouldNeverAppearInAnyBinding9>
 
 /// The wire type corresponding to [`ShouldNeverAppearInAnyBinding9`].
 #[repr(transparent)]
-pub struct WireShouldNeverAppearInAnyBinding9 {
+pub struct WireShouldNeverAppearInAnyBinding9<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-impl Drop for WireShouldNeverAppearInAnyBinding9 {
+impl<'de> Drop for WireShouldNeverAppearInAnyBinding9<'de> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             1 => {
@@ -3072,8 +3019,8 @@ impl Drop for WireShouldNeverAppearInAnyBinding9 {
     }
 }
 
-unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding9 {
-    type Decoded<'de> = WireShouldNeverAppearInAnyBinding9;
+unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding9<'static> {
+    type Decoded<'de> = WireShouldNeverAppearInAnyBinding9<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3090,7 +3037,7 @@ pub mod should_never_appear_in_any_binding9 {
     }
 }
 
-impl WireShouldNeverAppearInAnyBinding9 {
+impl<'de> WireShouldNeverAppearInAnyBinding9<'de> {
     pub fn as_ref(&self) -> crate::should_never_appear_in_any_binding9::Ref<'_> {
         match self.raw.ordinal() {
             1 => crate::should_never_appear_in_any_binding9::Ref::A(unsafe {
@@ -3102,25 +3049,10 @@ impl WireShouldNeverAppearInAnyBinding9 {
     }
 }
 
-impl Clone for WireShouldNeverAppearInAnyBinding9 {
-    fn clone(&self) -> Self {
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<bool>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding9
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding9<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -3128,16 +3060,16 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, bool>(raw, decoder)?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
 
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding9 {
+impl<'de> ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding9<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self.raw.ordinal() {
             1 => unsafe { self.raw.get().deref_unchecked::<bool>().fmt(f) },
@@ -3147,13 +3079,13 @@ impl ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding9 {
 }
 
 #[repr(transparent)]
-pub struct WireOptionalShouldNeverAppearInAnyBinding9 {
+pub struct WireOptionalShouldNeverAppearInAnyBinding9<'de> {
     raw: ::fidl_next::RawWireUnion,
-    _phantom: ::core::marker::PhantomData<()>,
+    _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
 }
 
-unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding9 {
-    type Decoded<'de> = WireOptionalShouldNeverAppearInAnyBinding9;
+unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding9<'static> {
+    type Decoded<'de> = WireOptionalShouldNeverAppearInAnyBinding9<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3162,7 +3094,7 @@ unsafe impl ::fidl_next::Wire for WireOptionalShouldNeverAppearInAnyBinding9 {
     }
 }
 
-impl WireOptionalShouldNeverAppearInAnyBinding9 {
+impl<'de> WireOptionalShouldNeverAppearInAnyBinding9<'de> {
     pub fn is_some(&self) -> bool {
         self.raw.is_some()
     }
@@ -3171,11 +3103,11 @@ impl WireOptionalShouldNeverAppearInAnyBinding9 {
         self.raw.is_none()
     }
 
-    pub fn as_ref(&self) -> Option<&WireShouldNeverAppearInAnyBinding9> {
+    pub fn as_ref(&self) -> Option<&WireShouldNeverAppearInAnyBinding9<'de>> {
         if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
-    pub fn into_option(self) -> Option<WireShouldNeverAppearInAnyBinding9> {
+    pub fn into_option(self) -> Option<WireShouldNeverAppearInAnyBinding9<'de>> {
         if self.is_some() {
             Some(WireShouldNeverAppearInAnyBinding9 {
                 raw: self.raw,
@@ -3187,32 +3119,10 @@ impl WireOptionalShouldNeverAppearInAnyBinding9 {
     }
 }
 
-impl Clone for WireOptionalShouldNeverAppearInAnyBinding9 {
-    fn clone(&self) -> Self {
-        if self.is_none() {
-            return WireOptionalShouldNeverAppearInAnyBinding9 {
-                raw: ::fidl_next::RawWireUnion::absent(),
-                _phantom: ::core::marker::PhantomData,
-            };
-        }
-
-        match self.raw.ordinal() {
-            1 => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<bool>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-
-            _ => Self {
-                raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
-                _phantom: ::core::marker::PhantomData,
-            },
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalShouldNeverAppearInAnyBinding9
+unsafe impl<___D> ::fidl_next::Decode<___D> for WireOptionalShouldNeverAppearInAnyBinding9<'static>
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    ___D: ::fidl_next::Decoder,
 {
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
@@ -3220,17 +3130,17 @@ where
     ) -> Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            1 => ::fidl_next::RawWireUnion::decode_as_static::<___D, bool>(raw, decoder)?,
+            1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
 
             0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-            _ => ::fidl_next::RawWireUnion::decode_unknown_static(raw, decoder)?,
+            _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
         }
 
         Ok(())
     }
 }
 
-impl ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding9 {
+impl<'de> ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding9<'de> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         self.as_ref().fmt(f)
     }
@@ -3431,7 +3341,7 @@ pub struct WireDeniedAnonymous<'de> {
 
     pub should_never_appear_in_any_binding_8: crate::WireShouldNeverAppearInAnyBinding8<'de>,
 
-    pub should_never_appear_in_any_binding_9: crate::WireShouldNeverAppearInAnyBinding9,
+    pub should_never_appear_in_any_binding_9: crate::WireShouldNeverAppearInAnyBinding9<'de>,
 }
 
 unsafe impl ::fidl_next::Wire for WireDeniedAnonymous<'static> {

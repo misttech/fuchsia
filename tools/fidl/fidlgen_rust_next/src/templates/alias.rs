@@ -10,6 +10,7 @@ use crate::templates::natural_type::NaturalTypeTemplate;
 use crate::templates::reserved::escape;
 use crate::templates::wire_type::WireTypeTemplate;
 use fidl_ir::TypeAlias;
+use fidl_ir_util::TypeShapeExt;
 
 #[derive(Template)]
 #[template(path = "alias.askama", whitespace = "preserve")]
@@ -35,7 +36,7 @@ impl<'a> AliasTemplate<'a> {
 
             name: escape(base_name),
             wire_name: escape(wire_name),
-            is_static: alias.ty.shape.max_out_of_line == 0,
+            is_static: alias.ty.shape.is_static(),
             natural_ty: context.natural_type(&alias.ty),
             wire_ty: context.wire_type(&alias.ty),
         }

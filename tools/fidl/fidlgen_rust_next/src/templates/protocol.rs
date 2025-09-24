@@ -13,6 +13,7 @@ use fidl_ir::{
     CompoundIdentifier, Protocol, ProtocolMethod, ProtocolMethodKind, ProtocolOpenness, Struct,
     Type, TypeKind,
 };
+use fidl_ir_util::TypeShapeExt;
 
 #[derive(Template)]
 #[template(path = "protocol.askama", whitespace = "preserve")]

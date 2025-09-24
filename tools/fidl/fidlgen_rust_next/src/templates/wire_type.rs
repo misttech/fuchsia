@@ -6,7 +6,7 @@ use core::fmt;
 
 use super::{Context, Contextual};
 use fidl_ir::{DeclType, EndpointRole, InternalSubtype, Type, TypeKind};
-use fidl_ir_util::LibraryExt as _;
+use fidl_ir_util::{LibraryExt, TypeShapeExt};
 
 pub struct WireTypeTemplate<'a> {
     context: Context<'a>,
@@ -114,7 +114,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
                         write!(f, "{wire_id}")?;
 
                         if let Some(shape) = self.library().get_type_shape(identifier) {
-                            if shape.max_out_of_line != 0 {
+                            if !shape.is_static() {
                                 write!(f, "<{}>", self.lifetime)?;
                             }
                         }
@@ -129,10 +129,10 @@ impl fmt::Display for WireTypeTemplate<'_> {
                         } else {
                             self.wire_id(identifier)
                         };
-                        if self.ty.shape.max_out_of_line != 0 {
-                            write!(f, "{id}<{}>", self.lifetime)?;
-                        } else {
+                        if self.ty.shape.is_static() {
                             write!(f, "{id}")?;
+                        } else {
+                            write!(f, "{id}<{}>", self.lifetime)?;
                         }
                     }
                     DeclType::ExperimentalResource => unreachable!(),
