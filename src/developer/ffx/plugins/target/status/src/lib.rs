@@ -8,7 +8,7 @@ use ffx_diagnostics::{NotificationType, Notifier};
 use ffx_diagnostics_checks::run_diagnostics;
 use ffx_target_status_args as args;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{FfxMain, FfxTool};
+use fho::{FfxContext, FfxMain, FfxTool};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -66,6 +66,6 @@ impl FfxMain for Status {
             Duration::from_secs_f64(self.cmd.proxy_connect_timeout),
         )
         .await
-        .map_err(Into::into)
+        .user_message("\nDiagnostics failed")
     }
 }
