@@ -342,10 +342,6 @@ fit::result<Error, bool> CfiModule::Step(Memory* stack, const Registers& current
     return fit::error(err);
   }
 
-  if (address_size_ == Module::AddressSize::k32Bit) {
-    next = Registers(Registers::Arch::kArm32);
-  }
-
   if (auto err = cfi_parser_->Step(stack, cie.return_address_register, current, next);
       err.has_err()) {
     return fit::error(err);

@@ -6,6 +6,7 @@
 
 #include <cinttypes>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -14,6 +15,80 @@
 #include "src/lib/unwinder/error.h"
 
 namespace unwinder {
+
+namespace {
+// Validates our assumptions about what registers we should have recovered in a "transition" 32 bit
+// frame that was recovered from a 64 bit frame. For now, this should only ever happen via Starnix's
+// custom CFI directives that get us the first restricted mode frame, which is what should be
+// contained in |regs|. In this state, we should always successfully recover all of SP, LR, and PC,
+// and they should all be pointing into the 32 bit restricted mode address space.
+Error Validate32BitRegisters(const Registers& regs) {
+  if (regs.arch() != Registers::Arch::kArm32) {
+    return Error("New registers aren't kArm32?");
+  }
+
+  uint64_t val;
+  if (auto err = regs.GetSP(val); err.has_err()) {
+    return Error("32 bit registers don't have SP (r13) set: %s\n32 Bit Registers: %s",
+                 err.msg().c_str(), regs.Describe().c_str());
+  } else if (val > std::numeric_limits<uint32_t>::max()) {
+    return Error("32 bit SP (r13) %" PRIx64 " > uint32::MAX", val);
+  }
+
+  if (auto err = regs.GetReturnAddress(val); err.has_err()) {
+    return Error("32 bit registers don't have LR (r14) set: %s\n32 Bit Registers: %s",
+                 err.msg().c_str(), regs.Describe().c_str());
+  } else if (val > std::numeric_limits<uint32_t>::max()) {
+    return Error("32 bit LR (r14) %" PRIx64 " > uint32::MAX", val);
+  }
+
+  if (auto err = regs.GetPC(val); err.has_err()) {
+    return Error("32 bit registers don't have PC (r15) set: %s\n32 Bit Registers: %s",
+                 err.msg().c_str(), regs.Describe().c_str());
+  } else if (val > std::numeric_limits<uint32_t>::max()) {
+    return Error("32 bit PC (r15) %" PRIx64 " > uint32::MAX", val);
+  }
+
+  return Success();
+}
+
+// Returns an error if the |next| registers do not have PC and LR populated with 32 bit values.
+fit::result<Error, Registers> TryConvertRegistersTo32Bit(const Registers& current,
+                                                         const Registers& next,
+                                                         const Module* next_module) {
+  if (current.arch() != Registers::Arch::kArm64) {
+    return fit::error(Error("Current registers are not kArm64."));
+  } else if (next.arch() == Registers::Arch::kArm32) {
+    return fit::error(Error("Next registers are already kArm32, nothing to do."));
+  }
+
+  uint64_t pc = 0;
+  uint64_t ra = 0;
+
+  // As of today the only way we should ever successfully transition to a 32 bit frame is when we
+  // have just recovered all of the registers specified by Starnix's CFI directives to reconstruct
+  // the restricted mode stack. That means that we should _always_ have both PC and LR available
+  // from the CFI (which should be finished processing by the time this is called). Therefore if we
+  // cannot fetch either of them from |next| we bail out.
+  if (next.GetPC(pc).has_err()) {
+    return fit::error(Error("Next registers do not have PC set: %s", next.Describe().c_str()));
+  }
+
+  if (next.GetReturnAddress(ra).has_err()) {
+    return fit::error(Error("Next registers do not have LR set: %s", next.Describe().c_str()));
+  }
+
+  if (!(pc < std::numeric_limits<uint32_t>::max()) ||
+      !(ra < std::numeric_limits<uint32_t>::max())) {
+    return fit::error(Error("PC [%" PRIx64 "] or LR [%" PRIx64
+                            "] contains address greater than 32 bit address space.",
+                            pc, ra));
+  }
+
+  return next.To32Bit();
+}
+
+}  // namespace
 
 bool CfiModuleInfo::IsValidPC(uint64_t pc) const {
   return ((binary && binary->IsValidPC(pc)) || (debug_info && debug_info->IsValidPC(pc)));
@@ -57,6 +132,41 @@ fit::result<Error, bool> CfiUnwinder::Step(Memory* stack, const Registers& curre
   if (is_return_address) {
     pc -= 1;
     regs.SetPC(pc);
+  }
+
+  // We might have a PC in a 32 bit module. If we do, we'll need to convert the registers to the 32
+  // bit arch so all the named registers correspond to their 32 bit register numbers instead of 64
+  // bit. Checking that PC < UINT32_MAX is just a heuristic and doesn't actually indicate
+  // anything about address size for the module.
+  if (regs.arch() != Registers::Arch::kArm32 && pc < std::numeric_limits<uint32_t>::max()) {
+    Module* next_module = nullptr;
+    if (auto err = GetModuleForPc(pc, &next_module); err.has_err()) {
+      return fit::error(err);
+    };
+
+    if (next_module->size == Module::AddressSize::k32Bit) {
+      // In the error case, the message is probably only useful for developing and debugging the
+      // unwinder itself and will happen frequently enough that we shouldn't log it, but for
+      // debugging purposes can be displayed if needed. The validation step in the success case is a
+      // fatal error since we have strict expectations of what registers are restored by Starnix,
+      // which is currently the only way we should ever transition to code in a 32 bit address
+      // space.
+      if (auto maybe_32bit = TryConvertRegistersTo32Bit(current, regs, next_module);
+          maybe_32bit.is_ok()) {
+        // Both PC and LR in |next| appear to be 32 bit addresses, now validate that the converted
+        // 32 bit registers actually have everything that we expect to get from Starnix's CFI: PC,
+        // LR, and SP should all be populated and have 32 bit addresses, if this fails at this
+        // point, it's an error.
+        if (auto err = Validate32BitRegisters(*maybe_32bit); err.has_err()) {
+          return fit::error(err);
+        }
+
+        // Validations succeeded, |next| is a 32 bit frame recovered from Starnix restricted mode.
+        // It's entirely possible at this point for the 32 bit binary to have CFI instructions for
+        // this 32 bit PC value, so we continue on.
+        regs = *maybe_32bit;
+      }
+    }
   }
 
   CfiModuleInfo* cfi;
