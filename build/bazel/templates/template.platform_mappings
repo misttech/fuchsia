@@ -85,3 +85,16 @@ platforms:
   //build/bazel/platforms:fuchsia_riscv64
     --cpu=riscv64
     --crosstool_top=@fuchsia_clang//:cc-compiler-riscv64
+
+  # Platforms for building Fuchsia platform binaries
+  //build/bazel/platforms:fuchsia_platform_x64
+    --cpu=k8
+    --crosstool_top=@fuchsia_clang//:cc-compiler-x86_64
+
+  //build/bazel/platforms:fuchsia_platform_arm64
+    --cpu=aarch64
+    --crosstool_top=@fuchsia_clang//:cc-compiler-aarch64
+
+  //build/bazel/platforms:fuchsia_platform_riscv64
+    --cpu=riscv64
+    --crosstool_top=@fuchsia_clang//:cc-compiler-riscv64
