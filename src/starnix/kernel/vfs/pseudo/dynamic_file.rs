@@ -424,11 +424,11 @@ impl FileOps for ConstFile {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::{AutoReleasableTask, anon_test_file, create_kernel_task_and_unlocked};
+    use crate::testing::{anon_test_file, spawn_kernel_and_run};
     use crate::vfs::pseudo::dynamic_file::{
         DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
     };
-    use crate::vfs::{FileHandle, SeekTarget, VecOutputBuffer};
+    use crate::vfs::{SeekTarget, VecOutputBuffer};
     use starnix_sync::{Locked, Mutex, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::open_flags::OpenFlags;
@@ -448,38 +448,31 @@ mod tests {
         }
     }
 
-    fn create_test_file<T: SequenceFileSource>(
-        source: T,
-    ) -> (AutoReleasableTask, FileHandle, &'static mut Locked<Unlocked>) {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let file = anon_test_file(
-            locked,
-            &current_task,
-            Box::new(DynamicFile::new(source)),
-            OpenFlags::RDONLY,
-        );
-        (current_task, file, locked)
-    }
+    #[fuchsia::test]
+    async fn test_sequence() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let file = anon_test_file(
+                locked,
+                &current_task,
+                Box::new(DynamicFile::new(TestSequenceFileSource {})),
+                OpenFlags::RDONLY,
+            );
 
-    #[::fuchsia::test]
-    async fn test_sequence() -> Result<(), Errno> {
-        let (current_task, file, locked) = create_test_file(TestSequenceFileSource {});
+            let read_at = |locked: &mut Locked<Unlocked>,
+                           offset: usize,
+                           length: usize|
+             -> Result<Vec<u8>, Errno> {
+                let mut buffer = VecOutputBuffer::new(length);
+                file.read_at(locked, &current_task, offset, &mut buffer)?;
+                Ok(buffer.data().to_vec())
+            };
 
-        let read_at = |locked: &mut Locked<Unlocked>,
-                       offset: usize,
-                       length: usize|
-         -> Result<Vec<u8>, Errno> {
-            let mut buffer = VecOutputBuffer::new(length);
-            file.read_at(locked, &current_task, offset, &mut buffer)?;
-            Ok(buffer.data().to_vec())
-        };
-
-        assert_eq!(read_at(locked, 0, 2)?, &[0, 1]);
-        assert_eq!(read_at(locked, 2, 2)?, &[2, 3]);
-        assert_eq!(read_at(locked, 4, 4)?, &[4, 5, 6, 7]);
-        assert_eq!(read_at(locked, 0, 2)?, &[0, 1]);
-        assert_eq!(read_at(locked, 4, 2)?, &[4, 5]);
-        Ok(())
+            assert_eq!(read_at(locked, 0, 2).unwrap(), &[0, 1]);
+            assert_eq!(read_at(locked, 2, 2).unwrap(), &[2, 3]);
+            assert_eq!(read_at(locked, 4, 4).unwrap(), &[4, 5, 6, 7]);
+            assert_eq!(read_at(locked, 0, 2).unwrap(), &[0, 1]);
+            assert_eq!(read_at(locked, 4, 2).unwrap(), &[4, 5]);
+        });
     }
 
     struct TestFileSource {
@@ -498,60 +491,69 @@ mod tests {
         }
     }
 
-    #[::fuchsia::test]
-    async fn test_read() -> Result<(), Errno> {
+    #[fuchsia::test]
+    async fn test_read() {
         let counter = Arc::new(Counter { value: Mutex::new(0) });
-        let (current_task, file, locked) = create_test_file(TestFileSource { counter });
-        let read_at = |locked: &mut Locked<Unlocked>,
-                       offset: usize,
-                       length: usize|
-         -> Result<Vec<u8>, Errno> {
-            let mut buffer = VecOutputBuffer::new(length);
-            let bytes_read = file.read_at(locked, &current_task, offset, &mut buffer)?;
-            Ok(buffer.data()[0..bytes_read].to_vec())
-        };
+        spawn_kernel_and_run(move |locked, current_task| {
+            let file = anon_test_file(
+                locked,
+                &current_task,
+                Box::new(DynamicFile::new(TestFileSource { counter: counter.clone() })),
+                OpenFlags::RDONLY,
+            );
+            let read_at = |locked: &mut Locked<Unlocked>,
+                           offset: usize,
+                           length: usize|
+             -> Result<Vec<u8>, Errno> {
+                let mut buffer = VecOutputBuffer::new(length);
+                let bytes_read = file.read_at(locked, &current_task, offset, &mut buffer)?;
+                Ok(buffer.data()[0..bytes_read].to_vec())
+            };
 
-        // Verify that we can read all data to the end.
-        assert_eq!(read_at(locked, 0, 20)?, (0..10).collect::<Vec<u8>>());
+            // Verify that we can read all data to the end.
+            assert_eq!(read_at(locked, 0, 20).unwrap(), (0..10).collect::<Vec<u8>>());
 
-        // Read from the beginning. Content should be refreshed.
-        assert_eq!(read_at(locked, 0, 2)?, [1, 2]);
+            // Read from the beginning. Content should be refreshed.
+            assert_eq!(read_at(locked, 0, 2).unwrap(), [1, 2]);
 
-        // Continue reading. Content should not be updated.
-        assert_eq!(read_at(locked, 2, 2)?, [3, 4]);
+            // Continue reading. Content should not be updated.
+            assert_eq!(read_at(locked, 2, 2).unwrap(), [3, 4]);
 
-        // Try reading from a new position. Content should be updated.
-        assert_eq!(read_at(locked, 5, 2)?, [7, 8]);
-
-        Ok(())
+            // Try reading from a new position. Content should be updated.
+            assert_eq!(read_at(locked, 5, 2).unwrap(), [7, 8]);
+        });
     }
 
-    #[::fuchsia::test]
-    async fn test_read_and_seek() -> Result<(), Errno> {
+    #[fuchsia::test]
+    async fn test_read_and_seek() {
         let counter = Arc::new(Counter { value: Mutex::new(0) });
-        let (current_task, file, locked) =
-            create_test_file(TestFileSource { counter: counter.clone() });
-        let read = |locked: &mut Locked<Unlocked>, length: usize| -> Result<Vec<u8>, Errno> {
-            let mut buffer = VecOutputBuffer::new(length);
-            let bytes_read = file.read(locked, &current_task, &mut buffer)?;
-            Ok(buffer.data()[0..bytes_read].to_vec())
-        };
+        spawn_kernel_and_run(move |locked, current_task| {
+            let file = anon_test_file(
+                locked,
+                &current_task,
+                Box::new(DynamicFile::new(TestFileSource { counter: counter.clone() })),
+                OpenFlags::RDONLY,
+            );
+            let read = |locked: &mut Locked<Unlocked>, length: usize| -> Result<Vec<u8>, Errno> {
+                let mut buffer = VecOutputBuffer::new(length);
+                let bytes_read = file.read(locked, &current_task, &mut buffer)?;
+                Ok(buffer.data()[0..bytes_read].to_vec())
+            };
 
-        // Call `read()` to read the content all the way to the end. Content should not update
-        assert_eq!(read(locked, 1)?, [0]);
-        assert_eq!(read(locked, 2)?, [1, 2]);
-        assert_eq!(read(locked, 20)?, (3..10).collect::<Vec<u8>>());
+            // Call `read()` to read the content all the way to the end. Content should not update
+            assert_eq!(read(locked, 1).unwrap(), [0]);
+            assert_eq!(read(locked, 2).unwrap(), [1, 2]);
+            assert_eq!(read(locked, 20).unwrap(), (3..10).collect::<Vec<u8>>());
 
-        // Seek to the start of the file. Content should be updated on the following read.
-        file.seek(locked, &current_task, SeekTarget::Set(0))?;
-        assert_eq!(*counter.value.lock(), 1);
-        assert_eq!(read(locked, 2)?, [1, 2]);
-        assert_eq!(*counter.value.lock(), 2);
+            // Seek to the start of the file. Content should be updated on the following read.
+            file.seek(locked, &current_task, SeekTarget::Set(0)).unwrap();
+            assert_eq!(*counter.value.lock(), 1);
+            assert_eq!(read(locked, 2).unwrap(), [1, 2]);
+            assert_eq!(*counter.value.lock(), 2);
 
-        // Seeking to `pos > 0` should update the content.
-        file.seek(locked, &current_task, SeekTarget::Set(1))?;
-        assert_eq!(*counter.value.lock(), 3);
-
-        Ok(())
+            // Seeking to `pos > 0` should update the content.
+            file.seek(locked, &current_task, SeekTarget::Set(1)).unwrap();
+            assert_eq!(*counter.value.lock(), 3);
+        });
     }
 }
