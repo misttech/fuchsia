@@ -361,6 +361,8 @@ mod test {
     use super::*;
     use crate::task::Kernel;
     use crate::testing::*;
+    use futures::executor::block_on;
+    use futures::future::join_all;
     use starnix_sync::{Unlocked, lock_ordering};
     use std::future::Future;
     use std::pin::Pin;
@@ -400,54 +402,57 @@ mod test {
             Unlocked => TestLevel
         }
 
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let queue = RwQueue::<TestLevel>::default();
+            let read_guard1 = queue.read(locked, current_task).expect("shouldn't be interrupted");
+            std::mem::drop(read_guard1);
 
-        let queue = RwQueue::<TestLevel>::default();
-        let read_guard1 = queue.read(locked, &current_task).expect("shouldn't be interrupted");
-        std::mem::drop(read_guard1);
+            let write_guard = queue.write(locked, current_task).expect("shouldn't be interrupted");
+            std::mem::drop(write_guard);
 
-        let write_guard = queue.write(locked, &current_task).expect("shouldn't be interrupted");
-        std::mem::drop(write_guard);
-
-        let read_guard2 = queue.read(locked, &current_task).expect("shouldn't be interrupted");
-        std::mem::drop(read_guard2);
+            let read_guard2 = queue.read(locked, current_task).expect("shouldn't be interrupted");
+            std::mem::drop(read_guard2);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_read_in_parallel() {
-        let (kernel, _current_task) = create_kernel_and_task();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let kernel = current_task.kernel();
+            lock_ordering! {
+                Unlocked => TestLevel
+            }
+            struct Info {
+                barrier: Barrier,
+                queue: RwQueue<TestLevel>,
+            }
 
-        lock_ordering! {
-            Unlocked => TestLevel
-        }
-        struct Info {
-            barrier: Barrier,
-            queue: RwQueue<TestLevel>,
-        }
+            let info =
+                Arc::new(Info { barrier: Barrier::new(2), queue: RwQueue::<TestLevel>::default() });
 
-        let info =
-            Arc::new(Info { barrier: Barrier::new(2), queue: RwQueue::<TestLevel>::default() });
+            let info1 = Arc::clone(&info);
+            let thread1 =
+                kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
+                    let guard =
+                        info1.queue.read(locked, current_task).expect("shouldn't be interrupted");
+                    info1.barrier.wait();
+                    std::mem::drop(guard);
+                });
 
-        let info1 = Arc::clone(&info);
-        let thread1 =
-            kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                let guard =
-                    info1.queue.read(locked, &current_task).expect("shouldn't be interrupted");
-                info1.barrier.wait();
-                std::mem::drop(guard);
+            let info2 = Arc::clone(&info);
+            let thread2 =
+                kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
+                    let guard =
+                        info2.queue.read(locked, current_task).expect("shouldn't be interrupted");
+                    info2.barrier.wait();
+                    std::mem::drop(guard);
+                });
+
+            block_on(async {
+                thread1.await.expect("failed to join thread");
+                thread2.await.expect("failed to join thread");
             });
-
-        let info2 = Arc::clone(&info);
-        let thread2 =
-            kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                let guard =
-                    info2.queue.read(locked, &current_task).expect("shouldn't be interrupted");
-                info2.barrier.wait();
-                std::mem::drop(guard);
-            });
-
-        thread1.await.expect("failed to join thread");
-        thread2.await.expect("failed to join thread");
+        });
     }
 
     lock_ordering! {
@@ -474,7 +479,7 @@ mod test {
             state: Arc<Self>,
             kernel: Arc<Kernel>,
             count: usize,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Errno>>>> {
+        ) -> Pin<Box<dyn Future<Output = Result<(), Errno>> + Send>> {
             Box::pin(kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
                 state.gate.wait();
                 for _ in 0..count {
@@ -497,7 +502,7 @@ mod test {
             state: Arc<Self>,
             kernel: Arc<Kernel>,
             count: usize,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Errno>>>> {
+        ) -> Pin<Box<dyn Future<Output = Result<(), Errno>> + Send>> {
             Box::pin(kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
                 state.gate.wait();
                 for _ in 0..count {
@@ -519,19 +524,18 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_thundering_reads_and_writes() {
-        let (kernel, _current_task) = create_kernel_and_task();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let kernel = current_task.kernel();
+            const THREAD_PAIRS: usize = 10;
 
-        const THREAD_PAIRS: usize = 10;
+            let state = Arc::new(State::new(THREAD_PAIRS * 2));
+            let mut threads = vec![];
+            for _ in 0..THREAD_PAIRS {
+                threads.push(State::spawn_writer(Arc::clone(&state), kernel.clone(), 100));
+                threads.push(State::spawn_reader(Arc::clone(&state), kernel.clone(), 100));
+            }
 
-        let state = Arc::new(State::new(THREAD_PAIRS * 2));
-        let mut threads = vec![];
-        for _ in 0..THREAD_PAIRS {
-            threads.push(State::spawn_writer(Arc::clone(&state), kernel.clone(), 100));
-            threads.push(State::spawn_reader(Arc::clone(&state), kernel.clone(), 100));
-        }
-
-        while let Some(thread) = threads.pop() {
-            thread.await.expect("failed to join thread");
-        }
+            block_on(join_all(threads)).into_iter().for_each(|r| r.expect("failed to join thread"));
+        });
     }
 }
