@@ -268,6 +268,7 @@ fn get_pstate_extended_data(
     result
 }
 
+#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn parse_pstate_extended_data(
     data: &[u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE],
     extended_pstate: &mut ExtendedPstateState,
