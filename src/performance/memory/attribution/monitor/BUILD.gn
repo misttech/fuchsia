@@ -39,6 +39,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
     "//sdk/fidl/fuchsia.memorypressure:fuchsia.memorypressure_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+    "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//sdk/rust/zx-types",
     "//src/lib/diagnostics/inspect/rust",

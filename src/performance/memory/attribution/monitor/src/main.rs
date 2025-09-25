@@ -48,12 +48,21 @@ enum Service {
 
 const INTROSPECTOR_PATH: &str = "/svc/fuchsia.component.Introspector.root";
 
+// Lower this thread priority to avoid affecting the system.
+fn run_with_lower_priority() -> Result<()> {
+    fuchsia_scheduler::set_role_for_this_thread("fuchsia.memory-monitor.main").into()
+}
+
 // Enable debug trace:
 // 1. set `logging_minimum_severity = "debug"`
 // 2. run `fx log --severity trace --moniker core/memory_monitor2`
 #[fuchsia::main(logging_minimum_severity = "info")]
 async fn main() -> Result<()> {
     info!("Starting memory_monitor 2");
+
+    if let Err(e) = run_with_lower_priority() {
+        warn!("Failed to set scheduler role: {:?}", e);
+    }
     fuchsia_inspect::component::health().set_starting_up();
     let mut service_fs = ServiceFs::new();
     service_fs
