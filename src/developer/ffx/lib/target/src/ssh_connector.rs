@@ -105,11 +105,8 @@ async fn read_stderr(
     error_sender: Sender<anyhow::Error>,
     ctx: &EnvironmentContext,
 ) {
-    let verbose_ssh = ffx_config::logging::debugging_on(ctx);
     while let Ok(Some(line)) = stderr.next_line().await {
-        if verbose_ssh {
-            ffx_ssh::parse::write_ssh_log("E", &line, &ctx);
-        }
+        ffx_ssh::parse::write_ssh_log("E", &line, &ctx);
         // This abandons the structured error as this output is intended to provide debugging after
         // an ssh connection has failed. The error sender is only here to show the verbatim error
         // so that it can be drained in the event of the SshConnector disconnecting.
@@ -138,7 +135,7 @@ impl SshConnector {
             // This function returns a PipeError on error, which necessitates terminating the SSH
             // command. This error must be converted into an `SshError` in order to be presentable
             // to the user.
-            match ffx_ssh::parse::parse_ssh_output(&mut stdout, &mut stderr, false, &self.env_context).await {
+            match ffx_ssh::parse::parse_ssh_output(&mut stdout, &mut stderr, &self.env_context).await {
                 Ok(res) => res,
                 Err(e) => {
                     log::warn!("SSH pipe error encountered {e:?}");

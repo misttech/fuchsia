@@ -103,8 +103,6 @@ impl HostPipeChildBuilder for HostPipeChildDefaultBuilder {
         node: Arc<overnet_core::Router>,
     ) -> Result<(Option<HostAddr>, HostPipeChild), PipeError> {
         let ctx = ffx_config::global_env_context().expect("Global env context uninitialized");
-        let verbose_ssh = ffx_config::logging::debugging_on(&ctx);
-
         HostPipeChild::new_inner(
             self.ssh_path(),
             addr,
@@ -113,7 +111,6 @@ impl HostPipeChildBuilder for HostPipeChildDefaultBuilder {
             event_queue,
             watchdogs,
             ssh_timeout,
-            verbose_ssh,
             node,
             ctx,
         )
@@ -207,7 +204,6 @@ impl HostPipeChild {
         event_queue: events::Queue<TargetEvent>,
         watchdogs: bool,
         ssh_timeout: u16,
-        verbose_ssh: bool,
         node: Arc<overnet_core::Router>,
         ctx: EnvironmentContext,
     ) -> Result<(Option<HostAddr>, HostPipeChild), PipeError> {
@@ -228,7 +224,6 @@ impl HostPipeChild {
             event_queue.clone(),
             watchdogs,
             ssh_timeout,
-            verbose_ssh,
             Arc::clone(&node),
             ctx.clone(),
         )
@@ -243,7 +238,6 @@ impl HostPipeChild {
         event_queue: events::Queue<TargetEvent>,
         watchdogs: bool,
         ssh_timeout: u16,
-        verbose_ssh: bool,
         node: Arc<overnet_core::Router>,
         ctx: EnvironmentContext,
     ) -> Result<(Option<HostAddr>, HostPipeChild), PipeError> {
@@ -302,7 +296,7 @@ impl HostPipeChild {
         log::debug!("Awaiting client address from ssh connection");
         let ssh_timeout = Duration::from_secs(ssh_timeout as u64);
         let (ssh_host_address, device_connection_info) =
-            match parse_ssh_output(&mut stdout, &mut stderr, verbose_ssh, &ctx)
+            match parse_ssh_output(&mut stdout, &mut stderr, &ctx)
                 .on_timeout(ssh_timeout, || {
                     Err(PipeError::ConnectionFailed(format!(
                         "ssh connection timed out after {ssh_timeout:?}"
@@ -351,6 +345,7 @@ impl HostPipeChild {
 
         let log_stderr = async move {
             let mut lb = ffx_ssh::parse::LineBuffer::new();
+            let verbose_ssh = ffx_config::logging::debugging_on(&ctx);
             loop {
                 let result = read_ssh_line(&mut lb, &mut stderr).await;
                 match result {

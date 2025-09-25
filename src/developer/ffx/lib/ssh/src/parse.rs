@@ -8,8 +8,10 @@ use ffx_config::EnvironmentContext;
 use ffx_config::logging::LogDirHandling;
 use fuchsia_async::TimeoutExt;
 use std::fmt;
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdout};
@@ -176,7 +178,6 @@ fn parse_ssh_connection_legacy(
 
 async fn parse_ssh_connection<R: AsyncBufRead + Unpin>(
     stdout: &mut R,
-    verbose: bool,
     ctx: &EnvironmentContext,
 ) -> std::result::Result<(String, Option<DeviceConnectionInfo>), ParseSshConnectionError> {
     let line = read_ssh_line_with_timeouts(stdout).await?;
@@ -184,9 +185,7 @@ async fn parse_ssh_connection<R: AsyncBufRead + Unpin>(
         log::error!("Failed to read first line from stdout");
         return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
     }
-    if verbose {
-        write_ssh_log("O", &line, ctx);
-    }
+    write_ssh_log("O", &line, ctx);
     if line.starts_with("{") {
         parse_ssh_connection_with_info(&line)
     } else {
@@ -240,13 +239,9 @@ pub enum PipeError {
 pub async fn parse_ssh_output(
     stdout: &mut BufReader<ChildStdout>,
     stderr: &mut BufReader<ChildStderr>,
-    verbose_ssh: bool,
     ctx: &EnvironmentContext,
 ) -> std::result::Result<(HostAddr, Option<DeviceConnectionInfo>), PipeError> {
-    let res = match parse_ssh_connection(stdout, verbose_ssh, ctx)
-        .await
-        .context("reading ssh connection")
-    {
+    let res = match parse_ssh_connection(stdout, ctx).await.context("reading ssh connection") {
         Ok((addr, connection_info)) => {
             if connection_info.as_ref().map(|dci| dci.overnet_id).is_none() {
                 log::info!(
@@ -266,7 +261,7 @@ pub async fn parse_ssh_output(
         Ok((addr, compat))
     } else {
         // If we failed to parse the ssh connection, there might be information in stderr
-        Err(parse_ssh_error(stderr, verbose_ssh, ctx).await)
+        Err(parse_ssh_error(stderr, ctx).await)
     }
 }
 
@@ -303,7 +298,6 @@ pub fn ssh_stderr_to_pipe_error(line: &String) -> Option<PipeError> {
 
 async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
     stderr: &mut R,
-    verbose: bool,
     ctx: &EnvironmentContext,
 ) -> PipeError {
     loop {
@@ -314,11 +308,7 @@ async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
             }
             Ok(l) => l,
         };
-        // Sadly, this is just reading buffered data, so timestamps in the log will be
-        // incorrect
-        if verbose {
-            write_ssh_log("E", &line, ctx);
-        }
+        write_ssh_log("E", &line, ctx);
         if let Some(e) = ssh_stderr_to_pipe_error(&line) {
             break e;
         }
@@ -341,22 +331,42 @@ fn parse_ssh_connection_with_info(
     }
 }
 
+// We'd like to cache the log file, if only so that our debug logs don't
+// include multiple config-query lines for every line of ssh logging.
+fn ssh_log_file(ctx: &EnvironmentContext) -> &'static Option<Mutex<File>> {
+    // This is a OnceLock so it's effectively global, an Option because we don't
+    // always want to get a log file at all, and a Mutex because we need mutable
+    // access to the File. (We can't use OnceLock::get_mut() because the static
+    // INSTANCE will only provide an immutable reference.)
+    static INSTANCE: OnceLock<Option<Mutex<File>>> = OnceLock::new();
+    INSTANCE.get_or_init(|| {
+        if !ffx_config::logging::debugging_on(ctx) {
+            None
+        } else {
+            match ffx_config::logging::log_file_with_info(
+                &ctx,
+                &PathBuf::from("ssh.log"),
+                LogDirHandling::WithDirWithRotate,
+            ) {
+                Ok((f, _)) => Some(Mutex::new(f)),
+                Err(e) => {
+                    eprintln!("Couldn't open ssh log file: {e:?}");
+                    None
+                }
+            }
+        }
+    })
+}
+
 pub fn write_ssh_log(prefix: &str, line: &String, ctx: &EnvironmentContext) {
     // Skip keepalives, which will show up in the steady-state
     if line.contains("keepalive") {
         return;
     }
-    let mut f = match ffx_config::logging::log_file_with_info(
-        &ctx,
-        &PathBuf::from("ssh.log"),
-        LogDirHandling::WithDirWithRotate,
-    ) {
-        Ok((f, _)) => f,
-        Err(e) => {
-            log::warn!("Couldn't open ssh log file: {e:?}");
-            return;
-        }
+    let Some(f_mutex) = ssh_log_file(ctx) else {
+        return;
     };
+    let mut f = f_mutex.lock().expect("poisoned ssh log mutex");
     const TIME_FORMAT: &str = "%b %d %H:%M:%S%.3f";
     let timestamp = chrono::Local::now().format(TIME_FORMAT);
     let log_id: u64 = *ffx_config::logging::LOGGING_ID;
@@ -374,7 +384,7 @@ mod test {
     async fn test_parse_ssh_output_doesnt_fail_with_debug2() {
         let env = ffx_config::test_init().await.expect("test env init");
         let line = "debug1: we are debugging\ndebug2: more debugging\ndebug1: debug one again\ndebug3: man this sure is verbose";
-        let err = parse_ssh_error(&mut line.as_bytes(), true, &env.context).await;
+        let err = parse_ssh_error(&mut line.as_bytes(), &env.context).await;
         // Can't assert_eq because IoError doesn't impl PartialEq.
         assert!(matches!(err, PipeError::NoCompatibilityCheck));
     }
@@ -393,7 +403,7 @@ mod test {
                 ("fe80::111:2222:3333:444%ethxc2".to_string(), None),
             ),
         ] {
-            match parse_ssh_connection(&mut line.as_bytes(), false, &env.context).await {
+            match parse_ssh_connection(&mut line.as_bytes(), &env.context).await {
                 Ok(actual) => assert_eq!(expected, actual),
                 res => panic!(
                     "unexpected result for {:?}: expected {:?}, got {:?}",
@@ -415,7 +425,7 @@ mod test {
             &"++ ++\n"[..],
             &"## 192.168.1.1 1234 10.0.0.1 22 ##\n"[..],
         ] {
-            let res = parse_ssh_connection(&mut line.as_bytes(), false, &env.context).await;
+            let res = parse_ssh_connection(&mut line.as_bytes(), &env.context).await;
             assert_matches!(res, Err(ParseSshConnectionError::Parse(_)));
         }
         for line in [
@@ -429,7 +439,7 @@ mod test {
             &"++ 192.168.1.1 1234 10.0.0.1 22 "[..],
             &"++ 192.168.1.1 1234 10.0.0.1 22 ++"[..],
         ] {
-            let res = parse_ssh_connection(&mut line.as_bytes(), false, &env.context).await;
+            let res = parse_ssh_connection(&mut line.as_bytes(), &env.context).await;
             assert_matches!(res, Err(ParseSshConnectionError::UnexpectedEOF(_)));
         }
     }
@@ -478,7 +488,7 @@ mod test {
             overnet_id: None,
         };
         let expected = ("10.0.2.2".to_string(), Some(dci));
-        match parse_ssh_connection(&mut line.as_bytes(), false, &env.context).await {
+        match parse_ssh_connection(&mut line.as_bytes(), &env.context).await {
             Ok(actual) => assert_eq!(expected, actual),
             res => {
                 panic!("unexpected result for {:?}: expected {:?}, got {:?}", line, expected, res)
@@ -498,7 +508,7 @@ mod test {
             overnet_id: Some(6789),
         };
         let expected = ("10.0.2.2".to_string(), Some(dci));
-        match parse_ssh_connection(&mut line.as_bytes(), false, &env.context).await {
+        match parse_ssh_connection(&mut line.as_bytes(), &env.context).await {
             Ok(actual) => assert_eq!(expected, actual),
             res => {
                 panic!("unexpected result for {:?}: expected {:?}, got {:?}", line, expected, res)
