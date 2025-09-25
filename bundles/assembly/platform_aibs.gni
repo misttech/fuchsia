@@ -36,6 +36,8 @@ bootstrap_user_platform_aib_names = [
   # Power
   "legacy_power_framework",
   "cpu_manager",
+  "power_driver",
+  "pwm_driver",
 
   # Graphics
   "input_drivers",
@@ -81,6 +83,7 @@ bootstrap_user_platform_aib_names = [
   "no_update_checker",
 
   # Platform drivers.
+  "registers_driver",
   "wlanphy_driver",
   "bt_transport_uart_driver",
   "bus_kpci_driver",

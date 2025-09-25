@@ -220,18 +220,6 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/i2c.cm" ]
     },
     {
-      package_target = "//src/devices/power/drivers/power:package"
-      driver_components = [ "meta/power.cm" ]
-    },
-    {
-      package_target = "//src/devices/pwm/drivers/pwm:package"
-      driver_components = [ "meta/pwm.cm" ]
-    },
-    {
-      package_target = "//src/devices/serial/drivers/ftdi:package"
-      driver_components = [ "meta/ftdi.cm" ]
-    },
-    {
       package_target = "//src/devices/spi/drivers/spi:package"
       driver_components = [ "meta/spi.cm" ]
     },
@@ -240,16 +228,39 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/display-coordinator.cm" ]
     },
     {
-      package_target = "//src/devices/registers/drivers/registers:package"
-      driver_components = [ "meta/registers.cm" ]
-    },
-    {
       package_target = "//src/devices/usb/drivers/usb-peripheral:package"
       driver_components = [ "meta/usb-peripheral.cm" ]
     },
     {
       package_target = "//src/devices/usb/drivers/usb-bus:package"
       driver_components = [ "meta/usb-bus.cm" ]
+    },
+  ]
+}
+
+assembly_input_bundle("pwm_driver") {
+  boot_driver_packages = [
+    {
+      package_target = "//src/devices/pwm/drivers/pwm:package"
+      driver_components = [ "meta/pwm.cm" ]
+    },
+  ]
+}
+
+assembly_input_bundle("power_driver") {
+  boot_driver_packages = [
+    {
+      package_target = "//src/devices/power/drivers/power:package"
+      driver_components = [ "meta/power.cm" ]
+    },
+  ]
+}
+
+assembly_input_bundle("registers_driver") {
+  boot_driver_packages = [
+    {
+      package_target = "//src/devices/registers/drivers/registers:package"
+      driver_components = [ "meta/registers.cm" ]
     },
   ]
 }
@@ -332,6 +343,10 @@ assembly_input_bundle("usb_host_drivers") {
     {
       package_target = "//src/ui/input/drivers/usb-hid:package"
       driver_components = [ "meta/usb-hid.cm" ]
+    },
+    {
+      package_target = "//src/devices/serial/drivers/ftdi:package"
+      driver_components = [ "meta/ftdi.cm" ]
     },
     {
       package_target = "//src/connectivity/ethernet/drivers/asix-88179:package"
