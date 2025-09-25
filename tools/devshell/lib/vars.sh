@@ -1258,8 +1258,10 @@ EOF
           )
           ;;
       esac
+      local -r rsproxy_log_dir="${build_log_dir}/rsproxy_logs"
       resultstore_wrapper=(
         "${rsproxy_wrap}"
+        --log-dir "${rsproxy_log_dir}"
         --rsproxy "${rsproxy_bin}"
         --rsproxy_options
         "${rsproxy_options[@]}"
