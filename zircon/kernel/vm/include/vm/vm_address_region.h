@@ -1197,6 +1197,9 @@ class VmMapping final : public VmAddressRegionOrMapping {
   zx_status_t SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) override
       TA_REQ(lock());
 
+  // When called with SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>, we set the memory
+  // priority assuming the object has not been |Activate|'d yet.
+  template <bool SplitOnUnmap = false>
   zx_status_t SetMemoryPriorityLockedObject(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
       TA_REQ(object_->lock());
 

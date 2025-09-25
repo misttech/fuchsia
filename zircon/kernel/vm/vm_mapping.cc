@@ -301,35 +301,40 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
       aspace_->arch_aspace().Unmap(base, size / PAGE_SIZE, aspace_->EnlargeArchUnmap());
   ASSERT(status == ZX_OK);
 
+  const MemoryPriority old_priority = memory_priority_;
   // Split the protection_ranges_ from this mapping into the new mapping(s). This has be done after
   // the mapping construction as this step is destructive and hard to rollback.
+  //
+  // Need to set memory priorities before we call DestroyLockedObject. If we have
+  // MemoryPriority::HIGH, then we need to pass that on to left and right before object_ and
+  // aspace_ suffer any dynamic reclamation.
   if (right) {
     AssertHeld(right->lock_ref());
     AssertHeld(right->object_lock_ref());
     MappingProtectionRanges right_prot = protection_ranges_.SplitAt(base + size);
     right->protection_ranges_ = ktl::move(right_prot);
+    status = right->SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>(old_priority);
+    ASSERT(status == ZX_OK);
   }
   if (left) {
     AssertHeld(left->lock_ref());
     AssertHeld(left->object_lock_ref());
     protection_ranges_.DiscardAbove(base);
     left->protection_ranges_ = ktl::move(protection_ranges_);
+    status = left->SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>(old_priority);
+    ASSERT(status == ZX_OK);
   }
 
-  // Now finish destroying this mapping, but remember any memory_priority_ to apply to the new
-  // mappings.
-  const MemoryPriority old_priority = memory_priority_;
+  // Now finish destroying this mapping.
   status = DestroyLockedObject(false);
   ASSERT(status == ZX_OK);
 
-  // Install the new mappings and set their memory priorities.
-  auto finish_mapping = [old_priority](fbl::RefPtr<VmMapping>& mapping) {
+  // Install the new mappings.
+  auto finish_mapping = [](fbl::RefPtr<VmMapping>& mapping) {
     if (mapping) {
       AssertHeld(mapping->lock_ref());
       AssertHeld(mapping->object_lock_ref());
       mapping->ActivateLocked();
-      zx_status_t status = mapping->SetMemoryPriorityLockedObject(old_priority);
-      ASSERT(status == ZX_OK);
     }
   };
   finish_mapping(left);
@@ -1336,8 +1341,14 @@ zx_status_t VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority p
   return SetMemoryPriorityLockedObject(priority);
 }
 
+template <bool SplitOnUnmap>
 zx_status_t VmMapping::SetMemoryPriorityLockedObject(VmAddressRegion::MemoryPriority priority) {
-  DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+  if constexpr (SplitOnUnmap) {
+    // all that's required to set our priority is to have object_ and aspace_ set up
+    DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY && object_ && aspace_);
+  } else {
+    DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+  }
   if (priority == memory_priority_) {
     return ZX_OK;
   }
