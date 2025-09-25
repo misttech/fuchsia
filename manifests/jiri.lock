@@ -1075,8 +1075,8 @@
     },
     {
         "package": "fuchsia_internal/firmware/bluetooth/broadcom",
-        "version": "version:020",
-        "instance_id": "aW4Ld3yb4DpQppvcjiVv0RI55T5em-9X-JJyfukUMuUC"
+        "version": "version:021",
+        "instance_id": "Z1VL0wuKlmcJnvblwQQ5cs_Ng3UvYvl98H0xs3CrHFAC"
     },
     {
         "package": "fuchsia_internal/firmware/bluetooth/qualcomm_atheros",
