@@ -2795,77 +2795,84 @@ mod tests {
 
     #[::fuchsia::test]
     async fn open_device_file() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        mem_device_init(locked, &current_task).expect("mem_device_init");
+        spawn_kernel_and_run(|locked, current_task| {
+            mem_device_init(locked, &*current_task).expect("mem_device_init");
 
-        // Create a device file that points to the `zero` device (which is automatically
-        // registered in the kernel).
-        current_task
-            .fs()
-            .root()
-            .create_node(
-                locked,
-                &current_task,
-                "zero".into(),
-                mode!(IFCHR, 0o666),
-                DeviceType::ZERO,
-            )
-            .expect("create_node");
+            // Create a device file that points to the `zero` device (which is automatically
+            // registered in the kernel).
+            current_task
+                .fs()
+                .root()
+                .create_node(
+                    locked,
+                    &current_task,
+                    "zero".into(),
+                    mode!(IFCHR, 0o666),
+                    DeviceType::ZERO,
+                )
+                .expect("create_node");
 
-        const CONTENT_LEN: usize = 10;
-        let mut buffer = VecOutputBuffer::new(CONTENT_LEN);
+            const CONTENT_LEN: usize = 10;
+            let mut buffer = VecOutputBuffer::new(CONTENT_LEN);
 
-        // Read from the zero device.
-        let device_file = current_task
-            .open_file(locked, "zero".into(), OpenFlags::RDONLY)
-            .expect("open device file");
-        device_file.read(locked, &current_task, &mut buffer).expect("read from zero");
+            // Read from the zero device.
+            let device_file = current_task
+                .open_file(locked, "zero".into(), OpenFlags::RDONLY)
+                .expect("open device file");
+            device_file.read(locked, &current_task, &mut buffer).expect("read from zero");
 
-        // Assert the contents.
-        assert_eq!(&[0; CONTENT_LEN], buffer.data());
+            // Assert the contents.
+            assert_eq!(&[0; CONTENT_LEN], buffer.data());
+        });
     }
 
     #[::fuchsia::test]
     async fn node_info_is_reflected_in_stat() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            // Create a node.
+            let node = &current_task
+                .fs()
+                .root()
+                .create_node(
+                    locked,
+                    &current_task,
+                    "zero".into(),
+                    FileMode::IFCHR,
+                    DeviceType::ZERO,
+                )
+                .expect("create_node")
+                .entry
+                .node;
+            node.update_info(|info| {
+                info.mode = FileMode::IFSOCK;
+                info.size = 1;
+                info.blocks = 2;
+                info.blksize = 4;
+                info.uid = 9;
+                info.gid = 10;
+                info.link_count = 11;
+                info.time_status_change = UtcInstant::from_nanos(1);
+                info.time_access = UtcInstant::from_nanos(2);
+                info.time_modify = UtcInstant::from_nanos(3);
+                info.rdev = DeviceType::new(13, 13);
+            });
+            let stat = node.stat(locked, &current_task).expect("stat");
 
-        // Create a node.
-        let node = &current_task
-            .fs()
-            .root()
-            .create_node(locked, &current_task, "zero".into(), FileMode::IFCHR, DeviceType::ZERO)
-            .expect("create_node")
-            .entry
-            .node;
-        node.update_info(|info| {
-            info.mode = FileMode::IFSOCK;
-            info.size = 1;
-            info.blocks = 2;
-            info.blksize = 4;
-            info.uid = 9;
-            info.gid = 10;
-            info.link_count = 11;
-            info.time_status_change = UtcInstant::from_nanos(1);
-            info.time_access = UtcInstant::from_nanos(2);
-            info.time_modify = UtcInstant::from_nanos(3);
-            info.rdev = DeviceType::new(13, 13);
+            assert_eq!(stat.st_mode, FileMode::IFSOCK.bits());
+            assert_eq!(stat.st_size, 1);
+            assert_eq!(stat.st_blksize, 4);
+            assert_eq!(stat.st_blocks, 2);
+            assert_eq!(stat.st_uid, 9);
+            assert_eq!(stat.st_gid, 10);
+            assert_eq!(stat.st_nlink, 11);
+            assert_eq!(stat.st_ctime, 0);
+            assert_eq!(stat.st_ctime_nsec, 1);
+            assert_eq!(stat.st_atime, 0);
+            assert_eq!(stat.st_atime_nsec, 2);
+            assert_eq!(stat.st_mtime, 0);
+            assert_eq!(stat.st_mtime_nsec, 3);
+            assert_eq!(stat.st_rdev, DeviceType::new(13, 13).bits());
         });
-        let stat = node.stat(locked, &current_task).expect("stat");
-
-        assert_eq!(stat.st_mode, FileMode::IFSOCK.bits());
-        assert_eq!(stat.st_size, 1);
-        assert_eq!(stat.st_blksize, 4);
-        assert_eq!(stat.st_blocks, 2);
-        assert_eq!(stat.st_uid, 9);
-        assert_eq!(stat.st_gid, 10);
-        assert_eq!(stat.st_nlink, 11);
-        assert_eq!(stat.st_ctime, 0);
-        assert_eq!(stat.st_ctime_nsec, 1);
-        assert_eq!(stat.st_atime, 0);
-        assert_eq!(stat.st_atime_nsec, 2);
-        assert_eq!(stat.st_mtime, 0);
-        assert_eq!(stat.st_mtime_nsec, 3);
-        assert_eq!(stat.st_rdev, DeviceType::new(13, 13).bits());
     }
 
     #[::fuchsia::test]
@@ -2891,21 +2898,24 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_check_access() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mut creds = Credentials::with_ids(1, 2);
-        creds.groups = vec![3, 4];
-        current_task.set_creds(creds);
+        spawn_kernel_and_run(|locked, current_task| {
+            let mut creds = Credentials::with_ids(1, 2);
+            creds.groups = vec![3, 4];
+            current_task.set_creds(creds);
 
-        // Create a node.
-        let node = &current_task
-            .fs()
-            .root()
-            .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
-            .expect("create_node")
-            .entry
-            .node;
-        let check_access =
-            |locked: &mut Locked<Unlocked>, uid: uid_t, gid: gid_t, perm: u32, access: Access| {
+            // Create a node.
+            let node = &current_task
+                .fs()
+                .root()
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .expect("create_node")
+                .entry
+                .node;
+            let check_access = |locked: &mut Locked<Unlocked>,
+                                uid: uid_t,
+                                gid: gid_t,
+                                perm: u32,
+                                access: Access| {
                 node.update_info(|info| {
                     info.mode = mode!(IFREG, perm);
                     info.uid = uid;
@@ -2920,161 +2930,165 @@ mod tests {
                 )
             };
 
-        assert_eq!(check_access(locked, 0, 0, 0o700, Access::EXEC), error!(EACCES));
-        assert_eq!(check_access(locked, 0, 0, 0o700, Access::READ), error!(EACCES));
-        assert_eq!(check_access(locked, 0, 0, 0o700, Access::WRITE), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 0, 0o700, Access::EXEC), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 0, 0o700, Access::READ), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 0, 0o700, Access::WRITE), error!(EACCES));
 
-        assert_eq!(check_access(locked, 0, 0, 0o070, Access::EXEC), error!(EACCES));
-        assert_eq!(check_access(locked, 0, 0, 0o070, Access::READ), error!(EACCES));
-        assert_eq!(check_access(locked, 0, 0, 0o070, Access::WRITE), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 0, 0o070, Access::EXEC), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 0, 0o070, Access::READ), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 0, 0o070, Access::WRITE), error!(EACCES));
 
-        assert_eq!(check_access(locked, 0, 0, 0o007, Access::EXEC), Ok(()));
-        assert_eq!(check_access(locked, 0, 0, 0o007, Access::READ), Ok(()));
-        assert_eq!(check_access(locked, 0, 0, 0o007, Access::WRITE), Ok(()));
+            assert_eq!(check_access(locked, 0, 0, 0o007, Access::EXEC), Ok(()));
+            assert_eq!(check_access(locked, 0, 0, 0o007, Access::READ), Ok(()));
+            assert_eq!(check_access(locked, 0, 0, 0o007, Access::WRITE), Ok(()));
 
-        assert_eq!(check_access(locked, 1, 0, 0o700, Access::EXEC), Ok(()));
-        assert_eq!(check_access(locked, 1, 0, 0o700, Access::READ), Ok(()));
-        assert_eq!(check_access(locked, 1, 0, 0o700, Access::WRITE), Ok(()));
+            assert_eq!(check_access(locked, 1, 0, 0o700, Access::EXEC), Ok(()));
+            assert_eq!(check_access(locked, 1, 0, 0o700, Access::READ), Ok(()));
+            assert_eq!(check_access(locked, 1, 0, 0o700, Access::WRITE), Ok(()));
 
-        assert_eq!(check_access(locked, 1, 0, 0o100, Access::EXEC), Ok(()));
-        assert_eq!(check_access(locked, 1, 0, 0o100, Access::READ), error!(EACCES));
-        assert_eq!(check_access(locked, 1, 0, 0o100, Access::WRITE), error!(EACCES));
+            assert_eq!(check_access(locked, 1, 0, 0o100, Access::EXEC), Ok(()));
+            assert_eq!(check_access(locked, 1, 0, 0o100, Access::READ), error!(EACCES));
+            assert_eq!(check_access(locked, 1, 0, 0o100, Access::WRITE), error!(EACCES));
 
-        assert_eq!(check_access(locked, 1, 0, 0o200, Access::EXEC), error!(EACCES));
-        assert_eq!(check_access(locked, 1, 0, 0o200, Access::READ), error!(EACCES));
-        assert_eq!(check_access(locked, 1, 0, 0o200, Access::WRITE), Ok(()));
+            assert_eq!(check_access(locked, 1, 0, 0o200, Access::EXEC), error!(EACCES));
+            assert_eq!(check_access(locked, 1, 0, 0o200, Access::READ), error!(EACCES));
+            assert_eq!(check_access(locked, 1, 0, 0o200, Access::WRITE), Ok(()));
 
-        assert_eq!(check_access(locked, 1, 0, 0o400, Access::EXEC), error!(EACCES));
-        assert_eq!(check_access(locked, 1, 0, 0o400, Access::READ), Ok(()));
-        assert_eq!(check_access(locked, 1, 0, 0o400, Access::WRITE), error!(EACCES));
+            assert_eq!(check_access(locked, 1, 0, 0o400, Access::EXEC), error!(EACCES));
+            assert_eq!(check_access(locked, 1, 0, 0o400, Access::READ), Ok(()));
+            assert_eq!(check_access(locked, 1, 0, 0o400, Access::WRITE), error!(EACCES));
 
-        assert_eq!(check_access(locked, 0, 2, 0o700, Access::EXEC), error!(EACCES));
-        assert_eq!(check_access(locked, 0, 2, 0o700, Access::READ), error!(EACCES));
-        assert_eq!(check_access(locked, 0, 2, 0o700, Access::WRITE), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 2, 0o700, Access::EXEC), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 2, 0o700, Access::READ), error!(EACCES));
+            assert_eq!(check_access(locked, 0, 2, 0o700, Access::WRITE), error!(EACCES));
 
-        assert_eq!(check_access(locked, 0, 2, 0o070, Access::EXEC), Ok(()));
-        assert_eq!(check_access(locked, 0, 2, 0o070, Access::READ), Ok(()));
-        assert_eq!(check_access(locked, 0, 2, 0o070, Access::WRITE), Ok(()));
+            assert_eq!(check_access(locked, 0, 2, 0o070, Access::EXEC), Ok(()));
+            assert_eq!(check_access(locked, 0, 2, 0o070, Access::READ), Ok(()));
+            assert_eq!(check_access(locked, 0, 2, 0o070, Access::WRITE), Ok(()));
 
-        assert_eq!(check_access(locked, 0, 3, 0o070, Access::EXEC), Ok(()));
-        assert_eq!(check_access(locked, 0, 3, 0o070, Access::READ), Ok(()));
-        assert_eq!(check_access(locked, 0, 3, 0o070, Access::WRITE), Ok(()));
+            assert_eq!(check_access(locked, 0, 3, 0o070, Access::EXEC), Ok(()));
+            assert_eq!(check_access(locked, 0, 3, 0o070, Access::READ), Ok(()));
+            assert_eq!(check_access(locked, 0, 3, 0o070, Access::WRITE), Ok(()));
+        });
     }
 
     #[::fuchsia::test]
     async fn set_security_xattr_fails_without_security_module_or_root() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mut creds = Credentials::with_ids(1, 2);
-        creds.groups = vec![3, 4];
-        current_task.set_creds(creds);
+        spawn_kernel_and_run(|locked, current_task| {
+            let mut creds = Credentials::with_ids(1, 2);
+            creds.groups = vec![3, 4];
+            current_task.set_creds(creds);
 
-        // Create a node.
-        let node = &current_task
-            .fs()
-            .root()
-            .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
-            .expect("create_node")
-            .entry
-            .node;
+            // Create a node.
+            let node = &current_task
+                .fs()
+                .root()
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .expect("create_node")
+                .entry
+                .node;
 
-        // Give read-write-execute access.
-        node.update_info(|info| info.mode = mode!(IFREG, 0o777));
+            // Give read-write-execute access.
+            node.update_info(|info| info.mode = mode!(IFREG, 0o777));
 
-        // Without a security module, and without CAP_SYS_ADMIN capabilities, setting the xattr
-        // should fail.
-        assert_eq!(
-            node.set_xattr(
-                locked,
-                &current_task,
-                &MountInfo::detached(),
-                "security.name".into(),
-                "security_label".into(),
-                XattrOp::Create,
-            ),
-            error!(EPERM)
-        );
+            // Without a security module, and without CAP_SYS_ADMIN capabilities, setting the xattr
+            // should fail.
+            assert_eq!(
+                node.set_xattr(
+                    locked,
+                    &current_task,
+                    &MountInfo::detached(),
+                    "security.name".into(),
+                    "security_label".into(),
+                    XattrOp::Create,
+                ),
+                error!(EPERM)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn set_non_user_xattr_fails_without_security_module_or_root() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mut creds = Credentials::with_ids(1, 2);
-        creds.groups = vec![3, 4];
-        current_task.set_creds(creds);
+        spawn_kernel_and_run(|locked, current_task| {
+            let mut creds = Credentials::with_ids(1, 2);
+            creds.groups = vec![3, 4];
+            current_task.set_creds(creds);
 
-        // Create a node.
-        let node = &current_task
-            .fs()
-            .root()
-            .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
-            .expect("create_node")
-            .entry
-            .node;
+            // Create a node.
+            let node = &current_task
+                .fs()
+                .root()
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .expect("create_node")
+                .entry
+                .node;
 
-        // Give read-write-execute access.
-        node.update_info(|info| info.mode = mode!(IFREG, 0o777));
+            // Give read-write-execute access.
+            node.update_info(|info| info.mode = mode!(IFREG, 0o777));
 
-        // Without a security module, and without CAP_SYS_ADMIN capabilities, setting the xattr
-        // should fail.
-        assert_eq!(
-            node.set_xattr(
-                locked,
-                &current_task,
-                &MountInfo::detached(),
-                "trusted.name".into(),
-                "some data".into(),
-                XattrOp::Create,
-            ),
-            error!(EPERM)
-        );
+            // Without a security module, and without CAP_SYS_ADMIN capabilities, setting the xattr
+            // should fail.
+            assert_eq!(
+                node.set_xattr(
+                    locked,
+                    &current_task,
+                    &MountInfo::detached(),
+                    "trusted.name".into(),
+                    "some data".into(),
+                    XattrOp::Create,
+                ),
+                error!(EPERM)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn get_security_xattr_succeeds_without_read_access() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mut creds = Credentials::with_ids(1, 2);
-        creds.groups = vec![3, 4];
-        current_task.set_creds(creds);
+        spawn_kernel_and_run(|locked, current_task| {
+            let mut creds = Credentials::with_ids(1, 2);
+            creds.groups = vec![3, 4];
+            current_task.set_creds(creds);
 
-        // Create a node.
-        let node = &current_task
-            .fs()
-            .root()
-            .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
-            .expect("create_node")
-            .entry
-            .node;
+            // Create a node.
+            let node = &current_task
+                .fs()
+                .root()
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .expect("create_node")
+                .entry
+                .node;
 
-        // Only give read access to the root and give root access to the current task.
-        node.update_info(|info| info.mode = mode!(IFREG, 0o100));
-        current_task.set_creds(Credentials::root());
+            // Only give read access to the root and give root access to the current task.
+            node.update_info(|info| info.mode = mode!(IFREG, 0o100));
+            current_task.set_creds(Credentials::root());
 
-        // Setting the label should succeed even without write access to the file.
-        assert_eq!(
-            node.set_xattr(
-                locked,
-                &current_task,
-                &MountInfo::detached(),
-                "security.name".into(),
-                "security_label".into(),
-                XattrOp::Create,
-            ),
-            Ok(())
-        );
+            // Setting the label should succeed even without write access to the file.
+            assert_eq!(
+                node.set_xattr(
+                    locked,
+                    &current_task,
+                    &MountInfo::detached(),
+                    "security.name".into(),
+                    "security_label".into(),
+                    XattrOp::Create,
+                ),
+                Ok(())
+            );
 
-        // Remove root access from the current task.
-        current_task.set_creds(Credentials::with_ids(1, 1));
+            // Remove root access from the current task.
+            current_task.set_creds(Credentials::with_ids(1, 1));
 
-        // Getting the label should succeed even without read access to the file.
-        assert_eq!(
-            node.get_xattr(
-                locked,
-                &current_task,
-                &MountInfo::detached(),
-                "security.name".into(),
-                4096
-            ),
-            Ok(ValueOrSize::Value("security_label".into()))
-        );
+            // Getting the label should succeed even without read access to the file.
+            assert_eq!(
+                node.get_xattr(
+                    locked,
+                    &current_task,
+                    &MountInfo::detached(),
+                    "security.name".into(),
+                    4096
+                ),
+                Ok(ValueOrSize::Value("security_label".into()))
+            );
+        });
     }
 }
