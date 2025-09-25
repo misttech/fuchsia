@@ -4,7 +4,9 @@
 
 # The following are example uses of the IDK atom rules that can be built and
 # analyzed with cquery.
+
 load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_source_library", "idk_molecule")
+load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 
 create_idk_atom_for_test(
     name = "test_atom",
@@ -189,3 +191,30 @@ exports_files([
     "source_subdependency.api",
     "tests_dependency.api",
 ])
+
+build_idk_combinations(
+    name = "build_only_tests_for_combinations",
+    testonly = True,
+    deps = [
+        ":test_atom_idk",
+        ":test_molecule",
+
+        # TODO(https://fxbug.dev/443766378): Fix the
+        # "unable to find library -lzircon", etc. errors and uncomment.
+        # ":test_executable",
+
+        # Depend directly on the underlying source libraries since they are not
+        # dependencies of the atoms.
+        ":test-source-set",
+        ":test_source_set_dependency",
+        "//sdk/lib/magma_common",
+        # TODO(https://fxbug.dev/443766378): Fix the sysroot headers not found
+        # error and uncomment.
+        # "//sdk/lib/media/cpp:no_converters",
+        "//sdk/lib/memory_barriers",
+        "//sdk/lib/stdcompat",
+        # TODO(https://fxbug.dev/443766378): Fix the use of incorrect headers
+        # with missing symbols and uncomment.
+        # "//sdk/lib/utf-utils",
+    ],
+)
