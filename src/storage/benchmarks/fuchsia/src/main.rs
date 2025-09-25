@@ -18,8 +18,8 @@ use storage_benchmarks::directory_benchmarks::{
 };
 use storage_benchmarks::io_benchmarks::{
     ReadRandomCold, ReadRandomWarm, ReadSequentialCold, ReadSequentialWarm, ReadSparseCold,
-    WriteRandomCold, WriteRandomWarm, WriteSequentialCold, WriteSequentialFsyncCold,
-    WriteSequentialFsyncWarm, WriteSequentialWarm,
+    WriteRandomCold, WriteRandomFsyncCold, WriteRandomFsyncWarm, WriteRandomWarm,
+    WriteSequentialCold, WriteSequentialFsyncCold, WriteSequentialFsyncWarm, WriteSequentialWarm,
 };
 use storage_benchmarks::{BenchmarkSet, add_benchmarks};
 
@@ -86,6 +86,16 @@ fn add_io_benchmarks(benchmark_set: &mut BenchmarkSet) {
             ReadSparseCold::new(OP_SIZE, OP_COUNT),
         ],
         [Fxfs::new(FXFS_VOLUME_SIZE), F2fs, Minfs]
+    );
+    // Minfs is excluded from the random-write fsync benchmark to reduce test time,
+    // as performance was never a primary design goal.
+    add_benchmarks!(
+        benchmark_set,
+        [
+            WriteRandomFsyncCold::new(OP_SIZE, OP_COUNT),
+            WriteRandomFsyncWarm::new(OP_SIZE, OP_COUNT)
+        ],
+        [Fxfs::new(FXFS_VOLUME_SIZE), F2fs]
     );
 }
 
