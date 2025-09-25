@@ -5,62 +5,12 @@
 #ifndef LIB_STDCOMPAT_INPLACE_VECTOR_H_
 #define LIB_STDCOMPAT_INPLACE_VECTOR_H_
 
-#include <algorithm>
-#include <cassert>
-#include <compare>
 #include <cstddef>
-#include <cstdlib>
-#include <initializer_list>
-#include <iterator>
-#include <memory>
-#include <ranges>
-#include <stdexcept>
 #include <type_traits>
-#include <utility>
 
-#include "internal/span.h"
-
-namespace cpp23 {
-
-#if __cpp_lib_containers_ranges >= 202202L
-// Use the standard from_range_t if available.
-using std::from_range;
-using std::from_range_t;
-#else
-// Polyfill for C++23 std::from_range_t.
-struct from_range_t {
-  explicit from_range_t() = default;
-};
-inline constexpr from_range_t from_range{};
-#endif
-
-}  // namespace cpp23
+#include "internal/inplace_vector.h"
 
 namespace cpp26 {
-
-namespace internal {
-
-template <typename R, typename T>
-using container_compatible_range_t =
-    std::enable_if_t<std::is_convertible_v<decltype(*std::begin(std::declval<R>())), T>>;
-
-[[noreturn]] inline void inplace_vector_abort() {
-#if __cpp_exceptions
-  throw std::bad_alloc();
-#else
-  __builtin_abort();
-#endif
-}
-
-[[noreturn]] inline void throw_abort_out_of_range() {
-#if __cpp_exceptions
-  throw std::out_of_range();
-#else
-  __builtin_abort();
-#endif
-}
-
-}  // namespace internal
 
 // Polyfill for C++26 std::inplace_vector.
 // See: https://wg21.link/P0843R8
@@ -79,8 +29,8 @@ class inplace_vector {
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-  constexpr inplace_vector() noexcept : size_(0) {}
-  constexpr explicit inplace_vector(size_type n) : size_(0) {
+  constexpr inplace_vector() noexcept = default;
+  constexpr explicit inplace_vector(size_type n) {
     if (n > N) {
       internal::inplace_vector_abort();
     }
@@ -89,7 +39,8 @@ class inplace_vector {
     }
   }
 
-  constexpr inplace_vector(size_type n, const T& value) : size_(0) {
+  constexpr inplace_vector(size_type n, const T& value) {
+    storage_.set_size(0);
     if (n > N) {
       internal::inplace_vector_abort();
     }
@@ -98,18 +49,18 @@ class inplace_vector {
     }
   }
   template <class InputIterator, typename = std::enable_if_t<!std::is_integral_v<InputIterator>>>
-  constexpr inplace_vector(InputIterator first, InputIterator last) : size_(0) {
+  constexpr inplace_vector(InputIterator first, InputIterator last) {
     for (auto it = first; it != last; ++it) {
       emplace_back(*it);
     }
   }
   template <typename R, typename = internal::container_compatible_range_t<R, T>>
-  constexpr inplace_vector(cpp23::from_range_t, R&& rg) : size_(0) {
+  constexpr inplace_vector(cpp23::from_range_t, R&& rg) {
     for (auto&& elem : rg) {
       emplace_back(std::forward<decltype(elem)>(elem));
     }
   }
-  constexpr inplace_vector(std::initializer_list<T> ilist) : size_(0) {
+  constexpr inplace_vector(std::initializer_list<T> ilist) {
     if (ilist.size() > N) {
       internal::inplace_vector_abort();
     }
@@ -133,9 +84,8 @@ class inplace_vector {
   }
   constexpr inplace_vector(inplace_vector&& other) noexcept(
       N == 0 || (std::is_nothrow_swappable_v<T> && std::is_nothrow_move_constructible_v<T> &&
-                 std::is_nothrow_destructible_v<T>))
-      : size_(0) {
-    if (other.size_ > N) {
+                 std::is_nothrow_destructible_v<T>)) {
+    if (other.size() > N) {
       internal::inplace_vector_abort();
     }
     this->swap(other);
@@ -147,14 +97,15 @@ class inplace_vector {
     if (this == &other) {
       return *this;
     }
-    if (other.size_ > N) {
+    if (other.size() > N) {
       internal::inplace_vector_abort();
     }
     this->clear();
     this->swap(other);
     return *this;
   }
-  ~inplace_vector() { clear(); }
+
+  ~inplace_vector() = default;
 
   template <class InputIterator, typename = std::enable_if_t<!std::is_integral_v<InputIterator>>>
   constexpr void assign(InputIterator first, InputIterator last) {
@@ -189,10 +140,10 @@ class inplace_vector {
     }
   }
 
-  constexpr size_type size() const noexcept { return size_; }
+  constexpr size_type size() const noexcept { return storage_.size(); }
   static constexpr size_type capacity() noexcept { return N; }
   static constexpr size_type max_size() noexcept { return N; }
-  [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
+  [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
   constexpr void resize(size_type n) { resize(n, T()); }
   constexpr void resize(size_type n, const T& c) {
@@ -200,14 +151,14 @@ class inplace_vector {
       internal::inplace_vector_abort();
     }
     // n < size_ or does nothing.
-    for (size_type i = n; i < size_; ++i) {
-      data()[i].~T();
+    for (size_type i = n; i < size(); ++i) {
+      storage_.destroy_at(i);
     }
     // n > size_ or does nothing.
-    for (size_type i = size_; i < n; ++i) {
-      new (data() + i) T(c);
+    for (size_type i = size(); i < n; ++i) {
+      storage_.construct_at(i, c);
     }
-    size_ = n;
+    storage_.set_size(n);
   }
 
   constexpr void reserve(size_type n) {
@@ -221,52 +172,52 @@ class inplace_vector {
   }
 
   constexpr reference operator[](size_type i) {
-    assert(i < size_);
+    assert(i < size());
     return data()[i];
   }
   constexpr const_reference operator[](size_type i) const {
-    assert(i < size_);
+    assert(i < size());
     return data()[i];
   }
   constexpr reference at(size_type i) {
-    if (i >= size_) {
+    if (i >= size()) {
       internal::throw_abort_out_of_range();
     }
     return data()[i];
   }
   constexpr const_reference at(size_type i) const {
-    if (i >= size_) {
+    if (i >= size()) {
       internal::throw_abort_out_of_range();
     }
     return data()[i];
   }
 
   constexpr reference front() {
-    assert(size_ > 0);
+    assert(size() > 0);
     return data()[0];
   }
   constexpr const_reference front() const {
-    assert(size_ > 0);
+    assert(size() > 0);
     return data()[0];
   }
   constexpr reference back() {
-    assert(size_ > 0);
-    return data()[size_ - 1];
+    assert(size() > 0);
+    return data()[size() - 1];
   }
   constexpr const_reference back() const {
-    assert(size_ > 0);
-    return data()[size_ - 1];
+    assert(size() > 0);
+    return data()[size() - 1];
   }
 
-  constexpr T* data() noexcept { return reinterpret_cast<T*>(buffer_); }
-  constexpr const T* data() const noexcept { return reinterpret_cast<const T*>(buffer_); }
+  constexpr T* data() noexcept { return storage_.data(); }
+  constexpr const T* data() const noexcept { return storage_.data(); }
 
   constexpr iterator begin() noexcept { return iterator(data()); }
   constexpr const_iterator begin() const noexcept { return const_iterator(data()); }
   constexpr const_iterator cbegin() const noexcept { return const_iterator(data()); }
-  constexpr iterator end() noexcept { return iterator(data() + size_); }
-  constexpr const_iterator end() const noexcept { return const_iterator(data() + size_); }
-  constexpr const_iterator cend() const noexcept { return const_iterator(data() + size_); }
+  constexpr iterator end() noexcept { return iterator(data() + size()); }
+  constexpr const_iterator end() const noexcept { return const_iterator(data() + size()); }
+  constexpr const_iterator cend() const noexcept { return const_iterator(data() + size()); }
 
   constexpr reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
   constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
@@ -280,10 +231,10 @@ class inplace_vector {
   }
 
   constexpr void clear() noexcept {
-    for (size_type i = 0; i < size_; ++i) {
-      data()[i].~T();
+    for (size_type i = 0; i < size(); ++i) {
+      storage_.destroy_at(i);
     }
-    size_ = 0;
+    storage_.set_size(0);
   }
 
   constexpr T& push_back(const T& value) {
@@ -317,11 +268,11 @@ class inplace_vector {
   template <class... Args, typename = std::enable_if_t<std::is_constructible_v<T, Args...>>>
   constexpr T* try_emplace_back(Args&&... args) noexcept(
       std::is_nothrow_constructible_v<T, Args...>) {
-    if (size_ >= N) {
+    if (size() >= N) {
       return nullptr;
     }
-    new (data() + size_) T(std::forward<Args>(args)...);
-    ++size_;
+    storage_.construct_at(size(), std::forward<Args>(args)...);
+    storage_.set_size(size() + 1);
     return &back();
   }
 
@@ -334,46 +285,46 @@ class inplace_vector {
 
   template <class... Args, typename = std::enable_if_t<std::is_constructible_v<T, Args...>>>
   constexpr T& unchecked_emplace_back(Args&&... args) {
-    assert(size_ < N);
-    new (data() + size_) T(std::forward<Args>(args)...);
-    ++size_;
+    assert(size() < N);
+    storage_.construct_at(size(), std::forward<Args>(args)...);
+    storage_.set_size(size() + 1);
     return back();
   }
 
   constexpr T& unchecked_push_back(const T& value) {
-    assert(size_ < N);
-    new (data() + size_) T(value);
-    ++size_;
+    assert(size() < N);
+    storage_.construct_at(size(), value);
+    storage_.set_size(size() + 1);
     return back();
   }
   constexpr T& unchecked_push_back(T&& value) {
-    assert(size_ < N);
-    new (data() + size_) T(std::move(value));
-    ++size_;
+    assert(size() < N);
+    storage_.construct_at(size(), std::move(value));
+    storage_.set_size(size() + 1);
     return back();
   }
 
   constexpr void pop_back() {
     assert(!empty());
-    --size_;
-    data()[size_].~T();
+    storage_.set_size(size() - 1);
+    storage_.destroy_at(size());
   }
 
   template <class... Args, typename = std::enable_if_t<std::is_constructible_v<T, Args...>>>
   constexpr iterator emplace(const_iterator position, Args&&... args) {
-    if (size_ >= N) {
+    if (size() >= N) {
       internal::inplace_vector_abort();
     }
     auto pos = begin() + (position - cbegin());
     auto insert_index = static_cast<size_type>(pos - begin());
-    if (insert_index < size_) {
-      for (size_type i = size_; i > insert_index; --i) {
-        new (data() + i) T(std::move(data()[i - 1]));
-        data()[i - 1].~T();
+    if (insert_index < size()) {
+      for (size_type i = size(); i > insert_index; --i) {
+        storage_.construct_at(i, std::move(data()[i - 1]));
+        storage_.destroy_at(i - 1);
       }
     }
-    new (data() + insert_index) T(std::forward<Args>(args)...);
-    ++size_;
+    storage_.construct_at(insert_index, std::forward<Args>(args)...);
+    storage_.set_size(size() + 1);
     return begin() + insert_index;
   }
 
@@ -411,8 +362,8 @@ class inplace_vector {
     for (auto it = position; it + 1 != end(); ++it) {
       *it = std::move(*(it + 1));
     }
-    --size_;
-    data()[size_].~T();
+    storage_.set_size(size() - 1);
+    storage_.destroy_at(size());
     return position;
   }
   constexpr iterator erase(const_iterator first, const_iterator last) {
@@ -426,8 +377,8 @@ class inplace_vector {
       *it = std::move(*(end_pos + (it - start_pos)));
     }
     for (size_type i = 0; i < erase_count; ++i) {
-      --size_;
-      data()[size_].~T();
+      storage_.set_size(size() - 1);
+      storage_.destroy_at(size());
     }
     return start_pos;
   }
@@ -441,23 +392,30 @@ class inplace_vector {
       if (this == &other) {
         return;
       }
-      if (size_ > other.size_) {
+      if (size() > other.size()) {
         other.swap(*this);
         return;
       }
       // Swap elements.
       T* this_data = data();
       T* other_data = other.data();
-      for (size_type i = 0; i < size_; ++i) {
+      for (size_type i = 0; i < size(); ++i) {
         using std::swap;
         swap(this_data[i], other_data[i]);
       }
       // Move additional elements from other to this.
-      for (size_type i = size_; i < other.size_; ++i) {
-        new (this_data + i) T(std::move(other_data[i]));
+      for (size_type i = size(); i < other.size(); ++i) {
+        if constexpr (std::is_trivial_v<T>) {
+          this_data[i] = std::move(other_data[i]);
+        } else {
+          new (this_data + i) T(std::move(other_data[i]));
+        }
         other_data[i].~T();
       }
-      std::swap(size_, other.size_);
+      size_type this_size = size();
+      size_type other_size = other.size();
+      storage_.set_size(other_size);
+      other.storage_.set_size(this_size);
     }
   }
 
@@ -498,53 +456,36 @@ class inplace_vector {
   template <typename Constructor>
   constexpr iterator batch_insert_impl(const_iterator position, size_type count,
                                        Constructor&& ctor) {
-    if (count > N - size_) {
+    if (count > N - size()) {
       internal::inplace_vector_abort();
     }
     if (count == 0) {
       return begin() + (position - cbegin());
     }
     auto insert_index = static_cast<size_type>(position - cbegin());
-    if (insert_index < size_) {
-      for (size_type i = size_; i > insert_index; --i) {
-        new (data() + i + count - 1) T(std::move(data()[i - 1]));
-        data()[i - 1].~T();
+    if (insert_index < size()) {
+      for (size_type i = size(); i > insert_index; --i) {
+        storage_.construct_at(i + count - 1, std::move(data()[i - 1]));
+        storage_.destroy_at(i - 1);
       }
     }
     ctor(data() + insert_index, count);
-    size_ += count;
+    storage_.set_size(storage_.size() + count);
     return begin() + insert_index;
   }
 
-  alignas(T) unsigned char buffer_[sizeof(T) * N];
-  size_type size_;
+  internal::inplace_vector_storage<T, N> storage_;
 };
-
-template <class T, std::size_t N>
-constexpr std::enable_if_t<N == 0 || std::is_swappable_v<T>, void> swap(
-    inplace_vector<T, N>& x, inplace_vector<T, N>& y) noexcept(noexcept(x.swap(y))) {
-  x.swap(y);
-}
-
-template <class T, std::size_t N, class U>
-constexpr typename inplace_vector<T, N>::size_type erase(inplace_vector<T, N>& c, const U& value) {
-  auto it = std::remove(c.begin(), c.end(), value);
-  auto r = std::distance(it, c.end());
-  c.erase(it, c.end());
-  return r;
-}
-template <class T, std::size_t N, class Predicate>
-constexpr typename inplace_vector<T, N>::size_type erase_if(inplace_vector<T, N>& c,
-                                                            Predicate pred) {
-  auto it = std::remove_if(c.begin(), c.end(), pred);
-  auto r = std::distance(it, c.end());
-  c.erase(it, c.end());
-  return r;
-}
 
 }  // namespace cpp26
 
 namespace stdcompat {
+
+template <class T, std::size_t N>
+constexpr std::enable_if_t<N == 0 || std::is_swappable_v<T>, void> swap(
+    cpp26::inplace_vector<T, N>& x, cpp26::inplace_vector<T, N>& y) noexcept(noexcept(x.swap(y))) {
+  x.swap(y);
+}
 
 template <class T, std::size_t N, class U>
 constexpr typename cpp26::inplace_vector<T, N>::size_type erase(cpp26::inplace_vector<T, N>& c,
@@ -554,6 +495,7 @@ constexpr typename cpp26::inplace_vector<T, N>::size_type erase(cpp26::inplace_v
   c.erase(it, c.end());
   return r;
 }
+
 template <class T, std::size_t N, class Predicate>
 constexpr typename cpp26::inplace_vector<T, N>::size_type erase_if(cpp26::inplace_vector<T, N>& c,
                                                                    Predicate pred) {

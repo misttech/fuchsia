@@ -82,7 +82,7 @@ TEST(InplaceVectorTest, SafetyViolationDeathTests) {
   EXPECT_DEATH(v6.append_range(source4), "");
 
   auto test_assignment_overflow = []() {
-    cpp26::inplace_vector<int, 3> v_small;
+    [[maybe_unused]] cpp26::inplace_vector<int, 3> v_small;
     cpp26::inplace_vector<int, 3> v_large{1, 2, 3, 4, 5};
   };
   EXPECT_DEATH(test_assignment_overflow(), "");
@@ -1068,6 +1068,23 @@ TEST(InplaceVectorTest, ZeroCapacityEdgeCases) {
   auto it3 = v.insert(v.begin(), {});
   EXPECT_EQ(it3, v.begin());
   EXPECT_EQ(v.size(), 0u);
+}
+
+TEST(InplaceVectorTest, ConstructionIsConstexprForTrivialTypes) {
+  constexpr cpp26::inplace_vector<int, 5> kEmptyVector;
+  EXPECT_TRUE(kEmptyVector.empty());
+
+  constexpr cpp26::inplace_vector<int, 5> kVectorFromInitializerList{1, 2, 3};
+  EXPECT_EQ(kVectorFromInitializerList.size(), 3u);
+  EXPECT_THAT(kVectorFromInitializerList, ::testing::ElementsAre(1, 2, 3));
+
+  constexpr cpp26::inplace_vector<int, 5> kCopyConstructedVector(kVectorFromInitializerList);
+  EXPECT_EQ(kCopyConstructedVector.size(), 3u);
+  EXPECT_THAT(kCopyConstructedVector, ::testing::ElementsAre(1, 2, 3));
+
+  constexpr cpp26::inplace_vector<int, 5> kCopyAssignedVector = kVectorFromInitializerList;
+  EXPECT_EQ(kCopyAssignedVector.size(), 3u);
+  EXPECT_THAT(kCopyAssignedVector, ::testing::ElementsAre(1, 2, 3));
 }
 
 }  // namespace
