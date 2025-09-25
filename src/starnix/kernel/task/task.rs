@@ -1692,61 +1692,65 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_tid_allocation() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            assert_eq!(current_task.get_tid(), 1);
+            let another_current = create_task(locked, &kernel, "another-task");
+            let another_tid = another_current.get_tid();
+            assert!(another_tid >= 2);
 
-        assert_eq!(current_task.get_tid(), 1);
-        let another_current = create_task(locked, &kernel, "another-task");
-        let another_tid = another_current.get_tid();
-        assert!(another_tid >= 2);
-
-        let pids = kernel.pids.read();
-        assert_eq!(pids.get_task(1).upgrade().unwrap().get_tid(), 1);
-        assert_eq!(pids.get_task(another_tid).upgrade().unwrap().get_tid(), another_tid);
+            let pids = kernel.pids.read();
+            assert_eq!(pids.get_task(1).upgrade().unwrap().get_tid(), 1);
+            assert_eq!(pids.get_task(another_tid).upgrade().unwrap().get_tid(), another_tid);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_clone_pid_and_parent_pid() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let thread = current_task.clone_task_for_test(
-            locked,
-            (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
-            Some(SIGCHLD),
-        );
-        assert_eq!(current_task.get_pid(), thread.get_pid());
-        assert_ne!(current_task.get_tid(), thread.get_tid());
-        assert_eq!(current_task.thread_group().leader, thread.thread_group().leader);
+        spawn_kernel_and_run(|locked, current_task| {
+            let thread = current_task.clone_task_for_test(
+                locked,
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            assert_eq!(current_task.get_pid(), thread.get_pid());
+            assert_ne!(current_task.get_tid(), thread.get_tid());
+            assert_eq!(current_task.thread_group().leader, thread.thread_group().leader);
 
-        let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        assert_ne!(current_task.get_pid(), child_task.get_pid());
-        assert_ne!(current_task.get_tid(), child_task.get_tid());
-        assert_eq!(current_task.get_pid(), child_task.thread_group().read().get_ppid());
+            let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            assert_ne!(current_task.get_pid(), child_task.get_pid());
+            assert_ne!(current_task.get_tid(), child_task.get_tid());
+            assert_eq!(current_task.get_pid(), child_task.thread_group().read().get_ppid());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_root_capabilities() {
-        let (_kernel, current_task) = create_kernel_and_task();
-        assert!(security::is_task_capable_noaudit(&current_task, CAP_SYS_ADMIN));
-        assert_eq!(current_task.real_creds().cap_inheritable, Capabilities::empty());
+        spawn_kernel_and_run(|_locked, current_task| {
+            assert!(security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN));
+            assert_eq!(current_task.real_creds().cap_inheritable, Capabilities::empty());
 
-        current_task.set_creds(Credentials::with_ids(1, 1));
-        assert!(!security::is_task_capable_noaudit(&current_task, CAP_SYS_ADMIN));
+            current_task.set_creds(Credentials::with_ids(1, 1));
+            assert!(!security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN));
+        });
     }
 
     #[::fuchsia::test]
     async fn test_clone_rlimit() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let prev_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
-        assert_ne!(prev_fsize, 10);
-        current_task
-            .thread_group()
-            .limits
-            .lock(locked)
-            .set(Resource::FSIZE, rlimit { rlim_cur: 10, rlim_max: 100 });
-        let current_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
-        assert_eq!(current_fsize, 10);
+        spawn_kernel_and_run(|locked, current_task| {
+            let prev_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
+            assert_ne!(prev_fsize, 10);
+            current_task
+                .thread_group()
+                .limits
+                .lock(locked)
+                .set(Resource::FSIZE, rlimit { rlim_cur: 10, rlim_max: 100 });
+            let current_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
+            assert_eq!(current_fsize, 10);
 
-        let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        let child_fsize = child_task.thread_group().get_rlimit(locked, Resource::FSIZE);
-        assert_eq!(child_fsize, 10)
+            let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let child_fsize = child_task.thread_group().get_rlimit(locked, Resource::FSIZE);
+            assert_eq!(child_fsize, 10)
+        });
     }
 }
