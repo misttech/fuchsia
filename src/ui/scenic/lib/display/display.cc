@@ -45,6 +45,19 @@ void Display::Unclaim() {
   claimed_ = false;
 }
 
+Display::VsyncCallbackId Display::AddVsyncCallback(VsyncCallback callback) {
+  const VsyncCallbackId id = ++next_vsync_callback_id_;
+  FX_DCHECK(!vsync_callbacks_.contains(id));
+  vsync_callbacks_[id] = std::move(callback);
+  return id;
+}
+
+void Display::RemoveVsyncCallback(VsyncCallbackId id) {
+  if (!vsync_callbacks_.erase(id)) {
+    FX_LOGS(ERROR) << "Removing an unregistered vsync callback.";
+  }
+}
+
 void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp) {
   // Estimate current vsync interval. Need to include a maximum to mitigate any
   // potential issues during long breaks.
@@ -58,12 +71,12 @@ void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_conf
   TRACE_INSTANT("gfx", "Display::OnVsync", TRACE_SCOPE_PROCESS, "Timestamp", timestamp.get(),
                 "Vsync interval", vsync_timing_->vsync_interval().get());
 
-  if (vsync_callback_) {
+  for (const auto& [id, callback] : vsync_callbacks_) {
     FLATLAND_VERBOSE_LOG << "Display::OnVsync(): display_id=" << display_id_.value()
-                         << "  timestamp=" << timestamp.get()
+                         << "  callback_id=" << id << "  timestamp=" << timestamp.get()
                          << "  applied_config_stamp=" << applied_config_stamp.value
                          << "  ... invoking vsync callback";
-    vsync_callback_(timestamp, applied_config_stamp);
+    callback(timestamp, applied_config_stamp);
   }
 }
 

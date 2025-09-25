@@ -120,7 +120,7 @@ class DisplayTest : public gtest::RealLoopFixture {
   // if no such vsync is received before `timeout` elapses.
   zx::result<> WaitForVsync(display::WireConfigStamp target_stamp, zx::duration timeout) {
     std::optional<display::WireConfigStamp> received_stamp;
-    display_manager_->default_display()->SetVsyncCallback(
+    auto vsync_callback_id = display_manager_->default_display()->AddVsyncCallback(
         [&](zx::time, display::WireConfigStamp applied_config_stamp) {
           received_stamp = applied_config_stamp;
         });
@@ -128,7 +128,7 @@ class DisplayTest : public gtest::RealLoopFixture {
     bool success = RunLoopWithTimeoutOrUntil(
         [&]() { return received_stamp && received_stamp->value >= target_stamp.value; }, timeout);
 
-    display_manager_->default_display()->SetVsyncCallback(nullptr);
+    display_manager_->default_display()->RemoveVsyncCallback(vsync_callback_id);
 
     if (success) {
       return zx::ok();

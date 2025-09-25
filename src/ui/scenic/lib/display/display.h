@@ -13,6 +13,7 @@
 #include <zircon/types.h>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "src/lib/fxl/macros.h"
@@ -32,9 +33,11 @@ class Display {
   Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px);
   virtual ~Display() = default;
 
+  using VsyncCallbackId = int;
   using VsyncCallback =
       fit::function<void(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp)>;
-  void SetVsyncCallback(VsyncCallback callback) { vsync_callback_ = std::move(callback); }
+  VsyncCallbackId AddVsyncCallback(VsyncCallback callback);
+  void RemoveVsyncCallback(VsyncCallbackId id);
 
   using DPRCallback = fit::function<void(const glm::vec2& dpr)>;
   void SetDPRCallback(DPRCallback callback) { dpr_callback_ = std::move(callback); }
@@ -81,7 +84,8 @@ class Display {
   std::shared_ptr<scheduling::VsyncTiming> vsync_timing_;
 
  private:
-  VsyncCallback vsync_callback_;
+  VsyncCallbackId next_vsync_callback_id_ = 0;
+  std::unordered_map<VsyncCallbackId, VsyncCallback> vsync_callbacks_;
   DPRCallback dpr_callback_;
 
   // The maximum vsync interval we would ever expect.

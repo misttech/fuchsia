@@ -77,7 +77,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
         ++num_vsync_acknowledgement;
       });
 
-  display_manager()->default_display()->SetVsyncCallback(
+  display_manager()->default_display()->AddVsyncCallback(
       [&num_vsync_display_received](zx::time_monotonic timestamp, WireConfigStamp stamp) {
         ++num_vsync_display_received;
       });
@@ -146,6 +146,65 @@ TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
   EXPECT_EQ(default_display->maximum_refresh_rate_in_millihertz(),
             static_cast<uint32_t>(kDisplayRefreshRateHz * 1'000));
   EXPECT_THAT(default_display->pixel_formats(), testing::ElementsAre(pixel_format));
+}
+
+TEST_F(DisplayManagerMockTest, MultipleDisplayVsyncCallbacks) {
+  const display::WireDisplayId kDisplayId = {.value = 1};
+  const uint32_t kDisplayWidth = 1024;
+  const uint32_t kDisplayHeight = 768;
+
+  auto [coordinator_client, coordinator_server] =
+      fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
+  auto [listener_client, listener_server] =
+      fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
+
+  display_manager()->BindDefaultDisplayCoordinator(dispatcher(), std::move(coordinator_client),
+                                                   std::move(listener_server));
+
+  display_manager()->SetDefaultDisplayForTests(
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+
+  MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
+  mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
+
+  size_t callback1_calls = 0;
+  size_t callback2_calls = 0;
+
+  auto id1 = display_manager()->default_display()->AddVsyncCallback(
+      [&](auto, auto) { callback1_calls++; });
+  auto id2 = display_manager()->default_display()->AddVsyncCallback(
+      [&](auto, auto) { callback2_calls++; });
+
+  // Both callbacks should be called.
+
+  fidl::OneWayStatus result = mock_display_coordinator.listener().sync()->OnVsync(
+      kDisplayId, zx::time_monotonic(0), {1u}, {0});
+  ASSERT_TRUE(result.ok());
+  RunLoopUntilIdle();
+  EXPECT_EQ(callback1_calls, 1u);
+  EXPECT_EQ(callback2_calls, 1u);
+
+  // Remove the first callback.
+  display_manager()->default_display()->RemoveVsyncCallback(id1);
+
+  // Only the second callback should be called.
+  result = mock_display_coordinator.listener().sync()->OnVsync(kDisplayId, zx::time_monotonic(0),
+                                                               {1u}, {0});
+  ASSERT_TRUE(result.ok());
+  RunLoopUntilIdle();
+  EXPECT_EQ(callback1_calls, 1u);
+  EXPECT_EQ(callback2_calls, 2u);
+
+  // Remove the second callback.
+  display_manager()->default_display()->RemoveVsyncCallback(id2);
+
+  // No callbacks should be called.
+  result = mock_display_coordinator.listener().sync()->OnVsync(kDisplayId, zx::time_monotonic(0),
+                                                               {1u}, {0});
+  ASSERT_TRUE(result.ok());
+  RunLoopUntilIdle();
+  EXPECT_EQ(callback1_calls, 1u);
+  EXPECT_EQ(callback2_calls, 2u);
 }
 
 TEST_F(DisplayManagerMockTest, SelectPreferredMode) {

@@ -359,6 +359,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
+  display::Display::VsyncCallbackId vsync_callback_id_{};
 
   static std::pair<std::unique_ptr<escher::Escher>, std::shared_ptr<flatland::VkRenderer>>
   NewVkRenderer() {
@@ -407,7 +408,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // The callback will switch this bool to |true| if the two configs match. It is initialized
     // to |false| and blocks the main thread below.
     bool configs_are_equal = false;
-    display->SetVsyncCallback(
+    auto vsync_callback_id = display->AddVsyncCallback(
         [&pending_config_stamp, &configs_are_equal](zx::time timestamp,
                                                     display::WireConfigStamp applied_config_stamp) {
           if (pending_config_stamp.value == applied_config_stamp.value &&
@@ -423,7 +424,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // Now that we've finished waiting, we can reset the display callback to null as we do not want
     // this callback, which makes references to stack variables which will go out of scope once this
     // function exits, to continue being called on future vsyncs.
-    display->SetVsyncCallback(nullptr);
+    display->RemoveVsyncCallback(vsync_callback_id);
   }
 
   // Set up the buffer collections and images to be used for capturing the diplay coordinator's

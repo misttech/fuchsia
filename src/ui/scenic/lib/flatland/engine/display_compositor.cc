@@ -1054,7 +1054,7 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
 
   // Add vsync callback on display. Note that this will overwrite the existing callback on
   // |display| and other clients won't receive any, i.e. gfx.
-  display->SetVsyncCallback([weak_ref = weak_from_this()](
+  display->AddVsyncCallback([weak_ref = weak_from_this()](
                                 zx::time timestamp, display::WireConfigStamp applied_config_stamp) {
     if (auto ref = weak_ref.lock())
       ref->OnVsync(timestamp, applied_config_stamp);
