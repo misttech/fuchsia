@@ -131,6 +131,11 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "aarch64-unknown-fuchsia",
     target_triple = "aarch64-unknown-fuchsia",
+    # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
+    # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
+    # code that is targeted for ARM64 Fuchsia must be compiled with shadow
+    # call stack to avoid build failures due to ABI mismatch.
+    extra_rustc_flags = ["-Zsanitizer=shadow-call-stack"],
 )
 
 toolchain(
@@ -170,6 +175,11 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "riscv64-unknown-fuchsia",
     target_triple = "riscv64-unknown-fuchsia",
+    # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
+    # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
+    # code that is targeted for RISC-V64 Fuchsia must be compiled with shadow
+    # call stack to avoid build failures due to ABI mismatch.
+    extra_rustc_flags = ["-Zsanitizer=shadow-call-stack"],
 )
 
 toolchain(
