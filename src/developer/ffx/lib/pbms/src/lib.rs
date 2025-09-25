@@ -25,6 +25,7 @@ use ::gcs::client::{Client, FileProgress, ProgressResult};
 use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::ffx_bail;
+use ffx_config::EnvironmentContext;
 use hyper::{Body, Method, Request};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -51,6 +52,10 @@ pub enum AuthFlowChoice {
 }
 
 const PRODUCT_BUNDLE_PATH_KEY: &str = "product.path";
+
+pub fn get_product_bundle_path(context: &EnvironmentContext) -> Result<String> {
+    Ok(context.get(PRODUCT_BUNDLE_PATH_KEY).unwrap_or_default())
+}
 
 /// Convert CLI arg or config strings to AuthFlowChoice.
 impl FromStr for AuthFlowChoice {
@@ -91,13 +96,11 @@ pub fn is_local_product_bundle<P: AsRef<Path>>(product_bundle: P) -> bool {
 /// otherwise the relative path is checked to exist, and if it does not,
 /// it is joined to the build_dir. This way, command line references to relative
 /// paths work as developer's expect, and still maintain the legacy behavior.
-pub async fn load_product_bundle(product_bundle: &Option<String>) -> Result<LoadedProductBundle> {
+pub async fn load_product_bundle(
+    product_bundle: impl AsRef<Utf8Path>,
+) -> Result<LoadedProductBundle> {
     // Can't use unwrap_or_else here since ffx config get is async.
-    let bundle_path: Utf8PathBuf = match product_bundle {
-        Some(p) => p.into(),
-        None => ffx_config::get::<String, &str>(PRODUCT_BUNDLE_PATH_KEY).unwrap_or_default().into(),
-    };
-
+    let bundle_path: &Utf8Path = product_bundle.as_ref();
     if bundle_path.as_std_path() == Path::new("") {
         anyhow::bail!("No product bundle path configured, nor specified.");
     }
@@ -219,7 +222,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ffx_config::ConfigLevel;
     use ffx_config::environment::test_env;
     use std::fs::File;
     use tempfile::TempDir;
@@ -231,24 +233,16 @@ mod tests {
             Utf8Path::from_path(test_dir.path()).expect("cannot convert builddir to Utf8Path");
         let _env = test_env().in_tree(&test_dir.path()).build().await.unwrap();
 
-        let empty_pb: Option<String> = None;
-        // If no product bundle path provided and no config return None
-        let pb = load_product_bundle(&empty_pb).await;
-        assert_eq!(
-            pb.err().unwrap().to_string(),
-            "No product bundle path configured, nor specified."
-        );
-
         // If pb provided but invalid path return None
         let pb_path = build_dir.join("__invalid__").to_string();
-        let pb = load_product_bundle(&Some(pb_path.clone())).await;
+        let pb = load_product_bundle(&pb_path.clone()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("Could not find product bundle in \"{pb_path}\"")
         );
 
         // If pb provided and absolute and valid return Some(abspath)
-        let pb = load_product_bundle(&Some(build_dir.to_string())).await;
+        let pb = load_product_bundle(build_dir).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("No such file or directory (os error 2): \"{build_dir}/product_bundle.json\"")
@@ -257,14 +251,14 @@ mod tests {
         // If pb provided, relative and but to a file not a directory.
         let relpath = "foo".to_string();
         std::fs::File::create(build_dir.join(relpath.clone())).expect("create relative dir");
-        let pb = load_product_bundle(&Some(relpath.clone())).await;
+        let pb = load_product_bundle(&relpath.clone()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("{}/{relpath} is not a directory", build_dir.to_string())
         );
 
         // If pb provided and relative and invalid return None
-        let pb = load_product_bundle(&Some("invalid".into())).await;
+        let pb = load_product_bundle(&"invalid".to_string()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!(
@@ -279,7 +273,7 @@ mod tests {
         let _env = ffx_config::test_init().await.unwrap();
 
         // Can handle an empty build path
-        let pb = load_product_bundle(&Some("some_place".to_string())).await;
+        let pb = load_product_bundle("some_place".to_string()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("Could not find product bundle in \"some_place\"")
@@ -344,20 +338,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let pb_dir = make_pb_v2_in!(tmp, "fake.x64");
 
-        let env = ffx_config::test_init().await.expect("create test config");
         // Load with passing a path directly
-        let pb = load_product_bundle(&Some(pb_dir.to_string()))
-            .await
-            .expect("could not load product bundle");
-        assert_eq!(pb.loaded_from_path(), pb_dir);
-
-        // Load with the config set with absolute path
-        env.context
-            .query(PRODUCT_BUNDLE_PATH_KEY)
-            .level(Some(ConfigLevel::User))
-            .set(serde_json::Value::String(pb_dir.to_string()))
-            .expect("set product.path path");
-        let pb = load_product_bundle(&None).await.expect("could not load product bundle");
+        let pb = load_product_bundle(pb_dir).await.expect("could not load product bundle");
         assert_eq!(pb.loaded_from_path(), pb_dir);
     }
 
@@ -368,7 +350,7 @@ mod tests {
         let _env = ffx_config::test_init().await.expect("create test config");
 
         // Load with passing a path directly
-        let pb = load_product_bundle(&Some(pb_dir.to_string())).await;
+        let pb = load_product_bundle(pb_dir).await;
         assert!(pb.is_err());
     }
 }
