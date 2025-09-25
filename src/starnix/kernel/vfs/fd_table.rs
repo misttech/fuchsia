@@ -484,91 +484,101 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_fd_table_install() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let files = FdTable::default();
-        let file = SyslogFile::new_file(locked, &current_task);
+        spawn_kernel_and_run(|locked, current_task| {
+            let files = FdTable::default();
+            let file = SyslogFile::new_file(locked, &current_task);
 
-        let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
-        assert_eq!(fd0.raw(), 0);
-        let fd1 = add(locked, &current_task, &files, file.clone()).unwrap();
-        assert_eq!(fd1.raw(), 1);
+            let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
+            assert_eq!(fd0.raw(), 0);
+            let fd1 = add(locked, &current_task, &files, file.clone()).unwrap();
+            assert_eq!(fd1.raw(), 1);
 
-        assert!(Arc::ptr_eq(&files.get(fd0).unwrap(), &file));
-        assert!(Arc::ptr_eq(&files.get(fd1).unwrap(), &file));
-        assert_eq!(files.get(FdNumber::from_raw(fd1.raw() + 1)).map(|_| ()), error!(EBADF));
+            assert!(Arc::ptr_eq(&files.get(fd0).unwrap(), &file));
+            assert!(Arc::ptr_eq(&files.get(fd1).unwrap(), &file));
+            assert_eq!(files.get(FdNumber::from_raw(fd1.raw() + 1)).map(|_| ()), error!(EBADF));
 
-        files.release(());
+            files.release(());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_fd_table_fork() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let files = FdTable::default();
-        let file = SyslogFile::new_file(locked, &current_task);
+        spawn_kernel_and_run(|locked, current_task| {
+            let files = FdTable::default();
+            let file = SyslogFile::new_file(locked, &current_task);
 
-        let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
-        let fd1 = add(locked, &current_task, &files, file).unwrap();
-        let fd2 = FdNumber::from_raw(2);
+            let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
+            let fd1 = add(locked, &current_task, &files, file).unwrap();
+            let fd2 = FdNumber::from_raw(2);
 
-        let forked = files.fork();
+            let forked = files.fork();
 
-        assert_eq!(Arc::as_ptr(&files.get(fd0).unwrap()), Arc::as_ptr(&forked.get(fd0).unwrap()));
-        assert_eq!(Arc::as_ptr(&files.get(fd1).unwrap()), Arc::as_ptr(&forked.get(fd1).unwrap()));
-        assert!(files.get(fd2).is_err());
-        assert!(forked.get(fd2).is_err());
+            assert_eq!(
+                Arc::as_ptr(&files.get(fd0).unwrap()),
+                Arc::as_ptr(&forked.get(fd0).unwrap())
+            );
+            assert_eq!(
+                Arc::as_ptr(&files.get(fd1).unwrap()),
+                Arc::as_ptr(&forked.get(fd1).unwrap())
+            );
+            assert!(files.get(fd2).is_err());
+            assert!(forked.get(fd2).is_err());
 
-        files.set_fd_flags_allowing_opath(fd0, FdFlags::CLOEXEC).unwrap();
-        assert_eq!(FdFlags::CLOEXEC, files.get_fd_flags_allowing_opath(fd0).unwrap());
-        assert_ne!(FdFlags::CLOEXEC, forked.get_fd_flags_allowing_opath(fd0).unwrap());
+            files.set_fd_flags_allowing_opath(fd0, FdFlags::CLOEXEC).unwrap();
+            assert_eq!(FdFlags::CLOEXEC, files.get_fd_flags_allowing_opath(fd0).unwrap());
+            assert_ne!(FdFlags::CLOEXEC, forked.get_fd_flags_allowing_opath(fd0).unwrap());
 
-        forked.release(());
-        files.release(());
+            forked.release(());
+            files.release(());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_fd_table_exec() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let files = FdTable::default();
-        let file = SyslogFile::new_file(locked, &current_task);
+        spawn_kernel_and_run(|locked, current_task| {
+            let files = FdTable::default();
+            let file = SyslogFile::new_file(locked, &current_task);
 
-        let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
-        let fd1 = add(locked, &current_task, &files, file).unwrap();
+            let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
+            let fd1 = add(locked, &current_task, &files, file).unwrap();
 
-        files.set_fd_flags_allowing_opath(fd0, FdFlags::CLOEXEC).unwrap();
+            files.set_fd_flags_allowing_opath(fd0, FdFlags::CLOEXEC).unwrap();
 
-        assert!(files.get(fd0).is_ok());
-        assert!(files.get(fd1).is_ok());
+            assert!(files.get(fd0).is_ok());
+            assert!(files.get(fd1).is_ok());
 
-        files.exec();
+            files.exec();
 
-        assert!(files.get(fd0).is_err());
-        assert!(files.get(fd1).is_ok());
+            assert!(files.get(fd0).is_err());
+            assert!(files.get(fd1).is_ok());
 
-        files.release(());
+            files.release(());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_fd_table_pack_values() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let files = FdTable::default();
-        let file = SyslogFile::new_file(locked, &current_task);
+        spawn_kernel_and_run(|locked, current_task| {
+            let files = FdTable::default();
+            let file = SyslogFile::new_file(locked, &current_task);
 
-        // Add two FDs.
-        let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
-        let fd1 = add(locked, &current_task, &files, file.clone()).unwrap();
-        assert_eq!(fd0.raw(), 0);
-        assert_eq!(fd1.raw(), 1);
+            // Add two FDs.
+            let fd0 = add(locked, &current_task, &files, file.clone()).unwrap();
+            let fd1 = add(locked, &current_task, &files, file.clone()).unwrap();
+            assert_eq!(fd0.raw(), 0);
+            assert_eq!(fd1.raw(), 1);
 
-        // Close FD 0
-        assert!(files.close(fd0).is_ok());
-        assert!(files.close(fd0).is_err());
-        // Now it's gone.
-        assert!(files.get(fd0).is_err());
+            // Close FD 0
+            assert!(files.close(fd0).is_ok());
+            assert!(files.close(fd0).is_err());
+            // Now it's gone.
+            assert!(files.get(fd0).is_err());
 
-        // The next FD we insert fills in the hole we created.
-        let another_fd = add(locked, &current_task, &files, file).unwrap();
-        assert_eq!(another_fd.raw(), 0);
+            // The next FD we insert fills in the hole we created.
+            let another_fd = add(locked, &current_task, &files, file).unwrap();
+            assert_eq!(another_fd.raw(), 0);
 
-        files.release(());
+            files.release(());
+        });
     }
 }
