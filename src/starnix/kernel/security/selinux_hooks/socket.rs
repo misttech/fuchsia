@@ -573,8 +573,7 @@ pub(in crate::security) fn unix_stream_connect(
 
     // Verify whether the `client_socket` has permission to connect to the `listening_socket`.
     let client_sid = fs_node_effective_sid_and_class(&client_node).sid;
-    todo_has_socket_permission(
-        TODO_DENY!("https://fxbug.dev/364569156", "Enforce unix_stream_connect"),
+    has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
         client_sid,
