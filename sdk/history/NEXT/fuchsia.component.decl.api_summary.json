@@ -2186,6 +2186,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.component.decl/UseProtocol.numbered_handle",
+        "ordinal": "7",
+        "type": "uint8"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.component.decl/UseProtocol.source",
         "ordinal": "1",
         "type": "fuchsia.component.decl/Ref"

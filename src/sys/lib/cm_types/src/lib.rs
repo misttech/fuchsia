@@ -1653,6 +1653,14 @@ impl From<fuchsia_runtime::HandleType> for HandleType {
     }
 }
 
+impl From<HandleType> for Name {
+    fn from(numbered_handle: HandleType) -> Self {
+        let numbered_handle: u8 = numbered_handle.into();
+        let numbered_handle = format!("{numbered_handle:x}");
+        Self::new(numbered_handle).expect("numbered_handle is a valid dictionary key")
+    }
+}
+
 const HANDLE_TYPE_EXPECT_STR: &str = "a uint8 from zircon/processargs.h";
 
 impl<'de> de::Deserialize<'de> for HandleType {

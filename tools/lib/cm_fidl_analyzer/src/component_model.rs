@@ -12,7 +12,7 @@ use cm_rust::{
     OfferDeclCommon, OfferStorageDecl, OfferTarget, ProgramDecl, ResolverRegistration, SourceName,
     UseDecl, UseDeclCommon, UseEventStreamDecl, UseRunnerDecl, UseSource, UseStorageDecl,
 };
-use cm_types::{Name, Url};
+use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
 use fidl::prelude::*;
 use fuchsia_url::AbsoluteComponentUrl;
@@ -800,13 +800,12 @@ impl ComponentModelForAnalyzer {
     }
 
     pub async fn check_used_path(
-        namespace_path: &cm_types::Path,
+        path: &impl IterablePath,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Result<CapabilitySource, RouterError> {
         let namespace = target.sandbox.program_input.namespace();
-        let path = namespace_path.split();
         let mut current_capability = Capability::Dictionary(namespace);
-        for item in path {
+        for item in path.iter_segments() {
             let dictionary = match current_capability {
                 Capability::Dictionary(dictionary) => dictionary,
                 Capability::DictionaryRouter(router) => {
@@ -1608,7 +1607,7 @@ mod tests {
                 source: UseSource::Parent,
                 source_name: "bar_svc".parse().unwrap(),
                 source_dictionary: Default::default(),
-                target_path: "/svc/hippo".parse().unwrap(),
+                target_path: Some("/svc/hippo".parse().unwrap()),
                 numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,

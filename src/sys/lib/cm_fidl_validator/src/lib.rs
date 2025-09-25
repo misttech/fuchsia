@@ -742,6 +742,16 @@ impl<'a> ValidationContext<'a> {
                     u.dependency_type.as_ref(),
                     u.availability.as_ref(),
                 );
+                #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                let has_numbered_handle = false;
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                let has_numbered_handle = u.numbered_handle.is_some();
+                if u.target_path.is_none() && !has_numbered_handle {
+                    self.errors.push(Error::missing_field(decl, "target_path"));
+                }
+                if has_numbered_handle && u.target_path.is_some() {
+                    self.errors.push(Error::extraneous_field(decl, "numbered_handle"));
+                }
                 if u.dependency_type.is_none() {
                     self.errors.push(Error::missing_field(decl, "dependency_type"));
                 }
@@ -1017,8 +1027,19 @@ impl<'a> ValidationContext<'a> {
         if source_dictionary.is_some() {
             check_relative_path(source_dictionary, decl, "source_dictionary", &mut self.errors);
         }
-        if decl != DeclType::UseRunner && decl != DeclType::UseConfiguration {
-            check_path(target_path, decl, "target_path", &mut self.errors);
+        match decl {
+            DeclType::UseRunner | DeclType::UseConfiguration => {}
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            DeclType::UseProtocol => {
+                if target_path.is_some() {
+                    check_path(target_path, decl, "target_path", &mut self.errors);
+                } else {
+                    // Expect this use to contain numbered_handle, verified by the caller.
+                }
+            }
+            _ => {
+                check_path(target_path, decl, "target_path", &mut self.errors);
+            }
         }
         check_use_availability(decl, availability, &mut self.errors);
 
@@ -3586,6 +3607,35 @@ mod tests {
                 Error::invalid_capability(DeclType::UseRunner, "source", "source_elf"),
                 Error::invalid_capability(DeclType::UseConfiguration, "source", "source_config"),
                 Error::invalid_capability(DeclType::UseProtocol, "source", "dict"),
+            ])),
+        },
+        test_validate_use_numbered_handle => {
+            input = {
+                fdecl::Component {
+                    uses: Some(vec![
+                        // Valid
+                        fdecl::Use::Protocol(fdecl::UseProtocol {
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                            source_name: Some("fuchsia.logger.LogSink".into()),
+                            numbered_handle: Some(0xab),
+                            ..Default::default()
+                        }),
+                        // Invalid
+                        fdecl::Use::Protocol(fdecl::UseProtocol {
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                            source_name: Some("fuchsia.logger.LogSink".into()),
+                            target_path: Some("/svc/fuchsia.logger.LogSink".into()),
+                            numbered_handle: Some(0xab),
+                            ..Default::default()
+                        }),
+                    ]),
+                    ..new_component_decl()
+                }
+            },
+            result = Err(ErrorList::new(vec![
+                Error::extraneous_field(DeclType::UseProtocol, "numbered_handle"),
             ])),
         },
         test_validate_use_from_child_offer_to_child_strong_cycle => {

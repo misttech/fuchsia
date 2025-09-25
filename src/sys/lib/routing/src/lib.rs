@@ -448,13 +448,27 @@ where
             route_event_stream(use_event_stream_decl, target, mapper).await
         }
         RouteRequest::UseProtocol(use_protocol_decl) => {
-            route_capability_inner::<Connector, _>(
-                &target.component_sandbox().await?.program_input.namespace(),
-                &use_protocol_decl.target_path,
-                protocol_metadata(use_protocol_decl.availability),
-                target,
-            )
-            .await
+            if let Some(target_path) = use_protocol_decl.target_path.as_ref() {
+                route_capability_inner::<Connector, _>(
+                    &target.component_sandbox().await?.program_input.namespace(),
+                    target_path,
+                    protocol_metadata(use_protocol_decl.availability),
+                    target,
+                )
+                .await
+            } else {
+                let numbered_handle = use_protocol_decl
+                    .numbered_handle
+                    .expect("validation guarantees numbered_handle is set");
+                let numbered_handle = Name::from(numbered_handle);
+                route_capability_inner::<Connector, _>(
+                    &target.component_sandbox().await?.program_input.numbered_handles(),
+                    &numbered_handle,
+                    protocol_metadata(use_protocol_decl.availability),
+                    target,
+                )
+                .await
+            }
         }
         RouteRequest::UseService(use_service_decl) => {
             route_capability_inner::<DirConnector, _>(

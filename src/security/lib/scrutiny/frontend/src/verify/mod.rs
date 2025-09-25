@@ -221,7 +221,7 @@ mod tests {
             source,
             source_name,
             source_dictionary: Default::default(),
-            target_path: "/dir/svc".parse().unwrap(),
+            target_path: Some("/dir/svc".parse().unwrap()),
             numbered_handle: None,
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,

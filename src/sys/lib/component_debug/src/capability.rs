@@ -229,7 +229,7 @@ mod tests {
                             source: UseSource::Parent,
                             source_name: "fuchsia.foo.bar".parse().unwrap(),
                             source_dictionary: Default::default(),
-                            target_path: "/svc/fuchsia.foo.bar".parse().unwrap(),
+                            target_path: Some("/svc/fuchsia.foo.bar".parse().unwrap()),
                             dependency_type: DependencyType::Strong,
                             numbered_handle: None,
                             availability: Availability::Required

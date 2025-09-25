@@ -58,6 +58,7 @@ pub type EventStreamUseRouterFn<C> =
     dyn Fn(&Arc<C>, Vec<EventStreamSourceRouter>) -> Router<Connector>;
 
 static NAMESPACE: LazyLock<Name> = LazyLock::new(|| "namespace".parse().unwrap());
+static NUMBERED_HANDLES: LazyLock<Name> = LazyLock::new(|| "numbered_handles".parse().unwrap());
 static RUNNER: LazyLock<Name> = LazyLock::new(|| "runner".parse().unwrap());
 static CONFIG: LazyLock<Name> = LazyLock::new(|| "config".parse().unwrap());
 
@@ -90,6 +91,7 @@ impl ProgramInput {
         if let Some(runner) = runner {
             inner.insert(RUNNER.clone(), runner.into()).unwrap();
         }
+        inner.insert(NUMBERED_HANDLES.clone(), Dict::new().into()).unwrap();
         inner.insert(CONFIG.clone(), config.into()).unwrap();
         ProgramInput { inner }
     }
@@ -99,6 +101,16 @@ impl ProgramInput {
         let cap = self.inner.get(&*NAMESPACE).expect("capabilities must be cloneable").unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("namespace entry must be a dict: {cap:?}");
+        };
+        dict
+    }
+
+    /// All of the capabilities that appear in a program's set of numbered handles.
+    pub fn numbered_handles(&self) -> Dict {
+        let cap =
+            self.inner.get(&*NUMBERED_HANDLES).expect("capabilities must be cloneable").unwrap();
+        let Capability::Dictionary(dict) = cap else {
+            unreachable!("numbered_handles entry must be a dict: {cap:?}");
         };
         dict
     }
@@ -866,7 +878,7 @@ fn group_use_aggregates(uses: &[cm_rust::UseDecl]) -> Vec<Vec<&cm_rust::UseDecl>
     for use_ in uses.iter() {
         let maybe_target_path = match use_ {
             cm_rust::UseDecl::Service(u) => Some(&u.target_path),
-            cm_rust::UseDecl::Protocol(u) => Some(&u.target_path),
+            cm_rust::UseDecl::Protocol(u) => u.target_path.as_ref(),
             cm_rust::UseDecl::Directory(u) => Some(&u.target_path),
             cm_rust::UseDecl::Storage(u) => Some(&u.target_path),
             cm_rust::UseDecl::EventStream(u) => Some(&u.target_path),
@@ -1396,6 +1408,18 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
         }
     } else {
         match use_ {
+            cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
+                numbered_handle: Some(numbered_handle),
+                ..
+            }) => {
+                let numbered_handle = Name::from(*numbered_handle);
+                if let Err(e) = program_input
+                    .numbered_handles()
+                    .insert_capability(&numbered_handle, router.into())
+                {
+                    warn!("failed to insert {} in program input dict: {e:?}", numbered_handle)
+                }
+            }
             cm_rust::UseDecl::Runner(_) => {
                 assert!(program_input.runner().is_none(), "component can't use multiple runners");
                 program_input.set_runner(router.into());

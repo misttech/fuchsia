@@ -278,8 +278,15 @@ impl RoutingTestForAnalyzer {
                 decl.uses
                     .iter()
                     .find_map(|u| match u {
-                        UseDecl::Protocol(d) if d.target_path == path => Some(u.clone()),
-                        _ => None,
+                        UseDecl::Protocol(d)
+                            if d.target_path.as_ref().map(|p| *p == path).unwrap_or(false) =>
+                        {
+                            Some(u.clone())
+                        }
+                        _ => {
+                            // TODO(https://fxbug.dev/446687649): Check `numbered_handle` if set
+                            None
+                        }
                     })
                     .ok_or(TestModelError::UseDeclNotFound),
                 expected_res,
@@ -450,13 +457,14 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             self.check_storage_use(check, target).await;
             return;
         }
-        let (path, expected) = match &check {
+        let (result, expected) = match &check {
             CheckUse::Protocol { path, expected_res, .. }
             | CheckUse::Service { path, expected_res, .. }
             | CheckUse::Directory { path, expected_res, .. }
             | CheckUse::Storage { path, expected_res, .. }
             | CheckUse::EventStream { path, expected_res, .. } => {
-                (path.clone(), expected_res.clone())
+                let result = ComponentModelForAnalyzer::check_used_path(path, &target).await;
+                (result, expected_res.clone())
             }
             CheckUse::StorageAdmin { expected_res, .. } => {
                 let maybe_use = target.decl_for_testing().uses.iter().find_map(|u| match u {
@@ -470,7 +478,16 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
                     _ => None,
                 });
                 match maybe_use {
-                    Some(use_) => (use_.target_path, expected_res.clone()),
+                    Some(use_) => {
+                        let result = if let Some(path) = use_.target_path {
+                            ComponentModelForAnalyzer::check_used_path(&path, &target).await
+                        } else {
+                            // TODO(https://fxbug.dev/446687649): Check the numbered handle in this
+                            // branch
+                            return;
+                        };
+                        (result, expected_res.clone())
+                    }
                     None if expected_res == &ExpectedResult::Err(zx_status::Status::NOT_FOUND) => {
                         return;
                     }
@@ -479,7 +496,6 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             }
         };
 
-        let result = ComponentModelForAnalyzer::check_used_path(&path, &target).await;
         match (&result, expected) {
             (Ok(CapabilitySource::Void(_)), ExpectedResult::Err(zx_status::Status::NOT_FOUND)) => {
                 // Void results are equivalent to NOT_FOUND

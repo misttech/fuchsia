@@ -9,6 +9,7 @@ use cm_rust::{
     ExposeDecl, ExposeDictionaryDecl, ExposeProtocolDecl, ExposeRunnerDecl, ExposeServiceDecl,
     UseDecl, UseProtocolDecl, UseRunnerDecl, UseServiceDecl,
 };
+use cm_types::Name;
 use sandbox::Capability;
 
 /// A request to route a capability through the bedrock layer from use.
@@ -43,22 +44,45 @@ impl UseRouteRequest {
     ) -> Capability {
         match self {
             Self::UseProtocol(decl) => {
-                let Some(capability) = program_input.namespace().get_capability(&decl.target_path)
-                else {
-                    panic!(
-                        "router for capability {:?} is missing from program input dictionary for \
-                         component {}",
-                        decl.target_path, target.moniker
-                    );
-                };
-                let Capability::ConnectorRouter(_) = &capability else {
-                    panic!(
-                        "program input dictionary for component {} had an entry with an unexpected \
-                         type: {:?}",
-                        target.moniker, capability
-                    );
-                };
-                capability
+                if let Some(target_path) = decl.target_path.as_ref() {
+                    let Some(capability) = program_input.namespace().get_capability(target_path)
+                    else {
+                        panic!(
+                            "router for capability {:?} is missing from program input dictionary \
+                             for component {}",
+                            target_path, target.moniker
+                        );
+                    };
+                    let Capability::ConnectorRouter(_) = &capability else {
+                        panic!(
+                            "program input dictionary for component {} had an entry with an \
+                            unexpected type: {:?}",
+                            target.moniker, capability
+                        );
+                    };
+                    capability
+                } else {
+                    let numbered_handle =
+                        decl.numbered_handle.expect("validation guarantees numbered_handle is set");
+                    let numbered_handle = Name::from(numbered_handle);
+                    let Some(capability) =
+                        program_input.numbered_handles().get_capability(&numbered_handle)
+                    else {
+                        panic!(
+                            "router for capability {:?} is missing from program input dictionary \
+                             for component {}",
+                            numbered_handle, target.moniker
+                        );
+                    };
+                    let Capability::ConnectorRouter(_) = &capability else {
+                        panic!(
+                            "program input dictionary for component {} had an entry with an \
+                            unexpected type: {:?}",
+                            target.moniker, capability
+                        );
+                    };
+                    capability
+                }
             }
             Self::UseRunner(_) => {
                 // A component can only use one runner, it must be this one.

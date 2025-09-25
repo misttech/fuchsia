@@ -1100,9 +1100,9 @@ mod tests {
             source: UseSource::Parent,
             source_name: bredr_test::ProfileTestMarker::PROTOCOL_NAME.parse().unwrap(),
             source_dictionary: Default::default(),
-            target_path: format!("/svc/{}", bredr_test::ProfileTestMarker::PROTOCOL_NAME)
-                .parse()
-                .unwrap(),
+            target_path: Some(
+                format!("/svc/{}", bredr_test::ProfileTestMarker::PROTOCOL_NAME).parse().unwrap(),
+            ),
             numbered_handle: None,
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1174,9 +1174,9 @@ mod tests {
             source: UseSource::Parent,
             source_name: profile_test_name.clone(),
             source_dictionary: Default::default(),
-            target_path: format!("/svc/{}", bredr_test::ProfileTestMarker::PROTOCOL_NAME)
-                .parse()
-                .unwrap(),
+            target_path: Some(
+                format!("/svc/{}", bredr_test::ProfileTestMarker::PROTOCOL_NAME).parse().unwrap(),
+            ),
             numbered_handle: None,
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,

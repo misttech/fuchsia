@@ -4,6 +4,7 @@
 
 use crate::model::component::ComponentInstance;
 use crate::model::component::instance::ResolvedInstanceState;
+use cm_types::Name;
 use diagnostics_log::{BufferedPublisher, PublisherOptions};
 use fidl::endpoints;
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -58,11 +59,39 @@ impl LoggerCache {
         let Some(decl) = get_logsink_decl(&decl) else {
             return false;
         };
-        let program_input_dict = resolved_instance_state.sandbox.program_input.namespace();
-        let Some(Capability::ConnectorRouter(router)) =
-            program_input_dict.get_capability(&decl.target_path)
-        else {
-            return false;
+        let program_input_dict = &resolved_instance_state.sandbox.program_input;
+        let router = match &decl {
+            cm_rust::UseProtocolDecl {
+                target_path: Some(target_path),
+                numbered_handle: None,
+                ..
+            } => {
+                let Some(Capability::ConnectorRouter(router)) =
+                    program_input_dict.namespace().get_capability(target_path)
+                else {
+                    return false;
+                };
+                router
+            }
+            cm_rust::UseProtocolDecl {
+                numbered_handle: Some(numbered_handle),
+                target_path: None,
+                ..
+            } => {
+                let numbered_handle = Name::from(*numbered_handle);
+                let Some(Capability::ConnectorRouter(router)) =
+                    program_input_dict.numbered_handles().get_capability(&numbered_handle)
+                else {
+                    return false;
+                };
+                router
+            }
+            _ => {
+                panic!(
+                    "UseProtocolDecl had neither or both of numbered_handle and target_path. \
+                    Validation prevents this."
+                );
+            }
         };
 
         let (logsink, server) = endpoints::create_endpoints::<flogger::LogSinkMarker>();
@@ -182,7 +211,7 @@ mod tests {
                 source: UseSource::Parent,
                 source_name: LOG_SINK_PROTOCOL.parse().unwrap(),
                 source_dictionary: Default::default(),
-                target_path: target_path.clone(),
+                target_path: Some(target_path.clone()),
                 numbered_handle: None,
                 dependency_type: cm_rust::DependencyType::Strong,
                 availability: cm_rust::Availability::Required,

@@ -1900,12 +1900,11 @@ async fn nested_component_manager_decl(
             OfferDecl::Protocol(decl) => UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Parent,
                 source_name: decl.source_name.clone(),
-                target_path: Path::new(format!(
-                    "{CLIENT_CAPABILITY_PASSTHROUGH_PATH}/{}",
-                    decl.source_name
-                ))
-                .unwrap(),
-                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                target_path: Some(
+                    Path::new(format!("{CLIENT_CAPABILITY_PASSTHROUGH_PATH}/{}", decl.source_name))
+                        .unwrap(),
+                ),
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
                 numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::default(),
@@ -2540,8 +2539,8 @@ fn create_use_decl(
                 source,
                 source_name,
                 source_dictionary,
-                target_path,
-                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                target_path: Some(target_path),
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
                 numbered_handle: None,
                 dependency_type,
                 availability: check_and_unwrap_use_availability(protocol.availability)?,

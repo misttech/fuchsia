@@ -594,7 +594,7 @@ pub struct UseBuilder {
     source: cm_rust::UseSource,
     target_name: Option<Name>,
     target_path: Option<Path>,
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
     numbered_handle: Option<cm_types::HandleType>,
     dependency_type: cm_rust::DependencyType,
     availability: cm_rust::Availability,
@@ -641,7 +641,7 @@ impl UseBuilder {
             source_name: None,
             target_name: None,
             target_path: None,
-            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
             numbered_handle: None,
             source_dictionary: Default::default(),
             rights: fio::R_STAR_DIR,
@@ -693,10 +693,11 @@ impl UseBuilder {
         self
     }
 
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
     pub fn numbered_handle(mut self, h: impl Into<cm_types::HandleType>) -> Self {
         assert_matches!(self.type_, CapabilityTypeName::Protocol);
         self.numbered_handle = Some(h.into());
+        self.target_path = None;
         self
     }
 
@@ -779,16 +780,28 @@ impl UseBuilder {
 
     pub fn build(self) -> cm_rust::UseDecl {
         match self.type_ {
-            CapabilityTypeName::Protocol => cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
-                source: self.source,
-                source_name: self.source_name.expect("name not set"),
-                source_dictionary: self.source_dictionary,
-                target_path: self.target_path.expect("path not set"),
-                #[cfg(fuchsia_api_level_at_least = "HEAD")]
-                numbered_handle: self.numbered_handle,
-                dependency_type: self.dependency_type,
-                availability: self.availability,
-            }),
+            CapabilityTypeName::Protocol => {
+                #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                let has_numbered_handle = false;
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                let has_numbered_handle = self.numbered_handle.is_some();
+                if !has_numbered_handle && self.target_path.is_none() {
+                    panic!("path not set");
+                }
+                if has_numbered_handle && self.target_path.is_some() {
+                    panic!("path and numbered_handle both set");
+                }
+                cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
+                    source: self.source,
+                    source_name: self.source_name.expect("name not set"),
+                    source_dictionary: self.source_dictionary,
+                    target_path: self.target_path,
+                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    numbered_handle: self.numbered_handle,
+                    dependency_type: self.dependency_type,
+                    availability: self.availability,
+                })
+            }
             CapabilityTypeName::Service => cm_rust::UseDecl::Service(cm_rust::UseServiceDecl {
                 source: self.source,
                 source_name: self.source_name.expect("name not set"),

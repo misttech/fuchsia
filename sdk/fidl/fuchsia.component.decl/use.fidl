@@ -95,7 +95,7 @@ type UseProtocol = table {
     ///
     /// If this is set, we still require `target_path` to also be set, although we could relax this
     /// restriction in the future.
-    @available(added=HEAD)
+    @available(added=NEXT)
     7: numbered_handle uint8;
 
     /// (Required) The dependency type this use represents.

@@ -32,7 +32,7 @@ static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
         source: cm_rust::UseSource::Framework,
         source_name: INTROSPECTOR_SERVICE.clone(),
         source_dictionary: Default::default(),
-        target_path: cm_types::Path::new("/null").unwrap(),
+        target_path: Some(cm_types::Path::new("/null").unwrap()),
         numbered_handle: None,
         dependency_type: cm_rust::DependencyType::Strong,
         availability: Default::default(),

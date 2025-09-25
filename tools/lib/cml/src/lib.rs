@@ -2891,7 +2891,6 @@ pub struct Use {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<Path>,
 
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
     /// A processargs ordinal (aka. "numbered handle") over which a channel to this protocol will
     /// be delivered to the component's processargs.
     ///

@@ -95,12 +95,11 @@ fn open_protocols_with_numbered_handle(
     resolved_instance_state: &ResolvedInstanceState,
 ) -> Vec<fprocess::HandleInfo> {
     let decl = &resolved_instance_state.resolved_component.decl;
-    let program_input_dict = resolved_instance_state.sandbox.program_input.namespace();
+    let numbered_handle_dict = resolved_instance_state.sandbox.program_input.numbered_handles();
     decl.uses
         .iter()
         .filter_map(|use_| match use_ {
             cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
-                target_path,
                 numbered_handle: Some(numbered_handle),
                 ..
             }) => {
@@ -114,7 +113,8 @@ fn open_protocols_with_numbered_handle(
                             .as_raw(),
                     })
                 }
-                let cap = program_input_dict.get_capability(target_path);
+                let numbered_handle_key = Name::from(*numbered_handle);
+                let cap = numbered_handle_dict.get_capability(&numbered_handle_key);
                 match cap {
                     Some(Capability::ConnectorRouter(router)) => {
                         let scope = &resolved_instance_state.execution_scope;
@@ -153,9 +153,9 @@ fn open_protocols_with_numbered_handle(
                     }
                     None => {
                         warn!(
-                            "open_protocols_with_numbered_handle: {} not found in \
+                            "open_protocols_with_numbered_handle: {:?} not found in \
                             program_input_dict. This should never happen.",
-                            target_path
+                            numbered_handle
                         );
                         None
                     }

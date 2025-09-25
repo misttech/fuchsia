@@ -373,8 +373,8 @@ pub struct UseProtocolDecl {
     pub source_name: Name,
     #[fidl_decl(default_preserve_none)]
     pub source_dictionary: RelativePath,
-    pub target_path: Path,
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub target_path: Option<Path>,
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
     pub numbered_handle: Option<HandleType>,
     pub dependency_type: DependencyType,
     #[fidl_decl(default)]
@@ -1979,7 +1979,7 @@ impl UseDecl {
     pub fn path(&self) -> Option<&Path> {
         match self {
             UseDecl::Service(d) => Some(&d.target_path),
-            UseDecl::Protocol(d) => Some(&d.target_path),
+            UseDecl::Protocol(d) => d.target_path.as_ref(),
             UseDecl::Directory(d) => Some(&d.target_path),
             UseDecl::Storage(d) => Some(&d.target_path),
             UseDecl::EventStream(d) => Some(&d.target_path),
@@ -2927,7 +2927,7 @@ mod tests {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("legacy_netstack".to_string()),
                         source_dictionary: Some("in/dict".to_string()),
-                        target_path: Some("/svc/legacy_mynetstack".to_string()),
+                        target_path: None,
                         numbered_handle: Some(0xab),
                         availability: Some(fdecl::Availability::Optional),
                         ..Default::default()
@@ -3412,7 +3412,7 @@ mod tests {
                             source: UseSource::Parent,
                             source_name: "legacy_netstack".parse().unwrap(),
                             source_dictionary: "in/dict".parse().unwrap(),
-                            target_path: "/svc/legacy_mynetstack".parse().unwrap(),
+                            target_path: None,
                             numbered_handle: Some(HandleType::from(0xab)),
                             availability: Availability::Optional,
                         }),
@@ -3421,7 +3421,7 @@ mod tests {
                             source: UseSource::Child("echo".parse().unwrap()),
                             source_name: "echo_service".parse().unwrap(),
                             source_dictionary: "in/dict".parse().unwrap(),
-                            target_path: "/svc/echo_service".parse().unwrap(),
+                            target_path: Some("/svc/echo_service".parse().unwrap()),
                             numbered_handle: None,
                             availability: Availability::Required,
                         }),

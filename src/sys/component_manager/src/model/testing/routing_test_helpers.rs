@@ -515,7 +515,7 @@ impl RoutingTest {
             .filter_map(|u| match u {
                 UseDecl::Directory(d) => Some(d.target_path.to_string()),
                 UseDecl::Service(s) => Some(s.target_path.parent().to_string()),
-                UseDecl::Protocol(s) => Some(s.target_path.parent().to_string()),
+                UseDecl::Protocol(s) => s.target_path.as_ref().map(|p| p.parent().to_string()),
                 UseDecl::Storage(s) => Some(s.target_path.to_string()),
                 UseDecl::EventStream(s) => Some(s.target_path.parent().to_string()),
                 UseDecl::Runner(s) => Some(s.source_name.to_string().into()),

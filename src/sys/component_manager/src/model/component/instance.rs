@@ -775,7 +775,13 @@ impl ResolvedInstanceState {
         let uses = Self::deduplicate_event_stream(decl.uses.iter());
         for use_ in uses {
             let path: cm_types::Path = match use_ {
-                cm_rust::UseDecl::Protocol(d) => d.target_path.clone(),
+                cm_rust::UseDecl::Protocol(d) => {
+                    let path = d.target_path.as_ref();
+                    let Some(path) = path else {
+                        return;
+                    };
+                    path.clone()
+                }
                 cm_rust::UseDecl::Service(d) => d.target_path.clone(),
                 cm_rust::UseDecl::Directory(d) => d.target_path.clone(),
                 cm_rust::UseDecl::Storage(d) => d.target_path.clone(),

@@ -545,9 +545,13 @@ which is almost certainly a mistake: {}",
                 )));
             }
         }
-        if let Some(_) = use_.numbered_handle.as_ref() {
+        if use_.numbered_handle.as_ref().is_some() {
             if use_.protocol.is_some() {
-                // Allowed.
+                if use_.path.is_some() {
+                    return Err(Error::validate(format!(
+                        "`path` and `numbered_handle` are incompatible"
+                    )));
+                }
             } else {
                 return Err(Error::validate(format!(
                     "`numbered_handle` is only supported for `use protocol`"
@@ -3076,6 +3080,29 @@ mod tests {
                 ],
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is used from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+        test_cml_use_numbered_handle_not_protocol(
+            json!({
+                "use": [
+                    {
+                        "runner": "foo",
+                        "numbered_handle": 0xab,
+                    },
+                ],
+            }),
+            Err(Error::Validate { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
+        ),
+        test_cml_use_numbered_handle_and_path(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo",
+                        "path": "/svc/foo",
+                        "numbered_handle": 0xab,
+                    },
+                ],
+            }),
+            Err(Error::Validate { err, .. }) if &err == "`path` and `numbered_handle` are incompatible"
         ),
         test_cml_use_directory_from_self_missing(
             json!({

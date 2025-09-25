@@ -71,7 +71,9 @@ async fn get_worker_url() -> (String, fuchsia_async::Task<()>) {
             source: cm_rust::UseSource::Parent,
             source_name: cm_types::Name::new(fecho::EchoMarker::PROTOCOL_NAME).unwrap(),
             source_dictionary: cm_types::RelativePath::dot(),
-            target_path: format!("/svc/{}", fecho::EchoMarker::PROTOCOL_NAME).parse().unwrap(),
+            target_path: Some(
+                format!("/svc/{}", fecho::EchoMarker::PROTOCOL_NAME).parse().unwrap(),
+            ),
             numbered_handle: None,
             dependency_type: cm_rust::DependencyType::Strong,
             availability: cm_rust::Availability::Required,

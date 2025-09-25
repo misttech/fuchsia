@@ -299,10 +299,28 @@ fn translate_use(
         } else if let Some(n) = use_.protocol() {
             let (source, source_dictionary) =
                 extract_use_source(options, use_, all_capability_names, all_children, None)?;
+            let availability = extract_use_availability(use_)?;
+            if use_.numbered_handle.is_some() {
+                let OneOrMany::One(source_name) = n else {
+                    panic!("numbered_handle: multiple source_name");
+                };
+                out_uses.push(fdecl::Use::Protocol(fdecl::UseProtocol {
+                    source: Some(source.clone()),
+                    source_name: Some(source_name.to_string()),
+                    source_dictionary: source_dictionary.clone(),
+                    target_path: None,
+                    numbered_handle: use_.numbered_handle.map(Into::into),
+                    dependency_type: Some(
+                        use_.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
+                    ),
+                    availability: Some(availability),
+                    ..Default::default()
+                }));
+                continue;
+            }
+            let source_names = n.into_iter();
             let target_paths =
                 all_target_use_paths(use_, use_).ok_or_else(|| Error::internal("no capability"))?;
-            let source_names = n.into_iter();
-            let availability = extract_use_availability(use_)?;
             for (source_name, target_path) in source_names.into_iter().zip(target_paths.into_iter())
             {
                 out_uses.push(fdecl::Use::Protocol(fdecl::UseProtocol {
@@ -310,7 +328,6 @@ fn translate_use(
                     source_name: Some(source_name.to_string()),
                     source_dictionary: source_dictionary.clone(),
                     target_path: Some(target_path.into()),
-                    #[cfg(fuchsia_api_level_at_least = "HEAD")]
                     numbered_handle: use_.numbered_handle.map(Into::into),
                     dependency_type: Some(
                         use_.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
@@ -2959,8 +2976,11 @@ mod tests {
                     {
                         "protocol": "LegacyCoolFonts",
                         "path": "/svc/fuchsia.fonts.LegacyProvider",
-                        "numbered_handle": 0xab,
                         "availability": "optional",
+                    },
+                    {
+                        "protocol": "LegacyCoolFonts",
+                        "numbered_handle": 0xab,
                     },
                     { "protocol": "fuchsia.sys2.LegacyRealm", "from": "framework" },
                     { "protocol": "fuchsia.sys2.StorageAdmin", "from": "#data-storage" },
@@ -3030,8 +3050,17 @@ mod tests {
                             source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                             source_name: Some("LegacyCoolFonts".to_string()),
                             target_path: Some("/svc/fuchsia.fonts.LegacyProvider".to_string()),
-                            numbered_handle: Some(0xab),
                             availability: Some(fdecl::Availability::Optional),
+                            ..Default::default()
+                        }
+                    ),
+                    fdecl::Use::Protocol (
+                        fdecl::UseProtocol {
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                            source_name: Some("LegacyCoolFonts".to_string()),
+                            numbered_handle: Some(0xab),
+                            availability: Some(fdecl::Availability::Required),
                             ..Default::default()
                         }
                     ),
