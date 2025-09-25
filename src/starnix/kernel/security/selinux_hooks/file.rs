@@ -7,15 +7,16 @@
 
 use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
 use super::{
-    FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, current_task_state,
-    fs_node_effective_sid_and_class, has_file_ioctl_permission, has_file_permissions,
-    permissions_from_flags, todo_has_fs_node_permissions,
+    FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, check_permission,
+    current_task_state, fs_node_effective_sid_and_class, has_file_ioctl_permission,
+    has_file_permissions, permissions_from_flags, todo_has_fs_node_permissions,
 };
+
 use crate::TODO_DENY;
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingName, MappingOptions, ProtectionFlags};
 use crate::security::selinux_hooks::{
-    ProcessPermission, check_self_permission, has_fs_node_permissions, todo_check_permission,
+    ProcessPermission, check_self_permission, has_fs_node_permissions,
 };
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
@@ -372,8 +373,7 @@ fn file_map_prot_check(
             && prot.contains(ProtectionFlags::WRITE);
         if anonymous_mapping || private_writable_mapping {
             let current_sid = current_task_state(current_task).lock().current_sid;
-            todo_check_permission(
-                TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
+            check_permission(
                 &security_server.as_permission_check(),
                 current_task,
                 current_sid,
