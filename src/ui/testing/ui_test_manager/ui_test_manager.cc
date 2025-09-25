@@ -51,7 +51,10 @@ void UITestManager::BuildRealm() {
   fuchsia::ui::display::singleton::Metrics info;
   fuchsia::ui::display::singleton::InfoSyncPtr display_info =
       realm_.realm_root()->component().ConnectSync<fuchsia::ui::display::singleton::Info>();
+
+  FX_LOGS(INFO) << "*** UITestManager::BuildRealm calling GetMetrics";
   auto status = display_info->GetMetrics(&info);
+  FX_LOGS(INFO) << "*** UITestManager::BuildRealm GetMetrics returned: " << status;
 
   FX_DCHECK(status == ZX_OK);
 
