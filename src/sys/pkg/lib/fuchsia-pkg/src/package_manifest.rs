@@ -69,6 +69,15 @@ impl PackageManifest {
         }
     }
 
+    /// Sets the name of the package.
+    pub fn set_name(&mut self, name: PackageName) {
+        match &mut self.0 {
+            VersionedPackageManifest::Version1(manifest) => {
+                manifest.package.name = name;
+            }
+        }
+    }
+
     /// Write a package archive into the `out` file. The source files are relative to the `root_dir`
     /// directory.
     pub async fn archive(
@@ -1827,5 +1836,28 @@ mod tests {
 
         assert_eq!(source_path, "../data_source/p2");
         assert_eq!(subpackage_manifest_path, format!("../subpackage_manifests/{HASH_1}"));
+    }
+
+    #[test]
+    fn test_set_name() {
+        let mut manifest = PackageManifest(VersionedPackageManifest::Version1(PackageManifestV1 {
+            package: PackageMetadata {
+                name: "original-name".parse().unwrap(),
+                version: "0".parse().unwrap(),
+            },
+            blobs: vec![],
+            subpackages: vec![],
+            repository: None,
+            blob_sources_relative: Default::default(),
+            delivery_blob_type: None,
+            abi_revision: None,
+        }));
+
+        assert_eq!(manifest.name(), &"original-name".parse::<PackageName>().unwrap());
+
+        let new_name = "new-name".parse().unwrap();
+        manifest.set_name(new_name);
+
+        assert_eq!(manifest.name(), &"new-name".parse::<PackageName>().unwrap());
     }
 }
