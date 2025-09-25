@@ -1085,7 +1085,7 @@ impl HrTimerNode {
 mod tests {
     use super::*;
     use crate::task::HrTimer;
-    use crate::testing::{AutoReleasableTask, create_kernel_and_task};
+    use crate::testing::spawn_kernel_and_run;
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
     use fuchsia_runtime::UtcInstant;
     use std::thread;
@@ -1105,7 +1105,7 @@ mod tests {
     }
 
     // Injected for testing.
-    async fn connect_factory(message_counter: zx::Counter, response_type: Response) -> zx::Channel {
+    fn connect_factory(message_counter: zx::Counter, response_type: Response) -> zx::Channel {
         let (client, server) = zx::Channel::create();
 
         // A separate thread is needed to allow independent execution of the server.
@@ -1126,207 +1126,226 @@ mod tests {
     //
     // A tuple of:
     // - `HrTimerManagerHandle` the unit under test
-    // - `AutoReleasableTask` the kernel task to keep alive
     // - `zx::Counter` a message counter to use in tests to observe suspend state
-    async fn init_hr_timer_manager(
+    fn init_hr_timer_manager(
+        current_task: &CurrentTask,
         response_type: Response,
-    ) -> (HrTimerManagerHandle, AutoReleasableTask, zx::Counter) {
-        let (_, current_task) = create_kernel_and_task();
+    ) -> (HrTimerManagerHandle, zx::Counter) {
         let manager = Arc::new(HrTimerManager {
             state: Mutex::new(HrTimerManagerState::new_for_test()),
             start_next_sender: Default::default(),
         });
         let counter = zx::Counter::create();
         let counter_clone = duplicate_handle(&counter).unwrap();
-        let wake_channel = connect_factory(counter_clone, response_type).await;
+        let wake_channel = connect_factory(counter_clone, response_type);
         let counter_clone = duplicate_handle(&counter).unwrap();
         manager
             .init_internal(&current_task, Some(wake_channel), Some(counter_clone))
             .expect("infallible");
-        (manager, current_task, counter)
+        (manager, counter)
     }
 
     #[fuchsia::test]
     async fn test_triggering() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Immediate).await;
-        let timer1 = HrTimer::new();
-        let timer2 = HrTimer::new();
-        let timer3 = HrTimer::new();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (manager, counter) = init_hr_timer_manager(current_task, Response::Immediate);
 
-        hrtimer_manager.add_timer(None, &timer1, zx::BootInstant::from_nanos(1).into()).unwrap();
-        hrtimer_manager.add_timer(None, &timer2, zx::BootInstant::from_nanos(2).into()).unwrap();
-        hrtimer_manager.add_timer(None, &timer3, zx::BootInstant::from_nanos(3).into()).unwrap();
+            let timer1 = HrTimer::new();
+            let timer2 = HrTimer::new();
+            let timer3 = HrTimer::new();
 
-        wait_signaled(&timer1.event()).await.unwrap();
-        wait_signaled(&timer2.event()).await.unwrap();
-        wait_signaled(&timer3.event()).await.unwrap();
+            manager.add_timer(None, &timer1, zx::BootInstant::from_nanos(1).into()).unwrap();
+            manager.add_timer(None, &timer2, zx::BootInstant::from_nanos(2).into()).unwrap();
+            manager.add_timer(None, &timer3, zx::BootInstant::from_nanos(3).into()).unwrap();
 
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
-        );
+            wait_signaled_sync(&timer1.event()).to_result().unwrap();
+            wait_signaled_sync(&timer2.event()).to_result().unwrap();
+            wait_signaled_sync(&timer3.event()).to_result().unwrap();
+
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn test_triggering_utc() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Immediate).await;
-        let timer1 = HrTimer::new();
-        let timer2 = HrTimer::new();
-        let timer3 = HrTimer::new();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (manager, counter) = init_hr_timer_manager(current_task, Response::Immediate);
 
-        // All these are normally already expired as scheduled.
-        hrtimer_manager.add_timer(None, &timer1, UtcInstant::from_nanos(1).into()).unwrap();
-        hrtimer_manager.add_timer(None, &timer2, UtcInstant::from_nanos(2).into()).unwrap();
-        hrtimer_manager.add_timer(None, &timer3, UtcInstant::from_nanos(3).into()).unwrap();
+            let timer1 = HrTimer::new();
+            let timer2 = HrTimer::new();
+            let timer3 = HrTimer::new();
 
-        wait_signaled(&timer1.event()).await.unwrap();
-        wait_signaled(&timer2.event()).await.unwrap();
-        wait_signaled(&timer3.event()).await.unwrap();
+            // All these are normally already expired as scheduled.
+            manager.add_timer(None, &timer1, UtcInstant::from_nanos(1).into()).unwrap();
+            manager.add_timer(None, &timer2, UtcInstant::from_nanos(2).into()).unwrap();
+            manager.add_timer(None, &timer3, UtcInstant::from_nanos(3).into()).unwrap();
 
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
-        );
+            wait_signaled_sync(&timer1.event()).to_result().unwrap();
+            wait_signaled_sync(&timer2.event()).to_result().unwrap();
+            wait_signaled_sync(&timer3.event()).to_result().unwrap();
+
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn test_delayed_response() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Delayed).await;
-        let timer = HrTimer::new();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (manager, counter) = init_hr_timer_manager(current_task, Response::Immediate);
 
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
+            let timer = HrTimer::new();
 
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
-        );
+            manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
+
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn test_protocol_error_response() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Error).await;
-        let timer = HrTimer::new();
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
-        );
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (manager, counter) = init_hr_timer_manager(current_task, Response::Error);
+
+            let timer = HrTimer::new();
+            manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn reschedule_same_timer() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Delayed).await;
-        let timer = HrTimer::new();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(2).into()).unwrap();
+            let timer = HrTimer::new();
 
-        // Force alarm expiry.
-        hrtimer_manager
-            .add_timer(None, &timer, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
-            .unwrap();
-        wait_signaled(&timer.event()).await.unwrap();
+            manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
+            manager.add_timer(None, &timer, zx::BootInstant::from_nanos(2).into()).unwrap();
 
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
-        );
+            // Force alarm expiry.
+            manager
+                .add_timer(None, &timer, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
+                .unwrap();
+            wait_signaled_sync(&timer.event()).to_result().unwrap();
+
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn rescheduling_interval_timers_forbids_suspend() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Delayed).await;
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (hrtimer_manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
-        // Schedule an interval timer and let it expire.
-        let timer1 = HrTimer::new();
-        *timer1.is_interval.lock() = true;
-        hrtimer_manager
-            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
-            .unwrap();
-        wait_signaled(&timer1.event()).await.unwrap();
+            // Schedule an interval timer and let it expire.
+            let timer1 = HrTimer::new();
+            *timer1.is_interval.lock() = true;
+            hrtimer_manager
+                .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
+                .unwrap();
+            wait_signaled_sync(&timer1.event()).to_result().unwrap();
 
-        // Schedule a regular timer and let it expire.
-        let timer2 = HrTimer::new();
-        hrtimer_manager
-            .add_timer(None, &timer2, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
-            .unwrap();
-        wait_signaled(&timer2.event()).await.unwrap();
+            // Schedule a regular timer and let it expire.
+            let timer2 = HrTimer::new();
+            hrtimer_manager
+                .add_timer(None, &timer2, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
+                .unwrap();
+            wait_signaled_sync(&timer2.event()).to_result().unwrap();
 
-        // When we have an expired but not rescheduled interval timer (`timer1`), and we have
-        // an intervening timer that gets scheduled and expires (`timer2`) before `timer1` is
-        // rescheduled, then suspend should be disallowed (counter > 0) to allow `timer1` to
-        // be scheduled eventually.
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
-        );
+            // When we have an expired but not rescheduled interval timer (`timer1`), and we have
+            // an intervening timer that gets scheduled and expires (`timer2`) before `timer1` is
+            // rescheduled, then suspend should be disallowed (counter > 0) to allow `timer1` to
+            // be scheduled eventually.
+            assert_eq!(
+                counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn canceling_interval_timer_allows_suspend() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Delayed).await;
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (hrtimer_manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
-        let timer1 = HrTimer::new();
-        *timer1.is_interval.lock() = true;
-        hrtimer_manager
-            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
-            .unwrap();
-        wait_signaled(&timer1.event()).await.unwrap();
+            let timer1 = HrTimer::new();
+            *timer1.is_interval.lock() = true;
+            hrtimer_manager
+                .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
+                .unwrap();
+            wait_signaled_sync(&timer1.event()).to_result().unwrap();
 
-        // When an interval timer expires, we should not be allowed to suspend.
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
-        );
+            // When an interval timer expires, we should not be allowed to suspend.
+            assert_eq!(
+                counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
+            );
 
-        // Schedule the same timer again. This time around we do not wait for it to expire,
-        // but cancel the timer instead.
-        const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
-        let deadline2: zx::BootInstant = fasync::BootInstant::after(DURATION_100S).into();
-        hrtimer_manager.add_timer(None, &timer1, deadline2.into()).unwrap();
+            // Schedule the same timer again. This time around we do not wait for it to expire,
+            // but cancel the timer instead.
+            const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
+            let deadline2: zx::BootInstant = zx::BootInstant::after(DURATION_100S.into());
+            hrtimer_manager.add_timer(None, &timer1, deadline2.into()).unwrap();
 
-        hrtimer_manager.remove_timer(&timer1).unwrap();
+            hrtimer_manager.remove_timer(&timer1).unwrap();
 
-        // When we cancel an interval timer, we should be allowed to suspend.
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE),
-        );
+            // When we cancel an interval timer, we should be allowed to suspend.
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn canceling_interval_timer_allows_suspend_with_flake() {
-        let (hrtimer_manager, _starnix_task, counter) =
-            init_hr_timer_manager(Response::Delayed).await;
+        spawn_kernel_and_run(|_locked, current_task| {
+            let (hrtimer_manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
-        let timer1 = HrTimer::new();
-        *timer1.is_interval.lock() = true;
-        hrtimer_manager
-            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
-            .unwrap();
-        wait_signaled(&timer1.event()).await.unwrap();
+            let timer1 = HrTimer::new();
+            *timer1.is_interval.lock() = true;
+            hrtimer_manager
+                .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
+                .unwrap();
+            wait_signaled_sync(&timer1.event()).to_result().unwrap();
 
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
-        );
-        const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
-        let deadline2: zx::BootInstant = fasync::BootInstant::after(DURATION_100S).into();
-        hrtimer_manager.add_timer(None, &timer1, deadline2.into()).unwrap();
-        // No pause between start and stop has led to flakes before.
-        hrtimer_manager.remove_timer(&timer1).unwrap();
+            assert_eq!(
+                counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
+            );
+            const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
+            let deadline2: zx::BootInstant = zx::BootInstant::after(DURATION_100S.into());
+            hrtimer_manager.add_timer(None, &timer1, deadline2.into()).unwrap();
+            // No pause between start and stop has led to flakes before.
+            hrtimer_manager.remove_timer(&timer1).unwrap();
 
-        assert_eq!(
-            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
-            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE),
-        );
+            assert_eq!(
+                counter
+                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+            );
+        });
     }
 
     #[fuchsia::test]
