@@ -63,8 +63,10 @@ fn get_function_addr() -> Vec<u64> {
 
 fn generate_markup_module_mapping_data(modules_with_mapping_list: Vec<Module>) -> String {
     let mut mark_up_data = String::new();
+    let mut module_id: u16 = 0;
     for module in modules_with_mapping_list {
-        mark_up_data.push_str(&generate_module_mark_up_data(&module));
+        mark_up_data.push_str(&generate_module_mark_up_data(module_id, &module));
+        module_id += 1;
         mark_up_data.push_str(&generate_mapping_mark_up_data(module.mappings));
     }
     mark_up_data
@@ -97,10 +99,12 @@ fn generate_mapping_mark_up_data(mapping_list: Vec<Mapping>) -> String {
     mark_up_data
 }
 
-fn generate_module_mark_up_data(module: &Module) -> String {
+fn generate_module_mark_up_data(module_id: u16, module: &Module) -> String {
     // {{{module:1:libc.so:elf:83238ab56ba10497}}}
     let mut module_data = String::new();
-    module_data.push_str("{{{module:1:");
+    module_data.push_str("{{{module:");
+    module_data.push_str(&format!("{}:", module_id));
+    module_data.push_str(":");
     module_data.push_str(module.name.as_str());
     module_data.push_str(":elf:");
     module_data.push_str(hex::encode(module.build_id.clone()).as_str());

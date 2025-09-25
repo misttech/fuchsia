@@ -89,9 +89,7 @@ impl UnsymbolizedSamples {
                     let mut res_per_pid = vec![];
                     // We use a hashmap to store the seen backtrace, to avoid symbolize the same backtrace multiple times.
                     let mut seen_bt: HashMap<BacktraceDetails, ResolvedAddress> = HashMap::new();
-                    for ModuleWithMmapDetails { module, mmaps } in
-                        handler.get_module_with_mmap_records()
-                    {
+                    for ModuleWithMmapDetails {module, mmaps} in handler.module_with_mmap_records.values() {
                         let module_id = symbolizer
                             .add_module(&module.name, hex::decode(&module.build_id)?.as_ref());
 
@@ -99,7 +97,7 @@ impl UnsymbolizedSamples {
                             symbolizer.add_mapping(module_id, mmap_record.clone())?;
                         }
                     }
-                    for (tid, backtraces) in handler.get_backtrace_records() {
+                    for (tid, backtraces) in &handler.backtrace_records {
                         let mut symbolized_record = SymbolizedRecord {
                             tid: *tid,
                             call_stacks: Vec::new(),
