@@ -205,7 +205,7 @@ Reboot the Target to the bootloader and re-run this command."
                             };
                             let config = FastbootNetworkConnectionConfig::new_tcp().await;
                             let fastboot_device_file_path: Option<PathBuf> =
-                                ffx_config::get(FASTBOOT_FILE_PATH).ok();
+                                self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = tcp_proxy(
                                 target_name.to_string(),
                                 fastboot_device_file_path,
@@ -238,7 +238,7 @@ Reboot the Target to the bootloader and re-run this command."
                             };
                             let config = FastbootNetworkConnectionConfig::new_udp().await;
                             let fastboot_device_file_path: Option<PathBuf> =
-                                ffx_config::get(FASTBOOT_FILE_PATH).ok();
+                                self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = udp_proxy(
                                 target_name,
                                 fastboot_device_file_path,
@@ -454,7 +454,7 @@ pub async fn bootloader_impl(
     writer: &mut VerifiedMachineWriter<BootloaderToolMessage>,
 ) -> fho::Result<()> {
     if cmd.product_bundle.is_none() && cmd.manifest.is_none() {
-        let product_path = ffx_config::get("product.path").ok();
+        let product_path = ctx.get("product.path").ok();
         if let Some(product_path) = product_path {
             writeln!(
                 writer,
