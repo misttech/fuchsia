@@ -20,6 +20,24 @@ namespace {
 constexpr uint32_t kExIdxCantUnwind = 1;
 constexpr uint32_t kFinishedIndicator = 0xb0;
 
+fit::result<Error, uint64_t> ParseULEB128FromBytes(std::span<const uint8_t> bytes) {
+  uint64_t res = 0;
+  uint64_t shift = 0;
+  uint8_t byte = 0;
+  size_t i = 0;
+
+  do {
+    if (i == bytes.size()) {
+      return fit::error(Error("Failed to parse ULEB128."));
+    }
+    byte = bytes[i++];
+    res |= (byte & 0x7F) << shift;
+    shift += 7;
+  } while (byte & 0x80);
+
+  return fit::ok(res);
+}
+
 uint8_t GetNextByteFromData(uint32_t data, size_t offset) {
   const uint8_t* byte_data = reinterpret_cast<uint8_t*>(&data);
 
@@ -348,6 +366,118 @@ Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, std::span<const uint8_t
                     register_mask);
 
           if (auto err = SetRegistersFromMask(stack, register_mask, next); err.has_err()) {
+            return err;
+          }
+
+          break;
+        }
+        case 0xb0: {
+          if (byte == kFinishedIndicator) {
+            // If the lower 4 bits are all 0s then this is the finished indicator. This check is
+            // outside of the switch below for clarity rather than handling the "0x0" case for the
+            // lower bits.
+            break;
+          }
+
+          // Need to do some decoding of the lower 4 bits.
+          switch (byte & 0x0f) {
+            case 0x01: {
+              uint8_t next_byte = bytes[++i];
+              if (next_byte == 0 || (next_byte & 0xf0) != 0) {
+                // Spare. ARM Specification indicates that this is an unwinding failure.
+                return Error("Encountered SPARE opcode, ending unwinding.");
+              }
+
+              // The mask is for r3-r0 (in MSB->LSB order) in the low nibble.
+              uint32_t register_mask = next_byte & 0xf;
+              LOG_DEBUG("SET_REGS_FROM_MASK [0x%" PRIx8 "]: maks: 0x%" PRIx32 "\n", byte,
+                        register_mask);
+
+              if (auto err = SetRegistersFromMask(stack, register_mask, next); err.has_err()) {
+                return err;
+              }
+
+              break;
+            }
+            case 0x02: {
+              // vsp = vsp + 0x204 + (uleb128 << 2)
+              uint64_t uleb_value = 0;
+              if (auto result = ParseULEB128FromBytes(bytes.subspan(++i)); result.is_ok()) {
+                uleb_value = result.value();
+              } else {
+                return result.error_value();
+              }
+
+              uint64_t sp = 0;
+              if (auto err = next.GetSP(sp); err.has_err()) {
+                return err;
+              }
+
+              sp += 0x204 + (uleb_value << 2);
+
+              LOG_DEBUG("SP_OFFSET [0x%" PRIx8 "]: modifying sp by offset: 0x%" PRIx64
+                        " new sp: 0x%" PRIx64 "\n",
+                        byte, 0x204 + (uleb_value << 2), sp);
+
+              if (auto err = next.SetSP(sp); err.has_err()) {
+                return err;
+              }
+
+              break;
+            }
+            case 0x3: {
+              // This is for popping double-precision float registers. We ignore the values here for
+              // now, but we need to update SP accordingly. The rule states that SP is incremented
+              // by 8N + 4. where N is the distance between the high nibble and the low nibble,
+              // which mark the beginning and end (inclusive) respectively.
+              uint8_t next_byte = bytes[++i];
+              uint8_t high = (next_byte & 0xf0) >> 4;
+              uint8_t low = next_byte & 0x0f;
+              // Add one since the range is inclusive.
+              uint8_t count = low - high + 1;
+
+              uint64_t sp = 0;
+              if (auto err = next.GetSP(sp); err.has_err()) {
+                return err;
+              }
+
+              sp += (8 * count) + 4;
+
+              LOG_DEBUG("POP_VFA [0x%" PRIx8 "]: modifying sp by offset: 0x%" PRIx64
+                        " new sp: 0x%" PRIx64 "\n",
+                        byte, (8 * count) + 4, sp);
+
+              if (auto err = next.SetSP(sp); err.has_err()) {
+                return err;
+              }
+
+              break;
+            }
+          }
+          break;
+        }
+        case 0xc0: {
+          // This opcode is dealing with special double- and quad-word registers. We can ignore the
+          // register values for now, but we have to make sure we modify SP accordingly.
+          uint8_t next_byte = bytes[++i];
+          // |count| does not include the 0th register included in the opcode, so we have to add one
+          // to the count to get the true value of N.
+          uint8_t count = (next_byte & 0xf) + 1;
+
+          uint64_t sp;
+          if (auto err = next.GetSP(sp); err.has_err()) {
+            return err;
+          }
+
+          // This opcode is the "VPUSH" method, which says that SP should be incremented by 8 * N
+          // where N is the count of registers, which is stored in the low nibble of |next_byte|.
+          sp += count * 8;
+
+          LOG_DEBUG("VPUSH [0x%" PRIx8 "]: modifying sp by offset: %" PRId32 " new sp: 0x%" PRIx64
+                    "\n",
+                    byte, count * 8, sp);
+
+          if (auto err = next.SetSP(sp); err.has_err()) {
             return err;
           }
 

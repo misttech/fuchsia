@@ -69,6 +69,13 @@ class ArmEhAbiParser {
 
   // Returns the number of extra words from the given offset in |data|, advancing |offset|.
   fit::result<Error, uint8_t> GetExtraWordsCountAndAdvance(uint32_t data, size_t& offset);
+
+  // This method is an implementation of the ARM EHABI standard opcodes, found in this doc:
+  // https://github.com/ARM-software/abi-aa/blob/c51addc3dc03e73a016a1e4edf25440bcac76431/ehabi32/ehabi32.rst#103frame-unwinding-instructions.
+  //
+  // The view of bytes is collected via |CollectInstructions|, and is constructed in such a way that
+  // this method simply has to iterate through the entire view to examine each opcode and any
+  // additional bytes required for that opcode in a simple to understand order.
   Error ExecuteInstructions(Memory* stack, std::span<const uint8_t> bytes, Registers& next);
 
   // Returns the first word of data, which depends on the type of index entry we got. If the data
