@@ -1144,6 +1144,9 @@ EOF
   # Do this unconditionally, so that other build-log-consuming
   # tools can use it.
   local -r build_log_dir="$(fx-new-build-log-dir)"
+  # Record the invocation Id, which is also used for the top-level
+  # ninja invocation results streamed to ResultStore (if enabled).
+  echo "$build_uuid" > "$build_log_dir/invocation_id"
 
   local -a rbe_wrapper=()
   if fx-rbe-enabled
@@ -1193,6 +1196,7 @@ EOF
     "${user_rbe_env[@]}"
     "TERM=${TERM}"
     "PATH=${PATH}"
+    "NINJA_BUILD_ID=$build_uuid"  # for the top-level ResultStore invocation
     # By default, also show the number of actively running actions.
     "NINJA_STATUS=${NINJA_STATUS:-"[%f/%t][%p/%w](%r) "}"
     # By default, print the 4 oldest commands that are still running.
