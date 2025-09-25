@@ -24,7 +24,7 @@ ffx component run /core/ffx-laboratory:kernel-collector fuchsia-pkg://fuchsia.co
 Then collect a profile with:
 
 ```
-fx ffx profile heapdump snapshot --by-koid 1 --output-file /tmp/profile.pb
+fx ffx profile heapdump snapshot --by-koid 1 --output-file /tmp/profile.pb --collector core/ffx-laboratory:kernel-collector
 ```
 
 This outputs a serialized `perftools.profiles.Profile` protocol buffer, that can
