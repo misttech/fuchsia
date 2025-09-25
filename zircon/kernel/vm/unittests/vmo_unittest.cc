@@ -4220,6 +4220,79 @@ static bool vmo_user_stream_size_test() {
   END_TEST;
 }
 
+// Test to document that we can get loaned pages in high priority VMOs by abusing a lack of
+// visibility into the parent.
+static bool vmo_loaned_high_priority_parent_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
+  PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
+  auto cleanup = fit::defer([loaning_was_enabled] {
+    PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
+  });
+
+  constexpr size_t parent_size_pages = 2;
+  constexpr size_t parent_size_bytes = PAGE_SIZE * parent_size_pages;
+
+  // trying multiple times to increase our chance at picking up a page loaned out of
+  // `contiguous_vmo`
+  constexpr int kTryCount = 1000;
+  for (int i = 0; i < kTryCount; i++) {
+    // create a contiguous VMO so that we are guaranteed to have a place to borrow a page from
+    fbl::RefPtr<VmObjectPaged> contiguous_vmo;
+    ASSERT_OK(VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, PAGE_SIZE,
+                                              /*alignment_log2*/ 0, &contiguous_vmo));
+    vm_page_t* contiguous_page = contiguous_vmo->DebugGetPage(0);
+    ASSERT_OK(contiguous_vmo->DecommitRange(0, PAGE_SIZE));
+
+    fbl::RefPtr<VmObjectPaged> parent_vmo;
+    ASSERT_OK(make_committed_pager_vmo(parent_size_pages, /*trap_dirty*/ false, /*resizable*/ false,
+                                       nullptr, &parent_vmo));
+
+    fbl::RefPtr<VmCowPages> parent_cow = parent_vmo->DebugGetCowPages();
+
+    fbl::RefPtr<VmObject> child_vmo;
+    ASSERT_OK(parent_vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite,
+                                      /*offset*/ 0, parent_size_bytes, /*copy_name*/ true,
+                                      &child_vmo));
+
+    // commit the first child page so that the first parent page becomes inaccessible from the
+    // child
+    ASSERT_OK(child_vmo->CommitRange(0, PAGE_SIZE));
+
+    // replace the parent page with a loaned page
+    ASSERT_OK(parent_cow->ReplacePageWithLoaned(parent_cow->DebugGetPage(0), 0));
+
+    // simulate a user calling `zx_object_set_profile`
+    const auto change_priority = [&child_vmo](int64_t delta) {
+      Guard<CriticalMutex> guard{child_vmo->lock()};
+      child_vmo->ChangeHighPriorityCountLocked(delta);
+    };
+
+    change_priority(1);
+
+    vm_page_t* parent_first_page = parent_cow->DebugGetPage(0);
+    if (parent_first_page == contiguous_page) {
+      // This EXPECT_TRUE only makes sense if we can be sure that the page wasn't unloaned. The page
+      // can be unloaned at any time from its owner unless we are (contiguous_vmo is) the owner.
+      // If you're running this test manually, it is appropriate to
+      // unconditionally issue the EXPECT_TRUE because the page probably won't get unloaned.
+      // contiguous_vmo is very often the owner of parent_first_page.
+
+      // TODO(https://fxbug.dev/418099341): This is just testing the current behavior. When fixed,
+      // this should become an EXPECT_FALSE, and the expect can be moved out of the `if` statement.
+      EXPECT_TRUE(parent_first_page->is_loaned());
+    }
+
+    EXPECT_TRUE(pmm_page_queues()->DebugPageIsHighPriority(parent_first_page));
+
+    change_priority(-1);
+  }
+
+  END_TEST;
+}
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -4287,6 +4360,7 @@ VM_UNITTEST(vmo_pin_race_loaned_test)
 VM_UNITTEST(vmo_prefetch_compressed_pages_test)
 VM_UNITTEST(vmo_skip_range_update_test)
 VM_UNITTEST(vmo_user_stream_size_test)
+VM_UNITTEST(vmo_loaned_high_priority_parent_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace vm_unittest
