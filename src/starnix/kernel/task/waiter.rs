@@ -1142,8 +1142,8 @@ impl<T: Into<u64>> TypedWaitQueue<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fs::fuchsia::*;
-    use crate::testing::*;
+    use crate::fs::fuchsia::create_fuchsia_pipe;
+    use crate::testing::spawn_kernel_and_run;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::eventfd::{EventFdType, new_eventfd};
     use assert_matches::assert_matches;
@@ -1154,58 +1154,15 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_async_wait_exec() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (local_socket, remote_socket) = zx::Socket::create_stream();
-        let pipe =
-            create_fuchsia_pipe(locked, &current_task, remote_socket, OpenFlags::RDWR).unwrap();
+        spawn_kernel_and_run(|locked, current_task| {
+            let (local_socket, remote_socket) = zx::Socket::create_stream();
+            let pipe =
+                create_fuchsia_pipe(locked, &current_task, remote_socket, OpenFlags::RDWR).unwrap();
 
-        const MEM_SIZE: usize = 1024;
-        let mut output_buffer = VecOutputBuffer::new(MEM_SIZE);
+            const MEM_SIZE: usize = 1024;
+            let mut output_buffer = VecOutputBuffer::new(MEM_SIZE);
 
-        let test_string = "hello startnix".to_string();
-        let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
-        let handler = EventHandler::Enqueue(EnqueueEventHandler {
-            key: KEY,
-            queue: queue.clone(),
-            sought_events: FdEvents::all(),
-            mappings: Default::default(),
-        });
-        let waiter = Waiter::new();
-        pipe.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
-            .expect("wait_async");
-        let test_string_clone = test_string.clone();
-
-        let write_count = AtomicUsizeCounter::default();
-        std::thread::scope(|s| {
-            let thread = s.spawn(|| {
-                let test_data = test_string_clone.as_bytes();
-                let no_written = local_socket.write(test_data).unwrap();
-                assert_eq!(0, write_count.add(no_written));
-                assert_eq!(no_written, test_data.len());
-            });
-
-            // this code would block on failure
-
-            assert!(queue.lock().is_empty());
-            waiter.wait(locked, &current_task).unwrap();
-            thread.join().expect("join thread")
-        });
-        queue.lock().iter().for_each(|item| assert!(item.events.contains(FdEvents::POLLIN)));
-
-        let read_size = pipe.read(locked, &current_task, &mut output_buffer).unwrap();
-
-        let no_written = write_count.get();
-        assert_eq!(no_written, read_size);
-
-        assert_eq!(output_buffer.data(), test_string.as_bytes());
-    }
-
-    #[::fuchsia::test]
-    async fn test_async_wait_cancel() {
-        for do_cancel in [true, false] {
-            let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-            let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
-            let waiter = Waiter::new();
+            let test_string = "hello startnix".to_string();
             let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
             let handler = EventHandler::Enqueue(EnqueueEventHandler {
                 key: KEY,
@@ -1213,107 +1170,164 @@ mod tests {
                 sought_events: FdEvents::all(),
                 mappings: Default::default(),
             });
-            let wait_canceler = event
-                .wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
+            let waiter = Waiter::new();
+            pipe.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
                 .expect("wait_async");
-            if do_cancel {
-                wait_canceler.cancel();
-            }
-            let add_val = 1u64;
-            assert_eq!(
-                event
-                    .write(locked, &current_task, &mut VecInputBuffer::new(&add_val.to_ne_bytes()))
-                    .unwrap(),
-                std::mem::size_of::<u64>()
-            );
+            let test_string_clone = test_string.clone();
 
-            let wait_result = waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO);
-            let final_count = queue.lock().len();
-            if do_cancel {
-                assert_eq!(wait_result, error!(ETIMEDOUT));
-                assert_eq!(0, final_count);
-            } else {
-                assert_eq!(wait_result, Ok(()));
-                assert_eq!(1, final_count);
-            }
+            let write_count = AtomicUsizeCounter::default();
+            std::thread::scope(|s| {
+                let thread = s.spawn(|| {
+                    let test_data = test_string_clone.as_bytes();
+                    let no_written = local_socket.write(test_data).unwrap();
+                    assert_eq!(0, write_count.add(no_written));
+                    assert_eq!(no_written, test_data.len());
+                });
+
+                // this code would block on failure
+
+                assert!(queue.lock().is_empty());
+                waiter.wait(locked, &current_task).unwrap();
+                thread.join().expect("join thread")
+            });
+            queue.lock().iter().for_each(|item| assert!(item.events.contains(FdEvents::POLLIN)));
+
+            let read_size = pipe.read(locked, &current_task, &mut output_buffer).unwrap();
+
+            let no_written = write_count.get();
+            assert_eq!(no_written, read_size);
+
+            assert_eq!(output_buffer.data(), test_string.as_bytes());
+        });
+    }
+
+    #[::fuchsia::test]
+    async fn test_async_wait_cancel() {
+        for do_cancel in [true, false] {
+            spawn_kernel_and_run(move |locked, current_task| {
+                let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
+                let waiter = Waiter::new();
+                let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
+                let handler = EventHandler::Enqueue(EnqueueEventHandler {
+                    key: KEY,
+                    queue: queue.clone(),
+                    sought_events: FdEvents::all(),
+                    mappings: Default::default(),
+                });
+                let wait_canceler = event
+                    .wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, handler)
+                    .expect("wait_async");
+                if do_cancel {
+                    wait_canceler.cancel();
+                }
+                let add_val = 1u64;
+                assert_eq!(
+                    event
+                        .write(
+                            locked,
+                            &current_task,
+                            &mut VecInputBuffer::new(&add_val.to_ne_bytes())
+                        )
+                        .unwrap(),
+                    std::mem::size_of::<u64>()
+                );
+
+                let wait_result =
+                    waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO);
+                let final_count = queue.lock().len();
+                if do_cancel {
+                    assert_eq!(wait_result, error!(ETIMEDOUT));
+                    assert_eq!(0, final_count);
+                } else {
+                    assert_eq!(wait_result, Ok(()));
+                    assert_eq!(1, final_count);
+                }
+            });
         }
     }
 
     #[::fuchsia::test]
     async fn single_waiter_multiple_waits_cancel_one_waiter_still_notified() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let wait_queue = WaitQueue::default();
-        let waiter = Waiter::new();
-        let wk1 = wait_queue.wait_async(&waiter);
-        let _wk2 = wait_queue.wait_async(&waiter);
-        wk1.cancel();
-        wait_queue.notify_all();
-        assert!(waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
+        spawn_kernel_and_run(|locked, current_task| {
+            let wait_queue = WaitQueue::default();
+            let waiter = Waiter::new();
+            let wk1 = wait_queue.wait_async(&waiter);
+            let _wk2 = wait_queue.wait_async(&waiter);
+            wk1.cancel();
+            wait_queue.notify_all();
+            assert!(waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
+        });
     }
 
     #[::fuchsia::test]
     async fn multiple_waiters_cancel_one_other_still_notified() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let wait_queue = WaitQueue::default();
-        let waiter1 = Waiter::new();
-        let waiter2 = Waiter::new();
-        let wk1 = wait_queue.wait_async(&waiter1);
-        let _wk2 = wait_queue.wait_async(&waiter2);
-        wk1.cancel();
-        wait_queue.notify_all();
-        assert!(waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_err());
-        assert!(waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
+        spawn_kernel_and_run(|locked, current_task| {
+            let wait_queue = WaitQueue::default();
+            let waiter1 = Waiter::new();
+            let waiter2 = Waiter::new();
+            let wk1 = wait_queue.wait_async(&waiter1);
+            let _wk2 = wait_queue.wait_async(&waiter2);
+            wk1.cancel();
+            wait_queue.notify_all();
+            assert!(waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_err());
+            assert!(waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_wait_queue() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let queue = WaitQueue::default();
+        spawn_kernel_and_run(|locked, current_task| {
+            let queue = WaitQueue::default();
 
-        let waiters = <[Waiter; 3]>::default();
-        waiters.iter().for_each(|w| {
-            queue.wait_async(w);
+            let waiters = <[Waiter; 3]>::default();
+            waiters.iter().for_each(|w| {
+                queue.wait_async(w);
+            });
+
+            let woken = |locked: &mut Locked<Unlocked>| {
+                waiters
+                    .iter()
+                    .filter(|w| {
+                        w.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok()
+                    })
+                    .count()
+            };
+
+            const INITIAL_NOTIFY_COUNT: usize = 2;
+            let total_waiters = waiters.len();
+            queue.notify_unordered_count(INITIAL_NOTIFY_COUNT);
+            assert_eq!(INITIAL_NOTIFY_COUNT, woken(locked));
+
+            // Only the remaining (unnotified) waiters should be notified.
+            queue.notify_all();
+            assert_eq!(total_waiters - INITIAL_NOTIFY_COUNT, woken(locked));
         });
-
-        let woken = |locked: &mut Locked<Unlocked>| {
-            waiters
-                .iter()
-                .filter(|w| w.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok())
-                .count()
-        };
-
-        const INITIAL_NOTIFY_COUNT: usize = 2;
-        let total_waiters = waiters.len();
-        queue.notify_unordered_count(INITIAL_NOTIFY_COUNT);
-        assert_eq!(INITIAL_NOTIFY_COUNT, woken(locked));
-
-        // Only the remaining (unnotified) waiters should be notified.
-        queue.notify_all();
-        assert_eq!(total_waiters - INITIAL_NOTIFY_COUNT, woken(locked));
     }
 
     #[::fuchsia::test]
-    fn waiter_kind_abort_handle() {
-        let mut executor = fuchsia_async::TestExecutor::new();
-        let (_kernel, current_task, _) = create_kernel_task_and_unlocked();
-        let (abort_handle, abort_registration) = futures::stream::AbortHandle::new_pair();
-        let abort_handle = Arc::new(abort_handle);
-        let waiter_ref = WaiterRef::from_abort_handle(&abort_handle);
+    async fn waiter_kind_abort_handle() {
+        spawn_kernel_and_run(|_locked, current_task| {
+            let mut executor = fuchsia_async::TestExecutor::new();
+            let (abort_handle, abort_registration) = futures::stream::AbortHandle::new_pair();
+            let abort_handle = Arc::new(abort_handle);
+            let waiter_ref = WaiterRef::from_abort_handle(&abort_handle);
 
-        let mut fut =
-            futures::stream::Abortable::new(futures::future::pending::<()>(), abort_registration);
+            let mut fut = futures::stream::Abortable::new(
+                futures::future::pending::<()>(),
+                abort_registration,
+            );
 
-        assert_matches!(executor.run_until_stalled(&mut fut), std::task::Poll::Pending);
+            assert_matches!(executor.run_until_stalled(&mut fut), std::task::Poll::Pending);
 
-        waiter_ref.interrupt();
-        let output =
-            current_task.run_in_state(RunState::Waiter(waiter_ref), move || {
+            waiter_ref.interrupt();
+            let output = current_task.run_in_state(RunState::Waiter(waiter_ref), move || {
                 match executor.run_singlethreaded(&mut fut) {
                     Ok(()) => unreachable!("future never terminates normally"),
                     Err(futures::stream::Aborted) => Ok(()),
                 }
             });
 
-        assert_eq!(output, Ok(()));
+            assert_eq!(output, Ok(()));
+        });
     }
 }
