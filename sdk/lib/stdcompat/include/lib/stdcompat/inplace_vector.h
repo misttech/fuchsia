@@ -20,7 +20,6 @@
 
 #include "internal/span.h"
 
-namespace stdcompat {
 namespace cpp23 {
 
 #if __cpp_lib_containers_ranges >= 202202L
@@ -544,6 +543,8 @@ constexpr typename inplace_vector<T, N>::size_type erase_if(inplace_vector<T, N>
 }
 
 }  // namespace cpp26
+
+namespace stdcompat {
 
 template <class T, std::size_t N, class U>
 constexpr typename cpp26::inplace_vector<T, N>::size_type erase(cpp26::inplace_vector<T, N>& c,
