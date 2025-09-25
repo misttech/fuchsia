@@ -20,7 +20,7 @@
 # depends on FUCHSIA_DIR being defined correctly.
 
 # Increase the metrics version by 1 when analytics is updated
-_METRICS_VERSION="6"
+_METRICS_VERSION="7"
 _METRICS_ALLOWS_CUSTOM_REPORTING=( "test" "g-review" )
 # If args match the below, then track capture group 1
 _METRICS_TRACK_REGEX=(
@@ -776,6 +776,7 @@ function track-build-event {
 
   local args_json=""
   local env_flags=""
+  local main_pb_label=""
 
   metrics-read-config
   if [[ "${METRICS_LEVEL}" -eq 0 ]]; then
@@ -785,13 +786,11 @@ function track-build-event {
   if [[ "${METRICS_LEVEL}" -eq 2 ]]; then
     ninja_switches="$(metrics-sanitize-string "${ninja_switches}")"
     fuchsia_targets="$(metrics-sanitize-string "${fuchsia_targets}")"
-
-
     args_json=$(fx-command-run jq -c '{ b: .build_info_board, p: .build_info_product, r: .rbe_mode, c: .compilation_mode, o: .optimize, sv: .select_variant, tc: .target_cpu, ri: .rust_incremental }' "${build_dir}"/args.json)
+    main_pb_label=$(fx-command-run jq -r '.main_pb_label // empty' "${build_dir}"/args.json)
   else
     ninja_switches=""
     fuchsia_targets=""
-    args_json=""
   fi
 
   ninja_switches="${ninja_switches:0:500}"
@@ -833,6 +832,7 @@ function track-build-event {
   event_params=$(fx-command-run jq -c -n \
     --arg args_json1 "${args_json1}" \
     --arg args_json2 "${args_json2}" \
+    --arg main_pb_label "${main_pb_label}" \
     --arg ninja_switches "${ninja_switches}" \
     --arg fuchsia_targets "${fuchsia_targets}" \
     --arg exit_status "${exit_status}" \
