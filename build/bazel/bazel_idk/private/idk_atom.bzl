@@ -274,9 +274,6 @@ def _idk_atom_impl(
 
         atom_build_deps.append(":%s" % verify_api_target_name)
 
-    # TODO(https://fxbug.dev/417305295): Generate internal metadata (.sdk) file
-    # if necessary. See https://fxbug.dev/407083737.
-
     _create_idk_atom(
         name = name,
         type = type,

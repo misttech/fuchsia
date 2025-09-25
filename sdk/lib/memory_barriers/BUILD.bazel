@@ -20,8 +20,9 @@ idk_cc_source_library(
         # TODO(https://fxbug.dev/330709069): Remove these once the bots and targets are removed.
         "//build/sdk:__subpackages__",
 
-        # TODO(https://fxbug.dev/417305295): Remove when no longer using real
-        # atoms in tests.
-        "//build/bazel/bazel_idk/tests:__pkg__",
+        # TODO(https://fxbug.dev/428229472): Once Bazel-defined atoms are used
+        # in the production build path, remove this atom from the IDK macro
+        # tests and remove the following line.
+        "//build/bazel/bazel_idk/tests:__subpackages__",
     ],
 )
