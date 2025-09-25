@@ -1830,7 +1830,7 @@ impl Borrow<ArcKey<DirEntry>> for Submount {
 #[cfg(test)]
 mod test {
     use crate::fs::tmpfs::TmpFs;
-    use crate::testing::create_kernel_task_and_unlocked;
+    use crate::testing::spawn_kernel_and_run;
     use crate::vfs::namespace::DeviceType;
     use crate::vfs::{
         CallbackSymlinkNode, FsNodeInfo, LookupContext, MountInfo, Namespace, NamespaceNode,
@@ -1841,380 +1841,411 @@ mod test {
     use std::sync::Arc;
 
     #[::fuchsia::test]
-    async fn test_namespace() -> anyhow::Result<()> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let root_node = Arc::clone(root_fs.root());
-        let _dev_node =
-            root_node.create_dir(locked, &current_task, "dev".into()).expect("failed to mkdir dev");
-        let dev_fs = TmpFs::new_fs(locked, &kernel);
-        let dev_root_node = Arc::clone(dev_fs.root());
-        let _dev_pts_node = dev_root_node
-            .create_dir(locked, &current_task, "pts".into())
-            .expect("failed to mkdir pts");
+    async fn test_namespace() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let root_node = Arc::clone(root_fs.root());
+            let _dev_node = root_node
+                .create_dir(locked, &current_task, "dev".into())
+                .expect("failed to mkdir dev");
+            let dev_fs = TmpFs::new_fs(locked, &kernel);
+            let dev_root_node = Arc::clone(dev_fs.root());
+            let _dev_pts_node = dev_root_node
+                .create_dir(locked, &current_task, "pts".into())
+                .expect("failed to mkdir pts");
 
-        let ns = Namespace::new(root_fs);
-        let mut context = LookupContext::default();
-        let dev = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "dev".into())
-            .expect("failed to lookup dev");
-        dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
-            .expect("failed to mount dev root node");
-
-        let mut context = LookupContext::default();
-        let dev = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "dev".into())
-            .expect("failed to lookup dev");
-        let mut context = LookupContext::default();
-        let pts = dev
-            .lookup_child(locked, &current_task, &mut context, "pts".into())
-            .expect("failed to lookup pts");
-        let pts_parent =
-            pts.parent().ok_or_else(|| errno!(ENOENT)).expect("failed to get parent of pts");
-        assert!(Arc::ptr_eq(&pts_parent.entry, &dev.entry));
-
-        let dev_parent =
-            dev.parent().ok_or_else(|| errno!(ENOENT)).expect("failed to get parent of dev");
-        assert!(Arc::ptr_eq(&dev_parent.entry, &ns.root().entry));
-        Ok(())
-    }
-
-    #[::fuchsia::test]
-    async fn test_mount_does_not_upgrade() -> anyhow::Result<()> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let root_node = Arc::clone(root_fs.root());
-        let _dev_node =
-            root_node.create_dir(locked, &current_task, "dev".into()).expect("failed to mkdir dev");
-        let dev_fs = TmpFs::new_fs(locked, &kernel);
-        let dev_root_node = Arc::clone(dev_fs.root());
-        let _dev_pts_node = dev_root_node
-            .create_dir(locked, &current_task, "pts".into())
-            .expect("failed to mkdir pts");
-
-        let ns = Namespace::new(root_fs);
-        let mut context = LookupContext::default();
-        let dev = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "dev".into())
-            .expect("failed to lookup dev");
-        dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
-            .expect("failed to mount dev root node");
-        let mut context = LookupContext::default();
-        let new_dev = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "dev".into())
-            .expect("failed to lookup dev again");
-        assert!(!Arc::ptr_eq(&dev.entry, &new_dev.entry));
-        assert_ne!(&dev, &new_dev);
-
-        let mut context = LookupContext::default();
-        let _new_pts = new_dev
-            .lookup_child(locked, &current_task, &mut context, "pts".into())
-            .expect("failed to lookup pts");
-        let mut context = LookupContext::default();
-        assert!(dev.lookup_child(locked, &current_task, &mut context, "pts".into()).is_err());
-
-        Ok(())
-    }
-
-    #[::fuchsia::test]
-    async fn test_path() -> anyhow::Result<()> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let root_node = Arc::clone(root_fs.root());
-        let _dev_node =
-            root_node.create_dir(locked, &current_task, "dev".into()).expect("failed to mkdir dev");
-        let dev_fs = TmpFs::new_fs(locked, &kernel);
-        let dev_root_node = Arc::clone(dev_fs.root());
-        let _dev_pts_node = dev_root_node
-            .create_dir(locked, &current_task, "pts".into())
-            .expect("failed to mkdir pts");
-
-        let ns = Namespace::new(root_fs);
-        let mut context = LookupContext::default();
-        let dev = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "dev".into())
-            .expect("failed to lookup dev");
-        dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
-            .expect("failed to mount dev root node");
-
-        let mut context = LookupContext::default();
-        let dev = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "dev".into())
-            .expect("failed to lookup dev");
-        let mut context = LookupContext::default();
-        let pts = dev
-            .lookup_child(locked, &current_task, &mut context, "pts".into())
-            .expect("failed to lookup pts");
-
-        assert_eq!("/", ns.root().path_escaping_chroot());
-        assert_eq!("/dev", dev.path_escaping_chroot());
-        assert_eq!("/dev/pts", pts.path_escaping_chroot());
-        Ok(())
-    }
-
-    #[::fuchsia::test]
-    async fn test_shadowing() -> anyhow::Result<()> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let ns = Namespace::new(root_fs.clone());
-        let _foo_node = root_fs.root().create_dir(locked, &current_task, "foo".into())?;
-        let mut context = LookupContext::default();
-        let foo_dir = ns.root().lookup_child(locked, &current_task, &mut context, "foo".into())?;
-
-        let foofs1 = TmpFs::new_fs(locked, &kernel);
-        foo_dir.mount(WhatToMount::Fs(foofs1.clone()), MountFlags::empty())?;
-        let mut context = LookupContext::default();
-        assert!(Arc::ptr_eq(
-            &ns.root().lookup_child(locked, &current_task, &mut context, "foo".into())?.entry,
-            foofs1.root()
-        ));
-        let foo_dir = ns.root().lookup_child(locked, &current_task, &mut context, "foo".into())?;
-
-        let ns_clone = ns.clone_namespace();
-
-        let foofs2 = TmpFs::new_fs(locked, &kernel);
-        foo_dir.mount(WhatToMount::Fs(foofs2.clone()), MountFlags::empty())?;
-        let mut context = LookupContext::default();
-        assert!(Arc::ptr_eq(
-            &ns.root().lookup_child(locked, &current_task, &mut context, "foo".into())?.entry,
-            foofs2.root()
-        ));
-
-        assert!(Arc::ptr_eq(
-            &ns_clone
+            let ns = Namespace::new(root_fs);
+            let mut context = LookupContext::default();
+            let dev = ns
                 .root()
-                .lookup_child(locked, &current_task, &mut LookupContext::default(), "foo".into())?
-                .entry,
-            foofs1.root()
-        ));
+                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .expect("failed to lookup dev");
+            dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
+                .expect("failed to mount dev root node");
 
-        Ok(())
+            let mut context = LookupContext::default();
+            let dev = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .expect("failed to lookup dev");
+            let mut context = LookupContext::default();
+            let pts = dev
+                .lookup_child(locked, &current_task, &mut context, "pts".into())
+                .expect("failed to lookup pts");
+            let pts_parent =
+                pts.parent().ok_or_else(|| errno!(ENOENT)).expect("failed to get parent of pts");
+            assert!(Arc::ptr_eq(&pts_parent.entry, &dev.entry));
+
+            let dev_parent =
+                dev.parent().ok_or_else(|| errno!(ENOENT)).expect("failed to get parent of dev");
+            assert!(Arc::ptr_eq(&dev_parent.entry, &ns.root().entry));
+        });
     }
 
     #[::fuchsia::test]
-    async fn test_unlink_mounted_directory() -> anyhow::Result<()> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let ns1 = Namespace::new(root_fs.clone());
-        let ns2 = Namespace::new(root_fs.clone());
-        let _foo_node = root_fs.root().create_dir(locked, &current_task, "foo".into())?;
-        let mut context = LookupContext::default();
-        let foo_dir = ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into())?;
+    async fn test_mount_does_not_upgrade() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let root_node = Arc::clone(root_fs.root());
+            let _dev_node = root_node
+                .create_dir(locked, &current_task, "dev".into())
+                .expect("failed to mkdir dev");
+            let dev_fs = TmpFs::new_fs(locked, &kernel);
+            let dev_root_node = Arc::clone(dev_fs.root());
+            let _dev_pts_node = dev_root_node
+                .create_dir(locked, &current_task, "pts".into())
+                .expect("failed to mkdir pts");
 
-        let foofs = TmpFs::new_fs(locked, &kernel);
-        foo_dir.mount(WhatToMount::Fs(foofs), MountFlags::empty())?;
+            let ns = Namespace::new(root_fs);
+            let mut context = LookupContext::default();
+            let dev = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .expect("failed to lookup dev");
+            dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
+                .expect("failed to mount dev root node");
+            let mut context = LookupContext::default();
+            let new_dev = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .expect("failed to lookup dev again");
+            assert!(!Arc::ptr_eq(&dev.entry, &new_dev.entry));
+            assert_ne!(&dev, &new_dev);
 
-        // Trying to unlink from ns1 should fail.
-        assert_eq!(
-            ns1.root()
-                .unlink(locked, &current_task, "foo".into(), UnlinkKind::Directory, false)
-                .unwrap_err(),
-            errno!(EBUSY),
-        );
-
-        // But unlinking from ns2 should succeed.
-        ns2.root()
-            .unlink(locked, &current_task, "foo".into(), UnlinkKind::Directory, false)
-            .expect("unlink failed");
-
-        // And it should no longer show up in ns1.
-        assert_eq!(
-            ns1.root()
-                .unlink(locked, &current_task, "foo".into(), UnlinkKind::Directory, false)
-                .unwrap_err(),
-            errno!(ENOENT),
-        );
-
-        Ok(())
+            let mut context = LookupContext::default();
+            let _new_pts = new_dev
+                .lookup_child(locked, &current_task, &mut context, "pts".into())
+                .expect("failed to lookup pts");
+            let mut context = LookupContext::default();
+            assert!(dev.lookup_child(locked, &current_task, &mut context, "pts".into()).is_err());
+        });
     }
 
     #[::fuchsia::test]
-    async fn test_rename_mounted_directory() -> anyhow::Result<()> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let ns1 = Namespace::new(root_fs.clone());
-        let ns2 = Namespace::new(root_fs.clone());
-        let _foo_node = root_fs.root().create_dir(locked, &current_task, "foo".into())?;
-        let _bar_node = root_fs.root().create_dir(locked, &current_task, "bar".into())?;
-        let _baz_node = root_fs.root().create_dir(locked, &current_task, "baz".into())?;
-        let mut context = LookupContext::default();
-        let foo_dir = ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into())?;
+    async fn test_path() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let root_node = Arc::clone(root_fs.root());
+            let _dev_node = root_node
+                .create_dir(locked, &current_task, "dev".into())
+                .expect("failed to mkdir dev");
+            let dev_fs = TmpFs::new_fs(locked, &kernel);
+            let dev_root_node = Arc::clone(dev_fs.root());
+            let _dev_pts_node = dev_root_node
+                .create_dir(locked, &current_task, "pts".into())
+                .expect("failed to mkdir pts");
 
-        let foofs = TmpFs::new_fs(locked, &kernel);
-        foo_dir.mount(WhatToMount::Fs(foofs), MountFlags::empty())?;
+            let ns = Namespace::new(root_fs);
+            let mut context = LookupContext::default();
+            let dev = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .expect("failed to lookup dev");
+            dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
+                .expect("failed to mount dev root node");
 
-        // Trying to rename over foo from ns1 should fail.
-        let root = ns1.root();
-        assert_eq!(
+            let mut context = LookupContext::default();
+            let dev = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "dev".into())
+                .expect("failed to lookup dev");
+            let mut context = LookupContext::default();
+            let pts = dev
+                .lookup_child(locked, &current_task, &mut context, "pts".into())
+                .expect("failed to lookup pts");
+
+            assert_eq!("/", ns.root().path_escaping_chroot());
+            assert_eq!("/dev", dev.path_escaping_chroot());
+            assert_eq!("/dev/pts", pts.path_escaping_chroot());
+        });
+    }
+
+    #[::fuchsia::test]
+    async fn test_shadowing() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let ns = Namespace::new(root_fs.clone());
+            let _foo_node = root_fs.root().create_dir(locked, &current_task, "foo".into()).unwrap();
+            let mut context = LookupContext::default();
+            let foo_dir =
+                ns.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
+
+            let foofs1 = TmpFs::new_fs(locked, &kernel);
+            foo_dir.mount(WhatToMount::Fs(foofs1.clone()), MountFlags::empty()).unwrap();
+            let mut context = LookupContext::default();
+            assert!(Arc::ptr_eq(
+                &ns.root()
+                    .lookup_child(locked, &current_task, &mut context, "foo".into())
+                    .unwrap()
+                    .entry,
+                foofs1.root()
+            ));
+            let foo_dir =
+                ns.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
+
+            let ns_clone = ns.clone_namespace();
+
+            let foofs2 = TmpFs::new_fs(locked, &kernel);
+            foo_dir.mount(WhatToMount::Fs(foofs2.clone()), MountFlags::empty()).unwrap();
+            let mut context = LookupContext::default();
+            assert!(Arc::ptr_eq(
+                &ns.root()
+                    .lookup_child(locked, &current_task, &mut context, "foo".into())
+                    .unwrap()
+                    .entry,
+                foofs2.root()
+            ));
+
+            assert!(Arc::ptr_eq(
+                &ns_clone
+                    .root()
+                    .lookup_child(
+                        locked,
+                        &current_task,
+                        &mut LookupContext::default(),
+                        "foo".into()
+                    )
+                    .unwrap()
+                    .entry,
+                foofs1.root()
+            ));
+        });
+    }
+
+    #[::fuchsia::test]
+    async fn test_unlink_mounted_directory() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let ns1 = Namespace::new(root_fs.clone());
+            let ns2 = Namespace::new(root_fs.clone());
+            let _foo_node = root_fs.root().create_dir(locked, &current_task, "foo".into()).unwrap();
+            let mut context = LookupContext::default();
+            let foo_dir =
+                ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
+
+            let foofs = TmpFs::new_fs(locked, &kernel);
+            foo_dir.mount(WhatToMount::Fs(foofs), MountFlags::empty()).unwrap();
+
+            // Trying to unlink from ns1 should fail.
+            assert_eq!(
+                ns1.root()
+                    .unlink(locked, &current_task, "foo".into(), UnlinkKind::Directory, false)
+                    .unwrap_err(),
+                errno!(EBUSY),
+            );
+
+            // But unlinking from ns2 should succeed.
+            ns2.root()
+                .unlink(locked, &current_task, "foo".into(), UnlinkKind::Directory, false)
+                .expect("unlink failed");
+
+            // And it should no longer show up in ns1.
+            assert_eq!(
+                ns1.root()
+                    .unlink(locked, &current_task, "foo".into(), UnlinkKind::Directory, false)
+                    .unwrap_err(),
+                errno!(ENOENT),
+            );
+        });
+    }
+
+    #[::fuchsia::test]
+    async fn test_rename_mounted_directory() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let ns1 = Namespace::new(root_fs.clone());
+            let ns2 = Namespace::new(root_fs.clone());
+            let _foo_node = root_fs.root().create_dir(locked, &current_task, "foo".into()).unwrap();
+            let _bar_node = root_fs.root().create_dir(locked, &current_task, "bar".into()).unwrap();
+            let _baz_node = root_fs.root().create_dir(locked, &current_task, "baz".into()).unwrap();
+            let mut context = LookupContext::default();
+            let foo_dir =
+                ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
+
+            let foofs = TmpFs::new_fs(locked, &kernel);
+            foo_dir.mount(WhatToMount::Fs(foofs), MountFlags::empty()).unwrap();
+
+            // Trying to rename over foo from ns1 should fail.
+            let root = ns1.root();
+            assert_eq!(
+                NamespaceNode::rename(
+                    locked,
+                    &current_task,
+                    &root,
+                    "bar".into(),
+                    &root,
+                    "foo".into(),
+                    RenameFlags::empty()
+                )
+                .unwrap_err(),
+                errno!(EBUSY),
+            );
+            // Likewise the other way.
+            assert_eq!(
+                NamespaceNode::rename(
+                    locked,
+                    &current_task,
+                    &root,
+                    "foo".into(),
+                    &root,
+                    "bar".into(),
+                    RenameFlags::empty()
+                )
+                .unwrap_err(),
+                errno!(EBUSY),
+            );
+
+            // But renaming from ns2 should succeed.
+            let root = ns2.root();
+
+            // First rename the directory with the mount.
             NamespaceNode::rename(
                 locked,
                 &current_task,
                 &root,
-                "bar".into(),
-                &root,
                 "foo".into(),
-                RenameFlags::empty()
+                &root,
+                "bar".into(),
+                RenameFlags::empty(),
             )
-            .unwrap_err(),
-            errno!(EBUSY),
-        );
-        // Likewise the other way.
-        assert_eq!(
+            .expect("rename failed");
+
+            // Renaming over a directory with a mount should also work.
             NamespaceNode::rename(
                 locked,
                 &current_task,
                 &root,
-                "foo".into(),
+                "baz".into(),
                 &root,
                 "bar".into(),
-                RenameFlags::empty()
+                RenameFlags::empty(),
             )
-            .unwrap_err(),
-            errno!(EBUSY),
-        );
+            .expect("rename failed");
 
-        // But renaming from ns2 should succeed.
-        let root = ns2.root();
-
-        // First rename the directory with the mount.
-        NamespaceNode::rename(
-            locked,
-            &current_task,
-            &root,
-            "foo".into(),
-            &root,
-            "bar".into(),
-            RenameFlags::empty(),
-        )
-        .expect("rename failed");
-
-        // Renaming over a directory with a mount should also work.
-        NamespaceNode::rename(
-            locked,
-            &current_task,
-            &root,
-            "baz".into(),
-            &root,
-            "bar".into(),
-            RenameFlags::empty(),
-        )
-        .expect("rename failed");
-
-        // "foo" and "baz" should no longer show up in ns1.
-        assert_eq!(
-            ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap_err(),
-            errno!(ENOENT)
-        );
-        assert_eq!(
-            ns1.root().lookup_child(locked, &current_task, &mut context, "baz".into()).unwrap_err(),
-            errno!(ENOENT)
-        );
-
-        Ok(())
+            // "foo" and "baz" should no longer show up in ns1.
+            assert_eq!(
+                ns1.root()
+                    .lookup_child(locked, &current_task, &mut context, "foo".into())
+                    .unwrap_err(),
+                errno!(ENOENT)
+            );
+            assert_eq!(
+                ns1.root()
+                    .lookup_child(locked, &current_task, &mut context, "baz".into())
+                    .unwrap_err(),
+                errno!(ENOENT)
+            );
+        });
     }
 
     /// Symlinks which need to be traversed across types (nodes and paths), as well as across
     /// owning directories, can be tricky to get right.
     #[::fuchsia::test]
-    async fn test_lookup_with_symlink_chain() -> anyhow::Result<()> {
-        // Set up the root filesystem
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let root_node = Arc::clone(root_fs.root());
-        let _first_subdir_node = root_node
-            .create_dir(locked, &current_task, "first_subdir".into())
-            .expect("failed to mkdir dev");
-        let _second_subdir_node = root_node
-            .create_dir(locked, &current_task, "second_subdir".into())
-            .expect("failed to mkdir dev");
+    async fn test_lookup_with_symlink_chain() {
+        spawn_kernel_and_run(|locked, current_task| {
+            // Set up the root filesystem
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let root_node = Arc::clone(root_fs.root());
+            let _first_subdir_node = root_node
+                .create_dir(locked, &current_task, "first_subdir".into())
+                .expect("failed to mkdir dev");
+            let _second_subdir_node = root_node
+                .create_dir(locked, &current_task, "second_subdir".into())
+                .expect("failed to mkdir dev");
 
-        // Set up two subdirectories under the root filesystem
-        let first_subdir_fs = TmpFs::new_fs(locked, &kernel);
-        let second_subdir_fs = TmpFs::new_fs(locked, &kernel);
+            // Set up two subdirectories under the root filesystem
+            let first_subdir_fs = TmpFs::new_fs(locked, &kernel);
+            let second_subdir_fs = TmpFs::new_fs(locked, &kernel);
 
-        let ns = Namespace::new(root_fs);
-        let mut context = LookupContext::default();
-        let first_subdir = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "first_subdir".into())
-            .expect("failed to lookup first_subdir");
-        first_subdir
-            .mount(WhatToMount::Fs(first_subdir_fs), MountFlags::empty())
-            .expect("failed to mount first_subdir fs node");
-        let second_subdir = ns
-            .root()
-            .lookup_child(locked, &current_task, &mut context, "second_subdir".into())
-            .expect("failed to lookup second_subdir");
-        second_subdir
-            .mount(WhatToMount::Fs(second_subdir_fs), MountFlags::empty())
-            .expect("failed to mount second_subdir fs node");
+            let ns = Namespace::new(root_fs);
+            let mut context = LookupContext::default();
+            let first_subdir = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "first_subdir".into())
+                .expect("failed to lookup first_subdir");
+            first_subdir
+                .mount(WhatToMount::Fs(first_subdir_fs), MountFlags::empty())
+                .expect("failed to mount first_subdir fs node");
+            let second_subdir = ns
+                .root()
+                .lookup_child(locked, &current_task, &mut context, "second_subdir".into())
+                .expect("failed to lookup second_subdir");
+            second_subdir
+                .mount(WhatToMount::Fs(second_subdir_fs), MountFlags::empty())
+                .expect("failed to mount second_subdir fs node");
 
-        // Create the symlink structure. To trigger potential symlink traversal bugs, we're going
-        // for the following directory structure:
-        // / (root)
-        //     + first_subdir/
-        //         - real_file
-        //         - path_symlink (-> real_file)
-        //     + second_subdir/
-        //         - node_symlink (-> path_symlink)
-        let real_file_node = first_subdir
-            .create_node(
-                locked,
-                &current_task,
-                "real_file".into(),
-                mode!(IFREG, 0o777),
-                DeviceType::NONE,
-            )
-            .expect("failed to create real_file");
-        first_subdir
-            .create_symlink(locked, &current_task, "path_symlink".into(), "real_file".into())
-            .expect("failed to create path_symlink");
+            // Create the symlink structure. To trigger potential symlink traversal bugs, we're going
+            // for the following directory structure:
+            // / (root)
+            //     + first_subdir/
+            //         - real_file
+            //         - path_symlink (-> real_file)
+            //     + second_subdir/
+            //         - node_symlink (-> path_symlink)
+            let real_file_node = first_subdir
+                .create_node(
+                    locked,
+                    &current_task,
+                    "real_file".into(),
+                    mode!(IFREG, 0o777),
+                    DeviceType::NONE,
+                )
+                .expect("failed to create real_file");
+            first_subdir
+                .create_symlink(locked, &current_task, "path_symlink".into(), "real_file".into())
+                .expect("failed to create path_symlink");
 
-        let mut no_follow_lookup_context = LookupContext::new(SymlinkMode::NoFollow);
-        let path_symlink_node = first_subdir
-            .lookup_child(
-                locked,
-                &current_task,
-                &mut no_follow_lookup_context,
-                "path_symlink".into(),
-            )
-            .expect("Failed to lookup path_symlink");
+            let mut no_follow_lookup_context = LookupContext::new(SymlinkMode::NoFollow);
+            let path_symlink_node = first_subdir
+                .lookup_child(
+                    locked,
+                    &current_task,
+                    &mut no_follow_lookup_context,
+                    "path_symlink".into(),
+                )
+                .expect("Failed to lookup path_symlink");
 
-        // The second symlink needs to be of type SymlinkTarget::Node in order to trip the sensitive
-        // code path. There's no easy method for creating this type of symlink target, so we'll need
-        // to construct a node from scratch and insert it into the directory manually.
-        let node_symlink_node = second_subdir.entry.node.fs().create_node_and_allocate_node_id(
-            CallbackSymlinkNode::new(move || {
-                let node = path_symlink_node.clone();
-                Ok(SymlinkTarget::Node(node))
-            }),
-            FsNodeInfo::new(mode!(IFLNK, 0o777), current_task.current_fscred()),
-        );
-        second_subdir
-            .entry
-            .create_entry(
-                locked,
-                &current_task,
-                &MountInfo::detached(),
-                "node_symlink".into(),
-                move |_locked, _dir, _mount, _name| Ok(node_symlink_node),
-            )
-            .expect("failed to create node_symlink entry");
+            // The second symlink needs to be of type SymlinkTarget::Node in order to trip the sensitive
+            // code path. There's no easy method for creating this type of symlink target, so we'll need
+            // to construct a node from scratch and insert it into the directory manually.
+            let node_symlink_node = second_subdir.entry.node.fs().create_node_and_allocate_node_id(
+                CallbackSymlinkNode::new(move || {
+                    let node = path_symlink_node.clone();
+                    Ok(SymlinkTarget::Node(node))
+                }),
+                FsNodeInfo::new(mode!(IFLNK, 0o777), current_task.current_fscred()),
+            );
+            second_subdir
+                .entry
+                .create_entry(
+                    locked,
+                    &current_task,
+                    &MountInfo::detached(),
+                    "node_symlink".into(),
+                    move |_locked, _dir, _mount, _name| Ok(node_symlink_node),
+                )
+                .expect("failed to create node_symlink entry");
 
-        // Finally, exercise the lookup under test.
-        let mut follow_lookup_context = LookupContext::new(SymlinkMode::Follow);
-        let node_symlink_resolution = second_subdir
-            .lookup_child(locked, &current_task, &mut follow_lookup_context, "node_symlink".into())
-            .expect("lookup with symlink chain failed");
+            // Finally, exercise the lookup under test.
+            let mut follow_lookup_context = LookupContext::new(SymlinkMode::Follow);
+            let node_symlink_resolution = second_subdir
+                .lookup_child(
+                    locked,
+                    &current_task,
+                    &mut follow_lookup_context,
+                    "node_symlink".into(),
+                )
+                .expect("lookup with symlink chain failed");
 
-        // The lookup resolution should have correctly followed the symlinks to the real_file node.
-        assert!(node_symlink_resolution.entry.node.ino == real_file_node.entry.node.ino);
-        Ok(())
+            // The lookup resolution should have correctly followed the symlinks to the real_file node.
+            assert!(node_symlink_resolution.entry.node.ino == real_file_node.entry.node.ino);
+        });
     }
 }
