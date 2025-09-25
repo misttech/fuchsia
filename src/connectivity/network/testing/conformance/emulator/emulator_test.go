@@ -10,7 +10,10 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -81,6 +84,16 @@ func TestEmulatorWorksWithFfx(t *testing.T) {
 	// Note: To run this test locally on linux, you must create the TAP interface:
 	// $ sudo ip tuntap add mode tap qemu; sudo ip link set dev qemu up
 	// The qemu tap interface is assumed to exist on infra.
+	if runtime.GOOS == "linux" {
+		cmd := exec.Command("ip", "tuntap", "show")
+		// We don't check the error, because `ip tuntap show` may return an error
+		// when there are no devices. We only care about the output.
+		out, _ := cmd.CombinedOutput()
+
+		if !strings.Contains(string(out), "qemu:") {
+			t.Fatal("tun/tap device 'qemu' not found. To create one, run:\n\n$ sudo ip tuntap add dev qemu mode tap user $USER\n$ sudo ip link set qemu up")
+		}
+	}
 	netdevs := []*fvdpb.Netdev{{
 		Id:   "qemu",
 		Kind: "tap",
