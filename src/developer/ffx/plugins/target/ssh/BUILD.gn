@@ -21,7 +21,6 @@ ffx_plugin("ffx_target_ssh") {
     "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target/holders:lib",
-    "//src/developer/ffx/lib/timeout:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
@@ -31,7 +30,6 @@ ffx_plugin("ffx_target_ssh") {
   test_deps = [
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
-    "//src/developer/ffx/lib/timeout:lib",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:pretty_assertions",

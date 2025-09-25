@@ -42,7 +42,11 @@ impl TargetInfoHolder {
         addrs
     }
 
-    pub fn ssh_address(&self) -> Option<std::net::SocketAddr> {
+    pub fn ssh_address(&self) -> Option<fidl_fuchsia_developer_ffx::TargetIpAddrInfo> {
+        self.0.ssh_address.clone()
+    }
+
+    pub fn ssh_socket_addr(&self) -> Option<std::net::SocketAddr> {
         if let Some(ssh_address) = &self.0.ssh_address {
             let address: addr::TargetIpAddr = ssh_address.into();
             Some(address.into())
@@ -126,7 +130,7 @@ mod tests {
         assert_eq!(info.nodename(), ffx_info.nodename);
         assert_eq!(info.serial_number(), ffx_info.serial_number);
         assert_eq!(info.addresses().is_empty(), ffx_info.addresses.is_none());
-        assert_eq!(info.ssh_address(), None);
+        assert_eq!(info.ssh_socket_addr(), None);
     }
 
     #[test]
@@ -147,7 +151,7 @@ mod tests {
         };
         let info: TargetInfoHolder = (&ffx_info).into();
 
-        assert_eq!(info.ssh_address(), Some(sa))
+        assert_eq!(info.ssh_socket_addr(), Some(sa))
     }
 
     #[test]
@@ -167,7 +171,7 @@ mod tests {
         };
         let info: TargetInfoHolder = (&ffx_info).into();
 
-        assert_eq!(info.ssh_address(), Some(sa))
+        assert_eq!(info.ssh_socket_addr(), Some(sa))
     }
 
     #[test]
@@ -190,7 +194,7 @@ mod tests {
         };
         let info: TargetInfoHolder = (&ffx_info).into();
 
-        assert_eq!(info.ssh_address(), Some(sa))
+        assert_eq!(info.ssh_socket_addr(), Some(sa))
     }
 
     #[test]

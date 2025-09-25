@@ -15,15 +15,13 @@ use fidl_fuchsia_developer_ffx::{TargetIpAddrInfo, TargetIpPort};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address};
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
-use target_holders::TargetProxyHolder;
-use timeout::timeout;
+use target_holders::TargetInfoHolder;
 
 #[derive(FfxTool)]
 pub struct SshTool {
     #[command]
     cmd: SshCommand,
-    target_proxy: TargetProxyHolder,
+    target_info: TargetInfoHolder,
     context: EnvironmentContext,
 }
 
@@ -33,10 +31,8 @@ fho::embedded_plugin!(SshTool);
 impl FfxMain for SshTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let addr_info = timeout(Duration::from_secs(1), self.target_proxy.get_ssh_address())
-            .await
-            .user_message("Timed out getting target ssh address")?
-            .user_message("Failed to get target ssh address")?;
+        let addr_info =
+            self.target_info.ssh_address().user_message("Failed to get target ssh address")?;
 
         let addr = get_addr(&self.context, &addr_info)?;
         let mut ssh_cmd =
