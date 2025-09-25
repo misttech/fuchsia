@@ -370,73 +370,76 @@ impl Drop for RunningThread {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{AutoReleasableTask, create_kernel_and_task};
-
-    fn build_spawner(max_idle_threads: u8) -> (AutoReleasableTask, DynamicThreadSpawner) {
-        let (_kernel, task) = create_kernel_and_task();
-        let spawner = DynamicThreadSpawner::new(max_idle_threads, task.weak_task());
-        (task, spawner)
-    }
+    use crate::testing::spawn_kernel_and_run;
 
     #[fuchsia::test]
     async fn run_simple_task() {
-        let (_task, spawner) = build_spawner(2);
-        spawner.spawn(|_, _| {});
+        spawn_kernel_and_run(|_locked, current_task| {
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            spawner.spawn(|_, _| {});
+        });
     }
 
     #[fuchsia::test]
     async fn run_10_tasks() {
-        let (_task, spawner) = build_spawner(2);
-        for _ in 0..10 {
-            spawner.spawn(|_, _| {});
-        }
+        spawn_kernel_and_run(|_locked, current_task| {
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            for _ in 0..10 {
+                spawner.spawn(|_, _| {});
+            }
+        });
     }
 
     #[fuchsia::test]
     async fn blocking_task_do_not_prevent_further_processing() {
-        let (_task, spawner) = build_spawner(1);
+        spawn_kernel_and_run(|_locked, current_task| {
+            let spawner = DynamicThreadSpawner::new(1, current_task.weak_task());
 
-        let pair = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
-        for _ in 0..10 {
-            let pair2 = Arc::clone(&pair);
-            spawner.spawn(move |_, _| {
-                let (lock, cvar) = &*pair2;
-                let mut cont = lock.lock().unwrap();
-                while !*cont {
-                    cont = cvar.wait(cont).unwrap();
-                }
-            });
-        }
-
-        assert_eq!(
-            spawner.spawn_and_get_result_sync(move |_, _| {
-                {
-                    let (lock, cvar) = &*pair;
+            let pair = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+            for _ in 0..10 {
+                let pair2 = Arc::clone(&pair);
+                spawner.spawn(move |_, _| {
+                    let (lock, cvar) = &*pair2;
                     let mut cont = lock.lock().unwrap();
-                    *cont = true;
-                    cvar.notify_all();
-                }
-            }),
-            Ok(())
-        );
+                    while !*cont {
+                        cont = cvar.wait(cont).unwrap();
+                    }
+                });
+            }
+
+            assert_eq!(
+                spawner.spawn_and_get_result_sync(move |_, _| {
+                    {
+                        let (lock, cvar) = &*pair;
+                        let mut cont = lock.lock().unwrap();
+                        *cont = true;
+                        cvar.notify_all();
+                    }
+                }),
+                Ok(())
+            );
+        });
     }
 
     #[fuchsia::test]
     async fn run_spawn_and_get_result() {
-        let (_task, spawner) = build_spawner(2);
-        assert_eq!(spawner.spawn_and_get_result(|_, _| 3).await, Ok(3));
+        spawn_kernel_and_run(|_locked, current_task| {
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            assert_eq!(spawner.spawn_and_get_result_sync(|_, _| 3), Ok(3));
+        });
     }
 
     #[fuchsia::test]
     async fn test_spawn_async() {
-        let (_task, spawner) = build_spawner(2);
-        spawner.spawn_async(async |_: LockedAndTask<'_>| {});
-        spawner.spawn_async(async |locked_and_task: LockedAndTask<'_>| {
-            locked_and_task.current_task().get_pid();
-            let _locked: &mut Locked<Unlocked> = &mut locked_and_task.unlocked();
-            let bar = async || {};
-            bar().await;
-            locked_and_task.current_task().get_pid();
+        spawn_kernel_and_run(|_locked, current_task| {
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            spawner.spawn(move |locked, current_task| {
+                let mut exec = fuchsia_async::LocalExecutor::new();
+                let locked_and_task = LockedAndTask::new(locked, current_task);
+                let fut = async {};
+                let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
+                exec.run_singlethreaded(wrapped_future);
+            });
         });
     }
 }
