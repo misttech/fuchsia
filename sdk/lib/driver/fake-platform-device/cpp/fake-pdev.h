@@ -8,8 +8,8 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/async/default.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio.h>
 
 #include <map>
 

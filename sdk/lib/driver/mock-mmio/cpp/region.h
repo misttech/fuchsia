@@ -5,8 +5,8 @@
 #ifndef LIB_DRIVER_MOCK_MMIO_CPP_REGION_H_
 #define LIB_DRIVER_MOCK_MMIO_CPP_REGION_H_
 
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mock-mmio/cpp/register.h>
-#include <lib/mmio/mmio.h>
 
 #include <memory>
 

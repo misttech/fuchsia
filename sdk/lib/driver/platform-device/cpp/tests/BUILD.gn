@@ -23,8 +23,8 @@ test("driver-platform-device-test") {
     "//sdk/lib/driver/fake-bti/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/fake-resource/cpp",
+    "//sdk/lib/driver/mmio/testing/cpp",
     "//sdk/lib/driver/platform-device/cpp",
-    "//src/devices/lib/mmio:test_helper",
     "//zircon/system/ulib/zxtest",
   ]
 }

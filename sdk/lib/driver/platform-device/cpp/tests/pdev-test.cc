@@ -11,15 +11,14 @@
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/fake-resource/cpp/fake-resource.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <zxtest/zxtest.h>
-
-#include "src/devices/lib/mmio/test-helper.h"
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 

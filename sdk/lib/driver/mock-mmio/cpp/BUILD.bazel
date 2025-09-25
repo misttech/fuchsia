@@ -19,7 +19,7 @@ cc_library(
     include_prefix = "lib/driver/mock-mmio/cpp",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
-        "@fuchsia_sdk//pkg/mmio",
+        "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/stdcompat",
     ],
 )

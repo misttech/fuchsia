@@ -20,8 +20,8 @@ sdk_source_set("cpp") {
   deps = [ "//zircon/system/ulib/mmio-ptr" ]
 
   public_deps = [
+    "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/fit",
-    "//src/devices/lib/mmio",
   ]
 
   public_configs = [ "//sdk/config" ]

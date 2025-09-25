@@ -5,9 +5,9 @@
 #ifndef LIB_DRIVER_FAKE_MMIO_REG_CPP_FAKE_MMIO_REG_H_
 #define LIB_DRIVER_FAKE_MMIO_REG_CPP_FAKE_MMIO_REG_H_
 
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio.h>
 
 #include <vector>
 

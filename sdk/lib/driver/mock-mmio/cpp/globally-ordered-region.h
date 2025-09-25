@@ -5,7 +5,7 @@
 #ifndef LIB_DRIVER_MOCK_MMIO_CPP_GLOBALLY_ORDERED_REGION_H_
 #define LIB_DRIVER_MOCK_MMIO_CPP_GLOBALLY_ORDERED_REGION_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>

@@ -6,10 +6,10 @@
 #define LIB_DRIVER_PLATFORM_DEVICE_CPP_PDEV_H_
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/driver/power/cpp/types.h>
 #include <lib/fidl/cpp/natural_types.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>

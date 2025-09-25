@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include <fbl/algorithm.h>
 #include <zxtest/zxtest.h>

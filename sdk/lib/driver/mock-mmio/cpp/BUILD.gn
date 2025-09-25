@@ -21,7 +21,7 @@ sdk_source_set("cpp") {
     "register.h",
   ]
 
-  public_deps = [ "//src/devices/lib/mmio" ]
+  public_deps = [ "//sdk/lib/driver/mmio/cpp" ]
 
   public_configs = [ "//sdk/config" ]
 }
@@ -45,7 +45,7 @@ test("region-test-bin") {
   sources = [ "tests/region-test.cc" ]
   deps = [
     ":cpp",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]

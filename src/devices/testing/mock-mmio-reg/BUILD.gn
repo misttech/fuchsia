@@ -19,7 +19,8 @@ config("zxtest-backend") {
 
 source_set("mock-mmio-reg-zxtest") {
   public = [ "include/mock-mmio-reg/mock-mmio-reg.h" ]
-  deps = [
+  public_deps = [
+    "//src/devices/lib/mmio",
     "//src/devices/lib/mmio:test_helper",
     "//zircon/system/ulib/mmio-ptr",
   ]
