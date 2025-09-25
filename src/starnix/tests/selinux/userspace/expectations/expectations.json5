@@ -43,5 +43,12 @@
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
             ],
         },
+        {
+            type: "skip",
+            matchers: [
+                // TODO: https://fxbug.dev/447104596 - This test hangs rarely
+                "NetlinkAuditTest.ChildDaemonReadsParentsMessageFromNewSocket",
+            ],
+        },
     ],
 }

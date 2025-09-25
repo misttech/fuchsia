@@ -110,7 +110,7 @@ def run_test(
             "1G",
             "-enable-kvm",
             "-append",
-            "console=ttyS0 security=selinux debug=all panic=-1 -- data/tests/"
+            "console=ttyS0 security=selinux debug=all audit=1 panic=-1 -- data/tests/"
             + test_name,
         ],
         stdout=subprocess.PIPE,

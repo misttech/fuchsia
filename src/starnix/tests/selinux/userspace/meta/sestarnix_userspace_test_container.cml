@@ -12,7 +12,7 @@
             "selinux_test_suite",
         ],
         init: [],
-        kernel_cmdline: "",
+        kernel_cmdline: "audit=1",
         mounts: [ "/:remote_pkg_subdir::nosuid,nodev,relatime" ],
         name: "sestarnix_userspace_test_container",
         startup_file_path: "",

@@ -108,6 +108,7 @@ test_names = [
   "memfd",
   "mount",
   "mprotect",
+  "netlink_audit",
   "pipe",
   "procattr",
   "ptrace",
