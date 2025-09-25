@@ -155,29 +155,32 @@ impl TracePerformanceEventManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{create_kernel_task_and_unlocked, create_task};
+    use crate::testing::{create_task, spawn_kernel_and_run};
+    use futures::channel::oneshot;
 
     #[fuchsia::test]
     async fn test_initialize_pid_map() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (sender, receiver) = oneshot::channel();
+        spawn_kernel_and_run(move |locked, current_task| {
+            let kernel = current_task.kernel();
+            let pid = current_task.task.tid;
+            let tkoid = current_task.thread.read().as_ref().and_then(|t| t.get_koid().ok());
+            let pkoid = current_task.thread_group().get_process_koid().ok();
 
-        let pid = current_task.task.tid;
-        let tkoid = current_task.thread.read().as_ref().and_then(|t| t.get_koid().ok());
-        let pkoid = current_task.thread_group().get_process_koid().ok();
+            let _another_current = create_task(locked, &kernel, "another-task");
 
-        let _another_current = create_task(locked, &kernel, "another-task");
+            let pid_map = TracePerformanceEventManager::read_existing_pid_map(&*kernel.pids.read());
 
-        let pid_map = TracePerformanceEventManager::read_existing_pid_map(&*kernel.pids.read());
+            assert!(tkoid.is_some());
+            assert_eq!(pid_map.len(), 2, "Expected 2 entries in pid_map got {pid_map:?}");
+            assert!(pid_map.contains_key(&pid));
 
-        assert_eq!(tkoid, None);
-        assert_eq!(pid_map.len(), 2, "Expected 2 entries in pid_map got {pid_map:?}");
-        assert!(pid_map.contains_key(&pid));
-
-        // Since the tasks are not running, there is no Task object yet.
-        let pair = pid_map.get(&pid).unwrap();
-        assert_eq!(pair.process, pkoid);
-        assert_eq!(pair.thread, tkoid);
-        assert_eq!(pair.thread, None);
+            let pair = pid_map.get(&pid).unwrap();
+            assert_eq!(pair.process, pkoid);
+            assert_eq!(pair.thread, tkoid);
+            sender.send(()).unwrap();
+        });
+        receiver.await.unwrap();
     }
 
     #[fuchsia::test]
@@ -206,46 +209,50 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_lifecycle() {
-        let (kernel, _current_task, locked) = create_kernel_task_and_unlocked();
+        let (sender, receiver) = oneshot::channel();
+        spawn_kernel_and_run(move |locked, current_task| {
+            let kernel = current_task.kernel();
+            let mut manager = TracePerformanceEventManager::new();
 
-        let mut manager = TracePerformanceEventManager::new();
+            manager.start(&kernel);
 
-        manager.start(&kernel);
+            let pid_map = manager.map.read().clone();
+            assert_eq!(pid_map.len(), 1, "Expected 1 entry in pid_map got {pid_map:?}");
 
-        let pid_map = manager.map.read().clone();
-        assert_eq!(pid_map.len(), 1, "Expected 1 entry in pid_map got {pid_map:?}");
+            // Associate a thread with a new task.
+            let another_current = create_task(locked, &kernel, "another-task");
+            let test_thread = another_current
+                .thread_group()
+                .process
+                .create_thread(b"my-new-test-thread")
+                .expect("test thread");
 
-        // Associate a thread with a new task.
-        let another_current = create_task(locked, &kernel, "another-task");
-        let test_thread = another_current
-            .thread_group()
-            .process
-            .create_thread(b"my-new-test-thread")
-            .expect("test thread");
+            let mut thread = another_current.thread.write();
+            *thread = Some(Arc::new(test_thread));
+            drop(thread);
 
-        let mut thread = another_current.thread.write();
-        *thread = Some(Arc::new(test_thread));
-        drop(thread);
+            let pid_map = manager.map.read().clone();
+            let pid_dump = format!("{pid_map:?}");
+            assert_eq!(pid_map.len(), 1, "Expected 1 entry in pid_map got {pid_dump}");
 
-        let pid_map = manager.map.read().clone();
-        let pid_dump = format!("{pid_map:?}");
-        assert_eq!(pid_map.len(), 1, "Expected 1 entry in pid_map got {pid_dump}");
+            // This is called by the task when it is all ready to run.
+            another_current.record_pid_koid_mapping();
 
-        // This is called by the task when it is all ready to run.
-        another_current.record_pid_koid_mapping();
+            // Now expect 2 mappings.
+            let pid_map = manager.map.read().clone();
+            let pid_dump = format!("{pid_map:?}");
+            assert_eq!(pid_map.len(), 2, "Expected 2 entries in pid_map got {pid_dump}");
 
-        // Now expect 2 mappings.
-        let pid_map = manager.map.read().clone();
-        let pid_dump = format!("{pid_map:?}");
-        assert_eq!(pid_map.len(), 2, "Expected 2 entries in pid_map got {pid_dump}");
+            // Read the mappings, if it is not present, it will panic.
+            let _ = manager.map_pid_to_koid(another_current.task.get_pid());
+            let _ = manager.map_pid_to_koid(another_current.task.get_tid());
 
-        // Read the mappings, if it is not present, it will panic.
-        let _ = manager.map_pid_to_koid(another_current.task.get_pid());
-        let _ = manager.map_pid_to_koid(another_current.task.get_tid());
+            manager.stop();
 
-        manager.stop();
-
-        manager.clear();
-        assert!(manager.map.read().is_empty());
+            manager.clear();
+            assert!(manager.map.read().is_empty());
+            sender.send(()).unwrap();
+        });
+        receiver.await.unwrap();
     }
 }
