@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
-#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/fsck.h"
 
@@ -200,7 +200,7 @@ TEST(SuperblockTest, TestCorruptSuperblockWithoutCorrection) {
   ASSERT_TRUE(info_or.is_error());
 
   // Read back the superblock and backup superblock.
-  block_client::Reader reader(device);
+  block_client::ReaderWriter reader(device);
   ASSERT_EQ(reader.Read(kSuperblockStart * kMinfsBlockSize, kMinfsBlockSize, &info), ZX_OK);
   ASSERT_EQ(reader.Read(kNonFvmSuperblockBackup * kMinfsBlockSize, kMinfsBlockSize, &backup),
             ZX_OK);
@@ -243,7 +243,7 @@ TEST(SuperblockTest, TestCorruptSuperblockWithCorrection) {
   info = info_or.value();
 
   // Read back the superblock and backup superblock.
-  block_client::Reader reader(device);
+  block_client::ReaderWriter reader(device);
   ASSERT_EQ(reader.Read(kSuperblockStart * kMinfsBlockSize, kMinfsBlockSize, &info), ZX_OK);
   ASSERT_EQ(reader.Read(kNonFvmSuperblockBackup * kMinfsBlockSize, kMinfsBlockSize, &backup),
             ZX_OK);
@@ -297,7 +297,7 @@ TEST(SuperblockTest, TestRepairSuperblockWithBitmapReconstruction) {
   info = info_or.value();
 
   // Read back the superblock and backup superblock.
-  block_client::Reader reader(device);
+  block_client::ReaderWriter reader(device);
   ASSERT_EQ(reader.Read(kSuperblockStart * kMinfsBlockSize, kMinfsBlockSize, &info), ZX_OK);
   ASSERT_EQ(reader.Read(kNonFvmSuperblockBackup * kMinfsBlockSize, kMinfsBlockSize, &backup),
             ZX_OK);

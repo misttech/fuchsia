@@ -35,8 +35,7 @@
 
 #include "src/lib/utf_conversion/utf_conversion.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
-#include "src/storage/lib/block_client/cpp/reader.h"
-#include "src/storage/lib/block_client/cpp/writer.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 
 namespace gpt {
 
@@ -69,7 +68,7 @@ void print_array(const gpt_partition_t* const partitions[kPartitionCount], int c
 // block size.
 zx_status_t write_partial_block(block_client::BlockDevice& device, void* data, size_t size,
                                 off_t offset, size_t blocksize) {
-  block_client::Writer writer(device);
+  block_client::ReaderWriter writer(device);
   // If input block is already rounded to blocksize, just directly write from our buffer.
   if (size % blocksize == 0) {
     if (writer.Write(offset, size, data) != ZX_OK) {
@@ -687,7 +686,7 @@ zx::result<std::unique_ptr<GptDevice>> GptDevice::Init(
   }
 
   offset = 0;
-  block_client::Reader reader(*device);
+  block_client::ReaderWriter reader(*device);
   if (zx_status_t status = reader.Read(offset, blocksize, block.get()); status != ZX_OK) {
     G_PRINTF("Failed to read %u @ %lld: %s\n", blocksize, offset, zx_status_get_string(status));
     return zx::error(ZX_ERR_IO);
@@ -909,7 +908,7 @@ zx_status_t GptDevice::ClearPartition(uint64_t offset, uint64_t blocks) {
       return ZX_ERR_OUT_OF_RANGE;
     }
 
-    block_client::Writer writer(*device_);
+    block_client::ReaderWriter writer(*device_);
     zx_status_t status = writer.Write(offset, blocksize_, zero.get());
     if (status != ZX_OK) {
       G_PRINTF("Failed to write to block %zu; errno: %d\n", i, status);

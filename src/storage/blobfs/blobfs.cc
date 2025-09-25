@@ -74,7 +74,7 @@
 #include "src/storage/blobfs/transfer_buffer.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/pass_through_read_only_device.h"
-#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
 #include "src/storage/lib/vfs/cpp/inspect/inspect_data.h"
@@ -111,7 +111,7 @@ const char* CachePolicyToString(CachePolicy policy) {
 
 zx_status_t LoadSuperblock(const fuchsia_hardware_block::wire::BlockInfo& block_info,
                            int block_offset, BlockDevice& device, char block[kBlobfsBlockSize]) {
-  block_client::Reader reader(device);
+  block_client::ReaderWriter reader(device);
   zx_status_t status = reader.Read(block_offset * kBlobfsBlockSize, kBlobfsBlockSize, block);
   if (status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "could not read info block";
@@ -1091,7 +1091,7 @@ zx_status_t Blobfs::ReloadSuperblock() {
 
   // Re-read the info block from disk.
   char block[kBlobfsBlockSize];
-  block_client::Reader reader(*Device());
+  block_client::ReaderWriter reader(*Device());
   if (zx_status_t status = reader.Read(0, kBlobfsBlockSize, block); status != ZX_OK) {
     FX_LOGS(ERROR) << "could not read info block";
     return status;
@@ -1209,7 +1209,7 @@ zx::result<std::unique_ptr<Superblock>> Blobfs::ReadBackupSuperblock() {
     sync_completion_wait(&sync, ZX_TIME_INFINITE);
   }
   auto superblock = std::make_unique<Superblock>();
-  block_client::Reader reader(*block_device_);
+  block_client::ReaderWriter reader(*block_device_);
   if (zx_status_t status = reader.Read(kFVMBackupSuperblockOffset * kBlobfsBlockSize,
                                        kBlobfsBlockSize, superblock.get());
       status != ZX_OK) {

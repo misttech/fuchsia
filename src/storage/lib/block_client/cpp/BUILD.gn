@@ -16,10 +16,8 @@ source_set("interface") {
   sources = [
     "block_device.cc",
     "block_device.h",
-    "reader.cc",
-    "reader.h",
-    "writer.cc",
-    "writer.h",
+    "reader_writer.cc",
+    "reader_writer.h",
   ]
   public_deps = [
     # For storage/buffer/...
@@ -112,9 +110,8 @@ test("block_client_unit_test") {
   sources = [
     "block_group_registry_unittest.cc",
     "fake_block_device_unittest.cc",
-    "reader_unittest.cc",
+    "reader_writer_unittest.cc",
     "remote_block_device_unittest.cc",
-    "writer_unittest.cc",
   ]
 
   deps = [

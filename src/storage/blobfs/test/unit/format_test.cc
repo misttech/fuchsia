@@ -10,7 +10,7 @@
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
-#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 
 namespace blobfs {
 namespace {
@@ -333,7 +333,7 @@ TEST(FormatFilesystemTest, FormattedFilesystemHasSpecifiedOldestRevision) {
 
   uint8_t block[kBlobfsBlockSize] = {};
   static_assert(sizeof(block) >= sizeof(Superblock));
-  block_client::Reader reader(*device);
+  block_client::ReaderWriter reader(*device);
   ASSERT_EQ(reader.Read(0, kBlobfsBlockSize, &block), ZX_OK);
   Superblock* info = reinterpret_cast<Superblock*>(block);
   EXPECT_EQ(1234u, info->oldest_minor_version);
@@ -348,7 +348,7 @@ TEST(FormatFilesystemTest, FormattedFilesystemHasCurrentMinorVersionIfUnspecifie
 
   uint8_t block[kBlobfsBlockSize] = {};
   static_assert(sizeof(block) >= sizeof(Superblock));
-  block_client::Reader reader(*device);
+  block_client::ReaderWriter reader(*device);
   ASSERT_EQ(reader.Read(0, kBlobfsBlockSize, &block), ZX_OK);
   Superblock* info = reinterpret_cast<Superblock*>(block);
   EXPECT_EQ(kBlobfsCurrentMinorVersion, info->oldest_minor_version);

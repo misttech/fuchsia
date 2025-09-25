@@ -21,9 +21,8 @@
 
 #include "src/storage/gpt/gpt.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
-#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
-#include "src/storage/lib/block_client/cpp/writer.h"
 
 extern bool gUseRamDisk;
 extern char gDevPath[PATH_MAX];
@@ -85,7 +84,7 @@ void destroy_gpt(block_client::BlockDevice& device, uint64_t block_size, uint64_
   uint64_t first = offset;
   uint64_t last = offset + block_count - 1;
 
-  block_client::Writer writer(device);
+  block_client::ReaderWriter writer(device);
   for (uint64_t i = first; i <= last; i++) {
     ASSERT_OK(writer.Write(block_size * i, block_size, zero), "Failed to write");
   }
@@ -400,7 +399,7 @@ class LibGptTest {
 
     // Read the block containing the MBR.
     char buff[blk_size_];
-    block_client::Reader reader(gpt_->device());
+    block_client::ReaderWriter reader(gpt_->device());
     if (reader.Read(0, blk_size_, buff) != ZX_OK) {
       return ZX_ERR_IO;
     }

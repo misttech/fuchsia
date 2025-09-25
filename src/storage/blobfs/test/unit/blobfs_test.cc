@@ -42,7 +42,7 @@
 #include "src/storage/blobfs/test/test_scoped_vnode_open.h"
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
-#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
 
@@ -166,7 +166,7 @@ TEST_F(BlobfsTest, CleanFlag) {
   // Read the superblock, verify the clean flag is set.
   uint8_t block[kBlobfsBlockSize] = {};
   static_assert(sizeof(block) >= sizeof(Superblock));
-  block_client::Reader reader(*device);
+  block_client::ReaderWriter reader(*device);
   ASSERT_EQ(reader.Read(0, kBlobfsBlockSize, &block), ZX_OK);
   Superblock* info = reinterpret_cast<Superblock*>(block);
   EXPECT_EQ(kBlobFlagClean, (info->flags & kBlobFlagClean));

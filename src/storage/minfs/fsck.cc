@@ -31,7 +31,7 @@
 
 #include <storage/buffer/owned_vmoid.h>
 
-#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 
 #else
 
@@ -905,7 +905,7 @@ zx::result<Superblock> ReadBackupSuperblock(fs::TransactionHandler* transaction_
                                             block_client::BlockDevice* device, uint32_t max_blocks,
                                             uint32_t backup_location) {
   Superblock backup;
-  block_client::Reader reader(*device);
+  block_client::ReaderWriter reader(*device);
   if (zx_status_t status = reader.Read(static_cast<uint64_t>(backup_location) * kMinfsBlockSize,
                                        kMinfsBlockSize, &backup);
       status != ZX_OK) {
