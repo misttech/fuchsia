@@ -179,7 +179,7 @@ impl FfxMain for FlashTool {
         preflight_checks(&self.cmd, &mut writer)?;
 
         // Massage FlashCommand
-        let cmd = preprocess_flash_cmd(&mut writer, &self.cmd).await?;
+        let cmd = preprocess_flash_cmd(&self.ctx, &mut writer, &self.cmd).await?;
 
         self.flash_plugin_impl(cmd, &mut writer).await
     }
@@ -201,6 +201,7 @@ fn preflight_checks<W: Write>(cmd: &FlashCommand, mut writer: W) -> Result<()> {
 }
 
 async fn preprocess_flash_cmd(
+    ctx: &EnvironmentContext,
     writer: &mut VerifiedMachineWriter<FlashMessage>,
     i_cmd: &FlashCommand,
 ) -> Result<FlashCommand> {
@@ -267,7 +268,7 @@ async fn preprocess_flash_cmd(
     }
 
     if cmd.product_bundle.is_none() && cmd.manifest_path.is_none() && cmd.manifest.is_none() {
-        let product_path: String = ffx_config::get("product.path")?;
+        let product_path: String = ctx.get("product.path")?;
         let message = format!(
             "No product bundle or manifest passed. Inferring product bundle path from config: {}",
             product_path
@@ -454,7 +455,7 @@ Reboot the Target to the bootloader and re-run this command."
                         };
                         let config = FastbootNetworkConnectionConfig::new_udp().await;
                         let fastboot_device_file_path: Option<PathBuf> =
-                            ffx_config::get(FASTBOOT_FILE_PATH).ok();
+                            self.ctx.get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = udp_proxy(
                             target_name.clone(),
                             fastboot_device_file_path,
@@ -495,7 +496,7 @@ Reboot the Target to the bootloader and re-run this command."
                         };
                         let config = FastbootNetworkConnectionConfig::new_tcp().await;
                         let fastboot_device_file_path: Option<PathBuf> =
-                            ffx_config::get(FASTBOOT_FILE_PATH).ok();
+                            self.ctx.get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = tcp_proxy(
                             target_name.clone(),
                             fastboot_device_file_path,
@@ -795,19 +796,21 @@ mod test {
             .expect("creating temp product.path");
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        let cmd = preprocess_flash_cmd(&mut writer, &FlashCommand { ..Default::default() })
-            .await
-            .unwrap();
+        let cmd =
+            preprocess_flash_cmd(&env.context, &mut writer, &FlashCommand { ..Default::default() })
+                .await
+                .unwrap();
         assert_eq!(cmd.product_bundle, Some("foo".to_string()));
     }
 
     #[fuchsia::test]
     async fn test_nonexistent_file_throws_err() {
-        let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let env = ffx_config::test_init().await.expect("Failed to initialize test env");
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
         assert!(
             preprocess_flash_cmd(
+                &env.context,
                 &mut writer,
                 &FlashCommand {
                     manifest_path: Some(PathBuf::from("ffx_test_does_not_exist")),
@@ -821,7 +824,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_clean_quotes() {
-        let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let env = ffx_config::test_init().await.expect("Failed to initialize test env");
         let pb_tmp_file = NamedTempFile::new().expect("tmp access failed");
         let pb_tmp_file_name = pb_tmp_file.path().to_string_lossy().to_string();
         let wrapped_pb_tmp_file_name = format!("\"{}\"", pb_tmp_file_name);
@@ -833,6 +836,7 @@ mod test {
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
 
         let cmd = preprocess_flash_cmd(
+            &env.context,
             &mut writer,
             &FlashCommand {
                 product_bundle: Some(wrapped_pb_tmp_file_name),
@@ -847,7 +851,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_nonexistent_ssh_file_throws_err() {
-        let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let env = ffx_config::test_init().await.expect("Failed to initialize test env");
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
 
@@ -855,6 +859,7 @@ mod test {
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
         assert!(
             preprocess_flash_cmd(
+                &env.context,
                 &mut writer,
                 &FlashCommand {
                     manifest_path: Some(PathBuf::from(tmp_file_name)),
