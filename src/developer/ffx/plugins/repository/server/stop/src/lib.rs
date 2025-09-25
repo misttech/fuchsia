@@ -141,7 +141,7 @@ mod tests {
         name: String,
         product_bundle_path: Option<Utf8PathBuf>,
         context: &EnvironmentContext,
-        test_env: &TestEnv,
+        test_env: &TestEnv<'_>,
     ) -> Result<(PkgServerInstances, Child)> {
         let fake_server = test_env.isolate_root.path().join(format!("{name}_fake_server.sh"));
         // write out the shell script

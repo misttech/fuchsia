@@ -283,7 +283,7 @@ mod test {
     use ffx_writer::{Format, TestBuffers};
     use std::fs::File;
 
-    async fn setup_test_env() -> TestEnv {
+    async fn setup_test_env() -> TestEnv<'static> {
         let env = ffx_config::test_init().await.unwrap();
 
         env.context
@@ -407,7 +407,7 @@ mod test {
     async fn test_pb_list_impl_machine_code_ignore_unknown_fields() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join(PB_MANIFEST_NAME);
-        let env: TestEnv = setup_test_env().await;
+        let env: TestEnv<'_> = setup_test_env().await;
         let mut f = File::create(&path).expect("file create");
         f.write_all(
             r#"[{

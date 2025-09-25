@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use tempfile::{NamedTempFile, TempDir};
 
 use super::{EnvVars, EnvironmentKind, ExecutableKind};
@@ -20,19 +20,19 @@ static LOG_INIT: std::sync::Once = std::sync::Once::new();
 /// of a test. This object must continue to exist for the duration of the test, or the test
 /// may fail.
 #[must_use = "This object must be held for the duration of a test (ie. `let _env = ffx_config::test_init()`) for it to operate correctly."]
-pub struct TestEnv {
+pub struct TestEnv<'a> {
     pub env_file: NamedTempFile,
     pub context: EnvironmentContext,
     pub isolate_root: TempDir,
     pub user_file: NamedTempFile,
     pub build_file: Option<NamedTempFile>,
     pub global_file: NamedTempFile,
-    _guard: async_lock::MutexGuardArc<()>,
+    _guard: MutexGuard<'a, ()>,
 }
 
-impl TestEnv {
-    async fn new_isolated(
-        guard: async_lock::MutexGuardArc<()>,
+impl<'a> TestEnv<'a> {
+    fn new_isolated(
+        guard: MutexGuard<'a, ()>,
         env_vars: EnvVars,
         runtime_args: ConfigMap,
     ) -> Result<Self> {
@@ -48,12 +48,12 @@ impl TestEnv {
             None,
             false,
         )?;
-        Self::build_test_env(context, env_file, isolate_root, guard).await
+        Self::build_test_env(context, env_file, isolate_root, guard)
     }
 
-    async fn new_intree(
+    fn new_intree(
         build_dir: &Path,
-        guard: async_lock::MutexGuardArc<()>,
+        guard: MutexGuard<'a, ()>,
         env_vars: EnvVars,
         runtime_args: ConfigMap,
     ) -> Result<Self> {
@@ -71,14 +71,14 @@ impl TestEnv {
             Some(env_file.path().to_owned()),
             false,
         );
-        Self::build_test_env(context, env_file, isolate_root, guard).await
+        Self::build_test_env(context, env_file, isolate_root, guard)
     }
 
-    async fn build_test_env(
+    fn build_test_env(
         context: EnvironmentContext,
         env_file: NamedTempFile,
         isolate_root: TempDir,
-        guard: async_lock::MutexGuardArc<()>,
+        guard: MutexGuard<'a, ()>,
     ) -> Result<Self> {
         let global_file = NamedTempFile::new().context("tmp access failed")?;
         let global_file_path = global_file.path().to_owned();
@@ -129,7 +129,7 @@ impl TestEnv {
     }
 }
 
-impl Drop for TestEnv {
+impl Drop for TestEnv<'_> {
     fn drop(&mut self) {
         // after the test, wipe out all the test configuration we set up. Explode if things aren't as we
         // expect them.
@@ -151,7 +151,7 @@ impl Drop for TestEnv {
     }
 }
 
-static TEST_LOCK: LazyLock<Arc<async_lock::Mutex<()>>> = LazyLock::new(Arc::default);
+static TEST_LOCK: LazyLock<Arc<Mutex<()>>> = LazyLock::new(Arc::default);
 
 #[derive(Debug, Default)]
 pub struct TestEnvBuilder {
@@ -201,25 +201,21 @@ impl TestEnvBuilder {
     ///
     /// You must hold the returned object object for the duration of the test.
     /// Not doing so will result in strange behaviour.
-    pub async fn build(self) -> Result<TestEnv> {
+    pub fn build(self) -> Result<TestEnv<'static>> {
         let env = match self.build_dir {
-            Some(build_dir) => {
-                TestEnv::new_intree(
+            Some(build_dir) => match TEST_LOCK.lock() {
+                Ok(guard) => TestEnv::new_intree(
                     build_dir.as_path(),
-                    TEST_LOCK.lock_arc().await,
+                    guard,
                     self.env_vars,
                     self.runtime_config,
-                )
-                .await
-            }
-            None => {
-                TestEnv::new_isolated(
-                    TEST_LOCK.lock_arc().await,
-                    self.env_vars,
-                    self.runtime_config,
-                )
-                .await
-            }
+                ),
+                Err(e) => Err(anyhow::anyhow!("Error aquiring lock: {}", e)),
+            },
+            None => match TEST_LOCK.lock() {
+                Ok(guard) => TestEnv::new_isolated(guard, self.env_vars, self.runtime_config),
+                Err(e) => Err(anyhow::anyhow!("Error aquiring lock: {}", e)),
+            },
         }?;
 
         // Force an overwrite of the configuration setup.
@@ -240,11 +236,10 @@ impl TestEnvBuilder {
 ///
 /// FIXME(https://fxbug.dev/411199300): This function inherits environment
 /// variables from the real test environment.
-pub async fn test_init() -> Result<TestEnv> {
+pub async fn test_init() -> Result<TestEnv<'static>> {
     // TODO(https://fxbug.dev/411199300): Use `test_env()` when we don't need to
     // implicitly inherit environment variables from the real test environment
     // environment anymore.
     (TestEnvBuilder { env_vars: HashMap::from_iter(std::env::vars()), ..Default::default() })
         .build()
-        .await
 }

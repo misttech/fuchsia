@@ -68,7 +68,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_env_unset() -> Result<()> {
-        let env = test_env().build().await.unwrap();
+        let env = test_env().build().unwrap();
         let test_buffers = TestBuffers::default();
         let mut writer = SimpleWriter::new_test(&test_buffers);
 
@@ -92,7 +92,6 @@ mod test {
             .env_var("FUCHSIA_NODENAME", "")
             .env_var("FUCHSIA_DEVICE_ADDR", "")
             .build()
-            .await
             .unwrap();
         let test_buffers = TestBuffers::default();
         let mut writer = SimpleWriter::new_test(&test_buffers);
@@ -118,7 +117,6 @@ mod test {
             .runtime_config(TARGET_DEFAULT_KEY, "distraction-target1")
             .in_tree(&test_build_dir.path())
             .build()
-            .await
             .unwrap();
         let test_buffers = TestBuffers::default();
         let mut writer = SimpleWriter::new_test(&test_buffers);
@@ -162,7 +160,6 @@ mod test {
             .env_var("FUCHSIA_DEVICE_ADDR", "stateless-device-addr-target")
             .runtime_config(TARGET_DEFAULT_KEY, "distraction-target1")
             .build()
-            .await
             .unwrap();
         let test_buffers = TestBuffers::default();
         let mut writer = SimpleWriter::new_test(&test_buffers);

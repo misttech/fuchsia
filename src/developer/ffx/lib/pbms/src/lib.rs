@@ -231,7 +231,7 @@ mod tests {
         let test_dir = TempDir::new().expect("output directory");
         let build_dir =
             Utf8Path::from_path(test_dir.path()).expect("cannot convert builddir to Utf8Path");
-        let _env = test_env().in_tree(&test_dir.path()).build().await.unwrap();
+        let _env = test_env().in_tree(&test_dir.path()).build().unwrap();
 
         // If pb provided but invalid path return None
         let pb_path = build_dir.join("__invalid__").to_string();

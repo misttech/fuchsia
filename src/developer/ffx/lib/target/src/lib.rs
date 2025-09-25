@@ -623,7 +623,7 @@ mod test {
     async fn test_get_target_specifier_unset() {
         // Explicitly initialize the test with no env vars.
         // That way, $FUCHSIA_NODENAME and $FUCHSIA_DEVICE_ADDR are both unset.
-        let env = test_env().build().await.unwrap();
+        let env = test_env().build().unwrap();
 
         let target_spec = get_target_specifier(&env.context).await.unwrap();
         assert_eq!(target_spec, None);
@@ -631,7 +631,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_specifier_from_nodename_env() {
-        let env = test_env().env_var("FUCHSIA_NODENAME", "nodename-default").build().await.unwrap();
+        let env = test_env().env_var("FUCHSIA_NODENAME", "nodename-default").build().unwrap();
 
         let target_spec = get_target_specifier(&env.context).await.unwrap();
         assert_eq!(target_spec, Some("nodename-default".into()));
@@ -639,8 +639,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_specifier_from_device_addr_env() {
-        let env =
-            test_env().env_var("FUCHSIA_DEVICE_ADDR", "device-addr-default").build().await.unwrap();
+        let env = test_env().env_var("FUCHSIA_DEVICE_ADDR", "device-addr-default").build().unwrap();
 
         let target_spec = get_target_specifier(&env.context).await.unwrap();
         assert_eq!(target_spec, Some("device-addr-default".into()));
@@ -652,7 +651,6 @@ mod test {
             .env_var("FUCHSIA_NODENAME", "nodename-default")
             .env_var("FUCHSIA_DEVICE_ADDR", "device-addr-default")
             .build()
-            .await
             .unwrap();
 
         let target_spec = get_target_specifier(&env.context).await.unwrap();
@@ -662,7 +660,7 @@ mod test {
     #[fuchsia::test]
     async fn test_get_target_specifier_bypasses_state() {
         let build_dir = tempdir().expect("temp dir");
-        let env = test_env().in_tree(build_dir.path()).build().await.unwrap();
+        let env = test_env().in_tree(build_dir.path()).build().unwrap();
 
         // Set stateful configuration.
         env.context
@@ -692,7 +690,6 @@ mod test {
             .env_var("FUCHSIA_NODENAME", "nodename-default")
             .in_tree(build_dir.path())
             .build()
-            .await
             .unwrap();
 
         // Set stateful configuration.
@@ -725,7 +722,6 @@ mod test {
             .runtime_config(TARGET_DEFAULT_KEY, "runtime-default")
             .in_tree(build_dir.path())
             .build()
-            .await
             .unwrap();
 
         // Set stateful configuration.

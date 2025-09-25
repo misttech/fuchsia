@@ -262,7 +262,6 @@ mod test {
         let env = ffx_config::test_env()
             .runtime_config("connectivity.direct", true)
             .build()
-            .await
             .expect("test_env build");
         let server = setup_fake_target_collection_proxy(|_| {
             unreachable!("proxy should not be used in direct mode");

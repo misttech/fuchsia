@@ -328,7 +328,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_config_error() {
-        let env = crate::test_env().build().await.unwrap();
+        let env = crate::test_env().build().unwrap();
         let context = &env.context;
 
         let err = context.get::<Vec<String>, &str>("Some-key-that-does-not-exist").unwrap_err();

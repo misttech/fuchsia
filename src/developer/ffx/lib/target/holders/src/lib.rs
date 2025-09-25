@@ -131,14 +131,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_non_strict() {
-        let env = test_env().build().await.unwrap();
+        let env = test_env().build().unwrap();
         let behavior = init_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DaemonConnector(_)));
     }
 
     #[fuchsia::test]
     async fn test_daemon_connection_behavior() {
-        let env = test_env().build().await.unwrap();
+        let env = test_env().build().unwrap();
         let behavior = init_daemon_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DaemonConnector(_)));
     }
@@ -155,7 +155,6 @@ mod tests {
             .runtime_config("connectivity.direct", true)
             .runtime_config("target.default", "127.0.0.1")
             .build()
-            .await
             .unwrap();
         let behavior = init_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(behavior, FhoConnectionBehavior::DirectConnector(_)));

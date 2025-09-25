@@ -138,7 +138,7 @@ mod test {
     const PB_MANIFEST_NAME: &'static str = "product_bundles.json";
     const PRODUCT_BUNDLE_INDEX_KEY: &str = "product.index";
 
-    async fn setup_test_env(path: &Path) -> TestEnv {
+    async fn setup_test_env(path: &Path) -> TestEnv<'_> {
         let env = ffx_config::test_init().await.unwrap();
         env.context
             .query(PRODUCT_BUNDLE_INDEX_KEY)

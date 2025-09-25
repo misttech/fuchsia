@@ -979,11 +979,15 @@ mod tests {
         })))
     }
 
-    async fn run_trace_test(ctx: EnvironmentContext, cmd: TraceCommand, writer: Writer) {
+    async fn run_trace_test(
+        ctx: EnvironmentContext,
+        cmd: TraceCommand,
+        writer: Writer,
+    ) -> Result<()> {
         let session_manager: Deferred<SessionManagerProxy> = setup_fake_session_manager();
 
         let controller = Deferred::from_output(Err(fho::user_error!("not found")));
-        trace(ctx, controller, session_manager, writer, cmd).await.unwrap();
+        trace(ctx, controller, session_manager, writer, cmd).await
     }
 
     #[fuchsia::test]
@@ -996,7 +1000,8 @@ mod tests {
             TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "input (Input system)\nkernel (All kernel trace events)\nkernel:arch (Kernel arch events)\nkernel:ipc (Kernel ipc events)\n";
         assert_eq!(want, output);
@@ -1040,16 +1045,14 @@ mod tests {
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "12345678 -> fake_protocol_name.fake_method_name\n";
         assert!(output.contains(want));
     }
 
     #[fuchsia::test]
-    #[should_panic(
-        expected = "WARNING: The trace file is empty. Please verify that the input categories are valid. Input categories are:"
-    )]
     async fn test_empty_trace_data() {
         let fake_temp_file =
             Builder::new().suffix("foo.fxt").tempfile().expect("Failed to create a temp file");
@@ -1057,26 +1060,28 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec!["invalid_categories".to_string()],
-                    duration: Some(1),
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: Some(fake_trace_file_name),
-                    background: false,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: false,
-                }),
-            },
-            writer,
-        )
-        .await;
-        assert_eq!(test_buffers.into_stdout_str(), "Should be unreachable");
+        assert!(
+            run_trace_test(
+                env.context.clone(),
+                TraceCommand {
+                    sub_cmd: TraceSubCommand::Start(Start {
+                        buffer_size: 2,
+                        categories: vec!["invalid_categories".to_string()],
+                        duration: Some(1),
+                        buffering_mode: tracing::BufferingMode::Oneshot,
+                        output: Some(fake_trace_file_name),
+                        background: false,
+                        verbose: false,
+                        trigger: vec![],
+                        no_symbolize: false,
+                        no_verify_trace: false,
+                    }),
+                },
+                writer,
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[fuchsia::test]
@@ -1096,7 +1101,8 @@ mod tests {
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "Unable to symbolize ordinal 12345678. This could be because either:\n\
                     1. The ordinal is incorrect\n\
@@ -1114,7 +1120,8 @@ mod tests {
             TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = serde_json::to_string(
             &fake_known_categories()
@@ -1152,7 +1159,8 @@ mod tests {
             TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "Trace providers:\n\
                    bar  foo  unknown\n\n"
@@ -1186,7 +1194,8 @@ mod tests {
             TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = serde_json::to_string(&fake_trace_provider_infos()).unwrap();
         assert_eq!(want, output.trim_end());
@@ -1215,7 +1224,8 @@ mod tests {
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         // This doesn't find `/.../foo.txt` for the tracing status, since the faked
         // proxy has no state.
@@ -1243,7 +1253,8 @@ Triggers:
             TraceCommand { sub_cmd: TraceSubCommand::Status(Status {}) },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "Task Id: 2468
 Total Duration: infinite
@@ -1272,7 +1283,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str =
             "Results written to /([^/]+/)+?foo.txt\nUpload to https://ui.perfetto.dev/#!/ to view.";
@@ -1302,7 +1314,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Results written to /([^/]+/)+?trace.fxt\nUpload to https://ui.perfetto.dev/#!/ to view.";
         let want = Regex::new(regex_str).unwrap();
@@ -1332,7 +1345,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         // This doesn't find `/.../foo.txt` for the tracing status, since the faked
         // proxy has no state.
@@ -1367,7 +1381,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "\"provider_bar\" \\(pid: 1234\\) trace stats\n\
             Buffer wrapped count: 10\n\
@@ -1408,7 +1423,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n";
         let want = Regex::new(regex_str).unwrap();
@@ -1438,7 +1454,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n\
             Trace completed! Copying trace from device...\n\
@@ -1471,7 +1488,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n\
             Press <enter> to stop trace.\n\
@@ -1505,7 +1523,8 @@ Triggers:
             },
             writer,
         )
-        .await;
+        .await
+        .unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n\
             Press <enter> to stop trace.\n\
@@ -1574,11 +1593,8 @@ Triggers:
     #[fuchsia::test]
     async fn test_handle_recording_error() {
         let target = "fuchsia-device";
-        let env = ffx_config::test_env()
-            .env_var("FUCHSIA_NODENAME", target.into())
-            .build()
-            .await
-            .unwrap();
+        let env =
+            ffx_config::test_env().env_var("FUCHSIA_NODENAME", target.into()).build().unwrap();
         let context = &env.context;
         let output_file = "foo_bar_bazzle_wazzle.fxt";
         let log_dir = "important_log_file.log";

@@ -749,7 +749,7 @@ mod tests {
         EmuStartTool { cmd, engine_operations: MockEngineOperations::new() }
     }
 
-    async fn make_fake_sdk(env: &TestEnv) {
+    async fn make_fake_sdk(env: &TestEnv<'_>) {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))
@@ -811,7 +811,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(1);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(1);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -868,7 +869,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
 
         let result = tool.main(VerifiedMachineWriter::<CommandStatus>::new(None)).await;
         assert!(result.is_ok())
@@ -904,7 +906,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -959,7 +962,7 @@ mod tests {
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        tool.engine_operations.expect_context().returning_st(move || env.context.clone()).times(2);
 
         tool.main(VerifiedMachineWriter::<CommandStatus>::new(None))
             .await
@@ -1003,7 +1006,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1048,7 +1052,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1099,7 +1104,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1147,7 +1153,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(1);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(1);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1190,7 +1197,8 @@ mod tests {
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
 
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(1);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(1);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1230,7 +1238,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1276,7 +1285,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1310,7 +1320,7 @@ mod tests {
             })
             .times(1);
 
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        tool.engine_operations.expect_context().returning_st(move || env.context.clone()).times(2);
         tool.engine_operations.expect_load_product_bundle().times(0);
         tool.engine_operations
             .expect_get_emu_instances()
@@ -1367,7 +1377,8 @@ mod tests {
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
 
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1458,7 +1469,8 @@ mod tests {
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
@@ -1536,7 +1548,8 @@ mod tests {
                 }) as Box<dyn EmulatorEngine>))
             })
             .times(1);
-        tool.engine_operations.expect_context().returning(move || env.context.clone()).times(2);
+        let context = env.context.clone();
+        tool.engine_operations.expect_context().returning(move || context.clone()).times(2);
         tool.engine_operations
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())

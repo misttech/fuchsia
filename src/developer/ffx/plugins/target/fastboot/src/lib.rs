@@ -308,7 +308,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_gather_connection_info_fails() -> Result<()> {
-        let env = ffx_config::test_env().build().await?;
+        let env = ffx_config::test_env().build()?;
         let target_info: TargetInfoHolder =
             TargetInfo { nodename: Some("Foo".to_string()), ..Default::default() }.into();
         gather_connection_info(&env.context, &target_info, vec![])
@@ -320,8 +320,7 @@ mod test {
     async fn test_gather_connection_info_success() -> Result<()> {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
-            .build()
-            .await?;
+            .build()?;
         let target_info: TargetInfoHolder =
             TargetInfo { nodename: Some("Foo".to_string()), ..Default::default() }.into();
 
@@ -346,8 +345,7 @@ mod test {
     async fn test_gather_connection_info_node_name() -> Result<()> {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
-            .build()
-            .await?;
+            .build()?;
         let target_info: TargetInfoHolder =
             TargetInfo { nodename: None, ..Default::default() }.into();
 

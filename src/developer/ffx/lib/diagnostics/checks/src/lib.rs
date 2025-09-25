@@ -739,7 +739,7 @@ mod test {
     #[fuchsia::test]
     async fn test_resolve_target_success() {
         let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle = TargetHandle {
             node_name: Some("test-node".to_string()),
@@ -760,7 +760,7 @@ mod test {
         {
             *MOCK_HANDLES.lock().unwrap() = vec![];
         }
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let mut check = ResolveTarget::<_, MockResolver>::new(&env.context);
         let res = check.check(TargetInfoQuery::First, &mut notifier).await;
@@ -770,7 +770,7 @@ mod test {
     #[fuchsia::test]
     async fn test_resolve_target_too_many_devices_found() {
         let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle1 = TargetHandle {
             node_name: Some("test-node-1".to_string()),
@@ -922,7 +922,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_connect_ssh() {
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let m = MockSshConnectorProvider::with_res(Ok(MockConnector::with_results([Ok(
             TargetConnection::FDomain(FDomainConnection::invalid()),
         )])));
@@ -939,7 +939,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_connect_ssh_failures() {
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let m = MockSshConnectorProvider::<MockConnector>::with_res(Err(anyhow::anyhow!(
             "Couldn't get a connector for some reason"
         )));
@@ -956,7 +956,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_connect_ssh_failures_connector_fails() {
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         // TODO(b/425474866): This should result in a check where we can see that the connection
         // failed multiple times albeit non-fatally.
         let mock_connector = MockConnector::with_results([
@@ -1063,7 +1063,6 @@ mod test {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::TARGET_DEFAULT_KEY, "foobar")
             .build()
-            .await
             .expect("initializing config");
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let (target, _) = GetTargetSpecifier::new(&env.context)
@@ -1079,7 +1078,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_identifier_empty() {
-        let env = ffx_config::test_env().build().await.expect("initializing config");
+        let env = ffx_config::test_env().build().expect("initializing config");
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let (target, _) = GetTargetSpecifier::new(&env.context)
             .check_with_notifier((), &mut notifier)
@@ -1093,7 +1092,6 @@ mod test {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
             .build()
-            .await
             .unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let sources = DiscoverySources::EMULATOR;
@@ -1108,7 +1106,6 @@ mod test {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
             .build()
-            .await
             .unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let sources = DiscoverySources::FASTBOOT_FILE;
@@ -1124,7 +1121,6 @@ mod test {
             .runtime_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
             .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
             .build()
-            .await
             .unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let sources = DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
@@ -1136,7 +1132,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_notify_for_discovery_sources_none() {
-        let env = ffx_config::test_env().build().await.unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let sources = DiscoverySources::MANUAL;
         notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
