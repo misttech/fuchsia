@@ -1,0 +1,39 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Fixed settings for use in Starnix syscall tests.
+//
+// Refer to //src/sys/time/timekeeper/config.shard.cml for the data schema.
+{
+    disable_delays: false,
+    oscillator_error_std_dev_ppm: 15,
+    max_frequency_error_ppm: 10,
+
+    // Subpackage.
+    primary_time_source_url: "#meta/dev_time_source.cm",
+    initial_frequency_ppm: 1000000,
+    monitor_uses_pull: false,
+    back_off_time_between_pull_samples_sec: 5,
+    first_sampling_delay_sec: 0,
+    primary_uses_pull: false,
+    monitor_time_source_url: "",
+
+    // The UTC vendor will start the clock.
+    utc_start_at_startup: false,
+    early_exit: false,
+    power_topology_integration_enabled: false,
+
+    // This is not used in Starnix.
+    serve_test_protocols: false,
+
+    // This should not be needed for tests.
+    has_real_time_clock: false,
+    utc_start_at_startup_when_invalid_rtc: false,
+    serve_fuchsia_time_alarms: true,
+    has_always_on_counter: false,
+    serve_fuchsia_time_external_adjust: true,
+    utc_max_allowed_delta_past_sec: 0,
+    utc_max_allowed_delta_future_sec: 0,
+    use_connectivity: false,
+}

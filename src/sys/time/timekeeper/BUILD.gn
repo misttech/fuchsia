@@ -151,6 +151,24 @@ fuchsia_package("timekeeper-without-config") {
   deps = [ ":service" ]
 }
 
+fuchsia_structured_config_values("timekeeper-config-for-starnix-tests") {
+  testonly = true
+  cm_label = ":manifest"
+  values_source = "config/starnix-tests.json5"
+}
+
+# A component with fixed configuration that should be dropped verbatim into
+# starnix syscall test fixture.
+fuchsia_package("timekeeper-with-config-for-starnix-tests") {
+  testonly = true
+  package_name = "timekeeper-for-starnix-tests"
+  deps = [
+    ":service",
+    ":timekeeper-config-for-starnix-tests",
+  ]
+  subpackages = [ "//src/sys/time/testing/dev_time_source:pkg" ]
+}
+
 resource("testdata") {
   sources = [
     "test/end-of-unix-time",

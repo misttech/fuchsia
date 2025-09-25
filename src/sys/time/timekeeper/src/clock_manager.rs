@@ -624,10 +624,11 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
         let pull_delay = self.config.get_back_off_time_between_pull_samples();
 
         let utc_details = self.clock.get_details().expect("failed to get UTC clock details");
-        let mut clock_started =
-            utc_details.backstop != utc_details.ticks_to_synthetic.synthetic_offset;
+        warn!("XXX(fmil): maintain_clock: utc clock details at entry: {utc_details:?}");
         let utc_backstop = utc_details.backstop;
+        let mut clock_started = utc_backstop != utc_details.ticks_to_synthetic.synthetic_offset;
         std::mem::drop(utc_details);
+
         let mut receiver = async_commands.fuse(); // Required by select! below.
 
         let serve_test_protocols = self.config.serve_test_protocols();
@@ -747,6 +748,10 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                                         "reference time sample is rejected ",
                                         "as too close to backstop, {:?}"),
                                     utc_reference_to_backstop_diff);
+                                log::info!("UTC parameters:");
+                                log::info!("    - diff:             = {utc_reference_to_backstop_diff:?}");
+                                log::info!("    - backstop:         = {utc_backstop:?}");
+                                log::info!("    - reference utc_now = {utc_reference:?}\n\n");
                             } else {
                                 last_proposal = Some(sample);
                                 self.managed_clock_start(
@@ -941,6 +946,7 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
 
 /// Applies an update to the supplied clock, panicking with a comprehensible error on failure.
 fn update_clock(clock: &Arc<UtcClock>, track: &Track, update: impl Into<UtcClockUpdate>) {
+    debug!("update_clock: updating clock with koid: {:?}", clock.as_handle_ref().get_koid());
     if let Err(status) = clock.update(update) {
         // Clock update errors should only be caused by an invalid clock (or potentially a
         // serious bug in the generation of a time update). There isn't anything Timekeeper

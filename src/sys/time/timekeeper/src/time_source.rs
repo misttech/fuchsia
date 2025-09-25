@@ -188,14 +188,14 @@ impl TimeSourceLauncher {
             .create_child(&collection_ref, &child_decl, CreateChildArgs::default())
             .await
             .context("realm.create_child failed")?
-            .map_err(|e| anyhow!("failed to create child: {:?}", e))?;
+            .map_err(|e| anyhow!("failed to create child: {:?} for {}", e, self.component_url))?;
 
         Ok(client::open_childs_exposed_directory(
             &self.name,
             Some(String::from(TIMESOURCE_COLLECTION_NAME)),
         )
         .await
-        .context("failed to open exposed directory")?)
+        .with_context(|| format!("failed to open exposed directory for {}", self.component_url))?)
     }
 
     /// Destroys previously launched timesource. Will generate an error if the child was not found.

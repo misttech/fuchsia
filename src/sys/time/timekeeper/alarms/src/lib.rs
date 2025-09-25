@@ -639,6 +639,7 @@ impl Loop {
 // Forwards the clock transformation of an updated clock into the alarm manager, to allow
 // correcting the boot time deadlines of clocks on the UTC timeline.
 async fn monitor_utc_clock_changes(utc_clock: fxr::UtcClock, mut cmd: mpsc::Sender<Cmd>) {
+    let koid = utc_clock.as_handle_ref().get_koid();
     log::info!("monitor_utc_clock_changes: entry");
     loop {
         // CLOCK_UPDATED signal is self-clearing.
@@ -648,7 +649,7 @@ async fn monitor_utc_clock_changes(utc_clock: fxr::UtcClock, mut cmd: mpsc::Send
 
         let transform =
             utc_clock.get_details().expect("UTC clock details are readable").reference_to_synthetic;
-        log::debug!("Received a UTC update: {transform:?}");
+        log::debug!("Received a UTC update: koid={koid:?}: {transform:?}");
         if let Err(err) = cmd.send(Cmd::UtcUpdated { transform }).await {
             // This is OK in tests.
             log::warn!("monitor_utc_clock_changes: exit: {err:?}");
@@ -964,7 +965,6 @@ async fn get_timer_properties(hrtimer: &Box<dyn TimerOps>) -> TimerConfig {
 }
 
 /// The state of a single hardware timer that we must bookkeep.
-#[derive(Debug)]
 struct TimerState {
     // The task waiting for the proximate timer to expire.
     task: fasync::Task<()>,
@@ -1335,7 +1335,7 @@ async fn wake_timer_loop(
             }
             Cmd::UtcUpdated { transform } => {
                 trace::duration!(c"alarms", c"Cmd::UtcUpdated");
-                log::info!("wake_timer_loop: applying new UTC clock transform: {transform:?}");
+                debug!("wake_timer_loop: applying new clock transform: {transform:?}");
 
                 // Assigning to this shared reference updates the deadlines of all
                 // UTC timers.
@@ -1357,10 +1357,7 @@ async fn wake_timer_loop(
                             &timer_config,
                             &schedule_delay_prop,
                         ))),
-                    };
-                    log::info!("UtcUpdated: rescheduling the UTC timer: {hrtimer_status:?}");
-                } else {
-                    debug!("UtcUpdated: no hrtimer change needed.");
+                    }
                 }
             }
         }
