@@ -185,6 +185,7 @@ rustc_library("starnix_core") {
     "security/selinux_hooks/file.rs",
     "security/selinux_hooks/fs_node.rs",
     "security/selinux_hooks/mod.rs",
+    "security/selinux_hooks/netlink_socket.rs",
     "security/selinux_hooks/selinuxfs.rs",
     "security/selinux_hooks/socket.rs",
     "security/selinux_hooks/superblock.rs",

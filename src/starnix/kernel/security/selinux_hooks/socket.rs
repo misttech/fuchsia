@@ -15,6 +15,7 @@ use crate::vfs::socket::{
     SocketShutdownFlags, SocketType, socket_fs,
 };
 use crate::vfs::{Anon, DowncastedFile, FsNode};
+
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
@@ -82,7 +83,7 @@ fn has_socket_permission_for_sid(
 
 /// Checks that `current_task` has the specified `permission` for the `socket_node`, with
 /// "todo_deny" on denial.
-fn todo_has_socket_permission(
+pub(super) fn todo_has_socket_permission(
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,

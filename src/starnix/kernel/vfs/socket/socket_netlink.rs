@@ -982,8 +982,8 @@ impl SocketOps for RouteNetlinkSocket {
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
+        socket: &Socket,
+        current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         _dest_address: &mut Option<SocketAddress>,
         _ancillary_data: &mut Vec<AncillaryData>,
@@ -1004,20 +1004,23 @@ impl SocketOps for RouteNetlinkSocket {
                     error!(EINVAL)
                 }
             }
-            Ok(msg) => match message_sender.unbounded_send(msg) {
-                Ok(()) => {
-                    data.drain();
-                    Ok(bytes.len())
+            Ok(msg) => {
+                security::check_netlink_send_access(current_task, socket, msg.header.message_type)?;
+                match message_sender.unbounded_send(msg) {
+                    Ok(()) => {
+                        data.drain();
+                        Ok(bytes.len())
+                    }
+                    Err(e) => {
+                        log_warn!(
+                            tag = NETLINK_LOG_TAG;
+                            "Netlink receiver unexpectedly disconnected for socket: {:?}",
+                            e
+                        );
+                        error!(EPIPE)
+                    }
                 }
-                Err(e) => {
-                    log_warn!(
-                        tag = NETLINK_LOG_TAG;
-                        "Netlink receiver unexpectedly disconnected for socket: {:?}",
-                        e
-                    );
-                    error!(EPIPE)
-                }
-            },
+            }
         }
     }
 
@@ -1199,8 +1202,6 @@ impl SocketOps for DiagnosticNetlinkSocket {
         _dest_address: &mut Option<SocketAddress>,
         _ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
-        // TODO(https://fxbug.dev/323590076): Support SOCK_DIAG sockets.
-        log_debug!("got write to NETLINK_SOCK_DIAG");
         track_stub!(TODO("https://fxbug.dev/323590076"), "NETLINK_SOCK_DIAG handle request");
         error!(ENOTSUP)
     }
@@ -1701,15 +1702,16 @@ impl SocketOps for AuditNetlinkSocket {
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _socket: &Socket,
+        socket: &Socket,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         _dest_address: &mut Option<SocketAddress>,
         _ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
-        match NetlinkMessage::<GenericMessage>::deserialize(&(data.read_all()?)) {
+        match NetlinkMessage::<GenericMessage>::deserialize(&(data.peek_all()?)) {
             Ok(nl_message) => {
                 let header = nl_message.header;
+                security::check_netlink_send_access(current_task, socket, header.message_type)?;
 
                 // Send request to the `AuditNetlinkClient`.
                 let audit_ack = self
@@ -1718,6 +1720,7 @@ impl SocketOps for AuditNetlinkSocket {
                     .map_err(|e| AuditNetlinkClient::build_audit_ack(Err(e), header))
                     .unwrap_or_else(|nlerr| nlerr);
                 *self.audit_client.audit_response.lock() = Some(audit_ack);
+                data.drain();
                 Ok(header.length as usize)
             }
             Err(e) => {

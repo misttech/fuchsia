@@ -42,6 +42,12 @@ void LoadPolicy(const std::string& name) {
 
 // Perform one-time initialization of the test system.
 void PrepareTestEnvironment() {
+  // Check if selinuxfs is already mounted as a proxy for environment setup.
+  auto mounts = ReadFile("/proc/mounts");
+  if (mounts.is_ok() && mounts.value().find("/sys/fs/selinux selinuxfs") != std::string::npos) {
+    // Environment appears to be already initialized.
+    return;
+  }
   ASSERT_THAT(mkdir("/proc", 0755), SyscallSucceeds());
   ASSERT_THAT(mkdir("/sys", 0755), SyscallSucceeds());
   ASSERT_THAT(mkdir("/tmp", 0755), SyscallSucceeds());

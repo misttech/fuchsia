@@ -1265,6 +1265,25 @@ pub fn unix_stream_connect(
     })
 }
 
+/// Checks if the `current_task` is allowed to send a message of `message_type` on the Netlink
+/// `socket`.
+/// Corresponds to the `netlink_send()` LSM hook.
+pub fn check_netlink_send_access(
+    current_task: &CurrentTask,
+    socket: &Socket,
+    message_type: u16,
+) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_netlink_send_access");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::netlink_socket::check_netlink_send_access(
+            &security_server,
+            current_task,
+            socket,
+            message_type,
+        )
+    })
+}
+
 /// Updates the SELinux thread group state on exec.
 /// Corresponds to the `exec_binprm` function described in the SELinux Notebook.
 ///

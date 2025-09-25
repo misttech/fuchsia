@@ -890,6 +890,12 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkRouteSocketPermission extends CommonSocketPermission {
+        // keep-sorted start
+        /// Permission to read the kernel routing table.
+        NlmsgRead("nlmsg_read"),
+        /// Permission to write to the kernel routing table.
+        NlmsgWrite("nlmsg_write"),
+        // keep-sorted end
     }
 }
 
@@ -906,6 +912,12 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkTcpDiagSocketPermission extends CommonSocketPermission {
+        // keep-sorted start
+        /// Permission to request information about a protocol.
+        NlmsgRead("nlmsg_read"),
+        /// Permission to write netlink message.
+        NlmsgWrite("nlmsg_write"),
+        // keep-sorted end
     }
 }
 
@@ -922,6 +934,12 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkXfrmSocketPermission extends CommonSocketPermission {
+        // keep-sorted start
+        /// Permission to get IPSec configuration information.
+        NlmsgRead("nlmsg_read"),
+        /// Permission to set IPSec configuration information.
+        NlmsgWrite("nlmsg_write"),
+        // keep-sorted end
     }
 }
 
@@ -946,6 +964,18 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkAuditSocketPermission extends CommonSocketPermission {
+        // keep-sorted start
+        /// Permission to query status of audit service.
+        NlmsgRead("nlmsg_read"),
+        /// Permission to list auditing configuration rules.
+        NlmsgReadPriv("nlmsg_readpriv"),
+        /// Permission to send userspace audit messages to the audit service.
+        NlmsgRelay("nlmsg_relay"),
+        /// Permission to control TTY auditing.
+        NlmsgTtyAudit("nlmsg_tty_audit"),
+        /// Permission to update the audit service configuration.
+        NlmsgWrite("nlmsg_write"),
+        // keep-sorted end
     }
 }
 
