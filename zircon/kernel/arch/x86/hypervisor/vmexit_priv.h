@@ -336,12 +336,9 @@ struct InterruptCommandRegister {
   InterruptCommandRegister(uint32_t hi, uint32_t lo);
 };
 
-zx::result<> vmexit_handler_normal(AutoVmcs& vmcs, GuestState& guest_state,
-                                   LocalApicState& local_apic_state, PvClockState& pv_clock,
-                                   hypervisor::GuestPhysicalAspace& gpa, hypervisor::TrapMap& traps,
-                                   zx_port_packet_t& packet);
-
-zx::result<> vmexit_handler_direct(AutoVmcs& vmcs, GuestState& guest_state, uintptr_t& fs_base,
-                                   zx_port_packet_t& packet);
+zx::result<> vmexit_handler(AutoVmcs& vmcs, GuestState& guest_state,
+                            LocalApicState& local_apic_state, PvClockState& pv_clock,
+                            hypervisor::GuestPhysicalAspace& gpa, hypervisor::TrapMap& traps,
+                            zx_port_packet_t& packet);
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_HYPERVISOR_VMEXIT_PRIV_H_

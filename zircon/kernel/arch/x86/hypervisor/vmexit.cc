@@ -33,7 +33,6 @@
 
 #include "pv_priv.h"
 #include "vcpu_priv.h"
-#include "vmcall_priv.h"
 #include "vmexit_priv.h"
 
 #include <ktl/enforce.h>
@@ -92,30 +91,6 @@ void next_rip(const ExitInfo& exit_info, AutoVmcs& vmcs) {
   if (new_interruptibility != guest_interruptibility) {
     vmcs.Write(VmcsField32::GUEST_INTERRUPTIBILITY_STATE, new_interruptibility);
   }
-}
-
-zx::result<> handle_exception_or_nmi(AutoVmcs& vmcs) {
-  const ExitInterruptionInfo int_info(vmcs);
-  DEBUG_ASSERT(int_info.valid);
-  // Only handle page faults, everything else should terminate the VCPU.
-  if (int_info.interruption_type != InterruptionType::HARDWARE_EXCEPTION ||
-      int_info.vector != X86_INT_PAGE_FAULT) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  auto thread = Thread::Current::Get();
-  // Page fault resume should not end up here.
-  if (thread->arch().page_fault_resume != 0) {
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-
-  const zx_vaddr_t guest_vaddr = vmcs.Read(VmcsFieldXX::EXIT_QUALIFICATION);
-  DEBUG_ASSERT(int_info.error_code_valid);
-  const PageFaultInfo pf_info(vmcs.Read(VmcsField32::EXIT_INTERRUPTION_ERROR_CODE));
-
-  // We may have to block when handling the page fault.
-  vmcs.Invalidate();
-  zx_status_t status = vmm_page_fault_handler(guest_vaddr, pf_info.flags);
-  return zx::make_result(status);
 }
 
 void handle_external_interrupt(AutoVmcs& vmcs) {
@@ -1007,8 +982,8 @@ bool is_cpl0(AutoVmcs& vmcs) {
   return (access_rights & kGuestXxAccessRightsDplUser) == 0;
 }
 
-void handle_vmcall_regular(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState& guest_state,
-                           hypervisor::GuestPhysicalAspace& gpa) {
+void handle_vmcall(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState& guest_state,
+                   hypervisor::GuestPhysicalAspace& gpa) {
   next_rip(exit_info, vmcs);
   if (!is_cpl0(vmcs)) {
     guest_state.rax = VmCallStatus::NOT_PERMITTED;
@@ -1042,19 +1017,6 @@ void handle_vmcall_regular(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState
       guest_state.rax = VmCallStatus::UNKNOWN_HYPERCALL;
       break;
   }
-}
-
-zx::result<> handle_vmcall_direct(const ExitInfo& exit_info, AutoVmcs& vmcs,
-                                  GuestState& guest_state, uintptr_t& fs_base,
-                                  zx_port_packet_t& packet) {
-  next_rip(exit_info, vmcs);
-  if (!is_cpl0(vmcs)) {
-    guest_state.rax = ZX_ERR_ACCESS_DENIED;
-    return zx::ok();
-  }
-  vmcs.Invalidate();
-  zx_status_t status = vmcall_dispatch(guest_state, fs_base, packet);
-  return zx::make_result(status);
 }
 
 }  // namespace
@@ -1140,10 +1102,10 @@ VmCallInfo::VmCallInfo(const GuestState& guest_state) {
   arg[3] = guest_state.rsi;
 }
 
-zx::result<> vmexit_handler_normal(AutoVmcs& vmcs, GuestState& guest_state,
-                                   LocalApicState& local_apic_state, PvClockState& pv_clock,
-                                   hypervisor::GuestPhysicalAspace& gpa, hypervisor::TrapMap& traps,
-                                   zx_port_packet_t& packet) {
+zx::result<> vmexit_handler(AutoVmcs& vmcs, GuestState& guest_state,
+                            LocalApicState& local_apic_state, PvClockState& pv_clock,
+                            hypervisor::GuestPhysicalAspace& gpa, hypervisor::TrapMap& traps,
+                            zx_port_packet_t& packet) {
   zx::result<> result = zx::ok();
   const ExitInfo exit_info(vmcs);
   switch (exit_info.exit_reason) {
@@ -1211,7 +1173,7 @@ zx::result<> vmexit_handler_normal(AutoVmcs& vmcs, GuestState& guest_state,
     case ExitReason::VMCALL:
       ktrace_vcpu_exit(VCPU_VMCALL, exit_info.guest_rip);
       GUEST_STATS_INC(vmcall_instructions);
-      handle_vmcall_regular(exit_info, vmcs, guest_state, gpa);
+      handle_vmcall(exit_info, vmcs, guest_state, gpa);
       break;
     case ExitReason::EXCEPTION_OR_NMI:
     // Currently all exceptions, except NMIs, are delivered directly to guests.
@@ -1232,58 +1194,6 @@ zx::result<> vmexit_handler_normal(AutoVmcs& vmcs, GuestState& guest_state,
       dprintf(CRITICAL, "hypervisor: VM exit handler (regular) for %s (%u) returned %d\n",
               exit_reason_name(exit_info.exit_reason), static_cast<uint32_t>(exit_info.exit_reason),
               result.status_value());
-      dump_guest_state(guest_state, exit_info);
-      break;
-  }
-  return result;
-}
-
-zx::result<> vmexit_handler_direct(AutoVmcs& vmcs, GuestState& guest_state, uintptr_t& fs_base,
-                                   zx_port_packet_t& packet) {
-  zx::result<> result = zx::ok();
-  const ExitInfo exit_info(vmcs);
-  switch (exit_info.exit_reason) {
-    case ExitReason::EXCEPTION_OR_NMI:
-      ktrace_vcpu_exit(VCPU_EXCEPTION_OR_NMI, exit_info.guest_rip);
-      result = handle_exception_or_nmi(vmcs);
-      break;
-    case ExitReason::EXTERNAL_INTERRUPT:
-      ktrace_vcpu_exit(VCPU_EXTERNAL_INTERRUPT, exit_info.guest_rip);
-      GUEST_STATS_INC(interrupts);
-      handle_external_interrupt(vmcs);
-      break;
-    case ExitReason::CPUID:
-      ktrace_vcpu_exit(VCPU_CPUID, exit_info.guest_rip);
-      GUEST_STATS_INC(cpuid_instructions);
-      result = handle_cpuid(exit_info, vmcs, guest_state);
-      break;
-    case ExitReason::VMCALL:
-      ktrace_vcpu_exit(VCPU_VMCALL, exit_info.guest_rip);
-      GUEST_STATS_INC(vmcall_instructions);
-      result = handle_vmcall_direct(exit_info, vmcs, guest_state, fs_base, packet);
-      break;
-    case ExitReason::ENTRY_FAILURE_GUEST_STATE:
-    case ExitReason::ENTRY_FAILURE_MSR_LOADING:
-    case ExitReason::ENTRY_FAILURE_MACHINE_CHECK:
-      ktrace_vcpu_exit(VCPU_VM_ENTRY_FAILURE, exit_info.guest_rip);
-      result = zx::error(ZX_ERR_BAD_STATE);
-      break;
-    default:
-      ktrace_vcpu_exit(VCPU_NOT_SUPPORTED, exit_info.guest_rip);
-      result = zx::error(ZX_ERR_NOT_SUPPORTED);
-      break;
-  }
-  switch (result.status_value()) {
-    case ZX_OK:
-    case ZX_ERR_NEXT:
-    case ZX_ERR_INTERNAL_INTR_RETRY:
-    case ZX_ERR_INTERNAL_INTR_KILLED:
-      break;
-    default:
-      dprintf(CRITICAL,
-              "hypervisor: VM exit handler (direct) for %s (%u) returned %d on thread %s\n",
-              exit_reason_name(exit_info.exit_reason), static_cast<uint32_t>(exit_info.exit_reason),
-              result.status_value(), Thread::Current::Get()->name());
       dump_guest_state(guest_state, exit_info);
       break;
   }

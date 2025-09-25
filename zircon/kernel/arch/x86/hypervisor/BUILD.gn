@@ -10,7 +10,6 @@ source_set("hypervisor") {
     "invalidate.cc",
     "pv.cc",
     "vcpu.cc",
-    "vmcall.cc",
     "vmexit.cc",
     "vmx.S",
     "vmx_cpu_state.cc",

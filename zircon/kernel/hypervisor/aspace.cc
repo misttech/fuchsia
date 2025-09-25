@@ -22,13 +22,6 @@ namespace {
 constexpr uint kInterruptMmuFlags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 constexpr uint kGuestMmuFlags =
     ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
-constexpr uint kContiguousMmuFlags = ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_READ |
-                                     ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE;
-
-size_t NumPhysmapPages() {
-  ZX_DEBUG_ASSERT_MSG(gPhysmapSize % PAGE_SIZE == 0, "Physmap is not a multiple of the page size");
-  return gPhysmapSize / PAGE_SIZE;
-}
 
 }  // namespace
 
@@ -204,37 +197,6 @@ fbl::RefPtr<VmMapping> GuestPhysicalAspace::FindMapping(zx_gpaddr_t guest_paddr)
     }
   }
   return nullptr;
-}
-
-zx::result<DirectPhysicalAspace> DirectPhysicalAspace::Create() {
-  auto physical_aspace = VmAspace::Create(VmAspace::Type::GuestPhysical, "guest_physical");
-  if (!physical_aspace) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-  zx_status_t status =
-      physical_aspace->arch_aspace().MapContiguous(0, 0, NumPhysmapPages(), kContiguousMmuFlags);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  DirectPhysicalAspace dpa;
-  dpa.physical_aspace_ = ktl::move(physical_aspace);
-  return zx::ok(ktl::move(dpa));
-}
-
-DirectPhysicalAspace::~DirectPhysicalAspace() {
-  if (physical_aspace_ != nullptr) {
-    zx_status_t status = physical_aspace_->arch_aspace().Unmap(
-        0, NumPhysmapPages(), ArchVmAspaceInterface::ArchUnmapOptions::Enlarge);
-    DEBUG_ASSERT(status == ZX_OK);
-    physical_aspace_->Destroy();
-  }
-}
-
-VmAspace& switch_aspace(VmAspace& aspace) {
-  InterruptDisableGuard irqd;
-  VmAspace* old_aspace = Thread::Current::switch_aspace(&aspace);
-  vmm_context_switch(old_aspace, &aspace);
-  return *old_aspace;
 }
 
 }  // namespace hypervisor

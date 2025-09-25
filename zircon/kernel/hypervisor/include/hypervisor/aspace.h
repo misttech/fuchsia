@@ -84,27 +84,6 @@ class GuestPhysicalAspace {
   fbl::RefPtr<VmAspace> physical_aspace_;
 };
 
-class DirectPhysicalAspace {
- public:
-  static zx::result<DirectPhysicalAspace> Create();
-  ~DirectPhysicalAspace();
-
-  DirectPhysicalAspace() = default;
-  DirectPhysicalAspace(DirectPhysicalAspace&&) = default;
-  DirectPhysicalAspace& operator=(DirectPhysicalAspace&&) = default;
-
-  DirectPhysicalAspace(const DirectPhysicalAspace&) = delete;
-  DirectPhysicalAspace& operator=(const DirectPhysicalAspace&) = delete;
-
-  size_t size() const { return physical_aspace_->size(); }
-  ArchVmAspace& arch_aspace() { return physical_aspace_->arch_aspace(); }
-
- private:
-  fbl::RefPtr<VmAspace> physical_aspace_;
-};
-
-VmAspace& switch_aspace(VmAspace& aspace);
-
 }  // namespace hypervisor
 
 #endif  // ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_ASPACE_H_

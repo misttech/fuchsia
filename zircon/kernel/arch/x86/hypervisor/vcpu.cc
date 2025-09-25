@@ -13,8 +13,6 @@
 #include <lib/ktrace.h>
 #include <zircon/syscalls/hypervisor.h>
 
-#include <new>
-
 #include <arch/x86/descriptor.h>
 #include <arch/x86/feature.h>
 #include <arch/x86/hypervisor/invalidate.h>
@@ -1141,8 +1139,8 @@ zx::result<> NormalVcpu::Enter(zx_port_packet_t& packet) {
   };
   auto post_exit = [this](AutoVmcs& vmcs, zx_port_packet_t& packet) -> zx::result<> {
     auto& guest = static_cast<NormalGuest&>(guest_);
-    return vmexit_handler_normal(vmcs, vmx_state_.guest_state, local_apic_state_, pv_clock_state_,
-                                 guest.PhysicalAspace(), guest.Traps(), packet);
+    return vmexit_handler(vmcs, vmx_state_.guest_state, local_apic_state_, pv_clock_state_,
+                          guest.PhysicalAspace(), guest.Traps(), packet);
   };
   return EnterInternal(ktl::move(pre_enter), ktl::move(post_exit), packet);
 }

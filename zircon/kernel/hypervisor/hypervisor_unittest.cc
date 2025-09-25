@@ -456,21 +456,6 @@ static bool guest_physical_aspace_query() {
   END_TEST;
 }
 
-static bool direct_physical_aspace_create() {
-  BEGIN_TEST;
-
-  if (!hypervisor_supported()) {
-    return true;
-  }
-
-#ifdef ARCH_X86
-  auto dpa = hypervisor::DirectPhysicalAspace::Create();
-  EXPECT_EQ(ZX_OK, dpa.status_value(), "Failed to create DirectPhysicalAspace\n");
-#endif  // ARCH_X86
-
-  END_TEST;
-}
-
 static bool interrupt_bitmap() {
   BEGIN_TEST;
 
@@ -599,7 +584,6 @@ HYPERVISOR_UNITTEST(guest_physical_aspace_uncached_device)
 HYPERVISOR_UNITTEST(guest_physical_aspace_write_combining)
 HYPERVISOR_UNITTEST(guest_physical_aspace_protect)
 HYPERVISOR_UNITTEST(guest_physical_aspace_query)
-HYPERVISOR_UNITTEST(direct_physical_aspace_create)
 HYPERVISOR_UNITTEST(interrupt_bitmap)
 HYPERVISOR_UNITTEST(trap_map_insert_trap_intersecting)
 HYPERVISOR_UNITTEST(trap_map_insert_trap_out_of_range)
