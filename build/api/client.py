@@ -466,9 +466,18 @@ def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
                 / f"prebuilt/third_party/breakpad/{args.host_tag}/dump_syms/dump_syms"
             )
             if not dump_syms_tool.exists():
-                print(
-                    f"ERROR: Missing breakpad tool, use --dump_syms=TOOL: {dump_syms_tool}"
-                )
+                if args.host_tag != "linux_x64":
+                    print(
+                        f"WARNING: Ignoring breakpad symbol generation (https://fxbug.dev/447331878).",
+                        file=sys.stderr,
+                    )
+                    dump_syms_tool = None
+                else:
+                    print(
+                        f"ERROR: Missing breakpad tool, use --dump_syms=TOOL: {dump_syms_tool}",
+                        file=sys.stderr,
+                    )
+                    return 1
 
     if args.with_gsym_symbols:
         gsymutil_tool = args.gsymutil
@@ -479,8 +488,10 @@ def cmd_export_last_build_debug_symbols(args: argparse.Namespace) -> int:
             )
             if not gsymutil_tool.exists():
                 print(
-                    f"ERROR: Missing gsymutil tool, use --gsymutil=TOOL: {gsymutil_tool}"
+                    f"ERROR: Missing gsymutil tool, use --gsymutil=TOOL: {gsymutil_tool}",
+                    file=sys.stderr,
                 )
+                return 1
 
     def log_error(error: str) -> None:
         print(f"ERROR: {error}", file=sys.stderr)
