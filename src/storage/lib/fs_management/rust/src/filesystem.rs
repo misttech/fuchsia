@@ -148,12 +148,14 @@ impl Filesystem {
         Self { config, block_connector, component: None }
     }
 
-    /// If the filesystem is a currently running component, returns its (relative) moniker.
-    pub fn get_component_moniker(&self) -> Option<String> {
-        Some(match self.config.options().component_type {
+    /// Returns the (relative) moniker of the filesystem component. This will start the component
+    /// instance if it is not running.
+    pub async fn get_component_moniker(&mut self) -> Result<String, Error> {
+        let _ = self.get_component_exposed_dir().await?;
+        Ok(match self.config.options().component_type {
             ComponentType::StaticChild => self.config.options().component_name.to_string(),
             ComponentType::DynamicChild { .. } => {
-                let component = self.component.as_ref()?;
+                let component = self.component.as_ref().unwrap();
                 format!("{}:{}", component.collection, component.name)
             }
         })
@@ -285,7 +287,7 @@ impl Filesystem {
     /// # Errors
     ///
     /// Returns [`Err`] if serving the filesystem failed.
-    pub async fn serve(&mut self) -> Result<ServingSingleVolumeFilesystem, Error> {
+    pub async fn serve(mut self) -> Result<ServingSingleVolumeFilesystem, Error> {
         if self.config.is_multi_volume() {
             bail!("Can't serve a multivolume filesystem; use serve_multi_volume");
         }
@@ -324,7 +326,7 @@ impl Filesystem {
     /// # Errors
     ///
     /// Returns [`Err`] if serving the filesystem failed.
-    pub async fn serve_multi_volume(&mut self) -> Result<ServingMultiVolumeFilesystem, Error> {
+    pub async fn serve_multi_volume(mut self) -> Result<ServingMultiVolumeFilesystem, Error> {
         if !self.config.is_multi_volume() {
             bail!("Can't serve_multi_volume a single-volume filesystem; use serve");
         }
@@ -337,7 +339,7 @@ impl Filesystem {
             .map_err(Status::from_raw)?;
 
         Ok(ServingMultiVolumeFilesystem {
-            component: self.component.clone(),
+            component: self.component,
             exposed_dir: Some(exposed_dir),
         })
     }
@@ -592,7 +594,7 @@ impl ServingVolume {
 
 impl ServingMultiVolumeFilesystem {
     /// Returns whether the given volume exists.
-    pub async fn has_volume(&mut self, volume: &str) -> Result<bool, Error> {
+    pub async fn has_volume(&self, volume: &str) -> Result<bool, Error> {
         let path = format!("volumes/{}", volume);
         fuchsia_fs::directory::open_node(
             self.exposed_dir.as_ref().unwrap(),
@@ -735,10 +737,8 @@ impl Drop for ServingMultiVolumeFilesystem {
 mod tests {
     use super::*;
     use crate::{BlobCompression, BlobEvictionPolicy, Blobfs, F2fs, Fxfs, Minfs};
-    use fuchsia_async as fasync;
     use ramdevice_client::RamdiskClient;
     use std::io::{Read as _, Write as _};
-    use std::time::Duration;
 
     async fn ramdisk(block_size: u64) -> RamdiskClient {
         RamdiskClient::create(block_size, 1 << 16).await.unwrap()
@@ -828,6 +828,7 @@ mod tests {
         );
 
         serving.shutdown().await.expect("failed to shutdown blobfs the first time");
+        let blobfs = new_fs(&ramdisk, Blobfs::default()).await;
         let serving = blobfs.serve().await.expect("failed to serve blobfs the second time");
         {
             let test_file =
@@ -953,6 +954,7 @@ mod tests {
         );
 
         serving.shutdown().await.expect("failed to shutdown minfs the first time");
+        let minfs = new_fs(&ramdisk, Minfs::default()).await;
         let serving = minfs.serve().await.expect("failed to serve minfs the second time");
 
         {
@@ -1097,6 +1099,7 @@ mod tests {
         assert_eq!(fs_info2.used_bytes - fs_info1.used_bytes, expected_size2 as u64);
 
         serving.shutdown().await.expect("failed to shutdown f2fs the first time");
+        let f2fs = new_fs(&ramdisk, F2fs::default()).await;
         let serving = f2fs.serve().await.expect("failed to serve f2fs the second time");
 
         {
@@ -1116,6 +1119,7 @@ mod tests {
         assert_eq!(fs_info3.used_bytes - fs_info1.used_bytes, expected_size3 as u64);
 
         serving.shutdown().await.expect("failed to shutdown f2fs the second time");
+        let mut f2fs = new_fs(&ramdisk, F2fs::default()).await;
         f2fs.fsck().await.expect("failed to fsck f2fs after shutting down the second time");
 
         ramdisk.destroy().await.expect("failed to destroy ramdisk");
@@ -1150,38 +1154,6 @@ mod tests {
         std::fs::File::open(test_path).expect_err("test file was not unbound");
     }
 
-    // TODO(https://fxbug.dev/42174810): Re-enable this test; it depends on Fxfs failing repeated calls to
-    // Start.
-    #[ignore]
-    #[fuchsia::test]
-    async fn fxfs_shutdown_component_when_dropped() {
-        let block_size = 512;
-        let ramdisk = ramdisk(block_size).await;
-        let mut fxfs = new_fs(&ramdisk, Fxfs::default()).await;
-
-        fxfs.format().await.expect("failed to format fxfs");
-        {
-            let _fs = fxfs.serve_multi_volume().await.expect("failed to serve fxfs");
-
-            // Serve should fail for the second time.
-            assert!(
-                fxfs.serve_multi_volume().await.is_err(),
-                "serving succeeded when already mounted"
-            );
-        }
-
-        // Fxfs should get shut down when dropped, but it's asynchronous, so we need to loop here.
-        let mut attempts = 0;
-        loop {
-            if let Ok(_) = fxfs.serve_multi_volume().await {
-                break;
-            }
-            attempts += 1;
-            assert!(attempts < 10);
-            fasync::Timer::new(Duration::from_secs(1)).await;
-        }
-    }
-
     #[fuchsia::test]
     async fn fxfs_open_volume() {
         let block_size = 512;
@@ -1190,7 +1162,7 @@ mod tests {
 
         fxfs.format().await.expect("failed to format fxfs");
 
-        let mut fs = fxfs.serve_multi_volume().await.expect("failed to serve fxfs");
+        let fs = fxfs.serve_multi_volume().await.expect("failed to serve fxfs");
 
         assert_eq!(fs.has_volume("foo").await.expect("has_volume"), false);
         assert!(

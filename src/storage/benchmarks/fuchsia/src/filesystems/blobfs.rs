@@ -31,7 +31,7 @@ impl FilesystemConfig for Blobfs {
             })
             .await;
         let blobfs = FsManagementFilesystemInstance::new(
-            fs_management::Blobfs { ..Default::default() },
+            fs_management::Blobfs::default,
             block_device,
             None,
             /*as_blob=*/ false,

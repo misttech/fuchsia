@@ -414,7 +414,7 @@ impl DiskBuilder {
             let manager = GptManager::new(server.connect(), partitions_dir.clone()).await.unwrap();
             let dir =
                 vfs::directory::serve(partitions_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
-            gpt = Some(manager);
+            gpt = Some((manager, fuchsia_fs::directory::clone(&dir).unwrap()));
             Box::new(DirBasedBlockConnector::new(dir, "part-000/volume".to_string()))
         } else {
             // Format the volume manager onto the disk directly.
@@ -426,7 +426,8 @@ impl DiskBuilder {
         } else {
             self.build_fvm_as_volume_manager(connector).await;
         }
-        if let Some(gpt) = gpt {
+        if let Some((gpt, partitions_dir)) = gpt {
+            partitions_dir.close().await.unwrap().unwrap();
             gpt.shutdown().await;
         }
         (vmo, self.type_guid)
@@ -474,7 +475,7 @@ impl DiskBuilder {
         fasync::unblock(move || format_for_fvm(&block_device, fvm_slice_size as usize))
             .await
             .unwrap();
-        let mut fvm_fs = Filesystem::from_boxed_config(connector, Box::new(Fvm::dynamic_child()));
+        let fvm_fs = Filesystem::from_boxed_config(connector, Box::new(Fvm::dynamic_child()));
         let fvm = fvm_fs.serve_multi_volume().await.unwrap();
 
         {

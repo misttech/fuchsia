@@ -10,7 +10,8 @@ use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_io as fio;
 use fs_management::FSConfig;
 use fs_management::filesystem::{
-    ServingMultiVolumeFilesystem, ServingSingleVolumeFilesystem, ServingVolume,
+    Filesystem as FsManagementFilesystem, ServingMultiVolumeFilesystem,
+    ServingSingleVolumeFilesystem, ServingVolume,
 };
 use fuchsia_merkle::Hash;
 use std::path::Path;
@@ -76,25 +77,24 @@ enum FsType {
 pub type CryptClientFn = Arc<dyn Fn() -> ClientEnd<CryptMarker> + Send + Sync>;
 
 pub struct FsManagementFilesystemInstance {
-    fs: fs_management::filesystem::Filesystem,
+    config_creator: Box<dyn Fn() -> Box<dyn FSConfig> + Send + Sync>,
     crypt_client_fn: Option<CryptClientFn>,
     serving_filesystem: Option<FsType>,
     as_blob: bool,
     // Keep the underlying block device alive for as long as we are using the filesystem.
-    _block_device: Box<dyn BlockDevice>,
+    block_device: Box<dyn BlockDevice>,
 }
 
 impl FsManagementFilesystemInstance {
     pub async fn new<FSC: FSConfig>(
-        config: FSC,
+        config_creator: impl (Fn() -> FSC) + Send + Sync + 'static,
         block_device: Box<dyn BlockDevice>,
         crypt_client_fn: Option<CryptClientFn>,
         as_blob: bool,
     ) -> Self {
-        let mut fs = fs_management::filesystem::Filesystem::from_boxed_config(
-            block_device.connector(),
-            Box::new(config),
-        );
+        let config_creator = Box::new(move || Box::new(config_creator()) as Box<dyn FSConfig>);
+        let mut fs =
+            FsManagementFilesystem::from_boxed_config(block_device.connector(), config_creator());
         fs.format().await.expect("Failed to format the filesystem");
         let serving_filesystem = if fs.config().is_multi_volume() {
             let serving_filesystem =
@@ -119,11 +119,11 @@ impl FsManagementFilesystemInstance {
             FsType::SingleVolume(serving_filesystem)
         };
         Self {
-            fs,
+            config_creator,
             crypt_client_fn,
             serving_filesystem: Some(serving_filesystem),
-            _block_device: block_device,
             as_blob,
+            block_device,
         }
     }
 
@@ -143,6 +143,13 @@ impl FsManagementFilesystemInstance {
             FsType::SingleVolume(serving_filesystem) => serving_filesystem.exposed_dir(),
             FsType::MultiVolume(serving_filesystem, _) => serving_filesystem.exposed_dir(),
         }
+    }
+
+    fn fs(&self) -> FsManagementFilesystem {
+        FsManagementFilesystem::from_boxed_config(
+            self.block_device.connector(),
+            (self.config_creator)(),
+        )
     }
 }
 
@@ -174,7 +181,7 @@ impl CacheClearableFilesystem for FsManagementFilesystemInstance {
             FsType::SingleVolume(serving_filesystem) => {
                 serving_filesystem.shutdown().await.expect("Failed to stop the filesystem");
                 let mut serving_filesystem =
-                    self.fs.serve().await.expect("Failed to start the filesystem");
+                    self.fs().serve().await.expect("Failed to start the filesystem");
                 serving_filesystem.bind_to_path(MOUNT_PATH).expect("Failed to bind the filesystem");
                 FsType::SingleVolume(serving_filesystem)
             }
@@ -182,7 +189,7 @@ impl CacheClearableFilesystem for FsManagementFilesystemInstance {
                 volume.shutdown().await.expect("Failed to stop the volume");
                 serving_filesystem.shutdown().await.expect("Failed to stop the filesystem");
                 let serving_filesystem =
-                    self.fs.serve_multi_volume().await.expect("Failed to start the filesystem");
+                    self.fs().serve_multi_volume().await.expect("Failed to start the filesystem");
                 let mut vol = serving_filesystem
                     .open_volume(
                         "default",

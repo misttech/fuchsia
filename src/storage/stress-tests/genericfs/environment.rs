@@ -173,7 +173,7 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
         .unwrap();
         let mut fs = Filesystem::new(controller, config.clone());
         fs.format().await.unwrap();
-        let moniker = fs.get_component_moniker();
+        let moniker = fs.get_component_moniker().await.unwrap();
 
         let instance = if fs.config().is_multi_volume() {
             let crypt = Some(
@@ -242,7 +242,7 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
             instance_actor,
             config,
             _inspect_poll_task: fasync::Task::spawn(async move {
-                Self::inspect_poll_task(moniker.unwrap(), inspect_cloned).await;
+                Self::inspect_poll_task(moniker, inspect_cloned).await;
             }),
             inspect,
         }

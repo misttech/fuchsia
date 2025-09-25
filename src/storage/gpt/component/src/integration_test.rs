@@ -40,7 +40,7 @@ async fn test_overlay(overlay_enabled: bool) {
     );
 
     let gpt = {
-        let mut filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
+        let filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
             Box::new(move |server_end| Ok(block_server.connect_server(server_end))),
             Box::new(fs_management::Gpt {
                 merge_super_and_userdata: overlay_enabled,
@@ -300,7 +300,7 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
     );
 
     let gpt = {
-        let mut filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
+        let filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
             Box::new(move |server_end| Ok(block_server.connect_server(server_end))),
             Box::new(fs_management::Gpt {
                 merge_super_and_userdata: overlay_enabled,

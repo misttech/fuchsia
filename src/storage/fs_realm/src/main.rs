@@ -49,7 +49,7 @@ impl FsRealmState {
         let (block_proxy, block_server) = create_proxy::<BlockMarker>();
         device.connect_to_device_fidl(block_server.into_channel())?;
         let format = detect_disk_format(&block_proxy).await;
-        let mut filesystem = match format {
+        let filesystem = match format {
             DiskFormat::Blobfs => {
                 let blobfs = Blobfs {
                     verbose: options.verbose.unwrap_or(false),

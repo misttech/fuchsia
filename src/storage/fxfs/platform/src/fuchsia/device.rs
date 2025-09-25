@@ -824,7 +824,7 @@ mod tests {
             // Re-open Blobfs and verify the contents persisted.
             let connector = BlockConnector::new(&fixture, fixture.root(), "block_device").await;
 
-            let mut blobfs =
+            let blobfs =
                 Filesystem::new(connector, Blobfs { readonly: true, ..Default::default() });
             let serving = blobfs.serve().await.expect("serve blobfs failed");
             {

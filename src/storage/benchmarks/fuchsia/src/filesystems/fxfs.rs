@@ -43,7 +43,7 @@ impl FilesystemConfig for Fxfs {
             .await;
         FxfsInstance {
             fxfs: FsManagementFilesystemInstance::new(
-                fs_management::Fxfs::default(),
+                fs_management::Fxfs::default,
                 block_device,
                 Some(Arc::new(get_crypt_client)),
                 /*as_blob=*/ false,

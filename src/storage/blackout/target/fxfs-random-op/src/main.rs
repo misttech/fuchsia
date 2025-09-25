@@ -123,7 +123,7 @@ impl Test for FxfsRandomOp {
         let block_connector =
             find_partition(device_label, self.storage_host).await.context("find partition")?;
 
-        let mut fxfs = Filesystem::from_boxed_config(
+        let fxfs = Filesystem::from_boxed_config(
             block_connector,
             Box::new(Fxfs { barriers_enabled: self.barriers_enabled, ..Default::default() }),
         );

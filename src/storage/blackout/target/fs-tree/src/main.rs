@@ -92,7 +92,7 @@ impl FsTree {
     }
 
     async fn serve_fxfs(&self, block_connector: Box<dyn BlockConnector>) -> Result<FsInstance> {
-        let mut fxfs = Filesystem::from_boxed_config(block_connector, Box::new(Fxfs::default()));
+        let fxfs = Filesystem::from_boxed_config(block_connector, Box::new(Fxfs::default()));
         let fs = fxfs.serve_multi_volume().await?;
         let crypt = Some(self.setup_crypt_service().await?);
         let vol =
@@ -101,7 +101,7 @@ impl FsTree {
     }
 
     async fn serve_minfs(&self, block_connector: Box<dyn BlockConnector>) -> Result<FsInstance> {
-        let mut minfs = Filesystem::from_boxed_config(block_connector, Box::new(Minfs::default()));
+        let minfs = Filesystem::from_boxed_config(block_connector, Box::new(Minfs::default()));
         let fs = minfs.serve().await?;
         Ok(FsInstance::Minfs(fs))
     }

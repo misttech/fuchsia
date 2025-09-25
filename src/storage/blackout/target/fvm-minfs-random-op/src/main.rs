@@ -61,7 +61,7 @@ impl Test for FvmMinfsTest {
                 .await
                 .context("Failed to flash FVM")?;
         }
-        let mut fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
+        let fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
         let fs = fvm.serve_multi_volume().await.context("Failed to serve FVM")?;
         let minfs_vol = with_crypt_service(Policy::Null, |crypt| {
             fs.create_volume(
@@ -91,7 +91,7 @@ impl Test for FvmMinfsTest {
         log::info!(device_label:%; "running load gen");
         let block_connector = find_partition(device_label, true).await.context("find partition")?;
 
-        let mut fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
+        let fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
         let fs = fvm.serve_multi_volume().await?;
         let minfs = with_crypt_service(Policy::Null, |crypt| {
             fs.open_volume(
@@ -117,7 +117,7 @@ impl Test for FvmMinfsTest {
         log::info!(device_label:%; "verifying disk consistency");
         let block_connector = find_partition(device_label, true).await?;
 
-        let mut fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
+        let fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
         let fs = fvm.serve_multi_volume().await?;
         with_crypt_service(Policy::Null, |crypt| {
             fs.check_volume(

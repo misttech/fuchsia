@@ -728,6 +728,7 @@ impl Environment for FshostEnvironment {
                 ..fs_management::Gpt::dynamic_child()
             }),
         );
+        let moniker = filesystem.get_component_moniker().await.context("Starting GPT component")?;
         let serving = filesystem.serve_multi_volume().await.context("Failed to start GPT")?;
         let exposed_dir = serving.exposed_dir();
         let partitions_dir = fuchsia_fs::directory::open_directory(
@@ -756,7 +757,7 @@ impl Environment for FshostEnvironment {
         self.watcher
             .add_source(Box::new(DirSource::new(
                 partitions_dir,
-                filesystem.get_component_moniker().unwrap(),
+                moniker,
                 crate::device::Parent::SystemPartitionTable,
             )))
             .await
@@ -1447,8 +1448,7 @@ impl FilesystemLauncher {
         block_connector: Box<dyn BlockConnector>,
         config: Box<dyn FSConfig>,
     ) -> Result<ServingMultiVolumeFilesystem, Error> {
-        let mut fs =
-            fs_management::filesystem::Filesystem::from_boxed_config(block_connector, config);
+        let fs = fs_management::filesystem::Filesystem::from_boxed_config(block_connector, config);
         fs.serve_multi_volume().await
     }
 

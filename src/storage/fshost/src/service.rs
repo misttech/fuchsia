@@ -419,7 +419,7 @@ async fn shred_data_volume(
                 return Ok(());
             }
 
-            let mut fxfs = fs_management::filesystem::Filesystem::from_boxed_config(
+            let fxfs = fs_management::filesystem::Filesystem::from_boxed_config(
                 device,
                 Box::new(Fxfs::dynamic_child()),
             );
@@ -442,7 +442,7 @@ async fn shred_data_volume(
                 return Ok(());
             }
 
-            let mut fvm = fs_management::filesystem::Filesystem::from_boxed_config(
+            let fvm = fs_management::filesystem::Filesystem::from_boxed_config(
                 device,
                 Box::new(Fvm::dynamic_child()),
             );
@@ -466,7 +466,7 @@ async fn shred_data_volume(
                 log::error!(error:?; "Failed to find data partition");
                 zx::Status::NOT_FOUND
             })?;
-            let mut fxfs = fs_management::filesystem::Filesystem::from_boxed_config(
+            let fxfs = fs_management::filesystem::Filesystem::from_boxed_config(
                 Box::new(controller_proxy),
                 Box::new(Fxfs::dynamic_child()),
             );
@@ -814,8 +814,8 @@ async fn format_system_blob_volume_impl(
     let (device, _) = get_system_container_for_recovery(environment).await?;
 
     log::info!("Mounting Fxfs.");
-    let mut fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    let mut serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
+    let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
+    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
 
     if serving_fxfs.has_volume(BLOB_VOLUME_LABEL).await.context("checking for blob volume")? {
         log::info!("Removing existing blob volume.");
@@ -849,8 +849,8 @@ async fn mount_system_blob_volume_impl(
     let (device, _) = get_system_container_for_recovery(environment).await?;
 
     log::info!("Mounting Fxfs.");
-    let mut fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    let mut serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
+    let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
+    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
 
     log::info!("Mounting blob volume.");
     if !serving_fxfs.has_volume(BLOB_VOLUME_LABEL).await.context("checking for blob volume")? {

@@ -536,7 +536,7 @@ impl BenchmarkVolumeFactory {
         fvm::format_for_fvm(&block_device, BENCHMARK_FVM_SLICE_SIZE_BYTES)
             .expect("Failed to format FVM");
 
-        let mut fs = fs_management::filesystem::Filesystem::from_boxed_config(
+        let fs = fs_management::filesystem::Filesystem::from_boxed_config(
             Box::new(partition),
             Box::new(Fvm::default()),
         );
