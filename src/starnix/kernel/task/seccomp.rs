@@ -1069,28 +1069,30 @@ impl FileOps for SeccompNotifierFileObject {
 #[cfg(test)]
 mod test {
     use crate::task::SeccompAction;
-    use crate::testing::create_kernel_and_task;
+    use crate::testing::spawn_kernel_and_run;
 
     #[::fuchsia::test]
     async fn test_actions_logged_accepts_legal_string() {
-        let (kernel, _) = create_kernel_and_task();
-        let mut actions = SeccompAction::get_actions_avail_file();
-        // This is a test in Rust instead of a syscall test because we don't want to change the
-        // global config in a test.
-        assert!(
-            SeccompAction::set_actions_logged(&kernel, &actions[..]).is_err(),
-            "Should not be able to write allow to actions_logged file"
-        );
-        let action_string = std::string::String::from_utf8(actions.clone()).unwrap();
-        if let Some(action_index) = action_string.find("allow") {
-            actions.drain(action_index..action_index + "allow".len());
-        }
-        let write_result = SeccompAction::set_actions_logged(&kernel, &actions[..]);
-        assert!(
-            write_result.is_ok(),
-            "Could not write legal string \"{}\" to actions_logged file: error {}",
-            std::string::String::from_utf8(actions.clone()).unwrap(),
-            write_result.unwrap_err()
-        );
+        spawn_kernel_and_run(|_locked, current_task| {
+            let kernel = current_task.kernel();
+            let mut actions = SeccompAction::get_actions_avail_file();
+            // This is a test in Rust instead of a syscall test because we don't want to change the
+            // global config in a test.
+            assert!(
+                SeccompAction::set_actions_logged(&kernel, &actions[..]).is_err(),
+                "Should not be able to write allow to actions_logged file"
+            );
+            let action_string = std::string::String::from_utf8(actions.clone()).unwrap();
+            if let Some(action_index) = action_string.find("allow") {
+                actions.drain(action_index..action_index + "allow".len());
+            }
+            let write_result = SeccompAction::set_actions_logged(&kernel, &actions[..]);
+            assert!(
+                write_result.is_ok(),
+                "Could not write legal string \"{}\" to actions_logged file: error {}",
+                std::string::String::from_utf8(actions.clone()).unwrap(),
+                write_result.unwrap_err()
+            );
+        });
     }
 }
