@@ -176,7 +176,6 @@ rustc_library("fuchsia-async") {
       "//sdk/rust/zx-types",
       "//third_party/rust_crates:bitflags",
       "//third_party/rust_crates:futures-lite",
-      "//third_party/rust_crates:lazy_static",
       "//third_party/rust_crates:tokio",
     ]
   }

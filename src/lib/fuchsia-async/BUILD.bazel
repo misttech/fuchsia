@@ -89,7 +89,6 @@ rustc_library(
             "//sdk/rust/zx-types",
             "//third_party/rust_crates/vendor:bitflags",
             "//third_party/rust_crates/vendor:futures-lite",
-            "//third_party/rust_crates/vendor:lazy_static",
             "//third_party/rust_crates/vendor:tokio",
         ],
     }),

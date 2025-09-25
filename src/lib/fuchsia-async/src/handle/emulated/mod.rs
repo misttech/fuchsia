@@ -14,12 +14,12 @@ use futures::task::noop_waker_ref;
 #[cfg(debug_assertions)]
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
-use std::future::{poll_fn, Future};
+use std::future::{Future, poll_fn};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll, Waker};
 use zx_status::Status;
 
@@ -1309,7 +1309,7 @@ mod inner_signals {
     // Part of the code for the NONE cases that are produced by the macro triggers the lint, but as
     // a whole, the produced code is still correct.
     #![allow(clippy::bad_bit_mask)] // TODO(b/303500202) Remove once addressed in bitflags.
-    use super::{bitflags, Status};
+    use super::{Status, bitflags};
 
     bitflags! {
         /// Signals that can be waited upon.
@@ -1421,11 +1421,7 @@ mod inner_signals {
     impl Signals {
         /// Returns `Status::INVALID_ARGS` if this signal set contains non-user signals.
         pub(super) fn validate_user_signals(&self) -> Result<(), Status> {
-            if Signals::USER_SIGNALS.contains(*self) {
-                Ok(())
-            } else {
-                Err(Status::INVALID_ARGS)
-            }
+            if Signals::USER_SIGNALS.contains(*self) { Ok(()) } else { Err(Status::INVALID_ARGS) }
         }
     }
 
@@ -2060,10 +2056,9 @@ fn with_handle<R>(handle: u32, f: impl FnOnce(HdlRef<'_>, Side) -> R) -> R {
     r
 }
 
-lazy_static::lazy_static! {
-    static ref HANDLE_TABLE: Mutex<HashMap<u32, HandleTableEntry>> = Default::default();
-    static ref FREE_HANDLES: Mutex<VecDeque<u32>> = Default::default();
-}
+static HANDLE_TABLE: LazyLock<Mutex<HashMap<u32, HandleTableEntry>>> =
+    LazyLock::new(Default::default);
+static FREE_HANDLES: LazyLock<Mutex<VecDeque<u32>>> = LazyLock::new(Default::default);
 
 static NEXT_KOID: AtomicU64 = AtomicU64::new(1);
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
@@ -2103,11 +2098,7 @@ pub async fn shut_down_handles() {
 }
 
 fn check_write_shutdown() -> Result<(), zx_status::Status> {
-    if SHUTTING_DOWN.load(Ordering::Acquire) {
-        Err(zx_status::Status::SHOULD_WAIT)
-    } else {
-        Ok(())
-    }
+    if SHUTTING_DOWN.load(Ordering::Acquire) { Err(zx_status::Status::SHOULD_WAIT) } else { Ok(()) }
 }
 
 fn get_hdl_type(handle: u32) -> Option<HdlType> {

@@ -77,16 +77,14 @@ impl<T> Once<T> {
 mod test {
     use super::*;
     use futures_lite::future::block_on;
+    use std::sync::LazyLock;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static ONCE: LazyLock<Once<bool>> = LazyLock::new(Once::new);
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn test_get_or_init() {
-        lazy_static::lazy_static!(
-            static ref ONCE: Once<bool> = Once::new();
-        );
-
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
         let val = block_on(ONCE.get_or_init(async {
             let _: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
             true
@@ -106,12 +104,6 @@ mod test {
 
     #[test]
     fn test_get_or_init_default_initializer() {
-        lazy_static::lazy_static!(
-            static ref ONCE: Once<bool> = Once::default();
-        );
-
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
         let val = block_on(ONCE.get_or_init(async {
             let _: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
             true
@@ -131,19 +123,9 @@ mod test {
 
     #[test]
     fn test_get_or_try_init() {
-        lazy_static::lazy_static!(
-            static ref ONCE: Once<bool> = Once::new();
-        );
-
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
         let initializer = || async {
             let val = COUNTER.fetch_add(1, Ordering::SeqCst);
-            if val == 0 {
-                Err(std::io::Error::other("first attempt fails"))
-            } else {
-                Ok(true)
-            }
+            if val == 0 { Err(std::io::Error::other("first attempt fails")) } else { Ok(true) }
         };
 
         let val = block_on(ONCE.get_or_try_init(initializer()));
