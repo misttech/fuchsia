@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fstream>
+#include <string_view>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -21,9 +22,10 @@
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-extern std::string DoPrePolicyLoadWork() { return "minimal_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "netlink_audit.pp"; }
 
 namespace {
 
@@ -159,7 +161,8 @@ fit::result<int> UnregisterAuditDaemon(int fd) {
 }
 
 // Helper to send a user-space audit message (e.g., from an AVC denial).
-fit::result<int> SendUserAuditMessage(int fd, int seq, const std::string& message_text) {
+fit::result<int> SendUserAuditMessage(int fd, int seq, const std::string& message_text,
+                                      bool ack = true) {
   const size_t payload_len = message_text.length() + 1;
   const size_t buf_len = NLMSG_SPACE(payload_len);
   std::vector<char> buf(buf_len);
@@ -169,7 +172,10 @@ fit::result<int> SendUserAuditMessage(int fd, int seq, const std::string& messag
   auto* nlh = reinterpret_cast<struct nlmsghdr*>(buf.data());
   nlh->nlmsg_len = NLMSG_LENGTH((int)payload_len);
   nlh->nlmsg_type = AUDIT_USER_AVC;
-  nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  nlh->nlmsg_flags = NLM_F_REQUEST;
+  if (ack) {
+    nlh->nlmsg_flags |= NLM_F_ACK;
+  }
   nlh->nlmsg_seq = seq;
 
   char* data = static_cast<char*>(NLMSG_DATA(nlh));
@@ -178,6 +184,9 @@ fit::result<int> SendUserAuditMessage(int fd, int seq, const std::string& messag
   auto send_res = SendNetlinkMessage(fd, nlh, nlh->nlmsg_len);
   if (send_res.is_error()) {
     return send_res.take_error();
+  }
+  if (!ack) {
+    return fit::ok();
   }
 
   // Now, wait for the acknowledgment from the kernel.
@@ -338,5 +347,65 @@ TEST(NetlinkAuditTest, ForkedChildUnregistersParentOnOneSocket) {
   ASSERT_TRUE(fork_helper.WaitForChildren());
   EXPECT_TRUE(UnregisterAuditDaemon(fd.get()).is_ok());
 }
+
+TEST(NetlinkAuditTest, SocketCreateAllowed) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:audit_netlink_create_test_t:s0", [&] {
+    EXPECT_THAT(socket(AF_NETLINK, SOCK_RAW, NETLINK_AUDIT), SyscallSucceeds())
+        << "Netlink socket open should succeed";
+  }));
+}
+
+TEST(NetlinkAuditTest, SocketCreateDenied) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:audit_netlink_restricted_test_t:s0", [&] {
+    EXPECT_THAT(socket(AF_NETLINK, SOCK_RAW, NETLINK_AUDIT), SyscallFailsWithErrno(EACCES))
+        << "Netlink socket open should fail";
+  }));
+}
+
+struct SendTestParam {
+  std::string_view label;
+  bool should_wait_ack;
+  int expected_errno;
+};
+
+class NetlinkAuditSendTest : public ::testing::TestWithParam<SendTestParam> {};
+
+const char kCreateOnlyLabel[] = "test_u:test_r:audit_netlink_create_test_t:s0";
+const char kReadLabel[] = "test_u:test_r:audit_netlink_read_test_t:s0";
+const char kWriteLabel[] = "test_u:test_r:audit_netlink_write_test_t:s0";
+const char kWriteRelayLabel[] = "test_u:test_r:audit_netlink_write_relay_test_t:s0";
+const char kAllowWithWriteCapLabel[] = "test_u:test_r:audit_netlink_allow_with_write_cap_test_t:s0";
+const char kAllowWithoutWriteCapLabel[] =
+    "test_u:test_r:audit_netlink_allow_without_write_cap_test_t:s0";
+
+TEST_P(NetlinkAuditSendTest, Send) {
+  auto send_test = GetParam();
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs(send_test.label, [&] {
+    fbl::unique_fd fd = OpenNetlinkAuditSocket();
+    ASSERT_TRUE(fd.is_valid());
+
+    auto result = SendUserAuditMessage(
+        fd.get(), 1, std::string(send_test.label) + ": GENERIC_MESSAGE", send_test.should_wait_ack);
+    // If the errno is expected to be 0, check for success.
+    if (send_test.expected_errno == 0) {
+      ASSERT_TRUE(result.is_ok()) << "Netlink send should succeed";
+    } else {
+      ASSERT_TRUE(result.is_error()) << "Netlink send should fail";
+      ASSERT_EQ(result.error_value(), send_test.expected_errno)
+          << "Returned error should be " << strerror(send_test.expected_errno);
+    }
+  }));
+}
+
+INSTANTIATE_TEST_SUITE_P(NetlinkAuditWriteTestSuite, NetlinkAuditSendTest,
+                         ::testing::Values(SendTestParam{kCreateOnlyLabel, false, EACCES},
+                                           SendTestParam{kReadLabel, false, EACCES},
+                                           SendTestParam{kWriteLabel, false, EACCES},
+                                           SendTestParam{kWriteRelayLabel, false, 0},
+                                           SendTestParam{kAllowWithoutWriteCapLabel, true, EPERM},
+                                           SendTestParam{kAllowWithWriteCapLabel, true, 0}));
 
 }  // namespace

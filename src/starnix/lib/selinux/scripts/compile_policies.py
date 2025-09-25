@@ -100,6 +100,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/netlink_audit.conf",
+        ],
+        "netlink_audit.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/syslog.conf",
         ],
         "syslog.pp",

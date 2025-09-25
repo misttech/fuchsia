@@ -34,6 +34,12 @@
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_SharedMapping_Modification_MprotectSuccess",
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_NoModification_MprotectSuccess",
 
+                // TODO: https://fxbug.dev/364568934 - Enable once `netlink_send` hook is supported
+                "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/2",
+
+                // TODO: https://fxbug.dev/445686474 - Check if `AUDIT_WRITE_CAP` is correctly enforced
+                "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/4",
+
                 // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API handling of unknown policy class Ids.
                 "SeLinuxFsCreate.InvalidComputeCreateClassId",
                 "SeLinuxFsAccess.UnknownClassIdIsAccepted",
