@@ -367,7 +367,7 @@ impl fmt::Debug for LockState {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct LastObjectId {
     // The *unencrypted* value of the last object ID.
     id: u64,
@@ -1935,6 +1935,17 @@ impl ObjectStore {
 
         Ok((last_object_id.id & OBJECT_ID_HI_MASK)
             | last_object_id.cipher.as_ref().unwrap().encrypt(last_object_id.id as u32) as u64)
+    }
+
+    /// Query the next object ID that will be used. Intended for use when checking filesystem
+    /// consistency. Prefer [`Self::get_next_object_id()`] for general use.
+    pub(crate) fn query_next_object_id(&self) -> u64 {
+        let mut last_object_id = self.last_object_id.lock().clone();
+        if last_object_id.should_create_cipher() {
+            INVALID_OBJECT_ID
+        } else {
+            last_object_id.get_next_object_id()
+        }
     }
 
     fn allocator(&self) -> Arc<Allocator> {

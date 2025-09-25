@@ -1214,6 +1214,7 @@ pub(super) async fn scan_store(
     result: &mut FsckResult,
 ) -> Result<(), Error> {
     let store_id = store.store_object_id();
+    let next_object_id = store.query_next_object_id();
 
     let mut scanned = ScannedStore::new(
         fsck,
@@ -1241,6 +1242,9 @@ pub(super) async fn scan_store(
                 item.key.into(),
                 item.value.into(),
             ))?;
+        }
+        if next_object_id != INVALID_OBJECT_ID && item.key.object_id == next_object_id {
+            fsck.error(FsckError::NextObjectIdInUse(store_id, next_object_id))?;
         }
         if let Some(current_file) = &scanned.current_object {
             if item.key.object_id != current_file.object_id {

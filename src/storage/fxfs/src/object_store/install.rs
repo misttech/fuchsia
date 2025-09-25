@@ -222,6 +222,7 @@ impl ObjectStore {
         let old_store_info = inner_volume.store_info().unwrap();
         let new_store_info = StoreInfo {
             layers: vec![new_layer_object_id],
+            last_object_id: metadata_object_id,
             object_count: old_store_info.object_count + 1, // Update for the metadata file we added
             ..old_store_info
         };
@@ -240,6 +241,7 @@ impl ObjectStore {
         activate_volume_txn
             .commit_with_callback(|_| {
                 *self.store_info.lock().as_mut().unwrap() = new_store_info;
+                self.last_object_id.lock().id = metadata_object_id;
                 self.tree.set_layers(new_layers);
             })
             .await?;
@@ -549,8 +551,14 @@ mod tests {
             assert!(root.volume_directory().lookup(SRC_NAME).await.unwrap().is_none());
             verify_volume_contents(&root, DST_NAME, &files).await;
             ensure_volume_graveyard_is_empty(&root, DST_NAME).await;
+            do_fsck(&fs, DST_NAME).await;
         };
 
+        // Close and re-fsck the filesystem.
+        fs.close().await.unwrap();
+        let device = fs.take_device().await;
+        device.reopen(/*read_only*/ true);
+        let fs = FxFilesystem::open(device).await.unwrap();
         do_fsck(&fs, DST_NAME).await;
     }
 

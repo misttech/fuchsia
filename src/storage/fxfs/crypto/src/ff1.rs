@@ -11,6 +11,7 @@ use byteorder::{BigEndian, ByteOrder};
 // This is a heavily specialized version of ff1 encryption as described in:
 // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-38G.pdf.  This implementation
 // encrypts and decrypts a u32 without a tweak. It uses radix 2.
+#[derive(Clone)]
 pub struct Ff1 {
     initial_block: [u8; 16],
     cipher: Aes256,

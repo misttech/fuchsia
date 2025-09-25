@@ -268,6 +268,7 @@ pub enum FsckError {
     TrimValueForGraveyardAttributeEntry(u64, u64, u64),
     MissingOverwriteExtents(u64, u64, u64),
     OverwriteExtentFlagUnset(u64, u64, u64),
+    NextObjectIdInUse(u64, u64),
 }
 
 impl FsckError {
@@ -528,6 +529,9 @@ impl FsckError {
                     object_id, store_id, attribute_id,
                 )
             }
+            FsckError::NextObjectIdInUse(store_id, next_object_id) => {
+                format!("Next object ID {store_id} will use ({next_object_id}) is already in use",)
+            }
         }
     }
 
@@ -723,6 +727,9 @@ impl FsckError {
                     attribute_id;
                     "Overwrite extents were found, but metadata flag was not set",
                 )
+            }
+            FsckError::NextObjectIdInUse(store_id, next_object_id) => {
+                error!(store_id, next_object_id; "Next object ID is already in use");
             }
         }
     }
