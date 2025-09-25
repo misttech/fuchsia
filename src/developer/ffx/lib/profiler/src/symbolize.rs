@@ -9,6 +9,7 @@ use crate::parse::{
 use ffx_symbolize::{ResolvedLocation, Symbolizer};
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 
 // It defines how many processes a symbolizer will handle.
@@ -71,8 +72,17 @@ pub fn symbolize_with_context(
     context: &ffx_config::EnvironmentContext,
 ) -> Result<SymbolizedRecords, SymbolizeError> {
     logging_rust_cpp_bridge::init_with_log_severity(logging_rust_cpp_bridge::FUCHSIA_LOG_FATAL);
-    let unsymbolized_samples = UnsymbolizedSamples::new(input)?;
-    unsymbolized_samples.process_unsymbolized_samples(output, pprof_conversion, &context)
+    let mut file = std::fs::File::open(input)?;
+    let mut magic = [0; 11];
+    file.read_exact(&mut magic)?;
+
+    if magic == *b"{{{reset}}}" {
+        let unsymbolized_samples = UnsymbolizedSamples::new(input)?;
+        unsymbolized_samples.process_unsymbolized_samples(output, pprof_conversion, context)
+    } else {
+        let unsymbolized_fxt_samples = UnsymbolizedSamples::new_from_fxt_file(input)?;
+        unsymbolized_fxt_samples.process_unsymbolized_samples(output, pprof_conversion, context)
+    }
 }
 
 impl UnsymbolizedSamples {

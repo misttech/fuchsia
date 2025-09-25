@@ -321,6 +321,21 @@ pub enum SymbolizeError {
 
     #[error("Failed to convert string to u64 due to {}", .0)]
     HexConvertError(#[from] hex::FromHexError),
+
+    #[error("Encountered an unsupported FXT record type.")]
+    UnsupportedFxtRecord,
+
+    #[error("Failed to parse FXT file: {}", .0)]
+    FxtParseError(#[from] fxt::ParseError),
+
+    #[error("Error parsing utf8.")]
+    Utf8(#[from] std::string::FromUtf8Error),
+
+    #[error("Received non-profiler FXTrecord.")]
+    NonProfilerFxtRecord,
+
+    #[error("Invalid mapping record.")]
+    InvalidMappingRecord,
 }
 
 #[cfg(test)]

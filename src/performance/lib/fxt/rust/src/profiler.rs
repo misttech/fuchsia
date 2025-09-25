@@ -213,11 +213,11 @@ impl ProfilerRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModuleRecord {
-    timestamp: i64,
-    process: ProcessKoid,
-    module_id: u16,
-    name: FlyStr,
-    build_id: Vec<u8>,
+    pub timestamp: i64,
+    pub process: ProcessKoid,
+    pub module_id: u16,
+    pub name: FlyStr,
+    pub build_id: Vec<u8>,
 }
 
 impl ModuleRecord {
@@ -234,13 +234,13 @@ impl ModuleRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MappingRecord {
-    timestamp: i64,
-    process: ProcessKoid,
-    module_id: u16,
-    start_addr: u64,
-    range: u64,
-    vaddr: u64,
-    flags: u8,
+    pub timestamp: i64,
+    pub process: ProcessKoid,
+    pub module_id: u16,
+    pub start_addr: u64,
+    pub range: u64,
+    pub vaddr: u64,
+    pub flags: u8,
 }
 
 impl MappingRecord {
@@ -259,11 +259,11 @@ impl MappingRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BacktraceRecord {
-    timestamp: i64,
-    process: ProcessKoid,
-    thread: ThreadKoid,
-    num_records: u8,
-    data: Vec<u64>,
+    pub timestamp: i64,
+    pub process: ProcessKoid,
+    pub thread: ThreadKoid,
+    pub num_records: u8,
+    pub data: Vec<u64>,
 }
 
 impl BacktraceRecord {

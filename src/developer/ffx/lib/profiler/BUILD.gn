@@ -18,6 +18,7 @@ rustc_library("profiler") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/symbolize",
     "//src/lib/diagnostics/log/rust_cpp_bridge",
+    "//src/performance/lib/fxt/rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:prost",
@@ -31,6 +32,7 @@ rustc_library("profiler") {
   ]
 
   sources = [
+    "src/fxt_parse.rs",
     "src/lib.rs",
     "src/parse.rs",
     "src/pprof.rs",
