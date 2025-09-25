@@ -592,7 +592,7 @@ pub type InotifyMaxUserWatches = InotifyLimitProcFile<MaxUserWatchesGetter>;
 #[cfg(test)]
 mod tests {
     use super::{DATA_SIZE, InotifyEvent, InotifyEventQueue, InotifyFileObject};
-    use crate::testing::create_kernel_task_and_unlocked;
+    use crate::testing::spawn_kernel_and_run_with_pkgfs;
     use crate::vfs::buffers::VecOutputBuffer;
     use crate::vfs::{OutputBuffer, WdNumber};
     use starnix_uapi::arc_key::WeakKey;
@@ -718,183 +718,191 @@ mod tests {
 
     #[::fuchsia::test]
     async fn notify_from_watchers() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let inotify =
+                file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 
-        let file = InotifyFileObject::new_file(locked, &current_task, true);
-        let inotify =
-            file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
+            // Use root as the watched directory.
+            let root = current_task.fs().root().entry;
+            assert!(inotify.add_watch(root.clone(), InotifyMask::ALL_EVENTS, &file).is_ok());
 
-        // Use root as the watched directory.
-        let root = current_task.fs().root().entry;
-        assert!(inotify.add_watch(root.clone(), InotifyMask::ALL_EVENTS, &file).is_ok());
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 1);
+            }
 
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 1);
-        }
+            // Generate 1 event.
+            root.node.notify(InotifyMask::ACCESS, 0, Default::default(), FileMode::IFREG, false);
 
-        // Generate 1 event.
-        root.node.notify(InotifyMask::ACCESS, 0, Default::default(), FileMode::IFREG, false);
+            assert_eq!(inotify.available(), DATA_SIZE);
+            {
+                let state = inotify.state.lock();
+                assert_eq!(state.watches.len(), 1);
+                assert_eq!(state.events.queue.len(), 1);
+            }
 
-        assert_eq!(inotify.available(), DATA_SIZE);
-        {
-            let state = inotify.state.lock();
-            assert_eq!(state.watches.len(), 1);
-            assert_eq!(state.events.queue.len(), 1);
-        }
+            // Generate another event.
+            root.node.notify(InotifyMask::ATTRIB, 0, Default::default(), FileMode::IFREG, false);
 
-        // Generate another event.
-        root.node.notify(InotifyMask::ATTRIB, 0, Default::default(), FileMode::IFREG, false);
+            assert_eq!(inotify.available(), DATA_SIZE * 2);
+            {
+                let state = inotify.state.lock();
+                assert_eq!(state.events.queue.len(), 2);
+            }
 
-        assert_eq!(inotify.available(), DATA_SIZE * 2);
-        {
-            let state = inotify.state.lock();
-            assert_eq!(state.events.queue.len(), 2);
-        }
+            // Read 1 event.
+            let mut buffer = VecOutputBuffer::new(DATA_SIZE);
+            let bytes_read =
+                file.read(locked, &current_task, &mut buffer).expect("read into buffer");
 
-        // Read 1 event.
-        let mut buffer = VecOutputBuffer::new(DATA_SIZE);
-        let bytes_read = file.read(locked, &current_task, &mut buffer).expect("read into buffer");
+            assert_eq!(bytes_read, DATA_SIZE);
+            assert_eq!(inotify.available(), DATA_SIZE);
+            {
+                let state = inotify.state.lock();
+                assert_eq!(state.events.queue.len(), 1);
+            }
 
-        assert_eq!(bytes_read, DATA_SIZE);
-        assert_eq!(inotify.available(), DATA_SIZE);
-        {
-            let state = inotify.state.lock();
-            assert_eq!(state.events.queue.len(), 1);
-        }
+            // Read other event.
+            buffer.reset();
+            let bytes_read =
+                file.read(locked, &current_task, &mut buffer).expect("read into buffer");
 
-        // Read other event.
-        buffer.reset();
-        let bytes_read = file.read(locked, &current_task, &mut buffer).expect("read into buffer");
-
-        assert_eq!(bytes_read, DATA_SIZE);
-        assert_eq!(inotify.available(), 0);
-        {
-            let state = inotify.state.lock();
-            assert_eq!(state.events.queue.len(), 0);
-        }
+            assert_eq!(bytes_read, DATA_SIZE);
+            assert_eq!(inotify.available(), 0);
+            {
+                let state = inotify.state.lock();
+                assert_eq!(state.events.queue.len(), 0);
+            }
+        });
     }
 
     #[::fuchsia::test]
     async fn notify_deletion_from_watchers() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let inotify =
+                file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 
-        let file = InotifyFileObject::new_file(locked, &current_task, true);
-        let inotify =
-            file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
+            // Use root as the watched directory.
+            let root = current_task.fs().root().entry;
+            assert!(inotify.add_watch(root.clone(), InotifyMask::ALL_EVENTS, &file).is_ok());
 
-        // Use root as the watched directory.
-        let root = current_task.fs().root().entry;
-        assert!(inotify.add_watch(root.clone(), InotifyMask::ALL_EVENTS, &file).is_ok());
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 1);
+            }
 
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 1);
-        }
+            root.node.notify(
+                InotifyMask::DELETE_SELF,
+                0,
+                Default::default(),
+                FileMode::IFREG,
+                false,
+            );
 
-        root.node.notify(InotifyMask::DELETE_SELF, 0, Default::default(), FileMode::IFREG, false);
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 0);
+            }
 
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 0);
-        }
+            {
+                let state = inotify.state.lock();
+                assert_eq!(state.watches.len(), 0);
+                assert_eq!(state.events.queue.len(), 2);
 
-        {
-            let state = inotify.state.lock();
-            assert_eq!(state.watches.len(), 0);
-            assert_eq!(state.events.queue.len(), 2);
-
-            assert_eq!(state.events.queue.get(0).unwrap().mask, InotifyMask::DELETE_SELF);
-            assert_eq!(state.events.queue.get(1).unwrap().mask, InotifyMask::IGNORED);
-        }
+                assert_eq!(state.events.queue.get(0).unwrap().mask, InotifyMask::DELETE_SELF);
+                assert_eq!(state.events.queue.get(1).unwrap().mask, InotifyMask::IGNORED);
+            }
+        });
     }
 
     #[::fuchsia::test]
     async fn inotify_on_same_file() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let file_key = WeakKey::from(&file);
+            let inotify =
+                file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 
-        let file = InotifyFileObject::new_file(locked, &current_task, true);
-        let file_key = WeakKey::from(&file);
-        let inotify =
-            file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
+            // Use root as the watched directory.
+            let root = current_task.fs().root().entry;
 
-        // Use root as the watched directory.
-        let root = current_task.fs().root().entry;
+            // Cannot add with both MASK_ADD and MASK_CREATE.
+            assert!(
+                inotify
+                    .add_watch(
+                        root.clone(),
+                        InotifyMask::MODIFY | InotifyMask::MASK_ADD | InotifyMask::MASK_CREATE,
+                        &file
+                    )
+                    .is_err()
+            );
 
-        // Cannot add with both MASK_ADD and MASK_CREATE.
-        assert!(
-            inotify
-                .add_watch(
-                    root.clone(),
-                    InotifyMask::MODIFY | InotifyMask::MASK_ADD | InotifyMask::MASK_CREATE,
-                    &file
-                )
-                .is_err()
-        );
+            assert!(
+                inotify
+                    .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_CREATE, &file)
+                    .is_ok()
+            );
 
-        assert!(
-            inotify
-                .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_CREATE, &file)
-                .is_ok()
-        );
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 1);
+                assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
+            }
 
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 1);
-            assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
-        }
+            // Replaces existing mask.
+            assert!(inotify.add_watch(root.clone(), InotifyMask::ACCESS, &file).is_ok());
 
-        // Replaces existing mask.
-        assert!(inotify.add_watch(root.clone(), InotifyMask::ACCESS, &file).is_ok());
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 1);
+                assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::ACCESS));
+                assert!(!watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
+            }
 
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 1);
-            assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::ACCESS));
-            assert!(!watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
-        }
+            // Merges with existing mask.
+            assert!(
+                inotify
+                    .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_ADD, &file)
+                    .is_ok()
+            );
 
-        // Merges with existing mask.
-        assert!(
-            inotify
-                .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_ADD, &file)
-                .is_ok()
-        );
-
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 1);
-            assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::ACCESS));
-            assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
-        }
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 1);
+                assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::ACCESS));
+                assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
+            }
+        });
     }
 
     #[::fuchsia::test]
     async fn coalesce_events() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let file = InotifyFileObject::new_file(locked, &current_task, true);
+            let inotify =
+                file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
 
-        let file = InotifyFileObject::new_file(locked, &current_task, true);
-        let inotify =
-            file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
+            // Use root as the watched directory.
+            let root = current_task.fs().root().entry;
+            assert!(inotify.add_watch(root.clone(), InotifyMask::ALL_EVENTS, &file).is_ok());
 
-        // Use root as the watched directory.
-        let root = current_task.fs().root().entry;
-        assert!(inotify.add_watch(root.clone(), InotifyMask::ALL_EVENTS, &file).is_ok());
+            {
+                let watchers = root.node.ensure_watchers().watchers.lock();
+                assert_eq!(watchers.len(), 1);
+            }
 
-        {
-            let watchers = root.node.ensure_watchers().watchers.lock();
-            assert_eq!(watchers.len(), 1);
-        }
+            // Generate 2 identical events. They should combine into 1.
+            root.node.notify(InotifyMask::ACCESS, 0, Default::default(), FileMode::IFREG, false);
+            root.node.notify(InotifyMask::ACCESS, 0, Default::default(), FileMode::IFREG, false);
 
-        // Generate 2 identical events. They should combine into 1.
-        root.node.notify(InotifyMask::ACCESS, 0, Default::default(), FileMode::IFREG, false);
-        root.node.notify(InotifyMask::ACCESS, 0, Default::default(), FileMode::IFREG, false);
-
-        assert_eq!(inotify.available(), DATA_SIZE);
-        {
-            let state = inotify.state.lock();
-            assert_eq!(state.watches.len(), 1);
-            assert_eq!(state.events.queue.len(), 1);
-        }
+            assert_eq!(inotify.available(), DATA_SIZE);
+            {
+                let state = inotify.state.lock();
+                assert_eq!(state.watches.len(), 1);
+                assert_eq!(state.events.queue.len(), 1);
+            }
+        });
     }
 }
