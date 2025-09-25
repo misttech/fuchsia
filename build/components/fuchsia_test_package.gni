@@ -206,9 +206,11 @@ template("fuchsia_test_package") {
           "--config",
           "ffx.subtool-search-paths=host_${host_cpu}",
           "--config",
+          "log.dir={output_directory}/test/ffx_logs",
+          "--config",
           "ssh.priv={ssh_private_key_path}",
           "--config",
-          "log.dir={output_directory}/test/ffx_logs",
+          "{ffx_config}",
           "--machine",
           "raw",
           "--target",
@@ -233,6 +235,8 @@ template("fuchsia_test_package") {
         if (defined(_min_severity_logs)) {
           min_severity_logs = _min_severity_logs
         }
+
+        ffx_config = "{}"
       }
       test_component_output_label =
           "$package_name.$manifest_name.test_component_config"

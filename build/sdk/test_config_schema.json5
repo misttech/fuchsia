@@ -78,6 +78,10 @@
             description: "Path to ssh private key file",
             type: "string",
         },
+        ffx_config: {
+            description: "ffx config settings in any of the formats supported by ffx --config",
+            type: "string",
+        },
         target: {
             description: "IP address of the target device",
             type: "string",

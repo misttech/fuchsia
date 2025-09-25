@@ -617,10 +617,10 @@ mod tests {
     use crate::logger::NullLogger;
     use crate::schema::tests::fake_schema;
     use assert_matches::assert_matches;
-    use serde_json::{json, Map, Number};
+    use serde_json::{Map, Number, json};
     use std::fs;
     use std::str::FromStr;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
 
     fn option_name() -> Name {
         Name::from_str("test_option_name")
@@ -889,28 +889,6 @@ mod tests {
         assert_usage_error(
             under_test,
             UsageError::InvalidParameterName { option: Name::Prohibit, got: Name::from_str("1") },
-        );
-
-        let fake_env = FakeEnv::new("--output-directory=1,true", "");
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger);
-        assert_usage_error(
-            under_test,
-            UsageError::CommasNotAllowed {
-                parameter: Name::from_str("output_directory"),
-                got: String::from("1,true"),
-            },
-        );
-
-        let fake_env = FakeEnv::new("--output-directory=true,1", "");
-        let under_test =
-            TestConfigBuilder::from_env_like(&fake_env, fake_schema(), &mut NullLogger);
-        assert_usage_error(
-            under_test,
-            UsageError::CommasNotAllowed {
-                parameter: Name::from_str("output_directory"),
-                got: String::from("true,1"),
-            },
         );
     }
 

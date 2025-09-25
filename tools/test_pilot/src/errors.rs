@@ -158,10 +158,9 @@ pub enum UsageError {
     #[error("Wrong type: expected type {expected}, got \"{got}\" for parameter {parameter}")]
     TypeMismatch { expected: String, got: String, parameter: Name },
 
-    #[error("Multiple values supplied for non-array parameter {parameter}: \"{got}\"")]
-    CommasNotAllowed { parameter: Name, got: String },
-
-    #[error("Parameters of type object (such as {0}) are not allowed in command lines or environment variables")]
+    #[error(
+        "Parameters of type object (such as {0}) are not allowed in command lines or environment variables"
+    )]
     ObjectNotAllowed(Name),
 
     #[error("Parameter '{0}' is required by the schema, but was not defined")]
@@ -184,9 +183,13 @@ pub enum UsageError {
     #[error("Expected executable file path for option '{option}', got unreadable {path:?}")]
     BinaryUnreadable { option: Name, path: PathBuf },
 
-    #[error("Assignment to parameter '{parameter}' references undefined environment variable {var_name_value:?}")]
+    #[error(
+        "Assignment to parameter '{parameter}' references undefined environment variable {var_name_value:?}"
+    )]
     FromEnvUndefined { parameter: Name, var_name_value: Value },
 
-    #[error("Assignment to parameter '{parameter}' uses non-string value {var_name_value:?} in from_env/try_from_env")]
+    #[error(
+        "Assignment to parameter '{parameter}' uses non-string value {var_name_value:?} in from_env/try_from_env"
+    )]
     FromEnvNotString { parameter: Name, var_name_value: Value },
 }

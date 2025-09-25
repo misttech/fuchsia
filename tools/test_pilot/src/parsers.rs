@@ -125,13 +125,7 @@ impl Parser for NumberParser {
 struct StringParser;
 
 impl Parser for StringParser {
-    fn parse(&self, parameter_name: &Name, text: &str) -> Result<Value, UsageError> {
-        if text.contains(',') {
-            return Err(UsageError::CommasNotAllowed {
-                parameter: parameter_name.clone(),
-                got: String::from(text),
-            });
-        }
+    fn parse(&self, _parameter_name: &Name, text: &str) -> Result<Value, UsageError> {
         Ok(Value::String(String::from(text)))
     }
 }
@@ -240,13 +234,6 @@ mod tests {
         assert_eq!(
             Ok(Value::String(String::from("1.0"))),
             under_test.parse(&*PARAMETER_NAME, "1.0")
-        );
-        assert_eq!(
-            Err(UsageError::CommasNotAllowed {
-                parameter: (*PARAMETER_NAME).clone(),
-                got: String::from("a,b"),
-            }),
-            under_test.parse(&*PARAMETER_NAME, "a,b")
         );
     }
 
@@ -393,13 +380,6 @@ mod tests {
         assert_eq!(
             Ok(Value::String(String::from("1.0"))),
             under_test.parse(&*PARAMETER_NAME, "1.0")
-        );
-        assert_eq!(
-            Err(UsageError::CommasNotAllowed {
-                parameter: (*PARAMETER_NAME).clone(),
-                got: String::from("a,b"),
-            }),
-            under_test.parse(&*PARAMETER_NAME, "a,b")
         );
     }
 
