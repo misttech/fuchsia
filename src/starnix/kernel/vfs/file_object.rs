@@ -2325,76 +2325,84 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_append_truncate_race() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let root_fs = TmpFs::new_fs(locked, &kernel);
-        let mount = MountInfo::detached();
-        let root_node = Arc::clone(root_fs.root());
-        let file = root_node
-            .create_entry(
-                locked,
-                &current_task,
-                &mount,
-                "test".into(),
-                |locked, dir, mount, name| {
-                    dir.create_node(
-                        locked,
-                        &current_task,
-                        mount,
-                        name,
-                        FileMode::IFREG | FileMode::ALLOW_ALL,
-                        DeviceType::NONE,
-                        FsCred::root(),
-                    )
-                },
-            )
-            .expect("create_node failed");
-        let file_handle = file
-            .open_anonymous(locked, &current_task, OpenFlags::APPEND | OpenFlags::RDWR)
-            .expect("open failed");
-        let done = Arc::new(AtomicBool::new(false));
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(locked, &kernel);
+            let mount = MountInfo::detached();
+            let root_node = Arc::clone(root_fs.root());
+            let file = root_node
+                .create_entry(
+                    locked,
+                    &current_task,
+                    &mount,
+                    "test".into(),
+                    |locked, dir, mount, name| {
+                        dir.create_node(
+                            locked,
+                            &current_task,
+                            mount,
+                            name,
+                            FileMode::IFREG | FileMode::ALLOW_ALL,
+                            DeviceType::NONE,
+                            FsCred::root(),
+                        )
+                    },
+                )
+                .expect("create_node failed");
+            let file_handle = file
+                .open_anonymous(locked, &current_task, OpenFlags::APPEND | OpenFlags::RDWR)
+                .expect("open failed");
+            let done = Arc::new(AtomicBool::new(false));
 
-        let fh = file_handle.clone();
-        let done_clone = done.clone();
-        let write_thread =
-            kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                for i in 0..2000 {
-                    fh.write(
-                        locked,
-                        current_task,
-                        &mut VecInputBuffer::new(U64::<LE>::new(i).as_bytes()),
-                    )
-                    .expect("write failed");
-                }
-                done_clone.store(true, Ordering::SeqCst);
-            });
+            let fh = file_handle.clone();
+            let done_clone = done.clone();
+            let write_thread =
+                kernel.kthreads.spawner().spawn_and_get_result_sync(move |locked, current_task| {
+                    for i in 0..2000 {
+                        fh.write(
+                            locked,
+                            current_task,
+                            &mut VecInputBuffer::new(U64::<LE>::new(i).as_bytes()),
+                        )
+                        .expect("write failed");
+                    }
+                    done_clone.store(true, Ordering::SeqCst);
+                    let result: Result<(), starnix_uapi::errors::Errno> = Ok(());
+                    result
+                });
 
-        let fh = file_handle.clone();
-        let done_clone = done.clone();
-        let truncate_thread =
-            kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                while !done_clone.load(Ordering::SeqCst) {
-                    fh.ftruncate(locked, current_task, 0).expect("truncate failed");
-                }
-            });
+            let fh = file_handle.clone();
+            let done_clone = done.clone();
+            let truncate_thread =
+                kernel.kthreads.spawner().spawn_and_get_result_sync(move |locked, current_task| {
+                    while !done_clone.load(Ordering::SeqCst) {
+                        fh.ftruncate(locked, current_task, 0).expect("truncate failed");
+                    }
+                    let result: Result<(), starnix_uapi::errors::Errno> = Ok(());
+                    result
+                });
 
-        // If we read from the file, we should always find an increasing sequence. If there are
-        // races, then we might unexpectedly see zeroes.
-        while !done.load(Ordering::SeqCst) {
-            let mut buffer = VecOutputBuffer::new(4096);
-            let amount =
-                file_handle.read_at(locked, &current_task, 0, &mut buffer).expect("read failed");
-            let mut last = None;
-            let buffer = &Vec::from(buffer)[..amount];
-            for i in buffer.chunks_exact(8).map(|chunk| U64::<LE>::read_from_bytes(chunk).unwrap())
-            {
-                if let Some(last) = last {
-                    assert!(i.get() > last, "buffer: {:?}", buffer);
+            // If we read from the file, we should always find an increasing sequence. If there are
+            // races, then we might unexpectedly see zeroes.
+            while !done.load(Ordering::SeqCst) {
+                let mut buffer = VecOutputBuffer::new(4096);
+                let amount = file_handle
+                    .read_at(locked, &current_task, 0, &mut buffer)
+                    .expect("read failed");
+                let mut last = None;
+                let buffer = &Vec::from(buffer)[..amount];
+                for i in
+                    buffer.chunks_exact(8).map(|chunk| U64::<LE>::read_from_bytes(chunk).unwrap())
+                {
+                    if let Some(last) = last {
+                        assert!(i.get() > last, "buffer: {:?}", buffer);
+                    }
+                    last = Some(i.get());
                 }
-                last = Some(i.get());
             }
-        }
 
-        write_thread.await.expect("join");
-        truncate_thread.await.expect("join");
+            let _ = write_thread.unwrap();
+            let _ = truncate_thread.unwrap();
+        });
     }
 }
