@@ -130,18 +130,19 @@ impl FileWriteGuardState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::*;
+    use crate::testing::spawn_kernel_and_run;
     use crate::vfs::FsNodeHandle;
     use starnix_uapi::device_type::DeviceType;
     use starnix_uapi::file_mode::FileMode;
 
-    fn create_fs_node() -> FsNodeHandle {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
+    fn create_fs_node(
+        locked: &mut starnix_sync::Locked<starnix_sync::Unlocked>,
+        current_task: &crate::task::CurrentTask,
+    ) -> FsNodeHandle {
         current_task
             .fs()
             .root()
-            .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+            .create_node(locked, current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
             .expect("create_node")
             .entry
             .node
@@ -171,45 +172,48 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_write_exec_locking() {
-        let fs_node = create_fs_node();
+        spawn_kernel_and_run(|locked, current_task| {
+            let fs_node = create_fs_node(locked, current_task);
 
-        let write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
-            .expect("FsNode::lock failed unexpectedly");
+            let write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
+                .expect("FsNode::lock failed unexpectedly");
 
-        assert_eq!(
-            FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping).unwrap_err(),
-            errno!(ETXTBSY)
-        );
+            assert_eq!(
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping).unwrap_err(),
+                errno!(ETXTBSY)
+            );
 
-        let write_mapping_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteMapping)
-            .expect("FsNode::lock failed unexpectedly");
+            let write_mapping_guard =
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteMapping)
+                    .expect("FsNode::lock failed unexpectedly");
 
-        assert_eq!(
-            FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping).unwrap_err(),
-            errno!(ETXTBSY)
-        );
+            assert_eq!(
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping).unwrap_err(),
+                errno!(ETXTBSY)
+            );
 
-        std::mem::drop(write_guard);
+            std::mem::drop(write_guard);
 
-        assert_eq!(
-            FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping).unwrap_err(),
-            errno!(ETXTBSY)
-        );
+            assert_eq!(
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping).unwrap_err(),
+                errno!(ETXTBSY)
+            );
 
-        std::mem::drop(write_mapping_guard);
+            std::mem::drop(write_mapping_guard);
 
-        let exec_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping)
-            .expect("FsNode::lock failed unexpectedly");
+            let exec_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::ExecMapping)
+                .expect("FsNode::lock failed unexpectedly");
 
-        assert_eq!(
-            FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile).unwrap_err(),
-            errno!(ETXTBSY)
-        );
+            assert_eq!(
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile).unwrap_err(),
+                errno!(ETXTBSY)
+            );
 
-        std::mem::drop(exec_guard);
+            std::mem::drop(exec_guard);
 
-        FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
-            .expect("FsNode::lock failed unexpectedly");
+            FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
+                .expect("FsNode::lock failed unexpectedly");
+        });
     }
 
     #[::fuchsia::test]
@@ -224,72 +228,79 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals() {
-        let fs_node = create_fs_node();
+        spawn_kernel_and_run(|locked, current_task| {
+            let fs_node = create_fs_node(locked, current_task);
 
-        {
-            let mut state = fs_node.write_guard_state.lock();
+            {
+                let mut state = fs_node.write_guard_state.lock();
 
-            state.enable_sealing(SealFlags::empty());
+                state.enable_sealing(SealFlags::empty());
 
-            assert_eq!(state.check_no_seal(SealFlags::WRITE), Ok(()));
-            assert_eq!(state.get_seals(), Ok(SealFlags::empty()));
+                assert_eq!(state.check_no_seal(SealFlags::WRITE), Ok(()));
+                assert_eq!(state.get_seals(), Ok(SealFlags::empty()));
 
-            // Apply WRITE seal.
-            assert_eq!(state.try_add_seal(SealFlags::WRITE), Ok(()));
-            assert_eq!(state.check_no_seal(SealFlags::WRITE), error!(EPERM));
-            assert_eq!(state.get_seals(), Ok(SealFlags::WRITE));
-        }
+                // Apply WRITE seal.
+                assert_eq!(state.try_add_seal(SealFlags::WRITE), Ok(()));
+                assert_eq!(state.check_no_seal(SealFlags::WRITE), error!(EPERM));
+                assert_eq!(state.get_seals(), Ok(SealFlags::WRITE));
+            }
 
-        // Files with WRITE seal can be opened for write.
-        let file_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
-            .expect("lock(WriteFile) failed");
+            // Files with WRITE seal can be opened for write.
+            let file_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
+                .expect("lock(WriteFile) failed");
 
-        // Files with WRITE seal cannot be mapped.
-        assert_eq!(
-            FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteMapping).unwrap_err(),
-            errno!(EPERM)
-        );
+            // Files with WRITE seal cannot be mapped.
+            assert_eq!(
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteMapping).unwrap_err(),
+                errno!(EPERM)
+            );
 
-        std::mem::drop(file_guard);
+            std::mem::drop(file_guard);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_seals_block_when_mapped() {
-        let fs_node = create_fs_node();
-        fs_node.write_guard_state.lock().enable_sealing(SealFlags::empty());
+        spawn_kernel_and_run(|locked, current_task| {
+            let fs_node = create_fs_node(locked, current_task);
+            fs_node.write_guard_state.lock().enable_sealing(SealFlags::empty());
 
-        let _write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
-            .expect("FsNode::lock failed unexpectedly");
-        let write_mapping_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteMapping)
-            .expect("FsNode::lock failed unexpectedly");
+            let _write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
+                .expect("FsNode::lock failed unexpectedly");
+            let write_mapping_guard =
+                FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteMapping)
+                    .expect("FsNode::lock failed unexpectedly");
 
-        // Should fail since the file is mapped.
-        {
-            let mut state = fs_node.write_guard_state.lock();
-            assert_eq!(state.try_add_seal(SealFlags::WRITE), error!(EBUSY));
-            assert_eq!(state.check_no_seal(SealFlags::WRITE), Ok(()));
-        }
+            // Should fail since the file is mapped.
+            {
+                let mut state = fs_node.write_guard_state.lock();
+                assert_eq!(state.try_add_seal(SealFlags::WRITE), error!(EBUSY));
+                assert_eq!(state.check_no_seal(SealFlags::WRITE), Ok(()));
+            }
 
-        std::mem::drop(write_mapping_guard);
+            std::mem::drop(write_mapping_guard);
 
-        // Should succeed after file is unmapped.
-        {
-            let mut state = fs_node.write_guard_state.lock();
-            assert_eq!(state.try_add_seal(SealFlags::WRITE), Ok(()));
-            assert_eq!(state.check_no_seal(SealFlags::WRITE), error!(EPERM));
-        }
+            // Should succeed after file is unmapped.
+            {
+                let mut state = fs_node.write_guard_state.lock();
+                assert_eq!(state.try_add_seal(SealFlags::WRITE), Ok(()));
+                assert_eq!(state.check_no_seal(SealFlags::WRITE), error!(EPERM));
+            }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_seals_sealed() {
-        let fs_node = create_fs_node();
-        let mut state = fs_node.write_guard_state.lock();
+        spawn_kernel_and_run(|locked, current_task| {
+            let fs_node = create_fs_node(locked, current_task);
+            let mut state = fs_node.write_guard_state.lock();
 
-        state.enable_sealing(SealFlags::SEAL);
+            state.enable_sealing(SealFlags::SEAL);
 
-        assert_eq!(state.get_seals(), Ok(SealFlags::SEAL));
+            assert_eq!(state.get_seals(), Ok(SealFlags::SEAL));
 
-        assert_eq!(state.try_add_seal(SealFlags::WRITE), error!(EPERM));
-        assert_eq!(state.get_seals(), Ok(SealFlags::SEAL));
+            assert_eq!(state.try_add_seal(SealFlags::WRITE), error!(EPERM));
+            assert_eq!(state.get_seals(), Ok(SealFlags::SEAL));
+        });
     }
 }
