@@ -6,7 +6,7 @@
 #![warn(unused_results)]
 
 use anyhow::Context as _;
-use ffx_writer::SimpleWriter;
+use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use log::error;
 use target_holders::RemoteControlProxyHolder;
@@ -52,16 +52,17 @@ fho::embedded_plugin!(NetTestRealmTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for NetTestRealmTool {
-    type Writer = SimpleWriter;
+    type Writer = MachineWriter<String>;
 
-    async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        net_test_realm(self.remote_control, self.cmd).await.map_err(Into::into)
+    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
+        net_test_realm(self.remote_control, self.cmd, writer).await.map_err(Into::into)
     }
 }
 
 async fn net_test_realm(
     remote_control: RemoteControlProxyHolder,
     mut cmd: ntr_args::Command,
+    writer: MachineWriter<String>,
 ) -> anyhow::Result<()> {
     // The tool was called with a selector, make the arg an moniker.
     // TODO: remove once all clients of this tool are passing monikers.
@@ -72,12 +73,13 @@ async fn net_test_realm(
     let controller =
         connect_to_protocol::<fntr::ControllerMarker>(&remote_control, &cmd.component_moniker)
             .await?;
-    handle_command(controller, cmd.subcommand).await
+    handle_command(controller, cmd.subcommand, writer).await
 }
 
 async fn handle_command(
     controller: fntr::ControllerProxy,
     command: ntr_args::Subcommand,
+    mut writer: MachineWriter<String>,
 ) -> anyhow::Result<()> {
     let (result, method_name) = match command {
         ntr_args::Subcommand::AddInterface(ntr_args::AddInterface {
@@ -94,16 +96,20 @@ async fn handle_command(
         }) => (
             {
                 let now = std::time::Instant::now();
-                println!(
-                    "starting join_multicast_group op at {now:?}: {address:?} {interface_id:?}"
-                );
+                writer
+                    .item(&format!(
+                        "starting join_multicast_group op at {now:?}: {address:?} {interface_id:?}"
+                    ))
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 let result = controller.join_multicast_group(&address.into(), interface_id).await;
 
                 let elapsed = std::time::Instant::now() - now;
-                println!(
-                    "finishing join_multicast_group op from {now:?}: \
+                writer
+                    .item(&format!(
+                        "finishing join_multicast_group op from {now:?}: \
                      {address:?} {interface_id:?}: {result:?} (after {elapsed:?})"
-                );
+                    ))
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 result
             },
             "join_multicast_group",
@@ -114,16 +120,18 @@ async fn handle_command(
         }) => (
             {
                 let now = std::time::Instant::now();
-                println!(
-                    "starting leave_multicast_group op at {now:?}: {address:?} {interface_id:?}"
-                );
+                writer.item(&format!(
+                    "starting leave_multicast_group op at {now:?}: {address:?} {interface_id:?}",
+                )).map_err(|e| anyhow::anyhow!(e))?;
                 let result = controller.leave_multicast_group(&address.into(), interface_id).await;
 
                 let elapsed = std::time::Instant::now() - now;
-                println!(
-                    "finishing leave_multicast_group op from {now:?}: \
-                    {address:?} {interface_id:?}: {result:?} (after {elapsed:?})"
-                );
+                writer
+                    .item(&format!(
+                        "finishing leave_multicast_group op from {now:?}: \
+                    {address:?} {interface_id:?}: {result:?} (after {elapsed:?})",
+                    ))
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 result
             },
             "leave_multicast_group",
@@ -160,7 +168,7 @@ async fn handle_command(
                                 error!("error parsing {:?} as utf8: {:?}", bytes, e);
                                 fntr::Error::Internal
                             })?;
-                            println!("{}", received);
+                            let _ = writer.item(&format!("{received}"));
                             Ok(())
                         })
                     })
@@ -307,7 +315,8 @@ mod test {
     ) {
         let (controller, mut requests) =
             fidl::endpoints::create_proxy_and_stream::<fntr::ControllerMarker>();
-        let op = handle_command(controller, command);
+        let writer = MachineWriter::<String>::new(None);
+        let op = handle_command(controller, command, writer);
         let op_response = async {
             let request = requests
                 .try_next()
