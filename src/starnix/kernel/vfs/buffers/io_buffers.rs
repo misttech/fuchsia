@@ -866,124 +866,147 @@ mod tests {
     use crate::testing::*;
     use usercopy::slice_to_maybe_uninit_mut;
 
-    #[::fuchsia::test]
-    async fn test_data_input_buffer() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+    #[test]
+    fn test_data_input_buffer() {
+        let mut executor = fuchsia_async::TestExecutor::new();
+        executor.run_singlethreaded(async {
+            spawn_kernel_and_run(|locked, current_task| {
+                let page_size = *PAGE_SIZE;
+                let addr =
+                    map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
 
-        let page_size = *PAGE_SIZE;
-        let addr = map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
+                let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+                let mm = current_task.deref();
+                mm.write_memory(addr, &data).expect("failed to write test data");
 
-        let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
-        let mm = current_task.deref();
-        mm.write_memory(addr, &data).expect("failed to write test data");
+                let input_iovec = smallvec![
+                    UserBuffer { address: addr, length: 25 },
+                    UserBuffer {
+                        address: (addr + 64usize).expect("Memory mapped OOB!"),
+                        length: 12
+                    },
+                ];
 
-        let input_iovec = smallvec![
-            UserBuffer { address: addr, length: 25 },
-            UserBuffer { address: (addr + 64usize).expect("Memory mapped OOB!"), length: 12 },
-        ];
+                // Test incorrect callback.
+                {
+                    let mut input_buffer =
+                        UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
+                            .expect("UserBuffersInputBuffer");
+                    assert!(input_buffer.peek_each(&mut |data| Ok(data.len() + 1)).is_err());
+                }
 
-        // Test incorrect callback.
-        {
-            let mut input_buffer = UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
-                .expect("UserBuffersInputBuffer");
-            assert!(input_buffer.peek_each(&mut |data| Ok(data.len() + 1)).is_err());
-        }
+                // Test drain
+                {
+                    let mut input_buffer =
+                        UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
+                            .expect("UserBuffersInputBuffer");
+                    assert_eq!(input_buffer.available(), 37);
+                    assert_eq!(input_buffer.bytes_read(), 0);
+                    assert_eq!(input_buffer.drain(), 37);
+                    assert_eq!(input_buffer.available(), 0);
+                    assert_eq!(input_buffer.bytes_read(), 37);
+                }
 
-        // Test drain
-        {
-            let mut input_buffer = UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
-                .expect("UserBuffersInputBuffer");
-            assert_eq!(input_buffer.available(), 37);
-            assert_eq!(input_buffer.bytes_read(), 0);
-            assert_eq!(input_buffer.drain(), 37);
-            assert_eq!(input_buffer.available(), 0);
-            assert_eq!(input_buffer.bytes_read(), 37);
-        }
+                // Test read_all
+                {
+                    let mut input_buffer =
+                        UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
+                            .expect("UserBuffersInputBuffer");
+                    assert_eq!(input_buffer.available(), 37);
+                    assert_eq!(input_buffer.bytes_read(), 0);
+                    let buffer = input_buffer.read_all().expect("read_all");
+                    assert_eq!(input_buffer.available(), 0);
+                    assert_eq!(input_buffer.bytes_read(), 37);
+                    assert_eq!(buffer.len(), 37);
+                    assert_eq!(&data[..25], &buffer[..25]);
+                    assert_eq!(&data[64..76], &buffer[25..37]);
+                }
 
-        // Test read_all
-        {
-            let mut input_buffer = UserBuffersInputBuffer::unified_new(mm, input_iovec.clone())
-                .expect("UserBuffersInputBuffer");
-            assert_eq!(input_buffer.available(), 37);
-            assert_eq!(input_buffer.bytes_read(), 0);
-            let buffer = input_buffer.read_all().expect("read_all");
-            assert_eq!(input_buffer.available(), 0);
-            assert_eq!(input_buffer.bytes_read(), 37);
-            assert_eq!(buffer.len(), 37);
-            assert_eq!(&data[..25], &buffer[..25]);
-            assert_eq!(&data[64..76], &buffer[25..37]);
-        }
-
-        // Test read
-        {
-            let mut input_buffer = UserBuffersInputBuffer::unified_new(mm, input_iovec)
-                .expect("UserBuffersInputBuffer");
-            let mut buffer = [0; 50];
-            assert_eq!(input_buffer.available(), 37);
-            assert_eq!(input_buffer.bytes_read(), 0);
-            assert_eq!(
-                input_buffer
-                    .read_exact(slice_to_maybe_uninit_mut(&mut buffer[0..20]))
-                    .expect("read"),
-                20
-            );
-            assert_eq!(input_buffer.available(), 17);
-            assert_eq!(input_buffer.bytes_read(), 20);
-            assert_eq!(
-                input_buffer
-                    .read_exact(slice_to_maybe_uninit_mut(&mut buffer[20..37]))
-                    .expect("read"),
-                17
-            );
-            assert!(input_buffer.read_exact(slice_to_maybe_uninit_mut(&mut buffer[37..])).is_err());
-            assert_eq!(input_buffer.available(), 0);
-            assert_eq!(input_buffer.bytes_read(), 37);
-            assert_eq!(&data[..25], &buffer[..25]);
-            assert_eq!(&data[64..76], &buffer[25..37]);
-        }
+                // Test read
+                {
+                    let mut input_buffer = UserBuffersInputBuffer::unified_new(mm, input_iovec)
+                        .expect("UserBuffersInputBuffer");
+                    let mut buffer = [0; 50];
+                    assert_eq!(input_buffer.available(), 37);
+                    assert_eq!(input_buffer.bytes_read(), 0);
+                    assert_eq!(
+                        input_buffer
+                            .read_exact(slice_to_maybe_uninit_mut(&mut buffer[0..20]))
+                            .expect("read"),
+                        20
+                    );
+                    assert_eq!(input_buffer.available(), 17);
+                    assert_eq!(input_buffer.bytes_read(), 20);
+                    assert_eq!(
+                        input_buffer
+                            .read_exact(slice_to_maybe_uninit_mut(&mut buffer[20..37]))
+                            .expect("read"),
+                        17
+                    );
+                    assert!(
+                        input_buffer
+                            .read_exact(slice_to_maybe_uninit_mut(&mut buffer[37..]))
+                            .is_err()
+                    );
+                    assert_eq!(input_buffer.available(), 0);
+                    assert_eq!(input_buffer.bytes_read(), 37);
+                    assert_eq!(&data[..25], &buffer[..25]);
+                    assert_eq!(&data[64..76], &buffer[25..37]);
+                }
+            });
+        });
     }
 
-    #[::fuchsia::test]
-    async fn test_data_output_buffer() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+    #[test]
+    fn test_data_output_buffer() {
+        let mut executor = fuchsia_async::TestExecutor::new();
+        executor.run_singlethreaded(async {
+            spawn_kernel_and_run(|locked, current_task| {
+                let page_size = *PAGE_SIZE;
+                let addr =
+                    map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
 
-        let page_size = *PAGE_SIZE;
-        let addr = map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
+                let output_iovec = smallvec![
+                    UserBuffer { address: addr, length: 25 },
+                    UserBuffer {
+                        address: (addr + 64usize).expect("Memory was mapped OOB!"),
+                        length: 12
+                    },
+                ];
 
-        let output_iovec = smallvec![
-            UserBuffer { address: addr, length: 25 },
-            UserBuffer { address: (addr + 64usize).expect("Memory was mapped OOB!"), length: 12 },
-        ];
+                let mm = current_task.deref();
+                let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
 
-        let mm = current_task.deref();
-        let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+                // Test incorrect callback.
+                {
+                    let mut output_buffer =
+                        UserBuffersOutputBuffer::unified_new(mm, output_iovec.clone())
+                            .expect("UserBuffersOutputBuffer");
+                    assert!(output_buffer.write_each(&mut |data| Ok(data.len() + 1)).is_err());
+                }
 
-        // Test incorrect callback.
-        {
-            let mut output_buffer = UserBuffersOutputBuffer::unified_new(mm, output_iovec.clone())
-                .expect("UserBuffersOutputBuffer");
-            assert!(output_buffer.write_each(&mut |data| Ok(data.len() + 1)).is_err());
-        }
+                // Test write
+                {
+                    let mut output_buffer = UserBuffersOutputBuffer::unified_new(mm, output_iovec)
+                        .expect("UserBuffersOutputBuffer");
+                    assert_eq!(output_buffer.available(), 37);
+                    assert_eq!(output_buffer.bytes_written(), 0);
+                    assert_eq!(output_buffer.write_all(&data[0..20]).expect("write"), 20);
+                    assert_eq!(output_buffer.available(), 17);
+                    assert_eq!(output_buffer.bytes_written(), 20);
+                    assert_eq!(output_buffer.write_all(&data[20..37]).expect("write"), 17);
+                    assert_eq!(output_buffer.available(), 0);
+                    assert_eq!(output_buffer.bytes_written(), 37);
+                    assert!(output_buffer.write_all(&data[37..50]).is_err());
 
-        // Test write
-        {
-            let mut output_buffer = UserBuffersOutputBuffer::unified_new(mm, output_iovec)
-                .expect("UserBuffersOutputBuffer");
-            assert_eq!(output_buffer.available(), 37);
-            assert_eq!(output_buffer.bytes_written(), 0);
-            assert_eq!(output_buffer.write_all(&data[0..20]).expect("write"), 20);
-            assert_eq!(output_buffer.available(), 17);
-            assert_eq!(output_buffer.bytes_written(), 20);
-            assert_eq!(output_buffer.write_all(&data[20..37]).expect("write"), 17);
-            assert_eq!(output_buffer.available(), 0);
-            assert_eq!(output_buffer.bytes_written(), 37);
-            assert!(output_buffer.write_all(&data[37..50]).is_err());
-
-            let buffer =
-                current_task.read_memory_to_array::<128>(addr).expect("failed to write test data");
-            assert_eq!(&data[0..25], &buffer[0..25]);
-            assert_eq!(&data[25..37], &buffer[64..76]);
-        }
+                    let buffer = current_task
+                        .read_memory_to_array::<128>(addr)
+                        .expect("failed to write test data");
+                    assert_eq!(&data[0..25], &buffer[0..25]);
+                    assert_eq!(&data[25..37], &buffer[64..76]);
+                }
+            });
+        });
     }
 
     #[::fuchsia::test]
