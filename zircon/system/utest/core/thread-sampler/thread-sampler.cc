@@ -94,12 +94,12 @@ TEST(ThreadSampler, StartStop) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -140,14 +140,14 @@ TEST(ThreadSampler, SamplerLifetime) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   {
     zx::iob buffers;
     zx_status_t create_res =
-        zx_sampler_create(debug_resource.get(), 0, &config, buffers.reset_and_get_address());
+        zx_sampler_create(sampling_resource.get(), 0, &config, buffers.reset_and_get_address());
     if constexpr (!sampler_enabled) {
       ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
       return;
@@ -156,14 +156,15 @@ TEST(ThreadSampler, SamplerLifetime) {
 
     zx::iob new_buffers;
     zx_status_t create_res_bad =
-        zx_sampler_create(debug_resource.get(), 0, &config, new_buffers.reset_and_get_address());
+        zx_sampler_create(sampling_resource.get(), 0, &config, new_buffers.reset_and_get_address());
 
     EXPECT_EQ(create_res_bad, ZX_ERR_ALREADY_EXISTS);
   }
 
   // Once the buffer is released, a new sampler can now be created
   zx::iob buffers;
-  ASSERT_OK(zx_sampler_create(debug_resource.get(), 0, &config, buffers.reset_and_get_address()));
+  ASSERT_OK(
+      zx_sampler_create(sampling_resource.get(), 0, &config, buffers.reset_and_get_address()));
 }
 
 TEST(ThreadSampler, DroppedSampler) {
@@ -179,12 +180,12 @@ TEST(ThreadSampler, DroppedSampler) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -207,7 +208,8 @@ TEST(ThreadSampler, DroppedSampler) {
   sampler.reset();
 
   // And create a new one
-  create_res = zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+  create_res =
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   ASSERT_OK(create_res);
   ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   ASSERT_OK(zx_sampler_start(sampler.get()));
@@ -235,12 +237,12 @@ TEST(ThreadSampler, BadIob) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -298,12 +300,12 @@ TEST(ThreadSampler, NoRights) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -344,12 +346,12 @@ TEST(ThreadSampler, ClosedHandleReadBuffers) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -384,7 +386,8 @@ TEST(ThreadSampler, ClosedHandleReadBuffers) {
 
   // Reset our sampler
   sampler.reset();
-  create_res = zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+  create_res =
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   ASSERT_OK(create_res);
   ASSERT_OK(zx_sampler_start(sampler.get()));
   ASSERT_OK(zx_sampler_stop(sampler.get()));
@@ -421,13 +424,13 @@ TEST(ThreadSampler, NonRunningThread) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   // Create the thread, but defer starting the thread until after we've attached to it.
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -475,12 +478,12 @@ TEST(ThreadSampler, HighFrequency) {
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_DEBUG_BASE);
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
   ASSERT_OK(result.status_value());
-  zx::resource debug_resource = std::move(result.value());
+  zx::resource sampling_resource = std::move(result.value());
 
   zx_status_t create_res =
-      zx_sampler_create(debug_resource.get(), 0, &config, sampler.reset_and_get_address());
+      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;

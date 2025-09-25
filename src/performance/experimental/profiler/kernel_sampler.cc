@@ -17,24 +17,25 @@
 zx::result<std::unique_ptr<profiler::KernelSamplerSession>>
 profiler::KernelSamplerSession::CreateAndInit(const zx_sampler_config_t& config) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-  auto debug_client_end = component::Connect<fuchsia_kernel::DebugResource>();
-  if (debug_client_end.is_error()) {
-    FX_PLOGS(ERROR, debug_client_end.error_value()) << "Failed to get connect to debug resource";
-    return zx::error(debug_client_end.status_value());
+  auto sampling_client_end = component::Connect<fuchsia_kernel::SamplingResource>();
+  if (sampling_client_end.is_error()) {
+    FX_PLOGS(ERROR, sampling_client_end.error_value())
+        << "Failed to get connect to sampling resource";
+    return zx::error(sampling_client_end.status_value());
   }
-  auto debug_result = fidl::SyncClient(std::move(*debug_client_end))->Get();
-  if (!debug_result.is_ok()) {
-    FX_LOGS(ERROR) << debug_result.error_value() << " Failed to get debug resource";
-    return zx::error(debug_result.error_value().status());
+  auto sampling_result = fidl::SyncClient(std::move(*sampling_client_end))->Get();
+  if (!sampling_result.is_ok()) {
+    FX_LOGS(ERROR) << sampling_result.error_value() << " Failed to get sampling resource";
+    return zx::error(sampling_result.error_value().status());
   }
 
-  zx::resource debug_resource = std::move(debug_result->resource());
+  zx::resource sampling_resource = std::move(sampling_result->resource());
 
   zx::iob iob;
 
   FX_LOGS(DEBUG) << "Creating kernel sampler.";
   if (zx_status_t init_status =
-          zx_sampler_create(debug_resource.get(), 0, &config, iob.reset_and_get_address());
+          zx_sampler_create(sampling_resource.get(), 0, &config, iob.reset_and_get_address());
       init_status != ZX_OK) {
     FX_PLOGS(ERROR, init_status) << "Failed to create the kernel sampler.";
     return zx::error(init_status);

@@ -22,8 +22,8 @@
     use: [
         {
             protocol: [
-                "fuchsia.kernel.DebugResource",
                 "fuchsia.kernel.RootJob",
+                "fuchsia.kernel.SamplingResource",
                 "fuchsia.test.manager.SuiteRunner",
             ],
         },

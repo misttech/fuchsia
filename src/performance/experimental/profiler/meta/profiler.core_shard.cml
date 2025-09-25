@@ -12,8 +12,8 @@
     offer: [
         {
             protocol: [
-                "fuchsia.kernel.DebugResource",
                 "fuchsia.kernel.RootJob",
+                "fuchsia.kernel.SamplingResource",
                 "fuchsia.sys2.LifecycleController",
                 "fuchsia.sys2.LifecycleController.root",
             ],

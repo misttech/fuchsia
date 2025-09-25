@@ -34,7 +34,7 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
     return ZX_ERR_NOT_SUPPORTED;
   }
   if (zx_status_t status =
-          validate_ranged_resource(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_DEBUG_BASE, 1);
+          validate_ranged_resource(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_SAMPLING_BASE, 1);
       status != ZX_OK) {
     return status;
   }
