@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstddef>
+#include <iterator>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -991,5 +992,22 @@ TEST(SpanTest, DeductionGuideCheck) {
 }
 
 #endif
+
+TEST(SpanIteratorTest, IteratorTraitsCheck) {
+#if _LIBCPP_STD_VER >= 20
+  static_assert(std::forward_iterator<cpp20::internal::span_iterator<int>>);
+  static_assert(std::bidirectional_iterator<cpp20::internal::span_iterator<int>>);
+  static_assert(std::random_access_iterator<cpp20::internal::span_iterator<int>>);
+  static_assert(std::contiguous_iterator<cpp20::internal::span_iterator<int>>);
+#else
+  static_assert(std::is_base_of_v<std::forward_iterator_tag,
+                                  cpp20::internal::span_iterator<int>::iterator_category>);
+  static_assert(std::is_base_of_v<std::bidirectional_iterator_tag,
+                                  cpp20::internal::span_iterator<int>::iterator_category>);
+  static_assert(std::is_base_of_v<std::random_access_iterator_tag,
+                                  cpp20::internal::span_iterator<int>::iterator_category>);
+  static_assert(std::__libcpp_is_contiguous_iterator<cpp20::internal::span_iterator<int>>::value);
+#endif
+}
 
 }  // namespace

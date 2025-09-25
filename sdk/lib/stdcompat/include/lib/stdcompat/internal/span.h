@@ -59,7 +59,15 @@ class span_iterator {
   using value_type = std::remove_cv_t<T>;
   using pointer = T*;
   using reference = T&;
+
+#if _LIBCPP_STD_VER >= 20
+  using iterator_category = std::contiguous_iterator_tag;
+#else
+  // C++17 doesn't support std::contiguous_iterator_tag, so we have to
+  // instantiate the libc++ marker template type instead to indicate that the
+  // iterator is contiguous.
   using iterator_category = std::random_access_iterator_tag;
+#endif
 
   constexpr explicit span_iterator() : span_iterator(nullptr) {}
   constexpr explicit span_iterator(T* t) : ptr_(t) {}
@@ -82,7 +90,7 @@ class span_iterator {
 
   constexpr reference operator*() const { return *ptr_; }
   constexpr pointer operator->() const { return ptr_; }
-  constexpr reference operator[](difference_type offset) { return *(ptr_ + offset); }
+  constexpr reference operator[](difference_type offset) const { return *(ptr_ + offset); }
 
   constexpr bool operator==(span_iterator<T> other) const { return ptr_ == other.ptr_; }
   constexpr bool operator!=(span_iterator<T> other) const { return ptr_ != other.ptr_; }
@@ -104,26 +112,33 @@ class span_iterator {
     ptr_ -= 1;
     return *this;
   }
-  constexpr span_iterator<T>& operator--(int) {
-    *this -= 1;
-    return *this;
+  constexpr span_iterator<T> operator--(int) {
+    span_iterator<T> before = *this;
+    --(*this);
+    return before;
   }
-  constexpr span_iterator<T> operator+=(difference_type n) {
+  constexpr span_iterator<T>& operator+=(difference_type n) {
     ptr_ += n;
     return *this;
   }
-  constexpr span_iterator<T> operator-=(difference_type n) {
+  constexpr span_iterator<T>& operator-=(difference_type n) {
     ptr_ -= n;
     return *this;
   }
   constexpr span_iterator<T> operator-(difference_type n) const { return span_iterator(ptr_ - n); }
   constexpr span_iterator<T> operator+(difference_type n) const { return span_iterator(ptr_ + n); }
 
-  constexpr difference_type operator-(span_iterator<T> other) { return ptr_ - other.ptr_; }
+  constexpr difference_type operator-(span_iterator<T> other) const { return ptr_ - other.ptr_; }
 
  private:
   T* ptr_;
 };
+
+template <typename T>
+constexpr span_iterator<T> operator+(typename span_iterator<T>::difference_type n,
+                                     span_iterator<T> it) {
+  return it + n;
+}
 
 }  // namespace internal
 
