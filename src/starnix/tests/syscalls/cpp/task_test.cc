@@ -1079,11 +1079,19 @@ TEST(Task, KillZombieEPERM) {
 
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([]() {
+    // TODO: https://fxbug.dev/445899985 - Remove this once pidfd_open() is fixed for zombies.
+    test_helper::EventFdSem sem(0);
+
     pid_t child_pid = SAFE_SYSCALL(fork());
     if (child_pid == 0) {
+      SAFE_SYSCALL(sem.Wait());
       _exit(EXIT_SUCCESS);
     }
     int pidfd = test_helper::PidFdOpen(child_pid, 0);
+
+    // TODO: https://fxbug.dev/445899985 - Remove this once pidfd_open() is fixed for zombies.
+    SAFE_SYSCALL(sem.Notify(1));
+
     WaitForReadFd(pidfd);
     close(pidfd);
 
