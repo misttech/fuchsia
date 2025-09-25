@@ -9,16 +9,17 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
-#include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/ddk/device.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/sync/completion.h>
 #include <zircon/listnode.h>
 
 #include <array>
 #include <mutex>
+#include <optional>
+#include <thread>
 
-#include <bind/fuchsia/ethernet/cpp/bind.h>
+#include <ddktl/device.h>
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/cdc.h>
 #include <usb/request-fidl.h>
@@ -38,19 +39,22 @@ namespace usb_cdc_function {
 // header.
 #define ETH_MTU 1514
 
-class UsbCdcFunction : public fdf::DriverBase,
-                       public ddk::EthernetImplProtocol<UsbCdcFunction>,
+class UsbCdcFunction;
+using UsbCdcFunctionType = ddk::Device<UsbCdcFunction, ddk::Initializable, ddk::Unbindable>;
+
+class UsbCdcFunction : public UsbCdcFunctionType,
+                       public ddk::EthernetImplProtocol<UsbCdcFunction, ddk::base_protocol>,
                        public ddk::UsbFunctionInterfaceProtocol<UsbCdcFunction> {
  public:
-  static constexpr std::string_view kDriverName = "usb_cdc_function";
+  explicit UsbCdcFunction(zx_device_t* parent) : UsbCdcFunctionType(parent), function_(parent) {}
 
-  UsbCdcFunction(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  // Driver bind method.
+  static zx_status_t Bind(void* ctx, zx_device_t* parent);
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void DdkInit(ddk::InitTxn txn);
+  void DdkRelease();
+  void DdkSuspend(ddk::SuspendTxn txn);
+  void DdkUnbind(ddk::UnbindTxn txn);
 
   // EthernetImpl methods.
   zx_status_t EthernetImplQuery(uint32_t options, ethernet_info_t* out_info);
@@ -83,20 +87,7 @@ class UsbCdcFunction : public fdf::DriverBase,
   void cdc_rx_complete(fuchsia_hardware_usb_endpoint::Completion completion);
   void cdc_tx_complete(fuchsia_hardware_usb_endpoint::Completion completion);
 
- private:
-  compat::DeviceServer::BanjoConfig get_banjo_config() {
-    compat::DeviceServer::BanjoConfig config{bind_fuchsia_ethernet::BIND_PROTOCOL_IMPL};
-    config.callbacks[bind_fuchsia_ethernet::BIND_PROTOCOL_IMPL] = banjo_server_.callback();
-    return config;
-  }
-
   ddk::UsbFunctionProtocolClient function_;
-
-  compat::BanjoServer banjo_server_{bind_fuchsia_ethernet::BIND_PROTOCOL_IMPL, this,
-                                    &ethernet_impl_protocol_ops_};
-  compat::SyncInitializedDeviceServer child_;
-
-  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_controller_;
 
   fdf::SynchronizedDispatcher dispatcher_;
 
@@ -139,6 +130,9 @@ class UsbCdcFunction : public fdf::DriverBase,
   uint8_t bulk_out_addr_ = 0;
   uint8_t bulk_in_addr_ = 0;
   uint8_t intr_addr_ = 0;
+
+  std::optional<std::thread> suspend_thread_;
+  std::optional<ddk::SuspendTxn> suspend_txn_;
 
   struct {
     usb_interface_descriptor_t comm_intf;

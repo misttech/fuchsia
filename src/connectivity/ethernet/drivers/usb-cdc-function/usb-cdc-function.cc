@@ -8,15 +8,16 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
-#include <lib/driver/compat/cpp/banjo_client.h>
-#include <lib/driver/component/cpp/driver_export.h>
-#include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/ddk/binding_driver.h>
+#include <lib/ddk/debug.h>
+#include <lib/ddk/trace/event.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/trace/event.h>
 
+#include <cinttypes>
 #include <mutex>
 #include <vector>
 
+#include <ddktl/metadata_server.h>
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/request-fidl.h>
 #include <usb/usb-request.h>
@@ -62,7 +63,7 @@ static void complete_txn(txn_info_t* txn, zx_status_t status) {
 
 zx_status_t UsbCdcFunction::insert_usb_request(usb::FidlRequest&& req,
                                                usb::EndpointClient<UsbCdcFunction>& ep) {
-  if (unbound_) {
+  if (suspend_txn_.has_value()) {
     return ZX_OK;
   }
   ep.PutRequest(std::move(req));
@@ -71,7 +72,7 @@ zx_status_t UsbCdcFunction::insert_usb_request(usb::FidlRequest&& req,
 
 void UsbCdcFunction::usb_request_queue(usb::FidlRequest&& req,
                                        usb::EndpointClient<UsbCdcFunction>& ep) {
-  if (unbound_) {
+  if (suspend_txn_.has_value()) {
     return;
   }
 
@@ -82,21 +83,20 @@ void UsbCdcFunction::usb_request_queue(usb::FidlRequest&& req,
 }
 
 zx_status_t UsbCdcFunction::cdc_generate_mac_address() {
-  zx::result result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
+  zx::result result = ddk::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(parent_);
   if (result.is_error()) {
-    fdf::error("Failed to get MAC address metadata: {}", result);
+    zxlogf(ERROR, "Failed to get MAC address metadata: %s", result.status_string());
     return result.status_value();
   }
   if (result.value().has_value()) {
     const auto& metadata = result.value().value();
     if (!metadata.mac_address().has_value()) {
-      fdf::error("MAC address metadata missing mac_address field");
+      zxlogf(ERROR, "MAC address metadata missing mac_address field");
       return ZX_ERR_INTERNAL;
     }
     mac_addr_ = metadata.mac_address().value().octets();
   } else {
-    fdf::info("ethernet MAC metadata not found. Generating random address");
+    zxlogf(INFO, "ethernet MAC metadata not found. Generating random address");
 
     zx_cprng_draw(mac_addr_.data(), mac_addr_.size());
     mac_addr_[0] = 0x02;
@@ -115,7 +115,7 @@ zx_status_t UsbCdcFunction::cdc_generate_mac_address() {
 zx_status_t UsbCdcFunction::EthernetImplQuery(uint32_t options, ethernet_info_t* out_info) {
   // No options are supported
   if (options) {
-    fdf::error("unexpected options (0x{:x}) to ethernet_impl_query", options);
+    zxlogf(ERROR, "unexpected options (0x%" PRIx32 ") to ethernet_impl_query", options);
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -181,7 +181,7 @@ zx_status_t UsbCdcFunction::cdc_send_locked(ethernet_netbuf_t* netbuf) {
 
   zx_status_t status = tx_req->CacheFlush(bulk_in_ep_.GetMappedLocked());
   if (status != ZX_OK) {
-    fdf::error("[bug] tx_req->CacheFlush(): {}", zx_status_get_string(status));
+    zxlogf(ERROR, "[bug] tx_req->CacheFlush(): %s", zx_status_get_string(status));
     return status;
   }
   usb_request_queue(std::move(tx_req.value()), bulk_in_ep_);
@@ -208,7 +208,7 @@ void UsbCdcFunction::EthernetImplQueueTx(uint32_t options, ethernet_netbuf_t* ne
 
   {
     std::lock_guard<std::mutex> tx(tx_mutex_);
-    if (unbound_) {
+    if (unbound_ || suspend_txn_.has_value()) {
       status = ZX_ERR_IO_NOT_PRESENT;
     } else {
       status = cdc_send_locked(netbuf);
@@ -234,7 +234,7 @@ void UsbCdcFunction::cdc_intr_complete(fendpoint::Completion completion) {
   usb::FidlRequest req{std::move(completion.request().value())};
 
   std::lock_guard<std::mutex> intr(intr_mutex_);
-  if (!unbound_) {
+  if (!suspend_txn_.has_value()) {
     zx_status_t status = insert_usb_request(std::move(req), intr_ep_);
     ZX_DEBUG_ASSERT(status == ZX_OK);
   }
@@ -277,7 +277,7 @@ void UsbCdcFunction::cdc_send_notifications() {
   }
   std::optional<usb::FidlRequest> req = intr_ep_.GetRequest();
   if (!req.has_value()) {
-    fdf::error("[bug] intr_ep_.GetRequest(): no request available");
+    zxlogf(ERROR, "[bug] intr_ep_.GetRequest(): no request available");
     return;
   }
 
@@ -298,7 +298,7 @@ void UsbCdcFunction::cdc_send_notifications() {
   usb_request_queue(std::move(req.value()), intr_ep_);
   std::optional<usb::FidlRequest> req2 = intr_ep_.GetRequest();
   if (!req2.has_value()) {
-    fdf::error("[bug] intr_ep_.GetRequest(): no request available");
+    zxlogf(ERROR, "[bug] intr_ep_.GetRequest(): no request available");
     return;
   }
 
@@ -329,7 +329,7 @@ void UsbCdcFunction::cdc_rx_complete(fendpoint::Completion completion) {
     return;
   }
   if (status != ZX_OK) {
-    fdf::error("[bug] rx_completion: {}", zx_status_get_string(status));
+    zxlogf(ERROR, "[bug] rx_completion: %s", zx_status_get_string(status));
   }
 
   if (status == ZX_OK) {
@@ -345,7 +345,7 @@ void UsbCdcFunction::cdc_rx_complete(fendpoint::Completion completion) {
   req.reset_buffers(bulk_out_ep_.GetMapped());
   status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
   if (status != ZX_OK) {
-    fdf::error("[bug] CacheFlushInvalidate(): {}", zx_status_get_string(status));
+    zxlogf(ERROR, "[bug] CacheFlushInvalidate(): %s", zx_status_get_string(status));
   }
 
   usb_request_queue(std::move(req), bulk_out_ep_);
@@ -362,7 +362,7 @@ void UsbCdcFunction::cdc_tx_complete(fendpoint::Completion completion) {
       [&]() -> std::optional<std::tuple<txn_info_t*, zx_status_t>> {
     std::lock_guard<std::mutex> tx(tx_mutex_);
     {
-      if (unbound_) {
+      if (suspend_txn_.has_value()) {
         return std::nullopt;
       }
       zx_status_t status = insert_usb_request(std::move(req), bulk_in_ep_);
@@ -410,10 +410,10 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup
   uint16_t w_index{le16toh(setup->w_index)};
   uint16_t w_length{le16toh(setup->w_length)};
 
-  fdf::debug(
-      "bmRequestType={:02x} bRequest={:02x} wValue={:04x} ({}) wIndex={:04x} ({}) wLength={:04x} ({})",
-      setup->bm_request_type, setup->b_request, w_value, w_value, w_index, w_index, w_length,
-      w_length);
+  zxlogf(DEBUG,
+         "bmRequestType=%02x bRequest=%02x wValue=%04x (%d) wIndex=%04x (%d) wLength=%04x (%d)",
+         setup->bm_request_type, setup->b_request, w_value, w_value, w_index, w_index, w_length,
+         w_length);
 
   TRACE_DURATION("cdc_eth", __func__, "write_size", write_size, "read_size", read_size);
   if (out_read_actual != NULL) {
@@ -425,14 +425,14 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup
 
   if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
       setup->b_request == USB_CDC_SET_ETHERNET_PACKET_FILTER) {
-    fdf::debug("setting packet filter not supported");
+    zxlogf(DEBUG, "setting packet filter not supported");
     // TODO(voydanoff) implement the requested packet filtering
     return ZX_OK;
   }
 
   if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
       setup->b_request == USB_REQ_CLEAR_FEATURE && setup->w_value == USB_ENDPOINT_HALT) {
-    fdf::debug("clearing endpoint-halt not supported");
+    zxlogf(DEBUG, "clearing endpoint-halt not supported");
     return ZX_OK;
   }
 
@@ -454,10 +454,10 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetConfigured(bool configured, u
     }
   }
 
-  fdf::info("configured = {}", configured);
+  zxlogf(INFO, "configured = %d", configured);
   if (configured) {
     if (zx_status_t status = function_.ConfigEp(&descriptors_.intr_ep, NULL); status != ZX_OK) {
-      fdf::error("[bug] ConfigEp(): {}", zx_status_get_string(status));
+      zxlogf(ERROR, "[bug] ConfigEp(): %s", zx_status_get_string(status));
       return status;
     }
     speed_ = speed;
@@ -490,14 +490,14 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
   if (alt_setting) {
     for (const auto* ep : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
       if (zx_status_t status = function_.ConfigEp(ep, nullptr); status != ZX_OK) {
-        fdf::error("[bug] ConfigEp(): {}", zx_status_get_string(status));
+        zxlogf(ERROR, "[bug] ConfigEp(): %s", zx_status_get_string(status));
         return status;
       }
     }
   } else {
     for (const uint8_t ep : {bulk_out_addr_, bulk_in_addr_}) {
       if (zx_status_t status = function_.DisableEp(ep); status != ZX_OK) {
-        fdf::error("[bug] DisableEp(): {}", zx_status_get_string(status));
+        zxlogf(ERROR, "[bug] DisableEp(): %s", zx_status_get_string(status));
         return status;
       }
     }
@@ -516,7 +516,7 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
 
       if (zx_status_t status = req->CacheFlushInvalidate(bulk_out_ep_.GetMappedLocked());
           status != ZX_OK) {
-        fdf::error("[bug] CacheFlushInvalidate(): {}", zx_status_get_string(status));
+        zxlogf(ERROR, "[bug] CacheFlushInvalidate(): %s", zx_status_get_string(status));
         return status;
       }
       usb_request_queue(std::move(req.value()), bulk_out_ep_);
@@ -550,14 +550,7 @@ void UsbCdcFunction::DiscardPendingTxInfos(zx_status_t status) {
   }
 }
 
-zx::result<> UsbCdcFunction::Start() {
-  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    fdf::error("Failed to connect function: {}", function);
-    return function.take_error();
-  }
-  function_ = *function;
-
+void UsbCdcFunction::DdkInit(ddk::InitTxn txn) {
   list_initialize(&tx_pending_infos_);
 
   // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
@@ -574,15 +567,16 @@ zx::result<> UsbCdcFunction::Start() {
       {}, "init-state-checker",
       [&](fdf_dispatcher_t*) { sync_completion_signal(&state_dispatcher_shutdown); });
   if (state_dispatcher.is_error()) {
-    fdf::error("Failed to create synchronized dispatcher: {}", state_dispatcher);
-    return state_dispatcher.take_error();
+    zxlogf(ERROR, "Failed to create synchronized dispatcher: %s", state_dispatcher.status_string());
+    txn.Reply(state_dispatcher.error_value());
+    return;
   }
 
   async::PostDelayedTask(
       state_dispatcher.value().async_dispatcher(),
       [start = zx::clock::get_monotonic(), &state]() {
         auto now = zx::clock::get_monotonic();
-        const char* reason = "Unknown";
+        std::string reason = "Unknown";
         switch (state) {
           case InitState::kWaitingForAllocInterface1:
             reason = "Waiting for AllocInterface(1)";
@@ -624,21 +618,23 @@ zx::result<> UsbCdcFunction::Start() {
             reason = "Waiting for SetInterface()";
             break;
         }
-        fdf::warn("Initialization still has not completed after {} seconds: {}",
-                  (now - start).to_secs(), reason);
+        zxlogf(WARNING, "Initialization still has not completed after %li seconds: %s",
+               (now - start).to_secs(), reason.c_str());
       },
       zx::sec(20));
 
   auto status = function_.AllocInterface(&descriptors_.comm_intf.b_interface_number);
   if (status != ZX_OK) {
-    fdf::error("[bug] AllocInterface(comm_intf): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] AllocInterface(comm_intf): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
   state = InitState::kWaitingForAllocInterface2;
   status = function_.AllocInterface(&descriptors_.cdc_intf_0.b_interface_number);
   if (status != ZX_OK) {
-    fdf::error("[bug] AllocInterface(data_intf): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] AllocInterface(data_intf): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
   descriptors_.cdc_intf_1.b_interface_number = descriptors_.cdc_intf_0.b_interface_number;
   descriptors_.cdc_union.bControlInterface = descriptors_.comm_intf.b_interface_number;
@@ -647,20 +643,23 @@ zx::result<> UsbCdcFunction::Start() {
   state = InitState::kWaitingForAllocEp1;
   status = function_.AllocEp(USB_DIR_OUT, &bulk_out_addr_);
   if (status != ZX_OK) {
-    fdf::error("[bug] AllocEp(bulk_out): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] AllocEp(bulk_out): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
   state = InitState::kWaitingForAllocEp2;
   status = function_.AllocEp(USB_DIR_IN, &bulk_in_addr_);
   if (status != ZX_OK) {
-    fdf::error("[bug] AllocEp(bulk_in): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] AllocEp(bulk_in): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
   state = InitState::kWaitingForAllocEp3;
   status = function_.AllocEp(USB_DIR_IN, &intr_addr_);
   if (status != ZX_OK) {
-    fdf::error("[bug] AllocEp(intr): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] AllocEp(intr): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
 
   descriptors_.bulk_out_ep.b_endpoint_address = bulk_out_addr_;
@@ -670,131 +669,170 @@ zx::result<> UsbCdcFunction::Start() {
   state = InitState::kWaitingForMacAddress;
   status = cdc_generate_mac_address();
   if (status != ZX_OK) {
-    return zx::error(status);
+    txn.Reply(status);
+    return;
   }
 
   auto dispatcher =
       fdf::SynchronizedDispatcher::Create({}, "cdc-ep-dispatcher", [](fdf_dispatcher_t*) {});
   if (dispatcher.is_error()) {
-    fdf::error("[bug] fdf::SynchronizedDispatcher::Create(): {}", dispatcher);
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] fdf::SynchronizedDispatcher::Create(): %s", dispatcher.status_string());
+    txn.Reply(dispatcher.error_value());
+    return;
   }
   dispatcher_ = std::move(dispatcher.value());
 
-  auto result = incoming()->Connect<ffunction::UsbFunctionService::Device>();
+  auto result = DdkConnectFidlProtocol<ffunction::UsbFunctionService::Device>(parent());
   if (result.is_error()) {
-    fdf::error("could not connect to UsbFunctionService: {}", result);
-    return zx::error(status);
+    zxlogf(ERROR, "could not connect to UsbFunctionService: %s", result.status_string());
+    txn.Reply(result.error_value());
+    return;
   }
 
   state = InitState::kWaitingForInit1;
   // allocate bulk out usb requests
   status = bulk_out_ep_.Init(bulk_out_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
-    fdf::error("[bug] bulk_out_ep_.Init(): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] bulk_out_ep_.Init(): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
 
   state = InitState::kWaitingForAddRequests1;
   size_t actual =
       bulk_out_ep_.AddRequests(BULK_RX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != BULK_RX_COUNT) {
-    fdf::error("[bug] bulk_out_ep_.AddRequests(): want {}, got {}", BULK_RX_COUNT, actual);
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] bulk_out_ep_.AddRequests(): want %d, got %zu", BULK_RX_COUNT, actual);
+    txn.Reply(ZX_ERR_INTERNAL);
+    return;
   }
 
   state = InitState::kWaitingForInit2;
   // allocate bulk in usb requests
   status = bulk_in_ep_.Init(bulk_in_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
-    fdf::error("[bug] bulk_in_ep_.Init(): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] bulk_in_ep_.Init(): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
 
   state = InitState::kWaitingForAddRequests2;
   actual = bulk_in_ep_.AddRequests(BULK_TX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != BULK_TX_COUNT) {
-    fdf::error("[bug] bulk_in_ep_.AddRequests(): want {}, got {}", BULK_TX_COUNT, actual);
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] bulk_in_ep_.AddRequests(): want %d, got %zu", BULK_TX_COUNT, actual);
+    txn.Reply(ZX_ERR_INTERNAL);
+    return;
   }
 
   state = InitState::kWaitingForInit3;
   // allocate interrupt requests
   status = intr_ep_.Init(intr_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
-    fdf::error("[bug] intr_ep_.Init(): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] intr_ep_.Init(): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
 
   state = InitState::kWaitingForAddRequests3;
   actual = intr_ep_.AddRequests(INTR_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != INTR_COUNT) {
-    fdf::error("[bug] intr_ep_.AddRequests(): want {}, got {}", INTR_COUNT, actual);
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] intr_ep_.AddRequests(): want %d, got %zu", INTR_COUNT, actual);
+    txn.Reply(ZX_ERR_INTERNAL);
+    return;
   }
 
   state = InitState::kWaitingForSetInterface;
   status = function_.SetInterface(this, &usb_function_interface_protocol_ops_);
   if (status != ZX_OK) {
-    fdf::error("[bug] function_.SetInterface(): {}", zx_status_get_string(status));
-    return zx::error(status);
+    zxlogf(ERROR, "[bug] function_.SetInterface(): %s", zx_status_get_string(status));
+    txn.Reply(status);
+    return;
   }
 
   state_dispatcher.value().ShutdownAsync();
   sync_completion_wait(&state_dispatcher_shutdown, ZX_TIME_INFINITE);
-
-  constexpr char kChildName[] = "cdc-eth-function";
-  {
-    zx::result<> result = child_.Initialize(incoming(), outgoing(), node_name(), kChildName,
-                                            compat::ForwardMetadata::None(), get_banjo_config());
-    if (result.is_error()) {
-      return result.take_error();
-    }
-  }
-
-  zx::result controller =
-      AddChild(kChildName, {{banjo_server_.property()}}, child_.CreateOffers2());
-  if (controller.is_error()) {
-    fdf::error("Failed to add child with error: {}", controller);
-    return controller.take_error();
-  }
-  child_controller_ = std::move(controller.value());
-
-  return zx::ok();
+  txn.Reply(ZX_OK);
 }
 
-void UsbCdcFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
-  // Start the suspend process by setting unbound to true.
-  // When the pipeline tries to submit requests, they will be immediately free'd.
+void UsbCdcFunction::DdkUnbind(ddk::UnbindTxn txn) {
   unbound_ = true;
+  DiscardPendingTxInfos(ZX_ERR_PEER_CLOSED);
 
-  // Disable endpoints to prevent new requests present in our
-  // pipeline from getting queued.
-  function_.DisableEp(bulk_out_addr_);
-  function_.DisableEp(bulk_in_addr_);
-  function_.DisableEp(intr_addr_);
+  txn.Reply();
+}
 
-  // Cancel all requests in the pipeline -- the completion handler
-  // will free these requests as they come in.
-  function_.CancelAll(intr_addr_);
-  function_.CancelAll(bulk_out_addr_);
-  function_.CancelAll(bulk_in_addr_);
-
-  list_node_t list;
-  {
-    std::lock_guard<std::mutex> l(tx_mutex_);
-    list_move(tx_pending_infos(), &list);
-  }
-  txn_info_t* tx_txn;
-  while ((tx_txn = list_remove_head_type(&list, txn_info_t, node)) != NULL) {
-    complete_txn(tx_txn, ZX_ERR_PEER_CLOSED);
+void UsbCdcFunction::DdkRelease() {
+  if (suspend_thread_.has_value()) {
+    suspend_thread_->join();
   }
 
   dispatcher_.ShutdownAsync();
   dispatcher_.release();
-  completer(zx::ok());
+
+  delete this;
 }
+
+void UsbCdcFunction::DdkSuspend(ddk::SuspendTxn txn) {
+  // Start the suspend process by setting the suspend txn
+  // When the pipeline tries to submit requests, they will be immediately free'd.
+  suspend_txn_.emplace(std::move(txn));
+  suspend_thread_.emplace([this]() {
+    // Disable endpoints to prevent new requests present in our
+    // pipeline from getting queued.
+    function_.DisableEp(bulk_out_addr_);
+    function_.DisableEp(bulk_in_addr_);
+    function_.DisableEp(intr_addr_);
+
+    // Cancel all requests in the pipeline -- the completion handler
+    // will free these requests as they come in.
+    function_.CancelAll(intr_addr_);
+    function_.CancelAll(bulk_out_addr_);
+    function_.CancelAll(bulk_in_addr_);
+
+    list_node_t list;
+    {
+      std::lock_guard<std::mutex> l(tx_mutex_);
+      list_move(tx_pending_infos(), &list);
+    }
+    txn_info_t* tx_txn;
+    while ((tx_txn = list_remove_head_type(&list, txn_info_t, node)) != NULL) {
+      complete_txn(tx_txn, ZX_ERR_PEER_CLOSED);
+    }
+
+    suspend_txn_->Reply(ZX_OK, 0);
+  });
+}
+
+zx_status_t UsbCdcFunction::Bind(void* ctx, zx_device_t* parent) {
+  auto cdc = std::make_unique<UsbCdcFunction>(parent);
+  if (!cdc) {
+    return ZX_ERR_NO_MEMORY;
+  }
+
+  zx_status_t status = cdc->DdkAdd("cdc-eth-function");
+
+  // Either the DDK now owns this reference, or (in the case of failure) it will be freed in the
+  // block below. In either case, we want to avoid the unique_ptr destructing the allocated
+  // UsbCdcFunction instance.
+  [[maybe_unused]] auto released = cdc.release();
+
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "adding device fails: %s", zx_status_get_string(status));
+    cdc->DdkRelease();
+    return status;
+  }
+
+  return ZX_OK;
+}
+
+static constexpr zx_driver_ops_t driver_ops = []() {
+  zx_driver_ops_t ops = {};
+  ops.version = DRIVER_OPS_VERSION;
+  ops.bind = UsbCdcFunction::Bind;
+  return ops;
+}();
 
 }  // namespace usb_cdc_function
 
-FUCHSIA_DRIVER_EXPORT(usb_cdc_function::UsbCdcFunction);
+// clang-format off
+ZIRCON_DRIVER(usb_cdc_function, usb_cdc_function::driver_ops, "zircon", "0.1");
