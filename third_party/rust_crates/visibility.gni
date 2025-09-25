@@ -82,7 +82,6 @@ lazy_static_visibility = [
   "//src/connectivity/wlan/tests/drivers-only/common:*",
   "//src/connectivity/wlan/tests/helpers/fullmac-helpers:*",
   "//src/connectivity/wlan/wlancfg:*",
-  "//src/developer/fastboot:*",
   "//src/fonts:*",
   "//src/hwinfo/mock:*",
   "//src/lib/async-utils:*",
