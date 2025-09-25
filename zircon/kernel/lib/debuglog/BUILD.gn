@@ -27,7 +27,7 @@ source_set("debuglog") {
   ]
 }
 
-source_set("kerneltests") {
+source_set("kernel-tests") {
   #TODO: testonly = true
 
   sources = [ "debuglog_tests.cc" ]

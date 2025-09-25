@@ -106,6 +106,7 @@ if (toolchain_environment == "kernel") {
       "wait_queue_ordering_tests.cc",
     ]
     deps = [
+      "//zircon/kernel/lib:kernel-tests",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/console",

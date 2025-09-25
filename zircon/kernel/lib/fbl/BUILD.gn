@@ -33,7 +33,10 @@ library_headers("headers") {
 
 source_set("kernel-tests") {
   #TODO: testonly = true
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//zircon/kernel/lib:kernel-tests",
+  ]
   sources = [
     "arena_tests.cc",
     "gparena_tests.cc",

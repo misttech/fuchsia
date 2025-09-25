@@ -19,7 +19,7 @@ static_library("pow2_range_allocator") {
 source_set("kernel-tests") {
   sources = [ "pow2_range_allocator_tests.cc" ]
   deps = [
-    ":headers",
+    ":pow2_range_allocator",
     "//zircon/kernel/lib/unittest",
   ]
 }
