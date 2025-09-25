@@ -196,6 +196,16 @@
             {
                 source_moniker: "<component_manager>",
                 source: "component",
+                source_name: "fuchsia.kernel.SamplingResource",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/testing/system-tests:**",
+                    "/core/test_manager/system-tests:**",
+                ],
+            },
+            {
+                source_moniker: "<component_manager>",
+                source: "component",
                 source_name: "fuchsia.kernel.SmcResource",
                 capability: "protocol",
                 target_monikers: [

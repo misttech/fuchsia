@@ -57,6 +57,7 @@ rustc_library("builtins") {
     "src/power_resource.rs",
     "src/profile_resource.rs",
     "src/root_job.rs",
+    "src/sampling_resource.rs",
     "src/smc_resource.rs",
     "src/stall_resource.rs",
     "src/tracing_resource.rs",

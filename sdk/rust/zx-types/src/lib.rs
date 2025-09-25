@@ -585,6 +585,8 @@ multiconst!(zx_rsrc_system_base_t, [
     ZX_RSRC_SYSTEM_DEBUGLOG_BASE    = 12;
     ZX_RSRC_SYSTEM_STALL_BASE       = 13;
     ZX_RSRC_SYSTEM_TRACING_BASE     = 14;
+    // A resource representing the ability to sample callstack information about other processes.
+    ZX_RSRC_SYSTEM_SAMPLING_BASE    = 15;
 ]);
 
 // clock ids

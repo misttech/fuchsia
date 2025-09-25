@@ -84,6 +84,7 @@ use builtins::msi_resource::MsiResource;
 use builtins::power_resource::PowerResource;
 use builtins::profile_resource::ProfileResource;
 use builtins::root_job::RootJob;
+use builtins::sampling_resource::SamplingResource;
 use builtins::stall_resource::StallResource;
 use builtins::tracing_resource::TracingResource;
 use builtins::vmex_resource::VmexResource;
@@ -1498,6 +1499,28 @@ impl BuiltinEnvironment {
         if let Some(stall_resource) = stall_resource {
             root_input_builder.add_builtin_protocol_if_enabled::<fkernel::StallResourceMarker>(
                 move |stream| stall_resource.clone().serve(stream).boxed(),
+            );
+        }
+
+        // Set up the SamplingResource service.
+        let sampling_resource = system_resource_handle
+            .as_ref()
+            .and_then(|handle| {
+                handle
+                    .create_child(
+                        zx::ResourceKind::SYSTEM,
+                        None,
+                        zx::sys::ZX_RSRC_SYSTEM_SAMPLING_BASE,
+                        1,
+                        b"sampling",
+                    )
+                    .ok()
+            })
+            .map(SamplingResource::new)
+            .and_then(Result::ok);
+        if let Some(sampling_resource) = sampling_resource {
+            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::SamplingResourceMarker>(
+                move |stream| sampling_resource.clone().serve(stream).boxed(),
             );
         }
 
