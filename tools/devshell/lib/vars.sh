@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 # Lack of shebang in this file is intentional
-# shellcheck disable=SC2148
 
 # This file can be sourced multiple times when running certain tests.
 # Guard against it to avoid errors about redefining readonly variables.
@@ -139,6 +138,40 @@ else
   }
 fi
 
+readonly BUILD_LOGS_DIR=_build_logs
+readonly build_logs_root="${FUCHSIA_OUT_DIR}/${BUILD_LOGS_DIR}"
+
+# Establishes a centralized log directory for a build invocation.
+# The directory structure is:
+#   ${build_logs_root}/$(basename ${FUCHSIA_BUILD_DIR})/build.<timestamp>
+function fx-new-build-log-dir() {
+  fx-config-read
+  local -r out_dir_name="$(basename "${FUCHSIA_BUILD_DIR}")"
+  local -r log_dir_base="${build_logs_root}/${out_dir_name}"
+  mkdir -p "${log_dir_base}"
+
+  local timestamp
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  local log_dir
+  log_dir="$(mktemp -d "${log_dir_base}/build.${timestamp}.XXXXXXXX")"
+  echo "${log_dir}"
+}
+
+# Prints the path to the most recent build log directory
+# created by fx-new-build-log-dir().
+function fx-get-last-build-log-dir() {
+  fx-build-dir-if-present || return
+  local -r out_dir_name="$(basename "${FUCHSIA_BUILD_DIR}")"
+  local -r log_dir_base="${build_logs_root}/${out_dir_name}"
+  if [[ -d "$log_dir_base" ]]; then
+    # shellcheck disable=SC2012
+    local -r recent_log_dir="$(ls -1 -d "${log_dir_base}"/build.* | tail -n 1)"
+    if [[ -d "$recent_log_dir" ]]; then
+      echo "$recent_log_dir"
+      return
+    fi
+  fi
+}
 
 # Use this to conditionally prefix a command with "${RBE_WRAPPER[@]}".
 # NOTE: this function depends on FUCHSIA_BUILD_DIR which is set only after
@@ -1107,27 +1140,20 @@ EOF
     )
   fi
 
+  # Create a unique log directory for this build invocation.
+  # Do this unconditionally, so that other build-log-consuming
+  # tools can use it.
+  local -r build_log_dir="$(fx-new-build-log-dir)"
+
   local -a rbe_wrapper=()
   if fx-rbe-enabled
   then
-    # Move the reproxy logs outside of $FUCHSIA_BUILD_DIR so they do not get cleaned,
-    # but under 'out' so it does not pollute the source root.
-    # `fx rbe cleanlogs` will remove all of the accumulated reproxy logs.
-    # Choose a unique reproxy log dir based on basename of $FUCHSIA_BUILD_DIR.
-    local -r _build_dir_base="${FUCHSIA_BUILD_DIR##*/}"  # basename
-
-    # LINT.IfChange(reproxy_log_dirs)
-    local -r _logs_root="$FUCHSIA_DIR/out/.reproxy_logs/$_build_dir_base"
-    # LINT.ThenChange(/tools/devshell/rbe:reproxy_log_dirs)
-    mkdir -p "$_logs_root"
-    # 'mktemp -p' still yields to TMPDIR in the environment (bug?),
-    # so override TMPDIR instead.
-    local -r reproxy_logdir="$(env TMPDIR="$_logs_root" mktemp -d -t "reproxy.$date.XXXX")"
-    local -r _log_base="${reproxy_logdir##*/}"  # basename
+    local -r reproxy_logdir="${build_log_dir}/reproxy_logs"
+    mkdir -p "${reproxy_logdir}"
 
     # reproxy wants temporary space on the same physical device where the build happens.
     # Re-use the randomly generated dir name in a custom tempdir.
-    local -r reproxy_tmpdir="$FUCHSIA_BUILD_DIR/.reproxy_tmpdirs/$_log_base"
+    local -r reproxy_tmpdir="$FUCHSIA_BUILD_DIR/.reproxy_tmpdirs/$(basename "${build_log_dir}")"
     mkdir -p "$reproxy_tmpdir"
 
     # Honor additional cfg files from the current build dir.
@@ -1190,12 +1216,10 @@ EOF
   if [[ "$BUILD_PROFILE_ENABLED" == 1 ]]
   then
     # Collect system profile data while build is running.
-    # Note: this profile dir will get cleaned by 'fx clean'
-    local profile_dir="${FUCHSIA_BUILD_DIR}/.build_profile"
+    local profile_dir="${build_log_dir}/build_profile"
     mkdir -p "$profile_dir"
-    local vmstat_log ifconfig_log
-    vmstat_log="$(env TMPDIR="$profile_dir" mktemp -t "vmstat.$date.XXXX.log")"
-    ifconfig_log="$(env TMPDIR="$profile_dir" mktemp -t "ifconfig.$date.XXXX.log")"
+    local vmstat_log="${profile_dir}/vmstat.log"
+    local ifconfig_log="${profile_dir}/ifconfig.log"
     profile_wrapper=(
       "$profile_wrap"
       --vmstat-log "$vmstat_log"

@@ -402,14 +402,24 @@ function cleanlogs_subcommand() {
 # build output directory.  If none exists, print nothing.
 function last_logdir_subcommand() {
   fx-build-dir-if-present || return
-  # Location based on $FUCHSIA_DIR/build/rbe/fuchsia-reproxy-wrap.sh
   local -r build_subdir="$(basename "${FUCHSIA_BUILD_DIR}")"
   local -r out_dir="$(basename "$(dirname "${FUCHSIA_BUILD_DIR}")")"
-  local -r logs_dir="${FUCHSIA_DIR}/${out_dir}/.reproxy_logs/${build_subdir}"
-  if [[ -d "$logs_dir" ]]
+  local -r new_logs_dir="${FUCHSIA_DIR}/${out_dir}/.build_logs/${build_subdir}"
+  if [[ -d "$new_logs_dir" ]]; then
+    # shellcheck disable=SC2012
+    local -r recent_log_dir="$(ls -1 -d "${new_logs_dir}"/build.* | tail -n 1)"
+    if [[ -d "$recent_log_dir" ]]; then
+      echo "$recent_log_dir"
+      return
+    fi
+  fi
+
+  # Fallback to the old location.
+  local -r old_logs_dir="${FUCHSIA_DIR}/${out_dir}/.reproxy_logs/${build_subdir}"
+  if [[ -d "$old_logs_dir" ]]
   then
     # shellcheck disable=SC2012
-    local -r recent_rbe_log_dir="$(ls -1 -d "${logs_dir}"/reproxy.* | tail -n 1)"
+    local -r recent_rbe_log_dir="$(ls -1 -d "${old_logs_dir}"/reproxy.* | tail -n 1)"
     if [[ -d "$recent_rbe_log_dir" ]]
     then
       echo "$recent_rbe_log_dir"

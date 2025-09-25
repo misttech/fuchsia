@@ -158,10 +158,11 @@ readonly date="$(date +%Y%m%d-%H%M%S)"
 readonly default_build_subdir=out/_unknown
 
 [[ -n "$reproxy_logdir" ]] || {
-  # 'mktemp -p' still yields to TMPDIR in the environment (bug?),
-  # so override TMPDIR instead.
-  reproxy_logdir="$(mktemp -d -t "reproxy.$date.XXXX")"
+  readonly log_dir_base="$project_root/$default_build_subdir/.reproxy_logs"
+  mkdir -p "$log_dir_base"
+  reproxy_logdir="$(mktemp -d -p "$log_dir_base" -t "reproxy.$date.XXXX")"
 }
+
 readonly _log_base="${reproxy_logdir##*/}"  # basename
 [[ -n "$reproxy_tmpdir" ]] || {
   # reproxy wants temporary space on the same device where
