@@ -217,13 +217,18 @@ class MainSymbolize : public Symbolize {
 
   void set_self(const ElfImage* self);
 
-  // This is called when cross-DSO CFI checking is going to be supported.
-  void HandleCfiSlowpath();
+  void EnableModuleLoading(ModuleList modules) {
+    ReplaceModulesStorage(ktl::move(modules));
+    HandleCfiSlowpath();
+  }
 
  private:
   static void CallCfiSlowpath(Symbolize* main_symbolize, uint64_t key, void* entry,
                               const void* diag_data, void* caller);
   void CfiSlowpath(uint64_t key, void* entry, const void* diag_data, void* caller);
+
+  // This is called when cross-DSO CFI checking is going to be supported.
+  void HandleCfiSlowpath();
 
   const ElfImage* self_ = nullptr;
 };

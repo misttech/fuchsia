@@ -824,11 +824,19 @@ kernel_package("physboot.package") {
   deps = [ ":physboot.module(:kernel.phys_$current_cpu)" ]
 }
 
-zbi_executable("physload") {
-  sources = [
-    "main-symbolize-cfi.cc",
-    "physload.cc",
+source_set("phys-elf-loading") {
+  sources = [ "main-symbolize-cfi.cc" ]
+  deps = [
+    ":elf-image",
+    ":stdio",
+    ":symbolize",
+    "//sdk/lib/fit",
+    "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+zbi_executable("physload") {
+  sources = [ "physload.cc" ]
   deps = [
     ":address-space",
     ":allocation",
@@ -837,6 +845,7 @@ zbi_executable("physload") {
     ":kernel-package",
     ":log",
     ":main",
+    ":phys-elf-loading",
     ":physload.header",
     ":stdio",
     ":symbolize",

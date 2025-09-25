@@ -58,7 +58,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
   symbolize.Context();
 
   ktl::array<const ElfImage*, 2> modules;
-  symbolize.ReplaceModulesStorage(Symbolize::ModuleList(ktl::span(modules)));
+  symbolize.EnableModuleLoading(Symbolize::ModuleList(ktl::span(modules)));
 
   printf("Loading %.*s...\n", static_cast<int>(kGetInt.size()), kGetInt.data());
   ElfImage elf;

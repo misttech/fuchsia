@@ -95,8 +95,7 @@ void LogSerial(FILE* out = stdout) {
 
   // Provide space for loading modules.
   ktl::array<const ElfImage*, kMaxPhysloadModules> modules_storage;
-  symbolize.ReplaceModulesStorage(Symbolize::ModuleList(modules_storage));
-  symbolize.HandleCfiSlowpath();
+  symbolize.EnableModuleLoading(Symbolize::ModuleList(modules_storage));
 
   ktl::string_view next_file_name = gBootOptions->phys_next.data();
 
