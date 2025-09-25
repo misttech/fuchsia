@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::Result;
 use cobalt_client::traits::AsEventCode;
 use futures::StreamExt;
 use memory_metrics_registry::cobalt_registry;
@@ -15,7 +16,7 @@ use crate::error_from_metrics_error;
 pub async fn collect_stalls_forever(
     stalls_provider: impl StallProvider + 'static,
     metric_event_logger: fmetrics::MetricEventLoggerProxy,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     let mut last_stall = MemoryStallMetrics::default();
 
     // Wait for one hour after device start to get the first stall value. We don't use the one-hour
