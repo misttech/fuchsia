@@ -7,6 +7,8 @@
 #include <elf.h>
 #include <inttypes.h>
 
+#include <span>
+
 #include "src/lib/unwinder/arm_ehabi_module.h"
 #include "src/lib/unwinder/registers.h"
 
@@ -263,7 +265,7 @@ fit::result<Error, uint32_t> ArmEhAbiParser::GetFirstDataWord() {
   return fit::ok(data);
 }
 
-Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, const std::vector<uint8_t>& bytes,
+Error ArmEhAbiParser::ExecuteInstructions(Memory* stack, std::span<const uint8_t> bytes,
                                           Registers& next) {
   for (size_t i = 0; i < bytes.size(); i++) {
     uint8_t byte = bytes[i];

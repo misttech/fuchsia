@@ -5,6 +5,8 @@
 #ifndef SRC_LIB_UNWINDER_ARM_EHABI_PARSER_H_
 #define SRC_LIB_UNWINDER_ARM_EHABI_PARSER_H_
 
+#include <span>
+
 #include "gtest/gtest_prod.h"
 #include "src/lib/unwinder/arm_ehabi_module.h"
 #include "src/lib/unwinder/memory.h"
@@ -67,7 +69,7 @@ class ArmEhAbiParser {
 
   // Returns the number of extra words from the given offset in |data|, advancing |offset|.
   fit::result<Error, uint8_t> GetExtraWordsCountAndAdvance(uint32_t data, size_t& offset);
-  Error ExecuteInstructions(Memory* stack, const std::vector<uint8_t>& bytes, Registers& next);
+  Error ExecuteInstructions(Memory* stack, std::span<const uint8_t> bytes, Registers& next);
 
   // Returns the first word of data, which depends on the type of index entry we got. If the data
   // was inlined, then |data_| contains the entire set of unwinding instructions. If the data is in
