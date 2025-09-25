@@ -1,4 +1,4 @@
-?adc
+adc
 archivist
 ?archivist-pipelines
 ?asix-88179
@@ -25,7 +25,7 @@ driver_host
 driver_manager
 ?f2fs
 ?fshost
-?ftdi
+ftdi
 ?fvm
 ?fvm2
 ?fxfs
@@ -41,12 +41,12 @@ i2c
 ?paver
 pkg-cache
 platform-bus
-?power
+power
 power-manager
-?pwm
+pwm
 ?ramdisk
 ?realtek-8211f
-?registers
+registers
 ?rndis-function
 role_manager
 ?root

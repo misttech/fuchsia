@@ -27,15 +27,6 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for SensorsSubsystemCon
             }
         }
 
-        match context.feature_set_level {
-            FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable => {
-                builder.platform_bundle("sensor_drivers_boot");
-            }
-            FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
-                builder.platform_bundle("sensor_drivers_base");
-            }
-        }
-
         Ok(())
     }
 }

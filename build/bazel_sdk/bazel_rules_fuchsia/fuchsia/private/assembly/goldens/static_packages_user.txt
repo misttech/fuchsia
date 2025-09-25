@@ -1,6 +1,5 @@
 ?a11y-manager
 ?activity
-?adc
 ?audio_core
 ?audio_device_registry
 ?battery-manager

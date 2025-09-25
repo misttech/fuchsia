@@ -198,16 +198,6 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             builder.platform_bundle("fake_power_sensor");
         }
 
-        if context.board_config.provides_feature("fuchsia::pwm") {
-            builder.platform_bundle("pwm_driver");
-        }
-        if context.board_config.provides_feature("fuchsia::power") {
-            builder.platform_bundle("power_driver");
-        }
-        if context.board_config.provides_feature("fuchsia::shared_registers") {
-            builder.platform_bundle("registers_driver");
-        }
-
         Ok(())
     }
 }
