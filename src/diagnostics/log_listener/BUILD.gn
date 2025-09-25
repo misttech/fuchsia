@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/dist/renamed_binary.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/cc_test_executable.gni")
 
@@ -37,10 +38,17 @@ rustc_binary("bin") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
+renamed_binary("log_bin") {
+  dest = "bin/log"
+  source = "$root_out_dir/log_listener"
+  source_deps = [ ":bin" ]
+}
+
 fuchsia_package("log_listener_shell_pkg") {
   package_name = "log_listener_shell"
   deps = [
     ":bin",
+    ":log_bin",
     "//build/validate:non_production_tag",
   ]
 }

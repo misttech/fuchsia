@@ -21,7 +21,6 @@ group("tools") {
     "//src/storage:tools",
     "//src/sys/pkg/bin/far",
     "//src/sys/tools/activity-ctl",
-    "//src/sys/tools/log",
     "//src/ui/tools:scenic",
     "//third_party/boringssl:boringssl_tool",
     "//third_party/curl:curl_pkg",

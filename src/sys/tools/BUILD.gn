@@ -6,7 +6,6 @@ group("tests") {
   testonly = true
   deps = [
     "debug-dash-launcher:tests",
-    "log:tests",
     "stash_ctl:tests",
   ]
 }

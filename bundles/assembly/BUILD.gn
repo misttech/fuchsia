@@ -1274,10 +1274,6 @@ assembly_input_bundle("core_realm_eng") {
       components = [ "activity_ctl" ]
     },
     {
-      package = "log"
-      components = [ "log" ]
-    },
-    {
       package = "input"
       components = [ "input" ]
     },
@@ -1449,7 +1445,10 @@ assembly_input_bundle("core_realm_development_access") {
     },
     {
       package = "log_listener_shell"
-      components = [ "log_listener" ]
+      components = [
+        "log",
+        "log_listener",
+      ]
     },
   ]
 }
