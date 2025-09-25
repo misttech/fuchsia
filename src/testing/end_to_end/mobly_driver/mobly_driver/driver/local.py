@@ -9,6 +9,12 @@ import yaml
 from mobly_driver.api import api_ffx, api_infra, api_mobly
 from mobly_driver.driver import base, common
 
+_DEFAULT_TARGET_TYPE: str = "ip"
+_VALID_TARGET_TYPES: list[str] = [
+    "ip",
+    "name",
+]
+
 
 class LocalDriver(base.BaseDriver):
     """Local Mobly test driver.
@@ -26,6 +32,7 @@ class LocalDriver(base.BaseDriver):
         output_path: Optional[str] = None,
         config_path: Optional[str] = None,
         params_path: Optional[str] = None,
+        target_address_type: Optional[str] = None,
     ) -> None:
         """Initializes the instance.
 
@@ -35,8 +42,12 @@ class LocalDriver(base.BaseDriver):
           output_path: absolute path to directory for storing Mobly test output.
           config_path: absolute path to the Mobly test config file.
           params_path: absolute path to the Mobly test params file.
+          target_address_type: Whether to use the fuchsia device's name or ip for host-target
+            interactions when using FFX and Fuchsia-Controller transports.
+
         Raises:
           KeyError if required environment variables not found.
+          ValueError if incorrect value is passed for any of the init argument.
         """
         super().__init__(
             honeydew_config=honeydew_config,
@@ -48,6 +59,15 @@ class LocalDriver(base.BaseDriver):
         self._ffx_client = api_ffx.FfxClient(
             ffx_path=honeydew_config["transports"]["ffx"]["path"]
         )
+
+        self._target_address_type: str = (
+            target_address_type or _DEFAULT_TARGET_TYPE
+        )
+        if self._target_address_type not in _VALID_TARGET_TYPES:
+            raise ValueError(
+                f"'target_address_type' should be from '{_VALID_TARGET_TYPES}' but received: "
+                f"{self._target_address_type}"
+            )
 
     def _get_test_targets(self) -> List[str]:
         """Returns Fuchsia target names to use in Mobly test.
@@ -109,16 +129,17 @@ class LocalDriver(base.BaseDriver):
         """
         mobly_controllers: List[Dict[str, Any]] = []
         for target in self._get_test_targets():
-            target_ssh_address: api_ffx.TargetSshAddress = (
-                self._ffx_client.get_target_ssh_address(
-                    target_name=target, isolate_dir=None
-                )
-            )
             fx_device = {
                 "type": api_infra.FUCHSIA_DEVICE,
                 "name": target,
-                "device_ip_port": str(target_ssh_address),
             }
+            if self._target_address_type == "ip":
+                target_ssh_address: api_ffx.TargetSshAddress = (
+                    self._ffx_client.get_target_ssh_address(
+                        target_name=target, isolate_dir=None
+                    )
+                )
+                fx_device["device_ip_port"] = str(target_ssh_address)
 
             mobly_controllers.append(fx_device)
 

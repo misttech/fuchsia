@@ -26,6 +26,7 @@ class DriverFactory:
         config_path: Optional[str] = None,
         params_path: Optional[str] = None,
         ssh_path: Optional[str] = None,
+        target_address_type: Optional[str] = None,
     ) -> None:
         """Initializes the instance.
         Args:
@@ -35,12 +36,16 @@ class DriverFactory:
           params_path: absolute path to the Mobly testbed params file.
           ffx_subtools_search_path: absolute path to where to search for FFX plugins.
           ssh_path: absolute path to the SSH binary.
+          target_address_type: Whether to use the fuchsia device's name or ip for host-target
+            interactions when using FFX and Fuchsia-Controller transports. Used only for local
+            driver.
         """
         self._honeydew_config = honeydew_config
         self._multi_device = multi_device
         self._config_path = config_path
         self._params_path = params_path
         self._ssh_path = ssh_path
+        self._target_address_type = target_address_type
 
     def get_driver(self) -> base.BaseDriver:
         """Returns an environment-specific Mobly Driver implementation.
@@ -58,6 +63,7 @@ class DriverFactory:
                 multi_device=self._multi_device,
                 config_path=self._config_path,
                 params_path=self._params_path,
+                target_address_type=self._target_address_type,
             )
         try:
             return infra.InfraDriver(

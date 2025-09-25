@@ -214,7 +214,7 @@ import("//build/testing/host_test_data.gni")
 #    [bool] Whether the test needs to be run in isolation to other tests.
 #
 #  environments
-#    Optional: what environments this test should target. Only applies to host
+#    Optional: what environments this test should target. Only applies to
 #    host tests. See //build/testing/test_spec.gni for more details.
 #    Type: list of scopes.
 #    Default: emu_env
@@ -234,6 +234,13 @@ import("//build/testing/host_test_data.gni")
 #    See https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/BUILD.gn;l=161-167;drc=aa7ba9d998556f7124fe8e2edc6604c9c1592d01
 #    Type: boolean
 #    Default: true
+#
+#  target_address_type (optional)
+#    This option determines whether to use the fuchsia device's name or ip for host-target
+#    interactions when using FFX and Fuchsia-Controller transports. It is only applicable for
+#    local runs; infrastructure runs always use "ip". Valid values are "ip", "name".
+#    Type: String
+#    Default: "ip"
 #
 #  deps
 #  visibility
@@ -266,6 +273,14 @@ template("python_mobly_test") {
   _enable_hermetic_exe = false
   if (defined(invoker.enable_hermetic_exe)) {
     _enable_hermetic_exe = invoker.enable_hermetic_exe
+  }
+
+  if (defined(invoker.target_address_type)) {
+    assert(
+        invoker.target_address_type == "ip" ||
+            invoker.target_address_type == "name",
+        "'target_address_type' should be either 'ip' or 'name' but received: " +
+            "'" + invoker.target_address_type + "'")
   }
 
   # Mobly-specific entry point.
@@ -370,6 +385,12 @@ template("python_mobly_test") {
   ]
   if (defined(invoker.multi_fuchsia_device) && invoker.multi_fuchsia_device) {
     _common_host_test_args += [ "--multi-device" ]
+  }
+  if (defined(invoker.target_address_type)) {
+    _common_host_test_args += [
+      "--target-address-type",
+      invoker.target_address_type,
+    ]
   }
 
   _additional_deps = []

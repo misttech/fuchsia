@@ -65,6 +65,12 @@ parser.add_argument(
     help="Whether the mobly test is a self-contained executable.",
 )
 parser.add_argument(
+    "--target-address-type",
+    default=None,
+    help="Whether to use the fuchsia device's name or ip for host-target interactions when using FFX and Fuchsia-Controller transports.",
+)
+
+parser.add_argument(
     "--v",
     action="store_const",
     const=True,
@@ -94,6 +100,7 @@ def main() -> None:
         config_path=args.config_yaml_path,
         params_path=args.params_yaml_path,
         ssh_path=os.path.abspath(args.ssh_path) if args.ssh_path else None,
+        target_address_type=args.target_address_type,
     )
     driver = factory.get_driver()
 

@@ -5,12 +5,13 @@
 
 import ipaddress
 import unittest
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import patch
 
 from mobly_driver.api import api_ffx
 from mobly_driver.driver import common, local
-from parameterized import parameterized
+from parameterized import param, parameterized
 
 _HONEYDEW_CONFIG: dict[str, Any] = {
     "transports": {
@@ -20,6 +21,18 @@ _HONEYDEW_CONFIG: dict[str, Any] = {
         }
     }
 }
+
+
+def _custom_test_name_func(
+    testcase_func: Callable[..., None], _: str, param_arg: param
+) -> str:
+    """Custom name function method."""
+    test_func_name: str = testcase_func.__name__
+
+    params_dict: dict[str, Any] = param_arg.args[0]
+    test_label: str = parameterized.to_safe_name(params_dict["label"])
+
+    return f"{test_func_name}_with_{test_label}"
 
 
 class LocalDriverTest(unittest.TestCase):
@@ -136,6 +149,85 @@ class LocalDriverTest(unittest.TestCase):
 
         mock_ffx_target_list.assert_called()
         mock_ffx_target_ssh_address.assert_called()
+
+    @parameterized.expand(
+        [
+            (
+                {
+                    "label": "not_passed",
+                    "target_address_type": None,
+                },
+            ),
+            (
+                {
+                    "label": "valid_value_as_ip_address",
+                    "target_address_type": "ip",
+                },
+            ),
+            (
+                {
+                    "label": "valid_value_as_name",
+                    "target_address_type": "name",
+                },
+            ),
+        ],
+        name_func=_custom_test_name_func,
+    )
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch(
+        "mobly_driver.api.api_ffx.FfxClient.get_target_ssh_address",
+        autospec=True,
+        return_value=api_ffx.TargetSshAddress(
+            ip=ipaddress.ip_address("::1"), port=8022
+        ),
+    )
+    @patch(
+        "mobly_driver.api.api_ffx.FfxClient.target_list",
+        autospec=True,
+        return_value=api_ffx.TargetListResult(
+            all_nodes=["dut_1"], default_nodes=[]
+        ),
+    )
+    @patch("mobly_driver.api.api_mobly.new_testbed_config", autospec=True)
+    def test_target_address_type_arg_success(
+        self,
+        parameterized_dict: dict[str, Any],
+        mock_new_tb_config: Any,
+        mock_ffx_target_list: Any,
+        mock_ffx_target_ssh_address: Any,
+        *unused_args: Any,
+    ) -> None:
+        """Test case for target_address_type argument's success case"""
+        driver = local.LocalDriver(
+            honeydew_config=_HONEYDEW_CONFIG,
+            output_path="output/path",
+            target_address_type=parameterized_dict["target_address_type"],
+        )
+        ret = driver.generate_test_config()
+
+        mock_new_tb_config.assert_called_once()
+        controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
+        self.assertEqual(1, len(controllers))
+        self.assertEqual([c["name"] for c in controllers], ["dut_1"])
+        self.assertEqual(ret, "yaml_str")
+
+        mock_ffx_target_list.assert_called()
+        if parameterized_dict["target_address_type"] in [None, "ip"]:
+            mock_ffx_target_ssh_address.assert_called_once()
+        else:
+            mock_ffx_target_ssh_address.assert_not_called()
+
+    def test_target_address_type_arg_exception(
+        self,
+    ) -> None:
+        """Test case for target_address_type argument's failure case"""
+        with self.assertRaises(ValueError):
+            local.LocalDriver(
+                honeydew_config=_HONEYDEW_CONFIG,
+                output_path="output/path",
+                target_address_type="invalid",
+            )
 
     @parameterized.expand(
         [
