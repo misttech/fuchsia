@@ -29,6 +29,7 @@ class AuditChecker : public testing::EmptyTestEventListener {
  private:
   // Buffer size for reading from the netlink socket.
   static constexpr int kNetlinkBufSize = 4096;
+  static constexpr int kTabSize = 4;
 
   static constexpr std::string_view kTestsKey = "tests";
   static constexpr std::string_view kTestNameKey = "name";
@@ -54,7 +55,7 @@ class AuditChecker : public testing::EmptyTestEventListener {
   bool ParseExpectationsFile(const std::string_view file_path);
 
   // Reads and parses all audit logs between the start and end sentinels.
-  std::vector<AuditChecker::AuditLogEntry> ReadAuditLogs();
+  std::vector<AuditChecker::AuditLogEntry> ReadAuditLogs(std::string_view test_name);
 
   // Parses a single audit log.
   std::optional<AuditChecker::AuditLogEntry> ParseAuditLogString(const std::string line,
@@ -75,6 +76,10 @@ class AuditChecker : public testing::EmptyTestEventListener {
   // The main method to perform the audit check against the expectations file
   // provided in the constructor.
   void CheckAuditExpectations(std::string_view test_name);
+
+  // Debug printing functions to format audit expectations.
+  void DebugPrintWithTab(int multiplier, const char* format, ...);
+  void DebugExpectationsToJSON(std::vector<std::string> logs, std::string_view test_name);
 
   std::unordered_map<std::string, std::vector<AuditChecker::AuditLogEntry>> expectations_map_;
   std::string current_test_suite_name_;
