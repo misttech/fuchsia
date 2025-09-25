@@ -2647,18 +2647,6 @@ alias(
 )
 
 alias(
-    name = "signature-1.6.4",
-    actual = "//third_party/rust_crates/vendor/signature-1.6.4:signature",
-    tags = ["manual"],
-)
-
-alias(
-    name = "signature",
-    actual = "//third_party/rust_crates/vendor/signature-1.6.4:signature",
-    tags = ["manual"],
-)
-
-alias(
     name = "simplelog-0.10.2",
     actual = "//third_party/rust_crates/vendor/simplelog-0.10.2:simplelog",
     tags = ["manual"],

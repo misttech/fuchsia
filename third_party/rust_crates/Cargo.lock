@@ -1754,7 +1754,6 @@ dependencies = [
  "sha2",
  "shared_child",
  "signal-hook 0.3.18",
- "signature 1.6.4",
  "simplelog",
  "siphasher 1.0.1",
  "slab",

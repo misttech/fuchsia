@@ -996,10 +996,6 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("signature") {
-  public_deps = [ ":signature-v1_6_4" ]
-}
-
 group("simplelog") {
   public_deps = [ ":simplelog-v0_10_2" ]
 }
