@@ -15,6 +15,12 @@
 
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
+std::string CamelToSnake(const char* input);
+
+namespace test_helper {
+class ForkHelper;
+}  // namespace test_helper
+
 /// Writes `data` to the file at `path`, returning the `errno` if any part of that process fails.
 fit::result<int> WriteExistingFile(const std::string& path, std::string_view data);
 

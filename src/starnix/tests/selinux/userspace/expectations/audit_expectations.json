@@ -1,0 +1,82 @@
+{
+    "tests": [
+        {
+            "name": "AnonInodeTest/PrivateFdIsUnchecked",
+            "audit_expectations": [
+                "audit(1758273182.948:11): avc:  denied  { use } for  pid=128 comm=\"anon_inode_bin\" path=\"anon_inode:[eventfd]\" dev=\"anon_inodefs\" ino=151 scontext=test_u:test_r:anon_inode_no_use_fd:s0 tcontext=test_u:test_r:anon_inode_test_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/0",
+            "audit_expectations": [
+                "audit(1758557936.924:7): avc:  denied  { map_read map_write } for  pid=123 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/1",
+            "audit_expectations": [
+                "audit(1758559179.964:14): avc:  denied  { map_read map_write } for  pid=126 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/2",
+            "audit_expectations": [
+                "audit(1758559179.992:21): avc:  denied  { map_read map_write } for  pid=129 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/3",
+            "audit_expectations": [
+                "audit(1758559180.020:28): avc:  denied  { map_read map_write } for  pid=132 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/4",
+            "audit_expectations": [
+                "audit(1758559180.048:35): avc:  denied  { map_write } for  pid=135 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/5",
+            "audit_expectations": [
+                "audit(1758559180.076:42): avc:  denied  { map_write } for  pid=138 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/6",
+            "audit_expectations": [
+                "audit(1758559180.104:49): avc:  denied  { map_write } for  pid=141 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/7",
+            "audit_expectations": [
+                "audit(1758559180.132:56): avc:  denied  { map_write } for  pid=144 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/8",
+            "audit_expectations": [
+                "audit(1758559180.160:63): avc:  denied  { map_read } for  pid=147 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/9",
+            "audit_expectations": [
+                "audit(1758559180.188:70): avc:  denied  { map_read } for  pid=150 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/10",
+            "audit_expectations": [
+                "audit(1758559180.216:77): avc:  denied  { map_read } for  pid=153 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfMapTestSuite/BpfMapTest/Map/11",
+            "audit_expectations": [
+                "audit(1758559180.244:84): avc:  denied  { map_read } for  pid=156 comm=\"bpf_bin\" scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        }
+    ]
+}

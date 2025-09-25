@@ -80,6 +80,10 @@ config("rpath_config") {
 source_set("userspace_test_main") {
   testonly = true
   sources = [
+    "audit_checker.cc",
+    "audit_checker.h",
+    "audit_utils.cc",
+    "audit_utils.h",
     "test_main.cc",
     "util.cc",
     "util.h",
@@ -87,6 +91,7 @@ source_set("userspace_test_main") {
   deps = [
     "//sdk/lib/fit",
     "//src/lib/files",
+    "//src/lib/json_parser",
     "//src/starnix/tests/syscalls/cpp:test_utils",
     "//zircon/system/ulib/fbl",
   ]
@@ -159,6 +164,12 @@ resource("policies") {
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/timerslack.pp",
   ]
   outputs = "data/policies/{{source_file_part}}"
+}
+
+# Audit expectations to be checked
+resource("audit_expectations") {
+  sources = [ "expectations/audit_expectations.json" ]
+  outputs = "data/audit_expectations/{{source_file_part}}"
 }
 
 test_subprograms = []
@@ -243,6 +254,7 @@ foreach(test_name, test_names) {
     test_type = "starnix"
     deps = [
       ":${test_name}.cml",
+      ":audit_expectations",
       ":expectations",
       ":policies",
     ]

@@ -10,6 +10,7 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
+#include "src/starnix/tests/selinux/userspace/audit_checker.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
@@ -80,6 +81,10 @@ int main(int argc, char** argv) {
   // Set up gTest to perform test environment setup at-most-once.
   GTEST_FLAG_SET(recreate_environments_when_repeating, false);
   ::testing::AddGlobalTestEnvironment(new UserspaceTestEnvironment);
+
+  testing::TestEventListeners& listeners = testing::UnitTest::GetInstance()->listeners();
+  // The `for_debug()` function can be used to get an `AuditChecker` with debug enabled.
+  listeners.Append(new AuditChecker);
 
   return RUN_ALL_TESTS();
 }

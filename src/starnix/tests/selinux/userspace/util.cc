@@ -21,6 +21,26 @@ namespace {
 constexpr char kProcSelfAttrPath[] = "/proc/self/attr/";
 }
 
+std::string CamelToSnake(const char* input) {
+  std::string result;
+  size_t length = strlen(input);
+  if (!length) {
+    return "";
+  }
+  result += (char)tolower(input[0]);
+  for (size_t i = 1; i < length; ++i) {
+    if (input[i] == '/') {
+      result += '_';
+    } else if (isupper(input[i])) {
+      result += '_';
+      result += (char)tolower(input[i]);
+    } else {
+      result += input[i];
+    }
+  }
+  return result;
+}
+
 fit::result<int> WriteExistingFile(const std::string& path, std::string_view data) {
   auto fd = fbl::unique_fd(open(path.c_str(), O_WRONLY | O_TRUNC, 0777));
   if (!fd.is_valid()) {
