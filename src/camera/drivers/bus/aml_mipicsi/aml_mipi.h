@@ -7,9 +7,9 @@
 
 #include <fuchsia/hardware/mipicsi/cpp/banjo.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fzl/pinned-vmo.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zx/interrupt.h>
 
 #include <atomic>

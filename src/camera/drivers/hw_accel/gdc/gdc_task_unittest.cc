@@ -4,9 +4,9 @@
 
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <lib/ddk/debug.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mock-mmio/cpp/region.h>
 #include <lib/fake-bti/bti.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zbi-format/graphics.h>
 
 #include <condition_variable>

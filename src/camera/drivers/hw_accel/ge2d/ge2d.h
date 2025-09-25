@@ -11,7 +11,7 @@
 #include <threads.h>
 #endif
 #include <fidl/fuchsia.hardware.amlogiccanvas/cpp/wire.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
 #include <zircon/fidl.h>

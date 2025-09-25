@@ -35,8 +35,8 @@ source_set("aml_mipi_driver_source") {
   deps = [ "//src/devices/lib/driver" ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.mipicsi:fuchsia.hardware.mipicsi_banjo_cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
-    "//src/devices/lib/mmio",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/ddktl",

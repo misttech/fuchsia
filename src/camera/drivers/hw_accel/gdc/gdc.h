@@ -11,7 +11,7 @@
 #include <threads.h>
 #endif
 #include <fuchsia/hardware/gdc/cpp/banjo.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
 #include <zircon/fidl.h>
 

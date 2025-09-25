@@ -53,9 +53,9 @@ cc_test_executable("fake_buffer_collection_unittest_bin") {
   deps = [
     ":fake_buffer_collection",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
-    "//src/devices/lib/mmio",
     "//src/devices/testing/fake-bti",
     "//src/lib/ddk",
     "//src/lib/fxl/test:gtest_main",

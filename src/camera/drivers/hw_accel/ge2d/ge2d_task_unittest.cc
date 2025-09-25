@@ -6,10 +6,10 @@
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/ddk/debug.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mock-mmio/cpp/region.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/image-format/image_format.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zbitl/items/graphics.h>
 #include <stdint.h>
