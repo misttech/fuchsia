@@ -1733,9 +1733,8 @@ mod test {
     use crate::vfs::socket::{SocketFile, SocketMessageFlags};
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
-    use fidl::endpoints::Proxy;
+    use fidl_fuchsia_io as fio;
     use flyweights::FlyByteStr;
-    use fuchsia_fs::{directory, file};
     use fxfs_testing::{TestFixture, TestFixtureOptions};
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
@@ -1743,7 +1742,6 @@ mod test {
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use zx::HandleBased;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
@@ -1768,154 +1766,170 @@ mod test {
     }
 
     #[::fuchsia::test]
-    async fn test_tree() -> Result<(), anyhow::Error> {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
-        let (server, client) = zx::Channel::create();
-        fdio::open("/pkg", rights, server).expect("failed to open /pkg");
-        let fs = RemoteFs::new_fs(
-            locked,
-            &kernel,
-            client,
-            FileSystemOptions { source: FlyByteStr::new(b"/pkg"), ..Default::default() },
-            rights,
-        )?;
-        let ns = Namespace::new(fs);
-        let root = ns.root();
-        let mut context = LookupContext::default();
-        assert_eq!(
-            root.lookup_child(locked, &current_task, &mut context, "nib".into()).err(),
-            Some(errno!(ENOENT))
-        );
-        let mut context = LookupContext::default();
-        root.lookup_child(locked, &current_task, &mut context, "lib".into()).unwrap();
+    async fn test_tree() {
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
+            let (server, client) = zx::Channel::create();
+            fdio::open("/pkg", rights, server).expect("failed to open /pkg");
+            let fs = RemoteFs::new_fs(
+                locked,
+                &kernel,
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/pkg"), ..Default::default() },
+                rights,
+            )
+            .unwrap();
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+            let mut context = LookupContext::default();
+            assert_eq!(
+                root.lookup_child(locked, &current_task, &mut context, "nib".into()).err(),
+                Some(errno!(ENOENT))
+            );
+            let mut context = LookupContext::default();
+            root.lookup_child(locked, &current_task, &mut context, "lib".into()).unwrap();
 
-        let mut context = LookupContext::default();
-        let _test_file = root
-            .lookup_child(locked, &current_task, &mut context, "data/tests/hello_starnix".into())?
-            .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())?;
-        Ok(())
+            let mut context = LookupContext::default();
+            let _test_file = root
+                .lookup_child(
+                    locked,
+                    &current_task,
+                    &mut context,
+                    "data/tests/hello_starnix".into(),
+                )
+                .unwrap()
+                .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
+                .unwrap();
+        });
     }
 
     #[::fuchsia::test]
     async fn test_blocking_io() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let (client, server) = zx::Socket::create_stream();
+            let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR).unwrap();
 
-        let (client, server) = zx::Socket::create_stream();
-        let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR).unwrap();
+            let bytes = [0u8; 64];
+            assert_eq!(bytes.len(), server.write(&bytes).unwrap());
 
-        let bytes = [0u8; 64];
-        assert_eq!(bytes.len(), server.write(&bytes).unwrap());
+            // Spawn a kthread to get the right lock context.
+            let bytes_read = kernel
+                .kthreads
+                .spawner()
+                .spawn_and_get_result_sync(move |locked, current_task| {
+                    pipe.read(locked, &current_task, &mut VecOutputBuffer::new(64)).unwrap()
+                })
+                .unwrap();
 
-        // Spawn a kthread to get the right lock context.
-        let bytes_read = kernel
-            .kthreads
-            .spawner()
-            .spawn_and_get_result_sync(move |locked, current_task| {
-                pipe.read(locked, &current_task, &mut VecOutputBuffer::new(64)).unwrap()
-            })
-            .unwrap();
-
-        assert_eq!(bytes_read, bytes.len());
+            assert_eq!(bytes_read, bytes.len());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_poll() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let (client, server) = zx::Socket::create_stream();
+            let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
+                .expect("create_fuchsia_pipe");
+            let server_zxio = Zxio::create(server.into_handle()).expect("Zxio::create");
 
-        let (client, server) = zx::Socket::create_stream();
-        let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
-            .expect("create_fuchsia_pipe");
-        let server_zxio = Zxio::create(server.into_handle()).expect("Zxio::create");
+            assert_eq!(
+                pipe.query_events(locked, &current_task),
+                Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
+            );
 
-        assert_eq!(
-            pipe.query_events(locked, &current_task),
-            Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
-        );
+            let epoll_object = EpollFileObject::new_file(locked, &current_task);
+            let epoll_file = epoll_object.downcast_file::<EpollFileObject>().unwrap();
+            let event = EpollEvent::new(FdEvents::POLLIN, 0);
+            epoll_file
+                .add(locked, &current_task, &pipe, &epoll_object, event)
+                .expect("poll_file.add");
 
-        let epoll_object = EpollFileObject::new_file(locked, &current_task);
-        let epoll_file = epoll_object.downcast_file::<EpollFileObject>().unwrap();
-        let event = EpollEvent::new(FdEvents::POLLIN, 0);
-        epoll_file.add(locked, &current_task, &pipe, &epoll_object, event).expect("poll_file.add");
+            let fds = epoll_file
+                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
+                .expect("wait");
+            assert!(fds.is_empty());
 
-        let fds =
-            epoll_file.wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
-        assert!(fds.is_empty());
+            assert_eq!(server_zxio.write(&[0]).expect("write"), 1);
 
-        assert_eq!(server_zxio.write(&[0]).expect("write"), 1);
+            assert_eq!(
+                pipe.query_events(locked, &current_task),
+                Ok(FdEvents::POLLOUT
+                    | FdEvents::POLLWRNORM
+                    | FdEvents::POLLIN
+                    | FdEvents::POLLRDNORM)
+            );
+            let fds = epoll_file
+                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
+                .expect("wait");
+            assert_eq!(fds.len(), 1);
 
-        assert_eq!(
-            pipe.query_events(locked, &current_task),
-            Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM | FdEvents::POLLIN | FdEvents::POLLRDNORM)
-        );
-        let fds =
-            epoll_file.wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
-        assert_eq!(fds.len(), 1);
+            assert_eq!(
+                pipe.read(locked, &current_task, &mut VecOutputBuffer::new(64)).expect("read"),
+                1
+            );
 
-        assert_eq!(
-            pipe.read(locked, &current_task, &mut VecOutputBuffer::new(64)).expect("read"),
-            1
-        );
-
-        assert_eq!(
-            pipe.query_events(locked, &current_task),
-            Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
-        );
-        let fds =
-            epoll_file.wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
-        assert!(fds.is_empty());
+            assert_eq!(
+                pipe.query_events(locked, &current_task),
+                Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
+            );
+            let fds = epoll_file
+                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
+                .expect("wait");
+            assert!(fds.is_empty());
+        });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[::fuchsia::test]
     async fn test_new_remote_directory() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let pkg_channel: zx::Channel =
-            directory::open_in_namespace("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE)
-                .expect("failed to open /pkg")
-                .into_channel()
-                .expect("into_channel")
-                .into();
+        spawn_kernel_and_run(|locked, current_task| {
+            let (server, client) = zx::Channel::create();
+            fdio::open("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE, server)
+                .expect("failed to open /pkg");
 
-        let fd = new_remote_file(locked, &current_task, pkg_channel.into(), OpenFlags::RDWR)
-            .expect("new_remote_file");
-        assert!(fd.node().is_dir());
-        assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+            let fd = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDWR)
+                .expect("new_remote_file");
+            assert!(fd.node().is_dir());
+            assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+        });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[::fuchsia::test]
     async fn test_new_remote_file() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let content_channel: zx::Channel =
-            file::open_in_namespace("/pkg/meta/contents", fio::PERM_READABLE)
-                .expect("failed to open /pkg/meta/contents")
-                .into_channel()
-                .expect("into_channel")
-                .into();
+        spawn_kernel_and_run(|locked, current_task| {
+            let (server, client) = zx::Channel::create();
+            fdio::open("/pkg/meta/contents", fio::PERM_READABLE, server)
+                .expect("failed to open /pkg/meta/contents");
 
-        let fd = new_remote_file(locked, &current_task, content_channel.into(), OpenFlags::RDONLY)
-            .expect("new_remote_file");
-        assert!(!fd.node().is_dir());
-        assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+            let fd = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDONLY)
+                .expect("new_remote_file");
+            assert!(!fd.node().is_dir());
+            assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+        });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[::fuchsia::test]
     async fn test_new_remote_counter() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let counter = zx::Counter::create();
+        spawn_kernel_and_run(|locked, current_task| {
+            let counter = zx::Counter::create();
 
-        let fd = new_remote_file(locked, &current_task, counter.into(), OpenFlags::RDONLY)
-            .expect("new_remote_file");
-        assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+            let fd = new_remote_file(locked, &current_task, counter.into(), OpenFlags::RDONLY)
+                .expect("new_remote_file");
+            assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_new_remote_vmo() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
-        let fd = new_remote_file(locked, &current_task, vmo.into(), OpenFlags::RDWR)
-            .expect("new_remote_file");
-        assert!(!fd.node().is_dir());
-        assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+        spawn_kernel_and_run(|locked, current_task| {
+            let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
+            let fd = new_remote_file(locked, &current_task, vmo.into(), OpenFlags::RDWR)
+                .expect("new_remote_file");
+            assert!(!fd.node().is_dir());
+            assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
+        });
     }
 
     #[::fuchsia::test(threads = 2)]
