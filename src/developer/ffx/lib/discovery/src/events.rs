@@ -181,15 +181,22 @@ impl TryFrom<ffx::TargetInfo> for TargetHandle {
             Ok(())
         }
 
-        let state = match info.fastboot_interface {
-            None => {
+        // Let the target state first dictate what state the device is in. If there is an RCS
+        // connection, this supercedes anything else and should set the device into a `PRODUCT`
+        // state. Other states appear to be a bit more iffy, so just use the fields in `TargetInfo`
+        // to settle on the state afterward.
+        //
+        // It appears it's possible to be in product mode and also have a fastboot interface set at
+        // the same time.
+        let state = match (info.target_state, info.fastboot_interface) {
+            (Some(ffx::TargetState::Product), _) | (_, None) => {
                 assert_non_empty_addrs(&addrs)?;
                 TargetState::Product {
                     addrs: addrs.into_iter().map(Into::into).collect(),
                     serial: info.serial_number,
                 }
             }
-            Some(iface) => {
+            (_, Some(iface)) => {
                 let serial_number = info.serial_number.unwrap_or_else(|| "".to_string());
                 let connection_state = match iface {
                     ffx::FastbootInterface::Usb => FastbootConnectionState::Usb,
@@ -205,6 +212,7 @@ impl TryFrom<ffx::TargetInfo> for TargetHandle {
                 TargetState::Fastboot(FastbootTargetState { serial_number, connection_state })
             }
         };
+
         let manual = info.is_manual.unwrap_or(false);
         Ok(TargetHandle { node_name: info.nodename, state, manual })
     }
@@ -518,6 +526,168 @@ mod test {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_product_with_fastboot_info_returns_product() {
+        // This test may be for behavior that isn't intended to be supported. This is originally
+        // to address (b/438248466) but this may be covering up a more specific issue.
+
+        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let addr = TargetIpAddr::from(socket);
+        let target_addr = TargetAddr::from(socket);
+        let addr_info: ffx::TargetAddrInfo = addr.into();
+        let addresses = Some(vec![addr_info]);
+        let nodename = Some("foo".to_string());
+        let serial_number = Some("serial123".to_string());
+
+        // Case 1: target_state is Product, fastboot_interface is None
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: addresses.clone(),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Product),
+            fastboot_interface: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            TargetHandle::try_from(info).unwrap(),
+            TargetHandle {
+                node_name: nodename.clone(),
+                state: TargetState::Product {
+                    addrs: vec![target_addr.clone()],
+                    serial: serial_number.clone()
+                },
+                manual: false,
+            }
+        );
+
+        // Case 2: target_state is Product, fastboot_interface is Usb
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: addresses.clone(),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Product),
+            fastboot_interface: Some(ffx::FastbootInterface::Usb),
+            ..Default::default()
+        };
+        assert_eq!(
+            TargetHandle::try_from(info).unwrap(),
+            TargetHandle {
+                node_name: nodename.clone(),
+                state: TargetState::Product {
+                    addrs: vec![target_addr.clone()],
+                    serial: serial_number.clone()
+                },
+                manual: false,
+            }
+        );
+
+        // Case 3: target_state is Product, fastboot_interface is Tcp
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: addresses.clone(),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Product),
+            fastboot_interface: Some(ffx::FastbootInterface::Tcp),
+            ..Default::default()
+        };
+        assert_eq!(
+            TargetHandle::try_from(info).unwrap(),
+            TargetHandle {
+                node_name: nodename.clone(),
+                state: TargetState::Product {
+                    addrs: vec![target_addr.clone()],
+                    serial: serial_number.clone()
+                },
+                manual: false,
+            }
+        );
+
+        // Case 4: target_state is Unknown, fastboot_interface is None
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: addresses.clone(),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Unknown),
+            fastboot_interface: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            TargetHandle::try_from(info).unwrap(),
+            TargetHandle {
+                node_name: nodename.clone(),
+                state: TargetState::Product {
+                    addrs: vec![target_addr.clone()],
+                    serial: serial_number.clone()
+                },
+                manual: false,
+            }
+        );
+
+        // Case 5: target_state is Unknown, fastboot_interface is Usb
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: addresses.clone(),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Unknown),
+            fastboot_interface: Some(ffx::FastbootInterface::Usb),
+            ..Default::default()
+        };
+        assert_eq!(
+            TargetHandle::try_from(info).unwrap(),
+            TargetHandle {
+                node_name: nodename.clone(),
+                state: TargetState::Fastboot(FastbootTargetState {
+                    serial_number: serial_number.clone().unwrap(),
+                    connection_state: FastbootConnectionState::Usb
+                }),
+                manual: false,
+            }
+        );
+
+        // Case 6: target_state is Zedboot, fastboot_interface is Tcp
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: addresses.clone(),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Zedboot),
+            fastboot_interface: Some(ffx::FastbootInterface::Tcp),
+            ..Default::default()
+        };
+        assert_eq!(
+            TargetHandle::try_from(info).unwrap(),
+            TargetHandle {
+                node_name: nodename.clone(),
+                state: TargetState::Fastboot(FastbootTargetState {
+                    serial_number: serial_number.clone().unwrap(),
+                    connection_state: FastbootConnectionState::Tcp(vec![addr.clone()])
+                }),
+                manual: false,
+            }
+        );
+
+        // Case 7: Product state requires addresses
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: Some(vec![]),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Product),
+            fastboot_interface: None,
+            ..Default::default()
+        };
+        assert!(TargetHandle::try_from(info).is_err());
+
+        // Case 8: Fastboot Tcp/Udp requires addresses
+        let info = ffx::TargetInfo {
+            nodename: nodename.clone(),
+            addresses: Some(vec![]),
+            serial_number: serial_number.clone(),
+            target_state: Some(ffx::TargetState::Unknown),
+            fastboot_interface: Some(ffx::FastbootInterface::Tcp),
+            ..Default::default()
+        };
+        assert!(TargetHandle::try_from(info).is_err());
     }
 
     #[test]
