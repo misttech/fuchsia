@@ -140,14 +140,14 @@ zx_status_t pmm_alloc_contiguous(size_t count, uint alloc_flags, uint8_t alignme
 
 void pmm_unwire_page(vm_page_t* page) { Pmm::Node().UnwirePage(page); }
 
-void pmm_free(list_node* list) {
+void pmm_free(list_node* list, PmmOptDelayReuse delay_reuse) {
   VM_KTRACE_DURATION(3, "pmm_free");
-  Pmm::Node().FreeList(list);
+  Pmm::Node().FreeList(list, delay_reuse);
 }
 
-void pmm_free_page(vm_page* page) {
+void pmm_free_page(vm_page* page, PmmOptDelayReuse delay_reuse) {
   VM_KTRACE_DURATION(3, "pmm_free_page");
-  Pmm::Node().FreePage(page);
+  Pmm::Node().FreePage(page, delay_reuse);
 }
 
 uint64_t pmm_count_free_pages() { return Pmm::Node().CountFreePages(); }

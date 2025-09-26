@@ -59,17 +59,18 @@ void AsanUnpoisonPage(vm_page_t* p) {
 #endif  // __has_feature(address_sanitizer)
 }
 
-void ReturnPagesToFreeList(list_node* target_list, list_node* to_free) {
-  if constexpr (!__has_feature(address_sanitizer)) {
-    // splice list at the head of free_list_; free_loaned_list_.
-    list_splice_after(to_free, target_list);
-  } else {
-    // If address sanitizer is enabled, put the pages at the tail to maximize reuse distance.
+void ReturnPagesToFreeList(list_node* target_list, list_node* to_free,
+                           PmmOptDelayReuse delay_reuse) {
+  if (delay_reuse == PmmOptDelayReuse::Yes || __has_feature(address_sanitizer)) {
+    // Put the page at the tail to maximize reuse distance.
     if (!list_is_empty(target_list)) {
       list_splice_after(to_free, list_peek_tail(target_list));
     } else {
       list_splice_after(to_free, target_list);
     }
+  } else {
+    // splice list at the head of free_list_; free_loaned_list_.
+    list_splice_after(to_free, target_list);
   }
 }
 
@@ -538,8 +539,9 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
     if (allocated != count) {
       // We were not able to allocate the entire run, free these pages. As we allocated these pages
       // under this lock acquisition, the fill status is whatever it was before, i.e. the status of
-      // whether free pages have all been filled..
-      FreeListLocked(list, FreePagesFilledLocked());
+      // whether free pages have all been filled. No need to request delayed reuse as these pages
+      // were allocated just now, but never used.
+      FreeListLocked(list, FreePagesFilledLocked(), PmmOptDelayReuse::Default);
       return ZX_ERR_NOT_FOUND;
     }
   }
@@ -765,7 +767,14 @@ void PmmNode::FinishFreeLoanedPages(FreeLoanedPagesHolder& flph) {
   Guard<Mutex> guard{&loaned_list_lock_};
   DEBUG_ASSERT(!flph.used_);
   flph.used_ = true;
-  FreeLoanedListLocked(&flph.pages_, fill, [&](vm_page_t* page) {
+
+  // Why default and not "yes"?  The primary reason to delay reuse is to mitigate "bad DMA"
+  // involving previously pinned pages.  Because the pages we're about to free had been on loan and
+  // because we do not pin loaned pages (see |VmCowPages::ReplacePagesWithNonLoanedLocked|) we have
+  // no reason to delay their reuse.
+  const PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default;
+
+  FreeLoanedListLocked(&flph.pages_, fill, delay_reuse, [&](vm_page_t* page) {
     DEBUG_ASSERT(page->state() == vm_page_state::ALLOC);
     DEBUG_ASSERT(page->alloc.owner == &flph);
     page->alloc.owner = nullptr;
@@ -812,7 +821,7 @@ void PmmNode::WithLoanedPage(vm_page_t* page, fit::inline_function<void(vm_page_
   }
 }
 
-void PmmNode::FreePage(vm_page* page) {
+void PmmNode::FreePage(vm_page* page, PmmOptDelayReuse delay_reuse) {
   AutoPreemptDisabler preempt_disable;
   DEBUG_ASSERT(!page->is_loaned());
   const bool fill = IsFreeFillEnabledRacy();
@@ -827,16 +836,18 @@ void PmmNode::FreePage(vm_page* page) {
   FreePageHelperLocked(page, fill);
 
   IncrementFreeCountLocked(1);
-  if constexpr (!__has_feature(address_sanitizer)) {
-    list_add_head(&free_list_, &page->queue_node);
-  } else {
-    // If address sanitizer is enabled, put the page at the tail to maximize reuse distance.
+
+  if (delay_reuse == PmmOptDelayReuse::Yes || __has_feature(address_sanitizer)) {
+    // Put the page at the tail to maximize reuse distance.
     list_add_tail(&free_list_, &page->queue_node);
+  } else {
+    list_add_head(&free_list_, &page->queue_node);
   }
 }
 
 template <typename F>
-void PmmNode::FreeLoanedListLocked(list_node* list, bool already_filled, F validator) {
+void PmmNode::FreeLoanedListLocked(list_node* list, bool already_filled,
+                                   PmmOptDelayReuse delay_reuse, F validator) {
   DEBUG_ASSERT(list);
 
   uint64_t count = 0;
@@ -856,12 +867,12 @@ void PmmNode::FreeLoanedListLocked(list_node* list, bool already_filled, F valid
     }
   }  // end scope page
 
-  ReturnPagesToFreeList(&free_loaned_list_, list);
+  ReturnPagesToFreeList(&free_loaned_list_, list, delay_reuse);
 
   IncrementFreeLoanedCountLocked(count);
 }
 
-void PmmNode::FreeListLocked(list_node* list, bool already_filled) {
+void PmmNode::FreeListLocked(list_node* list, bool already_filled, PmmOptDelayReuse delay_reuse) {
   DEBUG_ASSERT(list);
 
   uint64_t count = 0;
@@ -875,7 +886,7 @@ void PmmNode::FreeListLocked(list_node* list, bool already_filled) {
     }
   }  // end scope page
 
-  ReturnPagesToFreeList(&free_list_, list);
+  ReturnPagesToFreeList(&free_list_, list, delay_reuse);
 
   IncrementFreeCountLocked(count);
 }
@@ -906,7 +917,7 @@ void PmmNode::BeginFreeLoanedArray(
   list_splice_after(&free_list, &flph.pages_);
 }
 
-void PmmNode::FreeList(list_node* list) {
+void PmmNode::FreeList(list_node* list, PmmOptDelayReuse delay_reuse) {
   AutoPreemptDisabler preempt_disable;
   const bool fill = IsFreeFillEnabledRacy();
   if (fill) {
@@ -917,7 +928,7 @@ void PmmNode::FreeList(list_node* list) {
   }
   Guard<Mutex> guard{&lock_};
 
-  FreeListLocked(list, fill);
+  FreeListLocked(list, fill, delay_reuse);
 }
 
 void PmmNode::UnwirePage(vm_page* page) {
@@ -1054,7 +1065,7 @@ bool PmmNode::has_alloc_failed_no_mem() {
   return alloc_failed_no_mem.load(ktl::memory_order_relaxed);
 }
 
-void PmmNode::BeginLoan(list_node* page_list) {
+void PmmNode::BeginLoan(list_node* page_list, PmmOptDelayReuse delay_reuse) {
   DEBUG_ASSERT(page_list);
   AutoPreemptDisabler preempt_disable;
   const bool fill = IsFreeFillEnabledRacy();
@@ -1080,7 +1091,7 @@ void PmmNode::BeginLoan(list_node* page_list) {
   // Callers of BeginLoan() generally won't want the pages loaned to them; the intent is to loan to
   // the rest of the system, so go ahead and free also.  Some callers will basically choose between
   // pmm_begin_loan() and pmm_free().
-  FreeLoanedListLocked(page_list, fill, [](vm_page_t* p) {});
+  FreeLoanedListLocked(page_list, fill, delay_reuse, [](vm_page_t* p) {});
 }
 
 void PmmNode::CancelLoan(vm_page_t* page) {

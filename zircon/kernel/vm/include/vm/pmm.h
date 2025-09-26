@@ -84,10 +84,16 @@ void pmm_unwire_page(vm_page_t* page);
 
 // Free a list of physical pages. This list must not contained loaned pages returned from
 // PmmNode::AllocLoanedPage.
-void pmm_free(list_node* list) __NONNULL((1));
+//
+// |delay_reuse| specifies whether reuse of the pages (i.e. reallocation) should be delayed or not.
+void pmm_free(list_node* list, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default)
+    __NONNULL((1));
 
 // Free a single page. This page must not be a loaned page returned from PmmNode::AllocLoanedPage.
-void pmm_free_page(vm_page_t* page) __NONNULL((1));
+//
+// See |pmm_free| for meaning of the |delay_reuse| parameter.
+void pmm_free_page(vm_page_t* page, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default)
+    __NONNULL((1));
 
 // Return count of unallocated physical pages in system.
 uint64_t pmm_count_free_pages();

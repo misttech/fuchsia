@@ -35,6 +35,20 @@ struct Range;
 // may tell it to wait for any reason.
 #define PMM_ALLOC_FLAG_CAN_WAIT (1 << 1)
 
+// This enum is used to specify whether a page, when freed, should have its reuse
+// (i.e. reallocation) delayed.  This feature exists to both improve the PMM checker's ability to
+// detect "bad DMAs" and to reduce the impact when they do occur.  When allocating a page, reusing
+// the most recently freed page often has performance benefits.  However, it can amplify the impact
+// of use-after-free bugs.  This feature enables part of the kernel to express a preference on
+// whether a page should be eligible for immediate reuse or not.  It's a hint.
+//
+// |Default| means no preference.  When specified, the page may or may not be immediately reused.
+// In some build/runtime configurations (e.g. kasan) delayed reuse is the default behavior.
+//
+// |Yes| indicates that the PMM should delay the reuse of the page by placing it on the "cold" end
+// up the free list, thereby maximizing the amount of time before which it is reallocated.
+enum class PmmOptDelayReuse : bool { Default, Yes };
+
 class FreeLoanedPagesHolder;
 class VmCompression;
 
@@ -84,8 +98,8 @@ class PmmNode {
   zx_status_t AllocRange(paddr_t address, size_t count, list_node* list);
   zx_status_t AllocContiguous(size_t count, uint alloc_flags, uint8_t alignment_log2, paddr_t* pa,
                               list_node* list);
-  void FreePage(vm_page* page);
-  void FreeList(list_node* list);
+  void FreePage(vm_page* page, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
+  void FreeList(list_node* list, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
 
   // Calls the provided function, passing |page| back into it, serialized with any other calls to
   // |AllocLoanedPage|, |BeginFreeLoanedPage| and |FinishFreeLoanedPages|. This allows caller to
@@ -133,7 +147,10 @@ class PmmNode {
 
   // Frees all pages in the given list and places them in the loaned state available to be returned
   // from AllocLoanedPage.
-  void BeginLoan(list_node* page_list);
+  //
+  // |delay_reuse| controls whether the newly loaned pages are eligile for immediate or delayed
+  // reuse.
+  void BeginLoan(list_node* page_list, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
 
   // Marks a page that had been previously provided to BeginLoan as cancelled. This page may be in
   // the FREE_LOANED state, or presently in use.
@@ -296,10 +313,11 @@ class PmmNode {
 
   void FreePageHelperLocked(vm_page* page, bool already_filled) TA_REQ(lock_);
   void FreeLoanedPageHelperLocked(vm_page* page, bool already_filled) TA_REQ(loaned_list_lock_);
-  void FreeListLocked(list_node* list, bool already_filled) TA_REQ(lock_);
+  void FreeListLocked(list_node* list, bool already_filled, PmmOptDelayReuse delay_reuse)
+      TA_REQ(lock_);
   template <typename F>
-  void FreeLoanedListLocked(list_node* list, bool already_filled, F validator)
-      TA_REQ(loaned_list_lock_);
+  void FreeLoanedListLocked(list_node* list, bool already_filled, PmmOptDelayReuse delay_reuse,
+                            F validator) TA_REQ(loaned_list_lock_);
 
   void SignalFreeMemoryChangeLocked() TA_REQ(lock_);
   void TripFreePagesLevelLocked() TA_REQ(lock_);
