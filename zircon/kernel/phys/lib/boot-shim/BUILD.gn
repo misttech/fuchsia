@@ -58,6 +58,8 @@ library_headers("headers") {
 }
 
 static_library("boot-shim") {
+  complete_static_lib = true
+
   public_deps = [ ":headers" ]
 
   sources = [
@@ -131,6 +133,8 @@ if (!is_kernel) {
 
   static_library("boot-shim-test") {
     testonly = true
+
+    complete_static_lib = true
 
     sources = [
       "devicetree-test-fixture.cc",

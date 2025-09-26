@@ -21,7 +21,10 @@ library_headers("range.headers") {
 }
 
 static_library("range") {
+  complete_static_lib = true
+
   public_deps = [ ":range.headers" ]
+
   sources = [ "range.cc" ]
   deps = [ "//zircon/system/ulib/pretty" ]
   if (is_kernel) {
@@ -49,7 +52,9 @@ library_headers("headers") {
   ]
 }
 
-source_set("memalloc") {
+static_library("memalloc") {
+  complete_static_lib = true
+
   public_deps = [ ":headers" ]
 
   sources = [

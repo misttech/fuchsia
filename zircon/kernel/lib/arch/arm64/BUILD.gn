@@ -17,6 +17,8 @@ library_headers("headers") {
 static_library("arm64") {
   visibility = [ "../*" ]
 
+  complete_static_lib = true
+
   sources = [ "shadow-call-stack.S" ]
   deps = [ "..:headers" ]
 

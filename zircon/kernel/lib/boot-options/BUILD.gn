@@ -46,6 +46,8 @@ if (current_toolchain == default_toolchain) {
 static_library("boot-options") {
   public_deps = [ ":headers" ]
 
+  complete_static_lib = true
+
   sources = [
     "boot-options.cc",
     "word-view.cc",

@@ -157,6 +157,8 @@ if (toolchain_environment == "kernel.phys" ||
   static_library("symbolize") {
     public = [ "include/phys/symbolize.h" ]
 
+    complete_static_lib = true
+
     sources = [
       "main-symbolize.cc",
       "panic.cc",
@@ -229,6 +231,7 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   static_library("exception") {
+    complete_static_lib = true
     if (toolchain_environment == "kernel.phys") {
       sources = [ "exception.cc" ]
       deps = [
@@ -239,6 +242,8 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   static_library("kernel-package") {
+    complete_static_lib = true
+
     public = [ "include/phys/kernel-package.h" ]
     public_deps = [
       ":allocation",
@@ -263,6 +268,8 @@ if (toolchain_environment == "kernel.phys" ||
 
   # Transitive dependencies for the <phys/main.h> header.
   static_library("main") {
+    complete_static_lib = true
+
     public = [
       "include/phys/exception.h",
       "include/phys/main.h",
@@ -327,6 +334,8 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   static_library("address-space") {
+    complete_static_lib = true
+
     public_deps = [ ":address-space.header" ]
 
     sources = [ "address-space.cc" ]
@@ -438,6 +447,8 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   static_library("allocation") {
+    complete_static_lib = true
+
     public = [ "include/phys/allocation.h" ]
     if (toolchain_environment != "kernel.efi") {
       sources = [ "allocation.cc" ]
@@ -514,6 +525,8 @@ if (toolchain_environment == "kernel.phys" ||
   # implicitly by zbi_executable() without adding bloat to the tiny tests that
   # don't use it.
   static_library("zbi-memory") {
+    complete_static_lib = true
+
     sources = [
       "zbi-init-memory.cc",
       "zbi-memory.cc",
@@ -631,6 +644,8 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   static_library("elf-image") {
+    complete_static_lib = true
+
     public = [ "include/phys/elf-image.h" ]
     sources = [
       "elf-image-mapinto.cc",
@@ -696,6 +711,9 @@ if (toolchain_environment == "kernel.phys" ||
   # the cross-DSO instrumentation.
   static_library("cfi-runtime") {
     visibility = [ ":phys_config_deps" ]
+
+    complete_static_lib = true
+
     sources = [ "cfi-runtime.cc" ]
     deps = [
       ":elf-image",

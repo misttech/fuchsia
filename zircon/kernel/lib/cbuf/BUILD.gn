@@ -9,6 +9,8 @@ import("//build/cpp/library_headers.gni")
 static_library("cbuf") {
   public_deps = [ ":headers" ]
 
+  complete_static_lib = true
+
   sources = [ "cbuf.cc" ]
   deps = [
     "//zircon/kernel/lib/ktl",

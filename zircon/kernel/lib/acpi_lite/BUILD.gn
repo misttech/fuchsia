@@ -11,6 +11,8 @@ import("//build/toolchain/toolchain_environment.gni")
 static_library("acpi_lite") {
   public_deps = [ ":headers" ]
 
+  complete_static_lib = true
+
   sources = [
     "acpi_lite.cc",
     "apic.cc",

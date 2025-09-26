@@ -23,6 +23,8 @@ library_headers("headers") {
 static_library("x86") {
   visibility = [ "../*" ]
 
+  complete_static_lib = true
+
   sources = []
   deps = [
     "..:headers",

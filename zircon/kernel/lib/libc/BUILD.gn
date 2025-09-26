@@ -18,6 +18,8 @@ library_headers("headers") {
 }
 
 static_library("libc") {
+  complete_static_lib = true
+
   public_deps = [ ":headers" ]
 
   sources = [

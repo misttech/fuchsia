@@ -9,6 +9,8 @@ import("//build/cpp/library_headers.gni")
 static_library("backtrace") {
   public_deps = [ ":headers" ]
 
+  complete_static_lib = true
+
   sources = [ "backtrace.cc" ]
   deps = [
     "//zircon/kernel/lib/version",

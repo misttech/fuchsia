@@ -15,6 +15,9 @@ if (toolchain_environment == "kernel.phys" ||
   # riscv64-specific definitions for things in <phys/address-space.h>.
   static_library("address-space") {
     visibility = [ "//zircon/kernel/phys:*" ]
+
+    complete_static_lib = true
+
     sources = [ "address-space.cc" ]
     deps = [
       "//zircon/kernel/lib/arch",
@@ -24,6 +27,8 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   static_library("phys") {
+    complete_static_lib = true
+
     public = [ "riscv64.h" ]
     sources = [
       "exception.S",

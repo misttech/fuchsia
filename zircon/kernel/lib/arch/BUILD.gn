@@ -54,6 +54,8 @@ library_headers("common-headers") {
 static_library("arch") {
   public_deps = [ ":headers" ]
 
+  complete_static_lib = true
+
   sources = [
     "cpuid.cc",
     "riscv64-features.cc",

@@ -44,6 +44,8 @@ if (current_toolchain == default_toolchain) {
     # All the code gets built here in the phys environment.
 
     static_library("phys") {
+      complete_static_lib = true
+
       sources = [
         "gdt.cc",
         "start.S",
@@ -192,6 +194,8 @@ if (current_toolchain == default_toolchain) {
     # implicitly by phys_executable() without adding bloat to the tiny tests
     # that don't use it.
     static_library("multiboot-init") {
+      complete_static_lib = true
+
       sources = [ "multiboot-init.cc" ]
       deps = [
         "//src/lib/zbitl",
@@ -304,6 +308,9 @@ if (current_toolchain == default_toolchain) {
   # that don't use it.
   static_library("linuxboot-init") {
     visibility = [ ":*" ]
+
+    complete_static_lib = true
+
     sources = [ "linuxboot-init.cc" ]
     deps = [
       ":linuxboot.h",
@@ -331,6 +338,9 @@ if (current_toolchain == default_toolchain) {
   # x86-specific definitions for things in <phys/address-space.h>.
   static_library("address-space") {
     visibility = [ "//zircon/kernel/phys:address-space" ]
+
+    complete_static_lib = true
+
     sources = [ "address-space-install.cc" ]
     if (toolchain_environment == "kernel.phys32") {
       sources += [ "address-space-32.cc" ]

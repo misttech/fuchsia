@@ -11,6 +11,8 @@ import("params.gni")
 static_library("crashlog") {
   public_deps = [ ":headers" ]
 
+  complete_static_lib = true
+
   sources = [
     "crashlog.cc",
     "panic_buffer.cc",
