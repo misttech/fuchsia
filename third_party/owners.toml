@@ -71,7 +71,6 @@
 'third_party/rust_crates/forks/ring-0.17.8' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls' = ["src/lib/fuchsia-hyper/OWNERS", "src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls-pemfile' = ["src/security/OWNERS"]
-'third_party/rust_crates/vendor/rustls-webpki' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls-native-certs' = ["src/security/OWNERS"]
 'third_party/rust_crates/vendor/rustls-webpki' = ["src/lib/fuchsia-hyper/OWNERS", "src/security/OWNERS"]
 'third_party/rust_crates/vendor/sct' = ["src/security/OWNERS"]
