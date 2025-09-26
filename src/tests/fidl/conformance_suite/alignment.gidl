@@ -59,7 +59,6 @@ success("FiveByte_randomly_generated") {
 }
 
 success("5ByteObjectAlignmentInStruct") {
-    bindings_denylist = [rust_next],
     value = FiveByteInStruct{
         elem1: FiveByte{
             elem1: 0x01020304,
@@ -170,7 +169,6 @@ success("3ByteObjectAlignmentInArray") {
 }
 
 success("5ByteObjectAlignmentInArray") {
-    bindings_denylist = [rust_next],
     value = FiveByteInArray{
         elems: [
             FiveByte{

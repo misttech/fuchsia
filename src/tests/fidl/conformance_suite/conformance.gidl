@@ -483,7 +483,6 @@ success("PackageResolverResolveRequest") {
 }
 
 success("FileGetAttrResponse") {
-    bindings_denylist = [rust_next],
     value = FileGetAttrResponse{
         s: 0x7eadbeaf,
         attributes: NodeAttributes{

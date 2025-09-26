@@ -151,7 +151,6 @@ decode_failure("TwoLayerStructInnerBoolBadValue") {
 }
 
 success("CorrectArrayWithInternalPadding") {
-    bindings_denylist = [rust_next],
     value = ArrayWithInternalPadding{
         v: [
             OneLayerStructWithPaddingAlign4{
