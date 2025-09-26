@@ -158,7 +158,7 @@ macro_rules! attributes {
                         Option::from($mut_v)
                     } else {
                         None
-                    }),*,
+                    },)*
                     ..Default::default()
                 },
                 immutable_attributes: fio::ImmutableNodeAttributes {
@@ -166,7 +166,7 @@ macro_rules! attributes {
                         Option::from($immut_v)
                     } else {
                         None
-                    }),*,
+                    },)*
                     ..Default::default()
                 }
             }
@@ -197,7 +197,7 @@ macro_rules! immutable_attributes {
                         Option::from($immut_v)
                     } else {
                         None
-                    }),*,
+                    },)*
                     ..Default::default()
                 },
             }
