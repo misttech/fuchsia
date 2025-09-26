@@ -400,8 +400,8 @@ pub async fn stage_oem_files<F: FileResolver + Sync, T: FastbootInterface>(
         )?;
 
         messenger.send(Event::Oem { oem_command: oem_file.command().to_string() }).await?;
-        fastboot_interface.oem(oem_file.command()).await.map_err(|_| {
-            anyhow!("There was an error sending oem command \"{}\"", oem_file.command())
+        fastboot_interface.oem(oem_file.command()).await.map_err(|e| {
+            anyhow!("There was an error sending oem command \"{}\": {e}", oem_file.command())
         })?;
     }
     Ok(())
