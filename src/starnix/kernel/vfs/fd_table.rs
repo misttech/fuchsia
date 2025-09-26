@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::{CurrentTaskAndLocked, Task, register_delayed_release};
-use crate::vfs::{FdNumber, FileHandle};
+use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_inspect_contrib::profile_duration;
 use fuchsia_rcu::rcu_arc::RcuArc;
@@ -14,6 +14,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::{FD_CLOEXEC, errno, error};
+use static_assertions::const_assert;
 use std::sync::Arc;
 
 bitflags! {
@@ -33,7 +34,7 @@ impl std::convert::From<FdFlags> for SyscallResult {
 pub struct FdTableId(usize);
 
 impl FdTableId {
-    fn new(id: *const Vec<Option<FdTableEntry>>) -> Self {
+    fn new(id: *const Vec<EncodedEntry>) -> Self {
         Self(id as usize)
     }
 
@@ -42,16 +43,114 @@ impl FdTableId {
     }
 }
 
+const FLAGS_MASK: usize = 0x1;
+
+/// An encoded entry in an `FdTable`.
+///
+/// Encodes both the `FileHandle` and the CLOEXEC bit. Can either hold an entry or be empty.
+#[derive(Debug, Default)]
+struct EncodedEntry {
+    /// Rather than using a separate "flags" field, we encode the table entry into a single usize.
+    ///
+    /// If `value` is zero, the entry is empty.
+    ///
+    /// The lowest bit of `value` is the CLOEXEC bit.
+    ///
+    /// The remaining bits of `value` are a `FileHandle` converted to a raw pointer.
+    value: usize,
+}
+
+const_assert!(std::mem::align_of::<*const FileReleaser>() >= 1 << FLAGS_MASK);
+
+impl EncodedEntry {
+    fn encode(file: FileHandle, flags: FdFlags) -> usize {
+        let ptr = Arc::into_raw(file) as usize;
+        let flags = (flags.bits() as usize) & FLAGS_MASK;
+        ptr | flags
+    }
+
+    fn new(entry: FdTableEntry) -> Self {
+        Self { value: Self::encode(entry.file, entry.flags) }
+    }
+
+    fn is_some(&self) -> bool {
+        self.value != 0
+    }
+
+    fn is_none(&self) -> bool {
+        self.value == 0
+    }
+
+    fn flags(&self) -> Option<FdFlags> {
+        if self.is_none() {
+            return None;
+        }
+        Some(self.unchecked_flags())
+    }
+
+    fn set_flags(&mut self, flags: FdFlags) {
+        assert!(self.is_some());
+        self.value = self.value & !FLAGS_MASK | (flags.bits() as usize) & FLAGS_MASK;
+    }
+
+    fn file(&self) -> Option<FileHandle> {
+        if self.is_none() {
+            return None;
+        }
+        let ptr = self.unchecked_ptr();
+        // SAFETY: The pointer is valid because it was encoded in `self.value`.
+        unsafe {
+            Arc::increment_strong_count(ptr);
+            Some(Arc::from_raw(ptr))
+        }
+    }
+
+    fn set_file(&mut self, id: FdTableId, file: FileHandle) {
+        assert!(self.is_some());
+        let flags = self.unchecked_flags();
+        self.replace(id, Self::encode(file, flags));
+    }
+
+    fn unchecked_ptr(&self) -> *const FileReleaser {
+        (self.value & !FLAGS_MASK) as *const _
+    }
+
+    fn unchecked_flags(&self) -> FdFlags {
+        FdFlags::from_bits_truncate((self.value & FLAGS_MASK) as u32)
+    }
+
+    fn to_entry(&self) -> Option<FdTableEntry> {
+        self.file().map(|file| FdTableEntry { file, flags: self.unchecked_flags() })
+    }
+
+    fn clear(&mut self, id: FdTableId) -> bool {
+        if self.is_none() {
+            return false;
+        }
+        self.replace(id, 0);
+        true
+    }
+
+    fn replace(&mut self, id: FdTableId, value: usize) {
+        let ptr = self.unchecked_ptr();
+        self.value = value;
+        if !ptr.is_null() {
+            // SAFETY: The pointer is valid because it was encoded in `self.value`.
+            let file = unsafe { Arc::from_raw(ptr) };
+            register_delayed_release(FlushedFile(file, id));
+        }
+    }
+}
+
+impl Clone for EncodedEntry {
+    fn clone(&self) -> Self {
+        if let Some(entry) = self.to_entry() { Self::new(entry) } else { Self::default() }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct FdTableEntry {
     file: FileHandle,
-
-    // Identifier of the FdTable containing this entry.
-    fd_table_id: FdTableId,
-
-    // Rather than using a separate "flags" field, we could maintain this data
-    // as a bitfield over the file descriptors because there is only one flag
-    // currently (CLOEXEC) and file descriptor numbers tend to cluster near 0.
     flags: FdFlags,
 }
 
@@ -61,27 +160,16 @@ impl Releasable for FlushedFile {
     type Context<'a> = CurrentTaskAndLocked<'a>;
     fn release<'a>(self, context: Self::Context<'a>) {
         let (locked, current_task) = context;
-        self.0.flush(locked, current_task, self.1);
-    }
-}
-
-impl Drop for FdTableEntry {
-    fn drop(&mut self) {
-        register_delayed_release(FlushedFile(Arc::clone(&self.file), self.fd_table_id));
-    }
-}
-
-impl FdTableEntry {
-    fn new(file: FileHandle, fd_table_id: FdTableId, flags: FdFlags) -> FdTableEntry {
-        FdTableEntry { file, fd_table_id, flags }
+        let FlushedFile(file, id) = self;
+        file.flush(locked, current_task, id);
     }
 }
 
 /// Having the map a separate data structure allows us to memoize next_fd, which is the
 /// lowest numbered file descriptor not in use.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 struct FdTableStore {
-    entries: Vec<Option<FdTableEntry>>,
+    entries: Vec<EncodedEntry>,
     next_fd: FdNumber,
 }
 
@@ -94,10 +182,11 @@ impl Default for FdTableStore {
 impl FdTableStore {
     fn insert_entry(
         &mut self,
+        id: FdTableId,
         fd: FdNumber,
         rlimit: u64,
         entry: FdTableEntry,
-    ) -> Result<Option<FdTableEntry>, Errno> {
+    ) -> Result<bool, Errno> {
         let raw_fd = fd.raw();
         if raw_fd < 0 {
             return error!(EBADF);
@@ -110,37 +199,48 @@ impl FdTableStore {
         }
         let raw_fd = raw_fd as usize;
         if raw_fd >= self.entries.len() {
-            self.entries.resize(raw_fd + 1, None);
+            self.entries.resize(raw_fd + 1, Default::default());
         }
-        let mut entry = Some(entry);
+        let mut entry = EncodedEntry::new(entry);
         std::mem::swap(&mut entry, &mut self.entries[raw_fd]);
-        Ok(entry)
+        Ok(entry.clear(id))
     }
 
-    fn remove_entry(&mut self, fd: &FdNumber) -> Option<FdTableEntry> {
+    fn remove_entry(&mut self, id: FdTableId, fd: &FdNumber) -> bool {
         let raw_fd = fd.raw() as usize;
         if raw_fd >= self.entries.len() {
-            return None;
+            return false;
         }
-        let removed = self.entries[raw_fd].take();
-        if removed.is_some() && raw_fd < self.next_fd.raw() as usize {
+        let removed = self.entries[raw_fd].clear(id);
+        if removed && raw_fd < self.next_fd.raw() as usize {
             self.next_fd = *fd;
         }
         removed
     }
 
-    fn get(&self, fd: FdNumber) -> Option<&FdTableEntry> {
-        match self.entries.get(fd.raw() as usize) {
-            Some(Some(entry)) => Some(entry),
-            _ => None,
-        }
+    fn is_some(&self, fd: FdNumber) -> bool {
+        let raw_fd = fd.raw() as usize;
+        self.entries.get(raw_fd).map_or(false, |entry| entry.is_some())
     }
 
-    fn get_mut(&mut self, fd: FdNumber) -> Option<&mut FdTableEntry> {
-        match self.entries.get_mut(fd.raw() as usize) {
-            Some(Some(entry)) => Some(entry),
-            _ => None,
+    fn get_file(&self, fd: FdNumber) -> Option<FileHandle> {
+        self.entries.get(fd.raw() as usize).map(EncodedEntry::file)?
+    }
+
+    fn get_entry(&self, fd: FdNumber) -> Option<FdTableEntry> {
+        self.entries.get(fd.raw() as usize).map(EncodedEntry::to_entry)?
+    }
+
+    fn set_fd_flags(&mut self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
+        let raw_fd = fd.raw() as usize;
+        if raw_fd >= self.entries.len() {
+            return error!(EBADF);
         }
+        if self.entries[raw_fd].is_none() {
+            return error!(EBADF);
+        }
+        self.entries[raw_fd].set_flags(flags);
+        Ok(())
     }
 
     // Returns the (possibly memoized) lowest available FD >= minfd in this map.
@@ -154,21 +254,24 @@ impl FdTableStore {
     // Recalculates the lowest available FD >= minfd based on the contents of the map.
     fn calculate_lowest_available_fd(&self, minfd: &FdNumber) -> FdNumber {
         let mut fd = *minfd;
-        while self.get(fd).is_some() {
+        while self.is_some(fd) {
             fd = FdNumber::from_raw(fd.raw() + 1);
         }
         fd
     }
 
-    fn retain<F>(&mut self, mut f: F)
+    fn retain<F>(&mut self, id: FdTableId, mut f: F)
     where
-        F: FnMut(&FdNumber, &mut FdTableEntry) -> bool,
+        F: FnMut(FdNumber, &mut FdFlags) -> bool,
     {
-        for (index, maybe_entry) in self.entries.iter_mut().enumerate() {
+        for (index, encoded_entry) in self.entries.iter_mut().enumerate() {
             let fd = FdNumber::from_raw(index as i32);
-            if let Some(entry) = maybe_entry {
-                if !f(&fd, entry) {
-                    *maybe_entry = None;
+            if let Some(flags) = encoded_entry.flags() {
+                let mut modified_flags = flags;
+                if !f(fd, &mut modified_flags) {
+                    encoded_entry.clear(id);
+                } else if modified_flags != flags {
+                    encoded_entry.set_flags(modified_flags);
                 }
             }
         }
@@ -183,7 +286,7 @@ struct FdTableInner {
 
 impl FdTableInner {
     fn id(&self) -> FdTableId {
-        FdTableId::new(&self.store.lock().entries as *const Vec<Option<FdTableEntry>>)
+        FdTableId::new(&self.store.lock().entries as *const Vec<EncodedEntry>)
     }
 
     fn unshare(&self) -> Arc<Self> {
@@ -193,17 +296,18 @@ impl FdTableInner {
 
 impl Clone for FdTableInner {
     fn clone(&self) -> FdTableInner {
-        let inner = {
-            let new_store = self.store.lock().clone();
-            FdTableInner { store: Mutex::new(new_store) }
-        };
-        let id = inner.id();
-        for maybe_entry in inner.store.lock().entries.iter_mut() {
-            if let Some(entry) = maybe_entry {
-                entry.fd_table_id = id;
-            }
+        let cloned_store = self.store.lock().clone();
+        FdTableInner { store: Mutex::new(cloned_store) }
+    }
+}
+
+impl Drop for FdTableInner {
+    fn drop(&mut self) {
+        let id = self.id();
+        let store = self.store.get_mut();
+        for encoded_entry in store.entries.iter_mut() {
+            encoded_entry.clear(id);
         }
-        inner
     }
 }
 
@@ -270,10 +374,10 @@ impl FdTable {
         L: LockBefore<ThreadGroupLimits>,
     {
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
-        let id = self.id();
         let inner = self.inner.read();
+        let id = inner.id();
         let mut state = inner.store.lock();
-        state.insert_entry(fd, rlimit, FdTableEntry::new(file, id, flags))?;
+        state.insert_entry(id, fd, rlimit, FdTableEntry { file, flags })?;
         Ok(())
     }
 
@@ -289,11 +393,11 @@ impl FdTable {
     {
         profile_duration!("AddFd");
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
-        let id = self.id();
         let inner = self.inner.read();
+        let id = inner.id();
         let mut state = inner.store.lock();
         let fd = state.next_fd;
-        state.insert_entry(fd, rlimit, FdTableEntry::new(file, id, flags))?;
+        state.insert_entry(id, fd, rlimit, FdTableEntry { file, flags })?;
         Ok(fd)
     }
 
@@ -311,17 +415,12 @@ impl FdTable {
         L: LockBefore<ThreadGroupLimits>,
     {
         profile_duration!("DuplicateFd");
-        // Drop the removed entry only after releasing the writer lock in case
-        // the close() function on the FileOps calls back into the FdTable.
-        #[allow(clippy::collection_is_never_read)]
-        let _removed_entry;
         let result = {
             let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
-            let id = self.id();
             let inner = self.inner.read();
+            let id = inner.id();
             let mut state = inner.store.lock();
-            let file =
-                state.get(oldfd).map(|entry| entry.file.clone()).ok_or_else(|| errno!(EBADF))?;
+            let file = state.get_file(oldfd).ok_or_else(|| errno!(EBADF))?;
 
             let fd = match target {
                 TargetFdNumber::Specific(fd) => {
@@ -333,15 +432,15 @@ impl FdTable {
                         // when we're past the rlimit.
                         return error!(EBADF);
                     }
-                    _removed_entry = state.remove_entry(&fd);
+                    state.remove_entry(id, &fd);
                     fd
                 }
                 TargetFdNumber::Minimum(fd) => state.get_lowest_available_fd(fd),
                 TargetFdNumber::Default => state.get_lowest_available_fd(FdNumber::from_raw(0)),
             };
             let existing_entry =
-                state.insert_entry(fd, rlimit, FdTableEntry::new(file, id, flags))?;
-            assert!(existing_entry.is_none());
+                state.insert_entry(id, fd, rlimit, FdTableEntry { file, flags })?;
+            assert!(!existing_entry);
             Ok(fd)
         };
         result
@@ -358,7 +457,7 @@ impl FdTable {
         profile_duration!("GetFdWithFlags");
         let inner = self.inner.read();
         let state = inner.store.lock();
-        state.get(fd).map(|entry| (entry.file.clone(), entry.flags)).ok_or_else(|| errno!(EBADF))
+        state.get_entry(fd).map(|entry| (entry.file, entry.flags)).ok_or_else(|| errno!(EBADF))
     }
 
     pub fn get(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
@@ -371,14 +470,10 @@ impl FdTable {
 
     pub fn close(&self, fd: FdNumber) -> Result<(), Errno> {
         profile_duration!("CloseFile");
-        // Drop the file object only after releasing the writer lock in case
-        // the close() function on the FileOps calls back into the FdTable.
-        let removed = {
-            let inner = self.inner.read();
-            let mut state = inner.store.lock();
-            state.remove_entry(&fd)
-        };
-        if removed.is_some() { Ok(()) } else { error!(EBADF) }
+        let inner = self.inner.read();
+        let id = inner.id();
+        let mut state = inner.store.lock();
+        if state.remove_entry(id, &fd) { Ok(()) } else { error!(EBADF) }
     }
 
     pub fn get_fd_flags_allowing_opath(&self, fd: FdNumber) -> Result<FdFlags, Errno> {
@@ -387,27 +482,18 @@ impl FdTable {
 
     pub fn set_fd_flags(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
         profile_duration!("SetFdFlags");
-        self.inner.read().store.lock().get_mut(fd).ok_or_else(|| errno!(EBADF)).map(|entry| {
-            if entry.file.flags().contains(OpenFlags::PATH) {
-                error!(EBADF)
-            } else {
-                entry.flags = flags;
-                Ok(())
-            }
-        })?
+        let inner = self.inner.read();
+        let mut state = inner.store.lock();
+        let file = state.get_file(fd).ok_or_else(|| errno!(EBADF))?;
+        if file.flags().contains(OpenFlags::PATH) {
+            return error!(EBADF);
+        }
+        state.set_fd_flags(fd, flags)
     }
 
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
         profile_duration!("SetFdFlagsAllowingOpath");
-        self.inner
-            .read()
-            .store
-            .lock()
-            .get_mut(fd)
-            .map(|entry| {
-                entry.flags = flags;
-            })
-            .ok_or_else(|| errno!(EBADF))
+        self.inner.read().store.lock().set_fd_flags(fd, flags)
     }
 
     /// Retains only the FDs matching the predicate `f`.
@@ -416,7 +502,10 @@ impl FdTable {
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
         profile_duration!("RetainFds");
-        self.inner.read().store.lock().retain(|fd, entry| f(*fd, &mut entry.flags));
+        let inner = self.inner.read();
+        let id = inner.id();
+        let mut state = inner.store.lock();
+        state.retain(id, |fd, flags| f(fd, flags));
     }
 
     /// Returns a vector of all current file descriptors in the table.
@@ -428,8 +517,8 @@ impl FdTable {
             .entries
             .iter()
             .enumerate()
-            .filter_map(|(index, maybe_entry)| {
-                maybe_entry.as_ref().map(|_| FdNumber::from_raw(index as i32))
+            .filter_map(|(index, encoded_entry)| {
+                if encoded_entry.is_none() { None } else { Some(FdNumber::from_raw(index as i32)) }
             })
             .collect()
     }
@@ -439,12 +528,12 @@ impl FdTable {
     /// `maybe_replacement == Some(replacement_file)`.
     pub fn remap_fds<F: Fn(&FileHandle) -> Option<FileHandle>>(&self, predicate: F) {
         let inner = self.inner.read();
+        let id = inner.id();
         let mut store = inner.store.lock();
-
-        for maybe_entry in store.entries.iter_mut() {
-            if let Some(entry) = maybe_entry {
-                if let Some(replacement_file) = predicate(&entry.file) {
-                    entry.file = replacement_file;
+        for encoded_entry in store.entries.iter_mut() {
+            if let Some(file) = encoded_entry.file() {
+                if let Some(replacement_file) = predicate(&file) {
+                    encoded_entry.set_file(id, replacement_file);
                 }
             }
         }
