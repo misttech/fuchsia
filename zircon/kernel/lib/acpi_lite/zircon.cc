@@ -5,12 +5,12 @@
 // https://opensource.org/licenses/MIT
 
 #include <align.h>
-#include <inttypes.h>
 #include <lib/acpi_lite.h>
 #include <lib/acpi_lite/zircon.h>
 #include <zircon/compiler.h>
 
 #include <kernel/range_check.h>
+#include <ktl/limits.h>
 #include <vm/physmap.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object_physical.h>
@@ -31,14 +31,13 @@ zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t l
 
   // Get the last byte of the specified range, ensuring we don't wrap around the address
   // space.
-  uintptr_t phys_end;
-  if (add_overflow(phys, length - 1, &phys_end)) {
+  if (phys > ktl::numeric_limits<uintptr_t>::max() - length) {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
   // Convert to a page aligned base and size.
   const paddr_t paddr_base = ROUNDDOWN_PAGE_SIZE(phys);
-  const size_t size = ROUNDUP_PAGE_SIZE(phys_end) - paddr_base;
+  const size_t size = ROUNDUP_PAGE_SIZE(phys + length - 1) - paddr_base;
 
   Guard<Mutex> guard{&lock_};
 

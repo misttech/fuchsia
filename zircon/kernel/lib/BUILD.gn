@@ -24,8 +24,7 @@ group("phys-tests") {
 group("kernel-tests") {
   # TODO: testonly = true
   deps = [
-    # TODO(https://fxbug.dev/447387400): These tests fail on arm/riscv
-    # "acpi_lite:kernel-tests",
+    "acpi_lite:kernel-tests",
     "arch/test:kernel-tests",
     "backtrace/tests",
     "cbuf:kernel-tests",
