@@ -36,20 +36,16 @@ closed(removed=18) open(added=18) protocol Controller {
         dictionary fuchsia.component.sandbox.DictionaryRef;
     }) error Error;
 
-    /// Destroys this component. When this method returns, either:
-    ///
-    /// - Ok was returned, indicating destruction has begun.
-    /// - An error was returned, and destruction will not be attempted.
-    ///
-    /// If Ok was returned, destruction will proceed in the background, but it
-    /// hasn't necessarily completed yet. When it completes, the framework will
-    /// close this [Controller] channel.
+    /// Destroys this component. When this method returns, the component is
+    /// either destroyed or in the case of an error no destruction happened.
     ///
     /// Errors:
     ///
     /// - `ACCESS_DENIED`: Destruction of this component is not allowed.
     /// Currently, this can happen if the component is a static child of its
     /// parent.
+    /// - `INTERNAL`: Something prevented destruction from succeeding -- component
+    ///   manager's logs will contain more detail.
     @available(added=HEAD)
     flexible Destroy() -> () error Error;
 };

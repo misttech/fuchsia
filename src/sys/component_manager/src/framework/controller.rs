@@ -136,20 +136,19 @@ pub async fn serve_controller(
                         continue;
                     }
                 };
-                // Be sure to return a response before scheduling the subtask. Otherwise it's possible
-                // (even if unlikely) that the subtask completes and cancels this task before the
-                // code to send the response executes.
-                responder.send(Ok(()))?;
                 parent.nonblocking_task_group().spawn(async move {
                     let child_name =
                         moniker.leaf().expect("we already checked this is not the root component");
-                    if let Err(err) = parent.remove_dynamic_child(&child_name).await {
-                        warn!(err:%, moniker:%;
-                                "Controller/Destroy: component destruction unexpectedly failed");
+                    match parent.remove_dynamic_child(&child_name).await {
+                        Ok(()) => {
+                            _ = responder.send(Ok(()));
+                        }
+                        Err(err) => {
+                            warn!(err:%, moniker:%;
+                            "Controller/Destroy: component destruction unexpectedly failed");
+                            _ = responder.send(Err(fcomponent::Error::Internal));
+                        }
                     }
-                    // If `res` was Ok, the contract of this method states that we should close
-                    // the channel and not return a response. That should happen because destroying
-                    // this component should cancel this task which owns the channel.
                 });
             }
             fcomponent::ControllerRequest::_UnknownMethod { ordinal, .. } => {
