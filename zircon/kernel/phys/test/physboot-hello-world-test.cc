@@ -39,7 +39,8 @@ extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
             .upper_guard_size_bytes = 0x1000,
         },
 #endif
-    .boot_constants = PhysHandoffKernelImagePtr<const BootConstants>::Constant<kBootConstants>(),
+
+    .boot_constants{kBootConstants},
 };
 
 PhysHandoff* gPhysHandoff = nullptr;

@@ -39,6 +39,9 @@
 
 namespace {
 
+constexpr ktl::string_view kMachineFileName =
+    elfldltl::ElfMachineFileName(elfldltl::ElfMachine::kNative);
+
 // Carve out some physical pages requested for testing before handing off.
 void FindTestRamReservation(RamReservation& ram) {
   ZX_ASSERT_MSG(!ram.paddr, "Must use kernel.test.ram.reserve=SIZE without ,ADDRESS!");
@@ -444,6 +447,26 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
   // altogether.
   debugf("%s: Handing off at physical load address %#" PRIxPTR ", entry %p...\n",
          gSymbolize->name(), kernel_.physical_load_address(), abi_spec_->entry);
+  debugf("%s: (gdb) add-symbol-file kernel_%.*s/vmzircon %#" PRIxPTR "\n", gSymbolize->name(),
+         static_cast<int>(kMachineFileName.size()), kMachineFileName.data(),
+         abi_spec_->text_start.address());
+
+  if (gBootOptions->debug_boot_spin) {
+    if (!abi_spec_->debug_boot_spin_ready) {
+      ZX_PANIC("kernel.debug.boot-spin set with a kernel compiled without it");
+    }
+
+    uintptr_t vaddr = abi_spec_->debug_boot_spin_ready.address();
+    auto query = AddressSpace::UpperPaging::Query(gAddressSpace->upper_root_paddr(),
+                                                  AddressSpace::GetPageTableDirectIo, vaddr);
+    ZX_ASSERT(query.is_ok());
+    printf(
+        "%s: Kernel will spin until `true` stored in %.*s @"
+        " vaddr {{{data:%#" PRIxPTR "}}} / paddr %#" PRIx64 "\n",
+        gSymbolize->name(), static_cast<int>(ZirconAbiSpec::kDebugBootSpinVariable.size()),
+        ZirconAbiSpec::kDebugBootSpinVariable.data(), vaddr, query->paddr);
+    printf("%s: (gdb) set *(bool*)%#" PRIxPTR " = true\n", gSymbolize->name(), vaddr);
+  }
 
   // Hand-off the serial driver. There may be no more logging beyond this point.
   handoff()->uart = ktl::move(uart).TakeUart();

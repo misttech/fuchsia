@@ -37,6 +37,7 @@
 #include <kernel/topology.h>
 #include <lk/init.h>
 #include <phys/handoff.h>
+#include <phys/zircon-abi-spec.h>
 #include <vm/init.h>
 #include <vm/vm.h>
 
@@ -66,6 +67,19 @@ KCOUNTER(timeline_init, "boot.timeline.init")
 // called from arch code
 void lk_main(PhysHandoff* handoff) {
   gHandoffTicks = arch::EarlyTicks::Get();
+
+#if LK_DEBUGLEVEL >= 2
+  // Check this even before PostHandoffBootstrap, but after the time sample.
+  if (handoff->boot_options->debug_boot_spin) [[unlikely]] {
+    // Wait for gDebugBootSpin to be changed magically from outside (e.g. by
+    // the kernel developer using the debugger interface to the emulator).
+    while (!gDebugBootSpinReady) {
+      // This tells the compiler that the loop always makes forward progress
+      // and might terminate, because the flag has a new value in memory.
+      __asm__ volatile("" : "=m"(gDebugBootSpinReady));
+    }
+  }
+#endif
 
   PostHandoffBootstrap(handoff);
 

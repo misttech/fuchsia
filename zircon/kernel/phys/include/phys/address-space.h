@@ -84,6 +84,16 @@ class AddressSpace {
   using LowerPaging = arch::Paging<ArchLowerPagingTraits>;
   using UpperPaging = arch::Paging<ArchUpperPagingTraits>;
 
+  static constexpr uint64_t kNumTableEntries = *LowerPaging::kNumTableEntriesAllLevels;
+  static_assert(*UpperPaging::kNumTableEntriesAllLevels == kNumTableEntries);
+
+  using TableEntryValueType = LowerPaging::EntryValueTypeAllLevels;
+  static_assert(std::is_same_v<TableEntryValueType, UpperPaging::EntryValueTypeAllLevels>);
+  static_assert(!std::is_void_v<TableEntryValueType>);
+
+  using PageTable = hwreg::AlignedTableStorage<TableEntryValueType, kNumTableEntries>;
+  using PageTableDirectIo = decltype(PageTable{}.direct_io());
+
   static_assert(ktl::is_same_v<typename LowerPaging::MemoryType, typename UpperPaging::MemoryType>);
   using MemoryType = typename LowerPaging::MemoryType;
 
@@ -151,17 +161,18 @@ class AddressSpace {
     state_ = ArchCreatePagingState(ktl::forward<Args>(args)...);
   }
 
-  template <bool DualSpaces = kDualSpaces, typename = ktl::enable_if_t<DualSpaces>>
-  uint64_t lower_root_paddr() const {
-    return lower_root_paddr_;
-  }
+  uint64_t lower_root_paddr() const { return lower_root_paddr_; }
 
-  template <bool DualSpaces = kDualSpaces, typename = ktl::enable_if_t<DualSpaces>>
   uint64_t upper_root_paddr() const {
-    return upper_root_paddr_;
+    if constexpr (kDualSpaces) {
+      return upper_root_paddr_;
+    } else {
+      return lower_root_paddr_;
+    }
   }
 
-  template <bool DualSpaces = kDualSpaces, typename = ktl::enable_if_t<!DualSpaces>>
+  template <typename = void>
+    requires(!kDualSpaces)
   uint64_t root_paddr() const {
     return lower_root_paddr_;
   }
@@ -213,25 +224,11 @@ class AddressSpace {
     ArchInstall();
   }
 
- private:
-  static constexpr uint64_t kNumTableEntries =
-      LowerPaging::kNumTableEntries<LowerPaging::kFirstLevel>;
-
-  template <typename Paging, size_t... LevelIndex>
-  static constexpr bool SameNumberOfEntries(ktl::index_sequence<LevelIndex...>) {
-    return ((Paging::template kNumTableEntries<Paging::kLevels[LevelIndex]> == kNumTableEntries) &&
-            ...);
+  static PageTableDirectIo GetPageTableDirectIo(uint64_t paddr) {
+    return reinterpret_cast<PageTable*>(paddr)->direct_io();
   }
-  // TODO(https://fxbug.dev/42083279): Uncomment.
-  /*
-  static_assert(
-      SameNumberOfEntries<LowerPaging>(ktl::make_index_sequence<LowerPaging::kLevels.size()>()));
-  static_assert(
-      SameNumberOfEntries<UpperPaging>(ktl::make_index_sequence<UpperPaging::kLevels.size()>()));
-  */
 
-  using Table = hwreg::AlignedTableStorage<uint64_t, kNumTableEntries>;
-
+ private:
   static constexpr uint64_t kLowerVirtualAddressRangeEnd =
       *LowerPaging::kLowerVirtualAddressRangeEnd;
   static constexpr uint64_t kUpperVirtualAddressRangeStart =
@@ -246,9 +243,7 @@ class AddressSpace {
   // Defined in //zircon/kernel/arch/$arch/phys/address-space.cc
   void ArchInstall() const;
 
-  fit::inline_function<decltype(Table{}.direct_io())(uint64_t)> paddr_to_io_ = [](uint64_t paddr) {
-    return reinterpret_cast<Table*>(paddr)->direct_io();
-  };
+  fit::inline_function<PageTableDirectIo(uint64_t)> paddr_to_io_ = GetPageTableDirectIo;
 
   template <memalloc::Type AllocationType>
   ktl::optional<uint64_t> AllocatePageTable(uint64_t size, uint64_t alignment) {

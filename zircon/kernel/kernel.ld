@@ -128,7 +128,10 @@ SECTIONS {
    * Sorting by alignment minimizes intersection padding; secondarily sorting
    * by name groups prefixes like `.text.hot.*` or `.text.cold.*` together.
    */
-  .text : { *(SORT_BY_ALIGNMENT(.text*)) }
+  .text : {
+    PROVIDE_HIDDEN(__text_start = .);
+    *(SORT_BY_ALIGNMENT(.text*))
+  }
 
   PROVIDE_HIDDEN(__code_end = .);
 

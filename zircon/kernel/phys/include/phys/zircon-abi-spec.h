@@ -7,10 +7,13 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZIRCON_ABI_SPEC_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZIRCON_ABI_SPEC_H_
 
+#include <lib/arch/asm.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/assert.h>
 
+#include <ktl/byte.h>
+#include <ktl/string_view.h>
 #include <ktl/type_traits.h>
 
 #include "handoff-ptr.h"
@@ -19,18 +22,27 @@ struct BootConstants;  // <phys/boot-constants.h>
 struct PhysHandoff;    // <phys/handoff.h>
 struct ZirconAbiSpec;  // Defined below.
 
+extern "C" {
+
 // This is defined in RODATA (or RELRO) by the kernel as the link-time e_entry
 // address; physboot finds it in the image after loading and relocation.
-extern "C" constinit const ZirconAbiSpec kZirconAbiSpec;
+extern constinit const ZirconAbiSpec kZirconAbiSpec;
 
 // This is the entry point function for the ELF kernel.  This symbol is not
 // used directly as the ELF entry point (Ehdr::e_entry).  Instead e_entry
 // points to the kZirconAbiSpec struct and its .entry is the real entry point.
-extern "C" [[noreturn, clang::cfi_unchecked_callee]] void PhysbootHandoff(PhysHandoff* handoff);
+[[noreturn, clang::cfi_unchecked_callee]] void PhysbootHandoff(PhysHandoff* handoff);
 
 // See <phys/boot-constants.h>.  This is "defined" in the kernel, so it resides
 // in the kernel's RODATA, but it's filled in by physboot before kernel entry.
-extern "C" constinit const BootConstants kBootConstants;
+extern constinit const BootConstants kBootConstants;
+
+// This always starts false and only exists to be set manually from the
+// debugger when using the `kernel.debug.boot-spin` boot option; when that's
+// not enabled, nothing ever looks at this.
+extern constinit volatile bool gDebugBootSpinReady;
+
+}  // extern "C"
 
 // The kernel ABI specifications needed at the phys stage to properly prepare
 // handoff.  The contents are initialized in the definition of kZirconAbiSpec;
@@ -86,6 +98,17 @@ struct ZirconAbiSpec {
   // This instructs physboot where to initialize the BootConstants before the
   // kernel starts.  Then the kernel just accesses kBootConstants directly.
   PhysHandoffKernelImagePtr<const BootConstants> boot_constants;
+
+  // This tells physboot where the gDebugBootSpinReady variable sits.  This
+  // variable is never actually touched by kernel code to implement the
+  // kernel.debug.boot-spin boot option, but physboot prints out its runtime
+  // address to aid in setting it manually when debugging.
+  PhysHandoffKernelImagePtr<volatile bool> debug_boot_spin_ready;
+  static constexpr ktl::string_view kDebugBootSpinVariable = "gDebugBootSpinReady";
+
+  // This tells physboot the (relocated) address of the .text section, which is
+  // what GDB's `add-symbol-file` needs to be fed.
+  PhysHandoffKernelImagePtr<const ktl::byte> text_start;
 };
 static_assert(ktl::is_trivially_destructible_v<ZirconAbiSpec>);
 

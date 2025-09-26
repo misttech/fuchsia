@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/asm.h>
 #include <lib/arch/ticks.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/code-patching/self-test.h>
@@ -40,6 +41,9 @@ PhysHandoff* gPhysHandoff;
 vaddr_t gPhysmapBase;
 size_t gPhysmapSize;
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
+extern arch::AsmLabel __text_start;  // Defined by the linker script.
+
 // This is declared as `extern "C" constinit const` so the compiler knows that
 // it needs to be defined for real to satisfy link-time references (from -e).
 // But the compiler still knows it's constexpr (or const would be enough) and
@@ -55,8 +59,22 @@ extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
 #if __has_feature(safe_stack)
     .unsafe_stack = kUnsafeStack,
 #endif
-    .boot_constants = PhysHandoffKernelImagePtr<const BootConstants>::Constant<kBootConstants>(),
+
+    .boot_constants{kBootConstants},
+
+#if LK_DEBUGLEVEL >= 2
+    // Without debug support, this stays nullptr and physboot will panic if the
+    // `kernel.debug.boot-spin` boot option is used.
+    .debug_boot_spin_ready{gDebugBootSpinReady},
+#endif
+
+    // This is just handy for physboot to be able to print out.
+    .text_start{__text_start[0]},
 };
+
+#if LK_DEBUGLEVEL >= 2
+constinit volatile bool gDebugBootSpinReady = false;
+#endif
 
 namespace {
 

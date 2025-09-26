@@ -415,6 +415,24 @@ class Paging : public PagingTraits {
     return *std::next(it);
   }();
 
+  // The kNumTableEntries value if they're all the same, else std::nullopt.
+  static constexpr std::optional<uint64_t> kNumTableEntriesAllLevels =
+      []<size_t... I>(std::index_sequence<I...>) -> std::optional<uint64_t> {
+    if (((kNumTableEntries<kLevels[I]> == kNumTableEntries<kFirstLevel>) && ...)) {
+      return kNumTableEntries<kFirstLevel>;
+    }
+    return std::nullopt;
+  }(std::make_index_sequence<kLevels.size()>());
+
+  // The TableEntry<...>::ValueType if they're all the same, else void.
+  using EntryValueTypeAllLevels =
+      std::conditional_t<[]<size_t... I>(std::index_sequence<I...>) -> bool {
+        return (std::is_same_v<typename TableEntry<kLevels[I]>::ValueType,
+                               typename TableEntry<kFirstLevel>::ValueType> &&
+                ...);
+      }(std::make_index_sequence<kLevels.size()>()),
+                         typename TableEntry<kFirstLevel>::ValueType, void>;
+
   /// The virtual address bit range at a given level that serves as the index
   /// into a page table at that level.
   template <LevelType Level>

@@ -54,6 +54,11 @@ enum class PhysHandoffPtrLifetime { kPermanent, kKernelImage, kTemporary };
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffPtr {
  public:
+  // Handoff "heap" pointers are always pointers to const.  But a pointer into
+  // the kernel image can have any kind of qualifiers or lack thereof.
+  using value_type =
+      std::conditional_t<Lifetime == PhysHandoffPtrLifetime::kKernelImage, T, const T>;
+
   // Handoff pointers can only be dereferenced in the kernel proper.
   static constexpr bool kCanDeref =
 #ifdef HANDOFF_PTR_DEREF
@@ -72,14 +77,9 @@ class PhysHandoffPtr {
 
   // In the kernel proper, pointers that are definitely into the image itself
   // can be initialized as constinit.
-  template <const T& Ref>
-  static consteval PhysHandoffPtr Constant()
+  consteval explicit PhysHandoffPtr(T& ref)
     requires(kCanDeref && Lifetime == PhysHandoffPtrLifetime::kKernelImage)
-  {
-    PhysHandoffPtr ptr;
-    ptr.ptr_ = &Ref;
-    return ptr;
-  }
+      : ptr_{&ref} {}
 
   constexpr PhysHandoffPtr& operator=(PhysHandoffPtr&& other) noexcept {
     ptr_ = std::exchange(other.ptr_, {});
@@ -118,10 +118,25 @@ class PhysHandoffPtr {
     return get();
   }
 
+  // The equivalent of reinterpret_cast can be done even when !kCanDeref.
+
+  uintptr_t address() const {  // as if reinterpret_cast<uintptr_t>(get())
+    return reinterpret_cast<uintptr_t>(ptr_);
+  }
+
+  template <typename Other>  // as if reinterpret_cast<Other*>(get())
+    requires(std::is_const_v<Other> == std::is_const_v<T>)
+  PhysHandoffPtr<Other, Lifetime> Reinterpret() const {
+    using OtherPtr = PhysHandoffPtr<Other, Lifetime>;
+    PhysHandoffPtr<Other, Lifetime> other;
+    other.ptr_ = reinterpret_cast<OtherPtr::value_type*>(ptr_);
+    return other;
+  }
+
  private:
   friend class HandoffPrep;
 
-  const T* ptr_ = nullptr;
+  value_type* ptr_ = nullptr;
 };
 
 // PhysHandoffSpan<T> is to std::span<const T> as PhysHandoffPtr<T> is to const

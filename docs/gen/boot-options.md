@@ -1082,6 +1082,21 @@ Values must be one of:
  * `panic`
    - Detected undefined behavior causes a fatal kernel panic.
 
+### kernel.debug.boot-spin=\<bool>
+
+**Default:** `false`
+
+_**NOTE:** This is only meant for kernel debugging and is not available in
+production kernel builds.  In a kernel compiled without assertions and other
+debugging features, the option will have no effect._
+
+When set, some of the first code in the kernel proper (after physboot hands off)
+will be to spin as long as a certain global variable is zero.  The variable must
+be set from the debugger attached to the kernel (e.g. via QEMU's -s) for boot to
+continue.  This makes it easy to let the virtual boot CPU run through the boot
+loader and early boot code with the debugger attached and then interrupt the
+spin interactively in the debugger to set breakpoints or step through boot code.
+
 
 ## Options available only on arm64 machines
 

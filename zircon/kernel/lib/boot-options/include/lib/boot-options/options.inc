@@ -940,6 +940,19 @@ Values must be one of:
    - Detected undefined behavior causes a fatal kernel panic.
 )""")
 
+DEFINE_OPTION("kernel.debug.boot-spin", bool, debug_boot_spin, {false}, R"""(
+_**NOTE:** This is only meant for kernel debugging and is not available in
+production kernel builds.  In a kernel compiled without assertions and other
+debugging features, the option will have no effect._
+
+When set, some of the first code in the kernel proper (after physboot hands off)
+will be to spin as long as a certain global variable is zero.  The variable must
+be set from the debugger attached to the kernel (e.g. via QEMU's -s) for boot to
+continue.  This makes it easy to let the virtual boot CPU run through the boot
+loader and early boot code with the debugger attached and then interrupt the
+spin interactively in the debugger to set breakpoints or step through boot code.
+)""")
+
 // Machine-specific options are included here for all the kernel places.
 // In the generator program, they're included separately.
 
