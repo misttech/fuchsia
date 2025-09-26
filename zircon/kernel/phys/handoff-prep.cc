@@ -22,6 +22,7 @@
 #include <ktl/utility.h>
 #include <phys/allocation.h>
 #include <phys/arch/arch-handoff.h>
+#include <phys/boot-constants.h>
 #include <phys/elf-image.h>
 #include <phys/handoff.h>
 #include <phys/kernel-package.h>
@@ -89,6 +90,17 @@ constexpr ktl::string_view VmoNameString(const PhysVmo::Name& name) {
 
 }  // namespace
 
+template <typename T, typename... Args>
+  requires(ktl::constructible_from<T, Args...> && ktl::is_trivially_destructible_v<T>)
+T* HandoffPrep::NewInKernelImage(const PhysHandoffKernelImagePtr<const T>& ptr,
+                                 Args&&... args) const {
+  auto& memory = kernel_.image();
+  // Translate the virtual pointer back to its link-time address.
+  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr.ptr_) - kernel_.load_bias();
+  // Turn that into a pointer into the physical image to do placement new there.
+  return new (memory.GetPointer<T>(addr)) T{ktl::forward<Args>(args)...};
+}
+
 HandoffPrep::HandoffPrep(ElfImage kernel)
     : kernel_(ktl::move(kernel)),
       temporary_data_allocator_(VirtualAddressAllocator::TemporaryHandoffDataAllocator(kernel_)),
@@ -109,6 +121,13 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
 
   // Check that this isn't clearly garbled data somehow.
   abi_spec_->AssertValid<ZX_PAGE_SIZE>();
+
+  // Translate the relocated virtual address from the spec back into the image
+  // to initialize the kernel's kBootContents.
+  const BootConstants constants = {
+      .kernel_physical_load_address = kernel_.physical_load_address(),
+  };
+  boot_constants_ = NewInKernelImage(abi_spec_->boot_constants, constants);
 }
 
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
@@ -408,7 +427,6 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
   // TODO(mcgrathr): Rename to physboot.log with some prefix.
   PublishLog("i/logs/physboot", ktl::move(*ktl::exchange(gLog, nullptr)));
 
-  handoff()->kernel_physical_load_address = kernel_.physical_load_address();
   ZirconAbi abi = ConstructKernelAddressSpace(uart);
 
   // This must happen after the kernel image is mapped at its virtual address.

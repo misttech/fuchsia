@@ -451,9 +451,14 @@ class HandoffPrep {
 
   auto kernel_virtual_entry() const { return abi_spec_->entry; }
 
+  template <typename T, typename... Args>
+    requires(ktl::constructible_from<T, Args...> && ktl::is_trivially_destructible_v<T>)
+  T* NewInKernelImage(const PhysHandoffKernelImagePtr<const T>& ptr, Args&&... args) const;
+
   const ElfImage kernel_;
   PhysHandoff* handoff_ = nullptr;
   const ZirconAbiSpec* abi_spec_ = nullptr;
+  BootConstants* boot_constants_ = nullptr;
   TemporaryDataAllocator temporary_data_allocator_;
   PermanentDataAllocator permanent_data_allocator_;
   VirtualAddressAllocator first_class_mapping_allocator_;

@@ -785,6 +785,12 @@ group("physboot") {
 
 source_set("zircon-abi-spec") {
   public = [ "include/phys/zircon-abi-spec.h" ]
+  public_deps = [ ":handoff" ]
+  public_configs = [ ":includes" ]
+}
+
+source_set("boot-constants") {
+  public = [ "include/phys/boot-constants.h" ]
   public_configs = [ ":includes" ]
 }
 

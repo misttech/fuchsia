@@ -11,6 +11,7 @@
 
 namespace ktl {
 
+using std::constructible_from;
 using std::derived_from;
 
 }  // namespace ktl

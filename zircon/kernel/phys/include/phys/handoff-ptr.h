@@ -51,22 +51,35 @@ extern PhysHandoff* gPhysHandoff;
 //
 enum class PhysHandoffPtrLifetime { kPermanent, kKernelImage, kTemporary };
 
-#ifndef HANDOFF_PTR_DEREF
-#ifdef _KERNEL
-#define HANDOFF_PTR_DEREF 1
-#else
-#define HANDOFF_PTR_DEREF 0
-#endif
-#endif
-
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffPtr {
  public:
+  // Handoff pointers can only be dereferenced in the kernel proper.
+  static constexpr bool kCanDeref =
+#ifdef HANDOFF_PTR_DEREF
+      HANDOFF_PTR_DEREF
+#elif defined(_KERNEL)
+      true
+#else
+      false
+#endif
+      ;
+
+  // Default-constructible, movable but not copyable (use .get() instead).
   constexpr PhysHandoffPtr() = default;
-
   constexpr PhysHandoffPtr(const PhysHandoffPtr&) = delete;
-
   constexpr PhysHandoffPtr(PhysHandoffPtr&& other) noexcept : ptr_(std::exchange(other.ptr_, {})) {}
+
+  // In the kernel proper, pointers that are definitely into the image itself
+  // can be initialized as constinit.
+  template <const T& Ref>
+  static consteval PhysHandoffPtr Constant()
+    requires(kCanDeref && Lifetime == PhysHandoffPtrLifetime::kKernelImage)
+  {
+    PhysHandoffPtr ptr;
+    ptr.ptr_ = &Ref;
+    return ptr;
+  }
 
   constexpr PhysHandoffPtr& operator=(PhysHandoffPtr&& other) noexcept {
     ptr_ = std::exchange(other.ptr_, {});
@@ -75,10 +88,11 @@ class PhysHandoffPtr {
 
   constexpr auto operator<=>(const PhysHandoffPtr& other) const = default;
 
-#if HANDOFF_PTR_DEREF
-  // Handoff pointers can only be dereferenced in the kernel proper.
+  explicit constexpr operator bool() const { return ptr_; }
 
-  const T* get() const {
+  constexpr const T* get() const
+    requires(kCanDeref)
+  {
     if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
       ZX_DEBUG_ASSERT_MSG(gPhysHandoff,
                           "Pointer no longer valid; phys hand-off has already ended!");
@@ -86,12 +100,23 @@ class PhysHandoffPtr {
     return ptr_;
   }
 
-  const T* release() { return std::exchange(ptr_, {}); }
+  const T* release()
+    requires(kCanDeref)
+  {
+    return std::exchange(ptr_, {});
+  }
 
-  const T& operator*() const { return *get(); }
+  const T& operator*() const
+    requires(kCanDeref)
+  {
+    return *get();
+  }
 
-  const T* operator->() const { return get(); }
-#endif  // HANDOFF_PTR_DEREF
+  const T* operator->() const
+    requires(kCanDeref)
+  {
+    return get();
+  }
 
  private:
   friend class HandoffPrep;
@@ -108,25 +133,31 @@ class PhysHandoffSpan {
   using Ptr = PhysHandoffPtr<T, Lifetime>;
   using value_type = const T;
 
-  PhysHandoffSpan() = default;
+  constexpr PhysHandoffSpan() = default;
   PhysHandoffSpan(const PhysHandoffSpan&) = delete;
-  PhysHandoffSpan(PhysHandoffSpan&&) noexcept = default;
+  constexpr PhysHandoffSpan(PhysHandoffSpan&&) noexcept = default;
 
-  PhysHandoffSpan(Ptr ptr, size_t size) : ptr_(std::move(ptr)), size_(size) {}
+  constexpr PhysHandoffSpan(Ptr ptr, size_t size) : ptr_(std::move(ptr)), size_(size) {}
 
-  PhysHandoffSpan& operator=(PhysHandoffSpan&&) noexcept = default;
+  constexpr PhysHandoffSpan& operator=(PhysHandoffSpan&&) noexcept = default;
 
   constexpr auto operator<=>(const PhysHandoffSpan& other) const = default;
 
-  size_t size() const { return size_; }
+  constexpr size_t size() const { return size_; }
 
-  bool empty() const { return size() == 0; }
+  constexpr bool empty() const { return size() == 0; }
 
-#if HANDOFF_PTR_DEREF
-  std::span<value_type> get() const { return {ptr_.get(), size_}; }
+  constexpr std::span<value_type> get() const
+    requires(Ptr::kCanDeref)
+  {
+    return {ptr_.get(), size_};
+  }
 
-  std::span<value_type> release() { return {ptr_.release(), size_}; }
-#endif
+  constexpr std::span<value_type> release()
+    requires(Ptr::kCanDeref)
+  {
+    return {ptr_.release(), size_};
+  }
 
  private:
   friend class HandoffPrep;
@@ -142,21 +173,23 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
  public:
   using Base = PhysHandoffSpan<const char, Lifetime>;
 
-  PhysHandoffString() = default;
-  PhysHandoffString(PhysHandoffString&&) noexcept = default;
-  PhysHandoffString& operator=(PhysHandoffString&&) noexcept = default;
+  constexpr PhysHandoffString() = default;
+  constexpr PhysHandoffString(PhysHandoffString&&) noexcept = default;
+  constexpr PhysHandoffString& operator=(PhysHandoffString&&) noexcept = default;
 
-#ifdef HANDOFF_PTR_DEREF
-  std::string_view get() const {
+  constexpr std::string_view get() const
+    requires(Base::Ptr::kCanDeref)
+  {
     std::span str = Base::get();
     return {str.data(), str.size()};
   }
 
-  std::string_view release() {
+  constexpr std::string_view release()
+    requires(Base::Ptr::kCanDeref)
+  {
     std::span str = Base::release();
     return {str.data(), str.size()};
   }
-#endif
 };
 
 // Convenience aliases used in the PhysHandoff declaration.

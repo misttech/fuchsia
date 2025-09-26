@@ -13,12 +13,24 @@
 
 #include <ktl/type_traits.h>
 
-struct PhysHandoff;  // <phys/handoff.h>
+#include "handoff-ptr.h"
+
+struct BootConstants;  // <phys/boot-constants.h>
+struct PhysHandoff;    // <phys/handoff.h>
+struct ZirconAbiSpec;  // Defined below.
+
+// This is defined in RODATA (or RELRO) by the kernel as the link-time e_entry
+// address; physboot finds it in the image after loading and relocation.
+extern "C" constinit const ZirconAbiSpec kZirconAbiSpec;
 
 // This is the entry point function for the ELF kernel.  This symbol is not
-// used directly as the ELF entry point (Ehdr::e_entry).  Instead it's found
-// via the ZirconAbiSpec data structure (below), which is where e_entry points.
+// used directly as the ELF entry point (Ehdr::e_entry).  Instead e_entry
+// points to the kZirconAbiSpec struct and its .entry is the real entry point.
 extern "C" [[noreturn, clang::cfi_unchecked_callee]] void PhysbootHandoff(PhysHandoff* handoff);
+
+// See <phys/boot-constants.h>.  This is "defined" in the kernel, so it resides
+// in the kernel's RODATA, but it's filled in by physboot before kernel entry.
+extern "C" constinit const BootConstants kBootConstants;
 
 // The kernel ABI specifications needed at the phys stage to properly prepare
 // handoff.  The contents are initialized in the definition of kZirconAbiSpec;
@@ -52,6 +64,7 @@ struct ZirconAbiSpec {
     shadow_call_stack.AssertValid<PageSize>();
     unsafe_stack.AssertValid<PageSize>();
     ZX_ASSERT(entry);
+    ZX_ASSERT(boot_constants);
   }
 
   // This never changes and is just checked by assertions.
@@ -69,11 +82,11 @@ struct ZirconAbiSpec {
   // and the function must not return.  The member is declared const so that
   // its default initializer still applies with designated initializers.
   decltype(PhysbootHandoff)* const entry = PhysbootHandoff;
+
+  // This instructs physboot where to initialize the BootConstants before the
+  // kernel starts.  Then the kernel just accesses kBootConstants directly.
+  PhysHandoffKernelImagePtr<const BootConstants> boot_constants;
 };
 static_assert(ktl::is_trivially_destructible_v<ZirconAbiSpec>);
-
-// This is defined in RODATA (or RELRO) by the kernel as the linke-time e_entry
-// address; physboot finds it in the image after loading and relocation.
-extern "C" constinit const ZirconAbiSpec kZirconAbiSpec;
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZIRCON_ABI_SPEC_H_

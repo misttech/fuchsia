@@ -49,7 +49,7 @@
   // After these instructions, virtual addresses may be translated to physical
   // ones by subtracting %rbx.
   lea __executable_start(%rip), %rbx
-  sub PHYS_HANDOFF_KERNEL_PHYSICAL_LOAD_ADDRESS(%r14), %rbx
+  sub kKernelPhysicalLoadAddress(%rip), %rbx
 
   // kASAN tracks memory validity with a 'shadow map' starting at a fixed offset. The shadow map
   // tracks the validity of accesses within an eight-byte region with one byte - zero means that

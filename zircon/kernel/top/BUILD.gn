@@ -36,6 +36,7 @@ source_set("top") {
     "//zircon/kernel/lib/thread-stack",
     "//zircon/kernel/lib/userabi",
     "//zircon/kernel/lib/version",
+    "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
     "//zircon/kernel/platform",

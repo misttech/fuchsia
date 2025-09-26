@@ -24,6 +24,7 @@
 #include <lk/init.h>
 #include <object/handle.h>
 #include <object/vm_object_dispatcher.h>
+#include <phys/boot-constants.h>
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
 #include <platform/timer.h>
@@ -54,11 +55,10 @@ extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
 #if __has_feature(safe_stack)
     .unsafe_stack = kUnsafeStack,
 #endif
+    .boot_constants = PhysHandoffKernelImagePtr<const BootConstants>::Constant<kBootConstants>(),
 };
 
 namespace {
-
-paddr_t gKernelPhysicalLoadAddress;
 
 // When using physboot, other samples are available in the handoff data too.
 //
@@ -193,6 +193,38 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
 // This function is called first thing on kernel entry, so it should be
 // careful on what it assumes is present.
 void PostHandoffBootstrap(PhysHandoff* handoff) {
+  // This is not really part of the function, it can go anywhere as long as the
+  // compiler doesn't duplicate it.  But it must be inside a function since
+  // Clang doesn't support asm with operands outside functions like GCC >= 15
+  // does.  This is a convenient function that's definite only called once.
+  // This is just defining kBootConstants as a const variable, but so the
+  // compiler can't see how and thus cannot optimize away reading its contents.
+  // The contents are filled with distinctive garbage in the link-time image.
+  // Before the kernel runs, physboot write real contents here.
+  //
+  // TODO(https://fxbug.dev/379891035): arch/x86/start.S uses the
+  // kKernelPhysicalLoadAddress symbol.  It can be removed when that is gone.
+  constexpr ktl::byte kFill{0xdd};
+  __asm__ volatile(
+      R"""(
+      .pushsection .rodata.kBootConstants, "a", %%progbits
+      .balign %cc0
+      .globl kBootConstants
+      .hidden kBootConstants
+      .type kBootConstants, %%object
+      kBootConstants:
+        .space %cc1, %cc2
+      .size kBootConstants, %cc1
+      .globl kKernelPhysicalLoadAddress
+      .hidden kKernelPhysicalLoadAddress
+      .type kKernelPhysicalLoadAddress, %%object
+      kKernelPhysicalLoadAddress = kBootConstants + %cc3
+      .popsection
+      )"""
+      :
+      : "i"(alignof(BootConstants)), "i"(sizeof(BootConstants)), "i"(kFill),
+        "i"(offsetof(BootConstants, kernel_physical_load_address)));
+
   // Crucial set-up happens in ArchPostHandoffBootstrap() and it should happen
   // early. We take care to only sequence the simple setting of several,
   // fundamental global variables before then, along with entrypoint time
@@ -203,8 +235,8 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
 
   gBootOptions = gPhysHandoff->boot_options.get();
 
-  gKernelPhysicalLoadAddress = gPhysHandoff->kernel_physical_load_address;
-  ZX_DEBUG_ASSERT(KernelPhysicalAddressOf<__executable_start>() == gKernelPhysicalLoadAddress);
+  ZX_DEBUG_ASSERT(KernelPhysicalAddressOf<__executable_start>() ==
+                  kBootConstants.kernel_physical_load_address);
 
   gPhysmapBase = gPhysHandoff->physmap_base;
   gPhysmapSize = gPhysHandoff->physmap_size;
@@ -220,14 +252,14 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
   CodePatchingNopTest();
 }
 
-paddr_t KernelPhysicalLoadAddress() { return gKernelPhysicalLoadAddress; }
+paddr_t KernelPhysicalLoadAddress() { return kBootConstants.kernel_physical_load_address; }
 
 paddr_t KernelPhysicalAddressOf(uintptr_t va) {
   const uintptr_t start = reinterpret_cast<uintptr_t>(__executable_start);
   [[maybe_unused]] const uintptr_t end = reinterpret_cast<uintptr_t>(_end);
   ZX_DEBUG_ASSERT_MSG(va >= start, "%#" PRIxPTR " < %p", va, __executable_start);
   ZX_DEBUG_ASSERT_MSG(va < end, "%#" PRIxPTR " < %p", va, _end);
-  return gKernelPhysicalLoadAddress + (va - start);
+  return kBootConstants.kernel_physical_load_address + (va - start);
 }
 
 HandoffEnd EndHandoff() {

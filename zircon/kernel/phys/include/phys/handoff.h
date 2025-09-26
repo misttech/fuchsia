@@ -7,13 +7,6 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_
 
-// `offsetof(PhysHandoff, kernel_physical_load_address)`, for use in assembly.
-//
-// TODO(https://fxbug.dev/379891035): We only need this for x86 kASan
-// page-table set-up in start.S, which can go away with proper kASan support in
-// physboot.
-#define PHYS_HANDOFF_KERNEL_PHYSICAL_LOAD_ADDRESS 0x8
-
 #ifndef __ASSEMBLER__
 
 // Note: we refrain from using the ktl namespace as <phys/handoff.h> is
@@ -213,6 +206,8 @@ static_assert(std::is_default_constructible_v<PhysMapping>);
 // logical grouping of mappings, to be realized as a proper VMAR during VM
 // initialization.
 struct PhysVmar : public PhysVmObject {
+  using MappingSpan = PhysHandoffTemporarySpan<const PhysMapping>;
+
   constexpr bool operator==(const PhysVmar& other) const = default;
 
   // It's useful to normalize VMAR order on base address for more readable
@@ -221,9 +216,9 @@ struct PhysVmar : public PhysVmObject {
 
   constexpr uintptr_t end() const { return base + size; }
 
-#if HANDOFF_PTR_DEREF
+#ifdef _KERNEL
   // The union/OR-ing of all associated mapping permissions.
-  PhysMapping::Permissions permissions() const {
+  constexpr PhysMapping::Permissions permissions() const {
     PhysMapping::Permissions perms;
     for (const auto& mapping : mappings.get()) {
       perms |= mapping.perms;
@@ -277,7 +272,11 @@ using MappedMemoryRange = MappedRange<std::byte>;
 using MappedMmioRange = MappedRange<volatile std::byte>;
 
 // This holds (or points to) everything that is handed off from physboot to the
-// kernel proper at boot time.
+// kernel proper at boot time for active initialization use.  This is best used
+// for things that are only used temporarily to initialize other subsystems in
+// the kernel proper.  For things where the kernel proper would be just copying
+// from a PhysHandoff member directly into a global variable that never changes
+// after boot, it's better to use BootConstants (see <phys/boot-constants.h>).
 struct PhysHandoff {
   // Whether the given type represents physical memory that should be turned
   // into a VMO.
@@ -300,9 +299,6 @@ struct PhysHandoff {
   static constexpr uint64_t kMagic = 0xfeedfaceb002da2a;
 
   const uint64_t magic = kMagic;
-
-  // The physical address at which the kernel is to be loaded.
-  uintptr_t kernel_physical_load_address = 0;
 
   PhysHandoffPermanentPtr<const BootOptions> boot_options;
 
@@ -407,15 +403,6 @@ struct PhysHandoff {
   PhysHandoffPermanentSpan<const MappedMmioRange> periph_ranges;
 };
 static_assert(std::is_default_constructible_v<PhysHandoff>);
-
-// PhysHandoff does not have a standard layout due to some non-standard
-// members, but it's standard enough that we'd expect to be able to use
-// offsetof() on its members, especially on early ones like this.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-static_assert(offsetof(PhysHandoff, kernel_physical_load_address) ==
-              PHYS_HANDOFF_KERNEL_PHYSICAL_LOAD_ADDRESS);
-#pragma GCC diagnostic pop
 
 #endif  // __ASSEMBLER__
 

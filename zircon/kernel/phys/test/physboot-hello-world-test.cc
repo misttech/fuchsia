@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/asm.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/code-patching/self-test.h>
 #include <lib/elfldltl/machine.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include <zircon/assert.h>
 
+#include <phys/boot-constants.h>
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
 
@@ -37,9 +39,26 @@ extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
             .upper_guard_size_bytes = 0x1000,
         },
 #endif
+    .boot_constants = PhysHandoffKernelImagePtr<const BootConstants>::Constant<kBootConstants>(),
 };
 
 PhysHandoff* gPhysHandoff = nullptr;
+
+extern "C" arch::AsmLabel __ehdr_start;  // NOLINT(bugprone-reserved-identifier)
+
+namespace {
+
+void CheckBootConstants() {
+  // Access the field via its physical address (still identity-mapped) to check
+  // that it's really the right physical address.
+  uintptr_t load_bias =
+      arch::kAsmLabelAddress<__ehdr_start> - kBootConstants.kernel_physical_load_address;
+  const uintptr_t* physical_ptr = reinterpret_cast<const uintptr_t*>(
+      reinterpret_cast<uintptr_t>(&kBootConstants.kernel_physical_load_address) - load_bias);
+  ZX_ASSERT(*physical_ptr == kBootConstants.kernel_physical_load_address);
+}
+
+}  // namespace
 
 [[clang::cfi_unchecked_callee]] void PhysbootHandoff(PhysHandoff* handoff) {
   // Check that the stack is aligned.
@@ -49,12 +68,28 @@ PhysHandoff* gPhysHandoff = nullptr;
   // Temporary hand-off pointer dereferencing checks that this is set.
   gPhysHandoff = handoff;
 
+  __asm__ volatile(
+      R"""(
+      .pushsection .rodata.kBootConstants, "a", %%progbits
+      .balign %cc0
+      .globl kBootConstants
+      .hidden kBootConstants
+      .type kBootConstants, %%object
+      kBootConstants:
+        .space %cc1, %cc2
+      .size kBootConstants, %cc1
+      .popsection
+      )"""
+      :
+      : "i"(alignof(BootConstants)), "i"(sizeof(BootConstants)), "i"(0xbb));
+
   uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy, uart::NullIrqProvider>(
       handoff->boot_options->serial)
       .Visit([](auto& uart) {
         uart.Write("Hello world!\n");
         CodePatchingNopTest();
         uart.Write("I've been patched!\n");
+        CheckBootConstants();
         uart.Write("\n" BOOT_TEST_SUCCESS_STRING "\n");
       });
   abort();
