@@ -6,9 +6,11 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/zbi-format/driver-config.h>
+#include <reg.h>
 #include <trace.h>
 #include <zircon/types.h>
 
+#include <arch/arm64/periphmap.h>
 #include <dev/power.h>
 #include <dev/power/moonflower/init.h>
 #include <dev/psci.h>
@@ -65,6 +67,42 @@ zx_status_t moonflower_power_reboot(power_reboot_flags flags) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
+constexpr size_t kPowerDomainCount = 1;
+constexpr uint32_t kDomainId = 0;
+constexpr uint64_t kMaxOppIndex = 3;
+
+vaddr_t opp_index_reg = 0;
+
+zx_status_t moonflower_opp_set(uint32_t domain_id, uint64_t opp) {
+  if (opp_index_reg == 0) {
+    return ZX_ERR_BAD_STATE;
+  }
+  if (domain_id != kDomainId || opp > kMaxOppIndex) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  writel(static_cast<uint32_t>(kMaxOppIndex - opp), opp_index_reg);
+  return ZX_OK;
+}
+
+zx::result<uint64_t> moonflower_opp_get(uint32_t domain_id) {
+  if (opp_index_reg == 0) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  if (domain_id != kDomainId) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  return zx::ok<uint32_t>(kMaxOppIndex - readl(opp_index_reg));
+}
+
+zx::result<size_t> moonflower_opp_get_domain_count() { return zx::ok(kPowerDomainCount); }
+
+void init_opp_reg() {
+  opp_index_reg = periph_paddr_to_vaddr(0xf521000 + 0x920);
+  dprintf(INFO, "POWER: current opp %" PRIu64 "\n", moonflower_opp_get(kDomainId).value_or(-1));
+}
+
 // Set up standard pdev power looks except for reboot, which needs to tweak the
 // arguments passed to the PSCI reboot call
 constexpr pdev_power_ops moonflower_power_ops = {
@@ -73,11 +111,15 @@ constexpr pdev_power_ops moonflower_power_ops = {
     .cpu_off = psci_cpu_off,
     .cpu_on = psci_cpu_on,
     .get_cpu_state = psci_get_cpu_state,
+    .opp_set = moonflower_opp_set,
+    .opp_get = moonflower_opp_get,
+    .opp_get_domain_count = moonflower_opp_get_domain_count,
 };
 
 }  // anonymous namespace
 
 void moonflower_power_init_early() {
   dprintf(INFO, "POWER: registering moonflower power hooks\n");
+  init_opp_reg();
   pdev_register_power(&moonflower_power_ops);
 }
