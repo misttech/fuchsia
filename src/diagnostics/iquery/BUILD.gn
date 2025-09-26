@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/dist/renamed_binary.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
@@ -106,6 +107,12 @@ rustc_binary("bin") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
+renamed_binary("inspect_bin") {
+  dest = "bin/inspect"
+  source = "$root_out_dir/iquery"
+  source_deps = [ ":bin" ]
+}
+
 fuchsia_unittest_package("test_iquery_lib_unittests") {
   deps = [
     ":lib_test",
@@ -206,6 +213,7 @@ group("tests") {
 group("iquery") {
   deps = [
     ":bin",
+    ":inspect_bin",
     "//build/validate:non_production_tag",
   ]
 }

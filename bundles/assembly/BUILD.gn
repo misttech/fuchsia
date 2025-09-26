@@ -443,7 +443,10 @@ assembly_input_bundle("embeddable_eng") {
     {
       bootfs_package = true
       package = "iquery"
-      components = [ "iquery" ]
+      components = [
+        "iquery",
+        "inspect",
+      ]
     },
   ]
 }
