@@ -347,184 +347,213 @@ mod tests {
     use super::*;
     use crate::fs::fuchsia::create_fuchsia_pipe;
     use crate::mm::PAGE_SIZE;
-    use crate::testing::*;
+    use crate::testing::spawn_kernel_and_run;
     use crate::vfs::EpollFileObject;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::socket::SocketFile;
-
+    use futures::executor::block_on;
     use starnix_uapi::vfs::EpollEvent;
     use syncio::Zxio;
     use zx::HandleBased;
 
     #[::fuchsia::test]
     async fn test_vsock_socket() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (fs1, fs2) = fidl::Socket::create_stream();
-        const VSOCK_PORT: u32 = 5555;
+        spawn_kernel_and_run(|locked, current_task| {
+            let (fs1, fs2) = fidl::Socket::create_stream();
+            const VSOCK_PORT: u32 = 5555;
 
-        let listen_socket = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Vsock,
-            SocketType::Stream,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to create socket.");
-        current_task
-            .abstract_vsock_namespace
-            .bind(locked, &current_task, VSOCK_PORT, &listen_socket)
-            .expect("Failed to bind socket.");
-        listen_socket.listen(locked, &current_task, 10).expect("Failed to listen.");
+            let listen_socket = Socket::new(
+                locked,
+                &current_task,
+                SocketDomain::Vsock,
+                SocketType::Stream,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket.");
+            current_task
+                .abstract_vsock_namespace
+                .bind(locked, &current_task, VSOCK_PORT, &listen_socket)
+                .expect("Failed to bind socket.");
+            listen_socket.listen(locked, &current_task, 10).expect("Failed to listen.");
 
-        let listen_socket = current_task
-            .abstract_vsock_namespace
-            .lookup(&VSOCK_PORT)
-            .expect("Failed to look up listening socket.");
-        let remote =
-            create_fuchsia_pipe(locked, &current_task, fs2, OpenFlags::RDWR | OpenFlags::NONBLOCK)
+            let listen_socket = current_task
+                .abstract_vsock_namespace
+                .lookup(&VSOCK_PORT)
+                .expect("Failed to look up listening socket.");
+            let remote = create_fuchsia_pipe(
+                locked,
+                &current_task,
+                fs2,
+                OpenFlags::RDWR | OpenFlags::NONBLOCK,
+            )
+            .unwrap();
+            listen_socket
+                .downcast_socket::<VsockSocket>()
+                .unwrap()
+                .remote_connection(locked, &listen_socket, &current_task, remote)
                 .unwrap();
-        listen_socket
-            .downcast_socket::<VsockSocket>()
-            .unwrap()
-            .remote_connection(locked, &listen_socket, &current_task, remote)
-            .unwrap();
 
-        let server_socket = listen_socket.accept(locked).unwrap();
+            let server_socket = listen_socket.accept(locked).unwrap();
 
-        let test_bytes_in: [u8; 5] = [0, 1, 2, 3, 4];
-        assert_eq!(fs1.write(&test_bytes_in[..]).unwrap(), test_bytes_in.len());
-        let mut buffer_iterator = VecOutputBuffer::new(*PAGE_SIZE as usize);
-        let read_message_info = server_socket
-            .read(locked, &current_task, &mut buffer_iterator, SocketMessageFlags::empty())
-            .unwrap();
-        assert_eq!(read_message_info.bytes_read, test_bytes_in.len());
-        assert_eq!(buffer_iterator.data(), test_bytes_in);
+            let test_bytes_in: [u8; 5] = [0, 1, 2, 3, 4];
+            assert_eq!(fs1.write(&test_bytes_in[..]).unwrap(), test_bytes_in.len());
+            let mut buffer_iterator = VecOutputBuffer::new(*PAGE_SIZE as usize);
+            let read_message_info = server_socket
+                .read(locked, &current_task, &mut buffer_iterator, SocketMessageFlags::empty())
+                .unwrap();
+            assert_eq!(read_message_info.bytes_read, test_bytes_in.len());
+            assert_eq!(buffer_iterator.data(), test_bytes_in);
 
-        let test_bytes_out: [u8; 10] = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
-        let mut buffer_iterator = VecInputBuffer::new(&test_bytes_out);
-        server_socket
-            .write(locked, &current_task, &mut buffer_iterator, &mut None, &mut vec![])
-            .unwrap();
-        assert_eq!(buffer_iterator.bytes_read(), test_bytes_out.len());
+            let test_bytes_out: [u8; 10] = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
+            let mut buffer_iterator = VecInputBuffer::new(&test_bytes_out);
+            server_socket
+                .write(locked, &current_task, &mut buffer_iterator, &mut None, &mut vec![])
+                .unwrap();
+            assert_eq!(buffer_iterator.bytes_read(), test_bytes_out.len());
 
-        let mut read_back_buf = [0u8; 100];
-        assert_eq!(test_bytes_out.len(), fs1.read(&mut read_back_buf).unwrap());
-        assert_eq!(&read_back_buf[..test_bytes_out.len()], &test_bytes_out);
+            let mut read_back_buf = [0u8; 100];
+            assert_eq!(test_bytes_out.len(), fs1.read(&mut read_back_buf).unwrap());
+            assert_eq!(&read_back_buf[..test_bytes_out.len()], &test_bytes_out);
 
-        server_socket.close(locked, &current_task);
-        listen_socket.close(locked, &current_task);
+            server_socket.close(locked, &current_task);
+            listen_socket.close(locked, &current_task);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_vsock_write_while_read() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let (fs1, fs2) = fidl::Socket::create_stream();
-        let socket = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Vsock,
-            SocketType::Stream,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to create socket.");
-        let remote =
-            create_fuchsia_pipe(locked, &current_task, fs2, OpenFlags::RDWR | OpenFlags::NONBLOCK)
-                .unwrap();
-        downcast_socket_to_vsock(&socket).lock().state = VsockSocketState::Connected {
-            file: remote,
-            peer_addr: SocketAddress::Vsock { port: u32::MAX, cid: starnix_uapi::VMADDR_CID_HOST },
-        };
-        let socket_file =
-            SocketFile::from_socket(locked, &current_task, socket, OpenFlags::RDWR, false)
-                .expect("Failed to create socket file.");
-
-        const XFER_SIZE: usize = 42;
-
-        let socket_clone = socket_file.clone();
-        let thread = kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-            let bytes_read = socket_clone
-                .read(locked, current_task, &mut VecOutputBuffer::new(XFER_SIZE))
-                .unwrap();
-            assert_eq!(XFER_SIZE, bytes_read);
-        });
-
-        // Wait for the thread to become blocked on the read.
-        zx::MonotonicDuration::from_seconds(2).sleep();
-
-        socket_file
-            .write(locked, &current_task, &mut VecInputBuffer::new(&[0; XFER_SIZE]))
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let (fs1, fs2) = fidl::Socket::create_stream();
+            let socket = Socket::new(
+                locked,
+                &current_task,
+                SocketDomain::Vsock,
+                SocketType::Stream,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket.");
+            let remote = create_fuchsia_pipe(
+                locked,
+                &current_task,
+                fs2,
+                OpenFlags::RDWR | OpenFlags::NONBLOCK,
+            )
             .unwrap();
+            downcast_socket_to_vsock(&socket).lock().state = VsockSocketState::Connected {
+                file: remote,
+                peer_addr: SocketAddress::Vsock {
+                    port: u32::MAX,
+                    cid: starnix_uapi::VMADDR_CID_HOST,
+                },
+            };
+            let socket_file =
+                SocketFile::from_socket(locked, &current_task, socket, OpenFlags::RDWR, false)
+                    .expect("Failed to create socket file.");
 
-        let mut buffer = [0u8; 1024];
-        assert_eq!(XFER_SIZE, fs1.read(&mut buffer).unwrap());
-        assert_eq!(XFER_SIZE, fs1.write(&buffer[..XFER_SIZE]).unwrap());
-        thread.await.expect("join");
+            const XFER_SIZE: usize = 42;
+
+            let socket_clone = socket_file.clone();
+            let thread =
+                kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
+                    let bytes_read = socket_clone
+                        .read(locked, current_task, &mut VecOutputBuffer::new(XFER_SIZE))
+                        .unwrap();
+                    assert_eq!(XFER_SIZE, bytes_read);
+                });
+
+            // Wait for the thread to become blocked on the read.
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            socket_file
+                .write(locked, &current_task, &mut VecInputBuffer::new(&[0; XFER_SIZE]))
+                .unwrap();
+
+            let mut buffer = [0u8; 1024];
+            assert_eq!(XFER_SIZE, fs1.read(&mut buffer).unwrap());
+            assert_eq!(XFER_SIZE, fs1.write(&buffer[..XFER_SIZE]).unwrap());
+            block_on(thread).unwrap();
+        });
     }
 
     #[::fuchsia::test]
     async fn test_vsock_poll() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let (client, server) = zx::Socket::create_stream();
+            let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
+                .expect("create_fuchsia_pipe");
+            let server_zxio = Zxio::create(server.into_handle()).expect("Zxio::create");
+            let socket_object = Socket::new(
+                locked,
+                &current_task,
+                SocketDomain::Vsock,
+                SocketType::Stream,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket.");
+            downcast_socket_to_vsock(&socket_object).lock().state = VsockSocketState::Connected {
+                file: pipe,
+                peer_addr: SocketAddress::Vsock {
+                    port: u32::MAX,
+                    cid: starnix_uapi::VMADDR_CID_HOST,
+                },
+            };
+            let socket = SocketFile::from_socket(
+                locked,
+                &current_task,
+                socket_object.clone(),
+                OpenFlags::RDWR,
+                false,
+            )
+            .expect("Failed to create socket file.");
 
-        let (client, server) = zx::Socket::create_stream();
-        let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
-            .expect("create_fuchsia_pipe");
-        let server_zxio = Zxio::create(server.into_handle()).expect("Zxio::create");
-        let socket_object = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Vsock,
-            SocketType::Stream,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to create socket.");
-        downcast_socket_to_vsock(&socket_object).lock().state = VsockSocketState::Connected {
-            file: pipe,
-            peer_addr: SocketAddress::Vsock { port: u32::MAX, cid: starnix_uapi::VMADDR_CID_HOST },
-        };
-        let socket =
-            SocketFile::from_socket(locked, &current_task, socket_object, OpenFlags::RDWR, false)
-                .expect("Failed to create socket file.");
+            assert_eq!(
+                socket.query_events(locked, &current_task),
+                Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
+            );
 
-        assert_eq!(
-            socket.query_events(locked, &current_task),
-            Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
-        );
+            let epoll_object = EpollFileObject::new_file(locked, &current_task);
+            let epoll_file = epoll_object.downcast_file::<EpollFileObject>().unwrap();
+            let event = EpollEvent::new(FdEvents::POLLIN, 0);
+            epoll_file
+                .add(locked, &current_task, &socket, &epoll_object, event)
+                .expect("poll_file.add");
 
-        let epoll_object = EpollFileObject::new_file(locked, &current_task);
-        let epoll_file = epoll_object.downcast_file::<EpollFileObject>().unwrap();
-        let event = EpollEvent::new(FdEvents::POLLIN, 0);
-        epoll_file
-            .add(locked, &current_task, &socket, &epoll_object, event)
-            .expect("poll_file.add");
+            let fds = epoll_file
+                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
+                .expect("wait");
+            assert!(fds.is_empty());
 
-        let fds =
-            epoll_file.wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
-        assert!(fds.is_empty());
+            assert_eq!(server_zxio.write(&[0]).expect("write"), 1);
 
-        assert_eq!(server_zxio.write(&[0]).expect("write"), 1);
+            assert_eq!(
+                socket.query_events(locked, &current_task),
+                Ok(FdEvents::POLLOUT
+                    | FdEvents::POLLWRNORM
+                    | FdEvents::POLLIN
+                    | FdEvents::POLLRDNORM)
+            );
+            let fds = epoll_file
+                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
+                .expect("wait");
+            assert_eq!(fds.len(), 1);
 
-        assert_eq!(
-            socket.query_events(locked, &current_task),
-            Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM | FdEvents::POLLIN | FdEvents::POLLRDNORM)
-        );
-        let fds =
-            epoll_file.wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
-        assert_eq!(fds.len(), 1);
+            assert_eq!(
+                socket.read(locked, &current_task, &mut VecOutputBuffer::new(64)).expect("read"),
+                1
+            );
 
-        assert_eq!(
-            socket.read(locked, &current_task, &mut VecOutputBuffer::new(64)).expect("read"),
-            1
-        );
-
-        assert_eq!(
-            socket.query_events(locked, &current_task),
-            Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
-        );
-        let fds =
-            epoll_file.wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO).expect("wait");
-        assert!(fds.is_empty());
+            assert_eq!(
+                socket.query_events(locked, &current_task),
+                Ok(FdEvents::POLLOUT | FdEvents::POLLWRNORM)
+            );
+            let fds = epoll_file
+                .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
+                .expect("wait");
+            assert!(fds.is_empty());
+        });
     }
 }
