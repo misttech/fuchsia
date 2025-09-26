@@ -433,12 +433,51 @@ pub fn swap_utc_clock_handle(new_clock: UtcClock) -> Result<UtcClock, Status> {
     .into())
 }
 
+/// SUBTLE, read the detailed documentation before using this function.
+///
 /// Reads time from the UTC `Clock` registered with the runtime.
+///
+/// # Subtleties
+///
+/// If you intend to use this timestamp in any user-facing capacity, you must
+/// ensure that a sensible thing is displayed to the user. Specifically:
+///
+/// * If you want to display the value, make sure to first check whether the
+///   UTC clock is even started. If not started, Fuchsia's UTC will [continuously
+///   indicate backstop time][bt]. This is a Fuchsia-only behavior, disregarding
+///   this behavior may present a confusing outcome to your user.
+/// * If you want to use this value in arithmetic calculations, never roll your
+///   own, especially if you are combining values from different timelines.
+/// * If you must use this value in arithmetic calculations and must combine
+///   values from different timelines, doublecheck that you are using the correct
+///   other timeline.
+/// * If in the end, you want to format the value as user readable date-time,
+///   never roll your own. Use the ICU library or equivalent chronological
+///   library of your choice.
+/// * **In testing only.** Due to above peculiarities, we often provide fake
+///   UTC clocks to test fixtures. This does not happen automatically, you must
+///   configure your test fixture to do this. When reading UTC time in a test
+///   especially if you want to compare across components, doublecheck that all
+///   components are using the same UTC clock by koid.
+///
+/// # Checking whether the clock is started
+///
+/// You can check this property in a few ways:
+///
+/// * You can call `utc_clock().get_details()`, which will return a `UtcClockDetails`.
+///   You can check that the clock rates reported are not zero. Requires
+///   `zx::Rights::INSPECT` on the clock handle for `get_details()`.
+/// * You can call `utc_clock().read()`, which will return an `UtcInstant` value.
+///   If the clock is not started, this will return a value that is exactly the
+///   value of UTC backstop time. This is more straightforward but requires you
+///   to read the clock and its details, which is more work than you may want.
 ///
 /// # Panics
 ///
 /// Panics if there is no UTC clock registered with the runtime or the registered handle does not
 /// have the required rights.
+///
+/// [bt]: https://fuchsia.dev/fuchsia-src/concepts/kernel/time/utc/behavior
 #[inline]
 pub fn utc_time() -> UtcInstant {
     utc_clock().read().expect("Failed to read UTC clock")
