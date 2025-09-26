@@ -197,6 +197,12 @@ open protocol SessionManager {
         task_id uint64;
     }) error RecordingError;
 
+    /// Configure a Trace session to start when the component starts.
+    flexible StartTraceSessionOnBoot(resource struct {
+        config TraceConfig;
+        options TraceOptions;
+    }) -> () error RecordingError;
+
     /// Ends the trace session.
     /// If task_id is non-zero, then only the trace task with the given id is checked.
     /// Note: Currently there is only 1 trace task active at a time, so the task_id is of

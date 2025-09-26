@@ -23,5 +23,6 @@ group("tests") {
     "trace2json:trace2json_tests($host_toolchain)",
     "trace_bench:tests",
     "trace_manager/tests",
+    "trace_session_manager:tests",
   ]
 }

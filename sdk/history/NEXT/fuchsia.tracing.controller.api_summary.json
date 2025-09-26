@@ -327,6 +327,16 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/SessionManager.StartTraceSessionOnBoot",
+        "strictness": "flexible",
+        "ordinal": "8094473441311178594",
+        "direction": "two_way",
+        "request": "fuchsia.tracing.controller/SessionManagerStartTraceSessionOnBootRequest",
+        "response": "fuchsia.tracing.controller/SessionManager_StartTraceSessionOnBoot_Response",
+        "error": "fuchsia.tracing.controller/RecordingError"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.tracing.controller/SessionManager.Status",
         "strictness": "flexible",
         "ordinal": "3367594708220350563",
@@ -355,6 +365,23 @@
     {
         "kind": "struct",
         "name": "fuchsia.tracing.controller/SessionManagerEndTraceSessionRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManagerStartTraceSessionOnBootRequest.config",
+        "ordinal": "1",
+        "type": "fuchsia.tracing.controller/TraceConfig"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManagerStartTraceSessionOnBootRequest.options",
+        "ordinal": "2",
+        "type": "fuchsia.tracing.controller/TraceOptions"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManagerStartTraceSessionOnBootRequest",
         "resourceness": "resource"
     },
     {

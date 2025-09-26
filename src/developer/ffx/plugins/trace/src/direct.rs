@@ -6,6 +6,7 @@ use crate::progress_reader::ProgressReader;
 use crate::{SessionManagerProxyType, TraceData};
 use anyhow::Result;
 use async_fs::File;
+use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use fho::{bug, return_bug, return_user_error};
 use fidl_fuchsia_tracing_controller::{RecordingError, TraceConfig, TraceOptions};
@@ -64,6 +65,22 @@ pub(crate) async fn trace(
         }
     }
     Ok(legacy_task)
+}
+
+pub(crate) async fn trace_on_reboot(
+    proxy: SessionManagerProxyType,
+    options: TraceOptions,
+    trace_config: TraceConfig,
+) -> Result<()> {
+    if let SessionManagerProxyType::SessionManager(session_manager_proxy) = proxy {
+        let r = session_manager_proxy.start_trace_session_on_boot(&trace_config, &options).await?;
+        match r {
+            Ok(_task_id) => Ok(()),
+            Err(e) => Err(anyhow::anyhow!("Error starting trace: {e:?}")),
+        }
+    } else {
+        ffx_bail!("SessionManager proxy is not available on device.")
+    }
 }
 
 pub(crate) async fn stop_tracing(

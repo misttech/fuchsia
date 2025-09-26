@@ -28,6 +28,7 @@
         {
             name: "trace_session_manager",
             url: "trace_session_manager#meta/trace_session_manager.cm",
+            startup: "eager",
         },
     ],
     collections: [
@@ -100,6 +101,11 @@
                 "fuchsia.tracing.controller.Session",
             ],
             from: "self",
+            to: "#trace_session_manager",
+        },
+        {
+            storage: "data",
+            from: "parent",
             to: "#trace_session_manager",
         },
     ],

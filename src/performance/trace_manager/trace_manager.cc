@@ -191,7 +191,7 @@ void TraceController::TerminateTracing(fit::closure cb) {
     return;
   }
 
-  if (write_results_on_terminate_ == false) {
+  if (!write_results_on_terminate_) {
     session_->set_write_results_on_terminate(false);
   }
 

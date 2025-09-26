@@ -431,6 +431,24 @@ pub async fn trace(
                 };
             }
 
+            if opts.on_boot {
+                return match trace_proxy {
+                    SessionManagerProxyType::Provisioner(_) => {
+                        ffx_bail!(
+                            "Trace on boot is not supported with devices that do not support SessionManagerProxy"
+                        );
+                    }
+                    SessionManagerProxyType::SessionManager(_) => {
+                        let trace_config = TraceConfig {
+                            categories: Some(expanded_categories.clone()),
+                            ..trace_config
+                        };
+                        configure_on_boot_trace(trace_proxy, options, trace_config, &mut writer)
+                            .await
+                    }
+                };
+            }
+
             let trace_config =
                 TraceConfig { categories: Some(expanded_categories.clone()), ..trace_config };
             let task =
@@ -637,6 +655,17 @@ async fn background_trace(
     } else {
         anyhow::bail!("Missing SessionManagerProxy")
     }
+}
+
+async fn configure_on_boot_trace(
+    trace_proxy: SessionManagerProxyType,
+    options: TraceOptions,
+    trace_config: TraceConfig,
+    writer: &mut Writer,
+) -> Result<()> {
+    direct::trace_on_reboot(trace_proxy.clone(), options, trace_config.clone()).await?;
+    writer.line("Once the device is rebooted, stop the trace using `ffx trace stop`")?;
+    Ok(())
 }
 
 pub(crate) async fn handle_recording_error(
@@ -1075,6 +1104,7 @@ mod tests {
                         trigger: vec![],
                         no_symbolize: false,
                         no_verify_trace: false,
+                        on_boot: false,
                     }),
                 },
                 writer,
@@ -1220,6 +1250,7 @@ mod tests {
                     trigger: vec![],
                     no_symbolize: false,
                     no_verify_trace: true,
+                    on_boot: false,
                 }),
             },
             writer,
@@ -1341,6 +1372,7 @@ Triggers:
                     trigger: vec![],
                     no_symbolize: false,
                     no_verify_trace: true,
+                    on_boot: false,
                 }),
             },
             writer,
@@ -1419,6 +1451,7 @@ Triggers:
                     trigger: vec![],
                     no_symbolize: false,
                     no_verify_trace: true,
+                    on_boot: false,
                 }),
             },
             writer,
@@ -1450,6 +1483,7 @@ Triggers:
                     trigger: vec![],
                     no_symbolize: false,
                     no_verify_trace: true,
+                    on_boot: false,
                 }),
             },
             writer,
@@ -1484,6 +1518,7 @@ Triggers:
                     trigger: vec![],
                     no_symbolize: false,
                     no_verify_trace: true,
+                    on_boot: false,
                 }),
             },
             writer,
@@ -1519,6 +1554,7 @@ Triggers:
                     trigger: vec![],
                     no_symbolize: false,
                     no_verify_trace: true,
+                    on_boot: false,
                 }),
             },
             writer,

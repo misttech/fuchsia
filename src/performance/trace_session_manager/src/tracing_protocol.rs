@@ -8,12 +8,14 @@ use fidl_fuchsia_tracing_controller::{
 };
 use futures::TryStreamExt;
 use log::error;
+use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 use trace_task::{TraceTask, TracingError};
 
 type Result<T> = std::result::Result<T, TracingError>;
 
+use crate::data::OnBootTraceConfig;
 /// Struct to hold on to an instance of TraceTask.
 #[derive(Debug)]
 struct TraceTaskEntry {
@@ -25,6 +27,8 @@ struct TraceTaskEntry {
 pub(crate) struct TracingProtocol {
     task_entry: Arc<RwLock<Option<TraceTaskEntry>>>,
 }
+
+const ON_BOOT_CONFIG_FILE: &str = "/traces/on_boot_trace.json";
 
 // Based on ffx protocol of the same name.
 impl TracingProtocol {
@@ -132,8 +136,88 @@ impl TracingProtocol {
                     }
                 }
             }
+            SessionManagerRequest::StartTraceSessionOnBoot {
+                config, options, responder, ..
+            } => {
+                log::info!("StartTraceSessionOnBoot called");
+
+                let res = self.save_start_on_boot_config(options, config).await;
+                log::debug!("save_start_on_boot_config returned {res:?}");
+                let result: std::result::Result<(), RecordingError> = res.map_err(Into::into);
+                if let Err(e) = responder.send(result) {
+                    error!("Error sending start_on_boot response: {:?}", e);
+                    return Err(TracingError::FidlError(e));
+                }
+                Ok(())
+            }
             SessionManagerRequest::_UnknownMethod { .. } => todo!(),
         }
+    }
+
+    // StartRecording a new trace session when the component starts up.
+    async fn save_start_on_boot_config(
+        &self,
+        options: TraceOptions,
+        trace_config: TraceConfig,
+    ) -> Result<()> {
+        let on_boot_config =
+            OnBootTraceConfig { options: options.into(), config: trace_config.into() };
+        let serialized = serde_json::to_string_pretty(&on_boot_config)
+            .map_err(|e| TracingError::GeneralError(format!("serialization failed: {e:?}")))?;
+
+        std::fs::write(ON_BOOT_CONFIG_FILE, serialized).map_err(|e| {
+            TracingError::GeneralError(format!("unable to write {ON_BOOT_CONFIG_FILE}: {e:?}"))
+        })?;
+
+        Ok(())
+    }
+
+    // Reads the on boot configuration from storage, the deletes it.
+    fn get_on_boot_config(&self) -> Result<Option<OnBootTraceConfig>> {
+        let data = match fs::read_to_string(ON_BOOT_CONFIG_FILE) {
+            Ok(contents) => Ok(Some(contents)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                log::debug!("{ON_BOOT_CONFIG_FILE} not found, skipping on-boot trace check");
+                Ok(None)
+            }
+            Err(e) => {
+                log::error!("Failed to read {ON_BOOT_CONFIG_FILE}: {e:?}");
+                let error = TracingError::GeneralError(format!(
+                    "failed to deserialize on_boot_trace.json: {e:?}"
+                ));
+                Err(error)
+            }
+        };
+        // Always remove the file.
+        if let Err(e) = std::fs::remove_file(ON_BOOT_CONFIG_FILE) {
+            log::error!("{e:?}");
+        }
+
+        if let Some(contents) = data? {
+            let on_boot_config: OnBootTraceConfig =
+                serde_json::from_str(&contents).map_err(|e| {
+                    TracingError::GeneralError(format!(
+                        "failed to deserialize on_boot_trace.json: {e:?}"
+                    ))
+                })?;
+            Ok(Some(on_boot_config))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(crate) async fn check_for_on_boot_tracing(&self) -> Result<()> {
+        if let Some(on_boot_config) = self.get_on_boot_config()? {
+            log::info!("Starting on-boot trace session from config");
+            let res = self
+                .start_recording(on_boot_config.options.into(), on_boot_config.config.into())
+                .await;
+
+            if let Err(e) = res {
+                log::error!("Failed to start on-boot trace: {e:?}");
+            }
+        }
+        Ok(())
     }
 
     // StartRecording handler for the task protocol. The return

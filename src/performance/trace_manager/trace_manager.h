@@ -47,8 +47,8 @@ class TraceController : public controller::Session {
 
  private:
   // |Session| implementation.
-  void StartTracing(controller::StartOptions options, StartTracingCallback cb) override;
-  void StopTracing(controller::StopOptions options, StopTracingCallback cb) override;
+  void StartTracing(controller::StartOptions options, StartTracingCallback start_callback) override;
+  void StopTracing(controller::StopOptions options, StopTracingCallback stop_callback) override;
   void WatchAlert(WatchAlertCallback cb) override;
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override;
 

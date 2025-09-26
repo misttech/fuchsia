@@ -70,7 +70,7 @@
       "optionality": "optional",
       "long": "--output",
       "short": null,
-      "description": "name of output trace file.  Defaults to trace.fxt. Cannot be used with --background.  To specify the output file with background mode, pass --output to `ffx trace stop` instead.\"",
+      "description": "name of output trace file.  Defaults to trace.fxt. Cannot be used with --background. To specify the output file with background mode, pass --output to `ffx trace stop` instead.\"",
       "hidden": false
     },
     {
@@ -87,6 +87,14 @@
       "long": "--verbose",
       "short": "v",
       "description": "increase verbosity of output on trace stop. Defaults to false. This is ignored if duration is not set. Enabling this prints stats from trace providers including the number of records dropped, wrapped buffers count, % of durable buffer used and non durable bytes written.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--on-boot",
+      "short": null,
+      "description": "send request to start tracing when the device reboots. This trace can be downloaded once the device is ready using `ffx trace stop`.",
       "hidden": false
     },
     {

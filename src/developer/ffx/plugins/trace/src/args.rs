@@ -207,7 +207,7 @@ pub struct Start {
     #[argh(option)]
     pub duration: Option<u32>,
 
-    /// name of output trace file.  Defaults to trace.fxt. Cannot be used with --background. 
+    /// name of output trace file.  Defaults to trace.fxt. Cannot be used with --background.
     /// To specify the output file with background mode, pass --output to `ffx trace stop` instead."
     #[argh(option)]
     pub output: Option<String>,
@@ -227,6 +227,11 @@ pub struct Start {
     /// non durable bytes written.
     #[argh(switch, short = 'v')]
     pub verbose: bool,
+
+    /// send request to start tracing when the device reboots. This trace can be downloaded once
+    /// the device is ready using `ffx trace stop`.
+    #[argh(switch)]
+    pub on_boot: bool,
 
     /// a trigger consists of an alert leading to an action. An alert
     /// is written into the code being traced, and an action here is
