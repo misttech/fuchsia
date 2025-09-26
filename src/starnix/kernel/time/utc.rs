@@ -13,6 +13,16 @@ use starnix_sync::Mutex;
 use std::sync::LazyLock;
 use zx::{self as zx, AsHandleRef, HandleBased, Unowned};
 
+static UTC_CLOCK_RIGHTS: LazyLock<zx::Rights> = LazyLock::new(|| {
+    // No zx::Rights::WRITE!
+    zx::Rights::READ
+        | zx::Rights::INSPECT
+        | zx::Rights::TRANSFER
+        | zx::Rights::DUPLICATE
+        | zx::Rights::MAP
+        | zx::Rights::WAIT
+});
+
 // Stores a vendored handle from a test fixture. In normal operation the value here must be
 // `None`. In some Starnix container tests, we inject a custom UTC clock that the tests
 // manipulate. This is a very special circumstance, so we log warnings accordingly.
@@ -27,11 +37,12 @@ static VENDORED_UTC_HANDLE_FOR_TESTS: LazyLock<Option<UtcClockHandle>> = LazyLoc
             proxy.get_writable_utc_clock(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(30)))
             .inspect_err(|err| {log_warn!("while getting UTC clock: {err:?}");})
             .map(|handle: zx::Clock| {
+                // Verify that the handle koid matches with the handle koid logged by the UTC vendor component.
                 log_warn!("Starnix kernel is using a vendored UTC handle. This is acceptable ONLY in tests.");
+                log_warn!("Vendored UTC clock handle koid: {:?}", handle.as_handle_ref().get_koid());
                 // Make sure to remove unneeded rights, even if we know that the test fixture will
                 // give us proper handle rights.
-                 handle.replace_handle(
-                    zx::Rights::READ | zx::Rights::INSPECT| zx::Rights::TRANSFER | zx::Rights::DUPLICATE | zx::Rights::MAP)
+                 handle.replace_handle(*UTC_CLOCK_RIGHTS)
                     .map(|handle| handle.cast())
                     .inspect_err(|err| {
                         panic!("Could not replace UTC handle for vendored UTC clock: {err:?}");

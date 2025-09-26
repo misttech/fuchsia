@@ -41,6 +41,14 @@ impl Timeline {
             Timeline::BootInstant => TargetTime::BootInstant(zx::Instant::ZERO),
         }
     }
+
+    /// Return true if this timeline represents a realtime clock timeline.
+    pub fn is_realtime(&self) -> bool {
+        match self {
+            Timeline::RealTime => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -88,7 +88,10 @@ async fn cancel_by_id(
     task_by_timer_id: &mut HashMap<zx::Koid, fasync::Task<()>>,
     alarm_id: &str,
 ) {
-    task_by_timer_id.remove(timer_id);
+    if let Some(task) = task_by_timer_id.remove(timer_id) {
+        // Let this task complete and get removed.
+        task.detach();
+    }
     if let Some(timer_state) = timer_state {
         ftrace::duration!(c"alarms", c"starnix:hrtimer:cancel_by_id", "timer_id" => *timer_id);
         log_debug!("cancel_by_id: START canceling timer: {:?}: alarm_id: {}", timer_id, alarm_id);
@@ -327,6 +330,10 @@ async fn run_utc_timeline_monitor(counter: zx::Counter) {
         log_error!("run_utc_timeline_monitor: could not monitor UTC timeline: {err:?}")
     });
     if let Ok(utc_handle) = utc_handle {
+        let koid = utc_handle.as_handle_ref().get_koid();
+        log_debug!(
+            "run_utc_timeline_monitor: monitoring UTC clock timeline: enter: UTC clock koid={koid:?}, counter={counter:?}"
+        );
         let utc_handle = std::rc::Rc::new(utc_handle);
         let utc_handle_fn = || utc_handle.clone();
         loop {
@@ -336,12 +343,12 @@ async fn run_utc_timeline_monitor(counter: zx::Counter) {
                 fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED)
                     .await
                     .inspect_err(|err| {
-                        log_warn!("run_utc_timeline_monitor: could not wait on signals: {err:?}");
+                        log_warn!("run_utc_timeline_monitor: could not wait on signals: {err:?}, counter={counter:?}");
                     });
             if result.is_err() {
                 break;
             }
-            log_debug!("run_utc_timeline_monitor: UTC timeline updated");
+            log_debug!("run_utc_timeline_monitor: UTC timeline updated, counter: {counter:?}");
             // The counter reader should write a zero once it observes
             // `zx::Signals::COUNTER_POSITIVE`.
             counter
