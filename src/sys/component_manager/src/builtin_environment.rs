@@ -91,7 +91,6 @@ use builtins::vmex_resource::VmexResource;
 use cm_config::{RuntimeConfig, SecurityPolicy, VmexSource};
 use cm_rust::{Availability, CapabilityTypeName, RunnerRegistration};
 use cm_types::{Name, RelativePath, Url};
-use cm_util::WeakTaskGroup;
 use elf_runner::crash_info::CrashRecords;
 use elf_runner::process_launcher::ProcessLauncher;
 use elf_runner::vdso_vmo::{get_next_vdso_vmo, get_stable_vdso_vmo, get_vdso_vmo};
@@ -111,10 +110,10 @@ use log::{error, info, warn};
 use routing::resolving::ComponentAddress;
 use sandbox::{Capability, Data, DirConnector, Message, Request, Router, RouterResponse};
 use std::sync::Arc;
-use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path;
+use vfs::{ToObjectRequest, WeakExecutionScope};
 use zx::{self, Resource};
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
@@ -152,6 +151,7 @@ pub struct BuiltinEnvironmentBuilder {
     inspector: Option<Inspector>,
     crash_records: CrashRecords,
     instance_registry: Arc<InstanceRegistry>,
+    global_scope: ExecutionScope,
     #[cfg(test)]
     scope_factory: Option<Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>>,
 }
@@ -164,6 +164,7 @@ struct BuiltinRunnerData {
 
 impl Default for BuiltinEnvironmentBuilder {
     fn default() -> Self {
+        let scope = ExecutionScope::new();
         Self {
             runtime_config: None,
             top_instance: None,
@@ -174,6 +175,7 @@ impl Default for BuiltinEnvironmentBuilder {
             add_environment_resolvers: false,
             inspector: None,
             crash_records: CrashRecords::new(),
+            global_scope: scope,
             instance_registry: InstanceRegistry::new(),
             #[cfg(test)]
             scope_factory: None,
@@ -264,7 +266,7 @@ impl BuiltinEnvironmentBuilder {
         let top_instance = self.top_instance.clone().unwrap();
         let runner = Arc::new(BuiltinRunner::new(
             fuchsia_runtime::job_default(),
-            top_instance.task_group(),
+            top_instance.execution_scope().clone(),
             program,
         ));
         Ok(self.add_runner(name.parse().unwrap(), runner, add_to_env))
@@ -470,6 +472,7 @@ impl BuiltinEnvironmentBuilder {
             self.crash_records,
             capability_passthrough,
             svc_stash_provider,
+            self.global_scope,
         )
         .await?)
     }
@@ -478,7 +481,7 @@ impl BuiltinEnvironmentBuilder {
 /// Constructs a [ComponentInput] that contains built-in capabilities.
 pub struct RootComponentInputBuilder {
     input: ComponentInput,
-    task_group: WeakTaskGroup,
+    scope: WeakExecutionScope,
     security_policy: Arc<SecurityPolicy>,
     policy_checker: GlobalPolicyChecker,
     builtin_capabilities: Vec<cm_rust::CapabilityDecl>,
@@ -493,7 +496,7 @@ impl RootComponentInputBuilder {
         Self {
             input: ComponentInput::default(),
             top_instance: top_instance.clone(),
-            task_group: top_instance.task_group().as_weak(),
+            scope: top_instance.execution_scope().as_weak(),
             security_policy: runtime_config.security_policy.clone(),
             policy_checker: GlobalPolicyChecker::new(runtime_config.security_policy.clone()),
             builtin_capabilities: runtime_config.builtin_capabilities.clone(),
@@ -547,7 +550,7 @@ impl RootComponentInputBuilder {
 
         let launch = LaunchTaskOnReceive::new(
             capability_source,
-            self.task_group.clone(),
+            self.scope.clone(),
             name.clone(),
             Some(self.policy_checker.clone()),
             Arc::new(move |server_end, _, _, _| {
@@ -581,7 +584,7 @@ impl RootComponentInputBuilder {
         });
         let launch = LaunchTaskOnReceive::new(
             capability_source,
-            self.task_group.clone(),
+            self.scope.clone(),
             "namespace capability dispatcher",
             Some(self.policy_checker.clone()),
             Arc::new(move |server_end, _, _, _| {
@@ -728,7 +731,7 @@ impl RootComponentInputBuilder {
         let name_for_warn = resolver_schema.clone();
         let launch = LaunchTaskOnReceive::new(
             capability_source,
-            self.task_group.clone(),
+            self.scope.clone(),
             resolver_schema.clone(),
             Some(self.policy_checker.clone()),
             Arc::new(move |server_end, weak_target, _, _| {
@@ -829,7 +832,7 @@ impl RootComponentInputBuilder {
         let execution_scope = ExecutionScope::new();
         let launch = LaunchTaskOnReceive::new(
             capability_source,
-            self.task_group.clone(),
+            self.scope.clone(),
             runner.name().clone(),
             Some(self.policy_checker.clone()),
             Arc::new(move |server_end, weak_component, _, _| {
@@ -960,6 +963,8 @@ pub struct BuiltinEnvironment {
     capability_passthrough: bool,
     _service_fs_task: Option<fasync::Task<()>>,
     root_component_input: ComponentInput,
+
+    _scope: ExecutionScope,
 }
 
 impl BuiltinEnvironment {
@@ -974,6 +979,7 @@ impl BuiltinEnvironment {
         crash_records: CrashRecords,
         capability_passthrough: bool,
         svc_stash_provider: Option<Arc<SvcStashCapability>>,
+        scope: ExecutionScope,
     ) -> Result<BuiltinEnvironment, Error> {
         let debug = runtime_config.debug;
         #[cfg(feature = "tracing")]
@@ -1728,6 +1734,7 @@ impl BuiltinEnvironment {
             num_threads,
             realm_builder_resolver,
             capability_passthrough,
+            _scope: scope,
             _service_fs_task: None,
             root_component_input,
         })
@@ -1755,7 +1762,7 @@ impl BuiltinEnvironment {
             Some(&self.capability_store),
         );
 
-        let scope = self.model.top_instance().task_group();
+        let scope = self.model.top_instance().execution_scope();
 
         // If capability passthrough is enabled, add a remote directory to proxy
         // capabilities exposed by the root component.
@@ -1850,7 +1857,7 @@ impl BuiltinEnvironment {
             return;
         };
         let cap = cap.clone();
-        let scope = self.model.top_instance().task_group();
+        let scope = self.model.top_instance().execution_scope().clone();
         let root = self.model.root().as_weak();
         service_fs.dir("svc").add_service_connector(move |server: ServerEnd<M>| {
             let cap = cap.clone();

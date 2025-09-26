@@ -10,13 +10,14 @@ use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component_runner::ComponentControllerOnEscrowRequest;
 use fidl_fuchsia_process_lifecycle::{LifecycleEvent, LifecycleProxy};
 use futures::StreamExt;
-use futures::future::{BoxFuture, FutureExt, join_all};
+use futures::future::{BoxFuture, FutureExt};
 use futures::stream::BoxStream;
 use log::{error, warn};
 use moniker::Moniker;
 use runner::component::Controllable;
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
+use vfs::ExecutionScope;
 use zx::{self as zx, AsHandleRef, HandleBased, Process, Task};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -104,12 +105,11 @@ pub struct ElfComponent {
     /// the protocol, this will be None.
     lifecycle_channel: Option<LifecycleProxy>,
 
-    /// Any tasks spawned to serve this component. For example, stdout and stderr
-    /// listeners are Task objects that live for the duration of the component's
-    /// lifetime.
+    /// Scope that holds tasks to serve this component. For example, stdout and stderr
+    /// listeners are Task objects that live for the duration of the component's lifetime.
     ///
     /// Stop will block on these to complete.
-    tasks: Option<Vec<fasync::Task<()>>>,
+    local_scope: ExecutionScope,
 
     /// A closure to be invoked when the object is dropped.
     on_drop: Mutex<Option<Box<dyn FnOnce(&ElfComponentInfo) + Send + 'static>>>,
@@ -123,7 +123,7 @@ impl ElfComponent {
         process: Process,
         lifecycle_channel: Option<LifecycleProxy>,
         main_process_critical: bool,
-        tasks: Vec<fasync::Task<()>>,
+        local_scope: ExecutionScope,
         component_url: String,
         outgoing_directory: Option<ClientEnd<fio::DirectoryMarker>>,
         program_config: ElfProgramConfig,
@@ -142,7 +142,7 @@ impl ElfComponent {
             }),
             process: Some(Arc::new(process)),
             lifecycle_channel,
-            tasks: Some(tasks),
+            local_scope,
             on_drop: Mutex::new(None),
         }
     }
@@ -264,9 +264,9 @@ impl Controllable for ElfComponent {
     }
 
     fn teardown<'a>(&mut self) -> BoxFuture<'a, ()> {
-        let tasks = self.tasks.take().unwrap_or_default();
+        let scope = self.local_scope.clone();
         async move {
-            join_all(tasks).await;
+            scope.wait().await;
         }
         .boxed()
     }

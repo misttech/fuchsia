@@ -6,9 +6,9 @@ use crate::vdso_vmo::get_stable_vdso_vmo;
 use anyhow::Context;
 use cm_types::NamespacePath;
 use fidl_connector::Connect;
+use fidl_fuchsia_process as fproc;
 use fuchsia_runtime::{HandleInfo, HandleInfoError};
 use futures::prelude::*;
-use log::warn;
 use process_builder::{
     BuiltProcess, NamespaceEntry, ProcessBuilder, ProcessBuilderError, StartupHandle,
 };
@@ -17,7 +17,6 @@ use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use zx::{self as zx, AsHandleRef, sys};
-use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
 /// Internal error type for ProcessLauncher which conveniently wraps errors that might
 /// result during process launching and allows for mapping them to an equivalent zx::Status, which
@@ -346,17 +345,19 @@ pub type Connector = Box<dyn Connect<Proxy = fproc::LauncherProxy> + Send + Sync
 
 /// A protocol connector for `fuchsia.process.Launcher` that serves the protocol with the
 /// `ProcessLauncher` implementation.
+#[cfg(test)]
 pub struct BuiltInConnector {}
 
+#[cfg(test)]
 impl Connect for BuiltInConnector {
     type Proxy = fproc::LauncherProxy;
 
     fn connect(&self) -> Result<Self::Proxy, anyhow::Error> {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fproc::LauncherMarker>();
-        fasync::Task::spawn(async move {
+        fuchsia_async::Task::spawn(async move {
             let result = ProcessLauncher::serve(stream).await;
             if let Err(error) = result {
-                warn!(error:%; "ProcessLauncher.serve failed");
+                log::warn!(error:%; "ProcessLauncher.serve failed");
             }
         })
         .detach();

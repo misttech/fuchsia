@@ -331,7 +331,7 @@ impl AnonymizedAggregateServiceDir {
         router: Router<DirConnector>,
         source: CapabilitySource,
     ) -> Result<(), ModelError> {
-        let task_group = self.parent.upgrade()?.nonblocking_task_group();
+        let scope = &self.parent.upgrade()?.execution_scope;
         let self_clone = self.clone();
         let instance_watcher_task = async move {
             let service_name = self_clone.route.service_name.as_str();
@@ -384,7 +384,7 @@ impl AnonymizedAggregateServiceDir {
             self_clone.run_instance_watcher(watcher, &proxy, &instance).await;
         };
 
-        task_group.spawn(instance_watcher_task);
+        scope.spawn(instance_watcher_task);
         Ok(())
     }
 

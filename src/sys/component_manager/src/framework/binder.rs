@@ -114,7 +114,6 @@ mod tests {
     use assert_matches::assert_matches;
     use cm_rust::ComponentDecl;
     use cm_rust_testing::*;
-    use cm_util::TaskGroup;
     use fidl::client::Client;
     use fidl::encoding::DefaultFuchsiaResourceDialect;
     use fidl::handle::AsyncChannel;
@@ -188,14 +187,13 @@ mod tests {
         let (_client_end, server_end) = zx::Channel::create();
         let moniker: Moniker = ["source"].try_into().unwrap();
 
-        let task_group = TaskGroup::new();
         let scope = ExecutionScope::new();
         let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server_end);
         fixture
             .provider(moniker.clone(), ["target"].try_into().unwrap())
             .await
             .open(
-                task_group.clone(),
+                scope.clone(),
                 OpenRequest::new(
                     scope.clone(),
                     fio::Flags::PROTOCOL_SERVICE,
@@ -205,7 +203,7 @@ mod tests {
             )
             .await
             .expect("failed to call open()");
-        task_group.join().await;
+        scope.wait().await;
 
         let events = get_n_events(&event_stream, 4).await;
         assert_event_type_and_moniker(&events[0], fcomponent::EventType::Resolved, Moniker::root());
@@ -229,14 +227,13 @@ mod tests {
         let (client_end, server_end) = zx::Channel::create();
         let moniker: Moniker = ["foo"].try_into().unwrap();
 
-        let task_group = TaskGroup::new();
         let scope = ExecutionScope::new();
         let mut object_request = fio::Flags::PROTOCOL_SERVICE.to_object_request(server_end);
         fixture
             .provider(moniker, Moniker::root())
             .await
             .open(
-                task_group.clone(),
+                scope.clone(),
                 OpenRequest::new(
                     scope.clone(),
                     fio::Flags::PROTOCOL_SERVICE,
@@ -246,7 +243,7 @@ mod tests {
             )
             .await
             .expect("failed to call open()");
-        task_group.join().await;
+        scope.wait().await;
 
         let client_end = AsyncChannel::from_channel(client_end);
         let client = Client::<DefaultFuchsiaResourceDialect>::new(client_end, "binder_service");

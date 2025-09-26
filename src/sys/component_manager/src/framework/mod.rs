@@ -150,7 +150,7 @@ fn add_protocol<P: DiscoverableProtocolMarker>(
         P::PROTOCOL_NAME.parse().unwrap(),
         LaunchTaskOnReceive::new(
             capability_source,
-            component.nonblocking_task_group().as_weak(),
+            component.execution_scope.as_weak(),
             format!("framework dispatcher for {}", P::PROTOCOL_NAME),
             Some(component.context.policy().clone()),
             Arc::new(move |chan, target, _path, _rights| {
@@ -170,7 +170,7 @@ fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dict) {
             capability: InternalCapability::Directory("pkg".parse().unwrap()),
             moniker: component.moniker.clone(),
         }),
-        component.nonblocking_task_group().as_weak(),
+        component.execution_scope.as_weak(),
         "framework_pkg_directory",
         Some(component.context.policy().clone()),
         Arc::new(move |channel, _weak_target_component, relative_path, rights| {

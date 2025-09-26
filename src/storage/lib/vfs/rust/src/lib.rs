@@ -74,7 +74,7 @@ pub mod pseudo_directory;
 pub use vfs_macros::pseudo_directory;
 
 pub use common::CreationMode;
-pub use execution_scope::ExecutionScope;
+pub use execution_scope::{ExecutionScope, WeakExecutionScope};
 pub use object_request::{ObjectRequest, ObjectRequestRef, ToObjectRequest};
 pub use path::Path;
 pub use protocols::ProtocolsExt;

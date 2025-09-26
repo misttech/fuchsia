@@ -4,16 +4,17 @@
 
 use crate::crash_info::{ComponentCrashInfo, CrashRecords};
 use crate::error::ExceptionError;
-use fuchsia_async as fasync;
 use futures::TryStreamExt;
 use log::error;
 use moniker::Moniker;
+use vfs::ExecutionScope;
 use zx::{self as zx, AsHandleRef};
 
 // Registers with the job to catch exceptions raised by it. Whenever we see an exception from this
 // job, record that the crash happened, and inform zircon that it should proceed to the next crash
 // handler. No actual handling of the crash occurs here, we merely save some data on it.
 pub fn run_exceptions_server(
+    scope: &ExecutionScope,
     component_job: &zx::Job,
     moniker: Moniker,
     resolved_url: String,
@@ -21,7 +22,7 @@ pub fn run_exceptions_server(
 ) -> Result<(), zx::Status> {
     let mut task_exceptions_stream =
         task_exceptions::ExceptionsStream::register_with_task(component_job)?;
-    fasync::Task::spawn(async move {
+    scope.spawn(async move {
         loop {
             match task_exceptions_stream.try_next().await {
                 Ok(Some(exception_info)) => {
@@ -46,8 +47,7 @@ pub fn run_exceptions_server(
                 }
             }
         }
-    })
-    .detach();
+    });
     Ok(())
 }
 
@@ -79,8 +79,12 @@ mod tests {
     use super::*;
     use anyhow::{Context as _, Error};
     use fuchsia_component::client as fclient;
+    use vfs::ExecutionScope;
     use zx::HandleBased;
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_runtime as fruntime};
+    use {
+        fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
+        fuchsia_runtime as fruntime,
+    };
 
     #[fuchsia::test]
     async fn crash_test() -> Result<(), Error> {
@@ -91,7 +95,14 @@ mod tests {
         let child_job =
             fruntime::job_default().create_child_job().context("failed to create child job")?;
 
-        run_exceptions_server(&child_job, moniker.clone(), url.clone(), crash_records.clone())?;
+        let scope = ExecutionScope::new();
+        run_exceptions_server(
+            &scope,
+            &child_job,
+            moniker.clone(),
+            url.clone(),
+            crash_records.clone(),
+        )?;
 
         // Connect to the process launcher
         let launcher_proxy = fclient::connect_to_protocol::<fprocess::LauncherMarker>()?;

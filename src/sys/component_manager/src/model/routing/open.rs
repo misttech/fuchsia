@@ -8,11 +8,11 @@ use crate::model::routing::providers::{
     DefaultComponentCapabilityProvider, NamespaceCapabilityProvider,
 };
 use crate::model::storage::{self, BackingDirectoryInfo};
+use ::routing::RouteSource;
 use ::routing::capability_source::{
     AnonymizedAggregateSource, CapabilitySource, ComponentSource, NamespaceSource,
 };
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::RouteSource;
 use errors::{CapabilityProviderError, ModelError, OpenError};
 use fidl_fuchsia_io as fio;
 use moniker::ExtendedMoniker;
@@ -101,14 +101,14 @@ impl<'a> CapabilityOpenRequest<'a> {
             .find_extended_instance(&source.source_moniker())
             .await
             .map_err(|err| CapabilityProviderError::ComponentInstanceError { err })?;
-        let task_group = match source_instance {
-            ExtendedInstance::AboveRoot(top) => top.task_group(),
+        let scope = match source_instance {
+            ExtendedInstance::AboveRoot(top) => top.execution_scope().clone(),
             ExtendedInstance::Component(component) => {
                 open_request.set_scope(component.execution_scope.clone());
-                component.nonblocking_task_group()
+                component.execution_scope.clone()
             }
         };
-        capability_provider.open(task_group, open_request).await?;
+        capability_provider.open(scope, open_request).await?;
         Ok(())
     }
 

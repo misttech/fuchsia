@@ -136,7 +136,7 @@ pub async fn serve_controller(
                         continue;
                     }
                 };
-                parent.nonblocking_task_group().spawn(async move {
+                parent.execution_scope.clone().spawn(async move {
                     let child_name =
                         moniker.leaf().expect("we already checked this is not the root component");
                     match parent.remove_dynamic_child(&child_name).await {
@@ -145,7 +145,7 @@ pub async fn serve_controller(
                         }
                         Err(err) => {
                             warn!(err:%, moniker:%;
-                            "Controller/Destroy: component destruction unexpectedly failed");
+                                  "Controller/Destroy: component destruction unexpectedly failed");
                             _ = responder.send(Err(fcomponent::Error::Internal));
                         }
                     }
