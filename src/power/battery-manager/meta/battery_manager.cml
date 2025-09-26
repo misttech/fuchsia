@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "inspect/client.shard.cml",
-
         // Enable system logging
         "syslog/client.shard.cml",
     ],
@@ -21,20 +19,6 @@
         },
     ],
     use: [
-        // TODO(b/379929394): Storage is temporarily double-mounted in order to
-        // soft-transition both away from /data and the fstab mounting methodology.
-        {
-            storage: "data",
-            path: "/data",
-        },
-        {
-            storage: "tmp",
-            path: "/tmp",
-        },
-        {
-            storage: "data",
-            path: "/userdata",
-        },
         { service: "fuchsia.power.battery.InfoService" },
     ],
     expose: [

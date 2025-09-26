@@ -5,7 +5,6 @@
     include: [
         // Use Rust test runner and expose fuchsia.test.Suite capability
         "//src/sys/test_runners/rust/default.shard.cml",
-        "inspect/client.shard.cml",
 
         // Enable system logging
         "syslog/client.shard.cml",
@@ -13,10 +12,4 @@
     program: {
         binary: "bin/battery_manager_bin_test",
     },
-    use: [
-        {
-            storage: "tmp",
-            path: "/tmp",
-        },
-    ],
 }

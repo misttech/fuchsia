@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::battery_manager::BatterySimulationStateObserver;
-use anyhow::{Error, format_err};
+use anyhow::{format_err, Error};
 use futures::lock::Mutex;
 use std::sync::{Arc, Weak};
 use {fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_battery_test as spower};
@@ -206,35 +206,9 @@ impl SimulatedBatteryInfoSource {
 mod tests {
     use super::*;
     use crate::battery_manager::BatteryManager;
-    use crate::{HistoryLogger, HistoryLoggerConfig, inspect};
     use fidl::endpoints::create_request_stream;
-    use futures::TryStreamExt;
     use futures::future::*;
-    use tempfile::{TempDir, tempdir};
-
-    fn create_config(
-        dir: &TempDir,
-        battery_level_buffer_capacity: usize,
-        charge_status_buffer_capacity: usize,
-        curr_boot_file: &str,
-        prev_boot_file: &str,
-    ) -> HistoryLoggerConfig {
-        HistoryLoggerConfig {
-            curr_boot_path: dir.path().join(curr_boot_file).to_str().unwrap().to_string(),
-            prev_boot_path: dir.path().join(prev_boot_file).to_str().unwrap().to_string(),
-            battery_level_buffer_capacity,
-            charge_status_buffer_capacity,
-        }
-    }
-
-    pub fn create_manager() -> (TempDir, Arc<BatteryManager>) {
-        let inspector = inspect::Inspector::default();
-        let dir = tempdir().unwrap();
-
-        let config = create_config(&dir, 1, 1, "curr_data.txt", "prev_data.txt");
-        let logger = HistoryLogger::from_file(inspector.root(), config);
-        (dir, Arc::new(BatteryManager::new_with_logger(logger)))
-    }
+    use futures::TryStreamExt;
 
     #[fuchsia_async::run_until_stalled(test)]
     async fn test_observer_relationship() {
@@ -242,7 +216,7 @@ mod tests {
             create_request_stream::<fpower::BatteryInfoWatcherMarker>();
         let watcher = watcher_client_end.into_proxy();
 
-        let (_dir, battery_manager) = create_manager();
+        let battery_manager = Arc::new(BatteryManager::new());
         battery_manager.add_watcher(watcher).await;
 
         let mut battery_info: fpower::BatteryInfo = battery_manager.get_battery_info_copy();

@@ -131,11 +131,5 @@
             instance_id: "2e76933b4eb7ff47b2fd4abbd7c1aa5ec0ada042d88aa880d819cc9461e31572",
             moniker: "/core/trace_manager",
         },
-
-        // battery_manager uses persistent storage for battery history.
-        {
-            instance_id: "4e37d54851c70b5f3043a139bf4640dd6602a9d52f98040cb3d4f0c992a17ff3",
-            moniker: "/core/battery_manager",
-        },
     ],
 }
