@@ -803,82 +803,83 @@ impl AcceptQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{create_kernel_task_and_unlocked, map_memory};
+    use crate::testing::{map_memory, spawn_kernel_and_run};
     use crate::vfs::{UnixControlData, VecInputBuffer, VecOutputBuffer};
     use starnix_uapi::SO_PASSCRED;
     use starnix_uapi::user_address::{UserAddress, UserRef};
 
-    #[::fuchsia::test]
+    #[fuchsia::test]
     async fn test_dgram_socket() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let bind_address = SocketAddress::Unix(b"dgram_test".into());
-        let rec_dgram = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Unix,
-            SocketType::Datagram,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to create socket.");
-        let passcred: u32 = 1;
-        let opt_size = std::mem::size_of::<u32>();
-        let user_address =
-            map_memory(locked, &current_task, UserAddress::default(), opt_size as u64);
-        let opt_ref = UserRef::<u32>::new(user_address);
-        current_task.write_object(opt_ref, &passcred).unwrap();
-        let opt_buf = UserBuffer { address: user_address, length: opt_size };
-        rec_dgram
-            .setsockopt(locked, &current_task, SOL_SOCKET, SO_PASSCRED, opt_buf.into())
-            .unwrap();
-
-        rec_dgram
-            .bind(locked, &current_task, bind_address)
-            .expect("failed to bind datagram socket");
-
-        let xfer_value: u64 = 1234567819;
-        let xfer_bytes = xfer_value.to_ne_bytes();
-
-        let send = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Unix,
-            SocketType::Datagram,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to connect socket.");
-        send.ops
-            .connect(
-                locked.cast_locked(),
-                &send,
+        spawn_kernel_and_run(|locked, current_task| {
+            let bind_address = SocketAddress::Unix(b"dgram_test".into());
+            let rec_dgram = Socket::new(
+                locked,
                 &current_task,
-                SocketPeer::Handle(rec_dgram.clone()),
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
             )
-            .unwrap();
-        let mut source_iter = VecInputBuffer::new(&xfer_bytes);
-        send.write(locked, &current_task, &mut source_iter, &mut None, &mut vec![]).unwrap();
-        assert_eq!(source_iter.available(), 0);
-        // Previously, this would cause the test to fail,
-        // because rec_dgram was shut down.
-        send.close(locked, &current_task);
+            .expect("Failed to create socket.");
+            let passcred: u32 = 1;
+            let opt_size = std::mem::size_of::<u32>();
+            let user_address =
+                map_memory(locked, &current_task, UserAddress::default(), opt_size as u64);
+            let opt_ref = UserRef::<u32>::new(user_address);
+            current_task.write_object(opt_ref, &passcred).unwrap();
+            let opt_buf = UserBuffer { address: user_address, length: opt_size };
+            rec_dgram
+                .setsockopt(locked, &current_task, SOL_SOCKET, SO_PASSCRED, opt_buf.into())
+                .unwrap();
 
-        let mut rec_buffer = VecOutputBuffer::new(8);
-        let read_info = rec_dgram
-            .read(locked, &current_task, &mut rec_buffer, SocketMessageFlags::empty())
-            .unwrap();
-        assert_eq!(read_info.bytes_read, xfer_bytes.len());
-        assert_eq!(rec_buffer.data(), xfer_bytes);
-        assert_eq!(1, read_info.ancillary_data.len());
-        assert_eq!(
-            read_info.ancillary_data[0],
-            AncillaryData::Unix(UnixControlData::Credentials(uapi::ucred {
-                pid: current_task.get_pid(),
-                uid: 0,
-                gid: 0
-            }))
-        );
+            rec_dgram
+                .bind(locked, &current_task, bind_address)
+                .expect("failed to bind datagram socket");
 
-        rec_dgram.close(locked, &current_task);
+            let xfer_value: u64 = 1234567819;
+            let xfer_bytes = xfer_value.to_ne_bytes();
+
+            let send = Socket::new(
+                locked,
+                &current_task,
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to connect socket.");
+            send.ops
+                .connect(
+                    locked.cast_locked(),
+                    &send,
+                    &current_task,
+                    SocketPeer::Handle(rec_dgram.clone()),
+                )
+                .unwrap();
+            let mut source_iter = VecInputBuffer::new(&xfer_bytes);
+            send.write(locked, &current_task, &mut source_iter, &mut None, &mut vec![]).unwrap();
+            assert_eq!(source_iter.available(), 0);
+            // Previously, this would cause the test to fail,
+            // because rec_dgram was shut down.
+            send.close(locked, &current_task);
+
+            let mut rec_buffer = VecOutputBuffer::new(8);
+            let read_info = rec_dgram
+                .read(locked, &current_task, &mut rec_buffer, SocketMessageFlags::empty())
+                .unwrap();
+            assert_eq!(read_info.bytes_read, xfer_bytes.len());
+            assert_eq!(rec_buffer.data(), xfer_bytes);
+            assert_eq!(1, read_info.ancillary_data.len());
+            assert_eq!(
+                read_info.ancillary_data[0],
+                AncillaryData::Unix(UnixControlData::Credentials(uapi::ucred {
+                    pid: current_task.get_pid(),
+                    uid: 0,
+                    gid: 0
+                }))
+            );
+
+            rec_dgram.close(locked, &current_task);
+        });
     }
 }
