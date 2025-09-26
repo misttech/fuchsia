@@ -398,6 +398,24 @@ async fn add_route_and_await_installed<I: Ip>(
     .await
 }
 
+async fn start_test_netlink(
+    realm: &TestRealm<'_>,
+) -> (netlink::Netlink<SenderReceiverProvider>, fasync::Task<()>) {
+    let protocols = connect_to_netlink_protocols_in_realm(&realm);
+    let (on_initialized, initialized) = oneshot::channel();
+    let (netlink, worker_params) =
+        netlink::Netlink::<SenderReceiverProvider>::new(NoopInterfacesHandler);
+    let worker = netlink::run_netlink_worker_with_protocols(
+        worker_params,
+        protocols,
+        Some(on_initialized),
+        test_feature_flags(),
+    );
+    let join_handle = fasync::Task::spawn(worker);
+    initialized.await.expect("should not be dropped");
+    (netlink, join_handle)
+}
+
 #[ip_test(I, test = false)]
 #[fuchsia::test]
 async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
@@ -406,17 +424,7 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
         .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
         .expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&main_realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
     let create_peer = |test_subnet: TestSubnet| {
         let sandbox = &sandbox;
@@ -634,17 +642,7 @@ async fn successfully_installs_rule_referencing_main_table<
         .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
         .expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&main_realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
     let client = add_route_client(&netlink);
 
@@ -756,17 +754,7 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
         .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
         .expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&main_realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
     let client = add_route_client(&netlink);
 
@@ -978,17 +966,7 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     let network = sandbox.create_network("network").await.expect("create network");
     let main_interface = main_realm.join_network(&network, "ep").await.expect("join network");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&main_realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
     let mut client = add_route_client(&netlink);
     assert!(
@@ -1306,17 +1284,7 @@ async fn join_leave_nduseropt_multicast_group() {
         .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
         .expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&main_realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
     let mut client = add_route_client(&netlink);
     let waiter = client
@@ -1387,17 +1355,7 @@ async fn netlink_uses_local_route_table() {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, join_handle) = start_test_netlink(&realm).await;
 
     let network = sandbox.create_network("network").await.expect("create network");
     let ep = realm
@@ -1496,17 +1454,7 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, join_handle) = start_test_netlink(&realm).await;
 
     let network = sandbox.create_network("network").await.expect("create network");
     let ep = realm
@@ -1615,17 +1563,7 @@ async fn no_backup_routes<I: Ip + FidlRouteIpExt>() {
     let realm =
         sandbox.create_netstack_realm::<Netstack3, _>("main-netstack").expect("create realm");
 
-    let protocols = connect_to_netlink_protocols_in_realm(&realm);
-    let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_fut) =
-        netlink::Netlink::<SenderReceiverProvider>::new_from_protocol_connections(
-            NoopInterfacesHandler,
-            protocols,
-            on_initialized,
-            test_feature_flags(),
-        );
-    let _join_handle = fasync::Task::spawn(worker_fut);
-    initialized.await.expect("should not be dropped");
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
 
     let network = sandbox.create_network("network").await.expect("create network");
 

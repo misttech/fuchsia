@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
 use async_trait::async_trait;
 use futures::channel::mpsc::UnboundedSender;
 use linux_uapi::{TASKSTATS_TYPE_NULL, TASKSTATS_VERSION};
@@ -21,8 +20,8 @@ use super::{GenericMessage, GenericNetlinkFamily};
 pub struct TaskstatsFamily {}
 
 impl TaskstatsFamily {
-    pub fn new() -> Result<Self, Error> {
-        Ok(Self {})
+    pub fn new() -> Self {
+        Self {}
     }
 }
 

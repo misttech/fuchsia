@@ -31,7 +31,6 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
-use futures::future::Future;
 use net_types::ip::{Ipv4, Ipv6};
 use netlink_packet_route::RouteNetlinkMessage;
 use protocol_family::route::NetlinkRouteNotifiedGroup;
@@ -93,35 +92,23 @@ pub struct FeatureFlags {
 }
 
 impl<P: SenderReceiverProvider> Netlink<P> {
-    /// Returns a newly instantiated [`Netlink`] and its asynchronous worker.
+    /// Returns a newly instantiated [`Netlink`] and parameters used to start the
+    /// asynchronous worker.
     ///
-    /// Callers are responsible for polling the worker [`Future`], which drives
-    /// the Netlink implementation's asynchronous work. The worker will never
-    /// complete.
+    /// Caller is expected to run the worker by calling `run_netlink_worker()`.
     pub fn new<H: interfaces::InterfacesHandler>(
         interfaces_handler: H,
-        feature_flags: FeatureFlags,
-    ) -> (Self, impl Future<Output = ()> + Send) {
-        Self::new_inner(
-            interfaces_handler,
-            NetlinkWorkerDiscoverableProtocols::from_environment,
-            None,
-            feature_flags,
+    ) -> (Self, NetlinkWorkerParams<H, P>) {
+        let (route_client_sender, route_client_receiver) = mpsc::unbounded();
+        let (async_work_sink, async_work_receiver) = mpsc::unbounded();
+        (
+            Netlink {
+                id_generator: ClientIdGenerator::default(),
+                route_client_sender,
+                async_work_sink,
+            },
+            NetlinkWorkerParams { interfaces_handler, route_client_receiver, async_work_receiver },
         )
-    }
-
-    /// Returns a newly instantiated [`Netlink`] and its asynchronous worker.
-    ///
-    /// Callers are responsible for polling the worker [`Future`], which drives
-    /// the Netlink implementation's asynchronous work. The worker will never
-    /// complete.
-    pub fn new_from_protocol_connections<H: interfaces::InterfacesHandler>(
-        interfaces_handler: H,
-        protocols: NetlinkWorkerDiscoverableProtocols,
-        on_initialized: oneshot::Sender<()>,
-        feature_flags: FeatureFlags,
-    ) -> (Self, impl Future<Output = ()> + Send) {
-        Self::new_inner(interfaces_handler, || protocols, Some(on_initialized), feature_flags)
     }
 
     /// Writes the accept_ra_rt_table sysctl for the selected interface.
@@ -151,33 +138,6 @@ impl<P: SenderReceiverProvider> Netlink<P> {
             .unbounded_send(AsyncWorkItem::GetAcceptRaRtTable { interface, responder })
             .map_err(|_| SysctlError::Disconnected)?;
         Ok(receiver.receive().map_err(|_| SysctlError::Disconnected)??.into())
-    }
-
-    fn new_inner<H: interfaces::InterfacesHandler>(
-        interfaces_handler: H,
-        protocols: impl FnOnce() -> NetlinkWorkerDiscoverableProtocols + Send + 'static,
-        on_initialized: Option<oneshot::Sender<()>>,
-        feature_flags: FeatureFlags,
-    ) -> (Self, impl Future<Output = ()> + Send) {
-        let (route_client_sender, route_client_receiver) = mpsc::unbounded();
-        let (async_work_sink, async_work_receiver) = mpsc::unbounded();
-        (
-            Netlink {
-                id_generator: ClientIdGenerator::default(),
-                route_client_sender,
-                async_work_sink,
-            },
-            run_netlink_worker(
-                NetlinkWorkerParams::<_, P> {
-                    interfaces_handler,
-                    route_client_receiver,
-                    async_work_receiver,
-                },
-                protocols,
-                on_initialized,
-                feature_flags,
-            ),
-        )
     }
 
     /// Creates a new client of the `NETLINK_ROUTE` protocol family.
@@ -238,7 +198,7 @@ pub enum SysctlError {
 }
 
 /// Parameters used to start the Netlink asynchronous worker.
-struct NetlinkWorkerParams<H, P: SenderReceiverProvider> {
+pub struct NetlinkWorkerParams<H, P: SenderReceiverProvider> {
     interfaces_handler: H,
     /// Receiver of newly created `NETLINK_ROUTE` clients.
     route_client_receiver: UnboundedReceiver<
@@ -335,9 +295,27 @@ impl NetlinkWorkerDiscoverableProtocols {
 ///
 /// Panics if a non-recoverable error is encountered by the worker. For example,
 /// a FIDL error on one of the FIDL connections with the netstack.
-async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverProvider>(
+pub async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverProvider>(
     params: NetlinkWorkerParams<H, P>,
-    protocols: impl FnOnce() -> NetlinkWorkerDiscoverableProtocols + Send + 'static,
+    feature_flags: FeatureFlags,
+) {
+    run_netlink_worker_with_protocols(
+        params,
+        NetlinkWorkerDiscoverableProtocols::from_environment(),
+        None,
+        feature_flags,
+    )
+    .await;
+}
+
+/// Same as `run_netlink_worker()`, but allows to pass custom
+/// `NetlinkWorkerDiscoverableProtocols`.
+pub async fn run_netlink_worker_with_protocols<
+    H: interfaces::InterfacesHandler,
+    P: SenderReceiverProvider,
+>(
+    params: NetlinkWorkerParams<H, P>,
+    protocols: NetlinkWorkerDiscoverableProtocols,
     on_initialized: Option<oneshot::Sender<()>>,
     feature_flags: FeatureFlags,
 ) {
@@ -362,7 +340,7 @@ async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverP
                 v4_rule_table,
                 v6_rule_table,
                 ndp_option_watcher_provider,
-            } = protocols();
+            } = protocols;
             let event_loop: EventLoop<H, P::Sender<_>> = EventLoop {
                 interfaces_proxy: root_interfaces,
                 interfaces_state_proxy: interfaces_state,

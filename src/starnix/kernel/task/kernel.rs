@@ -660,9 +660,9 @@ impl Kernel {
     /// call will instantiate the Generic Netlink server in a separate kthread.
     pub fn generic_netlink(&self) -> &GenericNetlink<NetlinkToClientSender<GenericMessage>> {
         self.generic_netlink.get_or_init(|| {
-            let (generic_netlink, generic_netlink_fut) = GenericNetlink::new();
+            let (generic_netlink, worker_params) = GenericNetlink::new();
             self.kthreads.spawn_future(async move {
-                generic_netlink_fut.await;
+                crate::vfs::socket::run_generic_netlink_worker(worker_params).await;
                 log_error!("Generic Netlink future unexpectedly exited");
             });
             generic_netlink
@@ -675,16 +675,18 @@ impl Kernel {
     /// call will instantiate the Netlink implementation.
     pub fn network_netlink(&self) -> &Netlink<NetlinkSenderReceiverProvider> {
         self.network_netlink.get_or_init(|| {
-            let (network_netlink, network_netlink_async_worker) = Netlink::new(
-                InterfacesHandlerImpl(self.weak_self.clone()),
-                // Only duplicate the routes in the main table when we are not
-                // using netstack marks. In that case, the starnix has the marks
-                // locally and the netstack is not aware of the marks and needs
-                // to use main table for routing.
-                netlink::FeatureFlags { copy_routes_to_main_table: !self.features.netstack_mark },
-            );
+            let (network_netlink, worker_params) =
+                Netlink::new(InterfacesHandlerImpl(self.weak_self.clone()));
+
+            // Only duplicate the routes in the main table when we are not
+            // using netstack marks. In that case, the starnix has the marks
+            // locally and the netstack is not aware of the marks and needs
+            // to use main table for routing.
+            let feature_flags =
+                netlink::FeatureFlags { copy_routes_to_main_table: !self.features.netstack_mark };
+
             self.kthreads.spawn_async(async move |_: LockedAndTask<'_>| {
-                network_netlink_async_worker.await;
+                netlink::run_netlink_worker(worker_params, feature_flags).await;
                 log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
             });
             network_netlink

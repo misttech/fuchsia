@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use futures::future::{Future, join};
+use futures::future::join;
 use futures::stream::{FuturesUnordered, StreamExt};
 use linux_uapi::{NLM_F_ACK, NLM_F_CAPPED};
 use netlink::NETLINK_LOG_TAG;
@@ -306,7 +306,7 @@ struct GenericNetlinkServer<S> {
     state: Arc<Mutex<GenericNetlinkServerState<S>>>,
 }
 
-impl<S: Sender<GenericMessage> + Send> GenericNetlinkServer<S> {
+impl<S: Sender<GenericMessage>> GenericNetlinkServer<S> {
     fn new() -> Self {
         Self { state: Arc::new(Mutex::new(GenericNetlinkServerState::new())) }
     }
@@ -430,15 +430,49 @@ pub(crate) struct GenericNetlinkClient<S> {
     receiver: mpsc::UnboundedReceiver<NetlinkMessage<GenericMessage>>,
 }
 
-pub struct GenericNetlink<S> {
-    server: GenericNetlinkServer<S>,
-    new_client_sender: mpsc::UnboundedSender<GenericNetlinkClient<S>>,
-}
-
-async fn run_generic_netlink<S: Sender<GenericMessage> + Send>(
+pub struct GenericNetlinkWorkerParams<S: Sender<GenericMessage>> {
     server: GenericNetlinkServer<S>,
     new_client_receiver: mpsc::UnboundedReceiver<GenericNetlinkClient<S>>,
+}
+
+pub async fn run_generic_netlink_worker<S: Sender<GenericMessage>>(
+    params: GenericNetlinkWorkerParams<S>,
 ) {
+    // Initialize supported families on the worker, so that they shares an
+    // executor with the main netlink future.
+    //
+    // TODO(https://fxbug.dev/42079282): Add dynamic family support. Right now this is only
+    // structured to support static family additions.
+    //
+    // TODO(https://fxbug.dev/447665719): Currently `nl80211::Nl80211Family::new()`
+    // doesn't check that the connection to the service was successful. If
+    // `Wlanix` service is not provided to Starnix then the `Nl80211Family`
+    // created here will not be functional.
+    let nl80211_family = nl80211::Nl80211Family::new()
+        .inspect_err(|e| {
+            log_error!(
+                tag = NETLINK_LOG_TAG;
+                "Failed to connect to Nl80211 netlink family: {}",
+                e
+            )
+        })
+        .ok();
+    let taskstats_family = taskstats::TaskstatsFamily::new();
+    {
+        let mut state = params.server.state.lock();
+        if let Some(nl80211_family) = nl80211_family {
+            state.add_family(Arc::new(nl80211_family));
+        }
+        state.add_family(Arc::new(taskstats_family));
+    }
+
+    run_generic_netlink_worker_internal(params).await
+}
+
+async fn run_generic_netlink_worker_internal<S: Sender<GenericMessage>>(
+    params: GenericNetlinkWorkerParams<S>,
+) {
+    let GenericNetlinkWorkerParams { server, new_client_receiver } = params;
     let multicast_fut = server.clone().pipe_multicast_traffic();
     let new_client_fut = new_client_receiver
         .for_each_concurrent(None, |client| server.clone().run_generic_netlink_client(client));
@@ -446,48 +480,18 @@ async fn run_generic_netlink<S: Sender<GenericMessage> + Send>(
     join(new_client_fut, multicast_fut).await;
 }
 
-impl<S: Sender<GenericMessage> + Send> GenericNetlink<S> {
-    pub fn new() -> (Self, impl Future<Output = ()> + Send) {
-        // TODO(https://fxbug.dev/42079282): Add dynamic family support. Right now this is only
-        // structured to support static family additions.
-        let (generic_netlink, netlink_fut) = Self::new_internal();
-        let server = generic_netlink.server.clone();
-        let fut_with_server = async move {
-            // Initialize the nl80211 family inside this async block so that
-            // it shares an executor with the main netlink future.
-            match nl80211::Nl80211Family::new() {
-                Ok(nl80211_family) => server.state.lock().add_family(Arc::new(nl80211_family) as _),
-                Err(e) => {
-                    log_error!(
-                        tag = NETLINK_LOG_TAG;
-                        "Failed to connect to Nl80211 netlink family: {}",
-                        e
-                    );
-                }
-            };
-            match taskstats::TaskstatsFamily::new() {
-                Ok(taskstats_family) => {
-                    server.state.lock().add_family(Arc::new(taskstats_family) as _)
-                }
-                Err(e) => {
-                    log_error!(
-                        tag = NETLINK_LOG_TAG;
-                        "Failed to connect to TASKSTATS netlink family: {}",
-                        e
-                    );
-                }
-            };
-            netlink_fut.await;
-        };
-        (generic_netlink, fut_with_server)
-    }
+pub struct GenericNetlink<S> {
+    server: GenericNetlinkServer<S>,
+    new_client_sender: mpsc::UnboundedSender<GenericNetlinkClient<S>>,
+}
 
-    fn new_internal() -> (Self, impl Future<Output = ()> + Send) {
+impl<S: Sender<GenericMessage>> GenericNetlink<S> {
+    pub fn new() -> (Self, GenericNetlinkWorkerParams<S>) {
         let (new_client_sender, new_client_receiver) = mpsc::unbounded();
         let server = GenericNetlinkServer::new();
-        let netlink_fut = run_generic_netlink(server.clone(), new_client_receiver);
-        let generic_netlink = Self { server, new_client_sender };
-        (generic_netlink, netlink_fut)
+        let generic_netlink = Self { server: server.clone(), new_client_sender };
+        let worker_params = GenericNetlinkWorkerParams { server, new_client_receiver };
+        (generic_netlink, worker_params)
     }
 
     pub fn new_generic_client(
@@ -552,6 +556,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_async::TestExecutor;
+    use futures::future::Future;
     use futures::pin_mut;
     use netlink_packet_generic::GenlHeader;
     use std::task::Poll;
@@ -612,15 +617,22 @@ mod tests {
         }
     }
 
+    fn start_test_netlink()
+    -> (GenericNetlink<TestSender<GenericMessage>>, impl Future<Output = ()> + Send) {
+        let (netlink, worker_params) = GenericNetlink::new();
+        let worker = run_generic_netlink_worker_internal(worker_params);
+        (netlink, worker)
+    }
+
     fn netlink_with_test_family() -> (
         GenericNetlink<TestSender<GenericMessage>>,
         Arc<TestFamily>,
         impl Future<Output = ()> + Send,
     ) {
         let test_family = Arc::new(TestFamily::default());
-        let (netlink, fut) = GenericNetlink::new_internal();
+        let (netlink, worker) = start_test_netlink();
         netlink.server.state.lock().add_family(Arc::clone(&test_family) as _);
-        (netlink, test_family, fut)
+        (netlink, test_family, worker)
     }
 
     fn new_client(
@@ -641,12 +653,12 @@ mod tests {
     #[test]
     fn test_ctrl_getfamily_missing() {
         let mut exec = TestExecutor::new();
-        let (netlink, fut) = GenericNetlink::new_internal();
-        pin_mut!(fut);
+        let (netlink, worker) = start_test_netlink();
+        pin_mut!(worker);
         let (messages_to_client, sender, _client_handle) = new_client(&netlink);
 
         sender.unbounded_send(getfamily_request()).expect("Failed to send getfamily request");
-        assert!(exec.run_until_stalled(&mut fut) == Poll::Pending);
+        assert!(exec.run_until_stalled(&mut worker) == Poll::Pending);
 
         // The family doesn't exist, so an error should be returned.
         assert!(messages_to_client.lock().len() == 1);
@@ -702,7 +714,7 @@ mod tests {
     #[test]
     fn test_ctrl_getfamily_before_and_after_add_family() {
         let mut exec = TestExecutor::new();
-        let (netlink, fut) = GenericNetlink::new_internal();
+        let (netlink, fut) = start_test_netlink();
         pin_mut!(fut);
         let (messages_to_client, sender, _client_handle) = new_client(&netlink);
 
@@ -827,7 +839,7 @@ mod tests {
     #[test]
     fn test_bad_multicast_subscription_fails() {
         let mut exec = TestExecutor::new();
-        let (netlink, fut) = GenericNetlink::new_internal();
+        let (netlink, fut) = start_test_netlink();
         pin_mut!(fut);
         assert!(exec.run_until_stalled(&mut fut) == Poll::Pending);
 
