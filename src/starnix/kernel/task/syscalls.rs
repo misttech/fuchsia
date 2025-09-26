@@ -2088,409 +2088,456 @@ pub use arch32::*;
 mod tests {
     use super::*;
     use crate::mm::syscalls::sys_munmap;
-    use crate::testing::*;
+    use crate::testing::{AutoReleasableTask, map_memory, spawn_kernel_and_run};
     use starnix_syscalls::SUCCESS;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::{SCHED_FIFO, SCHED_NORMAL};
+    use std::ffi::CString;
 
     #[::fuchsia::test]
     async fn test_prctl_set_vma_anon_name() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let name_addr = (mapped_address + 128u64).unwrap();
+            let name = "test-name\0";
+            current_task.write_memory(name_addr, name.as_bytes()).expect("failed to write name");
+            sys_prctl(
+                locked,
+                current_task,
+                PR_SET_VMA,
+                PR_SET_VMA_ANON_NAME as u64,
+                mapped_address.ptr() as u64,
+                32,
+                name_addr.ptr() as u64,
+            )
+            .expect("failed to set name");
+            assert_eq!(
+                "test-name",
+                current_task
+                    .mm()
+                    .unwrap()
+                    .get_mapping_name((mapped_address + 24u64).unwrap())
+                    .expect("failed to get address")
+                    .unwrap()
+                    .to_string(),
+            );
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let name_addr = (mapped_address + 128u64).unwrap();
-        let name = "test-name\0";
-        current_task.write_memory(name_addr, name.as_bytes()).expect("failed to write name");
-        sys_prctl(
-            locked,
-            &mut current_task,
-            PR_SET_VMA,
-            PR_SET_VMA_ANON_NAME as u64,
-            mapped_address.ptr() as u64,
-            32,
-            name_addr.ptr() as u64,
-        )
-        .expect("failed to set name");
-        assert_eq!(
-            "test-name",
-            current_task
-                .mm()
-                .unwrap()
-                .get_mapping_name((mapped_address + 24u64).unwrap())
-                .expect("failed to get address")
-                .unwrap()
-                .to_string(),
-        );
-
-        sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize)
-            .expect("failed to unmap memory");
-        assert_eq!(
-            error!(EFAULT),
-            current_task.mm().unwrap().get_mapping_name((mapped_address + 24u64).unwrap())
-        );
+            sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize)
+                .expect("failed to unmap memory");
+            assert_eq!(
+                error!(EFAULT),
+                current_task.mm().unwrap().get_mapping_name((mapped_address + 24u64).unwrap())
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_set_vma_name_special_chars() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let mapping_addr =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let mapping_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            for c in 1..255 {
+                let vma_name = CString::new([c]).unwrap();
+                current_task.write_memory(name_addr, vma_name.as_bytes_with_nul()).unwrap();
 
-        for c in 1..255 {
-            let vma_name = CString::new([c]).unwrap();
-            current_task.write_memory(name_addr, vma_name.as_bytes_with_nul()).unwrap();
+                let result = sys_prctl(
+                    locked,
+                    current_task,
+                    PR_SET_VMA,
+                    PR_SET_VMA_ANON_NAME as u64,
+                    mapping_addr.ptr() as u64,
+                    *PAGE_SIZE,
+                    name_addr.ptr() as u64,
+                );
 
-            let result = sys_prctl(
-                locked,
-                &mut current_task,
-                PR_SET_VMA,
-                PR_SET_VMA_ANON_NAME as u64,
-                mapping_addr.ptr() as u64,
-                *PAGE_SIZE,
-                name_addr.ptr() as u64,
-            );
-
-            if c > 0x1f
-                && c < 0x7f
-                && c != b'\\'
-                && c != b'`'
-                && c != b'$'
-                && c != b'['
-                && c != b']'
-            {
-                assert_eq!(result, Ok(SUCCESS));
-            } else {
-                assert_eq!(result, error!(EINVAL));
+                if c > 0x1f
+                    && c < 0x7f
+                    && c != b'\\'
+                    && c != b'`'
+                    && c != b'$'
+                    && c != b'['
+                    && c != b']'
+                {
+                    assert_eq!(result, Ok(SUCCESS));
+                } else {
+                    assert_eq!(result, error!(EINVAL));
+                }
             }
-        }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_set_vma_name_long() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let mapping_addr =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let mapping_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let name_too_long = CString::new(vec![b'a'; 256]).unwrap();
 
-        let name_too_long = CString::new(vec![b'a'; 256]).unwrap();
+            current_task.write_memory(name_addr, name_too_long.as_bytes_with_nul()).unwrap();
 
-        current_task.write_memory(name_addr, name_too_long.as_bytes_with_nul()).unwrap();
+            assert_eq!(
+                sys_prctl(
+                    locked,
+                    current_task,
+                    PR_SET_VMA,
+                    PR_SET_VMA_ANON_NAME as u64,
+                    mapping_addr.ptr() as u64,
+                    *PAGE_SIZE,
+                    name_addr.ptr() as u64,
+                ),
+                error!(EINVAL)
+            );
 
-        assert_eq!(
-            sys_prctl(
-                locked,
-                &mut current_task,
-                PR_SET_VMA,
-                PR_SET_VMA_ANON_NAME as u64,
-                mapping_addr.ptr() as u64,
-                *PAGE_SIZE,
-                name_addr.ptr() as u64,
-            ),
-            error!(EINVAL)
-        );
+            let name_just_long_enough = CString::new(vec![b'a'; 255]).unwrap();
 
-        let name_just_long_enough = CString::new(vec![b'a'; 255]).unwrap();
+            current_task
+                .write_memory(name_addr, name_just_long_enough.as_bytes_with_nul())
+                .unwrap();
 
-        current_task.write_memory(name_addr, name_just_long_enough.as_bytes_with_nul()).unwrap();
-
-        assert_eq!(
-            sys_prctl(
-                locked,
-                &mut current_task,
-                PR_SET_VMA,
-                PR_SET_VMA_ANON_NAME as u64,
-                mapping_addr.ptr() as u64,
-                *PAGE_SIZE,
-                name_addr.ptr() as u64,
-            ),
-            Ok(SUCCESS)
-        );
+            assert_eq!(
+                sys_prctl(
+                    locked,
+                    current_task,
+                    PR_SET_VMA,
+                    PR_SET_VMA_ANON_NAME as u64,
+                    mapping_addr.ptr() as u64,
+                    *PAGE_SIZE,
+                    name_addr.ptr() as u64,
+                ),
+                Ok(SUCCESS)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_set_vma_name_misaligned() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
-        let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let mapping_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let mapping_addr =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let name = CString::new("name").unwrap();
-        current_task.write_memory(name_addr, name.as_bytes_with_nul()).unwrap();
+            let name = CString::new("name").unwrap();
+            current_task.write_memory(name_addr, name.as_bytes_with_nul()).unwrap();
 
-        // Passing a misaligned pointer to the start of the named region fails.
-        assert_eq!(
-            sys_prctl(
-                locked,
-                &mut current_task,
-                PR_SET_VMA,
-                PR_SET_VMA_ANON_NAME as u64,
-                1 + mapping_addr.ptr() as u64,
-                *PAGE_SIZE - 1,
-                name_addr.ptr() as u64,
-            ),
-            error!(EINVAL)
-        );
+            // Passing a misaligned pointer to the start of the named region fails.
+            assert_eq!(
+                sys_prctl(
+                    locked,
+                    current_task,
+                    PR_SET_VMA,
+                    PR_SET_VMA_ANON_NAME as u64,
+                    1 + mapping_addr.ptr() as u64,
+                    *PAGE_SIZE - 1,
+                    name_addr.ptr() as u64,
+                ),
+                error!(EINVAL)
+            );
 
-        // Passing an unaligned length does work, however.
-        assert_eq!(
-            sys_prctl(
-                locked,
-                &mut current_task,
-                PR_SET_VMA,
-                PR_SET_VMA_ANON_NAME as u64,
-                mapping_addr.ptr() as u64,
-                *PAGE_SIZE - 1,
-                name_addr.ptr() as u64,
-            ),
-            Ok(SUCCESS)
-        );
+            // Passing an unaligned length does work, however.
+            assert_eq!(
+                sys_prctl(
+                    locked,
+                    current_task,
+                    PR_SET_VMA,
+                    PR_SET_VMA_ANON_NAME as u64,
+                    mapping_addr.ptr() as u64,
+                    *PAGE_SIZE - 1,
+                    name_addr.ptr() as u64,
+                ),
+                Ok(SUCCESS)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_prctl_get_set_dumpable() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            sys_prctl(locked, current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
+                .expect("failed to get dumpable");
 
-        sys_prctl(locked, &mut current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
-            .expect("failed to get dumpable");
+            sys_prctl(locked, current_task, PR_SET_DUMPABLE, 1, 0, 0, 0)
+                .expect("failed to set dumpable");
+            sys_prctl(locked, current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
+                .expect("failed to get dumpable");
 
-        sys_prctl(locked, &mut current_task, PR_SET_DUMPABLE, 1, 0, 0, 0)
-            .expect("failed to set dumpable");
-        sys_prctl(locked, &mut current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
-            .expect("failed to get dumpable");
-
-        // SUID_DUMP_ROOT not supported.
-        sys_prctl(locked, &mut current_task, PR_SET_DUMPABLE, 2, 0, 0, 0)
-            .expect("failed to set dumpable");
-        sys_prctl(locked, &mut current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
-            .expect("failed to get dumpable");
+            // SUID_DUMP_ROOT not supported.
+            sys_prctl(locked, current_task, PR_SET_DUMPABLE, 2, 0, 0, 0)
+                .expect("failed to set dumpable");
+            sys_prctl(locked, current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
+                .expect("failed to get dumpable");
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sys_getsid() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            assert_eq!(
+                current_task.get_tid(),
+                sys_getsid(locked, &current_task, 0).expect("failed to get sid")
+            );
 
-        assert_eq!(
-            current_task.get_tid(),
-            sys_getsid(locked, &current_task, 0).expect("failed to get sid")
-        );
+            let second_task = crate::execution::create_init_child_process(
+                locked,
+                &kernel.weak_self.upgrade().unwrap(),
+                &CString::new("second task").unwrap(),
+                Some(&CString::new("#kernel").unwrap()),
+            )
+            .expect("failed to create second task");
+            second_task
+                .mm()
+                .unwrap()
+                .initialize_mmap_layout_for_test(starnix_types::arch::ArchWidth::Arch64);
+            let second_current = AutoReleasableTask::from(second_task);
 
-        let second_current = create_task(locked, &kernel, "second task");
-
-        assert_eq!(
-            second_current.get_tid(),
-            sys_getsid(locked, &current_task, second_current.get_tid()).expect("failed to get sid")
-        );
+            assert_eq!(
+                second_current.get_tid(),
+                sys_getsid(locked, &current_task, second_current.get_tid())
+                    .expect("failed to get sid")
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_get_affinity_size() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let pid = current_task.get_pid();
-        assert_eq!(sys_sched_getaffinity(locked, &current_task, pid, 16, mapped_address), Ok(16));
-        assert_eq!(
-            sys_sched_getaffinity(locked, &current_task, pid, 1024, mapped_address),
-            Ok(std::mem::size_of::<CpuSet>())
-        );
-        assert_eq!(
-            sys_sched_getaffinity(locked, &current_task, pid, 1, mapped_address),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_sched_getaffinity(locked, &current_task, pid, 9, mapped_address),
-            error!(EINVAL)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let pid = current_task.get_pid();
+            assert_eq!(
+                sys_sched_getaffinity(locked, &current_task, pid, 16, mapped_address),
+                Ok(16)
+            );
+            assert_eq!(
+                sys_sched_getaffinity(locked, &current_task, pid, 1024, mapped_address),
+                Ok(std::mem::size_of::<CpuSet>())
+            );
+            assert_eq!(
+                sys_sched_getaffinity(locked, &current_task, pid, 1, mapped_address),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_sched_getaffinity(locked, &current_task, pid, 9, mapped_address),
+                error!(EINVAL)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_set_affinity_size() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task.write_memory(mapped_address, &[0xffu8]).expect("failed to cpumask");
-        let pid = current_task.get_pid();
-        assert_eq!(
-            sys_sched_setaffinity(locked, &current_task, pid, *PAGE_SIZE as u32, mapped_address),
-            Ok(())
-        );
-        assert_eq!(
-            sys_sched_setaffinity(locked, &current_task, pid, 1, mapped_address),
-            error!(EINVAL)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(mapped_address, &[0xffu8]).expect("failed to cpumask");
+            let pid = current_task.get_pid();
+            assert_eq!(
+                sys_sched_setaffinity(
+                    locked,
+                    &current_task,
+                    pid,
+                    *PAGE_SIZE as u32,
+                    mapped_address
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                sys_sched_setaffinity(locked, &current_task, pid, 1, mapped_address),
+                error!(EINVAL)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_task_name() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let name = "my-task-name\0";
-        current_task.write_memory(mapped_address, name.as_bytes()).expect("failed to write name");
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let name = "my-task-name\0";
+            current_task
+                .write_memory(mapped_address, name.as_bytes())
+                .expect("failed to write name");
 
-        let result =
-            sys_prctl(locked, &mut current_task, PR_SET_NAME, mapped_address.ptr() as u64, 0, 0, 0)
-                .unwrap();
-        assert_eq!(SUCCESS, result);
+            let result =
+                sys_prctl(locked, current_task, PR_SET_NAME, mapped_address.ptr() as u64, 0, 0, 0)
+                    .unwrap();
+            assert_eq!(SUCCESS, result);
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let result =
-            sys_prctl(locked, &mut current_task, PR_GET_NAME, mapped_address.ptr() as u64, 0, 0, 0)
-                .unwrap();
-        assert_eq!(SUCCESS, result);
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let result =
+                sys_prctl(locked, current_task, PR_GET_NAME, mapped_address.ptr() as u64, 0, 0, 0)
+                    .unwrap();
+            assert_eq!(SUCCESS, result);
 
-        let name_length = name.len();
+            let name_length = name.len();
 
-        let out_name = current_task.read_memory_to_vec(mapped_address, name_length).unwrap();
-        assert_eq!(name.as_bytes(), &out_name);
+            let out_name = current_task.read_memory_to_vec(mapped_address, name_length).unwrap();
+            assert_eq!(name.as_bytes(), &out_name);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sched_get_priority_min_max() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let non_rt_min = sys_sched_get_priority_min(locked, &current_task, SCHED_NORMAL).unwrap();
-        assert_eq!(non_rt_min, 0);
-        let non_rt_max = sys_sched_get_priority_max(locked, &current_task, SCHED_NORMAL).unwrap();
-        assert_eq!(non_rt_max, 0);
+        spawn_kernel_and_run(|locked, current_task| {
+            let non_rt_min =
+                sys_sched_get_priority_min(locked, &current_task, SCHED_NORMAL).unwrap();
+            assert_eq!(non_rt_min, 0);
+            let non_rt_max =
+                sys_sched_get_priority_max(locked, &current_task, SCHED_NORMAL).unwrap();
+            assert_eq!(non_rt_max, 0);
 
-        let rt_min = sys_sched_get_priority_min(locked, &current_task, SCHED_FIFO).unwrap();
-        assert_eq!(rt_min, 1);
-        let rt_max = sys_sched_get_priority_max(locked, &current_task, SCHED_FIFO).unwrap();
-        assert_eq!(rt_max, 99);
+            let rt_min = sys_sched_get_priority_min(locked, &current_task, SCHED_FIFO).unwrap();
+            assert_eq!(rt_min, 1);
+            let rt_max = sys_sched_get_priority_max(locked, &current_task, SCHED_FIFO).unwrap();
+            assert_eq!(rt_max, 99);
 
-        let min_bad_policy_error =
-            sys_sched_get_priority_min(locked, &current_task, std::u32::MAX).unwrap_err();
-        assert_eq!(min_bad_policy_error, errno!(EINVAL));
+            let min_bad_policy_error =
+                sys_sched_get_priority_min(locked, &current_task, std::u32::MAX).unwrap_err();
+            assert_eq!(min_bad_policy_error, errno!(EINVAL));
 
-        let max_bad_policy_error =
-            sys_sched_get_priority_max(locked, &current_task, std::u32::MAX).unwrap_err();
-        assert_eq!(max_bad_policy_error, errno!(EINVAL));
+            let max_bad_policy_error =
+                sys_sched_get_priority_max(locked, &current_task, std::u32::MAX).unwrap_err();
+            assert_eq!(max_bad_policy_error, errno!(EINVAL));
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sched_setscheduler() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            current_task
+                .thread_group()
+                .limits
+                .lock(locked)
+                .set(Resource::RTPRIO, rlimit { rlim_cur: 255, rlim_max: 255 });
 
-        current_task
-            .thread_group()
-            .limits
-            .lock(locked)
-            .set(Resource::RTPRIO, rlimit { rlim_cur: 255, rlim_max: 255 });
+            let scheduler = sys_sched_getscheduler(locked, &current_task, 0).unwrap();
+            assert_eq!(scheduler, SCHED_NORMAL, "tasks should have normal scheduler by default");
 
-        let scheduler = sys_sched_getscheduler(locked, &current_task, 0).unwrap();
-        assert_eq!(scheduler, SCHED_NORMAL, "tasks should have normal scheduler by default");
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let requested_params = sched_param { sched_priority: 15 };
+            current_task.write_object(mapped_address.into(), &requested_params).unwrap();
 
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let requested_params = sched_param { sched_priority: 15 };
-        current_task.write_object(mapped_address.into(), &requested_params).unwrap();
+            sys_sched_setscheduler(locked, &current_task, 0, SCHED_FIFO, mapped_address.into())
+                .unwrap();
 
-        sys_sched_setscheduler(locked, &current_task, 0, SCHED_FIFO, mapped_address.into())
-            .unwrap();
+            let new_scheduler = sys_sched_getscheduler(locked, &current_task, 0).unwrap();
+            assert_eq!(new_scheduler, SCHED_FIFO, "task should have been assigned fifo scheduler");
 
-        let new_scheduler = sys_sched_getscheduler(locked, &current_task, 0).unwrap();
-        assert_eq!(new_scheduler, SCHED_FIFO, "task should have been assigned fifo scheduler");
-
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        sys_sched_getparam(locked, &current_task, 0, mapped_address.into())
-            .expect("sched_getparam");
-        let param_value: sched_param =
-            current_task.read_object(mapped_address.into()).expect("read_object");
-        assert_eq!(param_value.sched_priority, 15);
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            sys_sched_getparam(locked, &current_task, 0, mapped_address.into())
+                .expect("sched_getparam");
+            let param_value: sched_param =
+                current_task.read_object(mapped_address.into()).expect("read_object");
+            assert_eq!(param_value.sched_priority, 15);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sched_getparam() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mapped_address = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        sys_sched_getparam(locked, &current_task, 0, mapped_address.into())
-            .expect("sched_getparam");
-        let param_value: sched_param =
-            current_task.read_object(mapped_address.into()).expect("read_object");
-        assert_eq!(param_value.sched_priority, 0);
+        spawn_kernel_and_run(|locked, current_task| {
+            let mapped_address =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            sys_sched_getparam(locked, &current_task, 0, mapped_address.into())
+                .expect("sched_getparam");
+            let param_value: sched_param =
+                current_task.read_object(mapped_address.into()).expect("read_object");
+            assert_eq!(param_value.sched_priority, 0);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_setuid() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        // Test for root.
-        current_task.set_creds(Credentials::root());
-        sys_setuid(locked, &current_task, 42).expect("setuid");
-        let mut creds = current_task.current_creds();
-        assert_eq!(creds.euid, 42);
-        assert_eq!(creds.uid, 42);
-        assert_eq!(creds.saved_uid, 42);
+        spawn_kernel_and_run(|locked, current_task| {
+            // Test for root.
+            current_task.set_creds(Credentials::root());
+            sys_setuid(locked, &current_task, 42).expect("setuid");
+            let mut creds = current_task.current_creds();
+            assert_eq!(creds.euid, 42);
+            assert_eq!(creds.uid, 42);
+            assert_eq!(creds.saved_uid, 42);
 
-        // Remove the CAP_SETUID capability to avoid overwriting permission checks.
-        creds.cap_effective.remove(CAP_SETUID);
-        current_task.set_creds(creds);
+            // Remove the CAP_SETUID capability to avoid overwriting permission checks.
+            creds.cap_effective.remove(CAP_SETUID);
+            current_task.set_creds(creds);
 
-        // Test for non root, which task now is.
-        assert_eq!(sys_setuid(locked, &current_task, 0), error!(EPERM));
-        assert_eq!(sys_setuid(locked, &current_task, 43), error!(EPERM));
+            // Test for non root, which task now is.
+            assert_eq!(sys_setuid(locked, &current_task, 0), error!(EPERM));
+            assert_eq!(sys_setuid(locked, &current_task, 43), error!(EPERM));
 
-        sys_setuid(locked, &current_task, 42).expect("setuid");
-        let creds = current_task.current_creds();
-        assert_eq!(creds.euid, 42);
-        assert_eq!(creds.uid, 42);
-        assert_eq!(creds.saved_uid, 42);
+            sys_setuid(locked, &current_task, 42).expect("setuid");
+            let creds = current_task.current_creds();
+            assert_eq!(creds.euid, 42);
+            assert_eq!(creds.uid, 42);
+            assert_eq!(creds.saved_uid, 42);
 
-        // Change uid and saved_uid, and check that one can set the euid to these.
-        let mut creds = current_task.current_creds();
-        creds.uid = 41;
-        creds.euid = 42;
-        creds.saved_uid = 43;
-        current_task.set_creds(creds);
+            // Change uid and saved_uid, and check that one can set the euid to these.
+            let mut creds = current_task.current_creds();
+            creds.uid = 41;
+            creds.euid = 42;
+            creds.saved_uid = 43;
+            current_task.set_creds(creds);
 
-        sys_setuid(locked, &current_task, 41).expect("setuid");
-        let creds = current_task.current_creds();
-        assert_eq!(creds.euid, 41);
-        assert_eq!(creds.uid, 41);
-        assert_eq!(creds.saved_uid, 43);
+            sys_setuid(locked, &current_task, 41).expect("setuid");
+            let creds = current_task.current_creds();
+            assert_eq!(creds.euid, 41);
+            assert_eq!(creds.uid, 41);
+            assert_eq!(creds.saved_uid, 43);
 
-        let mut creds = current_task.current_creds();
-        creds.uid = 41;
-        creds.euid = 42;
-        creds.saved_uid = 43;
-        current_task.set_creds(creds);
+            let mut creds = current_task.current_creds();
+            creds.uid = 41;
+            creds.euid = 42;
+            creds.saved_uid = 43;
+            current_task.set_creds(creds);
 
-        sys_setuid(locked, &current_task, 43).expect("setuid");
-        let creds = current_task.current_creds();
-        assert_eq!(creds.euid, 43);
-        assert_eq!(creds.uid, 41);
-        assert_eq!(creds.saved_uid, 43);
+            sys_setuid(locked, &current_task, 43).expect("setuid");
+            let creds = current_task.current_creds();
+            assert_eq!(creds.euid, 43);
+            assert_eq!(creds.uid, 41);
+            assert_eq!(creds.saved_uid, 43);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_read_c_string_vector() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let arg_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let arg = b"test-arg\0";
+            current_task.write_memory(arg_addr, arg).expect("failed to write test arg");
+            let arg_usercstr = UserCString::new(current_task, arg_addr);
+            let null_usercstr = UserCString::null(current_task);
 
-        let arg_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let arg = b"test-arg\0";
-        current_task.write_memory(arg_addr, arg).expect("failed to write test arg");
-        let arg_usercstr = UserCString::new(&current_task, arg_addr);
-        let null_usercstr = UserCString::null(&current_task);
+            let argv_addr = UserCStringPtr::new(
+                current_task,
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE),
+            );
+            current_task
+                .write_multi_arch_ptr(argv_addr.addr(), arg_usercstr)
+                .expect("failed to write UserCString");
+            current_task
+                .write_multi_arch_ptr(argv_addr.next().unwrap().addr(), null_usercstr)
+                .expect("failed to write UserCString");
 
-        let argv_addr = UserCStringPtr::new(
-            &current_task,
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE),
-        );
-        current_task
-            .write_multi_arch_ptr(argv_addr.addr(), arg_usercstr)
-            .expect("failed to write UserCString");
-        current_task
-            .write_multi_arch_ptr(argv_addr.next().unwrap().addr(), null_usercstr)
-            .expect("failed to write UserCString");
-
-        // The arguments size limit should include the null terminator.
-        assert!(read_c_string_vector(&current_task, argv_addr, 100, arg.len()).is_ok());
-        assert_eq!(
-            read_c_string_vector(
-                &current_task,
-                argv_addr,
-                100,
-                std::str::from_utf8(arg).unwrap().trim_matches('\0').len()
-            ),
-            error!(E2BIG)
-        );
+            // The arguments size limit should include the null terminator.
+            assert!(read_c_string_vector(&current_task, argv_addr, 100, arg.len()).is_ok());
+            assert_eq!(
+                read_c_string_vector(
+                    &current_task,
+                    argv_addr,
+                    100,
+                    std::str::from_utf8(arg).unwrap().trim_matches('\0').len()
+                ),
+                error!(E2BIG)
+            );
+        });
     }
 }
