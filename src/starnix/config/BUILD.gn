@@ -17,8 +17,12 @@ resource("starnix.profiles") {
 # Add lints here which should apply to all Starnix Rust targets.
 config("starnix_clippy_lints") {
   rustflags = [
-    "-Wclippy::undocumented_unsafe_blocks",
     "-Wclippy::unwrap_in_result",
     "-Wclippy::wildcard_imports",
   ]
+
+  # TODO(https://fxbug.dev/447627502): Include me unconditionally.
+  if (current_cpu != "riscv64") {
+    rustflags += [ "-Wclippy::undocumented_unsafe_blocks" ]
+  }
 }
