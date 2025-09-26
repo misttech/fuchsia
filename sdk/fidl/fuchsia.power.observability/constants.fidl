@@ -182,10 +182,15 @@ const ACTIVE_WAKE_LOCK_NAMES string = "active_wake_lock_names";
 /// because there were active wake locks.
 const INACTIVE_WAKE_LOCK_NAMES string = "inactive_wake_lock_names";
 
-/// The number of current active epolls, recorded when epolls become
-/// active / inactive and if we attempted to suspend, but failed
+/// The name of current active epolls, recorded when epolls
+/// become active and if we attempted to suspend, but failed because
+/// there were active epolls.
+const ACTIVE_EPOLLS string = "active_epolls";
+
+/// The name of current inactive epolls, recorded when epolls
+/// become inactive and if we attempted to suspend, but failed
 /// because there were active epolls.
-const ACTIVE_EPOLLS_COUNT string = "active_epolls_count";
+const INACTIVE_EPOLLS string = "inactive_epolls";
 
 // Fuchsia Suspend HAL
 

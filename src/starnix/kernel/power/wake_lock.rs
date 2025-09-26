@@ -66,7 +66,7 @@ impl BytesFileOps for PowerWakeLockFile {
     }
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let wake_locks = current_task.kernel().suspend_resume_manager.active_wake_locks();
+        let wake_locks = current_task.kernel().suspend_resume_manager.lock().active_wake_locks();
         let content = wake_locks.join(" ") + "\n";
         Ok(content.as_bytes().to_owned().into())
     }
@@ -94,7 +94,7 @@ impl BytesFileOps for PowerWakeUnlockFile {
     /// Returns a space-separated list of inactive wakeup source names previously created
     /// via `PowerWakeLockFile`.
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let wake_locks = current_task.kernel().suspend_resume_manager.inactive_wake_locks();
+        let wake_locks = current_task.kernel().suspend_resume_manager.lock().inactive_wake_locks();
         let content = wake_locks.join(" ") + "\n";
         Ok(content.as_bytes().to_owned().into())
     }

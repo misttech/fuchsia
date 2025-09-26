@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use fuchsia_component::client::connect_to_protocol_sync;
-use fuchsia_inspect::{ArrayProperty, NumericProperty, StringArrayProperty, UintProperty};
+use fuchsia_inspect::{ArrayProperty, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
@@ -55,7 +55,8 @@ pub struct SuspendResumeManagerInner {
 
     /// The currently active EPOLLWAKEUPs in the system. If non-empty, this prevents
     /// the container from suspending.
-    active_epolls: HashSet<EpollKey>,
+    active_epolls: HashMap<EpollKey, String>,
+    inactive_epolls: HashSet<String>,
 
     /// The event pair that is passed to the Starnix runner so it can observe whether
     /// or not any wake locks are active before completing a suspend operation.
@@ -77,8 +78,11 @@ struct WakeLocksInspect {
     /// List of inactive locks.
     inactive_wake_locks: StringArrayProperty,
 
-    /// Number of active epolls.
-    active_epolls_count: UintProperty,
+    /// List of active epolls
+    active_epolls: StringArrayProperty,
+
+    /// List of inactive epolls
+    inactive_epolls: StringArrayProperty,
 
     /// Parent node of the above properties.
     root: inspect::Node,
@@ -95,6 +99,7 @@ const INSPECT_RING_BUFFER_CAPACITY: usize = 128;
 
 /// The inspect wakelock nodes will keep at most this many entries.
 const INSPECT_MAX_WAKE_LOCK_NAMES: usize = 64;
+const INSPECT_MAX_EPOLLS: usize = 64;
 
 impl Default for SuspendResumeManagerInner {
     fn default() -> Self {
@@ -111,6 +116,7 @@ impl Default for SuspendResumeManagerInner {
             active_locks: Default::default(),
             inactive_locks: Default::default(),
             active_epolls: Default::default(),
+            inactive_epolls: Default::default(),
             active_lock_reader,
             active_lock_writer,
         }
@@ -118,6 +124,25 @@ impl Default for SuspendResumeManagerInner {
 }
 
 impl SuspendResumeManagerInner {
+    pub fn active_wake_locks(&self) -> Vec<String> {
+        Vec::from_iter(self.active_locks.keys().cloned())
+    }
+
+    pub fn inactive_wake_locks(&self) -> Vec<String> {
+        Vec::from_iter(self.inactive_locks.clone())
+    }
+
+    fn active_epolls(&self) -> Vec<String> {
+        Vec::from_iter(self.active_epolls.values().cloned())
+    }
+
+    fn update_suspend_stats<UpdateFn>(&mut self, update: UpdateFn)
+    where
+        UpdateFn: FnOnce(&mut SuspendStats),
+    {
+        update(&mut self.suspend_stats);
+    }
+
     /// Signals whether or not there are currently any active wake locks in the kernel.
     fn signal_wake_events(&mut self) {
         let (clear_mask, set_mask) =
@@ -157,14 +182,28 @@ impl SuspendResumeManagerInner {
         }
     }
 
-    /// Increments the count of active epolls by 1.
-    fn increment_active_epolls(&self) {
-        self.wake_locks_inspect.active_epolls_count.add(1);
+    fn record_active_epolls(&mut self) {
+        let inspect = &mut self.wake_locks_inspect;
+        let active_epolls = &self.active_epolls;
+
+        let len = min(active_epolls.len(), INSPECT_MAX_EPOLLS);
+        inspect.active_epolls = inspect.root.create_string_array(fobs::ACTIVE_EPOLLS, len);
+        for (i, key) in active_epolls.keys().sorted().rev().take(len).enumerate() {
+            if let Some(name) = active_epolls.get(key) {
+                inspect.active_epolls.set(i, name);
+            }
+        }
     }
 
-    /// Decrements the count of active epolls by 1.
-    fn decrement_active_epolls(&self) {
-        self.wake_locks_inspect.active_epolls_count.subtract(1);
+    fn record_inactive_epolls(&mut self) {
+        let inspect = &mut self.wake_locks_inspect;
+        let inactive_epolls = &self.inactive_epolls;
+
+        let len = min(inactive_epolls.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
+        inspect.inactive_epolls = inspect.root.create_string_array(fobs::INACTIVE_EPOLLS, len);
+        for (i, name) in inactive_epolls.iter().sorted().take(len).enumerate() {
+            inspect.inactive_epolls.set(i, name);
+        }
     }
 }
 
@@ -229,27 +268,30 @@ impl SuspendResumeManager {
     }
 
     /// Adds a wake lock `key` to the active epoll wake locks.
-    pub fn add_epoll(&self, key: EpollKey) {
+    pub fn add_epoll(&self, current_task: &CurrentTask, key: EpollKey) {
         let mut state = self.lock();
-        state.active_epolls.insert(key);
+        state.active_epolls.insert(
+            key,
+            current_task
+                .persistent_info
+                .command()
+                .to_str()
+                .map_or_else(|_| current_task.get_pid().to_string(), |s| s.to_string()),
+        );
         state.signal_wake_events();
-        state.increment_active_epolls();
+        state.record_active_epolls();
     }
 
     /// Removes a wake lock `key` from the active epoll wake locks.
     pub fn remove_epoll(&self, key: EpollKey) {
         let mut state = self.lock();
-        state.active_epolls.remove(&key);
+        let epoll = state.active_epolls.remove(&key);
+        if let Some(epoll) = epoll {
+            state.inactive_epolls.insert(epoll);
+        }
         state.signal_wake_events();
-        state.decrement_active_epolls();
-    }
-
-    pub fn active_wake_locks(&self) -> Vec<String> {
-        Vec::from_iter(self.lock().active_locks.keys().cloned())
-    }
-
-    pub fn inactive_wake_locks(&self) -> Vec<String> {
-        Vec::from_iter(self.lock().inactive_locks.clone())
+        state.record_active_epolls();
+        state.record_inactive_epolls();
     }
 
     /// Returns a duplicate handle to the `EventPair` that is signaled when wake
@@ -265,14 +307,6 @@ impl SuspendResumeManager {
     /// Gets the suspend statistics.
     pub fn suspend_stats(&self) -> SuspendStats {
         self.lock().suspend_stats.clone()
-    }
-
-    pub fn update_suspend_stats<UpdateFn>(&self, update: UpdateFn)
-    where
-        UpdateFn: FnOnce(&mut SuspendStats),
-    {
-        let stats_guard = &mut self.lock().suspend_stats;
-        update(stats_guard);
     }
 
     /// Get the contents of the power "sync_on_suspend" file in the power
@@ -327,7 +361,8 @@ impl SuspendResumeManager {
             Ok(Ok(res)) => {
                 log_info!("Resuming from container suspension.");
                 let wake_time = zx::BootInstant::get();
-                self.update_suspend_stats(|suspend_stats| {
+                let mut state = self.lock();
+                state.update_suspend_stats(|suspend_stats| {
                     suspend_stats.success_count += 1;
                     suspend_stats.last_time_in_suspend_operations =
                         (wake_time - suspend_start_time).into();
@@ -338,7 +373,7 @@ impl SuspendResumeManager {
                     suspend_stats.last_resume_reason =
                         res.resume_reason.map(|s| format!("0 {}", s));
                 });
-                self.lock().suspend_events_node.add_entry(|node| {
+                state.suspend_events_node.add_entry(|node| {
                     node.record_int(fobs::SUSPEND_RESUMED_AT, wake_time.into_nanos());
                 });
                 fuchsia_trace::instant!(
@@ -349,44 +384,50 @@ impl SuspendResumeManager {
             }
             e => {
                 let wake_time = zx::BootInstant::get();
-                let wake_lock_names: Option<Vec<String>> = match e {
-                    Ok(Err(frunner::SuspendError::WakeLocksExist)) => {
-                        let mut names = vec![];
-                        for wl in &self.active_wake_locks() {
-                            names.push(wl.clone());
-                        }
-                        Some(names)
-                    }
-                    _ => None,
-                };
-                self.update_suspend_stats(|suspend_stats| {
+                let mut state = self.lock();
+                state.update_suspend_stats(|suspend_stats| {
                     suspend_stats.fail_count += 1;
                     suspend_stats.last_failed_errno = Some(errno!(EINVAL));
-                    // Power analysis tools require `Abort: ` in the case of failed suspends.
-                    suspend_stats.last_resume_reason = wake_lock_names
-                        .as_ref()
-                        .map(|reasons| format!("Abort: {}", reasons.join(" ")));
+                    suspend_stats.last_resume_reason = None;
                 });
-                {
-                    let mut state = self.lock();
-                    let active_epolls_count = state.active_epolls.len();
-                    log_warn!(e:?; "Container suspension failed. wake locks: {:?}, epoll count: {}", wake_lock_names, active_epolls_count);
-                    state.suspend_events_node.add_entry(|node| {
-                        node.record_int(fobs::SUSPEND_FAILED_AT, wake_time.into_nanos());
-                        if let Some(names) = wake_lock_names {
-                            node.record_uint(
-                                fobs::ACTIVE_EPOLLS_COUNT,
-                                active_epolls_count.try_into().unwrap_or_default(),
-                            );
-                            let names_array =
-                                node.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, names.len());
-                            for (i, name) in names.iter().enumerate() {
-                                names_array.set(i, name);
-                            }
-                            node.record(names_array);
+
+                let (wake_lock_names, epoll_names) = match e {
+                    Ok(Err(frunner::SuspendError::WakeLocksExist)) => {
+                        let wake_lock_names = state.active_wake_locks();
+                        let epoll_names = state.active_epolls();
+                        let last_resume_reason = format!(
+                            "Abort: {}",
+                            wake_lock_names.join(" ") + &epoll_names.join(" ")
+                        );
+                        state.update_suspend_stats(|suspend_stats| {
+                            // Power analysis tools require `Abort: ` in the case of failed suspends
+                            suspend_stats.last_resume_reason = Some(last_resume_reason);
+                        });
+                        (Some(wake_lock_names), Some(epoll_names))
+                    }
+                    _ => (None, None),
+                };
+
+                log_warn!(e:?; "Container suspension failed. wake locks: {:?}, epolls: {:?}", wake_lock_names, epoll_names);
+                state.suspend_events_node.add_entry(|node| {
+                    node.record_int(fobs::SUSPEND_FAILED_AT, wake_time.into_nanos());
+                    if let Some(names) = wake_lock_names {
+                        let names_array =
+                            node.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, names.len());
+                        for (i, name) in names.iter().enumerate() {
+                            names_array.set(i, name);
                         }
-                    });
-                }
+                        node.record(names_array);
+                    }
+                    if let Some(epolls) = epoll_names {
+                        let epolls_array =
+                            node.create_string_array(fobs::ACTIVE_EPOLLS, epolls.len());
+                        for (i, name) in epolls.iter().enumerate() {
+                            epolls_array.set(i, name);
+                        }
+                        node.record(epolls_array);
+                    }
+                });
                 fuchsia_trace::instant!(
                     c"power",
                     c"suspend_container:error",
@@ -418,7 +459,8 @@ impl WakeLocksInspect {
         Self {
             active_wake_locks: root.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, 0),
             inactive_wake_locks: root.create_string_array(fobs::INACTIVE_WAKE_LOCK_NAMES, 0),
-            active_epolls_count: root.create_uint(fobs::ACTIVE_EPOLLS_COUNT, 0),
+            active_epolls: root.create_string_array(fobs::ACTIVE_EPOLLS, 0),
+            inactive_epolls: root.create_string_array(fobs::INACTIVE_EPOLLS, 0),
             root,
         }
     }

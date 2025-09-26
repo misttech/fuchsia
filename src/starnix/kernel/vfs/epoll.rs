@@ -453,7 +453,7 @@ impl EpollFileObject {
                 // hold a wake lease until the next epoll_wait.
                 if wait.events.contains(FdEvents::EPOLLWAKEUP) {
                     if let ReadyItemKey::Usize(key) = pending_event.key {
-                        current_task.kernel().suspend_resume_manager.add_epoll(key)
+                        current_task.kernel().suspend_resume_manager.add_epoll(current_task, key)
                     }
                 }
 
@@ -489,7 +489,7 @@ impl EpollFileObject {
         _baton_lease: &zx::Handle,
     ) -> Result<(), Errno> {
         let key = file.id.as_epoll_key();
-        current_task.kernel().suspend_resume_manager.add_epoll(key);
+        current_task.kernel().suspend_resume_manager.add_epoll(current_task, key);
         Ok(())
     }
 }
