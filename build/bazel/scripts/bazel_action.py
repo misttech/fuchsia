@@ -25,6 +25,14 @@ import thread_pool_helpers
 import workspace_utils
 from build_utils import FilePath
 
+_BUILD_API_DIR = os.path.join(_SCRIPT_DIR, "../../api")
+sys.path.insert(0, _BUILD_API_DIR)
+from debug_symbols import (
+    DebugSymbolEntryType,
+    DebugSymbolExporter,
+    DebugSymbolsManifestParser,
+)
+
 _BUILD_BAZEL_DIR = os.path.dirname(_SCRIPT_DIR)
 
 # Directory where to find Starlark input files.
@@ -298,6 +306,9 @@ _DEBUG = False
 # Set this to True to debug .build-id copies from the Bazel output base
 # to the Ninja build directory.
 _DEBUG_BUILD_ID_COPIES = _DEBUG
+
+# Set this to True to debug the export of debug symbols.
+_DEBUG_SYMBOL_EXPORT = _DEBUG
 
 # Set this to True to debug the bazel query cache.
 _DEBUG_BAZEL_QUERIES = _DEBUG
@@ -922,6 +933,198 @@ def label_requires_content_hash(label: str) -> bool:
     )
 
 
+def generate_debug_symbols_manifest(
+    bazel_targets: list[str],
+    bazel_launcher: build_utils.BazelLauncher,
+    configured_args: list[str],
+    bazel_execroot: Path,
+    build_dir: Path,
+    manifest_output_path: Path,
+    time_profile: build_utils.TimeProfile,
+) -> tuple[bool, list[DebugSymbolEntryType]]:
+    """Generate a debug symbol manifest.
+
+    This also ensures that all debug binaries the mnifest points to are
+    properly materialized in the Bazel output base, even when remote
+    caching is enabled.
+
+    Args:
+        bazel_targets: List of top-level Bazel target labels. The debug
+            symbols for all their transitive dependencies will be included.
+        bazel_launcher: A BazelLauncher instance.
+        configured_args: List of Bazel configuration-specific arguments
+            to run bazel build or bazel cquery.
+        bazel_execroot: Path to Bazel execroot.
+        build_dir: Path to Ninja build direvtory.
+        manifest_output_path: Path where the manifest will be written.
+            only used in error messages, this function does not write
+            the file itself.
+        time_profile: A TimeProfile instance.
+    Returns:
+        In case of failure, return (False, []).
+        IN case of success, return (True, debug_entries) where debug_entries
+        is a list of dictionaries describing debug symbols according to the
+        //:debug_symbols schema.
+    """
+    # Unfortunately, using --output_groups=+build_id_dirs only applies
+    # to the top-level Bazel targets being built, and not to their transitive
+    # dependencies. When building product bundles, this means that no
+    # debug symbols will be generated, as the build_id_dirs output groups
+    # are only supported by fuchsia_package() targets.
+    #
+    # To work around this, use an aspect to ensure that debug binaries are
+    # materialized in the execroot, and generate a debug_symbols.json manifest
+    # file from the dependencies of each top-level Bazel targets.
+    #
+    # Due to Bazel bugs / limitations, the stderr output of this command must
+    # be processed to retrieve the path of the generated manifest files. For
+    # details, read //build/bazel/debug_symbols/aspects.bzl.
+    #
+    # NOTE: Because capturing stderr is required here this bazel build
+    # invocation cannot be merged with the main one above.
+    #
+    # Then these manifest are processed, to rebase their paths, and merged into
+    # a single output debug_symbols.json file for the top-level bazel_action()
+    # GN target.
+
+    time_profile.start(
+        "generate_debug_symbol_manifests",
+        "Generate debug symbol manifests from deps of top-level targets.",
+    )
+    # First, build the debug binaries and target-specific manifests.
+    cmd_args = (
+        ["build"]
+        + configured_args
+        + [
+            "--output_groups=+debug_symbol_files",
+            "--aspects=//build/bazel/debug_symbols:aspects.bzl%generate_manifest",
+        ]
+        + bazel_targets
+    )
+    # Always capture both output streams.
+    ret = bazel_launcher.run_bazel_command(
+        cmd_args, print_stdout=False, print_stderr=False
+    )
+    time_profile.stop()
+    if ret.returncode != 0:
+        print(
+            "ERROR: Cannot generate debug symbols:\n%s\n%s"
+            % (ret.stdout, ret.stderr),
+            file=sys.stderr,
+        )
+        return (False, [])
+
+    if _DEBUG_SYMBOL_EXPORT:
+        print(
+            "DEBUG SYMBOLS STDERR: ====================\n%s\n======================\n"
+            % ret.stderr
+        )
+
+    # Second, extract paths to target-specific manifest, relative to the execroot.
+    time_profile.start(
+        "merge_debug_symbol_manifests",
+        "Merge target-specific manifests into final version.",
+    )
+    manifest_paths = []
+    # LINT.IfChange(debug_symbols_manifest_prefix)
+    manifest_path_prefix = "DEBUG_SYMBOLS_MANIFEST_PATH="
+    # LINT.ThenChange(//build/bazel/debug_symbols/aspects.bzl:debug_symbols_manifest_prefix)
+    for line in ret.stderr.splitlines():
+        # Bazel starts every print() output line on stderr with `DEBUG: <filepath>:<line>:`
+        # This looks for a line like 'DEBUG: .... DEBUG_SYMBOLS_MANIFEST_PATH=<path>'
+        if not line.startswith("DEBUG:"):
+            continue
+        pos = line.find(manifest_path_prefix)
+        if pos < 0:
+            continue
+        manifest_paths.append(line[pos + len(manifest_path_prefix) :])
+
+    # Third, read the manifests, merging their content while rebasing paths.
+    def rebase_execroot_path(path: str) -> str:
+        """Convert an execroot-relative path to a build-dir relative one.
+
+        Use os.path.realpath() to resolve symlinks properly.
+        """
+        return os.path.relpath(
+            os.path.realpath(os.path.join(bazel_execroot, path)),
+            build_dir,
+        )
+
+    output_manifest = []
+    recorded_entries: set[str] = set()
+
+    for manifest_path in manifest_paths:
+        input_manifest_path = os.path.join(bazel_execroot, manifest_path)
+        with open(input_manifest_path, "rt") as f:
+            input_manifest = json.load(f)
+
+        for input_entry in input_manifest:
+            src_debug = input_entry["debug"]
+            if src_debug in recorded_entries:
+                continue  # Ignore duplicates.
+
+            recorded_entries.add(src_debug)
+
+            # Adjust paths
+            entry = input_entry.copy()
+            for key in ("debug", "stripped", "breakpad", "elf_build_id"):
+                src_path = entry.get(key, "")
+                if src_path:
+                    entry[key] = rebase_execroot_path(src_path)
+            output_manifest.append(entry)
+
+    time_profile.start(
+        "compute_elf_build_ids",
+        "Extra GNU build-id values from ELF binaries.",
+    )
+    parser = DebugSymbolsManifestParser()
+    parser.enable_build_id_resolution()
+    parser.parse_manifest_json(output_manifest, manifest_output_path)
+
+    if _DEBUG_SYMBOL_EXPORT:
+        print("DEBUG SYMBOLS:\n%s" % output_manifest)
+
+    time_profile.stop()
+    return (True, parser.entries)
+
+
+def copy_debug_symbols_to_build_dir(
+    build_dir: Path, debug_symbols_manifest: list[DebugSymbolEntryType]
+) -> None:
+    """Copy debug symbols from the Bazel execroot to {NINJA_BUILD_DIR}/.build-id
+
+    Useful when performing local debugging and symbolization. This does not affect
+    infra builds which use artifactory instead to upload the symbols to cloud
+    storage.
+
+    Args:
+        build_dir: Path to Ninja build directory.
+        debug_symbols_manifest: A list of DebugSymbolEntryType values, similar
+            to what is returned by generate_debug_symbols_manifest().
+    """
+    exporter = DebugSymbolExporter(
+        build_dir,
+        log=lambda m: (
+            print(f"DEBUG: {m}", file=sys.stderr)
+            if _DEBUG_SYMBOL_EXPORT
+            else None
+        ),
+    )
+    exporter.parse_debug_symbols(debug_symbols_manifest)
+    debug_copies = exporter.get_debug_symbols_to_build_id_copies(
+        os.path.join(build_dir, ".build-id")
+    )
+
+    def copy_build_id_file(src_path: str, dst_path: str) -> None:
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+        shutil.copyfile(src_path, dst_path)
+
+    thread_pool_helpers.starmap_threaded(
+        copy_build_id_file,
+        debug_copies,
+    )
+
+
 def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
     is_first = True
     for val in l:
@@ -1160,6 +1363,10 @@ def main() -> int:
         help="If specified, write timings of each step in this script to file.",
     )
     parser.add_argument(
+        "--debug-symbols-manifest",
+        help="If specified, write debug symbols manifest to file.",
+    )
+    parser.add_argument(
         "--verbose_failures",
         action="store_true",
         default=False,
@@ -1301,10 +1508,6 @@ def main() -> int:
         return result
 
     configured_args = args.extra_bazel_args
-
-    if extract_debug_symbols:
-        # Ensure the build_id directories are produced.
-        configured_args += ["--output_groups=+build_id_dirs"]
 
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
@@ -1501,11 +1704,12 @@ def main() -> int:
         link_path = Path(final_symlink_output.ninja_path)
         final_symlinks.append((target_path, link_path))
 
+    bazel_execroot = bazel_paths.execroot
+
     if _build_fuchsia_package:
         time_profile.start(
             "package_info", "Run cquery to extract Fuchsia package information"
         )
-        bazel_execroot = bazel_paths.execroot
 
         for entry in args.package_outputs:
             if not (
@@ -1545,21 +1749,6 @@ def main() -> int:
                     )
                 )
 
-            if entry.copy_debug_symbols:
-                if _DEBUG_BUILD_ID_COPIES:
-                    print(
-                        f"PACKAGE DEBUG SYMBOLS gn={args.gn_target_label} bazel={args.bazel_targets}"
-                    )
-                    for debug_symbol_dir in bazel_debug_symbol_dirs:
-                        print(f"  DIR: {debug_symbol_dir}")
-
-                for debug_symbol_dir in bazel_debug_symbol_dirs:
-                    file_copies.extend(
-                        get_build_id_dir_files_to_copy(
-                            bazel_execroot / debug_symbol_dir,
-                        )
-                    )
-
         time_profile.stop()
 
     time_profile.start(
@@ -1588,28 +1777,6 @@ def main() -> int:
         dir_copies.append(
             (src_path, dst_path, [Path(f) for f in dir_output.tracked_files])
         )
-
-        if dir_output.copy_debug_symbols:
-            time_profile.start(
-                "copy_debug_symbols",
-                "Copy debug symbols to Ninja build directory",
-            )
-            if _DEBUG_BUILD_ID_COPIES:
-                print(
-                    f"DIRECTORY DEBUG SYMBOLS gn={args.gn_target_label} bazel={args.bazel_targets} {src_path} -> {dst_path}"
-                )
-
-            bazel_execroot = bazel_paths.execroot
-            debug_symbol_dirs = run_starlark_cquery(
-                args.bazel_targets,
-                "FuchsiaDebugSymbolInfo_debug_symbol_dirs.cquery",
-            )
-            for debug_symbol_dir in debug_symbol_dirs:
-                file_copies.extend(
-                    get_build_id_dir_files_to_copy(
-                        bazel_execroot / debug_symbol_dir,
-                    )
-                )
 
     if missing_directories:
         print(
@@ -1679,6 +1846,31 @@ def main() -> int:
     # Drop tracked_files from dir_copies so it can be concatenated with
     # file_copies later.
     all_copies = file_copies + [(src, dst) for src, dst, _ in dir_copies]
+
+    success, debug_symbols_manifest = generate_debug_symbols_manifest(
+        bazel_targets=args.bazel_targets,
+        bazel_launcher=bazel_launcher,
+        configured_args=configured_args,
+        bazel_execroot=bazel_execroot,
+        build_dir=build_dir,
+        manifest_output_path=args.debug_symbols_manifest,
+        time_profile=time_profile,
+    )
+    if not success:
+        return 1
+
+    if args.debug_symbols_manifest:
+        # Write the debug symbols manifest. This is referenced by {BUILD_DIR}/debug_symbols.json
+        # which will be used by artifactory to upload the symbols to cloud storage on infra
+        # builds.
+        with open(args.debug_symbols_manifest, "wt") as f:
+            json.dump(debug_symbols_manifest, f, indent=2)
+
+    if extract_debug_symbols:
+        time_profile.start(
+            "copy_debug_symbols", "Copy debug symbols to Ninja build directory."
+        )
+        copy_debug_symbols_to_build_dir(build_dir, debug_symbols_manifest)
 
     if args.path_mapping:
         time_profile.start("file_mapping", "Write file mapping file")

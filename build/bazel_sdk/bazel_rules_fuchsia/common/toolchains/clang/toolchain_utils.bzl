@@ -482,6 +482,25 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         sysroot = ctx.attr.sysroot,
     )
 
+    # While target_libc is documented as deprecated, it is still being used
+    # by Bazel to configure the "strip" action. In particular, if target_libc
+    # is "macosx" (and not "macos"), this action will not use the `-p` flag
+    # when invoking the strip tool. That is because this flag is not
+    # supported for MachO binaries and will result in a runtime error.
+    #
+    # See the following Bazel sources:
+    # https://cs.opensource.google/bazel/bazel/+/master:src/main/starlark/builtins_bzl/common/cc/toolchain_config/cc_toolchain_config_info.bzl;drc=ab724f1228a7ce3ef64449b771be805cd5077fda;l=106
+    # https://cs.opensource.google/bazel/bazel/+/master:src/main/starlark/builtins_bzl/common/cc/toolchain_config/legacy_features.bzl;drc=b9f1721f79bb1f21e39d74c13878a33f05fa7034;l=1381
+    #
+    # This seems the only place where this value is being used.
+    # The values of host_system_name, target_system_name, abi_version
+    # and abi_libc_version are not used, except being copied into
+    # a CcToolchainConfigInfo value.
+    if to_fuchsia_os_name(ctx.attr.target_os) == "mac":
+        target_libc = "macosx"
+    else:
+        target_libc = "__bazel_target_libc__"
+
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
         toolchain_identifier = "prebuilt_clang",
@@ -498,7 +517,7 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         # build error messages.
         host_system_name = "__bazel_host_system_name__",
         target_system_name = "__bazel_target_system_name__",
-        target_libc = "__bazel_target_libc__",
+        target_libc = target_libc,
         abi_version = "__bazel_abi_version__",
         abi_libc_version = "__bazel_abi_libc_version__",
         compiler = "__bazel_compiler__",
