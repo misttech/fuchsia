@@ -1412,14 +1412,24 @@ async fn run_target_diagnostics<W: Write>(
     env_context: &EnvironmentContext,
     retry_delay: Duration,
 ) -> Result<(), anyhow::Error> {
-    crate::single_target_diagnostics::run_single_target_diagnostics(
+    match crate::single_target_diagnostics::run_single_target_diagnostics(
         env_context,
         target.clone(),
         ledger,
         retry_delay,
     )
-    .await?;
-    Ok(())
+    .await
+    {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let node = ledger.add_node(
+                &format!("Error encountered in diagnostics: {e}"),
+                LedgerMode::Automatic,
+            )?;
+            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            Ok(())
+        }
+    }
 }
 
 async fn show_target<W: Write>(
