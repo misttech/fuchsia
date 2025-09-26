@@ -13,6 +13,7 @@ executable("bin") {
 
   deps = [
     ":base_deps",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

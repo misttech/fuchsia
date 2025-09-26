@@ -5,6 +5,7 @@
 #include "src/ui/scenic/bin/app.h"
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
+#include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
@@ -616,6 +617,18 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     display_power_manager_.emplace(display_manager_.value(), inspect_node_);
     FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_display_singleton::DisplayPower>(
                  display_power_manager_->GetHandler()) == ZX_OK);
+  }
+
+  {
+    TRACE_DURATION("gfx", "App::InitializeServices[vsync_source_manager_]");
+    vsync_source_manager_.emplace(display_manager_.value());
+    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::display::singleton::VsyncSource>)>
+        handler =
+            [this](fidl::InterfaceRequest<fuchsia::ui::display::singleton::VsyncSource> request) {
+              auto server_end = fidl::HLCPPToNatural(std::move(request));
+              vsync_source_manager_->CreateBinding(std::move(server_end));
+            };
+    FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
   }
 }
 

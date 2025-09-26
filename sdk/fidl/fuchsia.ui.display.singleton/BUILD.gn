@@ -13,6 +13,7 @@ fidl("fuchsia.ui.display.singleton") {
     "info.fidl",
     "overview.fidl",
     "power.fidl",
+    "vsync_source.fidl",
   ]
 
   public_deps = [

@@ -18,6 +18,7 @@
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/display/display_power_manager.h"
 #include "src/ui/scenic/lib/display/singleton_display_service.h"
+#include "src/ui/scenic/lib/display/vsync_source_manager.h"
 #include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter_impl.h"
@@ -98,6 +99,9 @@ class App {
   // DisplayPowerManager has a reference to |display_manager_|, so it should be
   // destroyed before |display_manager_|.
   std::optional<display::DisplayPowerManager> display_power_manager_;
+  // VsyncSourceManager has a reference to |display_manager_|, so it should be
+  // destroyed before |display_manager_|.
+  std::optional<display::VsyncSourceManager> vsync_source_manager_;
   escher::EscherUniquePtr escher_;
   std::shared_ptr<utils::CleanupUntilDone> escher_cleanup_;
 

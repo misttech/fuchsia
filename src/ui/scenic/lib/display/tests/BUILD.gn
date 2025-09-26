@@ -21,6 +21,7 @@ cc_test_executable("unittests") {
     "display_power_manager_unittest.cc",
     "display_spec_unittest.cc",
     "singleton_display_service_unittest.cc",
+    "vsync_source_unittest.cc",
   ]
   deps = [
     ":mocks",

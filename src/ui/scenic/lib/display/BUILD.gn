@@ -36,6 +36,10 @@ source_set("display") {
     "layer_spec.h",
     "util.cc",
     "util.h",
+    "vsync_source.cc",
+    "vsync_source.h",
+    "vsync_source_manager.cc",
+    "vsync_source_manager.h",
   ]
 
   public_deps = [
