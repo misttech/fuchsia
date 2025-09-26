@@ -184,11 +184,6 @@ def _generate_manifest_impl(target, actx):
     }
 
     for entry in manifest_info.entries.to_list():
-        # Ignore targets from @bazel_tools as this confuses our bazel_consistency
-        # builders. See https://fxbug.dev/445915240
-        if entry.label.repo_name == "bazel_tools":
-            continue
-
         debug = entry.debug
         symbol_entry = {
             "debug": str(debug.path),
@@ -217,9 +212,7 @@ def _generate_manifest_impl(target, actx):
     # To work around this, use print() here to print the execroot-related path
     # to stderr, and ensure the caller can process this line to extract the file's
     # location.
-    # LINT.IfChange(debug_symbols_manifest_prefix)
     print("DEBUG_SYMBOLS_MANIFEST_PATH=%s" % output.path)
-    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py:debug_symbols_manifest_prefix)
 
     return [
         OutputGroupInfo(
