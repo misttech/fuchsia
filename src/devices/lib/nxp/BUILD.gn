@@ -11,7 +11,7 @@ source_set("nxp") {
     "include/soc/imx8mm/usdhc.h",
   ]
   deps = [
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/lib/ddk",
     "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
