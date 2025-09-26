@@ -6,7 +6,9 @@ use diagnostics_log_encoding::parse::ParseError;
 use moniker::MonikerError;
 use thiserror::Error;
 
-#[derive(Debug, Clone, Error)]
+use std::str::Utf8Error;
+
+#[derive(Debug, Error)]
 pub enum MessageError {
     #[error("unrecognized value type encountered")]
     UnrecognizedValue,
@@ -35,6 +37,11 @@ pub enum MessageError {
     MonikerParseError {
         #[from]
         parse_error: MonikerError,
+    },
+    #[error("string is not valid utf8: {source:?}")]
+    Utf8Error {
+        #[from]
+        source: Utf8Error,
     },
 }
 

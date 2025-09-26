@@ -12,6 +12,10 @@ use flyweights::FlyStr;
 use libc::{c_char, c_int};
 use moniker::Moniker;
 use std::{mem, str};
+
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+use fidl_fuchsia_diagnostics as fdiagnostics;
+
 mod constants;
 pub mod error;
 pub mod ffi;
@@ -49,54 +53,10 @@ pub fn from_logger(source: MonikerWithUrl, msg: LoggerMessage) -> LogsData {
     builder.build()
 }
 
-#[cfg(fuchsia_api_level_at_least = "HEAD")]
-fn parse_archivist_args<'a>(
-    mut builder: LogsDataBuilder,
-    input: &'a Record<'a>,
-) -> Result<(LogsDataBuilder, usize), MessageError> {
-    let mut has_component_url = false;
-    let mut has_moniker = false;
-    let mut archivist_argument_count = 0;
-    for argument in input.arguments.iter().rev() {
-        // If Archivist records are expected, they should always be at the end.
-        // If no Archivist records are expected, treat them as regular key-value-pairs.
-        match argument {
-            Argument::Other { value, name } => {
-                if name == fidl_fuchsia_diagnostics::COMPONENT_URL_ARG_NAME {
-                    if let Value::Text(url) = value {
-                        builder = builder.set_url(Some(FlyStr::new(url.clone())));
-                        archivist_argument_count += 1;
-                        has_component_url = true;
-                        continue;
-                    }
-                }
-                if name == fidl_fuchsia_diagnostics::MONIKER_ARG_NAME {
-                    if let Value::Text(moniker) = value {
-                        builder = builder.set_moniker(ExtendedMoniker::parse_str(moniker)?);
-                        archivist_argument_count += 1;
-                        has_moniker = true;
-                        continue;
-                    }
-                }
-                if name == fidl_fuchsia_diagnostics::ROLLED_OUT_ARG_NAME {
-                    if let Value::UnsignedInt(ival) = value {
-                        builder = builder.set_rolled_out(*ival);
-                        archivist_argument_count += 1;
-                        continue;
-                    }
-                }
-                break;
-            }
-            _ => break,
-        }
-    }
-    if !has_component_url {
-        return Err(MessageError::MissingUrl);
-    }
-    if !has_moniker {
-        return Err(MessageError::MissingMoniker);
-    }
-    Ok((builder, archivist_argument_count))
+struct ExtendedMetadata {
+    moniker: ExtendedMoniker,
+    url: FlyStr,
+    rolled_out_logs: u64,
 }
 
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -107,14 +67,54 @@ fn parse_archivist_args<'a>(
     Ok((builder, 0))
 }
 
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+fn parse_archivist_args<'a>(
+    mut builder: LogsDataBuilder,
+    input: &'a Record<'a>,
+) -> Result<(LogsDataBuilder, usize), MessageError> {
+    let mut archivist_argument_count = 0;
+    for argument in input.arguments.iter().rev() {
+        // If Archivist records are expected, they should always be at the end.
+        // If we see a non-archivist record, we can stop looking.
+        match argument {
+            Argument::Other { name, value } => {
+                if name == fdiagnostics::COMPONENT_URL_ARG_NAME {
+                    if let Value::Text(url) = value {
+                        builder = builder.set_url(Some(FlyStr::new(url.as_ref())));
+                        archivist_argument_count += 1;
+                        continue;
+                    }
+                } else if name == fdiagnostics::MONIKER_ARG_NAME {
+                    if let Value::Text(moniker) = value {
+                        builder = builder.set_moniker(ExtendedMoniker::parse_str(moniker)?);
+                        archivist_argument_count += 1;
+                        continue;
+                    }
+                } else if name == fdiagnostics::ROLLED_OUT_ARG_NAME {
+                    if let Value::UnsignedInt(count) = value {
+                        builder = builder.set_rolled_out(*count);
+                        archivist_argument_count += 1;
+                        continue;
+                    }
+                }
+            }
+            _ => break,
+        }
+    }
+    Ok((builder, archivist_argument_count))
+}
+
 fn parse_logs_data<'a>(
     input: &'a Record<'a>,
-    source: Option<MonikerWithUrl>,
+    source: Option<ExtendedMetadata>,
 ) -> Result<LogsData, MessageError> {
     let (raw_severity, severity) = Severity::parse_exact(input.severity);
     let has_attribution = source.is_some();
-    let (maybe_moniker, maybe_url) =
-        source.map(|value| (Some(value.moniker), Some(value.url))).unwrap_or((None, None));
+
+    let (maybe_moniker, maybe_url, maybe_rolled_out) = source
+        .map(|value| (Some(value.moniker), Some(value.url), Some(value.rolled_out_logs)))
+        .unwrap_or((None, None, None));
+
     let mut builder = LogsDataBuilder::new(BuilderArgs {
         component_url: maybe_url,
         moniker: maybe_moniker.unwrap_or(ExtendedMoniker::ComponentInstance(
@@ -123,6 +123,13 @@ fn parse_logs_data<'a>(
         severity,
         timestamp: input.timestamp,
     });
+
+    if let Some(rolled_out) = maybe_rolled_out {
+        if rolled_out > 0 {
+            builder = builder.set_rolled_out(rolled_out);
+        }
+    }
+
     if let Some(raw_severity) = raw_severity {
         builder = builder.set_raw_severity(raw_severity);
     }
@@ -174,14 +181,34 @@ fn parse_logs_data<'a>(
 }
 
 /// Constructs a `LogsData` from the provided bytes, assuming the bytes
-/// are in the format specified as in the [log encoding], and come from
-///
-/// an Archivist LogStream with moniker, URL, and dropped logs output enabled.
-/// [log encoding] https://fuchsia.dev/fuchsia-src/development/logs/encodings
+/// are a a single FXT log record with a potentially extended metadata section.
+/// [log encoding] https://fuchsia.dev/fuchsia-src/reference/platform-spec/diagnostics/logs-encoding
 pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageError> {
     let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
-    let record = parse_logs_data(&input, None)?;
-    Ok((record, remaining))
+    let (source, new_remaining) = if remaining.len() >= 16 {
+        let moniker_len = u32::from_le_bytes(remaining[0..4].try_into().unwrap()) as usize;
+        let component_url_len = u32::from_le_bytes(remaining[4..8].try_into().unwrap()) as usize;
+        let rolled_out_logs = u64::from_le_bytes(remaining[8..16].try_into().unwrap());
+        let mut offset = 16;
+        let moniker = str::from_utf8(&remaining[offset..offset + moniker_len])?;
+        let moniker_padded_len = (moniker_len + 7) & !7;
+        offset += moniker_padded_len;
+        let url = str::from_utf8(&remaining[offset..offset + component_url_len])?;
+        let component_url_padded_len = (component_url_len + 7) & !7;
+        offset += component_url_padded_len;
+        (
+            Some(ExtendedMetadata {
+                moniker: ExtendedMoniker::parse_str(moniker)?,
+                url: FlyStr::new(url),
+                rolled_out_logs,
+            }),
+            &remaining[offset..],
+        )
+    } else {
+        (None, remaining)
+    };
+    let record = parse_logs_data(&input, source)?;
+    Ok((record, new_remaining))
 }
 
 /// Constructs a `LogsData` from the provided bytes, assuming the bytes
@@ -190,7 +217,10 @@ pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageEr
 /// [log encoding] https://fuchsia.dev/fuchsia-src/development/logs/encodings
 pub fn from_structured(source: MonikerWithUrl, bytes: &[u8]) -> Result<LogsData, MessageError> {
     let (input, _remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
-    let record = parse_logs_data(&input, Some(source))?;
+    let record = parse_logs_data(
+        &input,
+        Some(ExtendedMetadata { moniker: source.moniker, url: source.url, rolled_out_logs: 0 }),
+    )?;
     Ok(record)
 }
 

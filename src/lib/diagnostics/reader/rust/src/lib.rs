@@ -640,24 +640,22 @@ fn drain_batch_iterator_for_logs(
         FormattedContent::Fxt(vmo) => {
             let mut buf = vec![0; vmo.get_content_size().expect("Always returns Ok") as usize];
             vmo.read(&mut buf, 0).map_err(Error::ReadVmo)?;
-            let mut current_slice = buf.as_ref();
-            let mut ret: Option<OneOrMany<LogsData>> = None;
-            loop {
-                let (data, remaining) = from_extended_record(current_slice).unwrap();
-                ret = Some(match ret.take() {
-                    Some(OneOrMany::One(one)) => OneOrMany::Many(vec![one, data]),
-                    Some(OneOrMany::Many(mut many)) => {
-                        many.push(data);
-                        OneOrMany::Many(many)
+            let mut current_slice: &[u8] = buf.as_ref();
+            let mut items = vec![];
+            while !current_slice.is_empty() {
+                match from_extended_record(current_slice) {
+                    Ok((data, remaining)) => {
+                        items.push(data);
+                        current_slice = remaining;
                     }
-                    None => OneOrMany::One(data),
-                });
-                if remaining.is_empty() {
-                    break;
+                    Err(_) => {
+                        // This can happen if we are reading a truncated record.
+                        // Stop parsing this buffer.
+                        break;
+                    }
                 }
-                current_slice = remaining;
             }
-            Ok(ret.unwrap())
+            Ok(OneOrMany::Many(items))
         }
         #[cfg(fuchsia_api_level_at_least = "PLATFORM")]
         FormattedContent::Text(_) => unreachable!("We never expect Text"),
