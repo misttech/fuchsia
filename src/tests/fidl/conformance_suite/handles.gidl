@@ -503,7 +503,7 @@ success("ChannelMaxHandles") {
 // There should be support for at least 64 handles in unknown fields.
 decode_success("ChannelMaxUnknownHandlesDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go, rust_next],
+    bindings_denylist = [dart, go],
     handle_defs = {
         #0 = event(), #1 = event(), #2 = event(), #3 = event(),
         #4 = event(), #5 = event(), #6 = event(), #7 = event(),

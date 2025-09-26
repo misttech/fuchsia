@@ -226,7 +226,6 @@ decode_failure("TableFieldOutOfLineBadOutlinedMarker") {
 success("TableFieldUnknownInlinedStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownInlinedDropped.
     bindings_allowlist = [dart, go],
-    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{
             1: {
@@ -247,7 +246,7 @@ success("TableFieldUnknownInlinedStored") {
 // Tests a table in which a value is inlined into an unknown field.
 decode_success("TableFieldUnknownInlinedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go, rust_next],
+    bindings_denylist = [dart, go],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{},
     },
@@ -266,7 +265,6 @@ encode_success("TableFieldUnknownInlinedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     // TODO(https://fxbug.dev/42067496): Implement the decode function in all backends.
     bindings_allowlist = [rust],
-    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: decode({
             type = TableFieldUnknown,
@@ -375,7 +373,6 @@ encode_success("TableFieldUnknownInlinedHandleDropped") {
 success("TableFieldUnknownOutOfLineStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownOutOfLineDropped.
     bindings_allowlist = [dart, go],
-    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{
             1: {
@@ -398,7 +395,7 @@ success("TableFieldUnknownOutOfLineStored") {
 // Tests a table in which a value is stored out of line in an unknown field.
 decode_success("TableFieldUnknownOutOfLineDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go, rust_next],
+    bindings_denylist = [dart, go],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{},
     },
@@ -418,7 +415,6 @@ encode_success("TableFieldUnknownOutOfLineDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     // TODO(https://fxbug.dev/42067496): Implement the decode function in all backends.
     bindings_allowlist = [rust],
-    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: decode({
             type = TableFieldUnknown,
@@ -475,7 +471,6 @@ decode_failure("TableInlineEnvelopeWhenOutOfLineRequired") {
 
 // Test table with a 2^64-1 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("TableCountExceedsLimitByALot") {
-    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -488,7 +483,6 @@ decode_failure("TableCountExceedsLimitByALot") {
 
 // Test table with a 2^32 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("TableCountExceedsLimitByOne") {
-    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -502,7 +496,6 @@ decode_failure("TableCountExceedsLimitByOne") {
 // Test table with count that exceeds the total message size. Bindings should
 // explicitly check for this to avoid allocating huge tables before failing.
 decode_failure("TableCountExceedsTotalMessageSize") {
-    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -517,7 +510,6 @@ decode_failure("TableCountExceedsTotalMessageSize") {
 // Test table with count that exceeds the remainder of the message size.
 // Bindings should not explicitly check for this, but it should still fail.
 decode_failure("TableCountExceedsRemainingMessageSize") {
-    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -530,7 +522,6 @@ decode_failure("TableCountExceedsRemainingMessageSize") {
 }
 
 success("EmptyTable") {
-    bindings_denylist = [rust_next],
     value = StructOfEmptyTable{
         table: EmptyTable{},
     },
@@ -543,7 +534,6 @@ success("EmptyTable") {
 }
 
 decode_failure("TableWithAbsentAlloc") {
-    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -555,7 +545,6 @@ decode_failure("TableWithAbsentAlloc") {
 }
 
 decode_failure("TableWithInvalidAlloc") {
-    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
