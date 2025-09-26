@@ -18,6 +18,7 @@
 #include <zircon/types.h>
 
 #include <fbl/algorithm.h>
+#include <kernel/auto_preempt_disabler.h>
 #include <kernel/event.h>
 #include <kernel/mp.h>
 #include <kernel/mutex.h>
@@ -450,10 +451,6 @@ static int hold_and_release(void* arg) {
 bool spinlock_test() {
   BEGIN_TEST;
 
-  // TODO(https://fxbug.dev/439836795): re-enable when it passes
-  printf("this test is disabled: https://fxbug.dev/439836795\n");
-  END_TEST;
-
   interrupt_saved_state_t state;
   SpinLock lock;
 
@@ -482,21 +479,28 @@ bool spinlock_test() {
       Thread::Create("hold_and_release", &hold_and_release, &pair, DEFAULT_PRIORITY);
   ASSERT(holder_thread != nullptr);
 
-  // Acquire the lock before resuming the thread.
-  pair.first.AcquireIrqSave(state);
+  {
+    // Disable preemption for the duration the we hold the spinlock to ensure
+    // we do not trigger a local reschedule as it would be an error to do so
+    // while holding a spinlock.
+    AutoPreemptDisabler preempt_disable;
 
-  // Right now we have suspended IRQs and so we will not be moved off this cpu. To prevent any
-  // poor decisions by the scheduler that could cause deadlock we set the affinity of the
-  // holder_thread to not include our cpu.
-  holder_thread->SetCpuAffinity(active ^ cpu_num_to_mask(arch_curr_cpu_num()));
-  holder_thread->Resume();
-  while (pair.second.HolderCpu() == UINT_MAX) {
-    arch::Yield();
+    // Acquire the lock before resuming the thread.
+    pair.first.AcquireIrqSave(state);
+
+    // Right now we have suspended IRQs and so we will not be moved off this cpu. To prevent any
+    // poor decisions by the scheduler that could cause deadlock we set the affinity of the
+    // holder_thread to not include our cpu.
+    holder_thread->SetCpuAffinity(active ^ cpu_num_to_mask(arch_curr_cpu_num()));
+    holder_thread->Resume();
+    while (pair.second.HolderCpu() == UINT_MAX) {
+      arch::Yield();
+    }
+
+    // See that from our perspective "second" is not held.
+    ASSERT(!pair.second.IsHeld());
+    pair.first.ReleaseIrqRestore(state);
   }
-
-  // See that from our perspective "second" is not held.
-  ASSERT(!pair.second.IsHeld());
-  pair.first.ReleaseIrqRestore(state);
   holder_thread->Join(NULL, ZX_TIME_INFINITE);
 
   END_TEST;
