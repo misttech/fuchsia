@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::reboot_reasons::RebootReasons;
+use crate::reboot_reasons::ShutdownOptionsWrapper;
 
 use either::Either;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_power_statecontrol as fpower;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_inspect::{self as inspect, NumericProperty};
+use futures::TryStreamExt;
 use futures::lock::Mutex;
 use futures::prelude::*;
-use futures::TryStreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use zx::AsHandleRef;
@@ -160,16 +160,20 @@ impl ShutdownWatcher {
     }
 
     /// Handles the SystemShutdown message by notifying the appropriate registered watchers.
-    pub async fn handle_system_shutdown_message(&self, reasons: RebootReasons) {
-        self.notify_reboot_watchers(reasons, Self::NOTIFY_RESPONSE_TIMEOUT).await
+    pub async fn handle_system_shutdown_message(&self, options: ShutdownOptionsWrapper) {
+        self.notify_reboot_watchers(options, Self::NOTIFY_RESPONSE_TIMEOUT).await
     }
 
-    async fn notify_reboot_watchers(&self, reasons: RebootReasons, timeout: zx::MonotonicDuration) {
+    async fn notify_reboot_watchers(
+        &self,
+        options: ShutdownOptionsWrapper,
+        timeout: zx::MonotonicDuration,
+    ) {
         // Instead of waiting for https://fxbug.dev/42120903, use begin and end pair of macros.
         fuchsia_trace::duration_begin!(
             c"shutdown-shim",
             c"ShutdownWatcher::notify_reboot_watchers",
-            "reasons" => format!("{:?}", reasons).as_str()
+            "options" => format!("{:?}", options).as_str()
         );
 
         // Create a future for each watcher that calls the watcher's `on_reboot` method and returns
@@ -181,15 +185,15 @@ impl ShutdownWatcher {
             let watchers = self.reboot_watchers.lock().await;
             println!("[shutdown-shim] notifying {:?} watchers of reboot", watchers.len());
             watchers.clone().into_iter().map(|(key, watcher_proxy)| {
-                let reasons = reasons.clone();
+                let options = options.clone();
                 async move {
                     let deadline = timeout.after_now();
                     let result = match &watcher_proxy {
-                        Either::Left(proxy) => {
-                            futures::future::Either::Left(proxy.on_reboot(reasons.to_deprecated()))
-                        }
+                        Either::Left(proxy) => futures::future::Either::Left(
+                            proxy.on_reboot(options.to_reboot_reason_deprecated()),
+                        ),
                         Either::Right(proxy) => {
-                            futures::future::Either::Right(proxy.on_reboot(&reasons.into()))
+                            futures::future::Either::Right(proxy.on_reboot(&options.into()))
                         }
                     }
                     .map_err(|_| ())
@@ -217,7 +221,7 @@ impl ShutdownWatcher {
         fuchsia_trace::duration_end!(
             c"shutdown-shim",
             c"ShutdownWatcher::notify_reboot_watchers",
-            "reasons" => format!("{:?}", reasons).as_str()
+            "options" => format!("{:?}", options).as_str()
         );
     }
 }
@@ -258,6 +262,7 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::{ControlHandle, RequestStream};
+    use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownReason};
 
     // In this test, convert float to integer for simpilification
     fn seconds(seconds: f64) -> zx::MonotonicDuration {
@@ -363,7 +368,7 @@ mod tests {
         // Signal the watchers
         registrar
             .notify_reboot_watchers(
-                RebootReasons::new(fpower::RebootReason2::UserRequest),
+                ShutdownOptionsWrapper::new(ShutdownAction::Reboot, ShutdownReason::UserRequest),
                 seconds(0.0),
             )
             .await;
@@ -388,7 +393,10 @@ mod tests {
         registrar.add_reboot_watcher(watcher_proxy).await;
         registrar
             .notify_reboot_watchers(
-                RebootReasons::new(fpower::RebootReason2::HighTemperature),
+                ShutdownOptionsWrapper::new(
+                    ShutdownAction::Reboot,
+                    ShutdownReason::HighTemperature,
+                ),
                 seconds(0.0),
             )
             .await;
@@ -429,7 +437,10 @@ mod tests {
 
         registrar
             .notify_reboot_watchers(
-                RebootReasons::new(fpower::RebootReason2::HighTemperature),
+                ShutdownOptionsWrapper::new(
+                    ShutdownAction::Reboot,
+                    ShutdownReason::HighTemperature,
+                ),
                 seconds(0.0),
             )
             .await;
@@ -477,7 +488,7 @@ mod tests {
 
         // Set up the notify future
         let notify_future = registrar.notify_reboot_watchers(
-            RebootReasons::new(fpower::RebootReason2::HighTemperature),
+            ShutdownOptionsWrapper::new(ShutdownAction::Reboot, ShutdownReason::HighTemperature),
             seconds(1.0),
         );
         futures::pin_mut!(notify_future);
@@ -516,7 +527,7 @@ mod tests {
 
         // Set up the notify future
         let notify_future = registrar.notify_reboot_watchers(
-            RebootReasons::new(fpower::RebootReason2::HighTemperature),
+            ShutdownOptionsWrapper::new(ShutdownAction::Reboot, ShutdownReason::HighTemperature),
             seconds(1.0),
         );
         futures::pin_mut!(notify_future);

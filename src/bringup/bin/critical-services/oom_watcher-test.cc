@@ -24,7 +24,7 @@ class FakeShutdownShim : public fidl::WireServer<fuchsia_hardware_power_statecon
     if (!view->options.has_action() || !view->options.has_reasons() ||
         view->options.reasons().size() != 1 ||
         view->options.reasons().at(0) !=
-            fuchsia_hardware_power_statecontrol::RebootReason2::kOutOfMemory) {
+            fuchsia_hardware_power_statecontrol::ShutdownReason::kOutOfMemory) {
       unexpected_calls_ = true;
       completer.Close(ZX_ERR_NOT_SUPPORTED);
       return;

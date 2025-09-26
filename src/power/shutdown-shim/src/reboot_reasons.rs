@@ -3,113 +3,158 @@
 // found in the LICENSE file.
 
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_hardware_power_statecontrol as fpower;
+use fidl_fuchsia_hardware_power_statecontrol::{
+    self as fpower, RebootReason2, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 
-/// The reasons of a reboot.
+/// The action and reasons of a shutdown.
 ///
-/// This type acts as a witness that the provided reasons are valid (i.e. at
-/// least one reason was provided).
+/// This type provides translation functions for supporting deprecated enums.
+// TODO(https://fxbug.dev/414413282): This type may not be necessary once `RebootReason2` is removed
+// from the API.
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub struct RebootReasons(pub Vec<fpower::RebootReason2>);
+pub struct ShutdownOptionsWrapper {
+    pub action: ShutdownAction,
+    pub reasons: Vec<ShutdownReason>,
+}
 
-impl RebootReasons {
-    /// Construct a new `RebootReasons` with the given reason.
-    pub fn new(reason: fpower::RebootReason2) -> Self {
-        Self(vec![reason])
+impl ShutdownOptionsWrapper {
+    /// Construct a new `ShutdownOptionsWrapper` with the given reason.
+    pub fn new(action: fpower::ShutdownAction, reason: ShutdownReason) -> Self {
+        Self { action, reasons: vec![reason] }
     }
 
-    /// Construct a new `RebootReasons` from the given deprecated
+    /// Construct a new `ShutdownOptionsWrapper` from the given deprecated
     /// `RebootReason`.
     // TODO(https://fxbug.dev/385742868): Remove this function once
     // `RebootReason` is removed from the API.
-    pub(crate) fn from_deprecated(reason: &fpower::RebootReason) -> Self {
+    pub(crate) fn from_reboot_reason_deprecated(reason: &fpower::RebootReason) -> Self {
         let reason = match reason {
-            fpower::RebootReason::UserRequest => fpower::RebootReason2::UserRequest,
-            fpower::RebootReason::SystemUpdate => fpower::RebootReason2::SystemUpdate,
-            fpower::RebootReason::RetrySystemUpdate => fpower::RebootReason2::RetrySystemUpdate,
-            fpower::RebootReason::HighTemperature => fpower::RebootReason2::HighTemperature,
-            fpower::RebootReason::FactoryDataReset => fpower::RebootReason2::FactoryDataReset,
-            fpower::RebootReason::SessionFailure => fpower::RebootReason2::SessionFailure,
-            fpower::RebootReason::SysmgrFailure => fpower::RebootReason2::SysmgrFailure,
-            fpower::RebootReason::CriticalComponentFailure => {
-                fpower::RebootReason2::CriticalComponentFailure
+            fpower::RebootReason::UserRequest => fpower::ShutdownReason::UserRequest,
+            fpower::RebootReason::SystemUpdate => fpower::ShutdownReason::SystemUpdate,
+            fpower::RebootReason::RetrySystemUpdate => fpower::ShutdownReason::RetrySystemUpdate,
+            fpower::RebootReason::HighTemperature => fpower::ShutdownReason::HighTemperature,
+            fpower::RebootReason::FactoryDataReset => fpower::ShutdownReason::FactoryDataReset,
+            fpower::RebootReason::SessionFailure => fpower::ShutdownReason::SessionFailure,
+            fpower::RebootReason::SysmgrFailure => {
+                // sysmgr doesn't exist anymore.
+                println!(
+                    "[shutdown-shim]: error, unexpectedly received RebootReason::SysmgrFailure"
+                );
+                fpower::ShutdownReason::unknown()
             }
-            fpower::RebootReason::ZbiSwap => fpower::RebootReason2::ZbiSwap,
-            fpower::RebootReason::OutOfMemory => fpower::RebootReason2::OutOfMemory,
+            fpower::RebootReason::CriticalComponentFailure => {
+                fpower::ShutdownReason::CriticalComponentFailure
+            }
+            fpower::RebootReason::ZbiSwap => fpower::ShutdownReason::ZbiSwap,
+            fpower::RebootReason::OutOfMemory => fpower::ShutdownReason::OutOfMemory,
         };
-        Self::new(reason)
+        Self::new(fpower::ShutdownAction::Reboot, reason)
     }
 
-    /// Convert this set of `RebootReasons` into a deprecated `RebootReason`.
-    /// It's a backwards compatible implementation.
-    /// * If multiple `RebootReason2` are provided, prefer reasons with an
+    /// Construct a new `ShutdownOptionsWrapper` from the given Vec of deprecated `RebootReason2`.
+    pub(crate) fn from_reboot_reason2_deprecated(reasons: &Vec<RebootReason2>) -> Self {
+        let reasons = reasons
+            .iter()
+            .map(|reason| match reason {
+                RebootReason2::UserRequest => ShutdownReason::UserRequest,
+                RebootReason2::DeveloperRequest => ShutdownReason::DeveloperRequest,
+                RebootReason2::SystemUpdate => ShutdownReason::SystemUpdate,
+                RebootReason2::RetrySystemUpdate => ShutdownReason::RetrySystemUpdate,
+                RebootReason2::HighTemperature => ShutdownReason::HighTemperature,
+                RebootReason2::FactoryDataReset => ShutdownReason::FactoryDataReset,
+                RebootReason2::SessionFailure => ShutdownReason::SessionFailure,
+                RebootReason2::SysmgrFailure => {
+                    // sysmgr doesn't exist anymore.
+                    println!(
+                        "[shutdown-shim]: error, unexpectedly received RebootReason2::SysmgrFailure"
+                    );
+                    fpower::ShutdownReason::unknown()
+                }
+                RebootReason2::CriticalComponentFailure => ShutdownReason::CriticalComponentFailure,
+                RebootReason2::ZbiSwap => ShutdownReason::ZbiSwap,
+                RebootReason2::OutOfMemory => ShutdownReason::OutOfMemory,
+                RebootReason2::NetstackMigration => ShutdownReason::NetstackMigration,
+                RebootReason2::AndroidUnexpectedReason => ShutdownReason::AndroidUnexpectedReason,
+                RebootReason2::AndroidRescueParty => ShutdownReason::AndroidRescueParty,
+                RebootReason2::AndroidCriticalProcessFailure => {
+                    ShutdownReason::AndroidCriticalProcessFailure
+                }
+                RebootReason2::__SourceBreaking { unknown_ordinal } => {
+                    println!("[shutdown-shim]: error, unrecognized RebootReason2 ordinal: {unknown_ordinal}");
+                    ShutdownReason::unknown()
+                }
+            })
+            .collect();
+        Self { action: ShutdownAction::Reboot, reasons }
+    }
+
+    /// Convert into a deprecated `RebootReason`. It's a backwards compatible implementation.
+    /// * If multiple `ShutdownReason` are provided, prefer reasons with an
     ///   equivalent deprecated `RebootReason` representation.
     /// * Then, if multiple reasons are provided, prefer the first.
     /// * Then, if the reason has no equivalent deprecated `RebootReason`, do a
     ///   best-effort translation.
     // TODO(https://fxbug.dev/385742868): Remove this function once
     // `RebootReason` is removed from the API.
-    pub(crate) fn to_deprecated(&self) -> fpower::RebootReason {
+    pub(crate) fn to_reboot_reason_deprecated(&self) -> fpower::RebootReason {
         enum FoldState {
             Direct(fpower::RebootReason),
             Indirect(fpower::RebootReason),
             None,
         }
-        let state = self.0.iter().fold(FoldState::None, |state, reason| {
+        let state = self.reasons.iter().fold(FoldState::None, |state, reason| {
             match (&state, &reason) {
                 // We already have a direct state; keep it.
                 (FoldState::Direct(_), _) => state,
                 // For reasons that have a direct backwards translation, use it.
-                (_, fpower::RebootReason2::UserRequest) => {
+                (_, fpower::ShutdownReason::UserRequest) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }
-                (_, fpower::RebootReason2::SystemUpdate) => {
+                (_, fpower::ShutdownReason::SystemUpdate) => {
                     FoldState::Direct(fpower::RebootReason::SystemUpdate)
                 }
-                (_, fpower::RebootReason2::RetrySystemUpdate) => {
+                (_, fpower::ShutdownReason::RetrySystemUpdate) => {
                     FoldState::Direct(fpower::RebootReason::RetrySystemUpdate)
                 }
-                (_, fpower::RebootReason2::HighTemperature) => {
+                (_, fpower::ShutdownReason::HighTemperature) => {
                     FoldState::Direct(fpower::RebootReason::HighTemperature)
                 }
-                (_, fpower::RebootReason2::FactoryDataReset) => {
+                (_, fpower::ShutdownReason::FactoryDataReset) => {
                     FoldState::Direct(fpower::RebootReason::FactoryDataReset)
                 }
-                (_, fpower::RebootReason2::SessionFailure) => {
+                (_, fpower::ShutdownReason::SessionFailure) => {
                     FoldState::Direct(fpower::RebootReason::SessionFailure)
                 }
-                (_, fpower::RebootReason2::SysmgrFailure) => {
-                    FoldState::Direct(fpower::RebootReason::SysmgrFailure)
-                }
-                (_, fpower::RebootReason2::CriticalComponentFailure) => {
+                (_, fpower::ShutdownReason::CriticalComponentFailure) => {
                     FoldState::Direct(fpower::RebootReason::CriticalComponentFailure)
                 }
-                (_, fpower::RebootReason2::ZbiSwap) => {
+                (_, fpower::ShutdownReason::ZbiSwap) => {
                     FoldState::Direct(fpower::RebootReason::ZbiSwap)
                 }
-                (_, fpower::RebootReason2::OutOfMemory) => {
+                (_, fpower::ShutdownReason::OutOfMemory) => {
                     FoldState::Direct(fpower::RebootReason::OutOfMemory)
                 }
-                (_, fpower::RebootReason2::AndroidUnexpectedReason) => {
+                (_, fpower::ShutdownReason::AndroidUnexpectedReason) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }
-                (_, fpower::RebootReason2::AndroidRescueParty) => {
+                (_, fpower::ShutdownReason::AndroidRescueParty) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }
-                (_, fpower::RebootReason2::AndroidCriticalProcessFailure) => {
+                (_, fpower::ShutdownReason::AndroidCriticalProcessFailure) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }
-                (_, fpower::RebootReason2::DeveloperRequest) => {
+                (_, fpower::ShutdownReason::DeveloperRequest) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }
                 // If we already have an indirect reason, don't overwrite it
                 // with a new indirect reason.
-                (FoldState::Indirect(_), fpower::RebootReason2::NetstackMigration) => state,
+                (FoldState::Indirect(_), fpower::ShutdownReason::NetstackMigration) => state,
                 // Translate `NetstackMigration` to `SystemUpdate`.
-                (FoldState::None, fpower::RebootReason2::NetstackMigration) => {
+                (FoldState::None, fpower::ShutdownReason::NetstackMigration) => {
                     FoldState::Indirect(fpower::RebootReason::SystemUpdate)
                 }
-                (_, fpower::RebootReason2::__SourceBreaking { unknown_ordinal: _ }) => {
+                (_, fpower::ShutdownReason::__SourceBreaking { unknown_ordinal: _ }) => {
                     unreachable!()
                 }
             }
@@ -117,21 +162,59 @@ impl RebootReasons {
         match state {
             FoldState::Direct(reason) | FoldState::Indirect(reason) => reason,
             FoldState::None => {
-                unreachable!("RebootReasons is guaranteed to have at least 1 reason.")
+                unreachable!("Called to_reboot_reason with no reason(s) specified")
             }
+        }
+    }
+
+    /// Convert into a vector of deprecated `RebootReason2`. It's a backwards compatible
+    /// implementation. If the reason has no equivalent deprecated `RebootReason2`, do a best-effort
+    /// translation.
+    pub(crate) fn to_reboot_reason2_deprecated(&self) -> Vec<RebootReason2> {
+        self.reasons
+            .iter()
+            .map(|item| match item {
+                ShutdownReason::UserRequest => RebootReason2::UserRequest,
+                ShutdownReason::DeveloperRequest => RebootReason2::DeveloperRequest,
+                ShutdownReason::SystemUpdate => RebootReason2::SystemUpdate,
+                ShutdownReason::RetrySystemUpdate => RebootReason2::RetrySystemUpdate,
+                ShutdownReason::HighTemperature => RebootReason2::HighTemperature,
+                ShutdownReason::FactoryDataReset => RebootReason2::FactoryDataReset,
+                ShutdownReason::SessionFailure => RebootReason2::SessionFailure,
+                ShutdownReason::CriticalComponentFailure => RebootReason2::CriticalComponentFailure,
+                ShutdownReason::ZbiSwap => RebootReason2::ZbiSwap,
+                ShutdownReason::OutOfMemory => RebootReason2::OutOfMemory,
+                ShutdownReason::NetstackMigration => RebootReason2::NetstackMigration,
+                ShutdownReason::AndroidUnexpectedReason => RebootReason2::AndroidUnexpectedReason,
+                ShutdownReason::AndroidRescueParty => RebootReason2::AndroidRescueParty,
+                ShutdownReason::AndroidCriticalProcessFailure => {
+                    RebootReason2::AndroidCriticalProcessFailure
+                }
+                ShutdownReason::__SourceBreaking { unknown_ordinal } => {
+                    println!("[shutdown-shim]: error, unrecognized ShutdownReason ordinal: {unknown_ordinal}");
+                    RebootReason2::unknown()
+                }
+            })
+            .collect()
+    }
+}
+
+impl From<ShutdownOptionsWrapper> for fpower::RebootOptions {
+    fn from(options: ShutdownOptionsWrapper) -> Self {
+        fpower::RebootOptions {
+            reasons: Some(options.to_reboot_reason2_deprecated()),
+            __source_breaking: SourceBreaking,
         }
     }
 }
 
-impl AsRef<Vec<fpower::RebootReason2>> for RebootReasons {
-    fn as_ref(&self) -> &Vec<fpower::RebootReason2> {
-        &self.0
-    }
-}
-
-impl From<RebootReasons> for fpower::RebootOptions {
-    fn from(RebootReasons(reasons): RebootReasons) -> Self {
-        fpower::RebootOptions { reasons: Some(reasons), __source_breaking: SourceBreaking }
+impl From<ShutdownOptionsWrapper> for ShutdownOptions {
+    fn from(options: ShutdownOptionsWrapper) -> Self {
+        ShutdownOptions {
+            action: Some(options.action),
+            reasons: Some(options.reasons),
+            __source_breaking: SourceBreaking,
+        }
     }
 }
 
@@ -142,13 +225,13 @@ pub enum InvalidRebootOptions {
     NoReasons,
 }
 
-impl TryFrom<fpower::RebootOptions> for RebootReasons {
+impl TryFrom<fpower::RebootOptions> for ShutdownOptionsWrapper {
     type Error = InvalidRebootOptions;
     fn try_from(options: fpower::RebootOptions) -> Result<Self, Self::Error> {
         let fpower::RebootOptions { reasons, __source_breaking } = options;
         if let Some(reasons) = reasons {
             if !reasons.is_empty() {
-                return Ok(RebootReasons(reasons));
+                return Ok(ShutdownOptionsWrapper::from_reboot_reason2_deprecated(&reasons));
             }
         }
 
@@ -168,7 +251,7 @@ mod tests {
         reasons: Option<Vec<fpower::RebootReason2>>,
     ) -> Result<(), InvalidRebootOptions> {
         let options = fpower::RebootOptions { reasons, __source_breaking: SourceBreaking };
-        RebootReasons::try_from(options).map(|_reasons| {})
+        ShutdownOptionsWrapper::try_from(options).map(|_reasons| {})
     }
 
     #[test_case(
@@ -190,6 +273,6 @@ mod tests {
     fn reasons_to_deprecated(reasons: Vec<fpower::RebootReason2>) -> fpower::RebootReason {
         let options =
             fpower::RebootOptions { reasons: Some(reasons), __source_breaking: SourceBreaking };
-        RebootReasons::try_from(options).unwrap().to_deprecated()
+        ShutdownOptionsWrapper::try_from(options).unwrap().to_reboot_reason_deprecated()
     }
 }

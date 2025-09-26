@@ -4,15 +4,15 @@
 mod reboot_reasons;
 mod shutdown_watcher;
 
-use crate::reboot_reasons::RebootReasons;
+use crate::reboot_reasons::ShutdownOptionsWrapper;
 use crate::shutdown_watcher::ShutdownWatcher;
 use anyhow::{Context, format_err};
 use fidl::HandleBased;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMexecRequest, AdminRequest, AdminRequestStream, AdminShutdownResponder,
-    RebootMethodsWatcherRegisterRequestStream, RebootReason, RebootReason2, ShutdownAction,
-    ShutdownOptions,
+    RebootMethodsWatcherRegisterRequestStream, RebootReason, ShutdownAction, ShutdownOptions,
+    ShutdownReason,
 };
 use fidl_fuchsia_power::CollaborativeRebootInitiatorRequestStream;
 use fidl_fuchsia_power_internal::{
@@ -173,28 +173,29 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                     let res = self
                         .forward_command(
                             target_state,
-                            Some(RebootReasons::from_deprecated(&reason)),
+                            Some(ShutdownOptionsWrapper::from_reboot_reason_deprecated(&reason)),
                             None,
                         )
                         .await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::PerformReboot { options, responder } => {
-                    let reasons = match options.reasons {
-                        Some(reasons) => Some(RebootReasons(reasons)),
+                    let options = match options.reasons {
+                        Some(reasons) => {
+                            Some(ShutdownOptionsWrapper::from_reboot_reason2_deprecated(&reasons))
+                        }
                         None => None,
                     };
 
-                    let target_state = if reasons
-                        .as_ref()
-                        .is_some_and(|reasons| reasons.0.contains(&RebootReason2::OutOfMemory))
-                    {
+                    let target_state = if options.as_ref().is_some_and(|options| {
+                        options.reasons.contains(&ShutdownReason::OutOfMemory)
+                    }) {
                         SystemPowerState::RebootKernelInitiated
                     } else {
                         SystemPowerState::Reboot
                     };
 
-                    let res = self.shutdown(target_state, reasons).await;
+                    let res = self.shutdown(target_state, options).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::RebootToBootloader { responder } => {
@@ -252,20 +253,20 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
             return;
         };
 
-        let reasons = options.reasons.filter(|reasons| !reasons.is_empty()).map(RebootReasons);
+        let options = match options.reasons {
+            Some(reasons) => ShutdownOptionsWrapper { action, reasons },
+            None => ShutdownOptionsWrapper { action, reasons: vec![] },
+        };
 
         match action {
             ShutdownAction::Reboot => {
-                let target_state = if reasons
-                    .as_ref()
-                    .is_some_and(|reasons| reasons.0.contains(&RebootReason2::OutOfMemory))
-                {
+                let target_state = if options.reasons.contains(&ShutdownReason::OutOfMemory) {
                     SystemPowerState::RebootKernelInitiated
                 } else {
                     SystemPowerState::Reboot
                 };
 
-                let res = self.shutdown(target_state, reasons).await;
+                let res = self.shutdown(target_state, Some(options)).await;
                 let _ = responder.send(res.map_err(|s| s.into_raw()));
             }
             ShutdownAction::RebootToBootloader => {
@@ -317,18 +318,18 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
     async fn shutdown(
         &self,
         target_state: SystemPowerState,
-        reasons: Option<RebootReasons>,
+        options: Option<ShutdownOptionsWrapper>,
     ) -> Result<(), zx::Status> {
-        println!("[shutdown-shim] shutdown with reasons [{:?}]", reasons);
+        println!("[shutdown-shim] shutdown with options [{:?}]", options);
         let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
         set_system_power_state(target_state);
-        self.forward_command(target_state, reasons, None).await
+        self.forward_command(target_state, options, None).await
     }
 
     async fn forward_command(
         &self,
         fallback_state: SystemPowerState,
-        reboot_reasons: Option<RebootReasons>,
+        options: Option<ShutdownOptionsWrapper>,
         _mexec_request: Option<AdminMexecRequest>,
     ) -> Result<(), zx::Status> {
         println!("[shutdown-shim] entering {:?} state", fallback_state);
@@ -341,8 +342,10 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
             *shutdown_pending = true;
         }
 
-        if let Some(reasons) = reboot_reasons {
-            self.shutdown_watcher.handle_system_shutdown_message(reasons).await;
+        if let Some(options) = options
+            && !options.reasons.is_empty()
+        {
+            self.shutdown_watcher.handle_system_shutdown_message(options).await;
         }
 
         self.drive_shutdown_manually().await;
@@ -426,11 +429,15 @@ impl<D: Directory + AsRefDirectory> collaborative_reboot::RebootActuator for Pro
         let reasons = reasons
             .into_iter()
             .map(|reason| match reason {
-                CollaborativeRebootReason::NetstackMigration => RebootReason2::NetstackMigration,
-                CollaborativeRebootReason::SystemUpdate => RebootReason2::SystemUpdate,
+                CollaborativeRebootReason::NetstackMigration => ShutdownReason::NetstackMigration,
+                CollaborativeRebootReason::SystemUpdate => ShutdownReason::SystemUpdate,
             })
             .collect();
-        self.shutdown(SystemPowerState::Reboot, Some(RebootReasons(reasons))).await
+        self.shutdown(
+            SystemPowerState::Reboot,
+            Some(ShutdownOptionsWrapper { action: ShutdownAction::Reboot, reasons }),
+        )
+        .await
     }
 }
 

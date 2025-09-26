@@ -6,7 +6,7 @@ use crate::shutdown_mocks::{LeaseState, Signal, new_mocks_provider};
 use anyhow::Error;
 use assert_matches::assert_matches;
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_hardware_power_statecontrol::{RebootReason2, ShutdownAction, ShutdownOptions};
+use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -310,7 +310,7 @@ async fn test_shutdown_request(
     fasync::Task::spawn(async move {
         shim_statecontrol.shutdown(&ShutdownOptions {
             action: Some(action),
-            reasons: Some(vec![RebootReason2::SystemUpdate]),
+            reasons: Some(vec![ShutdownReason::SystemUpdate]),
             __source_breaking: SourceBreaking
         })
         .await
@@ -336,7 +336,7 @@ async fn shutdown_request_action_required(is_power_framework_available: bool) {
     let result = shim_statecontrol
         .shutdown(&ShutdownOptions {
             action: None,
-            reasons: Some(vec![RebootReason2::SystemUpdate]),
+            reasons: Some(vec![ShutdownReason::SystemUpdate]),
             __source_breaking: SourceBreaking,
         })
         .await;
@@ -367,7 +367,7 @@ async fn test_shutdown_request_with_reasons(
     fasync::Task::spawn(async move {
         shim_statecontrol.shutdown(&ShutdownOptions {
             action: Some(ShutdownAction::Reboot),
-            reasons: Some(vec![RebootReason2::SystemUpdate]),
+            reasons: Some(vec![ShutdownReason::SystemUpdate]),
             __source_breaking: SourceBreaking
         })
         .await

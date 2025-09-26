@@ -137,7 +137,6 @@ type ShutdownAction = flexible enum {
 };
 
 /// The options specified when a shutdown is requested.
-// TODO(https://fxbug.dev/414413282): migrate to ShutdownReason once available and promote to NEXT.
 @available(added=HEAD)
 type ShutdownOptions = table {
     1: action ShutdownAction;
@@ -146,7 +145,7 @@ type ShutdownOptions = table {
     // When calling `Admin.Shutdown`, the majority of clients need only
     // specify a single reason. Contact OWNERS if you believe your use case
     // warrants providing multiple reasons.
-    2: reasons vector<RebootReason2>:MAX_SHUTDOWN_REASONS;
+    2: reasons vector<ShutdownReason>:MAX_SHUTDOWN_REASONS;
 };
 
 /// Allows components to register a callback that will be executed when a Reboot
