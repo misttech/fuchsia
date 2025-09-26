@@ -1150,60 +1150,62 @@ type UnixSocketFilter = EbpfProgram<UnixSocketEbpfContext>;
 mod tests {
     use super::*;
     use crate::mm::MemoryAccessor;
-    use crate::testing::*;
+    use crate::testing::{map_memory, spawn_kernel_and_run};
     use starnix_types::user_buffer::UserBuffer;
 
     #[::fuchsia::test]
     async fn test_socket_send_capacity() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let socket = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Unix,
-            SocketType::Stream,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to create socket.");
-        socket
-            .bind(locked, &current_task, SocketAddress::Unix(b"\0".into()))
-            .expect("Failed to bind socket.");
-        socket.listen(locked, &current_task, 10).expect("Failed to listen.");
-        let connecting_socket = Socket::new(
-            locked,
-            &current_task,
-            SocketDomain::Unix,
-            SocketType::Stream,
-            SocketProtocol::default(),
-            /* kernel_private = */ false,
-        )
-        .expect("Failed to connect socket.");
-        connecting_socket
-            .ops
-            .connect(
-                locked.cast_locked(),
-                &connecting_socket,
+        spawn_kernel_and_run(|locked, current_task| {
+            let _kernel = current_task.kernel();
+            let socket = Socket::new(
+                locked,
                 &current_task,
-                SocketPeer::Handle(socket.clone()),
+                SocketDomain::Unix,
+                SocketType::Stream,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket.");
+            socket
+                .bind(locked, &current_task, SocketAddress::Unix(b"\0".into()))
+                .expect("Failed to bind socket.");
+            socket.listen(locked, &current_task, 10).expect("Failed to listen.");
+            let connecting_socket = Socket::new(
+                locked,
+                &current_task,
+                SocketDomain::Unix,
+                SocketType::Stream,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
             )
             .expect("Failed to connect socket.");
-        assert_eq!(Ok(FdEvents::POLLIN), socket.query_events(locked, &current_task));
-        let server_socket = socket.accept(locked).unwrap();
+            connecting_socket
+                .ops
+                .connect(
+                    locked.cast_locked(),
+                    &connecting_socket,
+                    &current_task,
+                    SocketPeer::Handle(socket.clone()),
+                )
+                .expect("Failed to connect socket.");
+            assert_eq!(Ok(FdEvents::POLLIN), socket.query_events(locked, &current_task));
+            let server_socket = socket.accept(locked).unwrap();
 
-        let opt_size = std::mem::size_of::<socklen_t>();
-        let user_address =
-            map_memory(locked, &current_task, UserAddress::default(), opt_size as u64);
-        let send_capacity: socklen_t = 4 * 4096;
-        current_task.write_memory(user_address, &send_capacity.to_ne_bytes()).unwrap();
-        let user_buffer = UserBuffer { address: user_address, length: opt_size };
-        server_socket
-            .setsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, user_buffer.into())
-            .unwrap();
+            let opt_size = std::mem::size_of::<socklen_t>();
+            let user_address =
+                map_memory(locked, &current_task, UserAddress::default(), opt_size as u64);
+            let send_capacity: socklen_t = 4 * 4096;
+            current_task.write_memory(user_address, &send_capacity.to_ne_bytes()).unwrap();
+            let user_buffer = UserBuffer { address: user_address, length: opt_size };
+            server_socket
+                .setsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, user_buffer.into())
+                .unwrap();
 
-        let opt_bytes =
-            server_socket.getsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, 0).unwrap();
-        let retrieved_capacity = socklen_t::from_ne_bytes(opt_bytes.try_into().unwrap());
-        // Setting SO_SNDBUF actually sets it to double the size
-        assert_eq!(2 * send_capacity, retrieved_capacity);
+            let opt_bytes =
+                server_socket.getsockopt(locked, &current_task, SOL_SOCKET, SO_SNDBUF, 0).unwrap();
+            let retrieved_capacity = socklen_t::from_ne_bytes(opt_bytes.try_into().unwrap());
+            // Setting SO_SNDBUF actually sets it to double the size
+            assert_eq!(2 * send_capacity, retrieved_capacity);
+        });
     }
 }
