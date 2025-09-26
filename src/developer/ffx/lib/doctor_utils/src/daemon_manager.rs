@@ -1,8 +1,9 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use ffx_config::EnvironmentContext;
 use ffx_daemon::{
     SocketDetails, find_and_connect, is_daemon_running_at_path, spawn_daemon, try_to_kill_pid,
 };
@@ -37,13 +38,18 @@ pub trait DaemonManager {
 }
 
 pub struct DefaultDaemonManager {
+    context: EnvironmentContext,
     node: Arc<overnet_core::Router>,
     socket_path: PathBuf,
 }
 
 impl DefaultDaemonManager {
-    pub fn new(node: Arc<overnet_core::Router>, socket_path: PathBuf) -> Self {
-        Self { node, socket_path }
+    pub fn new(
+        context: EnvironmentContext,
+        node: Arc<overnet_core::Router>,
+        socket_path: PathBuf,
+    ) -> Self {
+        Self { context, node, socket_path }
     }
 }
 
@@ -145,12 +151,10 @@ impl DaemonManager for DefaultDaemonManager {
     }
 
     async fn spawn(&self) -> Result<()> {
-        let context = ffx_config::global_env_context()
-            .context("Trying to spawn daemon with no configuration")?;
-        spawn_daemon(&context).await
+        spawn_daemon(&self.context).await
     }
 
     async fn find_and_connect(&self) -> Result<DaemonProxy> {
-        find_and_connect(&self.node, self.socket_path.clone()).await
+        find_and_connect(&self.context, &self.node, self.socket_path.clone()).await
     }
 }

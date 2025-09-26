@@ -139,6 +139,7 @@ async fn run_ascendd_connection<'a>(
 }
 
 pub async fn get_daemon_proxy_single_link(
+    context: &EnvironmentContext,
     node: &Arc<overnet_core::Router>,
     socket_path: PathBuf,
     exclusions: Option<Vec<NodeId>>,
@@ -152,7 +153,8 @@ pub async fn get_daemon_proxy_single_link(
     let mut link = Box::pin(link);
     let find = find_next_daemon(node, exclusions).fuse();
     let mut find = Box::pin(find);
-    let timeout_ms = ffx_config::get(CONFIG_DAEMON_CONNECT_TIMEOUT_MS)
+    let timeout_ms = context
+        .get(CONFIG_DAEMON_CONNECT_TIMEOUT_MS)
         .map_err(|_| ffx_error!("Could not get {} config", CONFIG_DAEMON_CONNECT_TIMEOUT_MS))?;
     let mut timeout = Timer::new(Duration::from_millis(timeout_ms)).fuse();
 
@@ -203,13 +205,14 @@ async fn find_next_daemon<'a>(
 
 // Note that this function assumes the daemon has been started separately.
 pub async fn find_and_connect(
+    context: &EnvironmentContext,
     node: &Arc<overnet_core::Router>,
     socket_path: PathBuf,
 ) -> Result<DaemonProxy> {
     // This function is due for deprecation/removal. It should only be used
     // currently by the doctor daemon_manager, which should instead learn to
     // understand the link state in future revisions.
-    get_daemon_proxy_single_link(node, socket_path, None)
+    get_daemon_proxy_single_link(context, node, socket_path, None)
         .await
         .map(|(_nodeid, proxy, link_fut)| {
             fuchsia_async::Task::local(link_fut.map(|_| ())).detach();

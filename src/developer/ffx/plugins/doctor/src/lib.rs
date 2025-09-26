@@ -286,7 +286,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     let node = overnet_core::Router::new(None)
         .with_context(|| ffx_error!("Could not initialize Overnet"))?;
     let ascendd_path = context.get_ascendd_path().await?;
-    let daemon_manager = DefaultDaemonManager::new(node, ascendd_path);
+    let daemon_manager = DefaultDaemonManager::new(context.clone(), node, ascendd_path);
     let delay = Duration::from_millis(cmd.retry_delay);
     let target_spec = ffx_target::get_target_specifier(&context).await?;
     let target_str = target_spec.unwrap_or_else(String::default);

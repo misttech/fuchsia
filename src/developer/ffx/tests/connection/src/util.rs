@@ -135,7 +135,8 @@ async fn connect_to_rcs(
     context: &ffx_config::EnvironmentContext,
 ) -> Result<(RemoteControlProxy, fasync::Task<Result<()>>)> {
     let (_node, daemon_proxy, daemon_fut) =
-        ffx_daemon::get_daemon_proxy_single_link(&node, ascendd_path.to_owned(), None).await?;
+        ffx_daemon::get_daemon_proxy_single_link(context, &node, ascendd_path.to_owned(), None)
+            .await?;
     let daemon_task = fasync::Task::spawn(daemon_fut);
     let rcs_proxy = ffx_target::get_remote_proxy(
         &nodename.to_string().into(),
