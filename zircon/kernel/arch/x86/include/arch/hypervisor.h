@@ -39,46 +39,37 @@ class VmxPage : public hypervisor::Page {
 // Represents a guest within the hypervisor.
 class Guest {
  public:
-  Guest(const Guest&) = delete;
-  Guest(Guest&&) = delete;
-  Guest& operator=(const Guest&) = delete;
-  Guest& operator=(Guest&&) = delete;
-
-  virtual ~Guest();
-
-  virtual fbl::RefPtr<VmAddressRegion> RootVmar() const = 0;
-  zx_paddr_t MsrBitmapsAddress() const { return msr_bitmaps_page_.PhysicalAddress(); }
-
- protected:
-  template <typename G>
-  static zx::result<ktl::unique_ptr<G>> Create();
-
-  Guest() = default;
-
-  VmxPage msr_bitmaps_page_;
-};
-
-class NormalGuest : public Guest {
- public:
   // Maximum VCPUs per guest.
   static constexpr size_t kMaxGuestVcpus = 64;
 
   static zx::result<ktl::unique_ptr<Guest>> Create();
 
+  Guest(const Guest&) = delete;
+  Guest(Guest&&) = delete;
+  Guest& operator=(const Guest&) = delete;
+  Guest& operator=(Guest&&) = delete;
+
+  Guest() = default;
+  virtual ~Guest();
+
   zx::result<> SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len, fbl::RefPtr<PortDispatcher> port,
                        uint64_t key);
 
   hypervisor::GuestPhysicalAspace& PhysicalAspace() { return gpa_; }
-  fbl::RefPtr<VmAddressRegion> RootVmar() const override { return gpa_.RootVmar(); }
+  fbl::RefPtr<VmAddressRegion> RootVmar() const { return gpa_.RootVmar(); }
   hypervisor::TrapMap& Traps() { return traps_; }
+  zx_paddr_t MsrBitmapsAddress() const { return msr_bitmaps_page_.PhysicalAddress(); }
 
   zx::result<uint16_t> TryAllocVpid() { return vpid_allocator_.TryAlloc(); }
   zx::result<> FreeVpid(uint16_t vpid) { return vpid_allocator_.Free(vpid); }
 
  private:
+  static zx::result<ktl::unique_ptr<Guest>> CreateInternal();
+
   hypervisor::GuestPhysicalAspace gpa_;
   hypervisor::TrapMap traps_;
   id_allocator::IdAllocator<uint16_t, kMaxGuestVcpus> vpid_allocator_;
+  VmxPage msr_bitmaps_page_;
 };
 
 // Stores part of the MSR state for a virtual CPU.
@@ -90,9 +81,35 @@ struct MsrState {
   uint64_t kernel_gs_base;
 };
 
+// Stores the local APIC state for a virtual CPU.
+struct LocalApicState {
+  // Timer for APIC timer.
+  Timer timer;
+  // Tracks pending interrupts.
+  hypervisor::InterruptTracker<X86_INT_COUNT> interrupt_tracker;
+  // LVT timer configuration
+  uint32_t lvt_timer = LVT_MASKED;  // Initial state is masked (Vol 3 Section 10.12.5.1).
+  uint32_t lvt_initial_count;
+  uint32_t lvt_divide_config;
+};
+
+// Stores the para-virtualized clock for a virtual CPU.
+//
+// System time is time since boot time, and boot time is some fixed point in the
+// past.
+struct pv_clock_system_time;
+struct PvClockState {
+  bool is_stable = false;
+  uint32_t version = 0;
+  pv_clock_system_time* system_time = nullptr;
+  hypervisor::GuestPtr guest_ptr;
+};
+
 // Represents a virtual CPU within a guest.
 class Vcpu {
  public:
+  static zx::result<ktl::unique_ptr<Vcpu>> Create(Guest& guest, zx_vaddr_t entry);
+
   Vcpu(const Vcpu&) = delete;
   Vcpu(Vcpu&&) = delete;
   Vcpu& operator=(const Vcpu&) = delete;
@@ -100,16 +117,18 @@ class Vcpu {
 
   virtual ~Vcpu();
 
-  virtual zx::result<> Enter(zx_port_packet_t& packet) = 0;
-  virtual void Kick() = 0;
+  zx::result<> Enter(zx_port_packet_t& packet);
+  void Kick();
+  void Interrupt(uint32_t vector);
   zx::result<> ReadState(zx_vcpu_state_t& vcpu_state);
   zx::result<> WriteState(const zx_vcpu_state_t& vcpu_state);
+  zx::result<> WriteState(const zx_vcpu_io_t& io_state);
 
   zx_info_vcpu_t GetInfo() const;
 
- protected:
-  template <typename V, typename G>
-  static zx::result<ktl::unique_ptr<V>> Create(G& guest, uint16_t vpid, zx_vaddr_t entry);
+ private:
+  static zx::result<ktl::unique_ptr<Vcpu>> CreateInternal(Guest& guest, uint16_t vpid,
+                                                          zx_vaddr_t entry);
 
   Vcpu(Guest& guest, uint16_t vpid, Thread* thread);
 
@@ -178,64 +197,10 @@ class Vcpu {
   VmxPage vmcs_page_;
   VmxState vmx_state_;
   MsrState msr_state_;
-  // The guest may enable any state, so the XSAVE area is the maximum size.
-  alignas(64) uint8_t extended_register_state_[X86_MAX_EXTENDED_REGISTER_SIZE];
-};
-
-// Stores the local APIC state for a virtual CPU.
-struct LocalApicState {
-  // Timer for APIC timer.
-  Timer timer;
-  // Tracks pending interrupts.
-  hypervisor::InterruptTracker<X86_INT_COUNT> interrupt_tracker;
-  // LVT timer configuration
-  uint32_t lvt_timer = LVT_MASKED;  // Initial state is masked (Vol 3 Section 10.12.5.1).
-  uint32_t lvt_initial_count;
-  uint32_t lvt_divide_config;
-};
-
-// Stores the para-virtualized clock for a virtual CPU.
-//
-// System time is time since boot time, and boot time is some fixed point in the
-// past.
-struct pv_clock_system_time;
-struct PvClockState {
-  bool is_stable = false;
-  uint32_t version = 0;
-  pv_clock_system_time* system_time = nullptr;
-  hypervisor::GuestPtr guest_ptr;
-};
-
-struct VcpuConfig {
-  // Whether there is a base processor for this type of VCPU.
-  bool has_base_processor;
-  // Whether we VM exit when loading or storing some control registers.
-  bool cr_exiting;
-  // Whether we may run in unpaged protected mode or in real-address mode.
-  bool unrestricted;
-};
-
-class NormalVcpu : public Vcpu {
- public:
-  static constexpr VcpuConfig kConfig = {
-      .has_base_processor = true,
-      .cr_exiting = false,
-      .unrestricted = true,
-  };
-
-  static zx::result<ktl::unique_ptr<Vcpu>> Create(NormalGuest& guest, zx_vaddr_t entry);
-
-  NormalVcpu(NormalGuest& guest, uint16_t vpid, Thread* thread);
-  ~NormalVcpu() override;
-
-  zx::result<> Enter(zx_port_packet_t& packet) override;
-  void Kick() override;
-  void Interrupt(uint32_t vector);
-  zx::result<> WriteState(const zx_vcpu_io_t& io_state);
-
- private:
   LocalApicState local_apic_state_;
   PvClockState pv_clock_state_;
+  // The guest may enable any state, so the XSAVE area is the maximum size.
+  alignas(64) uint8_t extended_register_state_[X86_MAX_EXTENDED_REGISTER_SIZE];
 };
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_HYPERVISOR_H_

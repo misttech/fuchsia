@@ -37,8 +37,7 @@ void IgnoreMsr(const VmxPage& msr_bitmaps_page, uint32_t msr) {
 }  // namespace
 
 // static
-template <typename G>
-zx::result<ktl::unique_ptr<G>> Guest::Create() {
+zx::result<ktl::unique_ptr<Guest>> Guest::CreateInternal() {
   // Check that the CPU supports VMX.
   if (!x86_feature_test(X86_FEATURE_VMX)) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -50,7 +49,7 @@ zx::result<ktl::unique_ptr<G>> Guest::Create() {
   auto defer = fit::defer([] { free_vmx_state(); });
 
   fbl::AllocChecker ac;
-  auto guest = ktl::make_unique<G>(&ac);
+  auto guest = ktl::make_unique<Guest>(&ac);
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
@@ -81,10 +80,8 @@ zx::result<ktl::unique_ptr<G>> Guest::Create() {
   return zx::ok(ktl::move(guest));
 }
 
-Guest::~Guest() { free_vmx_state(); }
-
 // static
-zx::result<ktl::unique_ptr<Guest>> NormalGuest::Create() {
+zx::result<ktl::unique_ptr<Guest>> Guest::Create() {
   auto gpa = hypervisor::GuestPhysicalAspace::Create();
   if (gpa.is_error()) {
     return gpa.take_error();
@@ -93,7 +90,7 @@ zx::result<ktl::unique_ptr<Guest>> NormalGuest::Create() {
   uint64_t eptp = ept_pointer_from_pml4(gpa->arch_aspace().arch_table_phys());
   broadcast_invept(eptp);
 
-  auto guest = Guest::Create<NormalGuest>();
+  auto guest = Guest::CreateInternal();
   if (guest.is_error()) {
     return guest.take_error();
   }
@@ -101,8 +98,10 @@ zx::result<ktl::unique_ptr<Guest>> NormalGuest::Create() {
   return zx::ok(*ktl::move(guest));
 }
 
-zx::result<> NormalGuest::SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len,
-                                  fbl::RefPtr<PortDispatcher> port, uint64_t key) {
+Guest::~Guest() { free_vmx_state(); }
+
+zx::result<> Guest::SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len,
+                            fbl::RefPtr<PortDispatcher> port, uint64_t key) {
   switch (kind) {
     case ZX_GUEST_TRAP_MEM:
       if (port) {

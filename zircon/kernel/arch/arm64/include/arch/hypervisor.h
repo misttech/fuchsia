@@ -66,8 +66,6 @@ class Guest {
   explicit Guest(uint16_t vmid);
 };
 
-using NormalGuest = Guest;
-
 // Stores the state of the GICH across VM exits.
 class GichState {
  public:
@@ -154,7 +152,5 @@ class Vcpu {
   GichState gich_state_;
   uint64_t hcr_;
 };
-
-using NormalVcpu = Vcpu;
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_HYPERVISOR_H_

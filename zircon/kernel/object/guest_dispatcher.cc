@@ -25,7 +25,7 @@ zx_status_t GuestDispatcher::Create(uint32_t options, KernelHandle<GuestDispatch
     return ZX_ERR_INVALID_ARGS;
   }
 
-  auto guest = NormalGuest::Create();
+  auto guest = Guest::Create();
   if (guest.is_error()) {
     return guest.status_value();
   }
@@ -57,7 +57,5 @@ GuestDispatcher::~GuestDispatcher() { kcounter_add(dispatcher_guest_destroy_coun
 zx_status_t GuestDispatcher::SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len,
                                      fbl::RefPtr<PortDispatcher> port, uint64_t key) {
   canary_.Assert();
-  return static_cast<NormalGuest*>(guest_.get())
-      ->SetTrap(kind, addr, len, ktl::move(port), key)
-      .status_value();
+  return guest_->SetTrap(kind, addr, len, ktl::move(port), key).status_value();
 }

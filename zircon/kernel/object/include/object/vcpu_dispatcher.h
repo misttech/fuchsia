@@ -21,7 +21,7 @@ typedef struct zx_port_packet zx_port_packet_t;
 
 class VcpuDispatcher final : public SoloDispatcher<VcpuDispatcher, ZX_DEFAULT_VCPU_RIGHTS> {
  public:
-  static zx_status_t Create(fbl::RefPtr<GuestDispatcher> guest_dispatcher, zx_vaddr_t entry,
+  static zx_status_t Create(const fbl::RefPtr<GuestDispatcher>& guest_dispatcher, zx_vaddr_t entry,
                             KernelHandle<VcpuDispatcher>* handle, zx_rights_t* rights);
   ~VcpuDispatcher();
 

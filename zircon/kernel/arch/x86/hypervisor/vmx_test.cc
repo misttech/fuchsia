@@ -15,7 +15,7 @@ bool vmlaunch_fail() {
 
   // Create a Guest object, which will both determine if VMX is supported, and
   // set up the CPU state correctly if so.
-  auto guest = NormalGuest::Create();
+  auto guest = Guest::Create();
   if (guest.is_error() && guest.status_value() == ZX_ERR_NOT_SUPPORTED) {
     printf("VMX not supported. Skipping test.\n");
     return true;
