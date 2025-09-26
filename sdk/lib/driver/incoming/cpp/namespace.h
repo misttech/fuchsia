@@ -42,6 +42,14 @@ zx::result<fdf::ClientEnd<typename ServiceMember::ProtocolType>> DriverTransport
     return zx::error(status);
   }
 
+  auto [client_end, server_end] = fdf::Endpoints<typename ServiceMember::ProtocolType>::Create();
+
+  if (zx_status_t status =
+          fdf::ProtocolConnect(std::move(client_token), std::move(server_end.TakeHandle()));
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
   if (zx_status_t status =
           fdio_service_connect_at(svc_dir.handle()->get(),
                                   component::MakeServiceMemberPath<ServiceMember>(instance).c_str(),
@@ -50,13 +58,6 @@ zx::result<fdf::ClientEnd<typename ServiceMember::ProtocolType>> DriverTransport
     return zx::error(status);
   }
 
-  auto [client_end, server_end] = fdf::Endpoints<typename ServiceMember::ProtocolType>::Create();
-
-  if (zx_status_t status =
-          fdf::ProtocolConnect(std::move(client_token), std::move(server_end.TakeHandle()));
-      status != ZX_OK) {
-    return zx::error(status);
-  }
   return zx::ok(std::move(client_end));
 }
 
@@ -75,6 +76,12 @@ zx::result<> DriverTransportConnect(fidl::UnownedClientEnd<fuchsia_io::Directory
   }
 
   if (zx_status_t status =
+          fdf::ProtocolConnect(std::move(client_token), std::move(server_end.TakeHandle()));
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  if (zx_status_t status =
           fdio_service_connect_at(svc_dir.handle()->get(),
                                   component::MakeServiceMemberPath<ServiceMember>(instance).c_str(),
                                   server_token.release());
@@ -82,11 +89,6 @@ zx::result<> DriverTransportConnect(fidl::UnownedClientEnd<fuchsia_io::Directory
     return zx::error(status);
   }
 
-  if (zx_status_t status =
-          fdf::ProtocolConnect(std::move(client_token), std::move(server_end.TakeHandle()));
-      status != ZX_OK) {
-    return zx::error(status);
-  }
   return zx::ok();
 }
 }  // namespace internal
