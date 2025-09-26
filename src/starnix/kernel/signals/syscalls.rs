@@ -969,1041 +969,1101 @@ mod tests {
     #[cfg(target_arch = "x86_64")]
     #[::fuchsia::test]
     async fn test_sigaltstack() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let user_ss = UserRef::<sigaltstack>::new(addr);
-        let nullptr = UserRef::<sigaltstack>::default();
+            let user_ss = UserRef::<sigaltstack>::new(addr);
+            let nullptr = UserRef::<sigaltstack>::default();
 
-        // Check that the initial state is disabled.
-        sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
-            .expect("failed to call sigaltstack");
-        let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
-        assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
+            // Check that the initial state is disabled.
+            sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
+                .expect("failed to call sigaltstack");
+            let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
+            assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
 
-        // Install a sigaltstack and read it back out.
-        ss.ss_sp = uaddr { addr: 0x7FFFF };
-        ss.ss_size = 0x1000;
-        ss.ss_flags = SS_AUTODISARM as i32;
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
-            .expect("failed to call sigaltstack");
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<sigaltstack>()])
-            .expect("failed to clear struct");
-        sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
-            .expect("failed to call sigaltstack");
-        let another_ss = current_task.read_object(user_ss).expect("failed to read struct");
-        assert_eq!(ss.as_bytes(), another_ss.as_bytes());
+            // Install a sigaltstack and read it back out.
+            ss.ss_sp = uaddr { addr: 0x7FFFF };
+            ss.ss_size = 0x1000;
+            ss.ss_flags = SS_AUTODISARM as i32;
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
+                .expect("failed to call sigaltstack");
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<sigaltstack>()])
+                .expect("failed to clear struct");
+            sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
+                .expect("failed to call sigaltstack");
+            let another_ss = current_task.read_object(user_ss).expect("failed to read struct");
+            assert_eq!(ss.as_bytes(), another_ss.as_bytes());
 
-        // Disable the sigaltstack and read it back out.
-        let ss = sigaltstack { ss_flags: SS_DISABLE as i32, ..sigaltstack::default() };
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
-            .expect("failed to call sigaltstack");
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<sigaltstack>()])
-            .expect("failed to clear struct");
-        sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
-            .expect("failed to call sigaltstack");
-        let ss = current_task.read_object(user_ss).expect("failed to read struct");
-        assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
+            // Disable the sigaltstack and read it back out.
+            let ss = sigaltstack { ss_flags: SS_DISABLE as i32, ..sigaltstack::default() };
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
+                .expect("failed to call sigaltstack");
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<sigaltstack>()])
+                .expect("failed to clear struct");
+            sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
+                .expect("failed to call sigaltstack");
+            let ss = current_task.read_object(user_ss).expect("failed to read struct");
+            assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sigaltstack_invalid_size() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let user_ss = UserRef::<sigaltstack>::new(addr);
-        let nullptr = UserRef::<sigaltstack>::default();
+            let user_ss = UserRef::<sigaltstack>::new(addr);
+            let nullptr = UserRef::<sigaltstack>::default();
 
-        // Check that the initial state is disabled.
-        sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
-            .expect("failed to call sigaltstack");
-        let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
-        assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
+            // Check that the initial state is disabled.
+            sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
+                .expect("failed to call sigaltstack");
+            let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
+            assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
 
-        // Try to install a sigaltstack with an invalid size.
-        let sigaltstack_addr_size =
-            round_up_to_system_page_size(uapi::MINSIGSTKSZ as usize).expect("failed to round up");
-        let sigaltstack_addr =
-            map_memory(locked, &current_task, UserAddress::default(), sigaltstack_addr_size as u64);
-        ss.ss_sp = sigaltstack_addr.into();
-        ss.ss_flags = 0;
-        ss.ss_size = uapi::MINSIGSTKSZ as u64 - 1;
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        assert_eq!(
-            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
-            error!(ENOMEM)
-        );
+            // Try to install a sigaltstack with an invalid size.
+            let sigaltstack_addr_size = round_up_to_system_page_size(uapi::MINSIGSTKSZ as usize)
+                .expect("failed to round up");
+            let sigaltstack_addr = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                sigaltstack_addr_size as u64,
+            );
+            ss.ss_sp = sigaltstack_addr.into();
+            ss.ss_flags = 0;
+            ss.ss_size = uapi::MINSIGSTKSZ as u64 - 1;
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            assert_eq!(
+                sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
+                error!(ENOMEM)
+            );
+        });
     }
 
     #[cfg(target_arch = "x86_64")]
     #[::fuchsia::test]
     async fn test_sigaltstack_active_stack() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let user_ss = UserRef::<sigaltstack>::new(addr);
-        let nullptr = UserRef::<sigaltstack>::default();
+            let user_ss = UserRef::<sigaltstack>::new(addr);
+            let nullptr = UserRef::<sigaltstack>::default();
 
-        // Check that the initial state is disabled.
-        sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
-            .expect("failed to call sigaltstack");
-        let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
-        assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
+            // Check that the initial state is disabled.
+            sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
+                .expect("failed to call sigaltstack");
+            let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
+            assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
 
-        // Try to install a sigaltstack.
-        let sigaltstack_addr_size =
-            round_up_to_system_page_size(uapi::MINSIGSTKSZ as usize).expect("failed to round up");
-        let sigaltstack_addr =
-            map_memory(locked, &current_task, UserAddress::default(), sigaltstack_addr_size as u64);
-        ss.ss_sp = sigaltstack_addr.into();
-        ss.ss_flags = 0;
-        ss.ss_size = sigaltstack_addr_size as u64;
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
-            .expect("failed to call sigaltstack");
+            // Try to install a sigaltstack.
+            let sigaltstack_addr_size = round_up_to_system_page_size(uapi::MINSIGSTKSZ as usize)
+                .expect("failed to round up");
+            let sigaltstack_addr = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                sigaltstack_addr_size as u64,
+            );
+            ss.ss_sp = sigaltstack_addr.into();
+            ss.ss_flags = 0;
+            ss.ss_size = sigaltstack_addr_size as u64;
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
+                .expect("failed to call sigaltstack");
 
-        // Changing the sigaltstack while we are there should be an error.
-        let next_addr = (sigaltstack_addr + sigaltstack_addr_size).unwrap();
-        current_task.thread_state.registers.rsp = next_addr.ptr() as u64;
-        ss.ss_flags = SS_DISABLE as i32;
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        assert_eq!(
-            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
-            error!(EPERM)
-        );
+            // Changing the sigaltstack while we are there should be an error.
+            let next_addr = (sigaltstack_addr + sigaltstack_addr_size).unwrap();
+            current_task.thread_state.registers.rsp = next_addr.ptr() as u64;
+            ss.ss_flags = SS_DISABLE as i32;
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            assert_eq!(
+                sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
+                error!(EPERM)
+            );
 
-        // However, setting the rsp to a different value outside the alt stack should allow us to
-        // disable it.
-        let next_ss_addr = sigaltstack_addr
-            .checked_add(sigaltstack_addr_size)
-            .unwrap()
-            .checked_add(0x1000usize)
-            .unwrap();
-        current_task.thread_state.registers.rsp = next_ss_addr.ptr() as u64;
-        let ss = sigaltstack { ss_flags: SS_DISABLE as i32, ..sigaltstack::default() };
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
-            .expect("failed to call sigaltstack");
+            // However, setting the rsp to a different value outside the alt stack should allow us to
+            // disable it.
+            let next_ss_addr = sigaltstack_addr
+                .checked_add(sigaltstack_addr_size)
+                .unwrap()
+                .checked_add(0x1000usize)
+                .unwrap();
+            current_task.thread_state.registers.rsp = next_ss_addr.ptr() as u64;
+            let ss = sigaltstack { ss_flags: SS_DISABLE as i32, ..sigaltstack::default() };
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
+                .expect("failed to call sigaltstack");
+        });
     }
 
     #[cfg(target_arch = "x86_64")]
     #[::fuchsia::test]
     async fn test_sigaltstack_active_stack_saturates() {
-        let (_kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let user_ss = UserRef::<sigaltstack>::new(addr);
-        let nullptr = UserRef::<sigaltstack>::default();
+            let user_ss = UserRef::<sigaltstack>::new(addr);
+            let nullptr = UserRef::<sigaltstack>::default();
 
-        // Check that the initial state is disabled.
-        sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
-            .expect("failed to call sigaltstack");
-        let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
-        assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
+            // Check that the initial state is disabled.
+            sys_sigaltstack(locked, &current_task, nullptr.into(), user_ss.into())
+                .expect("failed to call sigaltstack");
+            let mut ss = current_task.read_object(user_ss).expect("failed to read struct");
+            assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
 
-        // Try to install a sigaltstack that takes the whole memory.
-        let sigaltstack_addr_size =
-            round_up_to_system_page_size(uapi::MINSIGSTKSZ as usize).expect("failed to round up");
-        let sigaltstack_addr =
-            map_memory(locked, &current_task, UserAddress::default(), sigaltstack_addr_size as u64);
-        ss.ss_sp = sigaltstack_addr.into();
-        ss.ss_flags = 0;
-        ss.ss_size = u64::MAX;
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
-            .expect("failed to call sigaltstack");
+            // Try to install a sigaltstack that takes the whole memory.
+            let sigaltstack_addr_size = round_up_to_system_page_size(uapi::MINSIGSTKSZ as usize)
+                .expect("failed to round up");
+            let sigaltstack_addr = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                sigaltstack_addr_size as u64,
+            );
+            ss.ss_sp = sigaltstack_addr.into();
+            ss.ss_flags = 0;
+            ss.ss_size = u64::MAX;
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
+                .expect("failed to call sigaltstack");
 
-        // Changing the sigaltstack while we are there should be an error.
-        current_task.thread_state.registers.rsp =
-            (sigaltstack_addr + sigaltstack_addr_size).unwrap().ptr() as u64;
-        ss.ss_flags = SS_DISABLE as i32;
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        assert_eq!(
-            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
-            error!(EPERM)
-        );
+            // Changing the sigaltstack while we are there should be an error.
+            current_task.thread_state.registers.rsp =
+                (sigaltstack_addr + sigaltstack_addr_size).unwrap().ptr() as u64;
+            ss.ss_flags = SS_DISABLE as i32;
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            assert_eq!(
+                sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
+                error!(EPERM)
+            );
 
-        // However, setting the rsp to a low value should work (it doesn't wrap-around).
-        current_task.thread_state.registers.rsp = 0u64;
-        let ss = sigaltstack { ss_flags: SS_DISABLE as i32, ..sigaltstack::default() };
-        current_task.write_object(user_ss, &ss).expect("failed to write struct");
-        sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
-            .expect("failed to call sigaltstack");
+            // However, setting the rsp to a low value should work (it doesn't wrap-around).
+            current_task.thread_state.registers.rsp = 0u64;
+            let ss = sigaltstack { ss_flags: SS_DISABLE as i32, ..sigaltstack::default() };
+            current_task.write_object(user_ss, &ss).expect("failed to write struct");
+            sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
+                .expect("failed to call sigaltstack");
+        });
     }
 
     /// It is invalid to call rt_sigprocmask with a sigsetsize that does not match the size of
     /// SigSet.
     #[::fuchsia::test]
     async fn test_sigprocmask_invalid_size() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, current_task| {
+            let set = UserRef::<SigSet>::default();
+            let old_set = UserRef::<SigSet>::default();
+            let how = 0;
 
-        let set = UserRef::<SigSet>::default();
-        let old_set = UserRef::<SigSet>::default();
-        let how = 0;
-
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>() * 2
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>() / 2
-            ),
-            error!(EINVAL)
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>() * 2
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>() / 2
+                ),
+                error!(EINVAL)
+            );
+        });
     }
 
     /// It is invalid to call rt_sigprocmask with a bad `how`.
     #[::fuchsia::test]
     async fn test_sigprocmask_invalid_how() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        let set = UserRef::<SigSet>::new(addr);
-        let old_set = UserRef::<SigSet>::default();
-        let how = SIG_SETMASK | SIG_UNBLOCK | SIG_BLOCK;
+            let set = UserRef::<SigSet>::new(addr);
+            let old_set = UserRef::<SigSet>::default();
+            let how = SIG_SETMASK | SIG_UNBLOCK | SIG_BLOCK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            error!(EINVAL)
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                error!(EINVAL)
+            );
+        });
     }
 
     /// It is valid to call rt_sigprocmask with a null value for set. In that case, old_set should
     /// contain the current signal mask.
     #[::fuchsia::test]
     async fn test_sigprocmask_null_set() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let original_mask = SigSet::from(SIGTRAP);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let original_mask = SigSet::from(SIGTRAP);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let set = UserRef::<SigSet>::default();
-        let old_set = UserRef::<SigSet>::new(addr);
-        let how = SIG_SETMASK;
+            let set = UserRef::<SigSet>::default();
+            let old_set = UserRef::<SigSet>::new(addr);
+            let how = SIG_SETMASK;
 
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>()])
-            .expect("failed to clear struct");
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>()])
+                .expect("failed to clear struct");
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_mask = current_task.read_object(old_set).expect("failed to read mask");
-        assert_eq!(old_mask, original_mask);
+            let old_mask = current_task.read_object(old_set).expect("failed to read mask");
+            assert_eq!(old_mask, original_mask);
+        });
     }
 
     /// It is valid to call rt_sigprocmask with null values for both set and old_set.
     /// In this case, how should be ignored and the set remains the same.
     #[::fuchsia::test]
     async fn test_sigprocmask_null_set_and_old_set() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let original_mask = SigSet::from(SIGTRAP);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+        spawn_kernel_and_run(|locked, current_task| {
+            let original_mask = SigSet::from(SIGTRAP);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let set = UserRef::<SigSet>::default();
-        let old_set = UserRef::<SigSet>::default();
-        let how = SIG_SETMASK;
+            let set = UserRef::<SigSet>::default();
+            let old_set = UserRef::<SigSet>::default();
+            let how = SIG_SETMASK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
-        assert_eq!(current_task.read().signal_mask(), original_mask);
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
+            assert_eq!(current_task.read().signal_mask(), original_mask);
+        });
     }
 
     /// Calling rt_sigprocmask with SIG_SETMASK should set the mask to the provided set.
     #[::fuchsia::test]
     async fn test_sigprocmask_setmask() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let original_mask = SigSet::from(SIGTRAP);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+            let original_mask = SigSet::from(SIGTRAP);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let new_mask = SigSet::from(SIGIO);
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = SigSet::from(SIGIO);
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
-        let old_set = UserRef::<SigSet>::new(old_addr_range);
-        let how = SIG_SETMASK;
+            let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
+            let old_set = UserRef::<SigSet>::new(old_addr_range);
+            let how = SIG_SETMASK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_mask = current_task.read_object(old_set).expect("failed to read mask");
-        assert_eq!(old_mask, original_mask);
-        assert_eq!(current_task.read().signal_mask(), new_mask);
+            let old_mask = current_task.read_object(old_set).expect("failed to read mask");
+            assert_eq!(old_mask, original_mask);
+            assert_eq!(current_task.read().signal_mask(), new_mask);
+        });
     }
 
     /// Calling st_sigprocmask with a how of SIG_BLOCK should add to the existing set.
     #[::fuchsia::test]
     async fn test_sigprocmask_block() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let original_mask = SigSet::from(SIGTRAP);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+            let original_mask = SigSet::from(SIGTRAP);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let new_mask = SigSet::from(SIGIO);
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = SigSet::from(SIGIO);
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
-        let old_set = UserRef::<SigSet>::new(old_addr_range);
-        let how = SIG_BLOCK;
+            let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
+            let old_set = UserRef::<SigSet>::new(old_addr_range);
+            let how = SIG_BLOCK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_mask = current_task.read_object(old_set).expect("failed to read mask");
-        assert_eq!(old_mask, original_mask);
-        assert_eq!(current_task.read().signal_mask(), new_mask | original_mask);
+            let old_mask = current_task.read_object(old_set).expect("failed to read mask");
+            assert_eq!(old_mask, original_mask);
+            assert_eq!(current_task.read().signal_mask(), new_mask | original_mask);
+        });
     }
 
     /// Calling st_sigprocmask with a how of SIG_UNBLOCK should remove from the existing set.
     #[::fuchsia::test]
     async fn test_sigprocmask_unblock() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let original_mask = SigSet::from(SIGTRAP) | SigSet::from(SIGIO);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+            let original_mask = SigSet::from(SIGTRAP) | SigSet::from(SIGIO);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let new_mask = SigSet::from(SIGTRAP);
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = SigSet::from(SIGTRAP);
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
-        let old_set = UserRef::<SigSet>::new(old_addr_range);
-        let how = SIG_UNBLOCK;
+            let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
+            let old_set = UserRef::<SigSet>::new(old_addr_range);
+            let how = SIG_UNBLOCK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_mask = current_task.read_object(old_set).expect("failed to read mask");
-        assert_eq!(old_mask, original_mask);
-        assert_eq!(current_task.read().signal_mask(), SIGIO.into());
+            let old_mask = current_task.read_object(old_set).expect("failed to read mask");
+            assert_eq!(old_mask, original_mask);
+            assert_eq!(current_task.read().signal_mask(), SIGIO.into());
+        });
     }
 
     /// It's ok to call sigprocmask to unblock a signal that is not set.
     #[::fuchsia::test]
     async fn test_sigprocmask_unblock_not_set() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let original_mask = SigSet::from(SIGIO);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+            let original_mask = SigSet::from(SIGIO);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let new_mask = SigSet::from(SIGTRAP);
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = SigSet::from(SIGTRAP);
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
-        let old_set = UserRef::<SigSet>::new(old_addr_range);
-        let how = SIG_UNBLOCK;
+            let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
+            let old_set = UserRef::<SigSet>::new(old_addr_range);
+            let how = SIG_UNBLOCK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_mask = current_task.read_object(old_set).expect("failed to read mask");
-        assert_eq!(old_mask, original_mask);
-        assert_eq!(current_task.read().signal_mask(), original_mask);
+            let old_mask = current_task.read_object(old_set).expect("failed to read mask");
+            assert_eq!(old_mask, original_mask);
+            assert_eq!(current_task.read().signal_mask(), original_mask);
+        });
     }
 
     /// It's not possible to block SIGKILL or SIGSTOP.
     #[::fuchsia::test]
     async fn test_sigprocmask_kill_stop() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let original_mask = SigSet::from(SIGIO);
-        {
-            current_task.write().set_signal_mask(original_mask);
-        }
+            let original_mask = SigSet::from(SIGIO);
+            {
+                current_task.write().set_signal_mask(original_mask);
+            }
 
-        let new_mask = UNBLOCKABLE_SIGNALS;
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = UNBLOCKABLE_SIGNALS;
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
-        let old_set = UserRef::<SigSet>::new(old_addr_range);
-        let how = SIG_BLOCK;
+            let old_addr_range = (addr + std::mem::size_of::<SigSet>()).unwrap();
+            let old_set = UserRef::<SigSet>::new(old_addr_range);
+            let how = SIG_BLOCK;
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                how,
-                set,
-                old_set,
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    how,
+                    set,
+                    old_set,
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_mask = current_task.read_object(old_set).expect("failed to read mask");
-        assert_eq!(old_mask, original_mask);
-        assert_eq!(current_task.read().signal_mask(), original_mask);
+            let old_mask = current_task.read_object(old_set).expect("failed to read mask");
+            assert_eq!(old_mask, original_mask);
+            assert_eq!(current_task.read().signal_mask(), original_mask);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sigaction_invalid_signal() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        assert_eq!(
-            sys_rt_sigaction(
-                locked,
-                &current_task,
-                UncheckedSignal::from(SIGKILL),
-                // The signal is only checked when the action is set (i.e., action is non-null).
-                UserRef::<sigaction_t>::new(UserAddress::from(10)).into(),
-                UserRef::<sigaction_t>::default().into(),
-                std::mem::size_of::<SigSet>(),
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_rt_sigaction(
-                locked,
-                &current_task,
-                UncheckedSignal::from(SIGSTOP),
-                // The signal is only checked when the action is set (i.e., action is non-null).
-                UserRef::<sigaction_t>::new(UserAddress::from(10)).into(),
-                UserRef::<sigaction_t>::default().into(),
-                std::mem::size_of::<SigSet>(),
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_rt_sigaction(
-                locked,
-                &current_task,
-                UncheckedSignal::from(Signal::NUM_SIGNALS + 1),
-                // The signal is only checked when the action is set (i.e., action is non-null).
-                UserRef::<sigaction_t>::new(UserAddress::from(10)).into(),
-                UserRef::<sigaction_t>::default().into(),
-                std::mem::size_of::<SigSet>(),
-            ),
-            error!(EINVAL)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            assert_eq!(
+                sys_rt_sigaction(
+                    locked,
+                    &current_task,
+                    UncheckedSignal::from(SIGKILL),
+                    // The signal is only checked when the action is set (i.e., action is non-null).
+                    UserRef::<sigaction_t>::new(UserAddress::from(10)).into(),
+                    UserRef::<sigaction_t>::default().into(),
+                    std::mem::size_of::<SigSet>(),
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_rt_sigaction(
+                    locked,
+                    &current_task,
+                    UncheckedSignal::from(SIGSTOP),
+                    // The signal is only checked when the action is set (i.e., action is non-null).
+                    UserRef::<sigaction_t>::new(UserAddress::from(10)).into(),
+                    UserRef::<sigaction_t>::default().into(),
+                    std::mem::size_of::<SigSet>(),
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_rt_sigaction(
+                    locked,
+                    &current_task,
+                    UncheckedSignal::from(Signal::NUM_SIGNALS + 1),
+                    // The signal is only checked when the action is set (i.e., action is non-null).
+                    UserRef::<sigaction_t>::new(UserAddress::from(10)).into(),
+                    UserRef::<sigaction_t>::default().into(),
+                    std::mem::size_of::<SigSet>(),
+                ),
+                error!(EINVAL)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sigaction_old_value_set() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<sigaction_t>()])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<sigaction_t>()])
+                .expect("failed to clear struct");
 
-        let org_mask = SigSet::from(SIGHUP) | SigSet::from(SIGINT);
-        let original_action = sigaction_t { sa_mask: org_mask.into(), ..sigaction_t::default() };
+            let org_mask = SigSet::from(SIGHUP) | SigSet::from(SIGINT);
+            let original_action =
+                sigaction_t { sa_mask: org_mask.into(), ..sigaction_t::default() };
 
-        {
-            current_task.thread_group().signal_actions.set(SIGHUP, original_action);
-        }
+            {
+                current_task.thread_group().signal_actions.set(SIGHUP, original_action);
+            }
 
-        let old_action_ref = UserRef::<sigaction_t>::new(addr);
-        assert_eq!(
-            sys_rt_sigaction(
-                locked,
-                &current_task,
-                UncheckedSignal::from(SIGHUP),
-                UserRef::<sigaction_t>::default().into(),
-                old_action_ref.into(),
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
+            let old_action_ref = UserRef::<sigaction_t>::new(addr);
+            assert_eq!(
+                sys_rt_sigaction(
+                    locked,
+                    &current_task,
+                    UncheckedSignal::from(SIGHUP),
+                    UserRef::<sigaction_t>::default().into(),
+                    old_action_ref.into(),
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
 
-        let old_action = current_task.read_object(old_action_ref).expect("failed to read action");
-        assert_eq!(old_action.as_bytes(), original_action.as_bytes());
+            let old_action =
+                current_task.read_object(old_action_ref).expect("failed to read action");
+            assert_eq!(old_action.as_bytes(), original_action.as_bytes());
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sigaction_new_value_set() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<sigaction_t>()])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<sigaction_t>()])
+                .expect("failed to clear struct");
 
-        let org_mask = SigSet::from(SIGHUP) | SigSet::from(SIGINT);
-        let original_action = sigaction_t { sa_mask: org_mask.into(), ..sigaction_t::default() };
-        let set_action_ref = UserRef::<sigaction_t>::new(addr);
-        current_task.write_object(set_action_ref, &original_action).expect("failed to set action");
+            let org_mask = SigSet::from(SIGHUP) | SigSet::from(SIGINT);
+            let original_action =
+                sigaction_t { sa_mask: org_mask.into(), ..sigaction_t::default() };
+            let set_action_ref = UserRef::<sigaction_t>::new(addr);
+            current_task
+                .write_object(set_action_ref, &original_action)
+                .expect("failed to set action");
 
-        assert_eq!(
-            sys_rt_sigaction(
-                locked,
-                &current_task,
-                UncheckedSignal::from(SIGINT),
-                set_action_ref.into(),
-                UserRef::<sigaction_t>::default().into(),
-                std::mem::size_of::<SigSet>(),
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_rt_sigaction(
+                    locked,
+                    &current_task,
+                    UncheckedSignal::from(SIGINT),
+                    set_action_ref.into(),
+                    UserRef::<sigaction_t>::default().into(),
+                    std::mem::size_of::<SigSet>(),
+                ),
+                Ok(())
+            );
 
-        assert_eq!(
-            current_task.thread_group().signal_actions.get(SIGINT).as_bytes(),
-            original_action.as_bytes()
-        );
+            assert_eq!(
+                current_task.thread_group().signal_actions.get(SIGINT).as_bytes(),
+                original_action.as_bytes()
+            );
+        });
     }
 
     /// A task should be able to signal itself.
     #[::fuchsia::test]
     async fn test_kill_same_task() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGINT.into()), Ok(()));
+        spawn_kernel_and_run(|locked, current_task| {
+            assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGINT.into()), Ok(()));
+        });
     }
 
     /// A task should be able to signal its own thread group.
     #[::fuchsia::test]
     async fn test_kill_own_thread_group() {
-        let (_kernel, init_task, locked) = create_kernel_task_and_unlocked();
-        let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        task1.thread_group().setsid(locked).expect("setsid");
-        let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
+        spawn_kernel_and_run(|locked, init_task| {
+            let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            task1.thread_group().setsid(locked).expect("setsid");
+            let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
-        assert_eq!(sys_kill(locked, &task1, 0, SIGINT.into()), Ok(()));
-        assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
-        assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
-        assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+            assert_eq!(sys_kill(locked, &task1, 0, SIGINT.into()), Ok(()));
+            assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
+            assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
+            assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+        });
     }
 
     /// A task should be able to signal a thread group.
     #[::fuchsia::test]
     async fn test_kill_thread_group() {
-        let (_kernel, init_task, locked) = create_kernel_task_and_unlocked();
-        let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        task1.thread_group().setsid(locked).expect("setsid");
-        let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
+        spawn_kernel_and_run(|locked, init_task| {
+            let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            task1.thread_group().setsid(locked).expect("setsid");
+            let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
-        assert_eq!(sys_kill(locked, &task1, -task1.tid, SIGINT.into()), Ok(()));
-        assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
-        assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
-        assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+            assert_eq!(sys_kill(locked, &task1, -task1.tid, SIGINT.into()), Ok(()));
+            assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
+            assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
+            assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+        });
     }
 
     /// A task should be able to signal everything but init and itself.
     #[::fuchsia::test]
     async fn test_kill_all() {
-        let (_kernel, init_task, locked) = create_kernel_task_and_unlocked();
-        let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        task1.thread_group().setsid(locked).expect("setsid");
-        let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
+        spawn_kernel_and_run(|locked, init_task| {
+            let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            task1.thread_group().setsid(locked).expect("setsid");
+            let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
-        assert_eq!(sys_kill(locked, &task1, -1, SIGINT.into()), Ok(()));
-        assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
-        assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
-        assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+            assert_eq!(sys_kill(locked, &task1, -1, SIGINT.into()), Ok(()));
+            assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
+            assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
+            assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+        });
     }
 
     /// A task should not be able to signal a nonexistent task.
     #[::fuchsia::test]
     async fn test_kill_inexistant_task() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        assert_eq!(sys_kill(locked, &current_task, 9, SIGINT.into()), error!(ESRCH));
+        spawn_kernel_and_run(|locked, current_task| {
+            assert_eq!(sys_kill(locked, &current_task, 9, SIGINT.into()), error!(ESRCH));
+        });
     }
 
     /// A task should not be able to signal a task owned by another uid.
     #[::fuchsia::test]
     async fn test_kill_invalid_task() {
-        let (_kernel, task1, locked) = create_kernel_task_and_unlocked();
-        // Task must not have the kill capability.
-        task1.set_creds(Credentials::with_ids(1, 1));
-        let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        task2.set_creds(Credentials::with_ids(2, 2));
+        spawn_kernel_and_run(|locked, task1| {
+            // Task must not have the kill capability.
+            task1.set_creds(Credentials::with_ids(1, 1));
+            let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            task2.set_creds(Credentials::with_ids(2, 2));
 
-        assert!(task1.can_signal(&task2, SIGINT.into()).is_err());
-        assert_eq!(sys_kill(locked, &task2, task1.tid, SIGINT.into()), error!(EPERM));
-        assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
+            assert!(task1.can_signal(&task2, SIGINT.into()).is_err());
+            assert_eq!(sys_kill(locked, &task2, task1.tid, SIGINT.into()), error!(EPERM));
+            assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
+        });
     }
 
     /// A task should not be able to signal a task owned by another uid in a thead group.
     #[::fuchsia::test]
     async fn test_kill_invalid_task_in_thread_group() {
-        let (_kernel, init_task, locked) = create_kernel_task_and_unlocked();
-        let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        task1.thread_group().setsid(locked).expect("setsid");
-        let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        task2.thread_group().setsid(locked).expect("setsid");
-        task2.set_creds(Credentials::with_ids(2, 2));
+        spawn_kernel_and_run(|locked, init_task| {
+            let task1 = init_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            task1.thread_group().setsid(locked).expect("setsid");
+            let task2 = task1.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            task2.thread_group().setsid(locked).expect("setsid");
+            task2.set_creds(Credentials::with_ids(2, 2));
 
-        assert!(task2.can_signal(&task1, SIGINT.into()).is_err());
-        assert_eq!(sys_kill(locked, &task2, -task1.tid, SIGINT.into()), error!(EPERM));
-        assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
+            assert!(task2.can_signal(&task1, SIGINT.into()).is_err());
+            assert_eq!(sys_kill(locked, &task2, -task1.tid, SIGINT.into()), error!(EPERM));
+            assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
+        });
     }
 
     /// A task should not be able to send an invalid signal.
     #[::fuchsia::test]
     async fn test_kill_invalid_signal() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        assert_eq!(
-            sys_kill(locked, &current_task, current_task.tid, UncheckedSignal::from(75)),
-            error!(EINVAL)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            assert_eq!(
+                sys_kill(locked, &current_task, current_task.tid, UncheckedSignal::from(75)),
+                error!(EINVAL)
+            );
+        });
     }
 
     /// Sending a blocked signal should result in a pending signal.
     #[::fuchsia::test]
     async fn test_blocked_signal_pending() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let new_mask = SigSet::from(SIGIO);
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = SigSet::from(SIGIO);
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                SIG_BLOCK,
-                set,
-                UserRef::default(),
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
-        assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGIO.into()), Ok(()));
-        assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    SIG_BLOCK,
+                    set,
+                    UserRef::default(),
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
+            assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGIO.into()), Ok(()));
+            assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
 
-        // A second signal should not increment the number of pending signals.
-        assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGIO.into()), Ok(()));
-        assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
+            // A second signal should not increment the number of pending signals.
+            assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGIO.into()), Ok(()));
+            assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
+        });
     }
 
     /// More than one instance of a real-time signal can be blocked.
     #[::fuchsia::test]
     async fn test_blocked_real_time_signal_pending() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
-            .expect("failed to clear struct");
+        spawn_kernel_and_run(|locked, current_task| {
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(addr, &[0u8; std::mem::size_of::<SigSet>() * 2])
+                .expect("failed to clear struct");
 
-        let new_mask = SigSet::from(starnix_uapi::signals::SIGRTMIN);
-        let set = UserRef::<SigSet>::new(addr);
-        current_task.write_object(set, &new_mask).expect("failed to set mask");
+            let new_mask = SigSet::from(starnix_uapi::signals::SIGRTMIN);
+            let set = UserRef::<SigSet>::new(addr);
+            current_task.write_object(set, &new_mask).expect("failed to set mask");
 
-        assert_eq!(
-            sys_rt_sigprocmask(
-                locked,
-                &current_task,
-                SIG_BLOCK,
-                set,
-                UserRef::default(),
-                std::mem::size_of::<SigSet>()
-            ),
-            Ok(())
-        );
-        assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
-        assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 1);
+            assert_eq!(
+                sys_rt_sigprocmask(
+                    locked,
+                    &current_task,
+                    SIG_BLOCK,
+                    set,
+                    UserRef::default(),
+                    std::mem::size_of::<SigSet>()
+                ),
+                Ok(())
+            );
+            assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
+            assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 1);
 
-        // A second signal should increment the number of pending signals.
-        assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
-        assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 2);
+            // A second signal should increment the number of pending signals.
+            assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
+            assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 2);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_suspend() {
-        let (kernel, mut init_task, locked) = create_kernel_task_and_unlocked();
-        let init_task_weak = init_task.weak_task();
-        let (tx, rx) = std::sync::mpsc::sync_channel::<()>(0);
+        spawn_kernel_and_run(|locked, current_task| {
+            let init_task_weak = current_task.weak_task();
+            let (tx, rx) = std::sync::mpsc::sync_channel::<()>(0);
 
-        let thread = kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-            let init_task_temp = init_task_weak.upgrade().expect("Task must be alive");
+            let thread = current_task.kernel().kthreads.spawner().spawn_and_get_result(
+                move |locked, current_task| {
+                    let init_task_temp = init_task_weak.upgrade().expect("Task must be alive");
 
-            // Wait for the init task to be suspended.
-            let mut suspended = false;
-            while !suspended {
-                suspended = init_task_temp.read().is_blocked();
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+                    // Wait for the init task to be suspended.
+                    let mut suspended = false;
+                    while !suspended {
+                        suspended = init_task_temp.read().is_blocked();
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
 
-            // Signal the suspended task with a signal that is not blocked (only SIGHUP in this test).
-            let _ =
-                sys_kill(locked, current_task, init_task_temp.tid, UncheckedSignal::from(SIGHUP));
+                    // Signal the suspended task with a signal that is not blocked (only SIGHUP in this test).
+                    let _ = sys_kill(
+                        locked,
+                        current_task,
+                        init_task_temp.tid,
+                        UncheckedSignal::from(SIGHUP),
+                    );
 
-            // Wait for the sigsuspend to complete.
-            rx.recv().expect("receive");
-            assert!(!init_task_temp.read().is_blocked());
+                    // Wait for the sigsuspend to complete.
+                    rx.recv().expect("receive");
+                    assert!(!init_task_temp.read().is_blocked());
+                },
+            );
+
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            let user_ref = UserRef::<SigSet>::new(addr);
+
+            let sigset = !SigSet::from(SIGHUP);
+            current_task.write_object(user_ref, &sigset).expect("failed to set action");
+
+            assert_eq!(
+                sys_rt_sigsuspend(locked, current_task, user_ref, std::mem::size_of::<SigSet>()),
+                error!(ERESTARTNOHAND)
+            );
+            tx.send(()).expect("send");
+            futures::executor::block_on(thread).expect("join");
         });
-
-        let addr = map_memory(locked, &init_task, UserAddress::default(), *PAGE_SIZE);
-        let user_ref = UserRef::<SigSet>::new(addr);
-
-        let sigset = !SigSet::from(SIGHUP);
-        init_task.write_object(user_ref, &sigset).expect("failed to set action");
-
-        assert_eq!(
-            sys_rt_sigsuspend(locked, &mut init_task, user_ref, std::mem::size_of::<SigSet>()),
-            error!(ERESTARTNOHAND)
-        );
-        tx.send(()).expect("send");
-        thread.await.expect("join");
     }
 
     /// Waitid does not support all options.
     #[::fuchsia::test]
     async fn test_waitid_options() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let id = 1;
-        assert_eq!(
-            sys_waitid(
-                locked,
-                &current_task,
-                P_PID,
-                id,
-                MultiArchUserRef::null(&current_task),
-                0,
-                UserRef::default().into()
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_waitid(
-                locked,
-                &current_task,
-                P_PID,
-                id,
-                MultiArchUserRef::null(&current_task),
-                0xffff,
-                UserRef::default().into()
-            ),
-            error!(EINVAL)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            let id = 1;
+            assert_eq!(
+                sys_waitid(
+                    locked,
+                    &current_task,
+                    P_PID,
+                    id,
+                    MultiArchUserRef::null(current_task),
+                    0,
+                    UserRef::default().into()
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_waitid(
+                    locked,
+                    &current_task,
+                    P_PID,
+                    id,
+                    MultiArchUserRef::null(current_task),
+                    0xffff,
+                    UserRef::default().into()
+                ),
+                error!(EINVAL)
+            );
+        });
     }
 
     /// Wait4 does not support all options.
     #[::fuchsia::test]
     async fn test_wait4_options() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let id = 1;
-        assert_eq!(
-            sys_wait4(
-                locked,
-                &current_task,
-                id,
-                UserRef::default(),
-                WEXITED,
-                RUsagePtr::null(&current_task)
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_wait4(
-                locked,
-                &current_task,
-                id,
-                UserRef::default(),
-                WNOWAIT,
-                RUsagePtr::null(&current_task)
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_wait4(
-                locked,
-                &current_task,
-                id,
-                UserRef::default(),
-                0xffff,
-                RUsagePtr::null(&current_task)
-            ),
-            error!(EINVAL)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            let id = 1;
+            assert_eq!(
+                sys_wait4(
+                    locked,
+                    &current_task,
+                    id,
+                    UserRef::default(),
+                    WEXITED,
+                    RUsagePtr::null(current_task)
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_wait4(
+                    locked,
+                    &current_task,
+                    id,
+                    UserRef::default(),
+                    WNOWAIT,
+                    RUsagePtr::null(current_task)
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_wait4(
+                    locked,
+                    &current_task,
+                    id,
+                    UserRef::default(),
+                    0xffff,
+                    RUsagePtr::null(current_task)
+                ),
+                error!(EINVAL)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_echild_when_no_zombie() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        // Send the signal to the task.
-        assert!(
-            sys_kill(locked, &current_task, current_task.get_pid(), UncheckedSignal::from(SIGCHLD))
+        spawn_kernel_and_run(|locked, current_task| {
+            // Send the signal to the task.
+            assert!(
+                sys_kill(
+                    locked,
+                    &current_task,
+                    current_task.get_pid(),
+                    UncheckedSignal::from(SIGCHLD)
+                )
                 .is_ok()
-        );
-        // Verify that ECHILD is returned because there is no zombie process and no children to
-        // block waiting for.
-        assert_eq!(
-            wait_on_pid(
-                locked,
-                &current_task,
-                &ProcessSelector::Any,
-                &WaitingOptions::new_for_wait4(0).expect("WaitingOptions")
-            ),
-            error!(ECHILD)
-        );
+            );
+            // Verify that ECHILD is returned because there is no zombie process and no children to
+            // block waiting for.
+            assert_eq!(
+                wait_on_pid(
+                    locked,
+                    &current_task,
+                    &ProcessSelector::Any,
+                    &WaitingOptions::new_for_wait4(0).expect("WaitingOptions")
+                ),
+                error!(ECHILD)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_no_error_when_zombie() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        let expected_result = WaitResult {
-            pid: child.tid,
-            uid: 0,
-            exit_info: ProcessExitInfo { status: ExitStatus::Exit(1), exit_signal: Some(SIGCHLD) },
-            time_stats: Default::default(),
-        };
-        child.thread_group().exit(locked, ExitStatus::Exit(1), None);
-        std::mem::drop(child);
+        spawn_kernel_and_run(|locked, current_task| {
+            let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let expected_result = WaitResult {
+                pid: child.tid,
+                uid: 0,
+                exit_info: ProcessExitInfo {
+                    status: ExitStatus::Exit(1),
+                    exit_signal: Some(SIGCHLD),
+                },
+                time_stats: Default::default(),
+            };
+            child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+            std::mem::drop(child);
 
-        assert_eq!(
-            wait_on_pid(
-                locked,
-                &current_task,
-                &ProcessSelector::Any,
-                &WaitingOptions::new_for_wait4(0).expect("WaitingOptions")
-            ),
-            Ok(Some(expected_result))
-        );
+            assert_eq!(
+                wait_on_pid(
+                    locked,
+                    &current_task,
+                    &ProcessSelector::Any,
+                    &WaitingOptions::new_for_wait4(0).expect("WaitingOptions")
+                ),
+                Ok(Some(expected_result))
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_waiting_for_child() {
-        let (_kernel, task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, task| {
+            let child = task
+                .clone_task(
+                    locked,
+                    0,
+                    Some(SIGCHLD),
+                    UserRef::default(),
+                    UserRef::default(),
+                    UserRef::default(),
+                )
+                .expect("clone_task");
 
-        let child = task
-            .clone_task(
-                locked,
-                0,
-                Some(SIGCHLD),
-                UserRef::default(),
-                UserRef::default(),
-                UserRef::default(),
-            )
-            .expect("clone_task");
+            // No child is currently terminated.
+            assert_eq!(
+                wait_on_pid(
+                    locked,
+                    &task,
+                    &ProcessSelector::Any,
+                    &WaitingOptions::new_for_wait4(WNOHANG).expect("WaitingOptions")
+                ),
+                Ok(None)
+            );
 
-        // No child is currently terminated.
-        assert_eq!(
-            wait_on_pid(
+            let thread = std::thread::spawn({
+                let task = task.weak_task();
+                move || {
+                    // Create child
+                    #[allow(
+                        clippy::undocumented_unsafe_blocks,
+                        reason = "Force documented unsafe blocks in Starnix"
+                    )]
+                    let locked = unsafe { Unlocked::new() };
+                    let task = task.upgrade().expect("task must be alive");
+                    let child: AutoReleasableTask = child.into();
+                    // Wait for the main thread to be blocked on waiting for a child.
+                    while !task.read().is_blocked() {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    child.thread_group().exit(locked, ExitStatus::Exit(0), None);
+                    child.tid
+                }
+            });
+
+            // Block until child is terminated.
+            let waited_child = wait_on_pid(
                 locked,
                 &task,
                 &ProcessSelector::Any,
-                &WaitingOptions::new_for_wait4(WNOHANG).expect("WaitingOptions")
-            ),
-            Ok(None)
-        );
+                &WaitingOptions::new_for_wait4(0).expect("WaitingOptions"),
+            )
+            .expect("wait_on_pid")
+            .unwrap();
 
-        let thread = std::thread::spawn({
-            let task = task.weak_task();
-            move || {
-                // Create child
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                let locked = unsafe { Unlocked::new() };
-                let task = task.upgrade().expect("task must be alive");
-                let child: AutoReleasableTask = child.into();
-                // Wait for the main thread to be blocked on waiting for a child.
-                while !task.read().is_blocked() {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                child.thread_group().exit(locked, ExitStatus::Exit(0), None);
-                child.tid
-            }
+            // Child is deleted, the thread must be able to terminate.
+            let child_id = thread.join().expect("join");
+            assert_eq!(waited_child.pid, child_id);
         });
-
-        // Block until child is terminated.
-        let waited_child = wait_on_pid(
-            locked,
-            &task,
-            &ProcessSelector::Any,
-            &WaitingOptions::new_for_wait4(0).expect("WaitingOptions"),
-        )
-        .expect("wait_on_pid")
-        .unwrap();
-
-        // Child is deleted, the thread must be able to terminate.
-        let child_id = thread.join().expect("join");
-        assert_eq!(waited_child.pid, child_id);
     }
 
     #[::fuchsia::test]
     async fn test_waiting_for_child_with_signal_pending() {
-        let (_kernel, task, locked) = create_kernel_task_and_unlocked();
+        spawn_kernel_and_run(|locked, task| {
+            // Register a signal action to ensure that the `SIGUSR1` signal interrupts the task.
+            task.thread_group().signal_actions.set(
+                SIGUSR1,
+                sigaction_t { sa_handler: uaddr { addr: 0xDEADBEEF }, ..sigaction_t::default() },
+            );
 
-        // Register a signal action to ensure that the `SIGUSR1` signal interrupts the task.
-        task.thread_group().signal_actions.set(
-            SIGUSR1,
-            sigaction_t { sa_handler: uaddr { addr: 0xDEADBEEF }, ..sigaction_t::default() },
-        );
+            // Start a child task. This will ensure that `wait_on_pid` tries to wait for the child.
+            let _child = task.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
-        // Start a child task. This will ensure that `wait_on_pid` tries to wait for the child.
-        let _child = task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            // Send a signal to the task. `wait_on_pid` should realize there is a signal pending when
+            // entering a wait and return with `EINTR`.
+            send_standard_signal(locked, &task, SignalInfo::default(SIGUSR1));
 
-        // Send a signal to the task. `wait_on_pid` should realize there is a signal pending when
-        // entering a wait and return with `EINTR`.
-        send_standard_signal(locked, &task, SignalInfo::default(SIGUSR1));
-
-        let errno = wait_on_pid(
-            locked,
-            &task,
-            &ProcessSelector::Any,
-            &WaitingOptions::new_for_wait4(0).expect("WaitingOptions"),
-        )
-        .expect_err("wait_on_pid");
-        assert_eq!(errno, ERESTARTSYS);
+            let errno = wait_on_pid(
+                locked,
+                &task,
+                &ProcessSelector::Any,
+                &WaitingOptions::new_for_wait4(0).expect("WaitingOptions"),
+            )
+            .expect_err("wait_on_pid");
+            assert_eq!(errno, ERESTARTSYS);
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sigkill() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mut child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+        spawn_kernel_and_run(|locked, current_task| {
+            let mut child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
-        // Send SIGKILL to the child. As kill is handled immediately, no need to dequeue signals.
-        send_standard_signal(locked, &child, SignalInfo::default(SIGKILL));
-        dequeue_signal_for_test(locked, &mut child);
-        std::mem::drop(child);
+            // Send SIGKILL to the child. As kill is handled immediately, no need to dequeue signals.
+            send_standard_signal(locked, &child, SignalInfo::default(SIGKILL));
+            dequeue_signal_for_test(locked, &mut child);
+            std::mem::drop(child);
 
-        // Retrieve the exit status.
-        let address = map_memory(
-            locked,
-            &current_task,
-            UserAddress::default(),
-            std::mem::size_of::<i32>() as u64,
-        );
-        let address_ref = UserRef::<i32>::new(address);
-        sys_wait4(locked, &current_task, -1, address_ref, 0, RUsagePtr::null(&current_task))
-            .expect("wait4");
-        let wstatus = current_task.read_object(address_ref).expect("read memory");
-        assert_eq!(wstatus, SIGKILL.number() as i32);
+            // Retrieve the exit status.
+            let address = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                std::mem::size_of::<i32>() as u64,
+            );
+            let address_ref = UserRef::<i32>::new(address);
+            sys_wait4(locked, &current_task, -1, address_ref, 0, RUsagePtr::null(current_task))
+                .expect("wait4");
+            let wstatus = current_task.read_object(address_ref).expect("read memory");
+            assert_eq!(wstatus, SIGKILL.number() as i32);
+        });
     }
 
     fn test_exit_status_for_signal(sig: Signal, wait_status: i32, exit_signal: Option<Signal>) {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let mut child = current_task.clone_task_for_test(locked, 0, exit_signal);
+        spawn_kernel_and_run(move |locked, current_task| {
+            let mut child = current_task.clone_task_for_test(locked, 0, exit_signal);
 
-        // Send the signal to the child.
-        send_standard_signal(locked, &child, SignalInfo::default(sig));
-        dequeue_signal_for_test(locked, &mut child);
-        std::mem::drop(child);
+            // Send the signal to the child.
+            send_standard_signal(locked, &child, SignalInfo::default(sig));
+            dequeue_signal_for_test(locked, &mut child);
+            std::mem::drop(child);
 
-        // Retrieve the exit status.
-        let address = map_memory(
-            locked,
-            &current_task,
-            UserAddress::default(),
-            std::mem::size_of::<i32>() as u64,
-        );
-        let address_ref = UserRef::<i32>::new(address);
-        sys_wait4(locked, &current_task, -1, address_ref, 0, RUsagePtr::null(&current_task))
-            .expect("wait4");
-        let wstatus = current_task.read_object(address_ref).expect("read memory");
-        assert_eq!(wstatus, wait_status);
+            // Retrieve the exit status.
+            let address = map_memory(
+                locked,
+                &current_task,
+                UserAddress::default(),
+                std::mem::size_of::<i32>() as u64,
+            );
+            let address_ref = UserRef::<i32>::new(address);
+            sys_wait4(locked, &current_task, -1, address_ref, 0, RUsagePtr::null(current_task))
+                .expect("wait4");
+            let wstatus = current_task.read_object(address_ref).expect("read memory");
+            assert_eq!(wstatus, wait_status);
+        });
     }
 
     #[::fuchsia::test]
@@ -2016,323 +2076,338 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_wait4_by_pgid() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let child1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        let child1_pid = child1.tid;
-        child1.thread_group().exit(locked, ExitStatus::Exit(42), None);
-        std::mem::drop(child1);
-        let child2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        child2.thread_group().setsid(locked).expect("setsid");
-        let child2_pid = child2.tid;
-        child2.thread_group().exit(locked, ExitStatus::Exit(42), None);
-        std::mem::drop(child2);
+        spawn_kernel_and_run(|locked, current_task| {
+            let child1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let child1_pid = child1.tid;
+            child1.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            std::mem::drop(child1);
+            let child2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            child2.thread_group().setsid(locked).expect("setsid");
+            let child2_pid = child2.tid;
+            child2.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            std::mem::drop(child2);
 
-        assert_eq!(
-            sys_wait4(
-                locked,
-                &current_task,
-                -child2_pid,
-                UserRef::default(),
-                0,
-                RUsagePtr::null(&current_task)
-            ),
-            Ok(child2_pid)
-        );
-        assert_eq!(
-            sys_wait4(
-                locked,
-                &current_task,
-                0,
-                UserRef::default(),
-                0,
-                RUsagePtr::null(&current_task)
-            ),
-            Ok(child1_pid)
-        );
+            assert_eq!(
+                sys_wait4(
+                    locked,
+                    &current_task,
+                    -child2_pid,
+                    UserRef::default(),
+                    0,
+                    RUsagePtr::null(current_task)
+                ),
+                Ok(child2_pid)
+            );
+            assert_eq!(
+                sys_wait4(
+                    locked,
+                    &current_task,
+                    0,
+                    UserRef::default(),
+                    0,
+                    RUsagePtr::null(current_task)
+                ),
+                Ok(child1_pid)
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_waitid_by_pgid() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let child1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        let child1_pid = child1.tid;
-        child1.thread_group().exit(locked, ExitStatus::Exit(42), None);
-        std::mem::drop(child1);
-        let child2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        child2.thread_group().setsid(locked).expect("setsid");
-        let child2_pid = child2.tid;
-        child2.thread_group().exit(locked, ExitStatus::Exit(42), None);
-        std::mem::drop(child2);
+        spawn_kernel_and_run(|locked, current_task| {
+            let child1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            let child1_pid = child1.tid;
+            child1.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            std::mem::drop(child1);
+            let child2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            child2.thread_group().setsid(locked).expect("setsid");
+            let child2_pid = child2.tid;
+            child2.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            std::mem::drop(child2);
 
-        let address: UserRef<uapi::siginfo_t> =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE).into();
-        assert_eq!(
-            sys_waitid(
-                locked,
-                &current_task,
-                P_PGID,
-                child2_pid,
-                address.into(),
-                WEXITED,
-                UserRef::default().into()
-            ),
-            Ok(())
-        );
-        // The previous wait matched child2, only child1 should be in the available zombies.
-        assert_eq!(current_task.thread_group().read().zombie_children[0].pid(), child1_pid);
+            let address: UserRef<uapi::siginfo_t> =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE).into();
+            assert_eq!(
+                sys_waitid(
+                    locked,
+                    &current_task,
+                    P_PGID,
+                    child2_pid,
+                    address.into(),
+                    WEXITED,
+                    UserRef::default().into()
+                ),
+                Ok(())
+            );
+            // The previous wait matched child2, only child1 should be in the available zombies.
+            assert_eq!(current_task.thread_group().read().zombie_children[0].pid(), child1_pid);
 
-        assert_eq!(
-            sys_waitid(
-                locked,
-                &current_task,
-                P_PGID,
-                0,
-                address.into(),
-                WEXITED,
-                UserRef::default().into()
-            ),
-            Ok(())
-        );
+            assert_eq!(
+                sys_waitid(
+                    locked,
+                    &current_task,
+                    P_PGID,
+                    0,
+                    address.into(),
+                    WEXITED,
+                    UserRef::default().into()
+                ),
+                Ok(())
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_sigqueue() {
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let current_uid = current_task.with_current_creds(|creds| creds.uid);
-        let current_pid = current_task.get_pid();
+        spawn_kernel_and_run(|locked, current_task| {
+            let current_uid = current_task.with_current_creds(|creds| creds.uid);
+            let current_pid = current_task.get_pid();
 
-        const TEST_VALUE: u64 = 101;
+            const TEST_VALUE: u64 = 101;
 
-        // Add the padding int for arch64
-        const ARCH64_SI_HEADER_SIZE: usize = SI_HEADER_SIZE + 4;
-        // Taken from gVisor of SignalInfo in  //pkg/abi/linux/signal.go
-        const PID_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE;
-        const UID_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE + 4;
-        const VALUE_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE + 8;
+            // Add the padding int for arch64
+            const ARCH64_SI_HEADER_SIZE: usize = SI_HEADER_SIZE + 4;
+            // Taken from gVisor of SignalInfo in  //pkg/abi/linux/signal.go
+            const PID_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE;
+            const UID_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE + 4;
+            const VALUE_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE + 8;
 
-        let mut data = vec![0u8; SI_MAX_SIZE as usize];
-        let header = SignalInfoHeader {
-            signo: SIGIO.number(),
-            code: SI_QUEUE,
-            ..SignalInfoHeader::default()
-        };
-        let _ = header.write_to(&mut data[..SI_HEADER_SIZE]);
-        data[PID_DATA_OFFSET..PID_DATA_OFFSET + 4].copy_from_slice(&current_pid.to_ne_bytes());
-        data[UID_DATA_OFFSET..UID_DATA_OFFSET + 4].copy_from_slice(&current_uid.to_ne_bytes());
-        data[VALUE_DATA_OFFSET..VALUE_DATA_OFFSET + 8].copy_from_slice(&TEST_VALUE.to_ne_bytes());
+            let mut data = vec![0u8; SI_MAX_SIZE as usize];
+            let header = SignalInfoHeader {
+                signo: SIGIO.number(),
+                code: SI_QUEUE,
+                ..SignalInfoHeader::default()
+            };
+            let _ = header.write_to(&mut data[..SI_HEADER_SIZE]);
+            data[PID_DATA_OFFSET..PID_DATA_OFFSET + 4].copy_from_slice(&current_pid.to_ne_bytes());
+            data[UID_DATA_OFFSET..UID_DATA_OFFSET + 4].copy_from_slice(&current_uid.to_ne_bytes());
+            data[VALUE_DATA_OFFSET..VALUE_DATA_OFFSET + 8]
+                .copy_from_slice(&TEST_VALUE.to_ne_bytes());
 
-        let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task.write_memory(addr, &data).unwrap();
-        let second_current = create_task(locked, &kernel, "second task");
-        let second_pid = second_current.get_pid();
-        let second_tid = second_current.get_tid();
-        assert_eq!(second_current.read().queued_signal_count(SIGIO), 0);
+            let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(addr, &data).unwrap();
+            let second_current = create_task(locked, current_task.kernel(), "second task");
+            let second_pid = second_current.get_pid();
+            let second_tid = second_current.get_tid();
+            assert_eq!(second_current.read().queued_signal_count(SIGIO), 0);
 
-        assert_eq!(
-            sys_rt_tgsigqueueinfo(
-                locked,
-                &current_task,
-                second_pid,
-                second_tid,
-                UncheckedSignal::from(SIGIO),
-                addr
-            ),
-            Ok(())
-        );
-        assert_eq!(second_current.read().queued_signal_count(SIGIO), 1);
+            assert_eq!(
+                sys_rt_tgsigqueueinfo(
+                    locked,
+                    &current_task,
+                    second_pid,
+                    second_tid,
+                    UncheckedSignal::from(SIGIO),
+                    addr
+                ),
+                Ok(())
+            );
+            assert_eq!(second_current.read().queued_signal_count(SIGIO), 1);
 
-        let signal = SignalInfo {
-            code: SI_USER as i32,
-            detail: SignalDetail::Kill {
-                pid: current_task.thread_group().leader,
-                uid: current_task.with_current_creds(|creds| creds.uid),
-            },
-            ..SignalInfo::default(SIGIO)
-        };
-        let queued_signal = second_current.write().take_specific_signal(signal);
-        if let Some(sig) = queued_signal {
-            assert_eq!(sig.signal, SIGIO);
-            assert_eq!(sig.errno, 0);
-            assert_eq!(sig.code, SI_QUEUE);
-            if let SignalDetail::Raw { data } = sig.detail {
-                // offsets into the raw portion of the signal info
-                let offset_pid = PID_DATA_OFFSET - SI_HEADER_SIZE;
-                let offset_uid = UID_DATA_OFFSET - SI_HEADER_SIZE;
-                let offset_value = VALUE_DATA_OFFSET - SI_HEADER_SIZE;
-                let pid =
-                    pid_t::from_ne_bytes(data[offset_pid..offset_pid + 4].try_into().unwrap());
-                let uid =
-                    uid_t::from_ne_bytes(data[offset_uid..offset_uid + 4].try_into().unwrap());
-                let value =
-                    u64::from_ne_bytes(data[offset_value..offset_value + 8].try_into().unwrap());
-                assert_eq!(pid, current_pid);
-                assert_eq!(uid, current_uid);
-                assert_eq!(value, TEST_VALUE);
+            let signal = SignalInfo {
+                code: SI_USER as i32,
+                detail: SignalDetail::Kill {
+                    pid: current_task.thread_group().leader,
+                    uid: current_task.with_current_creds(|creds| creds.uid),
+                },
+                ..SignalInfo::default(SIGIO)
+            };
+            let queued_signal = second_current.write().take_specific_signal(signal);
+            if let Some(sig) = queued_signal {
+                assert_eq!(sig.signal, SIGIO);
+                assert_eq!(sig.errno, 0);
+                assert_eq!(sig.code, SI_QUEUE);
+                if let SignalDetail::Raw { data } = sig.detail {
+                    // offsets into the raw portion of the signal info
+                    let offset_pid = PID_DATA_OFFSET - SI_HEADER_SIZE;
+                    let offset_uid = UID_DATA_OFFSET - SI_HEADER_SIZE;
+                    let offset_value = VALUE_DATA_OFFSET - SI_HEADER_SIZE;
+                    let pid =
+                        pid_t::from_ne_bytes(data[offset_pid..offset_pid + 4].try_into().unwrap());
+                    let uid =
+                        uid_t::from_ne_bytes(data[offset_uid..offset_uid + 4].try_into().unwrap());
+                    let value = u64::from_ne_bytes(
+                        data[offset_value..offset_value + 8].try_into().unwrap(),
+                    );
+                    assert_eq!(pid, current_pid);
+                    assert_eq!(uid, current_uid);
+                    assert_eq!(value, TEST_VALUE);
+                } else {
+                    panic!("incorrect signal detail");
+                }
             } else {
-                panic!("incorrect signal detail");
+                panic!("expected a queued signal");
             }
-        } else {
-            panic!("expected a queued signal");
-        }
+        });
     }
 
     #[::fuchsia::test]
     async fn test_signalfd_filters_signals() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let memory_for_masks =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let memory_for_masks =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        // Create a signalfd for SIGTERM and SIGINT.
-        let term_int_mask = SigSet::from(SIGTERM) | SigSet::from(SIGINT);
-        let term_int_mask_addr = UserRef::<SigSet>::new(memory_for_masks);
-        current_task
-            .write_object(term_int_mask_addr, &term_int_mask)
-            .expect("failed to write mask");
-        let sfd_term_int = sys_signalfd4(
-            locked,
-            &current_task,
-            FdNumber::from_raw(-1),
-            term_int_mask_addr,
-            std::mem::size_of::<SigSet>(),
-            0,
-        )
-        .expect("failed to create SIGTERM/SIGINT signalfd");
+            // Create a signalfd for SIGTERM and SIGINT.
+            let term_int_mask = SigSet::from(SIGTERM) | SigSet::from(SIGINT);
+            let term_int_mask_addr = UserRef::<SigSet>::new(memory_for_masks);
+            current_task
+                .write_object(term_int_mask_addr, &term_int_mask)
+                .expect("failed to write mask");
+            let sfd_term_int = sys_signalfd4(
+                locked,
+                &current_task,
+                FdNumber::from_raw(-1),
+                term_int_mask_addr,
+                std::mem::size_of::<SigSet>(),
+                0,
+            )
+            .expect("failed to create SIGTERM/SIGINT signalfd");
 
-        // Create a signalfd for SIGCHLD.
-        let sigchld_mask = SigSet::from(SIGCHLD);
-        let sigchld_mask_addr =
-            UserRef::<SigSet>::new((memory_for_masks + std::mem::size_of::<SigSet>()).unwrap());
-        current_task.write_object(sigchld_mask_addr, &sigchld_mask).expect("failed to write mask");
-        let sfd_chld = sys_signalfd4(
-            locked,
-            &current_task,
-            FdNumber::from_raw(-1),
-            sigchld_mask_addr,
-            std::mem::size_of::<SigSet>(),
-            0,
-        )
-        .expect("failed to create SIGCHLD signalfd");
+            // Create a signalfd for SIGCHLD.
+            let sigchld_mask = SigSet::from(SIGCHLD);
+            let sigchld_mask_addr =
+                UserRef::<SigSet>::new((memory_for_masks + std::mem::size_of::<SigSet>()).unwrap());
+            current_task
+                .write_object(sigchld_mask_addr, &sigchld_mask)
+                .expect("failed to write mask");
+            let sfd_chld = sys_signalfd4(
+                locked,
+                &current_task,
+                FdNumber::from_raw(-1),
+                sigchld_mask_addr,
+                std::mem::size_of::<SigSet>(),
+                0,
+            )
+            .expect("failed to create SIGCHLD signalfd");
 
-        // Create and exit a child process, which should generate a SIGCHLD.
-        let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        child.thread_group().exit(locked, ExitStatus::Exit(1), None);
-        std::mem::drop(child);
+            // Create and exit a child process, which should generate a SIGCHLD.
+            let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+            std::mem::drop(child);
 
-        // Check which signalfds are readable.
-        let sfd_term_int_file =
-            current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
-        let sfd_chld_file = current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
+            // Check which signalfds are readable.
+            let sfd_term_int_file =
+                current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
+            let sfd_chld_file =
+                current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
 
-        let term_int_events = sfd_term_int_file
-            .query_events(locked, &current_task)
-            .expect("failed to query sfd_term_int events");
-        let chld_events = sfd_chld_file
-            .query_events(locked, &current_task)
-            .expect("failed to query sfd_chld events");
+            let term_int_events = sfd_term_int_file
+                .query_events(locked, &current_task)
+                .expect("failed to query sfd_term_int events");
+            let chld_events = sfd_chld_file
+                .query_events(locked, &current_task)
+                .expect("failed to query sfd_chld events");
 
-        assert!(!term_int_events.contains(FdEvents::POLLIN));
-        assert!(chld_events.contains(FdEvents::POLLIN));
+            assert!(!term_int_events.contains(FdEvents::POLLIN));
+            assert!(chld_events.contains(FdEvents::POLLIN));
+        });
     }
 
     #[::fuchsia::test]
     async fn test_signalfd_filters_signals_async() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let memory_for_masks =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+        spawn_kernel_and_run(|locked, current_task| {
+            let memory_for_masks =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
-        // Create a signalfd for SIGTERM and SIGINT.
-        let term_int_mask = SigSet::from(SIGTERM) | SigSet::from(SIGINT);
-        let term_int_mask_addr = UserRef::<SigSet>::new(memory_for_masks);
-        current_task
-            .write_object(term_int_mask_addr, &term_int_mask)
-            .expect("failed to write mask");
-        let sfd_term_int = sys_signalfd4(
-            locked,
-            &current_task,
-            FdNumber::from_raw(-1),
-            term_int_mask_addr,
-            std::mem::size_of::<SigSet>(),
-            0,
-        )
-        .expect("failed to create SIGTERM/SIGINT signalfd");
-
-        // Create a signalfd for SIGCHLD.
-        let sigchld_mask = SigSet::from(SIGCHLD);
-        let sigchld_mask_addr =
-            UserRef::<SigSet>::new((memory_for_masks + std::mem::size_of::<SigSet>()).unwrap());
-        current_task.write_object(sigchld_mask_addr, &sigchld_mask).expect("failed to write mask");
-        let sfd_chld = sys_signalfd4(
-            locked,
-            &current_task,
-            FdNumber::from_raw(-1),
-            sigchld_mask_addr,
-            std::mem::size_of::<SigSet>(),
-            0,
-        )
-        .expect("failed to create SIGCHLD signalfd");
-
-        // Set up the async wait.
-        let waiter = Waiter::new();
-        let ready_items = Arc::new(Mutex::new(VecDeque::new()));
-
-        let sfd_term_int_file =
-            current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
-        let sfd_chld_file = current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
-
-        sfd_term_int_file
-            .wait_async(
+            // Create a signalfd for SIGTERM and SIGINT.
+            let term_int_mask = SigSet::from(SIGTERM) | SigSet::from(SIGINT);
+            let term_int_mask_addr = UserRef::<SigSet>::new(memory_for_masks);
+            current_task
+                .write_object(term_int_mask_addr, &term_int_mask)
+                .expect("failed to write mask");
+            let sfd_term_int = sys_signalfd4(
                 locked,
                 &current_task,
-                &waiter,
-                FdEvents::POLLIN,
-                EventHandler::Enqueue(EnqueueEventHandler {
-                    key: sfd_term_int.into(),
-                    queue: ready_items.clone(),
-                    sought_events: FdEvents::POLLIN,
-                    mappings: None,
-                }),
+                FdNumber::from_raw(-1),
+                term_int_mask_addr,
+                std::mem::size_of::<SigSet>(),
+                0,
             )
-            .expect("failed to wait on sfd_term_int");
+            .expect("failed to create SIGTERM/SIGINT signalfd");
 
-        sfd_chld_file
-            .wait_async(
+            // Create a signalfd for SIGCHLD.
+            let sigchld_mask = SigSet::from(SIGCHLD);
+            let sigchld_mask_addr =
+                UserRef::<SigSet>::new((memory_for_masks + std::mem::size_of::<SigSet>()).unwrap());
+            current_task
+                .write_object(sigchld_mask_addr, &sigchld_mask)
+                .expect("failed to write mask");
+            let sfd_chld = sys_signalfd4(
                 locked,
                 &current_task,
-                &waiter,
-                FdEvents::POLLIN,
-                EventHandler::Enqueue(EnqueueEventHandler {
-                    key: sfd_chld.into(),
-                    queue: ready_items.clone(),
-                    sought_events: FdEvents::POLLIN,
-                    mappings: None,
-                }),
+                FdNumber::from_raw(-1),
+                sigchld_mask_addr,
+                std::mem::size_of::<SigSet>(),
+                0,
             )
-            .expect("failed to wait on sfd_chld");
+            .expect("failed to create SIGCHLD signalfd");
 
-        // Block SIGCHLD so it can be received by the signalfd.
-        let sigchld_mask_ref = UserRef::<SigSet>::new(memory_for_masks);
-        current_task.write_object(sigchld_mask_ref, &sigchld_mask).expect("failed to write mask");
-        sys_rt_sigprocmask(
-            locked,
-            &current_task,
-            SIG_BLOCK,
-            sigchld_mask_ref,
-            UserRef::default(),
-            std::mem::size_of::<SigSet>(),
-        )
-        .expect("failed to block SIGCHLD");
+            // Set up the async wait.
+            let waiter = Waiter::new();
+            let ready_items = Arc::new(Mutex::new(VecDeque::new()));
 
-        // Create and exit a child process, which should generate a SIGCHLD.
-        let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-        child.thread_group().exit(locked, ExitStatus::Exit(1), None);
-        std::mem::drop(child);
+            let sfd_term_int_file =
+                current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
+            let sfd_chld_file =
+                current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
 
-        // Wait for the signal to be processed.
-        waiter.wait(locked, &current_task).expect("failed to wait");
+            sfd_term_int_file
+                .wait_async(
+                    locked,
+                    &current_task,
+                    &waiter,
+                    FdEvents::POLLIN,
+                    EventHandler::Enqueue(EnqueueEventHandler {
+                        key: sfd_term_int.into(),
+                        queue: ready_items.clone(),
+                        sought_events: FdEvents::POLLIN,
+                        mappings: None,
+                    }),
+                )
+                .expect("failed to wait on sfd_term_int");
 
-        // Check that only the correct signalfd was woken up.
-        let ready_items = ready_items.lock();
-        assert_eq!(ready_items.len(), 1);
-        assert_eq!(ready_items[0].key, sfd_chld.into());
+            sfd_chld_file
+                .wait_async(
+                    locked,
+                    &current_task,
+                    &waiter,
+                    FdEvents::POLLIN,
+                    EventHandler::Enqueue(EnqueueEventHandler {
+                        key: sfd_chld.into(),
+                        queue: ready_items.clone(),
+                        sought_events: FdEvents::POLLIN,
+                        mappings: None,
+                    }),
+                )
+                .expect("failed to wait on sfd_chld");
+
+            // Block SIGCHLD so it can be received by the signalfd.
+            let sigchld_mask_ref = UserRef::<SigSet>::new(memory_for_masks);
+            current_task
+                .write_object(sigchld_mask_ref, &sigchld_mask)
+                .expect("failed to write mask");
+            sys_rt_sigprocmask(
+                locked,
+                &current_task,
+                SIG_BLOCK,
+                sigchld_mask_ref,
+                UserRef::default(),
+                std::mem::size_of::<SigSet>(),
+            )
+            .expect("failed to block SIGCHLD");
+
+            // Create and exit a child process, which should generate a SIGCHLD.
+            let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+            std::mem::drop(child);
+
+            // Wait for the signal to be processed.
+            waiter.wait(locked, &current_task).expect("failed to wait");
+
+            // Check that only the correct signalfd was woken up.
+            let ready_items = ready_items.lock();
+            assert_eq!(ready_items.len(), 1);
+            assert_eq!(ready_items[0].key, sfd_chld.into());
+        });
     }
 }
