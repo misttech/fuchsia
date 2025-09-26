@@ -1,0 +1,262 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/config/logging.gni")
+import("//build/bazel/remote_services.gni")
+import("//build/config/clang/clang.gni")
+import("//build/config/compiler.gni")
+import("//build/config/fuchsia_cxx_version.gni")
+
+declare_args() {
+  # Suppress Bazel non-error output
+  # This is now disabled by default since bazel_action()
+  # uses the //:console pool to print its output directly
+  # to stdout/stderr during the Ninja build.
+  bazel_quiet = false
+}
+
+# Compute the list of `bazel build` arguments corresponding to the current
+# GN build configuration.
+#
+# _common_args are the arguments used by all commands, including `query`
+# which does not accept configuration-related options.
+#
+# _build_args are the arguments used by all commands that require a build
+# configuration, this include "build", but also "cquery" and "aquery".
+#
+# _remote_build_args are arguments specifically related to remote builds.
+# They are separated from _build_args because they must always be passed
+# explicitly to our Bazel shell wrapper, which will detect them to setup
+# proxies for infra builds (see //build/bazel/template.bazel.sh).
+
+_common_args = []
+_build_args = []
+_remote_build_args = []
+
+if (bazel_quiet) {
+  _common_args += [ "--config=quiet" ]
+} else {
+  # Disable INFO lines and printing results, this makes Bazel output much
+  # less chatty when invoked from Ninja. https://fxbug.dev/42077198
+  _common_args += [ "--ui_event_filters=-info" ]
+
+  # The --show_result option is not supported by bazel query.
+  _build_args += [ "--show_result=0" ]
+}
+
+if (bazel_execution_logs) {
+  _common_args += [ "--config=exec_log" ]
+}
+
+if (is_host) {
+  _build_args += [ "--platforms=//build/bazel/platforms:host" ]
+} else {
+  _build_args +=
+      [ "--platforms=//build/bazel/platforms:${current_os}_${current_cpu}" ]
+}
+
+# Forward GN sanitizer configuration to Bazel
+
+# ======================================================================
+# START OF CODE TO KEEP IN SYNC WITH BUILDCONFIG.gn
+#
+# IMPORTANT: Always keep the code below in sync with the computations
+# performed by variant_target() within //build/config/BUILDCONFIG.gn.
+#
+# LINT.IfChange
+
+# Detect the global variant that applies to the current toolchain.
+#
+# A "global" variant selector is an entry in `select_variant` that
+# selects a variant that applies to all targets by default (unless
+# they use `exclude_toolchain_tags` in their definition), as opposed
+# to selector entries that only target a specific subset of targets
+# (which cannot be supported with Bazel at all).
+#
+# The logic below will identify one global variant for Fuchsia artifacts,
+# and another one for host ones.
+#
+# In practice, this means parsing the entries of `select_variant_canonical`,
+# which is a processed version of `select_variant` from args.gn, and
+# looking for entries whose fields are empty lists or the boolean value
+# false, except for `host` which should match the current `is_host` value.
+#
+# The comparisons should be compatible with the logic used within
+# variant_target() implemented in BUILDCONFIG.gn.
+
+_found = false
+
+# Only look for a variant selector that applies to all targets,
+# as the Bazel build doesn't support applying variants to
+# subsets of targets, without introducing explicit transition-based
+# targets in the build graph, which cannot be controlled from args.gn,
+# .bazelrc or the command-line.
+#
+# In other words, look for a selector that only has 'host' and 'variant'
+# defined, and all other fields being an empty list or false.
+#
+# IMPORTANT: As a special case, ignore the special "novariant" entry
+# that is added to the list when sanitizers are enabled.
+#
+
+foreach(selector, select_variant_canonical) {
+  _select = {
+  }
+  _select = {
+    target_type = []
+    output_name = []
+    label = []
+    dir = []
+    host = false
+    testonly = false
+    forward_variables_from(selector, "*")
+  }
+  if (!_found && _select.host == is_host && !_select.testonly &&
+      _select.target_type + _select.output_name + _select.label + _select.dir ==
+      []) {
+    # As special cases:
+    #
+    # - The entry with `selector.variant == "novariant"` should be ignored.
+    #   While it looks like a global variant selector, it is never applied
+    #   globally and only used for special cases (see the comment describing
+    #   its use case in the variant_target() template definition).
+    #
+    # - Entries with variant tags "gcc" or "kernel-only" should also be
+    #   ignored, because these are only used for Zircon toolchains and
+    #   never instantiated in //build/toolchain/fuchsia:*. Using these
+    #   make GN complain with a weird error that looks like:
+    #
+    #     //build/bazel/config/bazel_args.gni(//build/toolchain/fuchsia:x64) needs
+    #       //build/bazel/config/bazel_args.gni(//build/toolchain/fuchsia:x64-gcc)
+    #
+    #   Because //build/toolchain/fuchsia:x64-gcc is never defined.
+    #
+    if (_select.variant != "novariant" && _select.variant_tags + [
+                                            "gcc",
+                                            "kernel-only",
+                                          ] -
+                                          [
+                                            "gcc",
+                                            "kernel-only",
+                                          ] == _select.variant_tags) {
+      _selected = _select
+      _found = true
+    }
+  }
+}
+
+if (!_found) {
+  _selected = {
+    variant = ""
+    host = is_host
+    variant_tags = []
+  }
+}
+
+# END OF CODE TO KEEP IN SYNC WITH BUILDCONFIG.gn!
+# ==================================================================
+
+# LINT.ThenChange(//build/config/BUILDCONFIG.gn)
+
+_variant_tags = _selected.variant_tags
+
+# The definitions of is_asan and is_hwasan in BUILDCONFIG.gn are not entirely
+# correct and trying to change them would break the build.
+_is_hwasan = _variant_tags + [ "hwasan" ] - [ "hwasan" ] != _variant_tags
+_is_asan = _variant_tags + [ "asan" ] - [ "asan" ] != _variant_tags
+_is_lsan = _variant_tags + [ "lsan" ] - [ "lsan" ] != _variant_tags
+_is_msan = _variant_tags + [ "msan" ] - [ "msan" ] != _variant_tags
+_is_tsan = _variant_tags + [ "tsan" ] - [ "tsan" ] != _variant_tags
+_is_ubsan = _variant_tags + [ "ubsan" ] - [ "ubsan" ] != _variant_tags
+
+# The hwasan variants also set the 'asan' and 'lsan' tags, but using
+# both features result in Clang errors, which doesn't support both
+# -fsanitize=address and -fsanitize=hwaddress on the same command line.
+#
+# Also `lsan` is implemented by using `--features=leak` at compile time
+# but `--features=address` at link time because the asan runtime provides
+# the leak checking runtime support.
+#
+# Note that currently only C++ rules support all these features.
+# TODO(https://fxbug.dev/447095455): Support variant flags for Rust binaries.
+# TODO(https://fxbug.dev/447095534): Support variant flags for Go binaries.
+if (_is_hwasan) {
+  _build_args += [ "--features=hwasan" ]
+} else if (_is_asan) {
+  _build_args += [ "--features=asan" ]
+} else if (_is_lsan) {
+  _build_args += [ "--features=lsan" ]
+}
+if (_is_msan) {
+  _build_args += [ "--features=msan" ]
+}
+if (_is_tsan) {
+  _build_args += [ "--features=tsan" ]
+}
+if (_is_ubsan) {
+  _build_args += [ "--features=ubsan" ]
+}
+
+# Only clang toolchain has coverage support in Bazel at the moment.
+if (_selected.variant == "coverage") {
+  _build_args += [ "--features=coverage" ]
+}
+
+# Forward GN C/C++ compiler optimization configuration to Bazel
+_optimize_to_dbg = [ "debug" ]
+_optimize_to_fastbuild = [
+  "coverage",
+  "minimal",
+  "moderate",
+  "none",
+  "sanitizer",
+]
+_optimize_to_opt = [
+  "profile",
+  "size",
+  "size_lto",
+  "size_thinlto",
+  "speed",
+]
+
+if (_optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg) {
+  _build_args += [ "--compilation_mode=dbg" ]
+} else if (_optimize_to_fastbuild + [ optimize ] - [ optimize ] !=
+           _optimize_to_fastbuild) {
+  _build_args += [ "--compilation_mode=fastbuild" ]
+} else if (_optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt) {
+  _build_args += [ "--compilation_mode=opt" ]
+} else {
+  assert("Unsupported mode optimize = $optimize")
+}
+
+# If the c++ version is 20, we overwrite the copts to use
+# c++20 in Bazel too.
+if (fuchsia_cxx_version == 20) {
+  _build_args += [
+    "--cxxopt=-std=c++20",
+    "--cxxopt=-Wno-deprecated-this-capture",
+  ]
+}
+
+# Arguments related to remote builds. These can be disabled per target so cannot
+# belong to _common_args.
+_remote_build_args = []
+if (enable_bazel_remote_rbe) {
+  if (bazel_rbe_exec_strategy == "remote") {
+    _remote_build_args += [ "--config=remote" ]
+  } else if (bazel_rbe_exec_strategy == "local") {
+    _remote_build_args += [ "--config=remote_cache_only" ]
+  } else if (bazel_rbe_exec_strategy == "nocache") {
+    _remote_build_args += [ "--config=nocache" ]
+  } else {
+    assert(false, "Unknown bazel_rbe_exec_strategy: $bazel_rbe_exec_strategy")
+  }
+}
+
+bazel_args = {
+  common = _common_args
+  build = _build_args
+  remote_build = _remote_build_args
+}

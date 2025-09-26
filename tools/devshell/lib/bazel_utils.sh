@@ -45,5 +45,30 @@ fx-update-bazel-workspace () {
 # Run bazel command in the Fuchsia workspace, after ensuring it is up-to-date.
 fx-bazel () {
   fx-update-bazel-workspace
+  # Building with Bazel now requires a --config=host or --config=fuchsia_<cpu>
+  # option to avoid a cryptic error related to C++ toolchain resolution failure.
+  # Parse the command arguments to print a warning if it is missing.
+  local args=("$@")
+  local bazel_command="${args[0]}"
+  case "${bazel_command}" in
+    # The following commands are configuration-sensitive, and will require
+    # A platform --config option to avoid toolchain resolution errors.
+    aquery|cquery|build|run|test)
+      local opt
+      local has_platform_config
+      for opt in "${args[@]:1}"; do
+          case "$opt" in
+            --config=host|--config=fuchsia)
+                has_platform_config=true
+                ;;
+          esac
+      done
+      if [[ -z "$has_platform_config" ]]; then
+          fx-error "Use --config=host or --config=fuchsia when invoking Bazel ${bazel_command} commands!"
+          return 1
+      fi
+      ;;
+  esac
+
   fx-run-bazel "" "$(fx-get-bazel)" "$@"
 }

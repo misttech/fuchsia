@@ -256,7 +256,7 @@ remote inputs, and more.
 
 **Current value (from the default):** `true`
 
-From //build/bazel/logging.gni:9
+From //build/bazel/config/logging.gni:9
 
 ### bazel_product_bundle_board
 
