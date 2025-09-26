@@ -8,7 +8,8 @@ use {
     assert_matches::assert_matches,
     fidl_next::{Chunk, Decode, DecoderExt as _, Encode, EncoderExt as _, WireU64, ClientEnd, ServerEnd},
     fidl_next::fuchsia::channel::Buffer,
-    fidl_next::fuchsia::zx::AsHandleRef as _,
+    fidl_next::fuchsia::channel::RecvBuffer,
+    fidl_next::fuchsia::zx as zx,
     fidl_next_test_conformance as test_conformance,
     zerocopy::IntoBytes,
     zx_status::Status,
@@ -19,12 +20,13 @@ use {
         select_raw_handle_infos, to_zx_handle_disposition_t,
     },
     std::convert::TryFrom,
+    zx::{Handle, AsHandleRef as _},
 };
 
 
 
     #[test]
-    fn test_golden_bool_struct_v2_encode() {
+    fn encode_golden_bool_struct() {
         let value = test_conformance::GoldenBoolStruct { v: true };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -36,7 +38,7 @@ use {
     }
 
     #[test]
-    fn test_golden_int_struct_v2_encode() {
+    fn encode_golden_int_struct() {
         let value = test_conformance::GoldenIntStruct { v: 1i16 };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -48,7 +50,7 @@ use {
     }
 
     #[test]
-    fn test_golden_uint_struct_v2_encode() {
+    fn encode_golden_uint_struct() {
         let value = test_conformance::GoldenUintStruct { v: 1u16 };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -60,7 +62,7 @@ use {
     }
 
     #[test]
-    fn test_golden_float_struct_v2_encode() {
+    fn encode_golden_float_struct() {
         let value = test_conformance::GoldenFloatStruct { v: 0f32 };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -72,7 +74,7 @@ use {
     }
 
     #[test]
-    fn test_golden_double_struct_v2_encode() {
+    fn encode_golden_double_struct() {
         let value = test_conformance::GoldenDoubleStruct { v: 0f64 };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -84,7 +86,7 @@ use {
     }
 
     #[test]
-    fn test_golden_string_struct_v2_encode() {
+    fn encode_golden_string_struct() {
         let value = test_conformance::GoldenStringStruct { v: String::from("abcd") };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -98,7 +100,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_string_struct_non_null_v2_encode() {
+    fn encode_golden_nullable_string_struct_non_null() {
         let value = test_conformance::GoldenNullableStringStruct { v: Some(String::from("abcd")) };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -112,7 +114,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_string_struct_null_v2_encode() {
+    fn encode_golden_nullable_string_struct_null() {
         let value = test_conformance::GoldenNullableStringStruct { v: None };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -125,7 +127,7 @@ use {
     }
 
     #[test]
-    fn test_golden_enum_struct_v2_encode() {
+    fn encode_golden_enum_struct() {
         let value = test_conformance::GoldenEnumStruct { v: test_conformance::GoldenEnum::try_from(1u16).unwrap() };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -137,7 +139,7 @@ use {
     }
 
     #[test]
-    fn test_golden_bits_struct_v2_encode() {
+    fn encode_golden_bits_struct() {
         let value = test_conformance::GoldenBitsStruct { v: test_conformance::GoldenBits::from_bits_retain(1u16) };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -149,7 +151,7 @@ use {
     }
 
     #[test]
-    fn test_golden_table_struct_v2_encode() {
+    fn encode_golden_table_struct() {
         let value = test_conformance::GoldenTableStruct { v: test_conformance::GoldenTable { v: Some(1i16), ..Default::default() } };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -163,7 +165,7 @@ use {
     }
 
     #[test]
-    fn test_golden_union_struct_v2_encode() {
+    fn encode_golden_union_struct() {
         let value = test_conformance::GoldenUnionStruct { v: test_conformance::GoldenUnion::V(1i16) };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -176,7 +178,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_union_struct_non_null_v2_encode() {
+    fn encode_golden_nullable_union_struct_non_null() {
         let value = test_conformance::GoldenNullableUnionStruct { v: Some(Box::new(test_conformance::GoldenUnion::V(1i16))) };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -189,7 +191,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_union_struct_null_v2_encode() {
+    fn encode_golden_nullable_union_struct_null() {
         let value = test_conformance::GoldenNullableUnionStruct { v: None };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -202,7 +204,7 @@ use {
     }
 
     #[test]
-    fn test_golden_byte_array_struct_v2_encode() {
+    fn encode_golden_byte_array_struct() {
         let value = test_conformance::GoldenByteArrayStruct { v: [1u8, 2u8, 3u8, 4u8] };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -214,7 +216,7 @@ use {
     }
 
     #[test]
-    fn test_golden_struct_array_struct_v2_encode() {
+    fn encode_golden_struct_array_struct() {
         let value = test_conformance::GoldenStructArrayStruct { v: [test_conformance::GoldenIntStruct { v: 1i16 }, test_conformance::GoldenIntStruct { v: 2i16 }] };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -226,7 +228,7 @@ use {
     }
 
     #[test]
-    fn test_golden_byte_vector_struct_v2_encode() {
+    fn encode_golden_byte_vector_struct() {
         let value = test_conformance::GoldenByteVectorStruct { v: vec![1u8, 2u8, 3u8, 4u8, 1u8, 2u8, 3u8, 4u8, 1u8, 2u8, 3u8, 4u8] };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -241,7 +243,7 @@ use {
     }
 
     #[test]
-    fn test_golden_byte_nullable_vector_struct_non_null_v2_encode() {
+    fn encode_golden_byte_nullable_vector_struct_non_null() {
         let value = test_conformance::GoldenNullableByteVectorStruct { v: Some(vec![1u8, 2u8, 3u8, 4u8]) };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -255,7 +257,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_byte_vector_struct_null_v2_encode() {
+    fn encode_golden_nullable_byte_vector_struct_null() {
         let value = test_conformance::GoldenNullableByteVectorStruct { v: None };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -268,7 +270,7 @@ use {
     }
 
     #[test]
-    fn test_golden_struct_vector_struct_v2_encode() {
+    fn encode_golden_struct_vector_struct() {
         let value = test_conformance::GoldenStructVectorStruct { v: vec![test_conformance::GoldenIntStruct { v: 1i16 }, test_conformance::GoldenIntStruct { v: 2i16 }] };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -282,7 +284,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_struct_non_null_v2_encode() {
+    fn encode_golden_nullable_struct_non_null() {
         let value = test_conformance::GoldenNullableStruct { v: Some(Box::new(test_conformance::GoldenBoolStruct { v: true })) };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -295,7 +297,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_struct_null_v2_encode() {
+    fn encode_golden_nullable_struct_null() {
         let value = test_conformance::GoldenNullableStruct { v: None };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -307,30 +309,7 @@ use {
     }
 
     #[test]
-    fn test_golden_nullable_handle_struct_non_null_v2_encode() {
-            let handle_defs = create_handles(&[
-// #0
-HandleDef{
-	subtype: HandleSubtype::Event,
-	rights: fidl_next::fuchsia::zx::Rights::from_bits(2147483648).unwrap(),
-},
-]);
-        let value = test_conformance::GoldenNullableHandleStruct { v: Some(copy_handle(&handle_defs[0])) };
-        let mut buffer = Buffer::new();
-        buffer.encode_next(value).unwrap();
-        assert_eq!(&[
-0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
-], buffer.bytes().as_slice());
-        // TODO: support handle dispositions
-        assert_eq!(
-            buffer.handles().iter().map(|h| h.raw_handle()).collect::<Vec<_>>(),
-            &[handle_defs[0].handle,
-]
-        );
-    }
-
-    #[test]
-    fn test_golden_nullable_handle_struct_null_v2_encode() {
+    fn encode_golden_nullable_handle_struct_null() {
         let value = test_conformance::GoldenNullableHandleStruct { v: None };
         let mut buffer = Buffer::new();
         buffer.encode_next(value).unwrap();
@@ -343,64 +322,380 @@ HandleDef{
 
 
 
-    // TODO: golden_bool_struct_v2_decode
+    #[test]
+    fn decode_golden_bool_struct() {
 
-    // TODO: golden_int_struct_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenBoolStruct = recv_buffer.decode::< <test_conformance::GoldenBoolStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenBoolStruct { v: true });
 
-    // TODO: golden_uint_struct_v2_decode
+    }
 
-    // TODO: golden_float_struct_v2_decode
+    #[test]
+    fn decode_golden_int_struct() {
 
-    // TODO: golden_double_struct_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenIntStruct = recv_buffer.decode::< <test_conformance::GoldenIntStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenIntStruct { v: 1i16 });
 
-    // TODO: golden_string_struct_v2_decode
+    }
 
-    // TODO: golden_nullable_string_struct_non_null_v2_decode
+    #[test]
+    fn decode_golden_uint_struct() {
 
-    // TODO: golden_nullable_string_struct_null_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenUintStruct = recv_buffer.decode::< <test_conformance::GoldenUintStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenUintStruct { v: 1u16 });
 
-    // TODO: golden_enum_struct_v2_decode
+    }
 
-    // TODO: golden_bits_struct_v2_decode
+    #[test]
+    fn decode_golden_float_struct() {
 
-    // TODO: golden_table_struct_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenFloatStruct = recv_buffer.decode::< <test_conformance::GoldenFloatStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenFloatStruct { v: 0f32 });
 
-    // TODO: golden_union_struct_v2_decode
+    }
 
-    // TODO: golden_nullable_union_struct_non_null_v2_decode
+    #[test]
+    fn decode_golden_double_struct() {
 
-    // TODO: golden_nullable_union_struct_null_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenDoubleStruct = recv_buffer.decode::< <test_conformance::GoldenDoubleStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenDoubleStruct { v: 0f64 });
 
-    // TODO: golden_byte_array_struct_v2_decode
+    }
 
-    // TODO: golden_struct_array_struct_v2_decode
+    #[test]
+    fn decode_golden_string_struct() {
 
-    // TODO: golden_byte_vector_struct_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x61,0x62,0x63,0x64,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenStringStruct = recv_buffer.decode::< <test_conformance::GoldenStringStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenStringStruct { v: String::from("abcd") });
 
-    // TODO: golden_byte_nullable_vector_struct_non_null_v2_decode
+    }
 
-    // TODO: golden_nullable_byte_vector_struct_null_v2_decode
+    #[test]
+    fn decode_golden_nullable_string_struct_non_null() {
 
-    // TODO: golden_struct_vector_struct_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x61,0x62,0x63,0x64,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableStringStruct = recv_buffer.decode::< <test_conformance::GoldenNullableStringStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableStringStruct { v: Some(String::from("abcd")) });
 
-    // TODO: golden_nullable_struct_non_null_v2_decode
+    }
 
-    // TODO: golden_nullable_struct_null_v2_decode
+    #[test]
+    fn decode_golden_nullable_string_struct_null() {
 
-    // TODO: golden_handle_basic_rights_struct_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableStringStruct = recv_buffer.decode::< <test_conformance::GoldenNullableStringStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableStringStruct { v: None });
 
-    // TODO: golden_nullable_handle_struct_non_null_v2_decode
+    }
 
-    // TODO: golden_nullable_handle_struct_null_v2_decode
+    #[test]
+    fn decode_golden_enum_struct() {
 
-    // TODO: golden_table_unknown_dropped_v2_decode
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenEnumStruct = recv_buffer.decode::< <test_conformance::GoldenEnumStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenEnumStruct { v: test_conformance::GoldenEnum::try_from(1u16).unwrap() });
+
+    }
+
+    #[test]
+    fn decode_golden_bits_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenBitsStruct = recv_buffer.decode::< <test_conformance::GoldenBitsStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenBitsStruct { v: test_conformance::GoldenBits::from_bits_retain(1u16) });
+
+    }
+
+    #[test]
+    fn decode_golden_table_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x01,0x00,0x00,0x00,0x00,0x00,0x01,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenTableStruct = recv_buffer.decode::< <test_conformance::GoldenTableStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenTableStruct { v: test_conformance::GoldenTable { v: Some(1i16), ..Default::default() } });
+
+    }
+
+    #[test]
+    fn decode_golden_union_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0x01,0x00,0x00,0x00,0x00,0x00,0x01,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenUnionStruct = recv_buffer.decode::< <test_conformance::GoldenUnionStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenUnionStruct { v: test_conformance::GoldenUnion::V(1i16) });
+
+    }
+
+    #[test]
+    fn decode_golden_nullable_union_struct_non_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0x01,0x00,0x00,0x00,0x00,0x00,0x01,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableUnionStruct = recv_buffer.decode::< <test_conformance::GoldenNullableUnionStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableUnionStruct { v: Some(Box::new(test_conformance::GoldenUnion::V(1i16))) });
+
+    }
+
+    #[test]
+    fn decode_golden_nullable_union_struct_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableUnionStruct = recv_buffer.decode::< <test_conformance::GoldenNullableUnionStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableUnionStruct { v: None });
+
+    }
+
+    #[test]
+    fn decode_golden_byte_array_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x02,0x03,0x04,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenByteArrayStruct = recv_buffer.decode::< <test_conformance::GoldenByteArrayStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenByteArrayStruct { v: [1u8, 2u8, 3u8, 4u8] });
+
+    }
+
+    #[test]
+    fn decode_golden_struct_array_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x01,0x00,0x02,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenStructArrayStruct = recv_buffer.decode::< <test_conformance::GoldenStructArrayStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenStructArrayStruct { v: [test_conformance::GoldenIntStruct { v: 1i16 }, test_conformance::GoldenIntStruct { v: 2i16 }] });
+
+    }
+
+    #[test]
+    fn decode_golden_byte_vector_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x0c,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x01,0x02,0x03,0x04,0x01,0x02,0x03,0x04,
+0x01,0x02,0x03,0x04,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenByteVectorStruct = recv_buffer.decode::< <test_conformance::GoldenByteVectorStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenByteVectorStruct { v: vec![1u8, 2u8, 3u8, 4u8, 1u8, 2u8, 3u8, 4u8, 1u8, 2u8, 3u8, 4u8] });
+
+    }
+
+    #[test]
+    fn decode_golden_byte_nullable_vector_struct_non_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x01,0x02,0x03,0x04,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableByteVectorStruct = recv_buffer.decode::< <test_conformance::GoldenNullableByteVectorStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableByteVectorStruct { v: Some(vec![1u8, 2u8, 3u8, 4u8]) });
+
+    }
+
+    #[test]
+    fn decode_golden_nullable_byte_vector_struct_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableByteVectorStruct = recv_buffer.decode::< <test_conformance::GoldenNullableByteVectorStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableByteVectorStruct { v: None });
+
+    }
+
+    #[test]
+    fn decode_golden_struct_vector_struct() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x01,0x00,0x02,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenStructVectorStruct = recv_buffer.decode::< <test_conformance::GoldenStructVectorStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenStructVectorStruct { v: vec![test_conformance::GoldenIntStruct { v: 1i16 }, test_conformance::GoldenIntStruct { v: 2i16 }] });
+
+    }
+
+    #[test]
+    fn decode_golden_nullable_struct_non_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableStruct = recv_buffer.decode::< <test_conformance::GoldenNullableStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableStruct { v: Some(Box::new(test_conformance::GoldenBoolStruct { v: true })) });
+
+    }
+
+    #[test]
+    fn decode_golden_nullable_struct_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableStruct = recv_buffer.decode::< <test_conformance::GoldenNullableStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableStruct { v: None });
+
+    }
+
+    #[test]
+    fn decode_golden_handle_basic_rights_struct() {
+            let handle_defs = create_handles(&[
+// #0
+HandleDef{
+	subtype: HandleSubtype::Event,
+	rights: fidl_next::fuchsia::zx::Rights::from_bits(53251).unwrap(),
+},
+]);
+            let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
+            #[allow(unused)]
+            let mut handle_infos = select_handle_infos(&handle_defs, &[
+0,]);
+
+        let buffer = Buffer::from_raw_bytes(vec![
+unsafe{Handle::from_raw(0)},], &[
+0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenHandleBasicRightsStruct = recv_buffer.decode::< <test_conformance::GoldenHandleBasicRightsStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        
+    }
+
+    #[test]
+    fn decode_golden_nullable_handle_struct_null() {
+
+        let buffer = Buffer::from_raw_bytes(vec![
+], &[
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableHandleStruct = recv_buffer.decode::< <test_conformance::GoldenNullableHandleStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenNullableHandleStruct { v: None });
+
+    }
+
+    #[test]
+    fn decode_golden_table_unknown_dropped() {
+            let handle_defs = create_handles(&[
+// #0
+HandleDef{
+	subtype: HandleSubtype::Event,
+	rights: fidl_next::fuchsia::zx::Rights::from_bits(2147483648).unwrap(),
+},
+]);
+            let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
+            #[allow(unused)]
+            let mut handle_infos = select_handle_infos(&handle_defs, &[
+0,]);
+
+        let buffer = Buffer::from_raw_bytes(vec![
+unsafe{Handle::from_raw(0)},], &[
+0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0xff,0xff,0xff,0xff,0x01,0x00,0x01,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenTableStruct = recv_buffer.decode::< <test_conformance::GoldenTableStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value, test_conformance::GoldenTableStruct { v: test_conformance::GoldenTable { ..Default::default() } });
+
+    }
 
 
 
-// TODO: golden_string_with_max_size2_v2_encode_failure
+// TODO: golden_string_with_max_size2_encode_failure
 
 
 
-// TODO: golden_string_struct_null_body_v2_decode_failure
+// TODO: golden_string_struct_null_body_decode_failure
 
 

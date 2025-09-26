@@ -57,6 +57,22 @@ impl Buffer {
     pub fn bytes(&self) -> Vec<u8> {
         self.chunks.iter().flat_map(|chunk| chunk.to_le_bytes()).collect()
     }
+
+    /// Make a buffer out of handles and chunks.
+    pub fn from_raw(handles: Vec<Handle>, chunks: Vec<Chunk>) -> Self {
+        Self { handles, chunks }
+    }
+
+    /// Make a buffer out of handles and bytes. The bytes will be copied.
+    pub fn from_raw_bytes(handles: Vec<Handle>, bytes: impl AsRef<[u8]>) -> Self {
+        let bytes = bytes.as_ref();
+        assert!(bytes.len() % CHUNK_SIZE == 0);
+        let chunks = bytes
+            .chunks_exact(CHUNK_SIZE)
+            .map(|c| fidl_next_codec::WireU64(u64::from_le_bytes(c.try_into().unwrap())))
+            .collect();
+        Self::from_raw(handles, chunks)
+    }
 }
 
 impl InternalHandleEncoder for Buffer {
@@ -119,6 +135,13 @@ pub struct RecvBuffer {
     buffer: Buffer,
     chunks_taken: usize,
     handles_taken: usize,
+}
+
+impl RecvBuffer {
+    /// Create a new receive buffer from a buffer.
+    pub fn new(buffer: Buffer) -> Self {
+        Self { buffer, chunks_taken: 0, handles_taken: 0 }
+    }
 }
 
 unsafe impl Decoder for RecvBuffer {

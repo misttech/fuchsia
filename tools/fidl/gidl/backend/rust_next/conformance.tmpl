@@ -12,7 +12,8 @@ use {
     assert_matches::assert_matches,
     fidl_next::{Chunk, Decode, DecoderExt as _, Encode, EncoderExt as _, WireU64, ClientEnd, ServerEnd},
     fidl_next::fuchsia::channel::Buffer,
-    fidl_next::fuchsia::zx::AsHandleRef as _,
+    fidl_next::fuchsia::channel::RecvBuffer,
+    fidl_next::fuchsia::zx as zx,
     fidl_next_test_conformance as test_conformance,
     zerocopy::IntoBytes,
     zx_status::Status,
@@ -23,12 +24,13 @@ use {
         select_raw_handle_infos, to_zx_handle_disposition_t,
     },
     std::convert::TryFrom,
+    zx::{Handle, AsHandleRef as _},
 };
 
 
 {{ range .EncodeSuccessCases }}
     #[test]
-    fn test_{{ .Name }}_encode() {
+    fn encode_{{ .Name }}() {
         {{- if .HandleDefs }}
             let handle_defs = create_handles(&{{ .HandleDefs }});
         {{- end }}
@@ -37,10 +39,10 @@ use {
         buffer.encode_next(value).unwrap();
         assert_eq!(&{{ .Bytes }}, buffer.bytes().as_slice());
         // TODO: support handle dispositions
-        {{-  if .Handles }}
+        {{-  if .RawHandles }}
         assert_eq!(
             buffer.handles().iter().map(|h| h.raw_handle()).collect::<Vec<_>>(),
-            &{{ .Handles }}
+            &{{ .RawHandles }}
         );
         {{- else }}
         assert_eq!(buffer.handles(), &[]);
@@ -49,7 +51,20 @@ use {
 {{ end }}
 
 {{ range .DecodeSuccessCases }}
-    // TODO: {{ .Name }}_decode
+    #[test]
+    fn decode_{{ .Name }}() {
+        {{- if .HandleDefs }}
+            let handle_defs = create_handles(&{{ .HandleDefs }});
+            let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
+            #[allow(unused)]
+            let mut handle_infos = select_handle_infos(&handle_defs, &{{ .Handles }});
+        {{- end }}
+
+        let buffer = Buffer::from_raw_bytes(vec!{{ .HandleValues }}, &{{ .Bytes }});
+        let recv_buffer = RecvBuffer::new(buffer);
+        let {{ .ValueVar }}: {{ .ValueType }} = recv_buffer.decode::< <{{ .ValueType }} as fidl_next::Encodable>::Encoded>().unwrap().take();
+        {{ .EqualityCheck }}
+    }
 {{ end }}
 
 {{ range .EncodeFailureCases }}

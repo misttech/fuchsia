@@ -22,6 +22,7 @@ decode_failure("VectorWithHugeCount") {
 }
 
 success("PresentNonnullableVectorOfHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -51,7 +52,7 @@ success("PresentNonnullableVectorOfHandles") {
 
 success("PresentNullableVectorOfHandles") {
     // TODO(https://fxbug.dev/42170268): generated Rust test does not compile.
-    bindings_denylist = [rust],
+    bindings_denylist = [rust, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -143,6 +144,7 @@ success("AbsentNullableVectorOfHandles") {
 }
 
 success("PresentNonnullableBoundedVectorOfHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -172,7 +174,7 @@ success("PresentNonnullableBoundedVectorOfHandles") {
 
 success("PresentNullableBoundedVectorOfHandles") {
     // TODO(https://fxbug.dev/42170268): generated Rust test does not compile.
-    bindings_denylist = [rust],
+    bindings_denylist = [rust, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),

@@ -32,13 +32,13 @@ type conformanceTmplInput struct {
 }
 
 type encodeSuccessCase struct {
-	Name, HandleDefs, ValueType, Value, Bytes, Handles, HandleDispositions string
-	IsResource                                                             bool
+	Name, HandleDefs, ValueType, Value, Bytes, RawHandles, HandleDispositions string
+	IsResource                                                                bool
 }
 
 type decodeSuccessCase struct {
-	Name, HandleDefs, ValueType, ValueVar, Bytes, Handles, UnusedHandles, EqualityCheck string
-	IsResource                                                                          bool
+	Name, HandleDefs, ValueType, ValueVar, Bytes, Handles, HandleValues, UnusedHandles, EqualityCheck, WireValueType string
+	IsResource                                                                                                       bool
 }
 
 type encodeFailureCase struct {
@@ -105,7 +105,7 @@ func encodeSuccessCases(gidlEncodeSuccesses []ir.EncodeSuccess, schema mixer.Sch
 				if encodeSuccess.CheckHandleRights {
 					newCase.HandleDispositions = buildRawHandleDispositions(encoding.HandleDispositions)
 				} else {
-					newCase.Handles = buildRawHandles(encoding.HandleDispositions)
+					newCase.RawHandles = buildRawHandles(encoding.HandleDispositions)
 				}
 			}
 			encodeSuccessCases = append(encodeSuccessCases, newCase)
@@ -122,7 +122,8 @@ func decodeSuccessCases(gidlDecodeSuccesses []ir.DecodeSuccess, schema mixer.Sch
 			return nil, fmt.Errorf("decode success %s: %s", decodeSuccess.Name, err)
 		}
 		valueType := declName(decl)
-		valueVar := "value"
+		wireValueType := wireDeclName(decl)
+		valueVar := "_value"
 		equalityCheck := buildEqualityCheck(valueVar, decodeSuccess.Value, decl)
 		for _, encoding := range decodeSuccess.Encodings {
 			if !wireFormatSupported(encoding.WireFormat) {
@@ -136,9 +137,11 @@ func decodeSuccessCases(gidlDecodeSuccesses []ir.DecodeSuccess, schema mixer.Sch
 				Name:          testCaseName(decodeSuccess.Name, encoding.WireFormat),
 				HandleDefs:    buildHandleDefs(decodeSuccess.HandleDefs),
 				ValueType:     valueType,
+				WireValueType: wireValueType,
 				ValueVar:      valueVar,
 				Bytes:         rust.BuildBytes(encoding.Bytes),
 				Handles:       buildHandles(encoding.Handles),
+				HandleValues:  buildHandleValues(encoding.Handles),
 				UnusedHandles: unusedHandles,
 				EqualityCheck: equalityCheck,
 				IsResource:    decl.IsResourceType(),
@@ -206,7 +209,10 @@ func decodeFailureCases(gidlDecodeFailures []ir.DecodeFailure, schema mixer.Sche
 }
 
 func testCaseName(baseName string, wireFormat ir.WireFormat) string {
-	return fidlgen.ToSnakeCase(fmt.Sprintf("%s_%s", baseName, wireFormat))
+	if wireFormat != ir.V2WireFormat {
+		panic("Only V2 wire format is supported")
+	}
+	return fidlgen.ToSnakeCase(baseName)
 }
 
 var supportedWireFormats = []ir.WireFormat{

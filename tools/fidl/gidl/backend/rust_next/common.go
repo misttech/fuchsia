@@ -48,6 +48,19 @@ func buildHandles(handles []ir.Handle) string {
 	return builder.String()
 }
 
+func buildHandleValues(handles []ir.Handle) string {
+	var builder strings.Builder
+	builder.WriteString("[\n")
+	for i, h := range handles {
+		builder.WriteString(fmt.Sprintf("unsafe{Handle::from_raw(%d)},", h))
+		if i%8 == 7 {
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("]")
+	return builder.String()
+}
+
 func buildRawHandleDispositions(handleDispositions []ir.HandleDisposition) string {
 	var builder strings.Builder
 	builder.WriteString("[")
@@ -160,15 +173,22 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 }
 
 func declName(decl mixer.NamedDeclaration) string {
-	return identifierName(decl.Name())
+	return identifierName(decl.Name(), false)
+}
+func wireDeclName(decl mixer.NamedDeclaration) string {
+	return identifierName(decl.Name(), true)
 }
 
 // TODO(https://fxbug.dev/42115264): Move into a common library outside GIDL.
-func identifierName(qualifiedName string) string {
+func identifierName(qualifiedName string, wire bool) string {
 	parts := strings.Split(qualifiedName, "/")
 	library_parts := strings.Split(parts[0], ".")
-	return fmt.Sprintf("%s::%s", strings.Join(library_parts, "_"),
-		fidlgen.ToUpperCamelCase(parts[1]))
+	library_name := strings.Join(library_parts, "_")
+	natural_name := fidlgen.ToUpperCamelCase(parts[1])
+	if wire {
+		return fmt.Sprintf("%s::Wire%s", library_name, natural_name)
+	}
+	return fmt.Sprintf("%s::%s", library_name, natural_name)
 }
 
 func primitiveTypeName(subtype fidlgen.PrimitiveSubtype) string {

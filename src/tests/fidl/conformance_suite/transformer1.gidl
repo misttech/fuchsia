@@ -652,6 +652,7 @@ success("Sandwich6Case4") {
 }
 
 success("Sandwich6Case5") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = channel(),

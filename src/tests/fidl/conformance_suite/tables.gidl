@@ -23,6 +23,7 @@ success("TableFieldInlined") {
 // Tests a table whose handle field is inlined into the envelope in the wire
 // format.
 success("TableFieldInlinedHandle") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
     },
@@ -225,6 +226,7 @@ decode_failure("TableFieldOutOfLineBadOutlinedMarker") {
 success("TableFieldUnknownInlinedStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownInlinedDropped.
     bindings_allowlist = [dart, go],
+    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{
             1: {
@@ -245,7 +247,7 @@ success("TableFieldUnknownInlinedStored") {
 // Tests a table in which a value is inlined into an unknown field.
 decode_success("TableFieldUnknownInlinedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart, go, rust_next],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{},
     },
@@ -264,6 +266,7 @@ encode_success("TableFieldUnknownInlinedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     // TODO(https://fxbug.dev/42067496): Implement the decode function in all backends.
     bindings_allowlist = [rust],
+    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: decode({
             type = TableFieldUnknown,
@@ -288,6 +291,7 @@ encode_success("TableFieldUnknownInlinedDropped") {
 success("TableFieldUnknownInlinedHandleStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownInlinedHandleDropped.
     bindings_allowlist = [dart, go],
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
     },
@@ -315,7 +319,7 @@ success("TableFieldUnknownInlinedHandleStored") {
 // Tests a table in which a handle value is inlined into an unknown field.
 decode_success("TableFieldUnknownInlinedHandleDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart, go, rust_next],
     handle_defs = {
         #0 = channel(),
     },
@@ -340,6 +344,7 @@ encode_success("TableFieldUnknownInlinedHandleDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     // TODO(https://fxbug.dev/42067496): Implement the decode function in all backends.
     bindings_allowlist = [rust],
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
     },
@@ -370,6 +375,7 @@ encode_success("TableFieldUnknownInlinedHandleDropped") {
 success("TableFieldUnknownOutOfLineStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownOutOfLineDropped.
     bindings_allowlist = [dart, go],
+    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{
             1: {
@@ -392,7 +398,7 @@ success("TableFieldUnknownOutOfLineStored") {
 // Tests a table in which a value is stored out of line in an unknown field.
 decode_success("TableFieldUnknownOutOfLineDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart, go, rust_next],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{},
     },
@@ -412,6 +418,7 @@ encode_success("TableFieldUnknownOutOfLineDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     // TODO(https://fxbug.dev/42067496): Implement the decode function in all backends.
     bindings_allowlist = [rust],
+    bindings_denylist = [rust_next],
     value = TableFieldUnknownStruct{
         t: decode({
             type = TableFieldUnknown,

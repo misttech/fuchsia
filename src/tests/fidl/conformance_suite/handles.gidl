@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 success("SingleHandle") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -39,6 +40,7 @@ decode_failure("AbsentNonOptionalHandle") {
 }
 
 success("SingleOptionalHandlePresent") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -93,6 +95,7 @@ decode_failure("SingleHandleInvalidPresenceIndicator") {
 }
 
 success("ArrayOfHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -114,6 +117,7 @@ success("ArrayOfHandles") {
 }
 
 success("ArrayOfOptionalHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -133,6 +137,7 @@ success("ArrayOfOptionalHandles") {
 }
 
 success("VectorOfHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -155,6 +160,7 @@ success("VectorOfHandles") {
 }
 
 success("BoxOfSingleHandlePresentBox") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -186,6 +192,7 @@ success("BoxOfSingleHandleAbsentBox") {
 }
 
 success("BoxOfSingleOptionalHandlePresentBoxPresentHandle") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -229,6 +236,7 @@ success("BoxOfSingleOptionalHandleAbsentBox") {
 }
 
 success("StructOfOptionalUnionOfHandlePresent") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -350,6 +358,7 @@ encode_failure("UnrelatedConstraintErrorBeforeHandle") {
 }
 
 success("VectorOfOptionalHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -370,6 +379,7 @@ success("VectorOfOptionalHandles") {
 }
 
 success("MultipleHandleSubtypes") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
         #1 = event(),
@@ -424,6 +434,7 @@ decode_failure("TooFewHandles") {
 
 // Currently channels max out at 64-handles.
 success("ChannelMaxHandles") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(), #1 = event(), #2 = event(), #3 = event(),
         #4 = event(), #5 = event(), #6 = event(), #7 = event(),
@@ -492,7 +503,7 @@ success("ChannelMaxHandles") {
 // There should be support for at least 64 handles in unknown fields.
 decode_success("ChannelMaxUnknownHandlesDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart, go, rust_next],
     handle_defs = {
         #0 = event(), #1 = event(), #2 = event(), #3 = event(),
         #4 = event(), #5 = event(), #6 = event(), #7 = event(),

@@ -70,7 +70,16 @@ func (b *equalityCheckBuilder) visit(expr string, value ir.Value, decl mixer.Dec
 	case ir.RawFloat:
 		b.write("assert_eq!(%s.to_bits(), 0x%x)", expr, value)
 	case ir.Handle:
-		b.write("assert_eq!(%s.basic_info().unwrap().koid.raw_koid(), _handle_koids[%d]);", expr, value)
+		switch decl := decl.(type) {
+		case *mixer.HandleDecl:
+			b.write("assert_eq!(%s.basic_info().unwrap().koid.raw_koid(), _handle_koids[%d]);", expr, value)
+		case *mixer.ClientEndDecl, *mixer.ServerEndDecl:
+			b.write("assert_eq!(%s.as_ref().into_untyped().basic_info().unwrap().koid.raw_koid(), _handle_koids[%d]);", expr, value)
+		default:
+			panic(fmt.Sprintf("unhandled decl type: %T", decl))
+		}
+	case ir.AnyHandle:
+		// do nothing
 	case ir.RestrictedHandle:
 		b.write(`
 match %s.basic_info() {
@@ -95,7 +104,7 @@ match %s.basic_info() {
 			}
 		case *mixer.TableDecl:
 			for _, field := range value.Fields {
-				b.visit(fmt.Sprintf("%s.%s.as_ref().unwrap()", expr, field.Key.Name), field.Value, decl.Field(field.Key.Name))
+				b.visit(fmt.Sprintf("%s.%s.unwrap()", expr, field.Key.Name), field.Value, decl.Field(field.Key.Name))
 			}
 		case *mixer.UnionDecl:
 			field := value.Fields[0]
@@ -108,7 +117,7 @@ match %s.basic_info() {
 				b.write("assert_eq!(%s.ordinal(), %d);", expr, field.Key.UnknownOrdinal)
 			} else {
 				b.write(`
-	match &%s {
+	match %s {
 		%s::%s(x) => {
 	`, expr, declName(decl), fidlgen.ToUpperCamelCase(field.Key.Name))
 				b.visit("x", field.Value, decl.Field(field.Key.Name))
@@ -129,11 +138,11 @@ match %s.basic_info() {
 func objectTypeConst(objectType fidlgen.ObjectType) string {
 	switch objectType {
 	case fidlgen.ObjectTypeEvent:
-		return "fidl::ObjectType::EVENT"
+		return "zx::ObjectType::EVENT"
 	case fidlgen.ObjectTypeChannel:
-		return "fidl::ObjectType::CHANNEL"
+		return "zx::ObjectType::CHANNEL"
 	case fidlgen.ObjectTypeSocket:
-		return "fidl::ObjectType::SOCKET"
+		return "zx::ObjectType::SOCKET"
 	default:
 		panic(fmt.Sprintf("unsupported object type: %d", objectType))
 	}
