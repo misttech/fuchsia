@@ -7,6 +7,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/power/state_recorder/cpp/state_recorder.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
@@ -15,8 +16,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-
-#include "src/power/observability/cpp/state_recorder.h"
 
 namespace {
 

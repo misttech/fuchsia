@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_POWER_OBSERVABILITY_CPP_STATE_RECORDER_H_
-#define SRC_POWER_OBSERVABILITY_CPP_STATE_RECORDER_H_
+#ifndef LIB_POWER_STATE_RECORDER_CPP_STATE_RECORDER_H_
+#define LIB_POWER_STATE_RECORDER_CPP_STATE_RECORDER_H_
 
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/bounded_list_node.h>
@@ -26,7 +26,8 @@
 
 namespace power_observability {
 
-namespace {
+// Using an anonymous namespace here results in an unneeded-internal-declaration warning.
+namespace internal {
 
 zx_koid_t GetPid() {
   static const zx_koid_t pid = []() {
@@ -42,7 +43,7 @@ zx_koid_t GetPid() {
   return pid;
 }
 
-}  // namespace
+}  // namespace internal
 
 // Manages state associated with all StateRecorder instances linked to a particular inspector.
 //
@@ -155,8 +156,8 @@ class StateRecorder final {
         root_node_(std::move(root_node)),
         transition_history_(root_node_.CreateChild("transition_history"), capacity),
         trace_id_(TRACE_NONCE()),
-        trace_name_(
-            std::make_unique<std::string>(std::format("{} {} {}", name_, GetPid(), trace_id_))),
+        trace_name_(std::make_unique<std::string>(
+            std::format("{} {} {}", name_, internal::GetPid(), trace_id_))),
         trace_name_ref_(trace_make_inline_string_ref(trace_name_->c_str(), trace_name_->length())),
         manager_(&manager) {
     root_node_.RecordChild("metadata", [&](inspect::Node& metadata_node) {
@@ -282,4 +283,4 @@ void StateRecorder<T>::RecordTransition(T state_enum) {
 
 }  // namespace power_observability
 
-#endif  // SRC_POWER_OBSERVABILITY_CPP_STATE_RECORDER_H_
+#endif  // LIB_POWER_STATE_RECORDER_CPP_STATE_RECORDER_H_

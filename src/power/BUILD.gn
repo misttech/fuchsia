@@ -8,7 +8,6 @@ group("power") {
     ":battery",
     ":tests",
     "cpu-manager",
-    "observability",
     "power-manager",
     "shutdown-shim",
   ]
@@ -51,7 +50,6 @@ group("tests") {
     "cpu-manager:tests",
     "fidl/testing",
     "metrics-logger:tests",
-    "observability:tests",
     "power-manager:tests",
     "shutdown-shim:tests",
     "system-activity-governor:tests",

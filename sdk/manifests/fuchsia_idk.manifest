@@ -116,6 +116,7 @@ cc_source_library://pkg/memory_barriers (unstable)
 cc_source_library://pkg/mmio
 cc_source_library://pkg/mmio-ptr
 cc_source_library://pkg/mock_mmio_cpp
+cc_source_library://pkg/power_state_recorder_cpp (unstable)
 cc_source_library://pkg/scenic_cpp
 cc_source_library://pkg/scenic_cpp_testing
 cc_source_library://pkg/stdcompat

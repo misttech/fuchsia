@@ -821,6 +821,7 @@ sdk_molecule("core_cc_source_libraries") {
     "//sdk/lib/magma_common:magma_common_sdk",
     "//sdk/lib/media/cpp:cpp_sdk",
     "//sdk/lib/memory_barriers:memory_barriers_sdk",
+    "//sdk/lib/power/state_recorder/cpp:cpp_sdk",
     "//sdk/lib/stdcompat:stdcompat_sdk",
     "//sdk/lib/sys/component/cpp/testing:cpp_library_sdk",
     "//sdk/lib/sys/cpp:cpp_sdk",

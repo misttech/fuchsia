@@ -4,7 +4,7 @@
 
 import("//build/components.gni")
 
-fuchsia_unittest_package("power_observability_state_recorder_cpp_test") {
+fuchsia_unittest_package("power_state_recorder_cpp_test") {
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -19,14 +19,14 @@ executable("state_recorder_test") {
   deps = [
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/inspect/testing/cpp",
+    "//sdk/lib/power/state_recorder/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
-    "//src/power/observability/cpp:state_recorder",
     "//third_party/googletest:gtest",
   ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":power_observability_state_recorder_cpp_test" ]
+  deps = [ ":power_state_recorder_cpp_test" ]
 }

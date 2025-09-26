@@ -9,6 +9,7 @@ rustc_binary("bin") {
   name = "state_recorder_rust_example"
   edition = "2021"
   deps = [
+    "//sdk/lib/power/state_recorder/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia",
@@ -16,7 +17,6 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-component",
     "//src/lib/trace/rust:trace",
     "//src/lib/trace/rust:trace-provider",
-    "//src/power/observability/rust:state_recorder",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",

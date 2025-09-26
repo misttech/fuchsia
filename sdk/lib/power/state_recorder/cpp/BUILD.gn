@@ -3,8 +3,14 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/cpp/sdk_source_set.gni")
 
-source_set("state_recorder") {
+sdk_source_set("cpp") {
+  category = "partner"
+  stable = false
+  sdk_name = "power_state_recorder_cpp"
+  include_base = "//sdk"
+
   sources = [ "state_recorder.h" ]
 
   public_deps = [

@@ -11,9 +11,9 @@ executable("bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/inspect/component/cpp",
+    "//sdk/lib/power/state_recorder/cpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//src/power/observability/cpp:state_recorder",
     "//zircon/system/ulib/trace-provider",
   ]
 }

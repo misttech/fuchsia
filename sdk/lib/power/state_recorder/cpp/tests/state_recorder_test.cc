@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/power/observability/cpp/state_recorder.h"
+#include "lib/power/state_recorder/cpp/state_recorder.h"
 
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/testing/cpp/inspect.h>
