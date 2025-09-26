@@ -92,7 +92,6 @@ group("bootfs-tests") {
     "//zircon/system/utest/psutils:ps-bootfs-test",
     "//zircon/system/utest/race-tests:race-tests-bootfs-test",
     "//zircon/system/utest/runtests-utils:runtests-utils-bootfs-test",
-    "//zircon/system/utest/svchost:svchost-bootfs-test",
     "//zircon/system/utest/task-utils:task-utils-bootfs-test",
     "//zircon/system/utest/trace:trace-bootfs-test",
     "//zircon/system/utest/utc-procargs:utc-procargs-bootfs-test",
