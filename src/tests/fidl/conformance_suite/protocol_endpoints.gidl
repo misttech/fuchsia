@@ -4,7 +4,7 @@
 
 encode_success("EncodeStructOfEndpoints_ExpectedRights") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     handle_defs = {
         #0 = channel(rights: channel_default),
         #1 = channel(rights: channel_default),
@@ -37,7 +37,7 @@ encode_success("EncodeStructOfEndpoints_ExpectedRights") {
 
 encode_success("EncodeStructOfEndpoints_TypeAndRightsComeFromFIDL") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     // These types and rights should be ignored by the encoder.
     // The output types and rights metadata should come from FIDL schema.
     handle_defs = {

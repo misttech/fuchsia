@@ -291,6 +291,7 @@ success("GoldenNullableStructNull") {
 }
 
 encode_success("GoldenHandleBasicRightsStruct") {
+    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },

@@ -27,7 +27,7 @@ func buildHandleDefs(defs []ir.HandleDef) string {
 			`// #%d
 HandleDef{
 	subtype: HandleSubtype::%s,
-	rights: Rights::from_bits(%d).unwrap(),
+	rights: fidl_next::fuchsia::zx::Rights::from_bits(%d).unwrap(),
 },
 `, i, handleTypeName(d.Subtype), d.Rights))
 	}
@@ -118,6 +118,16 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 		return wrapNullable(decl, expr)
 	case ir.Handle:
 		expr := buildHandleValue(value)
+		switch decl := decl.(type) {
+		case *mixer.HandleDecl:
+			// Do nothing
+		case *mixer.ClientEndDecl:
+			expr = fmt.Sprintf("ClientEnd::from_untyped(%s)", expr)
+		case *mixer.ServerEndDecl:
+			expr = fmt.Sprintf("ServerEnd::from_untyped(%s)", expr)
+		default:
+			panic(fmt.Sprintf("unexpected decl %v", decl))
+		}
 		return wrapNullable(decl, expr)
 	case ir.Record:
 		switch decl := decl.(type) {

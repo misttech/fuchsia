@@ -10,8 +10,9 @@
 
 use {
     assert_matches::assert_matches,
-    fidl_next::{Chunk, Decode, DecoderExt as _, Encode, EncoderExt as _, WireU64},
+    fidl_next::{Chunk, Decode, DecoderExt as _, Encode, EncoderExt as _, WireU64, ClientEnd, ServerEnd},
     fidl_next::fuchsia::channel::Buffer,
+    fidl_next::fuchsia::zx::AsHandleRef as _,
     fidl_next_test_conformance as test_conformance,
     zerocopy::IntoBytes,
     zx_status::Status,
@@ -26,22 +27,25 @@ use {
 
 
 {{ range .EncodeSuccessCases }}
-    {{ if not .IsResource }}
-        #[test]
-        fn test_{{ .Name }}_encode() {
-            {{- if .HandleDefs }}
-                let handle_defs = create_handles(&{{ .HandleDefs }});
-            {{- end }}
-            let value = {{ .Value }};
-            let mut buffer = Buffer::new();
-            buffer.encode_next(&value).unwrap();
-            assert_eq!(&{{ .Bytes }}, buffer.bytes().as_slice());
-            // TODO: check handles
-            assert_eq!(buffer.handles(), &[]);
-        }
-    {{ else }}
-        // TODO: {{ .Name }}_encode
-    {{ end }}
+    #[test]
+    fn test_{{ .Name }}_encode() {
+        {{- if .HandleDefs }}
+            let handle_defs = create_handles(&{{ .HandleDefs }});
+        {{- end }}
+        let value = {{ .Value }};
+        let mut buffer = Buffer::new();
+        buffer.encode_next(value).unwrap();
+        assert_eq!(&{{ .Bytes }}, buffer.bytes().as_slice());
+        // TODO: support handle dispositions
+        {{-  if .Handles }}
+        assert_eq!(
+            buffer.handles().iter().map(|h| h.raw_handle()).collect::<Vec<_>>(),
+            &{{ .Handles }}
+        );
+        {{- else }}
+        assert_eq!(buffer.handles(), &[]);
+        {{- end }}
+    }
 {{ end }}
 
 {{ range .DecodeSuccessCases }}
