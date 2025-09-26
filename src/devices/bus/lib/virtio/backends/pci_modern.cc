@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/virtio/backends/pci.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>

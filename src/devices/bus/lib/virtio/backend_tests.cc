@@ -9,8 +9,8 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/debug.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fake-bti/bti.h>
-#include <lib/mmio/mmio.h>
 #include <lib/sync/completion.h>
 #include <lib/virtio/backends/pci.h>
 #include <lib/virtio/driver_utils_dfv1.h>

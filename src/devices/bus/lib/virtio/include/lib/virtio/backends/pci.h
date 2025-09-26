@@ -6,7 +6,7 @@
 #define SRC_DEVICES_BUS_LIB_VIRTIO_INCLUDE_LIB_VIRTIO_BACKENDS_PCI_H_
 
 #include <fidl/fuchsia.hardware.pci/cpp/fidl.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/virtio/backends/backend.h>
 #include <lib/zx/port.h>
 #include <zircon/compiler.h>
