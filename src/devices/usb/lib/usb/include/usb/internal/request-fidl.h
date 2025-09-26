@@ -469,9 +469,6 @@ class FidlRequest {
 template <typename RequestType>
 class FidlRequestPool {
  public:
-  // When destructing, all of our requests should be sitting in the free list.
-  ~FidlRequestPool() { ZX_DEBUG_ASSERT(free_reqs_.size() == size_); }
-
   // Add: called when adding a new request to the pool.
   void Add(RequestType&& request) {
     std::lock_guard<std::mutex> _(mutex_);

@@ -37,7 +37,13 @@ EndpointClientBase::~EndpointClientBase() {
     }
   }
 
-  ZX_DEBUG_ASSERT(vmo_mapped_addrs_.empty());
+  // Unmap all remaining buffers. These entries should only exist due to outstanding
+  // usb requests that we will no longer need to access after this endpoint client is
+  // destructed anyways.
+  std::map vmo_mapped_addrs = std::move(vmo_mapped_addrs_);
+  for (auto& [_, mapped] : vmo_mapped_addrs) {
+    zx::vmar::root_self()->unmap(mapped.addr, mapped.size);
+  }
 }
 
 zx_status_t EndpointClientBase::Unmap(const fuchsia_hardware_usb_request::BufferRegion& buffer) {
