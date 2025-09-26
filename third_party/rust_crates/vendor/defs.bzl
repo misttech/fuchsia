@@ -544,7 +544,7 @@ _NORMAL_DEPENDENCIES = {
             "der": Label("//third_party/rust_crates/vendor/der-0.7.9:der"),
             "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.1:euclid"),
             "flagset": Label("//third_party/rust_crates/vendor/flagset-0.4.7:flagset"),
-            "getopts": Label("//third_party/rust_crates/vendor/getopts-0.2.18:getopts"),
+            "getopts": Label("//third_party/rust_crates/vendor/getopts-0.2.24:getopts"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.24.2:hyper_rustls"),
             "openat": Label("//third_party/rust_crates/vendor/openat-0.1.21:openat"),
             "openssl": Label("//third_party/rust_crates/vendor/openssl-0.10.71:openssl"),

@@ -401,7 +401,7 @@ group("futures-util") {
 
 if (current_os == "fuchsia") {
   group("getopts") {
-    public_deps = [ ":getopts-v0_2_18" ]
+    public_deps = [ ":getopts-v0_2_24" ]
   }
 }
 
@@ -7638,37 +7638,39 @@ rustc_library("generic-array-v0_14_7") {
   applicable_licenses = [ ":generic-array-v0_14_7.license" ]
 }
 
-license("getopts-v0_2_18.license") {
+license("getopts-v0_2_24.license") {
   public_package_name = "getopts"
   license_files = [
-    "//third_party/rust_crates/vendor/getopts-0.2.18/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/getopts-0.2.18/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/getopts-0.2.24/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/getopts-0.2.24/LICENSE-MIT",
   ]
 }
 
-rustc_library("getopts-v0_2_18") {
+rustc_library("getopts-v0_2_24") {
   crate_name = "getopts"
-  source_root = "//third_party/rust_crates/vendor/getopts-0.2.18/src/lib.rs"
-  output_name = "getopts-ee306262a9b3a5b0"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/getopts-0.2.24/src/lib.rs"
+  output_name = "getopts-4646984de73345f3"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":unicode-width-v0_1_14" ]
+  deps += [ ":unicode-width-v0_2_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ee306262a9b3a5b0",
-    "-Cextra-filename=-ee306262a9b3a5b0",
+    "-Cmetadata=4646984de73345f3",
+    "-Cextra-filename=-4646984de73345f3",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"unicode\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":getopts-v0_2_18.license" ]
+  applicable_licenses = [ ":getopts-v0_2_24.license" ]
 }
 
 license("getrandom-v0_2_10.license") {
@@ -13497,7 +13499,7 @@ rustc_library("pulldown-cmark-v0_9_3") {
   deps = []
   deps += [ ":memchr-v2_7_4" ]
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":getopts-v0_2_18" ]
+  deps += [ ":getopts-v0_2_24" ]
   deps += [ ":serde-v1_0_204" ]
   deps += [ ":unicase-v2_8_1" ]
 

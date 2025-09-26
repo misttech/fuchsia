@@ -1135,14 +1135,14 @@ alias(
 )
 
 alias(
-    name = "getopts-0.2.18",
-    actual = "//third_party/rust_crates/vendor/getopts-0.2.18:getopts",
+    name = "getopts-0.2.24",
+    actual = "//third_party/rust_crates/vendor/getopts-0.2.24:getopts",
     tags = ["manual"],
 )
 
 alias(
     name = "getopts",
-    actual = "//third_party/rust_crates/vendor/getopts-0.2.18:getopts",
+    actual = "//third_party/rust_crates/vendor/getopts-0.2.24:getopts",
     tags = ["manual"],
 )
 
