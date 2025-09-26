@@ -259,6 +259,7 @@ success("ArrayStruct") {
 }
 
 success("TransformerEmptyStruct") {
+    bindings_denylist = [rust_next],
     value = TransformerEmptyStruct{},
     bytes = {
         v2 = [
@@ -927,6 +928,7 @@ success("Regression9Response") {
 }
 
 success("Sandwich4Align8") {
+    bindings_denylist = [rust_next],
     value = Sandwich4Align8{
         sandwich4: Sandwich4{
             before: 0x04030201,
@@ -975,6 +977,7 @@ success("Sandwich4Align8") {
 }
 
 success("Sandwich4Align8WithPointer") {
+    bindings_denylist = [rust_next],
     value = Sandwich4Align8WithPointer{
         sandwich4: Sandwich4{
             before: 0x04030201,
@@ -1394,6 +1397,7 @@ success("CompatTable") {
 }
 
 success("MixedFields") {
+    bindings_denylist = [rust_next],
     value = MixedFieldsMessage{
         header: TransactionHeader{
             tx_id: 0xf3f2f1f0,

@@ -8,6 +8,7 @@ import("//build/rust/rustc_test.gni")
 group("tests") {
   testonly = true
   deps = [
+    "conformance:tests",
     "fidl_next:tests",
     "fidl_next_bind:tests",
     "fidl_next_codec:tests",

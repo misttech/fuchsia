@@ -448,6 +448,7 @@ success("Struct5Byte_randomly_generated") {
 }
 
 success("CorrectPaddingEndOfInlineObject5Byte") {
+    bindings_denylist = [rust_next],
     value = PaddingEndOfInlineObject5Byte{
         a: Struct5Byte{
             a: 0x01020304,
@@ -684,6 +685,7 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject2ByteUpperByte") {
 }
 
 success("CorrectPaddingEndOfInlineObjectBeforeNextObject3Byte") {
+    bindings_denylist = [rust_next],
     value = PaddingEndOfInlineObjectBeforeNextObject3Byte{
         out_of_line: Struct8Byte{
             a: 0x0102030405060708,
@@ -790,6 +792,7 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject4ByteUpperByte") {
 }
 
 success("CorrectPaddingEndOfInlineObjectBeforeNextObject5Byte") {
+    bindings_denylist = [rust_next],
     value = PaddingEndOfInlineObjectBeforeNextObject5Byte{
         out_of_line: Struct8Byte{
             a: 0x0102030405060708,

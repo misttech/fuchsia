@@ -27,6 +27,7 @@ success("Sandwich1Case1") {
 }
 
 success("Sandwich1Case1WithHdr") {
+    bindings_denylist = [rust_next],
     value = Sandwich1Message{
         header: TransactionHeader{
             tx_id: 0xf3f2f1f0,
@@ -223,6 +224,7 @@ success("Sandwich4Case1") {
 }
 
 success("Sandwich4Case1WithHdr") {
+    bindings_denylist = [rust_next],
     value = Sandwich4Message{
         header: TransactionHeader{
             tx_id: 0,
@@ -309,6 +311,7 @@ success("Sandwich5Case1") {
 }
 
 success("Sandwich5Case1WithHdr") {
+    bindings_denylist = [rust_next],
     value = Sandwich5Message{
         header: TransactionHeader{
             tx_id: 0xf3f2f1f0,
@@ -392,6 +395,7 @@ success("Sandwich5Case2") {
 }
 
 success("Sandwich5Case2WithHdr") {
+    bindings_denylist = [rust_next],
     value = Sandwich5Message{
         header: TransactionHeader{
             tx_id: 0xf3f2f1f0,
@@ -835,6 +839,7 @@ success("Sandwich7Case1") {
 }
 
 success("Sandwich7Case1WithHdr") {
+    bindings_denylist = [rust_next],
     value = Sandwich7Message{
         header: TransactionHeader{
             tx_id: 0xf3f2f1f0,
@@ -898,6 +903,7 @@ success("Sandwich7Case2") {
 }
 
 success("Sandwich7Case2WithHdr") {
+    bindings_denylist = [rust_next],
     value = Sandwich7Message{
         header: TransactionHeader{
             tx_id: 0xf3f2f1f0,
@@ -951,6 +957,7 @@ success("Regression1") {
 }
 
 success("Regression2") {
+    bindings_denylist = [rust_next],
     value = Regression2{
         head: Regression1{
             f1: 0x01,
@@ -989,6 +996,7 @@ success("Regression3Absent") {
 }
 
 success("Regression3Present") {
+    bindings_denylist = [rust_next],
     value = Regression3{
         opt_value: Regression2{
             head: Regression1{
@@ -1059,6 +1067,7 @@ success("Size5Alignment4_randomly_generated") {
 }
 
 success("Size5Alignment4Array") {
+    bindings_denylist = [rust_next],
     value = Size5Alignment4Array{
         a: [
             Size5Alignment4{
