@@ -35,7 +35,6 @@ group("tests") {
     "image-format:tests",
     "inspect:tests",
     "inspector:tests",
-    "io-scheduler:tests",
     "lazy_init:tests",
     "ldmsg:tests",
     "lockdep:tests",

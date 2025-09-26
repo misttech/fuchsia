@@ -74,7 +74,6 @@ test("core-unittest-bin") {
     "//sdk/lib/fdio",
     "//src/devices/testing/mock-ddk",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/io-scheduler",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
