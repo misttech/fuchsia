@@ -32,7 +32,8 @@ impl TargetHandle {
         handle: ServerEnd<ffx::TargetMarker>,
         target_collection: Rc<TargetCollection>,
     ) -> Result<Pin<Box<dyn Future<Output = ()>>>> {
-        let reboot_controller = reboot::RebootController::new(target.clone(), cx.overnet_node()?);
+        let reboot_controller =
+            reboot::RebootController::new(&cx.environment(), target.clone(), cx.overnet_node()?);
         let keep_alive = target.keep_alive();
         let inner = TargetHandleInner {
             target: RefCell::new(target),

@@ -5,6 +5,7 @@
 use addr::TargetIpAddr;
 use anyhow::{Result, anyhow};
 use async_utils::async_once::Once;
+use ffx_config::EnvironmentContext;
 use ffx_daemon_events::TargetConnectionState;
 use ffx_daemon_target::target::Target;
 use ffx_daemon_target::zedboot::{reboot, reboot_to_bootloader, reboot_to_recovery};
@@ -45,6 +46,7 @@ pub(crate) struct RebootController {
     admin_proxy: Once<AdminProxy>,
     overnet_node: Arc<overnet_core::Router>,
     fastboot_connection_builder: Box<dyn FastbootConnectionFactory>,
+    context: EnvironmentContext,
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -56,8 +58,13 @@ enum FastbootConnectionError {
 }
 
 impl RebootController {
-    pub(crate) fn new(target: Rc<Target>, overnet_node: Arc<overnet_core::Router>) -> Self {
+    pub(crate) fn new(
+        context: &EnvironmentContext,
+        target: Rc<Target>,
+        overnet_node: Arc<overnet_core::Router>,
+    ) -> Self {
         Self {
+            context: context.to_owned(),
             target,
             remote_proxy: Once::new(),
             admin_proxy: Once::new(),
@@ -247,7 +254,7 @@ impl RebootController {
             _ => {
                 //TODO(125639): Remove when Power Manager stabilizes
                 let use_ssh_for_reboot: bool =
-                    ffx_config::get(USE_SSH_FOR_REBOOT_FROM_PRODUCT).unwrap_or(false);
+                    self.context.get(USE_SSH_FOR_REBOOT_FROM_PRODUCT).unwrap_or(false);
 
                 if use_ssh_for_reboot {
                     let res = run_ssh_command(Rc::downgrade(&self.target), state).await;
@@ -441,13 +448,17 @@ mod tests {
         proxy
     }
 
-    async fn setup_inner(target: Rc<Target>) -> (Rc<Target>, TargetProxy) {
+    async fn setup_inner(
+        context: &EnvironmentContext,
+        target: Rc<Target>,
+    ) -> (Rc<Target>, TargetProxy) {
         let overnet_node = overnet_core::Router::new(None).unwrap();
         let remote_proxy = Once::new();
         let _ = remote_proxy.get_or_init(setup_remote()).await;
         let admin_proxy = Once::new();
         let (_, connection_builder) = setup_connection_factory();
         let rc = RebootController {
+            context: context.clone(),
             target: target.clone(),
             remote_proxy,
             admin_proxy,
@@ -469,19 +480,20 @@ mod tests {
         (target, proxy)
     }
 
-    async fn setup() -> (Rc<Target>, TargetProxy) {
+    async fn setup(context: &EnvironmentContext) -> (Rc<Target>, TargetProxy) {
         let target = Target::new_named("scooby-dooby-doo");
-        setup_inner(target).await
+        setup_inner(context, target).await
     }
 
-    async fn setup_usb() -> (Rc<Target>, TargetProxy) {
+    async fn setup_usb(context: &EnvironmentContext) -> (Rc<Target>, TargetProxy) {
         let target = Target::new_for_usb("1DISTHISAREALSERIAL");
-        setup_inner(target).await
+        setup_inner(context, target).await
     }
 
     #[fuchsia::test]
     async fn test_reboot_product() -> Result<()> {
-        let (_, proxy) = setup().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (_, proxy) = setup(&env.context).await;
         proxy
             .reboot(TargetRebootState::Product)
             .await?
@@ -490,7 +502,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_reboot_recovery() -> Result<()> {
-        let (_, proxy) = setup().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (_, proxy) = setup(&env.context).await;
         proxy
             .reboot(TargetRebootState::Recovery)
             .await?
@@ -499,7 +512,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_reboot_bootloader() -> Result<()> {
-        let (_, proxy) = setup().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (_, proxy) = setup(&env.context).await;
         proxy
             .reboot(TargetRebootState::Bootloader)
             .await?
@@ -508,7 +522,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fastboot_reboot_product() -> Result<()> {
-        let (target, proxy) = setup_usb().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (target, proxy) = setup_usb(&env.context).await;
         target.set_state(TargetConnectionState::Fastboot(Instant::now()));
         proxy
             .reboot(TargetRebootState::Product)
@@ -518,7 +533,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fastboot_reboot_recovery() -> Result<()> {
-        let (target, proxy) = setup_usb().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (target, proxy) = setup_usb(&env.context).await;
         target.set_state(TargetConnectionState::Fastboot(Instant::now()));
         assert!(proxy.reboot(TargetRebootState::Recovery).await?.is_err());
         Ok(())
@@ -526,7 +542,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fastboot_reboot_bootloader() -> Result<()> {
-        let (target, proxy) = setup_usb().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (target, proxy) = setup_usb(&env.context).await;
         target.set_state(TargetConnectionState::Fastboot(Instant::now()));
         proxy
             .reboot(TargetRebootState::Bootloader)
@@ -536,7 +553,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_zedboot_reboot_bootloader() -> Result<()> {
-        let (target, proxy) = setup().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (target, proxy) = setup(&env.context).await;
         target.set_state(TargetConnectionState::Zedboot(Instant::now()));
         assert!(proxy.reboot(TargetRebootState::Bootloader).await?.is_err());
         Ok(())
@@ -544,7 +562,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_zedboot_reboot_recovery() -> Result<()> {
-        let (target, proxy) = setup().await;
+        let env = ffx_config::test_init().await.unwrap();
+        let (target, proxy) = setup(&env.context).await;
         target.set_state(TargetConnectionState::Zedboot(Instant::now()));
         assert!(proxy.reboot(TargetRebootState::Recovery).await?.is_err());
         Ok(())
