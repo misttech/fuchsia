@@ -10,6 +10,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
+/// Whether to include these in user build type images.
+pub trait AddToImage {
+    /// Whether to include these in user build type images.
+    fn add_to_user_images(&self) -> bool;
+    /// Whether to include these in userdebug build type images.
+    fn add_to_userdebug_images(&self) -> bool;
+}
+
 /// Kernel arguments that can be used by assembly subsystems.
 #[derive(Debug, Clone, EnumIter, Serialize)]
 #[serde(into = "String")]
@@ -359,6 +367,17 @@ impl KernelArg {
             Self::UserbootNext(_) => vec![],
             Self::KtraceBufsize(_) => vec![],
         }
+    }
+}
+
+impl AddToImage for KernelArg {
+    fn add_to_user_images(&self) -> bool {
+        // All args are available in user (for now).
+        true
+    }
+    fn add_to_userdebug_images(&self) -> bool {
+        // All args are available in userdebug.
+        true
     }
 }
 

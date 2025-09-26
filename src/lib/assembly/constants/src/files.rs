@@ -28,8 +28,8 @@ pub struct FileEntry<D: Destination> {
     pub destination: D,
 }
 
-pub fn path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(gen).into();
+pub fn path_schema(r#gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(r#gen).into();
     schema.format = Some("Utf8PathBuf".to_owned());
     schema.into()
 }
@@ -425,5 +425,22 @@ mod tests {
         let dest = BootfsDestination::AdditionalBootArgs;
         assert_eq!("\"config/additional_boot_args\"", &serde_json::to_string(&dest).unwrap());
         assert_eq!("\"for-test\"", &serde_json::to_string(&BootfsDestination::ForTest).unwrap());
+    }
+}
+
+use crate::AddToImage;
+impl AddToImage for BootfsCompiledPackageDestination {
+    /// Whether to include these in user build type images.
+    fn add_to_user_images(&self) -> bool {
+        match self {
+            Self::Fshost | Self::Bootstrap | Self::Root => true,
+            Self::Toolbox => false,
+        }
+    }
+    /// Whether to include these in userdebug build type images.
+    fn add_to_userdebug_images(&self) -> bool {
+        match self {
+            Self::Fshost | Self::Bootstrap | Self::Root | Self::Toolbox => true,
+        }
     }
 }

@@ -14,4 +14,4 @@ pub use files::{
     BootfsPackageDestination, CompiledPackageDestination, Destination, FileEntry,
     PackageDestination, PackageSetDestination, TestCompiledPackageDestination,
 };
-pub use kernel_args::{Arm64DebugDapSoc, KernelArg, ZeroPageScanCount};
+pub use kernel_args::{AddToImage, Arm64DebugDapSoc, KernelArg, ZeroPageScanCount};

@@ -5,8 +5,8 @@
 use argh::FromArgs;
 use assembly_config_schema::BuildType;
 use assembly_constants::{
-    BlobfsCompiledPackageDestination, BootfsCompiledPackageDestination, BootfsDestination,
-    BootfsPackageDestination, KernelArg, PackageDestination,
+    AddToImage, BlobfsCompiledPackageDestination, BootfsCompiledPackageDestination,
+    BootfsDestination, BootfsPackageDestination, KernelArg, PackageDestination,
 };
 use camino::Utf8PathBuf;
 use strum::IntoEnumIterator;
@@ -53,28 +53,6 @@ impl AssemblyGenerated for PackageDestination {
             | Self::ForTest => false,
             // Everything else is assembly-generated.
             _ => true,
-        }
-    }
-}
-
-/// Whether to include these in user build type images.
-trait AddToImage {
-    fn add_to_user_images(&self) -> bool;
-    fn add_to_userdebug_images(&self) -> bool;
-}
-
-impl AddToImage for BootfsCompiledPackageDestination {
-    /// Whether to include these in user build type images.
-    fn add_to_user_images(&self) -> bool {
-        match self {
-            Self::Fshost | Self::Bootstrap | Self::Root => true,
-            Self::Toolbox => false,
-        }
-    }
-    /// Whether to include these in userdebug build type images.
-    fn add_to_userdebug_images(&self) -> bool {
-        match self {
-            Self::Fshost | Self::Bootstrap | Self::Root | Self::Toolbox => true,
         }
     }
 }
@@ -189,8 +167,18 @@ fn main() {
     bootfs_files.sort();
     std::fs::write(args.bootfs_files, bootfs_files.join("\n")).expect("Writing bootfs allowlist");
 
-    let kernel_args: Vec<String> =
-        KernelArg::iter().map(|a| a.allowlist_entries()).flatten().collect();
+    let kernel_args = get_kernel_args_allowlist(args.build_type);
     std::fs::write(args.kernel_args, kernel_args.join("\n"))
         .expect("Writing kernel args allowlist");
+}
+
+fn get_kernel_args_allowlist(build_type: BuildType) -> Vec<String> {
+    KernelArg::iter()
+        .filter(|a| match build_type {
+            BuildType::UserDebug => a.add_to_userdebug_images(),
+            _ => a.add_to_user_images(),
+        })
+        .map(|a| a.allowlist_entries())
+        .flatten()
+        .collect()
 }
