@@ -53,8 +53,6 @@ template("fuchsia_fuzzer_package") {
     # from the binary itself, or by making the fuzzer vs test a runtime determination.
     can_fuzz_cpp = false
     can_fuzz_rust = false
-
-    # LINT.IfChange(variant_selection)
     foreach(selector, select_variant_canonical) {
       selector_host = defined(selector.host) && selector.host
 
@@ -67,8 +65,6 @@ template("fuchsia_fuzzer_package") {
         can_fuzz_rust = true
       }
     }
-
-    # LINT.ThenChange(//build/config/BUILDCONFIG.gn:variant_selection)
 
     component_sets = [
       {

@@ -109,8 +109,6 @@ template("packaged_shared_library") {
     testonly = false
   }
 
-  # LINT.IfChange(variant_selection)
-
   _select = {
     host = is_host
     kernel = is_kernel
@@ -205,8 +203,6 @@ template("packaged_shared_library") {
   } else {
     _library_toolchain = "${toolchain_variant.base}${_variant}-shared"
   }
-
-  # LINT.ThenChange(//build/config/BUILDCONFIG.gn:variant_selection)
 
   _final_target = "${_library_label}(${_library_toolchain})"
 

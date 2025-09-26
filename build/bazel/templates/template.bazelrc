@@ -72,12 +72,6 @@ common:quiet --noshow_progress
 common:quiet --ui_event_filters=-info
 build:quiet --show_result=0
 
-# Enable verbose Bazel output with --config=verbose.
-common:verbose --ui_event_filters=+info
-common:verbose --show_loading_progress
-common:verbose --show_progress
-build:verbose --show_result=1
-
 # Ensure outputs are writable (umask 0755) instead of readonly (0555),
 # which prevent removing output directories with `rm -rf`.
 # See https://fxbug.dev/42072059
@@ -99,6 +93,12 @@ build --experimental_collect_system_network_usage
 # very intentionally.
 common:no_gn_targets \
   --override_repository=gn_targets=build/bazel/local_repositories/empty_gn_targets
+
+# The `--config=host option` is shorthand for
+#`--platforms=//build/bazel/platforms:host`.
+cquery:host --platforms=//build/bazel/platforms:host
+aquery:host --platforms=//build/bazel/platforms:host
+build:host --platforms=//build/bazel/platforms:host
 
 # Enable clippy for Rust targets specified on the build line.
 # See https://bazelbuild.github.io/rules_rust/rust_clippy.html.

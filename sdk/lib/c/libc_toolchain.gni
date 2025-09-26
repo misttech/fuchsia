@@ -43,8 +43,6 @@ _select_exclude_toolchain_tags = [
 # IMPORTANT: Always keep the code below in sync with the computations
 # performed by variant_target() within //build/config/BUILDCONFIG.gn.
 #
-# LINT.IfChange(variant_selection)
-
 _instrumented_target_variant = ""
 _uninstrumented_target_variant = ""
 
@@ -121,8 +119,6 @@ if (select_variant_canonical != []) {
   }
 }
 
-# LINT.ThenChange(//build/config/BUILDCONFIG.gn:variant_selection)
-#
 # END OF CODE TO KEEP IN SYNC WITH BUILDCONFIG.gn!
 # ==================================================================
 

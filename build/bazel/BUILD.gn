@@ -367,12 +367,3 @@ generated_file("gn_build_variables_for_bazel") {
 
   # LINT.ThenChange(//build/testing/config.gni)
 }
-
-if (current_toolchain == default_toolchain) {
-  group("bazel_args_json") {
-    deps = [
-      "//build/bazel/config:bazel_args_json($default_toolchain)",
-      "//build/bazel/config:bazel_args_json($host_toolchain)",
-    ]
-  }
-}
