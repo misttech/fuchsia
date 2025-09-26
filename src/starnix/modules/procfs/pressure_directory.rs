@@ -147,7 +147,6 @@ impl FileOps for MemoryPressureFile {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Pressure notifications are configured by writing to the file.
     fn write(
         &self,
@@ -215,7 +214,6 @@ impl FileOps for MemoryPressureFile {
         Ok(data.len())
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn wait_async(
         &self,
         locked: &mut Locked<FileOpsCore>,

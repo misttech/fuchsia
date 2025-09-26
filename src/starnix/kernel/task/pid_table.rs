@@ -127,7 +127,6 @@ impl PidTable {
         });
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef<'_>> {
         match self.get_entry(pid) {
             None => None,

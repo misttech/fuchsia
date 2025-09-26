@@ -271,7 +271,6 @@ impl AccessVectorRule {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// A numeric type id that corresponds to the `[new_type]` in a
     /// `type_transition [source] [target]:[class] [new_type];` policy statement,
     /// or similarly for a `type_member` or `type_change` policy statement.

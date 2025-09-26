@@ -202,7 +202,6 @@ pub struct ReplaceInfo {
 impl TryFrom<ipt_replace> for ReplaceInfo {
     type Error = IpTableParseError;
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn try_from(replace: ipt_replace) -> Result<Self, Self::Error> {
         let name = ascii_to_string(&replace.name).map_err(IpTableParseError::AsciiConversion)?;
         let valid_hooks = NfIpHooks::from_bits(replace.valid_hooks)
@@ -222,7 +221,6 @@ impl TryFrom<ipt_replace> for ReplaceInfo {
 impl TryFrom<ip6t_replace> for ReplaceInfo {
     type Error = IpTableParseError;
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn try_from(replace: ip6t_replace) -> Result<Self, Self::Error> {
         let name = ascii_to_string(&replace.name).map_err(IpTableParseError::AsciiConversion)?;
         let valid_hooks = NfIpHooks::from_bits(replace.valid_hooks)
@@ -664,7 +662,7 @@ impl IptReplaceParser {
     // Parse `bytes` starting from `parse_pos` as type T, without advancing `parse_pos`.
     // Used in cases where part of a structure must be parsed first, before determining how to parse
     // the rest of the structure.
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
     fn view_next_bytes_as<T: FromBytes>(&self) -> Result<T, IpTableParseError> {
         let bytes = self.get_next_bytes(size_of::<T>()).ok_or_else(|| {
             IpTableParseError::ParseEndOfBuffer {
@@ -1674,7 +1672,6 @@ impl Entry {
         Ok(Some(()))
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn translate_standard_target(
         verdict: i32,
         routine_map: &HashMap<usize, String>,

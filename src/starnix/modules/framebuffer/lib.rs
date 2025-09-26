@@ -251,7 +251,6 @@ impl FileOps for Framebuffer {
     fileops_impl_memory!(self, &self.get_memory()?);
     fileops_impl_noop_sync!();
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn ioctl(
         &self,
         _locked: &mut Locked<Unlocked>,

@@ -52,7 +52,6 @@ pub struct SignalStackFrame {
 pub const SIG_STACK_SIZE: usize = std::mem::size_of::<SignalStackFrame>();
 
 impl SignalStackFrame {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn new(
         task: &Task,
         arch_width: ArchWidth,
@@ -268,7 +267,6 @@ fn get_pstate_extended_data(
     result
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn parse_pstate_extended_data(
     data: &[u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE],
     extended_pstate: &mut ExtendedPstateState,

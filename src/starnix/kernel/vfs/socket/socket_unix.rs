@@ -290,7 +290,6 @@ impl UnixSocket {
         Ok(())
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn connect_datagram(&self, socket: &SocketHandle, peer: &SocketHandle) -> Result<(), Errno> {
         {
             let unix_socket = socket.downcast_socket::<UnixSocket>().unwrap();

@@ -17,7 +17,6 @@ pub struct CoredumpReport {
 }
 
 impl CoredumpReport {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Returns `None` if the snapshot seems partially-written, indicating a retry is warranted.
     ///
     /// # Panics

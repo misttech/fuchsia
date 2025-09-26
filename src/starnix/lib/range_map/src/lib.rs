@@ -287,7 +287,6 @@ where
         Self { max_gap: 0, keys: ArrayVec::new(), values: ArrayVec::new() }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Gets the index in this leaf that corresponds to the given cursor.
     ///
     /// Assumes the cursor contains exactly one index.
@@ -669,7 +668,6 @@ where
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Search this subtree for the given key and return both the key and the value found.
     fn get_key_value(&self, mut cursor: Cursor) -> Option<(&Range<K>, &V)> {
         let index = cursor.pop().expect("valid cursor");
@@ -694,7 +692,6 @@ where
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// The last key/value pair stored in this subtree.
     fn last_key_value(&self) -> Option<(&Range<K>, &V)> {
         match &self.children {

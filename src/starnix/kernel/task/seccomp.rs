@@ -429,7 +429,6 @@ impl SeccompState {
         );
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Take the given |action| on the given |task|.  The action is one of the SECCOMP_RET values
     /// (ALLOW, LOG, KILL, KILL_PROCESS, TRAP, ERRNO, USER_NOTIF, TRACE).  |task| is the thread that
     /// invoked the syscall, and |syscall| is the syscall that was invoked.

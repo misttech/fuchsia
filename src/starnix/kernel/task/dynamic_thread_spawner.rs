@@ -346,12 +346,10 @@ impl RunningThread {
         Self { thread, sender: Some(sender) }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn try_dispatch(&self, f: BoxedClosure) -> Result<(), TrySendError<BoxedClosure>> {
         self.sender.as_ref().expect("sender should never be None").try_send(f)
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn dispatch(&self, f: BoxedClosure) -> Result<(), SendError<BoxedClosure>> {
         self.sender.as_ref().expect("sender should never be None").send(f)
     }

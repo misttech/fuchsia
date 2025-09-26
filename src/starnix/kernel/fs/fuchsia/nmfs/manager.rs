@@ -89,7 +89,6 @@ impl NetworkManagerHandle {
 // `NetworkManager` can replay the networks to the socketproxy in the case of
 // the component restarting.
 impl NetworkManager {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn init(&self, kernel: &Kernel) -> Result<(), anyhow::Error> {
         let starnix_networks =
             connect_to_protocol_sync::<fnp_socketproxy::StarnixNetworksMarker>()?;

@@ -276,7 +276,6 @@ unsafe fn do_hermetic_copy(
 }
 
 impl Usercopy {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Returns a new instance of `Usercopy` if unified address spaces is
     /// supported on the target architecture.
     pub fn new(restricted_address_range: Range<usize>) -> Result<Self, zx::Status> {

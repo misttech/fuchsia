@@ -107,7 +107,6 @@ impl FileOps for Ashmem {
         true
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn seek(
         &self,
         _locked: &mut Locked<FileOpsCore>,

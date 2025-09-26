@@ -274,7 +274,6 @@ pub fn create_init_process(
 ///
 /// Rather than calling this function directly, consider using `kthreads`, which provides both
 /// a system task and a threadpool on which the task can do work.
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn create_system_task<L>(
     locked: &mut Locked<L>,
     kernel: &Arc<Kernel>,

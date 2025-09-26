@@ -69,7 +69,6 @@ impl SidTable {
         Self::new_from(policy, new_entries)
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Returns a `SecurityId` (SID) representing the supplied `security_context`.
     /// If an entry already exists that matches `security_context` then the existing SID is
     /// returned.

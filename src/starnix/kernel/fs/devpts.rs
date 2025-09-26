@@ -80,7 +80,6 @@ pub fn new_pts_fs(
     new_pts_fs_with_state(locked, kernel, options, state)
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn new_pts_fs_with_state(
     locked: &mut Locked<Unlocked>,
     kernel: &Kernel,
@@ -123,7 +122,6 @@ pub fn create_main_and_replica(
     Ok((pty_file, pts_file))
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn tty_device_init<'a, L>(
     locked: &mut Locked<L>,
     kernel_or_task: impl KernelOrTask<'a>,
@@ -253,7 +251,6 @@ impl FsNodeOps for DevPtsRootDir {
         Ok(VecDirectory::new_file(result))
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn lookup(
         &self,
         _locked: &mut Locked<FileOpsCore>,

@@ -52,7 +52,6 @@ impl FileOps for SignalFd {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn read(
         &self,
         locked: &mut Locked<FileOpsCore>,

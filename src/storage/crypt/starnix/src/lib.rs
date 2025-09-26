@@ -185,7 +185,6 @@ impl CryptService {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn forget_wrapping_key(
         &self,
         wrapping_key_id: [u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize],

@@ -580,7 +580,6 @@ pub struct HashMap {
 }
 
 impl HashMap {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Self, MapError> {
         let layout = Layout::new(schema)?;
         let buffer =

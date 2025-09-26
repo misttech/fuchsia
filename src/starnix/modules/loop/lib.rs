@@ -582,7 +582,6 @@ impl FileOps for LoopDeviceFile {
     }
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn loop_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Errno> {
     // Device registry.
     kernel

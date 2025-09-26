@@ -513,7 +513,6 @@ pub mod test {
     }
 
     impl TestCase {
-        #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
         fn parse(content: &str) -> Option<Self> {
             let mut pairs =
                 TestGrammar::parse(Rule::rules, content).expect("Parsing must be successful");

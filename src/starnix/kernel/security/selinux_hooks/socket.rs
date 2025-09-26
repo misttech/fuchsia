@@ -181,7 +181,7 @@ fn compute_socket_security_class(
 
 /// Checks that `current_task` has permission to create a socket with `domain`, `socket_type` and
 /// `protocol`.
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
 pub(in crate::security) fn check_socket_create_access<L>(
     locked: &mut Locked<L>,
     security_server: &SecurityServer,

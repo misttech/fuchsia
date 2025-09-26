@@ -2672,7 +2672,6 @@ impl BinderObjectFlags {
         })
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get_scheduler_state(&self) -> Option<SchedulerState> {
         let bits = self.bits();
         let priority = bits & uapi::flat_binder_object_flags_FLAT_BINDER_FLAG_PRIORITY_MASK;
@@ -4508,7 +4507,6 @@ impl BinderDriver {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Dequeues a command from the thread's commands' queue, or blocks until commands are available.
     fn handle_thread_read(
         &self,
@@ -4659,7 +4657,6 @@ impl BinderDriver {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Copies transaction buffers from the source process' address space to a new buffer in the
     /// target process' shared binder VMO.
     /// Returns the transaction buffers in the target process, as well as the transaction state.
@@ -4739,7 +4736,6 @@ impl BinderDriver {
         Ok((allocations.into(), transient_transaction_state))
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Translates file descriptors from the sending process to the receiving process.
     fn translate_files<'a, L>(
         locked: &mut Locked<L>,

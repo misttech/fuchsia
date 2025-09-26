@@ -4014,7 +4014,6 @@ impl BpfVisitor for ComputationContext {
         Ok(())
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn load64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,

@@ -307,7 +307,6 @@ impl ZxioBackedSocket {
         Ok(info)
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn attach_cbpf_filter(&self, _task: &Task, code: Vec<sock_filter>) -> Result<(), Errno> {
         // SO_ATTACH_FILTER is supported only for packet sockets.
         let domain = self
@@ -377,7 +376,6 @@ impl ZxioBackedSocket {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn get_socket_cookie(&self) -> Result<u64, Errno> {
         if let Some(cookie) = self.cookie.get() {
             return Ok(*cookie);
@@ -398,7 +396,6 @@ impl ZxioBackedSocket {
 }
 
 impl SocketOps for ZxioBackedSocket {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get_socket_info(&self) -> Result<(SocketDomain, SocketType, SocketProtocol), Errno> {
         let getsockopt = |optname: u32| -> Result<u32, Errno> {
             Ok(u32::from_ne_bytes(
@@ -704,7 +701,6 @@ impl SocketOps for ZxioBackedSocket {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn getsockopt(
         &self,
         _locked: &mut Locked<FileOpsCore>,

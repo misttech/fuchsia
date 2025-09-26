@@ -217,7 +217,6 @@ impl FileOps for InotifyFileObject {
         error!(EINVAL)
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn read(
         &self,
         locked: &mut Locked<FileOpsCore>,

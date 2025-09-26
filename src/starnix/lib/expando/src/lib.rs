@@ -63,7 +63,6 @@ impl Expando {
         self.get_or_try_init::<T, ()>(|| Ok(init())).expect("infallible initializer")
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Get the slot in the expando associated with the given type, running `try_init` to initialize
     /// the slot if needed. Returns an error only if `try_init` returns an error.
     ///
@@ -92,7 +91,6 @@ impl Expando {
         Ok(slot.downcast().expect("downcast of expando slot was successful"))
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Get the slot in the expando associated with the given type if it has previously been
     /// initialized.
     pub fn peek<T: Any + Send + Sync + 'static>(&self) -> Option<Arc<T>> {
@@ -103,7 +101,6 @@ impl Expando {
         Some(slot.downcast().expect("downcast of expando slot was successful"))
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Remove the provided type from the expando if it is present.
     pub fn remove<T: Any + Send + Sync + 'static>(&self) -> Option<Arc<T>> {
         let mut properties = self.properties.lock();

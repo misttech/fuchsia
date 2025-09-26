@@ -568,7 +568,6 @@ impl DirEntry {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Rename the file with old_basename in old_parent to new_basename in
     /// new_parent.
     ///

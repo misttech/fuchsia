@@ -294,7 +294,6 @@ impl SuspendResumeManager {
         HashSet::from([SuspendState::Idle])
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn suspend(
         &self,
         locked: &mut Locked<FileOpsCore>,

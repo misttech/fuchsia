@@ -131,7 +131,6 @@ impl Vdso {
         Self { memory, sigreturn_offset, vvar_writeable, vvar_readonly }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn new_arch32() -> Option<Self> {
         let maybe_memory = load_vdso_arch32_from_file();
         if maybe_memory.is_err() {
@@ -220,7 +219,6 @@ fn load_vdso_arch32_from_file() -> Result<Arc<MemoryObject>, Errno> {
     Ok(Arc::new(MemoryObject::from(vdso_vmo)))
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn load_time_values_memory() -> Result<Arc<MemoryObject>, Errno> {
     const FILENAME: &str = "time_values";
     const DIR: &str = "/boot/kernel";

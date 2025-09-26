@@ -2654,7 +2654,6 @@ impl<Key: Into<ReadyItemKey>> FileWaiter<Key> {
     }
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 pub fn poll(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,

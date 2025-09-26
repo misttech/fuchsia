@@ -259,7 +259,6 @@ struct DmDeviceFile {
     device: Arc<DmDevice>,
 }
 
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn verify_read(
     buffer: &VecOutputBuffer,
     args: &mut VerityTargetParams,
@@ -616,7 +615,7 @@ struct VerityTargetBaseArgs {
 
 // Returns the FileHandle and minor number of the device found at `device path` formatted as
 // either /dev/loop# of MAJOR:MINOR
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
 fn open_device(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -657,7 +656,7 @@ fn size_of_merkle_tree_preceding_leaf_nodes(
 }
 
 // Parse the parameter string into a TargetType.
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
 fn parse_parameter_string(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,

@@ -542,7 +542,6 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         self.endianness::<LittleEndian>(dst, width)
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     #[inline(always)]
     fn call_external<'a>(
         &mut self,

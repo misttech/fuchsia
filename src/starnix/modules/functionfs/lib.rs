@@ -548,7 +548,6 @@ struct FunctionFsControlEndpoint;
 impl FsNodeOps for FunctionFsControlEndpoint {
     fs_node_impl_not_dir!();
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn create_file_ops(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -581,7 +580,6 @@ impl FileOps for FunctionFsControlEndpoint {
         rootdir.on_control_closed();
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn read(
         &self,
         _locked: &mut Locked<FileOpsCore>,

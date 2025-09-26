@@ -68,7 +68,6 @@ impl FileOps for NanohubFirmwareFile {
         error!(EINVAL)
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn write(
         &self,
         locked: &mut Locked<FileOpsCore>,

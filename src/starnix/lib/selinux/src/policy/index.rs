@@ -330,7 +330,6 @@ impl PolicyIndex {
             })
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// If there is a genfscon statement for the given filesystem type, returns the associated
     /// [`SecurityContext`], taking the `node_path` into account. `class_id` defines the type
     /// of the file in the given `node_path`. It can only be omitted when looking up the filesystem
@@ -421,7 +420,6 @@ impl PolicyIndex {
             .is_some()
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn type_transition_new_type(
         &self,
         source_type: TypeId,

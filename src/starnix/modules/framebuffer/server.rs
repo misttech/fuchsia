@@ -128,7 +128,7 @@ impl FramebufferServer {
 ///
 /// SAFETY: This function `.expect`'s a lot, because it isn't meant to be used in the long time and
 /// most of the failures would be unexpected and unrecoverable.
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
 fn init_fb_scene(
     flatland: &fuicomposition::FlatlandProxy,
     allocator: &fuicomposition::AllocatorSynchronousProxy,

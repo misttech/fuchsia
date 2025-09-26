@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
     fn test_generate() -> Result<()> {
         let tmp = TempDir::new().unwrap();
         let outdir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -390,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
     fn test_skip_subpackages() -> Result<()> {
         let tmp = TempDir::new().unwrap();
         let outdir = Utf8Path::from_path(tmp.path()).unwrap();

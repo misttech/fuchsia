@@ -39,7 +39,6 @@ pub enum SyslogAccess {
 }
 
 impl Syslog {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     pub fn init(&self, system_task: &CurrentTask) -> Result<(), anyhow::Error> {
         let subscription = LogSubscription::snapshot_then_subscribe(system_task)?;
         self.syscall_subscription.set(Mutex::new(subscription)).expect("syslog inititialized once");

@@ -311,7 +311,6 @@ impl ContextExpression {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn operands_from_expr_with_names(
         operand_type: u32,
         names: &ExtensibleBitmap,

@@ -217,7 +217,6 @@ pub type WeakProgramHandle = Weak<ProgramReleaser>;
 impl TryFrom<&Program> for febpf::VerifiedProgram {
     type Error = Errno;
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn try_from(program: &Program) -> Result<febpf::VerifiedProgram, Errno> {
         let mut maps = Vec::with_capacity(program.maps.len());
         for map in program.maps.iter() {
@@ -255,7 +254,6 @@ impl TryFrom<&Program> for febpf::VerifiedProgram {
 }
 
 /// Links maps referenced by FD, replacing them with by-index references.
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
 fn link_maps_fds(
     current_task: &CurrentTask,
     code: &mut Vec<EbpfInstruction>,

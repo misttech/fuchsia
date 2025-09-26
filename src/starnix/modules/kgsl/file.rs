@@ -70,7 +70,6 @@ impl KgslFile {
         Ok(Box::new(Self { device }))
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn kgsl_device_getproperty(
         &self,
         current_task: &CurrentTask,

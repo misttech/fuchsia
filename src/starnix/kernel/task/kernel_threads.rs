@@ -203,7 +203,7 @@ impl Drop for KernelThreads {
 }
 
 /// Create a new system task, register it on the thread and run the given closure with it.
-#[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
+
 pub fn with_new_current_task<F, R>(
     locked: &mut Locked<Unlocked>,
     system_task: &WeakRef<Task>,

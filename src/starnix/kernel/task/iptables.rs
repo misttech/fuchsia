@@ -431,7 +431,6 @@ impl IpTables {
         }
     }
 
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     fn get_controller(&mut self) -> Result<&mut Controller, GetControllerError> {
         if self.controller.is_none() {
             let control_proxy = connect_to_protocol_sync::<fnet_filter::ControlMarker>()

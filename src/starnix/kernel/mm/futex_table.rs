@@ -35,7 +35,6 @@ impl<Key: FutexKey> Default for FutexTable<Key> {
 }
 
 impl<Key: FutexKey> FutexTable<Key> {
-    #[allow(clippy::unwrap_in_result, reason = "Force clippy rule in Starnix")]
     /// Wait on the futex at the given address given a boot deadline.
     ///
     /// See FUTEX_WAIT when passed a deadline in CLOCK_REALTIME.
