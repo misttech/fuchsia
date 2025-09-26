@@ -152,7 +152,16 @@ unsafe impl ::fidl_next::Wire for WireStructLargeArray {
     type Decoded<'de> = WireStructLargeArray;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructLargeArray
@@ -326,7 +335,16 @@ unsafe impl ::fidl_next::Wire for WireStructSmallArray {
     type Decoded<'de> = WireStructSmallArray;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructSmallArray

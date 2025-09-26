@@ -152,9 +152,21 @@ unsafe impl ::fidl_next::Wire for WirePadding1ByteEnd {
     type Decoded<'de> = WirePadding1ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(3).write_bytes(0, 1);
+            out_.as_mut_ptr().cast::<u8>().add(3).write_bytes(0, 1);
         }
     }
 }
@@ -333,9 +345,21 @@ unsafe impl ::fidl_next::Wire for WirePadding1ByteMiddle {
     type Decoded<'de> = WirePadding1ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 1);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 1);
         }
     }
 }
@@ -528,13 +552,28 @@ unsafe impl ::fidl_next::Wire for WirePadding2ByteAlignmentLength6 {
     type Decoded<'de> = WirePadding2ByteAlignmentLength6;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+                c,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
+        ::fidl_next::Wire::zero_padding(c);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(5).write_bytes(0, 1);
+            out_.as_mut_ptr().cast::<u8>().add(5).write_bytes(0, 1);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 1);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 1);
         }
     }
 }
@@ -716,9 +755,21 @@ unsafe impl ::fidl_next::Wire for WirePadding2ByteEnd {
     type Decoded<'de> = WirePadding2ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(6).write_bytes(0, 2);
+            out_.as_mut_ptr().cast::<u8>().add(6).write_bytes(0, 2);
         }
     }
 }
@@ -897,9 +948,21 @@ unsafe impl ::fidl_next::Wire for WirePadding2ByteMiddle {
     type Decoded<'de> = WirePadding2ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(2).write_bytes(0, 2);
+            out_.as_mut_ptr().cast::<u8>().add(2).write_bytes(0, 2);
         }
     }
 }
@@ -1078,9 +1141,21 @@ unsafe impl ::fidl_next::Wire for WirePadding3ByteEnd {
     type Decoded<'de> = WirePadding3ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(5).write_bytes(0, 3);
+            out_.as_mut_ptr().cast::<u8>().add(5).write_bytes(0, 3);
         }
     }
 }
@@ -1259,9 +1334,21 @@ unsafe impl ::fidl_next::Wire for WirePadding3ByteMiddle {
     type Decoded<'de> = WirePadding3ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 3);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 3);
         }
     }
 }
@@ -1468,13 +1555,31 @@ unsafe impl ::fidl_next::Wire for WirePadding4ByteAlignmentLength12 {
     type Decoded<'de> = WirePadding4ByteAlignmentLength12;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+                c,
+                d,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
+        ::fidl_next::Wire::zero_padding(c);
+
+        ::fidl_next::Wire::zero_padding(d);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(10).write_bytes(0, 2);
+            out_.as_mut_ptr().cast::<u8>().add(10).write_bytes(0, 2);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(5).write_bytes(0, 1);
+            out_.as_mut_ptr().cast::<u8>().add(5).write_bytes(0, 1);
         }
     }
 }
@@ -1659,9 +1764,21 @@ unsafe impl ::fidl_next::Wire for WirePadding4ByteEnd {
     type Decoded<'de> = WirePadding4ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(12).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(12).write_bytes(0, 4);
         }
     }
 }
@@ -1840,9 +1957,21 @@ unsafe impl ::fidl_next::Wire for WirePadding4ByteMiddle {
     type Decoded<'de> = WirePadding4ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }
@@ -2035,9 +2164,24 @@ unsafe impl ::fidl_next::Wire for WirePadding5ByteEnd {
     type Decoded<'de> = WirePadding5ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+                c,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
+        ::fidl_next::Wire::zero_padding(c);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(11).write_bytes(0, 5);
+            out_.as_mut_ptr().cast::<u8>().add(11).write_bytes(0, 5);
         }
     }
 }
@@ -2233,9 +2377,24 @@ unsafe impl ::fidl_next::Wire for WirePadding5ByteMiddle {
     type Decoded<'de> = WirePadding5ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+                c,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
+        ::fidl_next::Wire::zero_padding(c);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(3).write_bytes(0, 5);
+            out_.as_mut_ptr().cast::<u8>().add(3).write_bytes(0, 5);
         }
     }
 }
@@ -2417,9 +2576,21 @@ unsafe impl ::fidl_next::Wire for WirePadding6ByteEnd {
     type Decoded<'de> = WirePadding6ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(10).write_bytes(0, 6);
+            out_.as_mut_ptr().cast::<u8>().add(10).write_bytes(0, 6);
         }
     }
 }
@@ -2598,9 +2769,21 @@ unsafe impl ::fidl_next::Wire for WirePadding6ByteMiddle {
     type Decoded<'de> = WirePadding6ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(2).write_bytes(0, 6);
+            out_.as_mut_ptr().cast::<u8>().add(2).write_bytes(0, 6);
         }
     }
 }
@@ -2779,9 +2962,21 @@ unsafe impl ::fidl_next::Wire for WirePadding7ByteEnd {
     type Decoded<'de> = WirePadding7ByteEnd;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(9).write_bytes(0, 7);
+            out_.as_mut_ptr().cast::<u8>().add(9).write_bytes(0, 7);
         }
     }
 }
@@ -2960,9 +3155,21 @@ unsafe impl ::fidl_next::Wire for WirePadding7ByteMiddle {
     type Decoded<'de> = WirePadding7ByteMiddle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
         }
     }
 }

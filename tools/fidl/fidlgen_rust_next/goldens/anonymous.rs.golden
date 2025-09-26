@@ -421,9 +421,24 @@ unsafe impl ::fidl_next::Wire for WireOverrideTest<'static> {
     type Decoded<'de> = WireOverrideTest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                op,
+                left,
+                right,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(op);
+
+        ::fidl_next::Wire::zero_padding(left);
+
+        ::fidl_next::Wire::zero_padding(right);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }
@@ -1818,7 +1833,16 @@ unsafe impl ::fidl_next::Wire for WireTableData {
     type Decoded<'de> = WireTableData;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                data,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(data);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTableData
@@ -2222,7 +2246,19 @@ unsafe impl ::fidl_next::Wire for WireSomeProtocolSomeMethodRequest<'static> {
     type Decoded<'de> = WireSomeProtocolSomeMethodRequest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                union_member,
+                table_member,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(union_member);
+
+        ::fidl_next::Wire::zero_padding(table_member);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSomeProtocolSomeMethodRequest<'static>
@@ -2408,7 +2444,16 @@ unsafe impl ::fidl_next::Wire for WireSomeProtocolSomeMethodResponse {
     type Decoded<'de> = WireSomeProtocolSomeMethodResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                bits_member,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(bits_member);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSomeProtocolSomeMethodResponse

@@ -718,13 +718,34 @@ unsafe impl ::fidl_next::Wire for WireStruct<'static> {
     type Decoded<'de> = WireStruct<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                int64_with_default,
+                string_with_default,
+                bool_with_default,
+                enum_with_default,
+                bits_with_default,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(int64_with_default);
+
+        ::fidl_next::Wire::zero_padding(string_with_default);
+
+        ::fidl_next::Wire::zero_padding(bool_with_default);
+
+        ::fidl_next::Wire::zero_padding(enum_with_default);
+
+        ::fidl_next::Wire::zero_padding(bits_with_default);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(36).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(36).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(25).write_bytes(0, 3);
+            out_.as_mut_ptr().cast::<u8>().add(25).write_bytes(0, 3);
         }
     }
 }

@@ -106,7 +106,16 @@ unsafe impl ::fidl_next::Wire for WireParentFirstRequest {
     type Decoded<'de> = WireParentFirstRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                request,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(request);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireParentFirstRequest
@@ -447,7 +456,16 @@ unsafe impl ::fidl_next::Wire for WireChildSecondRequest {
     type Decoded<'de> = WireChildSecondRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                request,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(request);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireChildSecondRequest

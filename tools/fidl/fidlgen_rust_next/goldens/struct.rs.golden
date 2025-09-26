@@ -154,9 +154,21 @@ unsafe impl ::fidl_next::Wire for WireBasicStruct<'static> {
     type Decoded<'de> = WireBasicStruct<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                x,
+                y,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(x);
+
+        ::fidl_next::Wire::zero_padding(y);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }
@@ -351,7 +363,19 @@ unsafe impl ::fidl_next::Wire for WireSimple {
     type Decoded<'de> = WireSimple;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                f1,
+                f2,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(f1);
+
+        ::fidl_next::Wire::zero_padding(f2);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSimple

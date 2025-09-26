@@ -141,7 +141,13 @@ unsafe impl ::fidl_next::Wire for WireMyStruct {
     type Decoded<'de> = WireMyStruct;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+
+            } = &mut *out_;
+        }
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireMyStruct

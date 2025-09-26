@@ -148,7 +148,16 @@ unsafe impl ::fidl_next::Wire for WireInt32Wrapper {
     type Decoded<'de> = WireInt32Wrapper;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireInt32Wrapper
@@ -339,7 +348,19 @@ unsafe impl ::fidl_next::Wire for WireSimpleProtocolAddRequest {
     type Decoded<'de> = WireSimpleProtocolAddRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSimpleProtocolAddRequest
@@ -512,7 +533,16 @@ unsafe impl ::fidl_next::Wire for WireSimpleProtocolAddResponse {
     type Decoded<'de> = WireSimpleProtocolAddResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                sum,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(sum);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSimpleProtocolAddResponse
@@ -1257,7 +1287,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableHandle {
     type Decoded<'de> = WireStructWithNullableHandle;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableHandle
@@ -1389,7 +1428,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableProtocol {
     type Decoded<'de> = WireStructWithNullableProtocol;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableProtocol
@@ -1521,7 +1569,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableRequest {
     type Decoded<'de> = WireStructWithNullableRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableRequest
@@ -1680,7 +1737,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableString<'static> {
     type Decoded<'de> = WireStructWithNullableString<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableString<'static>
@@ -1839,7 +1905,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableStruct<'static> {
     type Decoded<'de> = WireStructWithNullableStruct<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableStruct<'static>
@@ -2013,7 +2088,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableUnion {
     type Decoded<'de> = WireStructWithNullableUnion;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableUnion
@@ -2171,7 +2255,16 @@ unsafe impl ::fidl_next::Wire for WireStructWithNullableVector<'static> {
     type Decoded<'de> = WireStructWithNullableVector<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                val,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(val);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructWithNullableVector<'static>

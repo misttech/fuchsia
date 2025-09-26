@@ -493,13 +493,28 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize12Alignment4<'static> {
     type Decoded<'de> = WireSandwichUnionSize12Alignment4<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                before,
+                union,
+                after,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(before);
+
+        ::fidl_next::Wire::zero_padding(union);
+
+        ::fidl_next::Wire::zero_padding(after);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }
@@ -699,7 +714,19 @@ unsafe impl ::fidl_next::Wire for WireStructSize16Alignment8 {
     type Decoded<'de> = WireStructSize16Alignment8;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                f1,
+                f2,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(f1);
+
+        ::fidl_next::Wire::zero_padding(f2);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireStructSize16Alignment8
@@ -1226,13 +1253,28 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize24Alignment8<'static> {
     type Decoded<'de> = WireSandwichUnionSize24Alignment8<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                before,
+                union,
+                after,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(before);
+
+        ::fidl_next::Wire::zero_padding(union);
+
+        ::fidl_next::Wire::zero_padding(after);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }
@@ -1756,13 +1798,28 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize36Alignment4<'static> {
     type Decoded<'de> = WireSandwichUnionSize36Alignment4<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                before,
+                union,
+                after,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(before);
+
+        ::fidl_next::Wire::zero_padding(union);
+
+        ::fidl_next::Wire::zero_padding(after);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }
@@ -2308,13 +2365,28 @@ unsafe impl ::fidl_next::Wire for WireSandwichUnionSize8Alignment4 {
     type Decoded<'de> = WireSandwichUnionSize8Alignment4;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                before,
+                union,
+                after,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(before);
+
+        ::fidl_next::Wire::zero_padding(union);
+
+        ::fidl_next::Wire::zero_padding(after);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(28).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }

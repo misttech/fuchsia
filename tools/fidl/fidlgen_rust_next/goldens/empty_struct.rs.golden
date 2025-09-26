@@ -131,7 +131,13 @@ unsafe impl ::fidl_next::Wire for WireEmpty {
     type Decoded<'de> = WireEmpty;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+
+            } = &mut *out_;
+        }
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmpty
@@ -298,7 +304,16 @@ unsafe impl ::fidl_next::Wire for WireEmptyProtocolSendRequest {
     type Decoded<'de> = WireEmptyProtocolSendRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                e,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(e);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyProtocolSendRequest
@@ -468,7 +483,16 @@ unsafe impl ::fidl_next::Wire for WireEmptyProtocolReceiveRequest {
     type Decoded<'de> = WireEmptyProtocolReceiveRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                e,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(e);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyProtocolReceiveRequest
@@ -648,7 +672,16 @@ unsafe impl ::fidl_next::Wire for WireEmptyProtocolSendAndReceiveRequest {
     type Decoded<'de> = WireEmptyProtocolSendAndReceiveRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                e,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(e);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyProtocolSendAndReceiveRequest
@@ -828,7 +861,16 @@ unsafe impl ::fidl_next::Wire for WireEmptyProtocolSendAndReceiveResponse {
     type Decoded<'de> = WireEmptyProtocolSendAndReceiveResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                e,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(e);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyProtocolSendAndReceiveResponse

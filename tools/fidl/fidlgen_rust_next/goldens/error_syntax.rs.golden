@@ -142,7 +142,16 @@ unsafe impl ::fidl_next::Wire for WireExampleUseOfErrorSyntaxCallWhichMayFailReq
     type Decoded<'de> = WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                s,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(s);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -327,7 +336,16 @@ unsafe impl ::fidl_next::Wire for WireExampleUseOfErrorSyntaxCallWhichMayFailRes
     type Decoded<'de> = WireExampleUseOfErrorSyntaxCallWhichMayFailResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                value,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(value);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireExampleUseOfErrorSyntaxCallWhichMayFailResponse

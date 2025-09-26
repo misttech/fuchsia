@@ -136,7 +136,16 @@ unsafe impl ::fidl_next::Wire for WireSuperFooRequest<'static> {
     type Decoded<'de> = WireSuperFooRequest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                s,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(s);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSuperFooRequest<'static>
@@ -307,7 +316,16 @@ unsafe impl ::fidl_next::Wire for WireSuperFooResponse {
     type Decoded<'de> = WireSuperFooResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                y,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(y);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireSuperFooResponse

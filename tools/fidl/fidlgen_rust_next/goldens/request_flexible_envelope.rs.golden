@@ -857,7 +857,16 @@ unsafe impl ::fidl_next::Wire for WireProtocolRequestStrictResponseFlexibleReque
     type Decoded<'de> = WireProtocolRequestStrictResponseFlexibleRequest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                s,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(s);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -1023,7 +1032,16 @@ unsafe impl ::fidl_next::Wire for WireProtocolRequestStrictResponseFlexibleRespo
     type Decoded<'de> = WireProtocolRequestStrictResponseFlexibleResponse<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                f,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(f);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -1189,7 +1207,16 @@ unsafe impl ::fidl_next::Wire for WireProtocolRequestFlexibleResponseStrictReque
     type Decoded<'de> = WireProtocolRequestFlexibleResponseStrictRequest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                s,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(s);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -1355,7 +1382,16 @@ unsafe impl ::fidl_next::Wire for WireProtocolRequestFlexibleResponseStrictRespo
     type Decoded<'de> = WireProtocolRequestFlexibleResponseStrictResponse<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                f,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(f);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>

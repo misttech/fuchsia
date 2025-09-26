@@ -147,7 +147,16 @@ unsafe impl ::fidl_next::Wire for WireByteAndBytes {
     type Decoded<'de> = WireByteAndBytes;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                single_byte,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(single_byte);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireByteAndBytes

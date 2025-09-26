@@ -175,7 +175,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -1006,7 +1015,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -2398,7 +2416,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolStrictTwoWa
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -3203,7 +3230,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolStrictTwoWa
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -4010,7 +4046,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolStrictEvent
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -4806,7 +4851,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolFlexibleEve
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -6523,7 +6577,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -7357,7 +7420,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -8714,7 +8786,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsClosedProtocolStrictTwo
     type Decoded<'de> = WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -9533,7 +9614,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -10345,7 +10435,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsClosedProtocolStrictEve
     type Decoded<'de> = WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -11809,7 +11908,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsDriverProtocolStrictTwo
     type Decoded<'de> = WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -12628,7 +12736,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -13453,7 +13570,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -14277,7 +14403,16 @@ unsafe impl ::fidl_next::Wire
     type Decoded<'de> = WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -16046,7 +16181,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolStrictTwoWayFie
     type Decoded<'de> = WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -16836,7 +16980,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolStrictTwoWayFie
     type Decoded<'de> = WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -17635,7 +17788,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolFlexibleTwoWayF
     type Decoded<'de> = WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -18438,7 +18600,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolFlexibleTwoWayF
     type Decoded<'de> = WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -19238,7 +19409,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolStrictEventFiel
     type Decoded<'de> = WireUnknownInteractionsProtocolStrictEventFieldsRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>
@@ -20013,7 +20193,16 @@ unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolFlexibleEventFi
     type Decoded<'de> = WireUnknownInteractionsProtocolFlexibleEventFieldsRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                some_field,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(some_field);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D>

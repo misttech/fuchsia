@@ -210,7 +210,16 @@ unsafe impl ::fidl_next::Wire for WireParentGetChildResponse {
     type Decoded<'de> = WireParentGetChildResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                c,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(c);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireParentGetChildResponse
@@ -345,7 +354,16 @@ unsafe impl ::fidl_next::Wire for WireParentGetChildRequestResponse {
     type Decoded<'de> = WireParentGetChildRequestResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                r,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(r);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireParentGetChildRequestResponse
@@ -474,7 +492,16 @@ unsafe impl ::fidl_next::Wire for WireParentTakeChildRequest {
     type Decoded<'de> = WireParentTakeChildRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                c,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(c);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireParentTakeChildRequest
@@ -609,7 +636,16 @@ unsafe impl ::fidl_next::Wire for WireParentTakeChildRequestRequest {
     type Decoded<'de> = WireParentTakeChildRequestRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                r,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(r);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireParentTakeChildRequestRequest

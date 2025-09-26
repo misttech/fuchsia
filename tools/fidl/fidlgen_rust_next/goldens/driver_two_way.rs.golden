@@ -169,7 +169,19 @@ unsafe impl ::fidl_next::Wire for WireTwoWayAddRequest {
     type Decoded<'de> = WireTwoWayAddRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                addend1,
+                addend2,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(addend1);
+
+        ::fidl_next::Wire::zero_padding(addend2);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTwoWayAddRequest
@@ -342,7 +354,16 @@ unsafe impl ::fidl_next::Wire for WireTwoWayAddResponse {
     type Decoded<'de> = WireTwoWayAddResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                sum,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(sum);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireTwoWayAddResponse

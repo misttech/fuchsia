@@ -157,7 +157,16 @@ unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding4 {
     type Decoded<'de> = WireShouldNeverAppearInAnyBinding4;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding4
@@ -926,9 +935,24 @@ unsafe impl ::fidl_next::Wire for WireAllowedDeniedResponse<'static> {
     type Decoded<'de> = WireAllowedDeniedResponse<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                should_never_appear_in_any_binding_4,
+                should_never_appear_in_any_binding_5,
+                should_never_appear_in_any_binding_6,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_4);
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_5);
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_6);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
         }
     }
 }
@@ -1366,7 +1390,16 @@ unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding1 {
     type Decoded<'de> = WireShouldNeverAppearInAnyBinding1;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding1
@@ -2140,9 +2173,24 @@ unsafe impl ::fidl_next::Wire for WireDeniedShouldNeverAppearInAnyBindingRequest
     type Decoded<'de> = WireDeniedShouldNeverAppearInAnyBindingRequest<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                should_never_appear_in_any_binding_1,
+                should_never_appear_in_any_binding_2,
+                should_never_appear_in_any_binding_3,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_1);
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_2);
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_3);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
         }
     }
 }
@@ -2579,7 +2627,16 @@ unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding7 {
     type Decoded<'de> = WireShouldNeverAppearInAnyBinding7;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireShouldNeverAppearInAnyBinding7
@@ -3348,9 +3405,24 @@ unsafe impl ::fidl_next::Wire for WireDeniedAnonymous<'static> {
     type Decoded<'de> = WireDeniedAnonymous<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                should_never_appear_in_any_binding_7,
+                should_never_appear_in_any_binding_8,
+                should_never_appear_in_any_binding_9,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_7);
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_8);
+
+        ::fidl_next::Wire::zero_padding(should_never_appear_in_any_binding_9);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
+            out_.as_mut_ptr().cast::<u8>().add(1).write_bytes(0, 7);
         }
     }
 }
@@ -3538,7 +3610,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyCppRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyCppRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyCppRequest
@@ -3718,7 +3799,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyCppResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyCppResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyCppResponse
@@ -3897,7 +3987,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyDartRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyDartRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyDartRequest
@@ -4077,7 +4176,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyDartResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyDartResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyDartResponse
@@ -4256,7 +4364,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyGoRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyGoRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyGoRequest
@@ -4436,7 +4553,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyGoResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyGoResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyGoResponse
@@ -4615,7 +4741,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyPythonRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyPythonRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyPythonRequest
@@ -4795,7 +4930,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyPythonResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyPythonResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyPythonResponse
@@ -4974,7 +5118,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyRustRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyRustRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyRustRequest
@@ -5154,7 +5307,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyRustResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyRustResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenyRustResponse
@@ -5333,7 +5495,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenySyzkallerRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenySyzkallerRequest;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenySyzkallerRequest
@@ -5514,7 +5685,16 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenySyzkallerResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenySyzkallerResponse;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                b,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(b);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireDenyEachBindingOnlyDenySyzkallerResponse
@@ -6705,7 +6885,16 @@ unsafe impl ::fidl_next::Wire for WireMemberOnlyAppearsInImportingLibrary {
     type Decoded<'de> = WireMemberOnlyAppearsInImportingLibrary;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                a,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(a);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireMemberOnlyAppearsInImportingLibrary
@@ -6904,7 +7093,16 @@ unsafe impl ::fidl_next::Wire for WireOnlyAppearsInImportingLibrary {
     type Decoded<'de> = WireOnlyAppearsInImportingLibrary;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                member_only_appears_in_importing_library,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(member_only_appears_in_importing_library);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOnlyAppearsInImportingLibrary
@@ -7292,7 +7490,13 @@ unsafe impl ::fidl_next::Wire for WireOnlyGo {
     type Decoded<'de> = WireOnlyGo;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+
+            } = &mut *out_;
+        }
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireOnlyGo

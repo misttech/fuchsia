@@ -219,10 +219,20 @@ unsafe impl ::fidl_next::Wire for {{ wire_name }}{{ static_ }} {
     type Decoded<'de> = {{ wire_name }}{{ de }};
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                {% for member in strct.members -%}
+                    {{ member.name|snake }},
+                {% endfor %}
+            } = &mut *out_;
+        }
+        {% for member in strct.members %}
+            ::fidl_next::Wire::zero_padding({{ member.name|snake }});
+        {% endfor %}
         {% for range in self.zero_padding_ranges() %}
             unsafe {
-                out.as_mut_ptr().cast::<u8>().add({{ range.offset }}).write_bytes(0, {{ range.width }});
+                out_.as_mut_ptr().cast::<u8>().add({{ range.offset }}).write_bytes(0, {{ range.width }});
             }
         {% endfor %}
     }

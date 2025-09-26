@@ -203,7 +203,25 @@ unsafe impl ::fidl_next::Wire for WireAllInstants {
     type Decoded<'de> = WireAllInstants;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                monotonic,
+                boot,
+                monotonic_ticks,
+                boot_ticks,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(monotonic);
+
+        ::fidl_next::Wire::zero_padding(boot);
+
+        ::fidl_next::Wire::zero_padding(monotonic_ticks);
+
+        ::fidl_next::Wire::zero_padding(boot_ticks);
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireAllInstants

@@ -348,13 +348,43 @@ unsafe impl ::fidl_next::Wire for WireExampleOfUseOfAliases<'static> {
     type Decoded<'de> = WireExampleOfUseOfAliases<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                field_of_u32,
+                field_of_vec_of_strings,
+                field_of_vec_of_strings_at_most_nine,
+                field_of_vec_of_strings_at_most_5,
+                field_of_vec_of_ref_me_at_most_5,
+                field_of_channel,
+                field_of_client_end,
+                field_of_nullable_client_end,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(field_of_u32);
+
+        ::fidl_next::Wire::zero_padding(field_of_vec_of_strings);
+
+        ::fidl_next::Wire::zero_padding(field_of_vec_of_strings_at_most_nine);
+
+        ::fidl_next::Wire::zero_padding(field_of_vec_of_strings_at_most_5);
+
+        ::fidl_next::Wire::zero_padding(field_of_vec_of_ref_me_at_most_5);
+
+        ::fidl_next::Wire::zero_padding(field_of_channel);
+
+        ::fidl_next::Wire::zero_padding(field_of_client_end);
+
+        ::fidl_next::Wire::zero_padding(field_of_nullable_client_end);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(84).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(84).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }

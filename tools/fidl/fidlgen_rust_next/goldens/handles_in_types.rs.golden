@@ -83,7 +83,13 @@ unsafe impl ::fidl_next::Wire for WireEmptyResourceStruct {
     type Decoded<'de> = WireEmptyResourceStruct;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {}
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+
+            } = &mut *out_;
+        }
+    }
 }
 
 unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyResourceStruct
@@ -1132,13 +1138,37 @@ unsafe impl ::fidl_next::Wire for WireHandlesInTypes<'static> {
     type Decoded<'de> = WireHandlesInTypes<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                normal_handle,
+                handle_in_vec,
+                handle_in_array,
+                handle_in_mixed_vec_array,
+                table_with_handle,
+                union_with_handle,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(normal_handle);
+
+        ::fidl_next::Wire::zero_padding(handle_in_vec);
+
+        ::fidl_next::Wire::zero_padding(handle_in_array);
+
+        ::fidl_next::Wire::zero_padding(handle_in_mixed_vec_array);
+
+        ::fidl_next::Wire::zero_padding(table_with_handle);
+
+        ::fidl_next::Wire::zero_padding(union_with_handle);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(44).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(44).write_bytes(0, 4);
         }
 
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
         }
     }
 }

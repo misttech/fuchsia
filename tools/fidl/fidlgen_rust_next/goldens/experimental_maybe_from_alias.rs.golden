@@ -485,9 +485,99 @@ unsafe impl ::fidl_next::Wire for WireTesting<'static> {
     type Decoded<'de> = WireTesting<'de>;
 
     #[inline]
-    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge! {
+            let Self {
+                u1,
+                u2,
+                u3,
+                u4,
+                u5,
+                u6,
+                u7,
+                v1,
+                v2,
+                v3,
+                a1,
+                a2,
+                a3,
+                r1,
+                r2,
+                r3,
+                b1,
+                b2,
+                b3,
+                s1,
+                s2,
+                s3,
+                vv1,
+                vv2,
+                vv3,
+                aa1,
+                aa2,
+                aa3,
+
+            } = &mut *out_;
+        }
+
+        ::fidl_next::Wire::zero_padding(u1);
+
+        ::fidl_next::Wire::zero_padding(u2);
+
+        ::fidl_next::Wire::zero_padding(u3);
+
+        ::fidl_next::Wire::zero_padding(u4);
+
+        ::fidl_next::Wire::zero_padding(u5);
+
+        ::fidl_next::Wire::zero_padding(u6);
+
+        ::fidl_next::Wire::zero_padding(u7);
+
+        ::fidl_next::Wire::zero_padding(v1);
+
+        ::fidl_next::Wire::zero_padding(v2);
+
+        ::fidl_next::Wire::zero_padding(v3);
+
+        ::fidl_next::Wire::zero_padding(a1);
+
+        ::fidl_next::Wire::zero_padding(a2);
+
+        ::fidl_next::Wire::zero_padding(a3);
+
+        ::fidl_next::Wire::zero_padding(r1);
+
+        ::fidl_next::Wire::zero_padding(r2);
+
+        ::fidl_next::Wire::zero_padding(r3);
+
+        ::fidl_next::Wire::zero_padding(b1);
+
+        ::fidl_next::Wire::zero_padding(b2);
+
+        ::fidl_next::Wire::zero_padding(b3);
+
+        ::fidl_next::Wire::zero_padding(s1);
+
+        ::fidl_next::Wire::zero_padding(s2);
+
+        ::fidl_next::Wire::zero_padding(s3);
+
+        ::fidl_next::Wire::zero_padding(vv1);
+
+        ::fidl_next::Wire::zero_padding(vv2);
+
+        ::fidl_next::Wire::zero_padding(vv3);
+
+        ::fidl_next::Wire::zero_padding(aa1);
+
+        ::fidl_next::Wire::zero_padding(aa2);
+
+        ::fidl_next::Wire::zero_padding(aa3);
+
         unsafe {
-            out.as_mut_ptr().cast::<u8>().add(316).write_bytes(0, 4);
+            out_.as_mut_ptr().cast::<u8>().add(316).write_bytes(0, 4);
         }
     }
 }
