@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetState};
 use ffx::TargetIpAddrInfo;
-use ffx_config::{get, is_usb_discovery_disabled};
+use ffx_config::is_usb_discovery_disabled;
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx;
@@ -50,21 +50,19 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
         }
     }
 
-    async fn start(&mut self, _cx: &Context) -> Result<()> {
+    async fn start(&mut self, cx: &Context) -> Result<()> {
         let (sender, receiver) = async_channel::bounded::<ffx::FastbootTarget>(1);
         let inner = Rc::new(Inner { events_in: receiver, events_out: sender });
         self.inner.replace(inner.clone());
         let inner = Rc::downgrade(&inner);
-        if let Some(context) = ffx_config::global_env_context() {
-            // Probably could avoid creating the entire inner object but that refactoring can wait
-            if is_usb_discovery_disabled(&context) {
-                return Ok(());
-            }
+        if is_usb_discovery_disabled(&cx.environment()) {
+            return Ok(());
         }
+        let environment = cx.environment();
         self.fastboot_task.replace(Task::local(async move {
             loop {
                 let fastboot_file_path: Option<PathBuf> =
-                    get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
+                    environment.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 let discovery = DiscoveryBuilder::default()
                     .with_fastboot_devices_file_path(fastboot_file_path)
                     .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
