@@ -7,7 +7,7 @@ library fuchsia.hardware.inlineencryption;
 using zx;
 
 @discoverable
-closed protocol InlineEncryption {
+closed protocol Device {
     /// Programs the ephemerally wrapped `wrapped_key` into the inline encryption hardware in the
     /// next available `slot`. All slots programmed via the connection this method is called on
     /// will be evicted once the connection is dropped. It is not possible to evict individual keys
@@ -45,6 +45,6 @@ closed protocol InlineEncryption {
     }) error zx.Status;
 };
 
-service InlineCryptoService {
-    device client_end:InlineEncryption;
+service Service {
+    device client_end:Device;
 };
