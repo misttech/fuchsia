@@ -349,7 +349,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_forward() {
         let forward = Forward::default();
-        let context = Context::new(TestDaemon);
+        let env = ffx_config::test_init().await.unwrap();
+        let context = Context::new(TestDaemon, env.context.clone());
         let (client, server) = fidl::endpoints::create_endpoints::<ffx::TunnelMarker>();
 
         fuchsia_async::Task::local(async move {
@@ -372,7 +373,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_reverse() {
         let forward = Forward::default();
-        let context = Context::new(TestDaemon);
+        let env = ffx_config::test_init().await.unwrap();
+        let context = Context::new(TestDaemon, env.context.clone());
         let (client, server) = fidl::endpoints::create_endpoints::<ffx::TunnelMarker>();
 
         fuchsia_async::Task::local(async move {

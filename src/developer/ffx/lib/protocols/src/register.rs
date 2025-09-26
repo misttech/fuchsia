@@ -224,6 +224,7 @@ mod test {
     use crate::{DaemonProtocolProvider, FidlProtocol, FidlStreamHandler};
     use async_trait::async_trait;
     use ffx::DaemonError;
+    use ffx_config::EnvironmentContext;
     use fidl::endpoints::DiscoverableProtocolMarker;
     use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_ffx_test as ffx_test};
 
@@ -286,13 +287,15 @@ mod test {
         ProtocolRegister::new(map)
     }
 
-    async fn create_noop_proxy() -> Result<(ffx_test::NoopProxy, ProtocolRegister)> {
+    async fn create_noop_proxy(
+        context: &EnvironmentContext,
+    ) -> Result<(ffx_test::NoopProxy, ProtocolRegister)> {
         let register = create_noop_register();
         let (noop_proxy, server) = fidl::endpoints::create_endpoints::<ffx_test::NoopMarker>();
         register
             .open(
                 ffx_test::NoopMarker::PROTOCOL_NAME.to_owned(),
-                Context::new(TestDaemon::default()),
+                Context::new(TestDaemon::default(), context.clone()),
                 fidl::AsyncChannel::from_channel(server.into_channel()),
             )
             .await?;
@@ -301,22 +304,24 @@ mod test {
 
     #[fuchsia::test]
     async fn test_start_stop() -> Result<()> {
-        let (noop_proxy, register) = create_noop_proxy().await?;
+        let env = ffx_config::test_init().await.unwrap();
+        let (noop_proxy, register) = create_noop_proxy(&env.context).await?;
         noop_proxy.do_noop().await?;
-        register.shutdown(Context::new(TestDaemon::default())).await?;
+        register.shutdown(Context::new(TestDaemon::default(), env.context.clone())).await?;
         assert!(noop_proxy.do_noop().await.is_err());
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_err_on_open_after_shutdown() -> Result<()> {
+        let env = ffx_config::test_init().await.unwrap();
         let register = create_noop_register();
         let (noop_proxy, server) = fidl::endpoints::create_endpoints::<ffx_test::NoopMarker>();
-        register.shutdown(Context::new(TestDaemon::default())).await?;
+        register.shutdown(Context::new(TestDaemon::default(), env.context.clone())).await?;
         let res = register
             .open(
                 ffx_test::NoopMarker::PROTOCOL_NAME.to_owned(),
-                Context::new(TestDaemon::default()),
+                Context::new(TestDaemon::default(), env.context.clone()),
                 fidl::AsyncChannel::from_channel(server.into_channel()),
             )
             .await;
@@ -328,9 +333,15 @@ mod test {
 
     #[fuchsia::test]
     async fn test_err_double_shutdown() -> Result<()> {
+        let env = ffx_config::test_init().await.unwrap();
         let register = create_noop_register();
-        register.shutdown(Context::new(TestDaemon::default())).await?;
-        assert!(register.shutdown(Context::new(TestDaemon::default())).await.is_err());
+        register.shutdown(Context::new(TestDaemon::default(), env.context.clone())).await?;
+        assert!(
+            register
+                .shutdown(Context::new(TestDaemon::default(), env.context.clone()))
+                .await
+                .is_err()
+        );
         Ok(())
     }
 }

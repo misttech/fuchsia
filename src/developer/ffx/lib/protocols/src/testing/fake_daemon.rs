@@ -9,6 +9,7 @@ use crate::{
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use ffx::DaemonError;
+use ffx_config::EnvironmentContext;
 use ffx_daemon_events::TargetConnectionState;
 use ffx_daemon_target::target::Target;
 use ffx_daemon_target::target_collection::TargetCollection;
@@ -113,6 +114,7 @@ where
 
 #[derive(Clone)]
 pub struct FakeDaemon {
+    pub context: EnvironmentContext,
     register: Option<ProtocolRegister>,
     target_collection: Rc<TargetCollection>,
     rcs_handler: Option<Arc<dyn Fn(rcs::RemoteControlRequest, Option<String>)>>,
@@ -131,7 +133,7 @@ impl FakeDaemon {
         self.register
             .as_ref()
             .expect("must have register set")
-            .shutdown(Context::new(self.clone()))
+            .shutdown(Context::new(self.clone(), self.context.clone()))
             .await
             .map_err(Into::into)
     }
@@ -144,6 +146,7 @@ impl Default for FakeDaemon {
             target_collection: TargetCollection::new().into(),
             rcs_handler: Default::default(),
             overnet_node: overnet_core::Router::new(None).unwrap(),
+            context: Default::default(),
         }
     }
 }
@@ -157,7 +160,7 @@ impl DaemonProtocolProvider for FakeDaemon {
             .unwrap()
             .open(
                 protocol_name,
-                Context::new(self.clone()),
+                Context::new(self.clone(), self.context.clone()),
                 fidl::AsyncChannel::from_channel(server),
             )
             .await?;

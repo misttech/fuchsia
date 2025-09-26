@@ -5,6 +5,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use ffx::DaemonError;
+use ffx_config::EnvironmentContext;
 use ffx_daemon_core::events::Queue;
 use ffx_daemon_events::{DaemonEvent, TargetEvent};
 use ffx_daemon_target::target::Target;
@@ -74,6 +75,7 @@ pub trait DaemonProtocolProvider {
 #[derive(Clone)]
 pub struct Context {
     inner: Rc<dyn DaemonProtocolProvider>,
+    environment: EnvironmentContext,
 }
 
 impl std::fmt::Debug for Context {
@@ -83,8 +85,12 @@ impl std::fmt::Debug for Context {
 }
 
 impl Context {
-    pub fn new(t: impl DaemonProtocolProvider + 'static) -> Self {
-        Self { inner: Rc::new(t) }
+    pub fn new(t: impl DaemonProtocolProvider + 'static, environment: EnvironmentContext) -> Self {
+        Self { inner: Rc::new(t), environment }
+    }
+
+    pub fn environment(&self) -> EnvironmentContext {
+        self.environment.clone()
     }
 
     pub fn overnet_node(&self) -> Result<Arc<overnet_core::Router>> {

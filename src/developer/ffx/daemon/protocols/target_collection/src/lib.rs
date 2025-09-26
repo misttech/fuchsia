@@ -1282,7 +1282,8 @@ mod tests {
         let target_add_fut = make_target_add_fut(server);
         proxy.add_target(&target_addr.into(), &ffx::AddTargetConfig::default(), client).unwrap();
         target_add_fut.await.unwrap();
-        let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
+        let target_collection =
+            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
         let target = target_collection
             .query_single_enabled_target(&TargetInfoQuery::Addr(target_addr.into()))
             .unwrap()
@@ -1309,7 +1310,8 @@ mod tests {
         let target_add_fut = make_target_add_fut(server);
         proxy.add_target(&target_addr.into(), &ffx::AddTargetConfig::default(), client).unwrap();
         target_add_fut.await.unwrap();
-        let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
+        let target_collection =
+            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
         let target = target_collection
             .query_single_enabled_target(&TargetInfoQuery::Addr(target_addr.into()))
             .unwrap()
@@ -1348,7 +1350,8 @@ mod tests {
             )
             .unwrap();
         target_add_fut.await.unwrap();
-        let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
+        let target_collection =
+            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
         assert_eq!(1, target_collection.targets(None).len());
         let mut map = Map::<String, Value>::new();
         map.insert("[fe80::1%1]:8022".to_string(), Value::Null);
@@ -1369,7 +1372,7 @@ mod tests {
             .build();
         tc_impl.borrow().manual_targets.add("127.0.0.1:8022".to_string()).await.unwrap();
 
-        let cx = Context::new(fake_daemon);
+        let cx = Context::new(fake_daemon, env.context.clone());
         let target_collection = cx.get_target_collection().await.unwrap();
         // This happens in FidlProtocol::start(), but we want to avoid binding the
         // network sockets in unit tests, thus not calling start.
@@ -1389,7 +1392,7 @@ mod tests {
     async fn test_dynamic_open_target() {
         // Without doing an "add", we can still do an "open" if the target is specified
         // with IP:port
-        let _env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().await.unwrap();
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
         let fake_daemon = FakeDaemonBuilder::new()
@@ -1410,7 +1413,8 @@ mod tests {
         })
         .await
         .unwrap();
-        let target_collection = Context::new(fake_daemon).get_target_collection().await.unwrap();
+        let target_collection =
+            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
         assert_eq!(1, target_collection.targets(None).len());
     }
 }

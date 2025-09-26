@@ -47,7 +47,10 @@ impl FfxMain for DaemonStartTool {
             )
         })?;
         log::debug!("creating daemon");
-        let mut daemon = ffx_daemon_server::Daemon::new(ascendd_path);
+        let mut daemon = ffx_daemon_server::Daemon::new(
+            self.fho_env.environment_context().clone(),
+            ascendd_path,
+        );
         daemon.start(node).await.bug()
     }
 }

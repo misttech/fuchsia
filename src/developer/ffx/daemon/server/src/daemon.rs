@@ -174,7 +174,7 @@ impl DaemonProtocolProvider for Daemon {
         self.protocol_register
             .open(
                 protocol_name,
-                protocols::Context::new(self.clone()),
+                protocols::Context::new(self.clone(), self.context.clone()),
                 fidl::AsyncChannel::from_channel(server),
             )
             .await?;
@@ -301,6 +301,8 @@ impl EventHandler<DaemonEvent> for DaemonEventHandler {
 ///   let mut daemon = ffx_daemon::Daemon::new(socket_path);
 ///   daemon.start().await
 pub struct Daemon {
+    // The EnvironmentContext the daemon is executing in
+    context: EnvironmentContext,
     // The path to the ascendd socket this daemon will bind to
     socket_path: PathBuf,
     // The event queue is a collection of subscriptions to which DaemonEvents will be published.
@@ -328,7 +330,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub fn new(socket_path: PathBuf) -> Daemon {
+    pub fn new(context: EnvironmentContext, socket_path: PathBuf) -> Daemon {
         log::debug!("About to create Daemon, starting with Target Collection");
         let target_collection = TargetCollection::new();
         log::debug!("Wrapping TC in Rc");
@@ -340,6 +342,7 @@ impl Daemon {
 
         log::debug!("Creating Daemon structure");
         Self {
+            context,
             socket_path,
             target_collection,
             event_queue,
@@ -353,9 +356,7 @@ impl Daemon {
     pub async fn start(&mut self, node: Arc<overnet_core::Router>) -> Result<()> {
         log::debug!("starting daemon");
         self.overnet_node = Some(Arc::clone(&node));
-        let context =
-            ffx_config::global_env_context().context("Discovering ffx environment context")?;
-
+        let context = self.context.clone();
         let ascendd = self.prime_ascendd(Arc::clone(&node)).await?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
@@ -393,7 +394,7 @@ impl Daemon {
     }
 
     async fn start_protocols(&mut self) -> Result<()> {
-        let cx = protocols::Context::new(self.clone());
+        let cx = protocols::Context::new(self.clone(), self.context.clone());
 
         self.protocol_register
             .start(TargetCollectionMarker::PROTOCOL_NAME.to_string(), cx)
@@ -711,7 +712,7 @@ impl Daemon {
                     .protocol_register
                     .open(
                         name,
-                        protocols::Context::new(self.clone()),
+                        protocols::Context::new(self.clone(), self.context.clone()),
                         fidl::AsyncChannel::from_channel(server_end),
                     )
                     .await
@@ -811,7 +812,7 @@ impl Daemon {
                         }
 
                         self.protocol_register
-                            .shutdown(protocols::Context::new(self.clone()))
+                            .shutdown(protocols::Context::new(self.clone(),self.context.clone()))
                             .await
                             .unwrap_or_else(|e| {
                                 log::error!("shutting down protocol register: {:?}", e)
@@ -883,10 +884,11 @@ mod test {
     use std::str::FromStr;
     use std::time::Instant;
 
-    fn spawn_test_daemon() -> (DaemonProxy, Daemon, Task<Result<()>>) {
+    async fn spawn_test_daemon() -> (DaemonProxy, Daemon, Task<Result<()>>) {
+        let env = ffx_config::test_init().await.unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
-        let d = Daemon::new(socket_path);
+        let d = Daemon::new(env.context.clone(), socket_path);
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<DaemonMarker>();
         let (quit_tx, _quit_rx) = mpsc::channel(1);
@@ -913,7 +915,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_open_rcs_on_fastboot_error() {
-        let (_proxy, daemon, _task) = spawn_test_daemon();
+        let (_proxy, daemon, _task) = spawn_test_daemon().await;
         let target = Target::new_for_usb("abc");
         daemon.target_collection.merge_insert(target);
         let result = daemon.open_remote_control(None).await;
@@ -922,7 +924,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_open_rcs_on_zedboot_error() {
-        let (_proxy, daemon, _task) = spawn_test_daemon();
+        let (_proxy, daemon, _task) = spawn_test_daemon().await;
         let target = Target::new_with_netsvc_addrs(
             Some("abc"),
             BTreeSet::from_iter(
@@ -936,9 +938,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_empty() {
+        let env = ffx_config::test_init().await.unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
-        let d = Daemon::new(socket_path);
+        let d = Daemon::new(env.context.clone(), socket_path);
         let nodename = "where-is-my-hasenpfeffer";
         let t = Target::new_autoconnected(nodename);
         d.target_collection.merge_insert(t.clone());
@@ -947,9 +950,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_query() {
+        let env = ffx_config::test_init().await.unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
-        let d = Daemon::new(socket_path);
+        let d = Daemon::new(env.context.clone(), socket_path);
         let nodename = "where-is-my-hasenpfeffer";
         let t = Target::new_autoconnected(nodename);
         d.target_collection.merge_insert(t.clone());
@@ -961,17 +965,19 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_collection_empty_error() {
+        let env = ffx_config::test_init().await.unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
-        let d = Daemon::new(socket_path);
+        let d = Daemon::new(env.context.clone(), socket_path);
         assert_eq!(DaemonError::TargetCacheEmpty, d.get_target(None).await.unwrap_err());
     }
 
     #[fuchsia::test]
     async fn test_get_target_ambiguous() {
+        let env = ffx_config::test_init().await.unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
-        let d = Daemon::new(socket_path);
+        let d = Daemon::new(env.context.clone(), socket_path);
         let t = Target::new_autoconnected("where-is-my-hasenpfeffer");
         let t2 = Target::new_autoconnected("it-is-rabbit-season");
         d.target_collection.merge_insert(t.clone());
@@ -981,10 +987,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_expiry() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
-        let mut daemon = Daemon::new(socket_path);
+        let mut daemon = Daemon::new(env.context.clone(), socket_path);
         let target = Target::new_named("goodbye-world");
         let then = Instant::now() - Duration::from_secs(10);
         target.update_connection_state(|_| TargetConnectionState::Mdns(then));

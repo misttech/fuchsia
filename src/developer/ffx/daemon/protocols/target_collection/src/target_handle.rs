@@ -303,7 +303,8 @@ mod tests {
     async fn test_valid_target_state() {
         const TEST_SOCKETADDR: &'static str = "[fe80::1%1]:22";
         let daemon = FakeDaemonBuilder::new().build();
-        let cx = Context::new(daemon);
+        let env = ffx_config::test_init().await.unwrap();
+        let cx = Context::new(daemon, env.context.clone());
         let target = Target::new_with_addr_entries(
             Some("pride-and-prejudice"),
             vec![TargetAddrEntry::new(
@@ -436,7 +437,7 @@ mod tests {
             .await
             .unwrap();
         let daemon = FakeDaemonBuilder::new().build();
-        let cx = Context::new(daemon);
+        let cx = Context::new(daemon.clone(), daemon.context.clone());
         let lpc = local_node.new_list_peers_context().await;
         while lpc.list_peers().await.unwrap().iter().all(|x| x.is_self) {}
         let (client, server) = fidl::Channel::create();
