@@ -23,7 +23,6 @@ success("TableFieldInlined") {
 // Tests a table whose handle field is inlined into the envelope in the wire
 // format.
 success("TableFieldInlinedHandle") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
     },
@@ -289,7 +288,6 @@ encode_success("TableFieldUnknownInlinedDropped") {
 success("TableFieldUnknownInlinedHandleStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownInlinedHandleDropped.
     bindings_allowlist = [dart, go],
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
     },
@@ -317,7 +315,7 @@ success("TableFieldUnknownInlinedHandleStored") {
 // Tests a table in which a handle value is inlined into an unknown field.
 decode_success("TableFieldUnknownInlinedHandleDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go, rust_next],
+    bindings_denylist = [dart, go],
     handle_defs = {
         #0 = channel(),
     },
@@ -342,7 +340,6 @@ encode_success("TableFieldUnknownInlinedHandleDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     // TODO(https://fxbug.dev/42067496): Implement the decode function in all backends.
     bindings_allowlist = [rust],
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = channel(),
     },

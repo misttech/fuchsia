@@ -331,7 +331,6 @@ decode_success("GoldenHandleBasicRightsStruct") {
 }
 
 success("GoldenNullableHandleStructNonNull") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },

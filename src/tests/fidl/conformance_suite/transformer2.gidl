@@ -1227,7 +1227,7 @@ success("StringUnionStructWrapperResponse") {
 
 success("RegressionNoUnionLauncherCreateComponentRequest") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(),
         #1 = channel(),

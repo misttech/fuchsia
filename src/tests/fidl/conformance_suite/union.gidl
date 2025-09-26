@@ -502,7 +502,6 @@ decode_failure("UnionEnvelopeInlining_LargeValue_BadOutlinedMarker") {
 }
 
 success("UnionEnvelopeInlining_HandleValue_Inlined") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },

@@ -309,6 +309,29 @@ use {
     }
 
     #[test]
+    fn encode_golden_nullable_handle_struct_non_null() {
+            let handle_defs = create_handles(&[
+// #0
+HandleDef{
+	subtype: HandleSubtype::Event,
+	rights: fidl_next::fuchsia::zx::Rights::from_bits(2147483648).unwrap(),
+},
+]);
+        let value = test_conformance::GoldenNullableHandleStruct { v: Some(copy_handle(&handle_defs[0])) };
+        let mut buffer = Buffer::new();
+        buffer.encode_next(value).unwrap();
+        assert_eq!(&[
+0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+], buffer.bytes().as_slice());
+        // TODO: support handle dispositions
+        assert_eq!(
+            buffer.handles().iter().map(|h| h.raw_handle()).collect::<Vec<_>>(),
+            &[handle_defs[0].handle,
+]
+        );
+    }
+
+    #[test]
     fn encode_golden_nullable_handle_struct_null() {
         let value = test_conformance::GoldenNullableHandleStruct { v: None };
         let mut buffer = Buffer::new();
@@ -642,12 +665,36 @@ HandleDef{
 0,]);
 
         let buffer = Buffer::from_raw_bytes(vec![
-unsafe{Handle::from_raw(0)},], &[
+copy_handle(&handle_defs[0]),], &[
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 ]);
         let recv_buffer = RecvBuffer::new(buffer);
         let _value: test_conformance::GoldenHandleBasicRightsStruct = recv_buffer.decode::< <test_conformance::GoldenHandleBasicRightsStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
         
+    }
+
+    #[test]
+    fn decode_golden_nullable_handle_struct_non_null() {
+            let handle_defs = create_handles(&[
+// #0
+HandleDef{
+	subtype: HandleSubtype::Event,
+	rights: fidl_next::fuchsia::zx::Rights::from_bits(2147483648).unwrap(),
+},
+]);
+            let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
+            #[allow(unused)]
+            let mut handle_infos = select_handle_infos(&handle_defs, &[
+0,]);
+
+        let buffer = Buffer::from_raw_bytes(vec![
+copy_handle(&handle_defs[0]),], &[
+0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+]);
+        let recv_buffer = RecvBuffer::new(buffer);
+        let _value: test_conformance::GoldenNullableHandleStruct = recv_buffer.decode::< <test_conformance::GoldenNullableHandleStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
+        assert_eq!(_value.v.as_ref().unwrap().basic_info().unwrap().koid.raw_koid(), _handle_koids[0]);
+
     }
 
     #[test]
@@ -678,7 +725,7 @@ HandleDef{
 0,]);
 
         let buffer = Buffer::from_raw_bytes(vec![
-unsafe{Handle::from_raw(0)},], &[
+copy_handle(&handle_defs[0]),], &[
 0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,

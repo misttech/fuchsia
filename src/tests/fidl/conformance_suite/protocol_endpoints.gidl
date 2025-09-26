@@ -72,7 +72,7 @@ encode_success("EncodeStructOfEndpoints_TypeAndRightsComeFromFIDL") {
 
 decode_success("DecodeStructOfEndpoints_ExpectedRights") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
         #1 = channel(rights: channel_default),
@@ -154,7 +154,7 @@ decode_failure("DecodeStructOfEndpoints_InsufficientRights") {
 
 success("StructOfEndpoints_Absent") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(),
         #1 = channel(),
@@ -181,7 +181,7 @@ success("StructOfEndpoints_Absent") {
 
 success("TableOfEndpoints") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(),
         #1 = channel(),
@@ -215,7 +215,7 @@ success("TableOfEndpoints") {
 
 success("UnionOfEndpoints_ClientEnd") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(),
     },
@@ -239,7 +239,7 @@ success("UnionOfEndpoints_ClientEnd") {
 
 success("UnionOfEndpoints_ServerEnd") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(),
     },

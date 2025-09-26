@@ -52,7 +52,8 @@ func buildHandleValues(handles []ir.Handle) string {
 	var builder strings.Builder
 	builder.WriteString("[\n")
 	for i, h := range handles {
-		builder.WriteString(fmt.Sprintf("unsafe{Handle::from_raw(%d)},", h))
+		builder.WriteString(buildHandleValue(h))
+		builder.WriteString(",")
 		if i%8 == 7 {
 			builder.WriteString("\n")
 		}

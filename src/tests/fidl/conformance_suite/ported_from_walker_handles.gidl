@@ -6,7 +6,6 @@
 // These were ported from a legacy set of manual C/C++ tests termed `walker_tests`.
 
 success("SinglePresentHandle") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -149,7 +148,6 @@ decode_failure("TooManyBytesSpecifiedError") {
 }
 
 success("MultiplePresentHandles") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = channel(),
@@ -209,7 +207,6 @@ success("MultipleAbsentHandles") {
 }
 
 success("ArrayOfPresentHandles") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -284,7 +281,6 @@ decode_failure("ArrayOfNonnullableHandlesSomeAbsentError") {
 }
 
 success("ArrayOfNullableHandles") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -337,7 +333,6 @@ decode_failure("ArrayOfNullableHandlesWithInsufficientHandlesError") {
 }
 
 success("ArrayOfArrayOfPresentHandles") {
-    bindings_denylist = [rust_next],
     // 4x3 handle array = 12 handles
     handle_defs = {
         #0 = event(),
@@ -386,7 +381,7 @@ success("ArrayOfArrayOfPresentHandles") {
 
 success("OutOfLineArrayOfNonnullableHandles") {
     // TODO(https://fxbug.dev/42170268): generated Rust test does not compile.
-    bindings_denylist = [rust, rust_next],
+    bindings_denylist = [rust],
     handle_defs = {
         #0 = event(),
         #1 = event(),
