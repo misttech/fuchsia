@@ -4,6 +4,7 @@
 
 import("//build/zircon/migrated_targets.gni")
 
+# LINT.IfChange
 zx_library("cmdline") {
   sdk = "source"
 
@@ -15,6 +16,8 @@ zx_library("cmdline") {
 
   sources = [ "args_parser.cc" ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 group("tests") {
   testonly = true

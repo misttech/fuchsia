@@ -1,0 +1,21 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# TODO(https://fxbug.dev/429377203): Support Bazel zx_library() when available.
+# Note that idk_cc_source_library_zx() only supports SDK-publishable zx_library()
+# instances for now.
+# TODO(https://fxbug.dev/429374432): Use bazel2gn to keep BUILD.gn in sync.
+# LINT.IfChange
+cc_library(
+    name = "cmdline",
+    srcs = ["args_parser.cc"],
+    hdrs = [
+        "include/lib/cmdline/args_parser.h",
+        "include/lib/cmdline/optional.h",
+        "include/lib/cmdline/status.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.bazel)
