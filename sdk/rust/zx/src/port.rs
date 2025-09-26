@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon port objects.
 
 use crate::{
-    guest, ok, sys, AsHandleRef, GPAddr, Handle, HandleBased, HandleRef, MonotonicInstant, Signals,
-    Status, VcpuContents,
+    AsHandleRef, GPAddr, Handle, HandleBased, HandleRef, MonotonicInstant, Signals, Status,
+    VcpuContents, guest, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem;
@@ -440,9 +440,6 @@ impl GuestVcpuPacket {
                     entry: self.0.union.startup.entry,
                 }
             },
-            sys::zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_EXIT => unsafe {
-                VcpuContents::Exit { retcode: self.0.union.exit.retcode }
-            },
             _ => panic!("unexpected VCPU packet type"),
         }
     }
@@ -605,9 +602,9 @@ mod tests {
         let event = Event::create();
         let no_opts = WaitAsyncOpts::empty();
 
-        assert!(event
-            .wait_async_handle(&port, key, Signals::USER_0 | Signals::USER_1, no_opts)
-            .is_ok());
+        assert!(
+            event.wait_async_handle(&port, key, Signals::USER_0 | Signals::USER_1, no_opts).is_ok()
+        );
 
         // Waiting without setting any signal should time out.
         assert_eq!(port.wait(MonotonicInstant::after(ten_ms)), Err(Status::TIMED_OUT));
@@ -746,27 +743,6 @@ mod tests {
         guest_vcpu_packet.union = sys::zx_packet_guest_vcpu_union_t {
             startup: sys::zx_packet_guest_vcpu_startup_t { id: 16, entry: 0xffffffff11111111 },
         };
-        const KEY: u64 = 0x0123456789abcdef;
-        const STATUS: i32 = sys::ZX_ERR_NO_RESOURCES;
-
-        let packet = Packet::from_guest_vcpu_packet(
-            KEY,
-            STATUS,
-            GuestVcpuPacket::from_raw(guest_vcpu_packet),
-        );
-
-        assert_matches!(packet.contents(), PacketContents::GuestVcpu(GuestVcpuPacket(packet)) if packet == guest_vcpu_packet);
-        assert_eq!(packet.key(), KEY);
-        assert_eq!(packet.status(), STATUS);
-    }
-
-    #[test]
-    fn guest_vcpu_exit_packet() {
-        let mut guest_vcpu_packet = sys::zx_packet_guest_vcpu_t::default();
-        guest_vcpu_packet.r#type = sys::zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_EXIT;
-        let mut exit = sys::zx_packet_guest_vcpu_exit_t::default();
-        exit.retcode = 12345678;
-        guest_vcpu_packet.union = sys::zx_packet_guest_vcpu_union_t { exit };
         const KEY: u64 = 0x0123456789abcdef;
         const STATUS: i32 = sys::ZX_ERR_NO_RESOURCES;
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{ok, sys, AsHandleRef, Guest, Handle, HandleBased, HandleRef, Packet, Status};
+use crate::{AsHandleRef, Guest, Handle, HandleBased, HandleRef, Packet, Status, ok, sys};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
@@ -81,7 +81,6 @@ impl Vcpu {
 pub enum VcpuContents {
     Interrupt { mask: u64, vector: u8 },
     Startup { id: u64, entry: sys::zx_gpaddr_t },
-    Exit { retcode: i64 },
 }
 
 #[cfg(test)]
@@ -102,9 +101,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn vcpu_normal_create() {
+    async fn vcpu_create() {
         let hypervisor = get_hypervisor().await;
-        let (guest, _vmar) = match Guest::normal(&hypervisor) {
+        let (guest, _vmar) = match Guest::create(&hypervisor) {
             Err(Status::NOT_SUPPORTED) => {
                 println!("Hypervisor not supported");
                 return;
@@ -115,9 +114,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn vcpu_normal_interrupt() {
+    async fn vcpu_interrupt() {
         let hypervisor = get_hypervisor().await;
-        let (guest, _vmar) = match Guest::normal(&hypervisor) {
+        let (guest, _vmar) = match Guest::create(&hypervisor) {
             Err(Status::NOT_SUPPORTED) => {
                 println!("Hypervisor not supported");
                 return;
@@ -130,9 +129,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn vcpu_normal_read_write_state() {
+    async fn vcpu_read_write_state() {
         let hypervisor = get_hypervisor().await;
-        let (guest, _vmar) = match Guest::normal(&hypervisor) {
+        let (guest, _vmar) = match Guest::create(&hypervisor) {
             Err(Status::NOT_SUPPORTED) => {
                 println!("Hypervisor not supported");
                 return;

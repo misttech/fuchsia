@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Port, Resource, Status, Vmar};
+use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Port, Resource, Status, Vmar, ok, sys};
 
 /// Wrapper type for guest physical addresses.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -18,21 +18,13 @@ pub struct Guest(Handle);
 impl_handle_based!(Guest);
 
 impl Guest {
-    /// Create a normal guest, that is used to run normal virtual machines.
-    pub fn normal(hypervisor: &Resource) -> Result<(Guest, Vmar), Status> {
-        Self::create(hypervisor, sys::ZX_GUEST_OPT_NORMAL)
-    }
-
-    fn create(
-        hypervisor: &Resource,
-        options: sys::zx_guest_option_t,
-    ) -> Result<(Guest, Vmar), Status> {
+    pub fn create(hypervisor: &Resource) -> Result<(Guest, Vmar), Status> {
         unsafe {
             let mut guest_handle = 0;
             let mut vmar_handle = 0;
             ok(sys::zx_guest_create(
                 hypervisor.raw_handle(),
-                options,
+                0,
                 &mut guest_handle,
                 &mut vmar_handle,
             ))?;
@@ -159,9 +151,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn guest_normal_create() {
+    async fn guest_create() {
         let hypervisor = get_hypervisor().await;
-        match Guest::normal(&hypervisor) {
+        match Guest::create(&hypervisor) {
             Err(Status::NOT_SUPPORTED) => {
                 println!("Hypervisor not supported");
                 return;

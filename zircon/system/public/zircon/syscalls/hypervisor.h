@@ -10,10 +10,6 @@
 __BEGIN_CDECLS
 
 // clang-format off
-typedef uint32_t zx_guest_option_t;
-
-#define ZX_GUEST_OPT_NORMAL ((zx_guest_option_t) 0u)
-
 typedef uint32_t zx_guest_trap_t;
 
 #define ZX_GUEST_TRAP_BELL ((zx_guest_trap_t) 0u)

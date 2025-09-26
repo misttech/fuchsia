@@ -16,33 +16,23 @@
 KCOUNTER(dispatcher_guest_create_count, "dispatcher.guest.create")
 KCOUNTER(dispatcher_guest_destroy_count, "dispatcher.guest.destroy")
 
-namespace {
-
-zx::result<ktl::unique_ptr<Guest>> CreateGuest(uint32_t options) {
-  switch (options) {
-    case ZX_GUEST_OPT_NORMAL:
-      return NormalGuest::Create();
-    default:
-      return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-}
-
-}  // namespace
-
 // static
 zx_status_t GuestDispatcher::Create(uint32_t options, KernelHandle<GuestDispatcher>* guest_handle,
                                     zx_rights_t* guest_rights,
                                     KernelHandle<VmAddressRegionDispatcher>* vmar_handle,
                                     zx_rights_t* vmar_rights) {
-  auto guest = CreateGuest(options);
+  if (options != 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  auto guest = NormalGuest::Create();
   if (guest.is_error()) {
     return guest.status_value();
   }
   fbl::RefPtr<VmAddressRegion> vmar = (*guest)->RootVmar();
 
   fbl::AllocChecker ac;
-  KernelHandle new_guest_handle(
-      fbl::AdoptRef(new (&ac) GuestDispatcher(options, ktl::move(*guest))));
+  KernelHandle new_guest_handle(fbl::AdoptRef(new (&ac) GuestDispatcher(ktl::move(*guest))));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -58,8 +48,7 @@ zx_status_t GuestDispatcher::Create(uint32_t options, KernelHandle<GuestDispatch
   return ZX_OK;
 }
 
-GuestDispatcher::GuestDispatcher(uint32_t options, ktl::unique_ptr<Guest> guest)
-    : options_(options), guest_(ktl::move(guest)) {
+GuestDispatcher::GuestDispatcher(ktl::unique_ptr<Guest> guest) : guest_(ktl::move(guest)) {
   kcounter_add(dispatcher_guest_create_count, 1);
 }
 
@@ -68,10 +57,7 @@ GuestDispatcher::~GuestDispatcher() { kcounter_add(dispatcher_guest_destroy_coun
 zx_status_t GuestDispatcher::SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len,
                                      fbl::RefPtr<PortDispatcher> port, uint64_t key) {
   canary_.Assert();
-  if (options_ == ZX_GUEST_OPT_NORMAL) {
-    return static_cast<NormalGuest*>(guest_.get())
-        ->SetTrap(kind, addr, len, ktl::move(port), key)
-        .status_value();
-  }
-  return ZX_ERR_NOT_SUPPORTED;
+  return static_cast<NormalGuest*>(guest_.get())
+      ->SetTrap(kind, addr, len, ktl::move(port), key)
+      .status_value();
 }

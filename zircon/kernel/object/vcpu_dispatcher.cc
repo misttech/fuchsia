@@ -19,23 +19,9 @@
 KCOUNTER(dispatcher_vcpu_create_count, "dispatcher.vcpu.create")
 KCOUNTER(dispatcher_vcpu_destroy_count, "dispatcher.vcpu.destroy")
 
-namespace {
-
-zx::result<ktl::unique_ptr<Vcpu>> CreateVcpu(Guest& guest, uint32_t guest_options,
-                                             zx_vaddr_t entry) {
-  switch (guest_options) {
-    case ZX_GUEST_OPT_NORMAL:
-      return NormalVcpu::Create(static_cast<NormalGuest&>(guest), entry);
-    default:
-      return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-}
-
-}  // namespace
-
 zx_status_t VcpuDispatcher::Create(fbl::RefPtr<GuestDispatcher> guest_dispatcher, zx_vaddr_t entry,
                                    KernelHandle<VcpuDispatcher>* handle, zx_rights_t* rights) {
-  auto vcpu = CreateVcpu(guest_dispatcher->guest(), guest_dispatcher->options(), entry);
+  auto vcpu = NormalVcpu::Create(static_cast<NormalGuest&>(guest_dispatcher->guest()), entry);
   if (vcpu.is_error()) {
     return vcpu.status_value();
   }
@@ -53,7 +39,7 @@ zx_status_t VcpuDispatcher::Create(fbl::RefPtr<GuestDispatcher> guest_dispatcher
 
 VcpuDispatcher::VcpuDispatcher(fbl::RefPtr<GuestDispatcher> guest_dispatcher,
                                ktl::unique_ptr<Vcpu> vcpu)
-    : guest_dispatcher_(guest_dispatcher), vcpu_(ktl::move(vcpu)) {
+    : guest_dispatcher_(std::move(guest_dispatcher)), vcpu_(ktl::move(vcpu)) {
   kcounter_add(dispatcher_vcpu_create_count, 1);
 }
 
@@ -71,11 +57,8 @@ void VcpuDispatcher::Kick() {
 
 zx_status_t VcpuDispatcher::Interrupt(uint32_t vector) {
   canary_.Assert();
-  if (guest_dispatcher_->options() == ZX_GUEST_OPT_NORMAL) {
-    static_cast<NormalVcpu*>(vcpu_.get())->Interrupt(vector);
-    return ZX_OK;
-  }
-  return ZX_ERR_NOT_SUPPORTED;
+  static_cast<NormalVcpu*>(vcpu_.get())->Interrupt(vector);
+  return ZX_OK;
 }
 
 zx_status_t VcpuDispatcher::ReadState(zx_vcpu_state_t& vcpu_state) const {
@@ -90,10 +73,7 @@ zx_status_t VcpuDispatcher::WriteState(const zx_vcpu_state_t& vcpu_state) {
 
 zx_status_t VcpuDispatcher::WriteState(const zx_vcpu_io_t& io_state) {
   canary_.Assert();
-  if (guest_dispatcher_->options() == ZX_GUEST_OPT_NORMAL) {
-    return static_cast<NormalVcpu*>(vcpu_.get())->WriteState(io_state).status_value();
-  }
-  return ZX_ERR_INVALID_ARGS;
+  return static_cast<NormalVcpu*>(vcpu_.get())->WriteState(io_state).status_value();
 }
 
 zx_info_vcpu_t VcpuDispatcher::GetInfo() const {

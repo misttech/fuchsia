@@ -20,7 +20,6 @@ pub type zx_duration_boot_t = i64;
 pub type zx_duration_boot_ticks_t = i64;
 pub type zx_futex_t = AtomicI32;
 pub type zx_gpaddr_t = usize;
-pub type zx_guest_option_t = u32;
 pub type zx_vcpu_option_t = u32;
 pub type zx_guest_trap_t = u32;
 pub type zx_handle_t = u32;
@@ -973,7 +972,6 @@ pub enum zx_packet_guest_vcpu_type_t {
     #[default]
     ZX_PKT_GUEST_VCPU_INTERRUPT = 0,
     ZX_PKT_GUEST_VCPU_STARTUP = 1,
-    ZX_PKT_GUEST_VCPU_EXIT = 2,
     #[doc(hidden)]
     __Nonexhaustive,
 }
@@ -1036,20 +1034,11 @@ pub struct zx_packet_guest_vcpu_startup_t {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
-pub struct zx_packet_guest_vcpu_exit_t {
-    pub retcode: i64,
-    padding1: [PadByte; 8],
-}
-
-#[repr(C)]
 #[derive(Copy, Clone)]
 #[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub union zx_packet_guest_vcpu_union_t {
     pub interrupt: zx_packet_guest_vcpu_interrupt_t,
     pub startup: zx_packet_guest_vcpu_startup_t,
-    pub exit: zx_packet_guest_vcpu_exit_t,
 }
 
 #[cfg(feature = "zerocopy")]
@@ -1080,9 +1069,6 @@ impl PartialEq for zx_packet_guest_vcpu_t {
             zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_STARTUP => unsafe {
                 self.union.startup == other.union.startup
             },
-            zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_EXIT => unsafe {
-                self.union.exit == other.union.exit
-            },
             // No equality relationship is defined for invalid types.
             _ => false,
         }
@@ -1099,9 +1085,6 @@ impl Debug for zx_packet_guest_vcpu_t {
             }
             zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_STARTUP => {
                 write!(f, "type: {:?} union: {:?}", self.r#type, unsafe { self.union.startup })
-            }
-            zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_EXIT => {
-                write!(f, "type: {:?} union: {:?}", self.r#type, unsafe { self.union.exit })
             }
             _ => panic!("unexpected VCPU packet type"),
         }
@@ -2375,10 +2358,6 @@ struct_decl_macro! {
 zx_info_memory_stall_t!(zx_info_memory_stall_t);
 
 // from //zircon/system/public/zircon/syscalls/hypervisor.h
-multiconst!(zx_guest_option_t, [
-    ZX_GUEST_OPT_NORMAL = 0;
-]);
-
 multiconst!(zx_guest_trap_t, [
     ZX_GUEST_TRAP_BELL = 0;
     ZX_GUEST_TRAP_MEM  = 1;

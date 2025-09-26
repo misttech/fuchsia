@@ -25,17 +25,15 @@ class GuestDispatcher final : public SoloDispatcher<GuestDispatcher, ZX_DEFAULT_
   ~GuestDispatcher();
 
   zx_obj_type_t get_type() const { return ZX_OBJ_TYPE_GUEST; }
-  uint32_t options() const { return options_; }
   Guest& guest() const { return *guest_; }
 
   zx_status_t SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len, fbl::RefPtr<PortDispatcher> port,
                       uint64_t key);
 
  private:
-  uint32_t options_;
   ktl::unique_ptr<Guest> guest_;
 
-  GuestDispatcher(uint32_t options, ktl::unique_ptr<Guest> guest);
+  explicit GuestDispatcher(ktl::unique_ptr<Guest> guest);
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_GUEST_DISPATCHER_H_
