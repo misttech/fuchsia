@@ -683,9 +683,21 @@ impl ZxioSocketMark {
     }
 }
 
+/// A transparent wrapper around the zxio_wake_group_token_t bindgen type.
+#[repr(transparent)]
+pub struct ZxioWakeGroupToken(zx_handle_t);
+
+impl ZxioWakeGroupToken {
+    /// Creates a wake group token from the provided handle to an event.
+    pub fn new(token: Option<zx::Event>) -> Self {
+        ZxioWakeGroupToken(token.map(zx::Event::into_raw).unwrap_or(zx::sys::ZX_HANDLE_INVALID))
+    }
+}
+
 /// Socket creation options that can be used.
 pub struct ZxioSocketCreationOptions<'a> {
     pub marks: &'a mut [ZxioSocketMark],
+    pub wake_group: ZxioWakeGroupToken,
 }
 
 impl Zxio {
@@ -693,15 +705,18 @@ impl Zxio {
         domain: c_int,
         socket_type: c_int,
         protocol: c_int,
-        ZxioSocketCreationOptions { marks }: ZxioSocketCreationOptions<'_>,
+        ZxioSocketCreationOptions { marks, wake_group }: ZxioSocketCreationOptions<'_>,
     ) -> Result<Result<Self, ZxioErrorCode>, zx::Status> {
         let zxio = Zxio::default();
         let mut out_context = zxio.as_storage_ptr() as *mut c_void;
         let mut out_code = 0;
 
+        let ZxioWakeGroupToken(wake_group) = wake_group;
         let creation_opts = zxio::zxio_socket_creation_options {
             num_marks: marks.len(),
             marks: marks.as_mut_ptr() as *mut _,
+            wake_group,
+            ..Default::default()
         };
 
         #[allow(

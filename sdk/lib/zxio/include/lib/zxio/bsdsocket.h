@@ -115,6 +115,14 @@ typedef struct zxio_socket_creation_options {
   // An array of |zxio_socket_mark_t|, these marks will be applied to the
   // created socket from first to last.
   zxio_socket_mark_t* marks;
+  // An optional wake group to which to add the socket.
+  //
+  // `ZX_HANDLE_INVALID` is interpreted as no wake group.
+  //
+  // If specified, must be a handle to an event that was retrieved from the
+  // netstack on creation of a wake group. It must have the `TRANSFER` and
+  // `DUPLICATE` rights.
+  zx_handle_t wake_group;
 } zxio_socket_creation_options_t;
 
 // Creates a socket with the optional creation |opts|. Expects |service_connector| to yield

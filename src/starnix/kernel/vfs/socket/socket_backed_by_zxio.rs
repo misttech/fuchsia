@@ -37,7 +37,7 @@ use syncio::zxio::{
 };
 use syncio::{
     ControlMessage, RecvMessageInfo, ServiceConnector, Zxio, ZxioErrorCode,
-    ZxioSocketCreationOptions, ZxioSocketMark,
+    ZxioSocketCreationOptions, ZxioSocketMark, ZxioWakeGroupToken,
 };
 use zerocopy::IntoBytes;
 use {
@@ -138,7 +138,11 @@ impl ZxioBackedSocket {
             domain.as_raw() as c_int,
             socket_type.as_raw() as c_int,
             protocol.as_raw() as c_int,
-            ZxioSocketCreationOptions { marks },
+            ZxioSocketCreationOptions {
+                marks,
+                // TODO(https://fxbug.dev/434263247): register sockets in a wake group.
+                wake_group: ZxioWakeGroupToken::new(None),
+            },
         )
         .map_err(|status| from_status_like_fdio!(status))?
         .map_err(|out_code| errno_from_zxio_code!(out_code))?;

@@ -98,6 +98,7 @@ source_set("zxio") {
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp",
+    "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_cpp",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
     "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",

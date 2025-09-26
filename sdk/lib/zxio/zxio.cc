@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.net.name/cpp/wire.h>
+#include <fidl/fuchsia.net.resources/cpp/wire.h>
 #include <fidl/fuchsia.net/cpp/wire.h>
 #include <fidl/fuchsia.posix.socket.packet/cpp/wire.h>
 #include <fidl/fuchsia.posix.socket.raw/cpp/wire.h>
@@ -625,10 +626,15 @@ zx::result<fidl::UnownedClientEnd<T>> connect_socket_provider(
 namespace {
 struct socket_creation_options {
   cpp20::span<zxio_socket_mark_t> marks;
+  std::optional<zx::event> wake_group;
   socket_creation_options() = default;
 
   explicit socket_creation_options(zxio_socket_creation_options_t opts)
-      : marks(opts.marks, opts.num_marks) {}
+      : marks(opts.marks, opts.num_marks) {
+    if (opts.wake_group != ZX_HANDLE_INVALID) {
+      wake_group = zx::event(opts.wake_group);
+    }
+  }
 };
 
 // A class template to extract the client end from the FIDL response.
@@ -778,7 +784,12 @@ zx_status_t zxio_socket_inner(zxio_service_connector service_connector, int doma
           __builtin_unreachable();
       }
     }
-    return fsocket::wire::SocketCreationOptions::Builder(arena).marks(fidl_marks.Build()).Build();
+    auto builder = fsocket::wire::SocketCreationOptions::Builder(arena).marks(fidl_marks.Build());
+    if (opts->wake_group.has_value()) {
+      builder.group(
+          fuchsia_net_resources::wire::WakeGroupToken{std::move(opts->wake_group.value())});
+    }
+    return builder.Build();
   };
 #else
   if (opts.has_value()) {

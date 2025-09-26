@@ -1298,6 +1298,8 @@ pub type zxio_socket_mark_t = zxio_socket_mark;
 pub struct zxio_socket_creation_options {
     pub num_marks: usize,
     pub marks: *mut zxio_socket_mark_t,
+    pub wake_group: zx_handle_t,
+    pub __bindgen_padding_0: [u8; 4usize],
 }
 impl Default for zxio_socket_creation_options {
     fn default() -> Self {
