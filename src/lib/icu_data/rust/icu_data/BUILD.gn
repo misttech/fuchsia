@@ -20,7 +20,6 @@ icu_rustc_library("icu_data") {
   deps = [
     "//sdk/rust/zx",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:thiserror",
   ]
 

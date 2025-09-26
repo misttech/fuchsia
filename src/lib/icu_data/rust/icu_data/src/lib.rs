@@ -24,18 +24,15 @@
 
 use std::path::PathBuf;
 
-use anyhow::{format_err, Context};
-use lazy_static::lazy_static;
+use anyhow::{Context, format_err};
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::{env, fs, io};
 use thiserror::Error;
 use {rust_icu_common as icu, rust_icu_ucal as ucal, rust_icu_udata as udata};
 
-lazy_static! {
-    // The storage for the loaded ICU data.  At most one may be loaded at any given time.
-    static ref REFCOUNT: Mutex<Weak<PathBuf>> = Mutex::new(Weak::new());
-}
+// The storage for the loaded ICU data.  At most one may be loaded at any given time.
+static REFCOUNT: LazyLock<Mutex<Weak<PathBuf>>> = LazyLock::new(|| Mutex::new(Weak::new()));
 
 // The default location at which to find the ICU data.
 // The icudtl.dat is deliberately omitted to conform to the loading
