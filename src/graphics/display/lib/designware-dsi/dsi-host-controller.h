@@ -5,8 +5,8 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_DESIGNWARE_DSI_DSI_HOST_CONTROLLER_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_DESIGNWARE_DSI_DSI_HOST_CONTROLLER_H_
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mipi-dsi/mipi-dsi.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <zircon/types.h>
 

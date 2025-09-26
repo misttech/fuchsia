@@ -5,7 +5,7 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_DESIGNWARE_HDMI_HDMI_TRANSMITTER_CONTROLLER_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_DESIGNWARE_HDMI_HDMI_TRANSMITTER_CONTROLLER_H_
 
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/result.h>
 
 #include <cstdint>

@@ -10,9 +10,9 @@
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/async/cpp/task.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fidl/cpp/wire/server.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/result.h>

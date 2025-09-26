@@ -9,8 +9,8 @@
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/mmio/mmio-buffer.h>
 
 #include <memory>
 
