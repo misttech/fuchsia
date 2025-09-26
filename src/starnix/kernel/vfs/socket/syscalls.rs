@@ -1111,45 +1111,46 @@ pub use arch32::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::*;
+    use crate::testing::spawn_kernel_and_run;
     use starnix_uapi::{AF_INET, AF_UNIX, SOCK_STREAM};
 
     #[::fuchsia::test]
     async fn test_socketpair_invalid_arguments() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        assert_eq!(
-            sys_socketpair(
-                locked,
-                &current_task,
-                AF_INET as u32,
-                SOCK_STREAM,
-                0,
-                UserRef::new(UserAddress::default())
-            ),
-            error!(EPROTONOSUPPORT)
-        );
-        assert_eq!(
-            sys_socketpair(
-                locked,
-                &current_task,
-                AF_UNIX as u32,
-                7,
-                0,
-                UserRef::new(UserAddress::default())
-            ),
-            error!(EINVAL)
-        );
-        assert_eq!(
-            sys_socketpair(
-                locked,
-                &current_task,
-                AF_UNIX as u32,
-                SOCK_STREAM,
-                0,
-                UserRef::new(UserAddress::default())
-            ),
-            error!(EFAULT)
-        );
+        spawn_kernel_and_run(|locked, current_task| {
+            assert_eq!(
+                sys_socketpair(
+                    locked,
+                    current_task,
+                    AF_INET as u32,
+                    SOCK_STREAM,
+                    0,
+                    UserRef::new(UserAddress::default())
+                ),
+                error!(EPROTONOSUPPORT)
+            );
+            assert_eq!(
+                sys_socketpair(
+                    locked,
+                    current_task,
+                    AF_UNIX as u32,
+                    7,
+                    0,
+                    UserRef::new(UserAddress::default())
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_socketpair(
+                    locked,
+                    current_task,
+                    AF_UNIX as u32,
+                    SOCK_STREAM,
+                    0,
+                    UserRef::new(UserAddress::default())
+                ),
+                error!(EFAULT)
+            );
+        });
     }
 
     #[::fuchsia::test]
