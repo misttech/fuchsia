@@ -41,7 +41,6 @@ i2c
 ?kernel_debug_broker
 ?memfs
 ?minfs
-nand-broker
 ?netdevice-migration
 ?netsvc
 ?network-device

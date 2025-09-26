@@ -29,7 +29,6 @@ pub const GPT_DRIVER_PATH: &str = "gpt.cm";
 pub const MBR_DRIVER_PATH: &str = "mbr.cm";
 pub const BOOTPART_DRIVER_PATH: &str = "bootpart.cm";
 // pub const BLOCK_VERITY_DRIVER_PATH: &str = "block-verity.cm";
-pub const NAND_BROKER_DRIVER_PATH: &str = "nand-broker.cm";
 pub const ZXCRYPT_DRIVER_PATH: &str = "zxcrypt.cm";
 
 pub const DEFAULT_F2FS_MIN_BYTES: u64 = 50 * 1024 * 1024;

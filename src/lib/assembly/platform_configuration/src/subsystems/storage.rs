@@ -124,7 +124,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let no_zxcrypt = storage_config.filesystems.no_zxcrypt;
         let format_data_on_corruption = storage_config.filesystems.format_data_on_corruption.0;
         let storage_host = storage_config.storage_host_enabled;
-        let nand = storage_config.filesystems.watch_for_nand;
         let provision_fxfs = storage_config.provision_fxfs;
 
         // Prepare some default arguments that may get overridden by the product config.
@@ -273,7 +272,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                 Config::new_bool(blob_deprecated_padded),
             ),
             ("fuchsia.fshost.UseDiskMigration", Config::new_bool(use_disk_migration)),
-            ("fuchsia.fshost.Nand", Config::new_bool(nand)),
             ("fuchsia.fshost.FxfsBlob", Config::new_bool(fxfs_blob)),
             ("fuchsia.fshost.StorageHost", Config::new_bool(storage_host)),
             ("fuchsia.fshost.FvmSliceSize", Config::new_uint64(fvm_slice_size)),

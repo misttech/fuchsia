@@ -17,8 +17,6 @@ bin/kstress
 bin/ktrace
 bin/loadgen
 bin/memgraph
-bin/nand-loader
-bin/nand-util
 bin/ping
 bin/ps
 bin/sh
@@ -54,7 +52,6 @@ lib/libc++abi.so.1
 lib/libcrypto.so
 lib/libfdio.so
 lib/libinspector.so
-lib/libramdevice-client.so
 lib/libssl.so
 lib/libstd-*
 lib/libsvc.so

@@ -74,7 +74,6 @@ template("generated_fshost_config") {
       blobfs_use_deprecated_padded_format = false
       data_filesystem_format = "fxfs"
       format_data_on_corruption = true
-      nand = false
       use_disk_migration = false
       storage_host = false
       disable_automount = false

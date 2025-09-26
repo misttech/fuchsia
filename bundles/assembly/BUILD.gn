@@ -401,8 +401,6 @@ assembly_input_bundle("bootstrap_userdebug") {
     # tools
     "//src/connectivity/network/bin/ping:bootfs",
     "//src/devices/block/bin/fvm-check:bootfs",
-    "//src/devices/nand/bin/nand-loader:bootfs",
-    "//src/devices/nand/bin/nand-util:bootfs",
     "//src/devices/usb/bin/usbctl",
     "//src/storage/bin/dd:bootfs",
     "//src/storage/bin/df:bootfs",
@@ -414,13 +412,6 @@ assembly_input_bundle("bootstrap_userdebug") {
   # Do not automatically include pistress, but build it to keep it from
   # bit-rotting.
   deps = [ "//src/zircon/bin/pistress:bootfs" ]
-
-  boot_driver_packages = [
-    {
-      package_target = "//src/devices/nand/drivers/broker:package"
-      driver_components = [ "meta/nand-broker.cm" ]
-    },
-  ]
 }
 
 # The most-common, most-basic, AIB that is included in all eng systems.

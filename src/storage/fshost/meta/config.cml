@@ -61,12 +61,6 @@
             max_size: 64,
         },
         {
-            // Enables NAND devices.
-            config: "fuchsia.fshost.Nand",
-            key: "nand",
-            type: "bool",
-        },
-        {
             // Enables blobfs partitions.
             config: "fuchsia.fshost.Blobfs",
             key: "blobfs",

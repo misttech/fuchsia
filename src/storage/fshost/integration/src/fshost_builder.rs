@@ -101,7 +101,6 @@ impl FshostBuilder {
             ("data_max_bytes", "fuchsia.fshost.DataMaxBytes"),
             ("format_data_on_corruption", "fuchsia.fshost.FormatDataOnCorruption"),
             ("data_filesystem_format", "fuchsia.fshost.DataFilesystemFormat"),
-            ("nand", "fuchsia.fshost.Nand"),
             ("blobfs", "fuchsia.fshost.Blobfs"),
             ("bootpart", "fuchsia.fshost.BootPart"),
             ("factory", "fuchsia.fshost.Factory"),

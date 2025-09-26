@@ -4,7 +4,7 @@
 
 use crate::device::constants::{
     BLOBFS_PARTITION_LABEL, BOOTPART_DRIVER_PATH, DATA_PARTITION_LABEL, GPT_DRIVER_PATH,
-    LEGACY_DATA_PARTITION_LABEL, LEGACY_FVM_TYPE_GUID, MBR_DRIVER_PATH, NAND_BROKER_DRIVER_PATH,
+    LEGACY_DATA_PARTITION_LABEL, LEGACY_FVM_TYPE_GUID, MBR_DRIVER_PATH,
 };
 use crate::device::{Device, DeviceTag, Parent};
 use crate::environment::Environment;
@@ -69,9 +69,6 @@ impl Matchers {
         // publish more devices, which will be matched by our other matchers.
         if config.bootpart {
             matchers.push(Box::new(BootpartMatcher::new()));
-        }
-        if config.nand {
-            matchers.push(Box::new(NandMatcher::new()));
         }
 
         // Match the system container.
@@ -227,34 +224,6 @@ impl Matcher for BootpartMatcher {
         env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
         env.attach_driver(device, BOOTPART_DRIVER_PATH).await?;
-        Ok(None)
-    }
-}
-
-// Matches Nand devices.
-struct NandMatcher();
-
-impl NandMatcher {
-    fn new() -> Self {
-        NandMatcher()
-    }
-}
-
-#[async_trait]
-impl Matcher for NandMatcher {
-    fn matcher_name(&self) -> &str {
-        "Nand"
-    }
-    async fn match_device(&self, device: &mut dyn Device) -> bool {
-        device.is_nand()
-    }
-
-    async fn process_device(
-        &mut self,
-        device: &mut dyn Device,
-        env: &mut dyn Environment,
-    ) -> Result<Option<DeviceTag>, Error> {
-        env.attach_driver(device, NAND_BROKER_DRIVER_PATH).await?;
         Ok(None)
     }
 }
@@ -759,7 +728,7 @@ mod tests {
     use crate::config::default_test_config;
     use crate::device::constants::{
         BLOBFS_PARTITION_LABEL, BOOTPART_DRIVER_PATH, DATA_PARTITION_LABEL, GPT_DRIVER_PATH,
-        LEGACY_DATA_PARTITION_LABEL, LEGACY_FVM_TYPE_GUID, NAND_BROKER_DRIVER_PATH,
+        LEGACY_DATA_PARTITION_LABEL, LEGACY_FVM_TYPE_GUID,
     };
     use crate::device::{DeviceTag, Parent, RegisteredDevices};
     use crate::environment::{Filesystem, PartitionInfo, SinglePublisher};
@@ -780,7 +749,6 @@ mod tests {
     #[derive(Clone)]
     struct MockDevice {
         block_flags: Flag,
-        is_nand: bool,
         content_format: DiskFormat,
         topological_path: String,
         partition_label: Option<String>,
@@ -793,7 +761,6 @@ mod tests {
         fn new() -> Self {
             MockDevice {
                 block_flags: Flag::empty(),
-                is_nand: false,
                 content_format: DiskFormat::Unknown,
                 topological_path: "mock_device".to_string(),
                 partition_label: None,
@@ -806,10 +773,6 @@ mod tests {
         }
         fn set_block_flags(mut self, flags: Flag) -> Self {
             self.block_flags = flags;
-            self
-        }
-        fn set_nand(mut self, v: bool) -> Self {
-            self.is_nand = v;
             self
         }
         fn set_content_format(mut self, format: DiskFormat) -> Self {
@@ -841,19 +804,15 @@ mod tests {
     #[async_trait]
     impl Device for MockDevice {
         async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
-            if self.is_nand {
-                Err(anyhow!("not supported by nand device"))
-            } else {
-                Ok(BlockInfo {
-                    block_count: 0,
-                    block_size: 0,
-                    max_transfer_size: 0,
-                    flags: self.block_flags,
-                })
-            }
+            Ok(BlockInfo {
+                block_count: 0,
+                block_size: 0,
+                max_transfer_size: 0,
+                flags: self.block_flags,
+            })
         }
         fn is_nand(&self) -> bool {
-            self.is_nand
+            false
         }
         async fn content_format(&mut self) -> Result<DiskFormat, Error> {
             Ok(self.content_format)
@@ -1226,27 +1185,6 @@ mod tests {
                     Box::new(mock_device),
                     &mut MockEnv::new().expect_attach_driver(BOOTPART_DRIVER_PATH)
                 )
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_nand_matcher() {
-        let device = MockDevice::new().set_nand(true);
-        let mut env = MockEnv::new().expect_attach_driver(NAND_BROKER_DRIVER_PATH);
-
-        // Default shouldn't match.
-        assert!(
-            !Matchers::new(&default_test_config())
-                .match_device(Box::new(device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-
-        assert!(
-            Matchers::new(&fshost_config::Config { nand: true, ..default_test_config() })
-                .match_device(Box::new(device), &mut env)
                 .await
                 .expect("match_device failed")
         );

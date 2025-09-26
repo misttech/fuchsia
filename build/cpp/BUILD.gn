@@ -88,10 +88,6 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//src/devices/nand/drivers/broker/test:nand-broker",
-
-    #------------------
-    #------------------
     "//src/devices/nand/drivers/broker/test:nandpart-broker",
 
     #------------------

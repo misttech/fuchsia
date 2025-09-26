@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "include/lib/driver-integration-test/fixture.h"
-
 #include <fidl/fuchsia.board.test/cpp/wire.h>
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
@@ -23,6 +21,7 @@
 
 #include <bind/fuchsia/platform/cpp/bind.h>
 
+#include "include/lib/driver-integration-test/fixture.h"
 #include "lib/sys/component/cpp/testing/realm_builder.h"
 
 namespace driver_integration_test {
@@ -118,7 +117,6 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       Config{.name = "fuchsia.fshost.GptAll"},
       Config{.name = "fuchsia.fshost.Mbr"},
       Config{.name = "fuchsia.fshost.MergeSuperAndUserdata"},
-      Config{.name = "fuchsia.fshost.Nand"},
       Config{.name = "fuchsia.fshost.NoZxcrypt"},
       Config{.name = "fuchsia.fshost.RamdiskImage"},
       Config{.name = "fuchsia.fshost.StorageHost"},

@@ -177,7 +177,6 @@
                 "fuchsia.fshost.InlineCrypto",
                 "fuchsia.fshost.Mbr",
                 "fuchsia.fshost.MergeSuperAndUserdata",
-                "fuchsia.fshost.Nand",
                 "fuchsia.fshost.NoZxcrypt",
                 "fuchsia.fshost.ProvisionFxfs",
                 "fuchsia.fshost.RamdiskImage",
