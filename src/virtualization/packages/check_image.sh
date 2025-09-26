@@ -26,14 +26,17 @@ mkdir -p $(dirname ${SOURCE_IMAGE})
 if [ ! -f "${SOURCE_IMAGE}" ]; then
   echo "WARNING: ${SOURCE_IMAGE} not found, using a dummy image. See" \
        "src/virtualization/README.md for manual build instructions."
-  touch "${SOURCE_IMAGE}"
+  touch "${TARGET_IMAGE}"
+
+  # Write a blank depfile if we don't have an input.
+  echo "${TARGET_IMAGE}:" > $DEPFILE
+else
+  # Copy source to target.
+  rm -f "${TARGET_IMAGE}"
+  cp -f "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
+
+  # Write a depfile to force the copy to happen when the image file changes.
+  #
+  # See comments in "guest_package.gni" as to why this is required.
+  echo "${TARGET_IMAGE}: ${SOURCE_IMAGE}" > $DEPFILE
 fi
-
-# Copy source to target.
-rm -f "${TARGET_IMAGE}"
-cp "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
-
-# Write a depfile to force the copy to happen when the image file changes.
-#
-# See comments in "guest_package.gni" as to why this is required.
-echo "${TARGET_IMAGE}: ${SOURCE_IMAGE}" > $DEPFILE

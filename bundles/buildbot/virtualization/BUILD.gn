@@ -54,6 +54,8 @@ product_bundle("starnix_linux_vm_bundle") {
 
 assembled_system("starnix_linux_vm_assembly") {
   testonly = true
+  image_name = "fuchsia"
+  namespace = "starnix_linux_vm_assembly"
   board_config_label = "//boards/${target_cpu}"
   product_assembly_config_label = ":starnix_linux_vm_assembly_config"
 }
