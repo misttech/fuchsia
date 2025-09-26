@@ -10,7 +10,7 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/pci/hw.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/time.h>

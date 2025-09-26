@@ -4,7 +4,7 @@
 #ifndef SRC_DEVICES_BUS_DRIVERS_PCI_CAPABILITIES_MSIX_H_
 #define SRC_DEVICES_BUS_DRIVERS_PCI_CAPABILITIES_MSIX_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 

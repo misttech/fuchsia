@@ -9,9 +9,9 @@
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/inspect/testing/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
 #include <lib/pci/hw.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/clock.h>

@@ -66,7 +66,7 @@ source_set("user_pci") {
     # TODO(https://fxbug.dev/42109087): This shouldn't be here if the mmio code is actually
     # used in the test too.  Anything using that needs to be separately
     # compiled for the test using the mock version.
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
   ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings

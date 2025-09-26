@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fidl/cpp/wire/string_view.h>
 #include <lib/fidl/cpp/wire/traits.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <zircon/errors.h>
 #include <zircon/hw/pci.h>
 #include <zircon/status.h>

@@ -9,9 +9,9 @@
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/ddk/device.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/inspect/cpp/vmo/types.h>
-#include <lib/mmio/mmio.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/msi.h>

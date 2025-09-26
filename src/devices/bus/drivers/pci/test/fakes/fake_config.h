@@ -4,7 +4,7 @@
 #ifndef SRC_DEVICES_BUS_DRIVERS_PCI_TEST_FAKES_FAKE_CONFIG_H_
 #define SRC_DEVICES_BUS_DRIVERS_PCI_TEST_FAKES_FAKE_CONFIG_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/zx/vmo.h>
 #include <zircon/hw/pci.h>

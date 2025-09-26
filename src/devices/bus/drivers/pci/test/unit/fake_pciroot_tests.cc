@@ -4,7 +4,7 @@
 
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/bti.h>
 #include <zircon/errors.h>
 #include <zircon/limits.h>

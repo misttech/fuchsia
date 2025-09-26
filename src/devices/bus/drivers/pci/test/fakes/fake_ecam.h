@@ -5,16 +5,16 @@
 #define SRC_DEVICES_BUS_DRIVERS_PCI_TEST_FAKES_FAKE_ECAM_H_
 
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-view.h>
+#include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <zircon/hw/pci.h>
 
 #include <hwreg/bitfields.h>
 
-#include "lib/mmio/mmio-buffer.h"
-#include "lib/mmio/mmio-view.h"
 #include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/config.h"
-#include "src/devices/lib/mmio/test-helper.h"
 
 struct IoBaseAddress {
   uint32_t value;

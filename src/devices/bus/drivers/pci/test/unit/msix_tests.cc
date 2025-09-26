@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/inspect/testing/cpp/inspect.h>
@@ -22,7 +23,6 @@
 #include "src/devices/bus/drivers/pci/config.h"
 #include "src/devices/bus/drivers/pci/test/fakes/fake_allocator.h"
 #include "src/devices/bus/drivers/pci/test/fakes/fake_config.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace pci {
