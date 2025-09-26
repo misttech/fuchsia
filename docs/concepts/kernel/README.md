@@ -55,7 +55,6 @@ This page is a non-comprehensive index of the zircon documentation.
 + [Testing](/docs/development/testing/testing.md)
 + [Kernel tracing](/docs/development/tracing/advanced/recording-a-kernel-trace.md)
 + [Block device testing](/docs/development/testing/block_device_testing.md)
-+ [nand Testing](/docs/development/testing/nand_testing.md)
 
 + [Compile-time object collections](/docs/development/languages/c-cpp/compile_time_object_collections.md)
 + [ACPI debugging](/docs/development/debugging/acpi.md)
