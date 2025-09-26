@@ -1486,7 +1486,7 @@ pub struct AuditNetlinkClient {
     /// Reference to the `AuditLogger`.
     audit_logger: Arc<AuditLogger>,
     /// The waiters queue present in `AuditNetlinkSocket`.
-    waiters: Mutex<WaitQueue>,
+    waiters: WaitQueue,
     /// Optional response from the `AuditLogger`.
     audit_response: Mutex<Option<NetlinkMessage<GenericMessage>>>,
 }
@@ -1497,7 +1497,7 @@ impl AuditNetlinkClient {
     }
 
     pub fn notify(&self) {
-        self.waiters.lock().notify_fd_events(FdEvents::POLLIN);
+        self.waiters.notify_fd_events(FdEvents::POLLIN);
     }
 
     /// Function to check the capabilities of the current task against CAP_AUDIT_*
@@ -1739,7 +1739,7 @@ impl SocketOps for AuditNetlinkSocket {
         events: FdEvents,
         handler: EventHandler,
     ) -> WaitCanceler {
-        self.audit_client.waiters.lock().wait_async_fd_events(waiter, events, handler)
+        self.audit_client.waiters.wait_async_fd_events(waiter, events, handler)
     }
 
     fn query_events(
