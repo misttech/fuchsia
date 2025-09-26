@@ -27,6 +27,7 @@ rustc_library("fuchsia-rcu") {
     "src/rcu_arc.rs",
     "src/rcu_cell.rs",
     "src/rcu_lock.rs",
+    "src/rcu_option_arc.rs",
     "src/rcu_ptr.rs",
     "src/rcu_read_scope.rs",
     "src/rcu_write_scope.rs",

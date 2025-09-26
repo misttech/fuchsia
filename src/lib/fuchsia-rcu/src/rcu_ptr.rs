@@ -40,6 +40,8 @@ impl<T> RcuPtr<T> {
 
     /// Get the value pointed to by the RCU pointer.
     ///
+    /// If the RCU pointer is null, this function will panic.
+    ///
     /// The object referenced by the RCU pointer will remain valid until the `RcuReadGuard` is
     /// dropped. However, another thread running concurrently might see a different value for the
     /// object.
@@ -48,6 +50,19 @@ impl<T> RcuPtr<T> {
         let ptr = self.read(&scope).as_ptr();
         assert!(!ptr.is_null());
         RcuReadGuard { scope, ptr }
+    }
+
+    /// Get the value pointed to by the RCU pointer.
+    ///
+    /// If the RCU pointer is null, this function will return `None`.
+    ///
+    /// The object referenced by the RCU pointer will remain valid until the `RcuReadGuard` is
+    /// dropped. However, another thread running concurrently might see a different value for the
+    /// object.
+    pub fn maybe_get(&self) -> Option<RcuReadGuard<T>> {
+        let scope = RcuReadScope::new();
+        let ptr = self.read(&scope).as_ptr();
+        if ptr.is_null() { None } else { Some(RcuReadGuard { scope, ptr }) }
     }
 
     /// Read the value of the RCU pointer.
