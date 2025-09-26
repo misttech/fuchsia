@@ -666,39 +666,6 @@ impl Parser {
 
         Ok(())
     }
-
-    /// Returns a `Simple` filesystem as built by `TreeBuilder.build()`.
-    #[cfg(target_os = "fuchsia")]
-    pub fn build_fuchsia_tree(
-        &self,
-    ) -> Result<std::sync::Arc<vfs::directory::immutable::Simple>, ParsingError> {
-        use vfs::file::vmo::read_only;
-        use vfs::tree_builder::TreeBuilder;
-
-        let root_inode = self.root_inode()?;
-        let mut tree = TreeBuilder::empty_dir();
-
-        self.index(root_inode, Vec::new(), &mut |my_self, path, entry| {
-            let entry_type = EntryType::from_u8(entry.e2d_type)?;
-            match entry_type {
-                EntryType::RegularFile => {
-                    let data = my_self.read_data(entry.e2d_ino.into())?;
-                    tree.add_entry(path.clone(), read_only(data))
-                        .map_err(|_| ParsingError::BadFile(path.join("/")))?;
-                }
-                EntryType::Directory => {
-                    tree.add_empty_dir(path.clone())
-                        .map_err(|_| ParsingError::BadDirectory(path.join("/")))?;
-                }
-                _ => {
-                    // TODO(https://fxbug.dev/42073143): Handle other types.
-                }
-            }
-            Ok(true)
-        })?;
-
-        Ok(tree.build())
-    }
 }
 
 #[cfg(test)]
