@@ -10,6 +10,9 @@
 #include <iterator>
 #include <limits>
 #include <span>
+#include <type_traits>
+
+#include <llvm/BinaryFormat/ELF.h>
 
 namespace elflib {
 namespace {
@@ -57,40 +60,81 @@ inline T safe_copy(const T* source) {
   return copy;
 }
 
-// Given a name, a symbol table (sized array of Elf64_Sym), and an accessor for
-// a corresponding string table, find the symbol with the given name.
-const Elf64_Sym* GetSymbolFromTable(
-    const std::string& name, const std::pair<const Elf64_Sym*, size_t>& symtab,
+Elf64_Sym UpcastSym(const Elf32_Sym& sym) {
+  Elf64_Sym upcast;
+  upcast.st_name = sym.st_name;
+  upcast.st_info = sym.st_info;
+  upcast.st_shndx = sym.st_shndx;
+  upcast.st_value = sym.st_value;
+  upcast.st_size = sym.st_size;
+  upcast.st_other = sym.st_other;
+  return upcast;
+}
+
+template <typename ElfSym>
+std::optional<Elf64_Sym> FindElfSymbolInTable(
+    const std::string& name, const ElfLib::MemoryRegion& symtab,
     std::function<std::optional<std::string>(uint64_t)> get_string) {
-  if (!symtab.first) {
-    return nullptr;
-  }
+  const ElfSym* symbols = reinterpret_cast<const ElfSym*>(symtab.ptr);
+  const ElfSym* end = symbols + (symtab.size / sizeof(ElfSym));
 
-  const Elf64_Sym* symbols = symtab.first;
-  const Elf64_Sym* end = symtab.first + symtab.second;
-
+  ElfSym s;
   for (auto symbol = symbols; symbol <= end; symbol++) {
-    Elf64_Sym s = safe_copy<Elf64_Sym>(symbol);
+    s = safe_copy<ElfSym>(symbol);
     auto got_name = get_string(s.st_name);
 
     if (got_name && *got_name == name) {
-      return symbol;
+      break;
     }
   }
 
-  return nullptr;
+  if constexpr (std::is_same_v<ElfSym, Elf32_Sym>) {
+    return UpcastSym(s);
+  } else {
+    return s;
+  }
+
+  return std::nullopt;
 }
 
-std::optional<std::map<std::string, Elf64_Sym>> SymtabToMap(
-    const std::pair<const Elf64_Sym*, size_t>& symtab, const ElfLib::MemoryRegion& strtab) {
-  auto [symtab_ptr, symtab_size] = symtab;
-  if (!symtab_ptr)
+// Given a name, a symbol table (sized array of Elf64_Sym), and an accessor for
+// a corresponding string table, find the symbol with the given name.
+std::optional<Elf64_Sym> GetSymbolFromTable(
+    const Elf64_Ehdr& ehdr, const std::string& name, const ElfLib::MemoryRegion& symtab,
+    std::function<std::optional<std::string>(uint64_t)> get_string) {
+  if (!symtab.ptr) {
+    return std::nullopt;
+  }
+
+  if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
+    return FindElfSymbolInTable<Elf32_Sym>(name, symtab, std::move(get_string));
+  }
+
+  return FindElfSymbolInTable<Elf64_Sym>(name, symtab, std::move(get_string));
+}
+
+std::optional<std::map<std::string, Elf64_Sym>> SymtabToMap(const Elf64_Ehdr& ehdr,
+                                                            const ElfLib::MemoryRegion& symtab,
+                                                            const ElfLib::MemoryRegion& strtab) {
+  if (!symtab.ptr)
     return std::nullopt;
 
   std::map<std::string, Elf64_Sym> out;
 
-  const Elf64_Sym* symbols = symtab_ptr;
-  const Elf64_Sym* end = symtab_ptr + symtab_size;
+  if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
+    const Elf32_Sym* symbols = reinterpret_cast<const Elf32_Sym*>(symtab.ptr);
+    const Elf32_Sym* end = symbols + (symtab.size / sizeof(Elf32_Sym));
+    for (auto symbol = symbols; symbol != end; symbol++) {
+      Elf32_Sym s = safe_copy<Elf32_Sym>(symbol);
+      auto sym_name = GetNullTerminatedStringAt(strtab.ptr, strtab.size, s.st_name);
+      out[sym_name] = UpcastSym(s);
+    }
+
+    return out;
+  }
+
+  const Elf64_Sym* symbols = reinterpret_cast<const Elf64_Sym*>(symtab.ptr);
+  const Elf64_Sym* end = symbols + (symtab.size / sizeof(Elf64_Sym));
   for (auto symbol = symbols; symbol != end; symbol++) {
     Elf64_Sym s = safe_copy<Elf64_Sym>(symbol);
     auto sym_name = GetNullTerminatedStringAt(strtab.ptr, strtab.size, s.st_name);
@@ -690,8 +734,118 @@ ElfLib::MemoryRegion ElfLib::GetSectionData(const std::string& name) {
   return GetSectionData(iter->second);
 }
 
+template <typename ElfDyn>
+bool ElfLib::LoadDynamicSymbolsForElf(const ElfLib::MemoryRegion& memory) {
+  if (memory.ptr == nullptr) {
+    return false;
+  }
+
+  const ElfDyn* start = reinterpret_cast<const ElfDyn*>(memory.ptr);
+  const ElfDyn* end = start + (memory.size / sizeof(ElfDyn));
+  for (auto dyn = start; dyn != end; dyn++) {
+    if (dyn->d_tag == DT_STRTAB) {
+      if (dynstr_.offset) {
+        Warn("Multiple DT_STRTAB entries found.");
+        continue;
+      }
+
+      dynstr_.offset = MappedAddressToOffset(dyn->d_un.d_ptr);
+    } else if (dyn->d_tag == DT_SYMTAB) {
+      if (dynsym_.offset) {
+        Warn("Multiple DT_SYMTAB entries found.");
+        continue;
+      }
+
+      dynsym_.offset = MappedAddressToOffset(dyn->d_un.d_ptr);
+    } else if (dyn->d_tag == DT_STRSZ) {
+      if (dynstr_.size) {
+        Warn("Multiple DT_STRSZ entries found.");
+        continue;
+      }
+
+      dynstr_.size = dyn->d_un.d_val;
+    } else if (dyn->d_tag == DT_HASH) {
+      // A note: The old DT_HASH style of hash table is considered legacy on
+      // Fuchsia. Technically a binary could provide both styles of hash
+      // table and we can produce a reasonable result in that case, so this code
+      // ignores DT_HASH.
+      Warn("Old style DT_HASH table found.");
+    } else if (dyn->d_tag == DT_GNU_HASH) {
+      if (dynsym_.size) {
+        Warn("Multiple DT_GNU_HASH entries found.");
+        continue;
+      }
+      auto addr = dyn->d_un.d_ptr;
+
+      // Our elf header doesn't provide the DT_GNU_HASH header structure.
+      struct Header {
+        uint32_t nbuckets;
+        uint32_t symoffset;
+        uint32_t bloom_size;
+        uint32_t bloom_shift;
+      } header;
+
+      static_assert(sizeof(Header) == 16);
+
+      auto data = memory_->GetMemory(MappedAddressToOffset(addr), sizeof(header));
+
+      if (!data) {
+        continue;
+      }
+
+      header = *reinterpret_cast<const Header*>(data);
+
+      addr += sizeof(header);
+
+      if constexpr (std::is_same_v<ElfDyn, Elf32_Dyn>) {
+        addr += 4 * header.bloom_size;
+      } else {
+        addr += 8 * header.bloom_size;
+      }
+
+      size_t bucket_bytes = 4 * header.nbuckets;
+      auto bucket_data = memory_->GetMemory(MappedAddressToOffset(addr), bucket_bytes);
+
+      if (!bucket_data) {
+        continue;
+      }
+
+      const uint32_t* buckets = reinterpret_cast<const uint32_t*>(bucket_data);
+      uint32_t max_bucket = *std::max_element(buckets, buckets + header.nbuckets);
+
+      if (max_bucket < header.symoffset) {
+        dynsym_.size = max_bucket;
+        continue;
+      }
+
+      addr += bucket_bytes;
+      addr += (max_bucket - header.symoffset) * 4;
+
+      for (uint32_t nsyms = max_bucket + 1;; nsyms++, addr += 4) {
+        auto chain_entry_data = memory_->GetMemory(MappedAddressToOffset(addr), 4);
+
+        if (!chain_entry_data) {
+          break;
+        }
+
+        uint32_t chain_entry = *reinterpret_cast<const uint32_t*>(chain_entry_data);
+
+        if (chain_entry & 1) {
+          dynsym_.size = nsyms;
+          break;
+        }
+      }
+    } else if (dyn->d_tag == DT_PLTREL) {
+      dynamic_plt_use_rela_ = dyn->d_un.d_val == DT_RELA;
+    } else if (dyn->d_tag == DT_SONAME) {
+      soname_offset_ = dyn->d_un.d_val;
+    }
+  }
+  return true;
+}
+
 bool ElfLib::LoadDynamicSymbols() {
-  if (did_load_dynamic_symbols_) {
+  if (did_load_dynamic_symbols_ && dynsym_.IsValid()) {
     return true;
   }
 
@@ -710,105 +864,11 @@ bool ElfLib::LoadDynamicSymbols() {
       return false;
     }
 
-    const Elf64_Dyn* start = reinterpret_cast<const Elf64_Dyn*>(data.ptr);
-    const Elf64_Dyn* end = start + (data.size / sizeof(Elf64_Dyn));
-
-    for (auto dyn = start; dyn != end; dyn++) {
-      if (dyn->d_tag == DT_STRTAB) {
-        if (dynstr_.offset) {
-          Warn("Multiple DT_STRTAB entries found.");
-          continue;
-        }
-
-        dynstr_.offset = MappedAddressToOffset(dyn->d_un.d_ptr);
-      } else if (dyn->d_tag == DT_SYMTAB) {
-        if (dynsym_.offset) {
-          Warn("Multiple DT_SYMTAB entries found.");
-          continue;
-        }
-
-        dynsym_.offset = MappedAddressToOffset(dyn->d_un.d_ptr);
-      } else if (dyn->d_tag == DT_STRSZ) {
-        if (dynstr_.size) {
-          Warn("Multiple DT_STRSZ entries found.");
-          continue;
-        }
-
-        dynstr_.size = dyn->d_un.d_val;
-      } else if (dyn->d_tag == DT_HASH) {
-        // A note: The old DT_HASH style of hash table is considered legacy on
-        // Fuchsia. Technically a binary could provide both styles of hash
-        // table and we can produce a sane result in that case, so this code
-        // ignores DT_HASH.
-        Warn("Old style DT_HASH table found.");
-      } else if (dyn->d_tag == DT_GNU_HASH) {
-        if (dynsym_.size) {
-          Warn("Multiple DT_GNU_HASH entries found.");
-          continue;
-        }
-        auto addr = dyn->d_un.d_ptr;
-
-        // Our elf header doesn't provide the DT_GNU_HASH header structure.
-        struct Header {
-          uint32_t nbuckets;
-          uint32_t symoffset;
-          uint32_t bloom_size;
-          uint32_t bloom_shift;
-        } header;
-
-        static_assert(sizeof(Header) == 16);
-
-        auto data = memory_->GetMemory(MappedAddressToOffset(addr), sizeof(header));
-
-        if (!data) {
-          continue;
-        }
-
-        header = *reinterpret_cast<const Header*>(data);
-
-        addr += sizeof(header);
-        addr += 8 * header.bloom_size;
-
-        size_t bucket_bytes = 4 * header.nbuckets;
-        auto bucket_data = memory_->GetMemory(MappedAddressToOffset(addr), bucket_bytes);
-
-        if (!bucket_data) {
-          continue;
-        }
-
-        const uint32_t* buckets = reinterpret_cast<const uint32_t*>(bucket_data);
-        uint32_t max_bucket = *std::max_element(buckets, buckets + header.nbuckets);
-
-        if (max_bucket < header.symoffset) {
-          dynsym_.size = max_bucket;
-          continue;
-        }
-
-        addr += bucket_bytes;
-        addr += (max_bucket - header.symoffset) * 4;
-
-        for (uint32_t nsyms = max_bucket + 1;; nsyms++, addr += 4) {
-          auto chain_entry_data = memory_->GetMemory(MappedAddressToOffset(addr), 4);
-
-          if (!chain_entry_data) {
-            break;
-          }
-
-          uint32_t chain_entry = *reinterpret_cast<const uint32_t*>(chain_entry_data);
-
-          if (chain_entry & 1) {
-            dynsym_.size = nsyms;
-            break;
-          }
-        }
-      } else if (dyn->d_tag == DT_PLTREL) {
-        dynamic_plt_use_rela_ = dyn->d_un.d_val == DT_RELA;
-      } else if (dyn->d_tag == DT_SONAME) {
-        soname_offset_ = dyn->d_un.d_val;
-      }
+    if (Is64Bit()) {
+      return LoadDynamicSymbolsForElf<Elf64_Dyn>(data);
+    } else {
+      return LoadDynamicSymbolsForElf<Elf32_Dyn>(data);
     }
-
-    return true;
   }
 
   return false;
@@ -1091,43 +1151,40 @@ std::optional<std::string> ElfLib::GetString(size_t offset) {
   return GetNullTerminatedStringAt(string_data.ptr, string_data.size, offset);
 }
 
-std::pair<const Elf64_Sym*, size_t> ElfLib::GetSymtab() {
-  ElfLib::MemoryRegion symtab = GetSectionData(".symtab");
+ElfLib::MemoryRegion ElfLib::GetSymtab() { return GetSectionData(".symtab"); }
 
-  if (symtab.ptr) {
-    const Elf64_Sym* symbols = reinterpret_cast<const Elf64_Sym*>(symtab.ptr);
-
-    return std::make_pair(symbols, symtab.size / sizeof(Elf64_Sym));
-  }
-
-  return std::make_pair(nullptr, 0);
-}
-
-std::pair<const Elf64_Sym*, size_t> ElfLib::GetDynamicSymtab() {
+ElfLib::MemoryRegion ElfLib::GetDynamicSymtab() {
   if (!LoadDynamicSymbols()) {
-    return std::make_pair(nullptr, 0);
+    return {};
   }
 
   if (!dynsym_.IsValid()) {
-    return std::make_pair(nullptr, 0);
+    return {};
   }
 
-  auto memory = memory_->GetMemory(*dynsym_.offset, *dynsym_.size * sizeof(Elf64_Sym));
+  size_t symtab_entry_size = 0;
+  if (Is64Bit()) {
+    symtab_entry_size = sizeof(Elf64_Sym);
+  } else {
+    symtab_entry_size = sizeof(Elf32_Sym);
+  }
+  auto memory = memory_->GetMemory(*dynsym_.offset, *dynsym_.size * symtab_entry_size);
 
-  return std::make_pair(reinterpret_cast<const Elf64_Sym*>(memory), *dynsym_.size);
+  return {.ptr = memory, .size = *dynsym_.size * symtab_entry_size};
 }
 
-const Elf64_Sym* ElfLib::GetSymbol(const std::string& name) {
-  return GetSymbolFromTable(name, GetSymtab(), [this](uint64_t idx) { return GetString(idx); });
+std::optional<Elf64_Sym> ElfLib::GetSymbol(const std::string& name) {
+  return GetSymbolFromTable(header_, name, GetSymtab(),
+                            [this](uint64_t idx) { return GetString(idx); });
 }
 
-const Elf64_Sym* ElfLib::GetDynamicSymbol(const std::string& name) {
-  return GetSymbolFromTable(name, GetDynamicSymtab(),
+std::optional<Elf64_Sym> ElfLib::GetDynamicSymbol(const std::string& name) {
+  return GetSymbolFromTable(header_, name, GetDynamicSymtab(),
                             [this](uint64_t idx) { return GetDynamicString(idx); });
 }
 
 std::optional<std::map<std::string, Elf64_Sym>> ElfLib::GetAllSymbols() {
-  return SymtabToMap(GetSymtab(), GetSectionData(".strtab"));
+  return SymtabToMap(header_, GetSymtab(), GetSectionData(".strtab"));
 }
 
 std::optional<std::map<std::string, Elf64_Sym>> ElfLib::GetAllDynamicSymbols() {
@@ -1135,7 +1192,7 @@ std::optional<std::map<std::string, Elf64_Sym>> ElfLib::GetAllDynamicSymbols() {
     return std::nullopt;
   }
 
-  return SymtabToMap(GetDynamicSymtab(),
+  return SymtabToMap(header_, GetDynamicSymtab(),
                      ElfLib::MemoryRegion{.ptr = memory_->GetMemory(*dynstr_.offset, *dynstr_.size),
                                           .size = *dynstr_.size});
 }

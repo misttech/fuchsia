@@ -335,7 +335,7 @@ uint64_t GetLdSoDebugRelativeAddress(const std::string& ld_so_path) {
 
   // LLDB and GDB have a list of different symbols to look for for different dynamic loaders.
   // We're only currently concerned with the one loader so omit that for now.
-  if (auto* sym = elf->GetDynamicSymbol("_r_debug"))
+  if (auto sym = elf->GetDynamicSymbol("_r_debug"))
     return sym->st_value;
 
   return 0;
@@ -353,7 +353,7 @@ uint64_t GetLdSoBreakpointRelativeAddress(const std::string& ld_so_path) {
   };
 
   for (const char* name : kDebugStateNames) {
-    if (auto* sym = elf->GetDynamicSymbol(name))
+    if (auto sym = elf->GetDynamicSymbol(name))
       return sym->st_value;
   }
 

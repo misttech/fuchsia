@@ -31,8 +31,8 @@ class ElfLib {
 
   // Essentially just a pointer with a bound.
   struct MemoryRegion {
-    const uint8_t* ptr;
-    size_t size;
+    const uint8_t* ptr = nullptr;
+    size_t size = 0;
   };
 
   // How do we expect the ELF structures to be mapped? Are they packed in a
@@ -91,7 +91,7 @@ class ElfLib {
 
   // Get a symbol from the symbol table. Return nullptr if there is no such
   // symbol. Pointer should live as long as the memory accessor.
-  const Elf64_Sym* GetSymbol(const std::string& name);
+  std::optional<Elf64_Sym> GetSymbol(const std::string& name);
 
   // Get a map of the symbols in the ".symtab" section and their string names. Returns nullopt if
   // the symbols could not be loaded. This section may be missing or very small for stripped
@@ -100,7 +100,7 @@ class ElfLib {
 
   // Get a symbol from the symbol table. Return nullptr if there is no such
   // symbol. Pointer should live as long as the memory accessor.
-  const Elf64_Sym* GetDynamicSymbol(const std::string& name);
+  std::optional<Elf64_Sym> GetDynamicSymbol(const std::string& name);
 
   // Get a map of all dynamic symbols and their string names. Returns nullopt if the symbols could
   // not be loaded.
@@ -208,12 +208,12 @@ class ElfLib {
   // Get the contents of the symbol table. Return nullptr if it is not present
   // or we do not have the means to locate it. Size is number of structs, not
   // number of bytes.
-  std::pair<const Elf64_Sym*, size_t> GetSymtab();
+  MemoryRegion GetSymtab();
 
   // Get the contents of the dynamic symbol table. Return nullptr if it is not
   // present or we do not have the means to locate it. Size is number of
   // structs, not number of bytes.
-  std::pair<const Elf64_Sym*, size_t> GetDynamicSymtab();
+  MemoryRegion GetDynamicSymtab();
 
   // Get a string from the .strtab section. Return nullptr if the offset is
   // invalid.
@@ -222,6 +222,9 @@ class ElfLib {
   // Get a string from the .dynstr section. Return nullptr if the offset is
   // invalid.
   std::optional<std::string> GetDynamicString(size_t offset);
+
+  template <typename ElfDyn>
+  bool LoadDynamicSymbolsForElf(const ElfLib::MemoryRegion& memory);
 
   // Load symbols from the dynamic segment of the target. We only do this when
   // the section data isn't available and we can't use the regular .symtab
