@@ -520,7 +520,7 @@ pub const INT8: i8 = 4;
 
 pub const STRING: &str = "string";
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Struct {
     pub int64_with_default: i64,
 

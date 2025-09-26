@@ -24,7 +24,7 @@ macro_rules! endpoint {
         $name:ident
     ) => {
         #[doc = $doc]
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq)]
         #[repr(transparent)]
         pub struct $name<
             P,

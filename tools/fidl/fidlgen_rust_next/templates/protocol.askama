@@ -1,8 +1,10 @@
 /// The type corresponding to the {{ non_canonical_name }} protocol.
 {{ self.doc_string(protocol.attributes) -}}
+#[derive(PartialEq,
 {% if self.emit_debug_impls() -%}
-    #[derive(Debug)]
+    Debug,
 {%- endif %}
+)]
 pub struct {{ protocol_name }};
 
 {% if let Some(discoverable_name) = self.discoverable_name() %}

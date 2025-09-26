@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct LocalStructPayload {
     pub a: u32,
@@ -208,7 +208,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MainProtocolOneWayAnonRequest {
     pub a: u32,
@@ -420,7 +420,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MainProtocolTwoWayAnonRequest {
     pub a: u32,
@@ -632,7 +632,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MainProtocolTwoWayAnonResponse {
     pub a: u32,
@@ -846,7 +846,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MainProtocolTwoWayAnonWithErrorRequest {
     pub a: u32,
@@ -1062,7 +1062,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MainProtocolTwoWayAnonWithErrorResponse {
     pub a: u32,
@@ -1278,7 +1278,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MainProtocolOnAnonRequest {
     pub a: u32,
@@ -1485,7 +1485,7 @@ where
 }
 
 /// The type corresponding to the MainProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct MainProtocol;
 
 pub mod main_protocol {

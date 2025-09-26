@@ -3,7 +3,7 @@
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
 /// The type corresponding to the Top protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Top;
 
 pub mod top {

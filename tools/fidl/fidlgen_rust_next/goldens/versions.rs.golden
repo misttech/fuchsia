@@ -246,7 +246,7 @@ impl ::core::convert::From<Enum> for WireEnum {
 }
 
 /// The type corresponding to the OtherProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct OtherProtocol;
 
 pub mod other_protocol {
@@ -352,7 +352,7 @@ where
 }
 
 /// The type corresponding to the Protocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Protocol;
 
 pub mod protocol {
@@ -565,7 +565,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct Struct {
     pub x: u32,
@@ -694,7 +694,7 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(PartialEq, Debug, Default)]
 pub struct Table {
     pub x: Option<u32>,
 }
@@ -845,7 +845,7 @@ impl<'de> ::core::fmt::Debug for WireTable<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Union {
     X(u32),
 

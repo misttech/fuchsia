@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct EmptyResourceStruct {}
 
@@ -111,7 +111,7 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(PartialEq, Debug, Default)]
 pub struct EmptyResourceTable {}
 
 impl EmptyResourceTable {
@@ -222,7 +222,7 @@ impl<'de> ::core::fmt::Debug for WireEmptyResourceTable<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum EmptyResourceUnion {
     UnknownOrdinal_(u64),
 }
@@ -591,7 +591,7 @@ impl ::core::convert::From<ObjType> for WireObjType {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(PartialEq, Debug, Default)]
 pub struct TableWithHandle {
     pub h: Option<::fidl_next::fuchsia::zx::Vmo>,
 }
@@ -742,7 +742,7 @@ impl<'de> ::core::fmt::Debug for WireTableWithHandle<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum UnionWithHandle {
     H(::fidl_next::fuchsia::zx::Vmo),
 
@@ -1003,7 +1003,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionWithHandle<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct HandlesInTypes {
     pub normal_handle: ::fidl_next::fuchsia::zx::Vmo,
 

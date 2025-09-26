@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct TwoWayAddRequest {
     pub addend1: u16,
@@ -208,7 +208,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct TwoWayAddResponse {
     pub sum: u16,
@@ -388,7 +388,7 @@ where
 }
 
 /// The type corresponding to the TwoWay protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct TwoWay;
 
 pub mod two_way {

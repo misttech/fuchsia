@@ -6,7 +6,7 @@
 pub const C: i32 = 4;
 
 #[doc = " flexible union comment #1\n\n flexible union comment #3\n"]
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum FlexibleUnion {
     Field(i32),
 
@@ -334,7 +334,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalFlexibleUnion<'de> {
 
 /// The type corresponding to the Interface protocol.
 #[doc = " interface comment #1\n\n interface comment #3\n"]
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Interface;
 
 pub mod interface {
@@ -1065,7 +1065,7 @@ where
 }
 
 #[doc = " strict union comment #1\n\n strict union comment #3\n"]
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictUnion {
     Field(i32),
 }
@@ -1414,7 +1414,7 @@ impl ::core::fmt::Debug for WireOptionalStrictUnion {
 }
 
 #[doc = " struct comment #1\n\n struct comment #3\n"]
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct Struct {
     pub field: i32,
@@ -1594,7 +1594,7 @@ where
 }
 
 #[doc = " table comment #1\n\n table comment #3\n"]
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct Table {
     pub field: Option<i32>,
 }

@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse {
     pub some_field: i32,
@@ -209,7 +209,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse {
     SomeField(i32),
 
@@ -600,7 +600,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -840,7 +840,7 @@ pub type UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse`].
 pub type WireUnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -1049,7 +1049,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -1441,7 +1441,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -1678,7 +1678,7 @@ impl<'de> ::core::fmt::Debug
 }
 
 /// The type corresponding to the UnknownInteractionsAjarDriverProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct UnknownInteractionsAjarDriverProtocol;
 
 pub mod unknown_interactions_ajar_driver_protocol {
@@ -2253,7 +2253,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
     pub some_field: i32,
@@ -2450,7 +2450,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse {
     SomeField(i32),
 
@@ -2831,7 +2831,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -3065,7 +3065,7 @@ pub type UnknownInteractionsAjarProtocolStrictTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsAjarProtocolStrictTwoWayErrResponse`].
 pub type WireUnknownInteractionsAjarProtocolStrictTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -3264,7 +3264,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -3651,7 +3651,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -3885,7 +3885,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsAjarProtocolStrictEventFieldsRequest {
     pub some_field: i32,
@@ -4080,7 +4080,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsAjarProtocolStrictEventUnionRequest {
     SomeField(i32),
 
@@ -4460,7 +4460,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsAjarProtocolStrictEventTableRequest {
     pub some_field: Option<i32>,
 }
@@ -4688,7 +4688,7 @@ impl<'de> ::core::fmt::Debug for WireUnknownInteractionsAjarProtocolStrictEventT
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
     pub some_field: i32,
@@ -4885,7 +4885,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsAjarProtocolFlexibleEventUnionRequest {
     SomeField(i32),
 
@@ -5266,7 +5266,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsAjarProtocolFlexibleEventTableRequest {
     pub some_field: Option<i32>,
 }
@@ -5496,7 +5496,7 @@ impl<'de> ::core::fmt::Debug for WireUnknownInteractionsAjarProtocolFlexibleEven
 }
 
 /// The type corresponding to the UnknownInteractionsAjarProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct UnknownInteractionsAjarProtocol;
 
 pub mod unknown_interactions_ajar_protocol {
@@ -6404,7 +6404,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse {
     pub some_field: i32,
@@ -6611,7 +6611,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse {
     SomeField(i32),
 
@@ -7002,7 +7002,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -7242,7 +7242,7 @@ pub type UnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse`].
 pub type WireUnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -7454,7 +7454,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -7850,7 +7850,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -8090,7 +8090,7 @@ impl<'de> ::core::fmt::Debug
 }
 
 /// The type corresponding to the UnknownInteractionsClosedDriverProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct UnknownInteractionsClosedDriverProtocol;
 
 pub mod unknown_interactions_closed_driver_protocol {
@@ -8621,7 +8621,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
     pub some_field: i32,
@@ -8820,7 +8820,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse {
     SomeField(i32),
 
@@ -9205,7 +9205,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -9443,7 +9443,7 @@ pub type UnknownInteractionsClosedProtocolStrictTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsClosedProtocolStrictTwoWayErrResponse`].
 pub type WireUnknownInteractionsClosedProtocolStrictTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -9648,7 +9648,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -10038,7 +10038,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -10272,7 +10272,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsClosedProtocolStrictEventFieldsRequest {
     pub some_field: i32,
@@ -10469,7 +10469,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsClosedProtocolStrictEventUnionRequest {
     SomeField(i32),
 
@@ -10850,7 +10850,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsClosedProtocolStrictEventTableRequest {
     pub some_field: Option<i32>,
 }
@@ -11080,7 +11080,7 @@ impl<'de> ::core::fmt::Debug for WireUnknownInteractionsClosedProtocolStrictEven
 }
 
 /// The type corresponding to the UnknownInteractionsClosedProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct UnknownInteractionsClosedProtocol;
 
 pub mod unknown_interactions_closed_protocol {
@@ -11743,7 +11743,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
     pub some_field: i32,
@@ -11942,7 +11942,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse {
     SomeField(i32),
 
@@ -12327,7 +12327,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsDriverProtocolStrictTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -12565,7 +12565,7 @@ pub type UnknownInteractionsDriverProtocolStrictTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsDriverProtocolStrictTwoWayErrResponse`].
 pub type WireUnknownInteractionsDriverProtocolStrictTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -12770,7 +12770,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -13160,7 +13160,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -13399,7 +13399,7 @@ pub type UnknownInteractionsDriverProtocolFlexibleTwoWayResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsDriverProtocolFlexibleTwoWayResponse`].
 pub type WireUnknownInteractionsDriverProtocolFlexibleTwoWayResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse {
     pub some_field: i32,
@@ -13604,7 +13604,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse {
     SomeField(i32),
 
@@ -13991,7 +13991,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -14230,7 +14230,7 @@ pub type UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse`].
 pub type WireUnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -14437,7 +14437,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -14828,7 +14828,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -15064,7 +15064,7 @@ impl<'de> ::core::fmt::Debug
 }
 
 /// The type corresponding to the UnknownInteractionsDriverProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct UnknownInteractionsDriverProtocol;
 
 pub mod unknown_interactions_driver_protocol {
@@ -16020,7 +16020,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsProtocolStrictTwoWayFieldsResponse {
     pub some_field: i32,
@@ -16215,7 +16215,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsProtocolStrictTwoWayUnionResponse {
     SomeField(i32),
 
@@ -16589,7 +16589,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsProtocolStrictTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -16819,7 +16819,7 @@ pub type UnknownInteractionsProtocolStrictTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsProtocolStrictTwoWayErrResponse`].
 pub type WireUnknownInteractionsProtocolStrictTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -17014,7 +17014,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsProtocolStrictTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -17394,7 +17394,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsProtocolStrictTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -17627,7 +17627,7 @@ pub type UnknownInteractionsProtocolFlexibleTwoWayResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsProtocolFlexibleTwoWayResponse`].
 pub type WireUnknownInteractionsProtocolFlexibleTwoWayResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
     pub some_field: i32,
@@ -17822,7 +17822,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsProtocolFlexibleTwoWayUnionResponse {
     SomeField(i32),
 
@@ -18202,7 +18202,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsProtocolFlexibleTwoWayTableResponse {
     pub some_field: Option<i32>,
 }
@@ -18435,7 +18435,7 @@ pub type UnknownInteractionsProtocolFlexibleTwoWayErrResponse = ();
 /// The wire type corresponding to [`UnknownInteractionsProtocolFlexibleTwoWayErrResponse`].
 pub type WireUnknownInteractionsProtocolFlexibleTwoWayErrResponse = ();
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
     pub some_field: i32,
@@ -18634,7 +18634,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse {
     SomeField(i32),
 
@@ -19018,7 +19018,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse {
     pub some_field: Option<i32>,
 }
@@ -19249,7 +19249,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsProtocolStrictEventFieldsRequest {
     pub some_field: i32,
@@ -19443,7 +19443,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsProtocolStrictEventUnionRequest {
     SomeField(i32),
 
@@ -19811,7 +19811,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsProtocolStrictEventTableRequest {
     pub some_field: Option<i32>,
 }
@@ -20032,7 +20032,7 @@ impl<'de> ::core::fmt::Debug for WireUnknownInteractionsProtocolStrictEventTable
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct UnknownInteractionsProtocolFlexibleEventFieldsRequest {
     pub some_field: i32,
@@ -20227,7 +20227,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnknownInteractionsProtocolFlexibleEventUnionRequest {
     SomeField(i32),
 
@@ -20601,7 +20601,7 @@ impl<'de> ::core::fmt::Debug
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct UnknownInteractionsProtocolFlexibleEventTableRequest {
     pub some_field: Option<i32>,
 }
@@ -20827,7 +20827,7 @@ impl<'de> ::core::fmt::Debug for WireUnknownInteractionsProtocolFlexibleEventTab
 }
 
 /// The type corresponding to the UnknownInteractionsProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct UnknownInteractionsProtocol;
 
 pub mod unknown_interactions_protocol {

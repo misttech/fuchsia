@@ -65,7 +65,7 @@ where
 }
 
 /// The type corresponding to the SomeDriverProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct SomeDriverProtocol;
 
 pub mod some_driver_protocol {

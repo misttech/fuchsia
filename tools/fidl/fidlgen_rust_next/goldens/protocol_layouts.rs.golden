@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct LocalTablePayload {
     pub a: Option<u16>,
 }
@@ -207,7 +207,7 @@ impl<'de> ::core::fmt::Debug for WireLocalTablePayload<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum LocalUnionPayload {
     B(bool),
 
@@ -537,7 +537,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalLocalUnionPayload<'de> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct MainProtocolOneWayAnonRequest {
     pub a: Option<u16>,
 }
@@ -746,7 +746,7 @@ impl<'de> ::core::fmt::Debug for WireMainProtocolOneWayAnonRequest<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum MainProtocolTwoWayAnonRequest {
     B(bool),
 
@@ -1086,7 +1086,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalMainProtocolTwoWayAnonRequest<'de> 
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct MainProtocolTwoWayAnonResponse {
     pub a: Option<u16>,
 }
@@ -1295,7 +1295,7 @@ impl<'de> ::core::fmt::Debug for WireMainProtocolTwoWayAnonResponse<'de> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct MainProtocolTwoWayAnonWithErrorRequest {
     pub a: Option<u16>,
 }
@@ -1504,7 +1504,7 @@ impl<'de> ::core::fmt::Debug for WireMainProtocolTwoWayAnonWithErrorRequest<'de>
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum MainProtocolTwoWayAnonWithErrorResponse {
     B(bool),
 
@@ -1853,7 +1853,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalMainProtocolTwoWayAnonWithErrorResp
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum MainProtocolOnAnonRequest {
     B(bool),
 
@@ -2192,7 +2192,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalMainProtocolOnAnonRequest<'de> {
 }
 
 /// The type corresponding to the MainProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct MainProtocol;
 
 pub mod main_protocol {
@@ -3303,7 +3303,7 @@ where
 }
 
 /// The type corresponding to the OpenProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct OpenProtocol;
 
 pub mod open_protocol {

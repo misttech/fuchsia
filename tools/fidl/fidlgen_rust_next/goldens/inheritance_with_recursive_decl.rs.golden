@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ParentFirstRequest {
     pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel>,
@@ -141,7 +141,7 @@ where
 }
 
 /// The type corresponding to the Parent protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Parent;
 
 pub mod parent {
@@ -352,7 +352,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ChildSecondRequest {
     pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel>,
@@ -491,7 +491,7 @@ where
 }
 
 /// The type corresponding to the Child protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Child;
 
 pub mod child {

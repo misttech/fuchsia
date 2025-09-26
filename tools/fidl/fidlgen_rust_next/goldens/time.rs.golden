@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct AllInstants {
     pub monotonic: i64,
@@ -254,7 +254,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ComplexInstants {
     pub monotonic: Option<[i64; 10]>,
 

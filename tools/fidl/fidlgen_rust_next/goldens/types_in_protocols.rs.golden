@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ArrayBasic {
     pub array_uint8: [u8; 5],
 
@@ -646,7 +646,7 @@ impl ::core::convert::From<Enum> for WireEnum {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct Struct {}
 
@@ -802,7 +802,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct Table {}
 
 impl Table {
@@ -953,7 +953,7 @@ impl<'de> ::core::fmt::Debug for WireTable<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Union {
     B(bool),
 
@@ -1276,7 +1276,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ArrayCompound {
     pub array_bits: [crate::Bits; 5],
 
@@ -1572,7 +1572,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ArrayVectorNested {
     pub array_array_uint8: [[u8; 5]; 5],
 
@@ -1812,7 +1812,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Basic {
     pub uint8: u8,
 
@@ -2216,7 +2216,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Compound {
     pub bits: crate::Bits,
 
@@ -2512,7 +2512,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct VectorBasic {
     pub vector_uint8: Vec<u8>,
 
@@ -2904,7 +2904,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct VectorCompound {
     pub vector_bits: Vec<crate::Bits>,
 
@@ -3197,7 +3197,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct VectorOptional {
     pub opt_vector_uint8: Option<Vec<u8>>,
 
@@ -3436,7 +3436,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ResourceStruct {}
 
@@ -3545,7 +3545,7 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(PartialEq, Debug, Default)]
 pub struct ResourceTable {}
 
 impl ResourceTable {
@@ -3656,7 +3656,7 @@ impl<'de> ::core::fmt::Debug for WireResourceTable<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum ResourceUnion {
     B(bool),
 
@@ -3908,7 +3908,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalResourceUnion<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Resource {
     pub handle: ::fidl_next::fuchsia::zx::Handle,
 
@@ -4442,7 +4442,7 @@ where
 }
 
 /// The type corresponding to the Protocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Protocol;
 
 pub mod protocol {

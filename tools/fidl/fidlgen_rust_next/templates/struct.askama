@@ -9,7 +9,7 @@ pub type {{ wire_name }} = ();
 {% else %}
 
 {{ self.doc_string(strct.attributes) -}}
-#[derive(
+#[derive(PartialEq,
     {% if !strct.is_resource %}
         Clone,
     {% endif %}

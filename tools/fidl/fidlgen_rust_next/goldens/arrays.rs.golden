@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct StructLargeArray {
     pub a: [u32; 100],
@@ -185,7 +185,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct StructSmallArray {
     pub a: [u32; 2],
@@ -368,7 +368,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct TableLargeArray {
     pub a: Option<[u32; 100]>,
 }
@@ -573,7 +573,7 @@ impl<'de> ::core::fmt::Debug for WireTableLargeArray<'de> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct TableSmallArray {
     pub a: Option<[u32; 2]>,
 }
@@ -778,7 +778,7 @@ impl<'de> ::core::fmt::Debug for WireTableSmallArray<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionLargeArray {
     A([u32; 100]),
 }
@@ -1098,7 +1098,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionLargeArray<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionSmallArray {
     A([u32; 2]),
 }

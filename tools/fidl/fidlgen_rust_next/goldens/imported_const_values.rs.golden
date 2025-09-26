@@ -12,7 +12,7 @@ pub const ENUM_MEMBER: ::fidl_next_test_dependent::MyEnum =
 
 pub const ENUM_MEMBER_PRIMITIVE: u8 = 1;
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MyStruct {}
 

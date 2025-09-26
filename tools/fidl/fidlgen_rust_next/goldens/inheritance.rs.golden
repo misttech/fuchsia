@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SuperFooRequest {
     pub s: String,
 }
@@ -170,7 +170,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct SuperFooResponse {
     pub y: i64,
@@ -350,7 +350,7 @@ where
 }
 
 /// The type corresponding to the super protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Super;
 
 pub mod super_ {
@@ -561,7 +561,7 @@ where
 }
 
 /// The type corresponding to the sub protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Sub;
 
 pub mod sub {

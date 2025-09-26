@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ExampleFooRequest {
     pub s: String,
 }
@@ -170,7 +170,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ExampleFooResponse {
     pub y: i64,
@@ -350,7 +350,7 @@ where
 }
 
 /// The type corresponding to the Example protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Example;
 
 pub mod example {

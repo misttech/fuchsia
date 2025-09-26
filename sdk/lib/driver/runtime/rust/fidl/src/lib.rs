@@ -25,7 +25,7 @@ pub use self::wire::*;
 
 /// A fidl-compatible driver channel that also holds a reference to the
 /// dispatcher. Defaults to using [`CurrentDispatcher`].
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DriverChannel<D = CurrentDispatcher> {
     dispatcher: D,
     channel: Channel<[Chunk]>,

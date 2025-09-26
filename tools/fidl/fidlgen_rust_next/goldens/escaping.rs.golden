@@ -9,7 +9,7 @@ pub const DOLLAR: &str = "$";
 pub const DOLLAR_BRACE: &str = "${";
 
 #[doc = " \"pleaseescapethisdocommentproperly\"\n"]
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DocCommentWithQuotes {}
 

@@ -39,7 +39,7 @@ where
 }
 
 /// The type corresponding to the FirstProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct FirstProtocol;
 
 pub mod first_protocol {
@@ -361,7 +361,7 @@ where
 }
 
 /// The type corresponding to the SecondProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct SecondProtocol;
 
 pub mod second_protocol {

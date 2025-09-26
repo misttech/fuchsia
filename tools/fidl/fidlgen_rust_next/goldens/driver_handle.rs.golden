@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ClientEndWrapper {
     pub value: ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
@@ -141,7 +141,7 @@ where
 }
 
 /// The type corresponding to the DriverProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct DriverProtocol;
 
 pub mod driver_protocol {
@@ -247,7 +247,7 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(PartialEq, Debug, Default)]
 pub struct T {
     pub zircon_handle: Option<::fidl_next::fuchsia::zx::Event>,
 
@@ -458,7 +458,7 @@ impl<'de> ::core::fmt::Debug for WireT<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct HandlesInProtocolSendHandlesRequest {
     pub t: crate::T,
 }
@@ -579,7 +579,7 @@ where
 }
 
 /// The type corresponding to the HandlesInProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct HandlesInProtocol;
 
 pub mod handles_in_protocol {
@@ -784,7 +784,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ServerEndWrapper {
     pub value: ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,

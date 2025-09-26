@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct Payload {
     pub value: u32,
@@ -181,7 +181,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct OneWaySendRequest {
     pub payload: crate::Payload,
@@ -362,7 +362,7 @@ where
 }
 
 /// The type corresponding to the OneWay protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct OneWay;
 
 pub mod one_way {

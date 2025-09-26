@@ -3,7 +3,7 @@
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
 /// The type corresponding to the Child protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Child;
 
 pub mod child {
@@ -106,7 +106,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ParentGetChildResponse {
     pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -244,7 +244,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ParentGetChildRequestResponse {
     pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -388,7 +388,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ParentTakeChildRequest {
     pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -526,7 +526,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ParentTakeChildRequestRequest {
     pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -671,7 +671,7 @@ where
 }
 
 /// The type corresponding to the Parent protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Parent;
 
 pub mod parent {

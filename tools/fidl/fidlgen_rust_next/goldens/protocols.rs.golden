@@ -3,7 +3,7 @@
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
 /// The type corresponding to the AnotherDiscoverableProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct AnotherDiscoverableProtocol;
 
 impl ::fidl_next::Discoverable for AnotherDiscoverableProtocol {
@@ -113,7 +113,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolMethodARequest {
     pub a: i64,
@@ -325,7 +325,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolEventARequest {
     pub a: i64,
@@ -531,7 +531,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolMethodBRequest {
     pub a: i64,
@@ -743,7 +743,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolMethodBResponse {
     pub result: i64,
@@ -930,7 +930,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolTakeHandleRequest {
     pub h: ::fidl_next::fuchsia::zx::Handle,
@@ -1070,7 +1070,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolMutateSocketRequest {
     pub a: ::fidl_next::fuchsia::zx::Socket,
@@ -1210,7 +1210,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ChannelProtocolMutateSocketResponse {
     pub b: ::fidl_next::fuchsia::zx::Socket,
@@ -1351,7 +1351,7 @@ where
 }
 
 /// The type corresponding to the ChannelProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ChannelProtocol;
 
 pub mod channel_protocol {
@@ -1987,7 +1987,7 @@ where
 }
 
 /// The type corresponding to the DiscoverableProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct DiscoverableProtocol;
 
 impl ::fidl_next::Discoverable for DiscoverableProtocol {
@@ -2264,7 +2264,7 @@ impl ::core::convert::From<ErrorEnum> for WireErrorEnum {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct HandleRightsProtocolNoResponseMethodRequest {
     pub h: ::fidl_next::fuchsia::zx::Socket,
@@ -2405,7 +2405,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct HandleRightsProtocolResponseMethodRequest {
     pub h: ::fidl_next::fuchsia::zx::Socket,
@@ -2546,7 +2546,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct HandleRightsProtocolResponseMethodResponse {
     pub h: ::fidl_next::fuchsia::zx::Socket,
@@ -2687,7 +2687,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct HandleRightsProtocolAnEventRequest {
     pub h: ::fidl_next::fuchsia::zx::Socket,
@@ -2828,7 +2828,7 @@ where
 }
 
 /// The type corresponding to the HandleRightsProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct HandleRightsProtocol;
 
 pub mod handle_rights_protocol {
@@ -3230,7 +3230,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ManyParametersFifteenRequest {
     pub p1: bool,
@@ -3721,7 +3721,7 @@ where
 }
 
 /// The type corresponding to the ManyParameters protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ManyParameters;
 
 pub mod many_parameters {
@@ -4120,7 +4120,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum TheUnion {
     V(u32),
 
@@ -4445,7 +4445,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalTheUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct MethodWithUnionUnionMethodRequest {
     pub u: crate::TheUnion,
 }
@@ -4618,7 +4618,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct MethodWithUnionUnionMethodResponse {
     pub u: Option<Box<crate::TheUnion>>,
 }
@@ -4792,7 +4792,7 @@ where
 }
 
 /// The type corresponding to the MethodWithUnion protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct MethodWithUnion;
 
 pub mod method_with_union {
@@ -5006,7 +5006,7 @@ where
 }
 
 /// The type corresponding to the PlatformServer protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct PlatformServer;
 
 impl ::fidl_next::Discoverable for PlatformServer {
@@ -5116,7 +5116,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct ProtocolEnds {
     pub client:
@@ -5371,7 +5371,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WithAndWithoutRequestResponseNoRequestWithResponseResponse {
     pub ret: String,
 }
@@ -5560,7 +5560,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WithAndWithoutRequestResponseWithRequestNoResponseRequest {
     pub arg: String,
 }
@@ -5747,7 +5747,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WithAndWithoutRequestResponseWithRequestEmptyResponseRequest {
     pub arg: String,
 }
@@ -5937,7 +5937,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WithAndWithoutRequestResponseWithRequestWithResponseRequest {
     pub arg: String,
 }
@@ -6127,7 +6127,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WithAndWithoutRequestResponseWithRequestWithResponseResponse {
     pub ret: String,
 }
@@ -6317,7 +6317,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WithAndWithoutRequestResponseOnWithResponseRequest {
     pub ret: String,
 }
@@ -6497,7 +6497,7 @@ where
 }
 
 /// The type corresponding to the WithAndWithoutRequestResponse protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct WithAndWithoutRequestResponse;
 
 pub mod with_and_without_request_response {
@@ -7160,7 +7160,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct WithErrorSyntaxResponseAsStructResponse {
     pub a: i64,
@@ -7409,7 +7409,7 @@ pub type WithErrorSyntaxErrorAsEnumResponse = ();
 /// The wire type corresponding to [`WithErrorSyntaxErrorAsEnumResponse`].
 pub type WireWithErrorSyntaxErrorAsEnumResponse = ();
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithErrorSyntaxHandleInResultResponse {
     pub h: ::fidl_next::fuchsia::zx::Handle,
@@ -7550,7 +7550,7 @@ where
 }
 
 /// The type corresponding to the WithErrorSyntax protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct WithErrorSyntax;
 
 pub mod with_error_syntax {
@@ -7822,7 +7822,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithProtocolEndsClientEndsRequest {
     pub in_: ::fidl_next::ClientEnd<crate::DiscoverableProtocol, ::fidl_next::fuchsia::zx::Channel>,
@@ -7971,7 +7971,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithProtocolEndsClientEndsResponse {
     pub out: Option<
@@ -8129,7 +8129,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithProtocolEndsServerEndsRequest {
     pub in_: Option<
@@ -8287,7 +8287,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithProtocolEndsServerEndsResponse {
     pub out: ::fidl_next::ServerEnd<crate::DiscoverableProtocol, ::fidl_next::fuchsia::zx::Channel>,
@@ -8436,7 +8436,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithProtocolEndsStructContainingEndsRequest {
     pub in_: crate::ProtocolEnds,
@@ -8578,7 +8578,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct WithProtocolEndsStructContainingEndsResponse {
     pub out: crate::ProtocolEnds,
@@ -8721,7 +8721,7 @@ where
 }
 
 /// The type corresponding to the WithProtocolEnds protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct WithProtocolEnds;
 
 pub mod with_protocol_ends {

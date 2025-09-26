@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct Empty {}
 
@@ -158,7 +158,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum EmptyFlexibleUnion {
     UnknownOrdinal_(u64),
 }
@@ -455,7 +455,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalEmptyFlexibleUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ExplicitFlexibleUnion {
     I(i64),
 
@@ -821,7 +821,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalExplicitFlexibleUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ExplicitFoo {
     I(i32),
 
@@ -1184,7 +1184,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalExplicitFoo<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Pizza {
     pub toppings: Vec<String>,
 }
@@ -1352,7 +1352,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Pasta {
     pub sauce: String,
 }
@@ -1529,7 +1529,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ExplicitPizzaOrPasta {
     Pizza(crate::Pizza),
 
@@ -1891,7 +1891,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalExplicitPizzaOrPasta<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ExplicitStrictFoo {
     I(i32),
 
@@ -2246,7 +2246,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalExplicitStrictFoo<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ExplicitUnion {
     Primitive(i32),
 
@@ -2597,7 +2597,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalExplicitUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum FieldCollision {
     FieldCollisionTag(i32),
 }
@@ -2944,7 +2944,7 @@ impl ::core::fmt::Debug for WireOptionalFieldCollision {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum FlexibleFoo {
     S(String),
 
@@ -3307,7 +3307,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalFlexibleFoo<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum FlexiblePizzaOrPasta {
     Pizza(crate::Pizza),
 
@@ -3681,7 +3681,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalFlexiblePizzaOrPasta<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum FlexibleUnion {
     Primitive(i32),
 
@@ -4098,7 +4098,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalFlexibleUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum NewerSimpleUnion {
     I(i64),
 
@@ -4515,7 +4515,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalNewerSimpleUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct NullableUnionStruct {
     pub the_union: Option<Box<crate::Union>>,
 }
@@ -4683,7 +4683,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum OlderSimpleUnion {
     I(i64),
 
@@ -5044,7 +5044,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalOlderSimpleUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum PizzaOrPasta {
     Pizza(crate::Pizza),
 
@@ -5399,7 +5399,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalPizzaOrPasta<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ReverseOrdinalUnion {
     First(u32),
 
@@ -5793,7 +5793,7 @@ impl ::core::fmt::Debug for WireOptionalReverseOrdinalUnion {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictBoundedUnion {
     V(Vec<u8>),
 }
@@ -6122,7 +6122,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalStrictBoundedUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictFoo {
     S(String),
 
@@ -6474,7 +6474,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalStrictFoo<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictPizzaOrPasta {
     Pizza(crate::Pizza),
 
@@ -6833,7 +6833,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalStrictPizzaOrPasta<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictSimpleUnion {
     I(i32),
 
@@ -7221,7 +7221,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalStrictSimpleUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictUnion {
     Primitive(i32),
 
@@ -7626,7 +7626,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalStrictUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructWithNullableUnion {
     pub x1: Option<Box<crate::OlderSimpleUnion>>,
 }
@@ -7794,7 +7794,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse {
     pub xu: crate::StrictBoundedUnion,
 }
@@ -7987,7 +7987,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse {
     pub xu: crate::OlderSimpleUnion,
 }
@@ -8182,7 +8182,7 @@ where
 }
 
 /// The type corresponding to the TestProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct TestProtocol;
 
 pub mod test_protocol {
@@ -8379,7 +8379,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Union {
     Primitive(i32),
 
@@ -8783,7 +8783,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnion<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionContainingEmptyStruct {
     Empty(crate::Empty),
 
@@ -9123,7 +9123,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionContainingEmptyStruct<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct UnionSandwich {
     pub a: u32,
 
@@ -9343,7 +9343,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionWithAttributes {
     X(i64),
 

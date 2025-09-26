@@ -41,7 +41,7 @@ pub type WireAliasOfVectorContainingAliasOfVector<'de> =
     ::fidl_next::WireVector<'de, ::fidl_next::WireU64>;
 
 /// The type corresponding to the MyProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct MyProtocol;
 
 pub mod my_protocol {
@@ -151,7 +151,7 @@ pub type Vector = Option<Vec<u64>>;
 /// The wire type corresponding to [`Vector`].
 pub type WireVector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Testing {
     pub u1: u64,
 

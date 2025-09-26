@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ComposedProtocolOneWayAnonComposedRequest {
     pub a: Option<u16>,
 }
@@ -212,7 +212,7 @@ impl<'de> ::core::fmt::Debug for WireComposedProtocolOneWayAnonComposedRequest<'
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ComposedProtocolTwoWayAnonComposedRequest {
     B(bool),
 }
@@ -576,7 +576,7 @@ impl ::core::fmt::Debug for WireOptionalComposedProtocolTwoWayAnonComposedReques
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ComposedProtocolTwoWayAnonComposedResponse {
     pub a: Option<u16>,
 }
@@ -786,7 +786,7 @@ impl<'de> ::core::fmt::Debug for WireComposedProtocolTwoWayAnonComposedResponse<
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ComposedProtocolTwoWayAnonComposedWithErrorRequest {
     pub a: Option<u16>,
 }
@@ -999,7 +999,7 @@ impl<'de> ::core::fmt::Debug for WireComposedProtocolTwoWayAnonComposedWithError
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ComposedProtocolTwoWayAnonComposedWithErrorResponse {
     B(bool),
 }
@@ -1371,7 +1371,7 @@ impl ::core::fmt::Debug for WireOptionalComposedProtocolTwoWayAnonComposedWithEr
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ComposedProtocolOnAnonComposedRequest {
     B(bool),
 }
@@ -1730,7 +1730,7 @@ impl ::core::fmt::Debug for WireOptionalComposedProtocolOnAnonComposedRequest {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct TablePayload {
     pub a: Option<u16>,
 }
@@ -1935,7 +1935,7 @@ impl<'de> ::core::fmt::Debug for WireTablePayload<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionPayload {
     B(bool),
 }
@@ -2278,7 +2278,7 @@ impl ::core::fmt::Debug for WireOptionalUnionPayload {
 }
 
 /// The type corresponding to the ComposedProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ComposedProtocol;
 
 pub mod composed_protocol {
@@ -2775,7 +2775,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct MainProtocolOneWayAnonRequest {
     pub a: Option<u16>,
 }
@@ -2984,7 +2984,7 @@ impl<'de> ::core::fmt::Debug for WireMainProtocolOneWayAnonRequest<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum MainProtocolTwoWayAnonRequest {
     B(bool),
 
@@ -3324,7 +3324,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalMainProtocolTwoWayAnonRequest<'de> 
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct MainProtocolTwoWayAnonResponse {
     pub a: Option<u16>,
 }
@@ -3533,7 +3533,7 @@ impl<'de> ::core::fmt::Debug for WireMainProtocolTwoWayAnonResponse<'de> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct MainProtocolTwoWayAnonWithErrorRequest {
     pub a: Option<u16>,
 }
@@ -3742,7 +3742,7 @@ impl<'de> ::core::fmt::Debug for WireMainProtocolTwoWayAnonWithErrorRequest<'de>
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum MainProtocolTwoWayAnonWithErrorResponse {
     B(bool),
 
@@ -4091,7 +4091,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalMainProtocolTwoWayAnonWithErrorResp
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum MainProtocolOnAnonRequest {
     B(bool),
 
@@ -4430,7 +4430,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalMainProtocolOnAnonRequest<'de> {
 }
 
 /// The type corresponding to the MainProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct MainProtocol;
 
 pub mod main_protocol {

@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionSize12Alignment4 {
     Variant([u8; 6]),
 }
@@ -323,7 +323,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionSize12Alignment4<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SandwichUnionSize12Alignment4 {
     pub before: u32,
 
@@ -547,7 +547,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct StructSize16Alignment8 {
     pub f1: u64,
@@ -753,7 +753,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionSize24Alignment8 {
     Variant(crate::StructSize16Alignment8),
 }
@@ -1083,7 +1083,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionSize24Alignment8<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SandwichUnionSize24Alignment8 {
     pub before: u32,
 
@@ -1307,7 +1307,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionSize36Alignment4 {
     Variant([u8; 32]),
 }
@@ -1628,7 +1628,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionSize36Alignment4<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SandwichUnionSize36Alignment4 {
     pub before: u32,
 
@@ -1852,7 +1852,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionSize8Alignment4 {
     Variant(u32),
 }
@@ -2201,7 +2201,7 @@ impl ::core::fmt::Debug for WireOptionalUnionSize8Alignment4 {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SandwichUnionSize8Alignment4 {
     pub before: u32,
 

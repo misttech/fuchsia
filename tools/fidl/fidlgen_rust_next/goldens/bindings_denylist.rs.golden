@@ -4,7 +4,7 @@
 
 pub const ALL_BINDINGS: u32 = 0;
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ShouldNeverAppearInAnyBinding4 {
     pub a: bool,
@@ -190,7 +190,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ShouldNeverAppearInAnyBinding5 {
     pub a: Option<bool>,
 }
@@ -391,7 +391,7 @@ impl<'de> ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding5<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ShouldNeverAppearInAnyBinding6 {
     A(bool),
 
@@ -733,7 +733,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding6<'de>
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct AllowedDeniedResponse {
     pub should_never_appear_in_any_binding_4: crate::ShouldNeverAppearInAnyBinding4,
 
@@ -986,7 +986,7 @@ where
 }
 
 /// The type corresponding to the Allowed protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Allowed;
 
 pub mod allowed {
@@ -1131,7 +1131,7 @@ where
 }
 
 /// The type corresponding to the ContainsAllowed protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ContainsAllowed;
 
 pub mod contains_allowed {
@@ -1237,7 +1237,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ShouldNeverAppearInAnyBinding1 {
     pub a: bool,
@@ -1423,7 +1423,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ShouldNeverAppearInAnyBinding2 {
     pub a: Option<bool>,
 }
@@ -1624,7 +1624,7 @@ impl<'de> ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding2<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ShouldNeverAppearInAnyBinding3 {
     A(bool),
 
@@ -1966,7 +1966,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding3<'de>
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct DeniedShouldNeverAppearInAnyBindingRequest {
     pub should_never_appear_in_any_binding_1: crate::ShouldNeverAppearInAnyBinding1,
 
@@ -2225,7 +2225,7 @@ where
 }
 
 /// The type corresponding to the Denied protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Denied;
 
 pub mod denied {
@@ -2474,7 +2474,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ShouldNeverAppearInAnyBinding7 {
     pub a: bool,
@@ -2660,7 +2660,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ShouldNeverAppearInAnyBinding8 {
     pub a: Option<bool>,
 }
@@ -2861,7 +2861,7 @@ impl<'de> ::core::fmt::Debug for WireShouldNeverAppearInAnyBinding8<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ShouldNeverAppearInAnyBinding9 {
     A(bool),
 
@@ -3203,7 +3203,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalShouldNeverAppearInAnyBinding9<'de>
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct DeniedAnonymous {
     pub should_never_appear_in_any_binding_7: crate::ShouldNeverAppearInAnyBinding7,
 
@@ -3455,7 +3455,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyCppRequest {
     pub a: bool,
@@ -3643,7 +3643,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyCppResponse {
     pub b: i32,
@@ -3832,7 +3832,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyDartRequest {
     pub a: bool,
@@ -4020,7 +4020,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyDartResponse {
     pub b: i32,
@@ -4209,7 +4209,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyGoRequest {
     pub a: bool,
@@ -4397,7 +4397,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyGoResponse {
     pub b: i32,
@@ -4586,7 +4586,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyPythonRequest {
     pub a: bool,
@@ -4774,7 +4774,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyPythonResponse {
     pub b: i32,
@@ -4963,7 +4963,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyRustRequest {
     pub a: bool,
@@ -5151,7 +5151,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenyRustResponse {
     pub b: i32,
@@ -5340,7 +5340,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenySyzkallerRequest {
     pub a: bool,
@@ -5528,7 +5528,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct DenyEachBindingOnlyDenySyzkallerResponse {
     pub b: i32,
@@ -5719,7 +5719,7 @@ where
 }
 
 /// The type corresponding to the DenyEachBinding protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct DenyEachBinding;
 
 pub mod deny_each_binding {
@@ -6470,7 +6470,7 @@ where
 }
 
 /// The type corresponding to the ImportsSameNameContext protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ImportsSameNameContext;
 
 pub mod imports_same_name_context {
@@ -6730,7 +6730,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct MemberOnlyAppearsInImportingLibrary {
     pub a: bool,
@@ -6918,7 +6918,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct OnlyAppearsInImportingLibrary {
     pub member_only_appears_in_importing_library: crate::MemberOnlyAppearsInImportingLibrary,
@@ -7127,7 +7127,7 @@ where
 }
 
 /// The type corresponding to the OnlyCppAndDeps protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct OnlyCppAndDeps;
 
 pub mod only_cpp_and_deps {
@@ -7361,7 +7361,7 @@ impl ::core::convert::From<OnlyDart> for WireOnlyDart {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct OnlyGo {}
 
@@ -7553,7 +7553,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum OnlyLlcpp {
     X(u32),
 }
@@ -7899,7 +7899,7 @@ impl ::core::fmt::Debug for WireOptionalOnlyLlcpp {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct OnlyPython {}
 
 impl OnlyPython {
@@ -8050,7 +8050,7 @@ impl<'de> ::core::fmt::Debug for WireOnlyPython<'de> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct OnlyRust {}
 
 impl OnlyRust {

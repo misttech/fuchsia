@@ -170,7 +170,7 @@ pub type AliasOfChannel = ::fidl_next::fuchsia::zx::Channel;
 /// The wire type corresponding to [`AliasOfChannel`].
 pub type WireAliasOfChannel = ::fidl_next::fuchsia::WireChannel;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ExampleOfUseOfAliases {
     pub field_of_u32: u32,
 

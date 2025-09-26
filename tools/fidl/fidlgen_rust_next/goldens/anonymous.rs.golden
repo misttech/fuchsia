@@ -255,7 +255,7 @@ impl ::core::convert::From<Op> for WireOp {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct OverrideTest {
     pub op: crate::Op,
 
@@ -578,7 +578,7 @@ impl ::core::convert::From<Flags> for WireFlags {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct FunctionApplication {
     pub func: Option<String>,
 
@@ -949,7 +949,7 @@ impl<'de> ::core::fmt::Debug for WireFunctionApplication<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Expression {
     Value(u64),
 
@@ -1362,7 +1362,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalExpression<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum UnionMember {
     UnionData(u8),
 
@@ -1688,7 +1688,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalUnionMember<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct TableData {
     pub data: u8,
@@ -1866,7 +1866,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct TableMember {
     pub table_data: Option<Vec<crate::TableData>>,
 }
@@ -2090,7 +2090,7 @@ impl<'de> ::core::fmt::Debug for WireTableMember<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SomeProtocolSomeMethodRequest {
     pub union_member: crate::UnionMember,
 
@@ -2286,7 +2286,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct SomeProtocolSomeMethodResponse {
     pub bits_member: crate::BitsMember,
@@ -2617,7 +2617,7 @@ impl ::core::convert::From<SomeProtocolSomeMethodError> for WireSomeProtocolSome
 }
 
 /// The type corresponding to the SomeProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct SomeProtocol;
 
 pub mod some_protocol {

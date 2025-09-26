@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct Int32Wrapper {
     pub val: i32,
@@ -181,7 +181,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct SimpleProtocolAddRequest {
     pub a: i32,
@@ -387,7 +387,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct SimpleProtocolAddResponse {
     pub sum: i32,
@@ -567,7 +567,7 @@ where
 }
 
 /// The type corresponding to the SimpleProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct SimpleProtocol;
 
 pub mod simple_protocol {
@@ -790,7 +790,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum SimpleUnion {
     A(i32),
 
@@ -1185,7 +1185,7 @@ impl ::core::fmt::Debug for WireOptionalSimpleUnion {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct StructWithNullableHandle {
     pub val: Option<::fidl_next::fuchsia::zx::Vmo>,
@@ -1321,7 +1321,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct StructWithNullableProtocol {
     pub val:
@@ -1462,7 +1462,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct StructWithNullableRequest {
     pub val:
@@ -1603,7 +1603,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructWithNullableString {
     pub val: Option<String>,
 }
@@ -1771,7 +1771,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructWithNullableStruct {
     pub val: Option<Box<crate::Int32Wrapper>>,
 }
@@ -1939,7 +1939,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct StructWithNullableUnion {
     pub val: Option<Box<crate::SimpleUnion>>,
@@ -2121,7 +2121,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructWithNullableVector {
     pub val: Option<Vec<i32>>,
 }

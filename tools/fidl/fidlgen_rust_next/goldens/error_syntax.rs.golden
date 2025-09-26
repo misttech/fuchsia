@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ExampleUseOfErrorSyntaxCallWhichMayFailRequest {
     pub s: String,
 }
@@ -177,7 +177,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
     pub value: i64,
@@ -370,7 +370,7 @@ where
 }
 
 /// The type corresponding to the ExampleUseOfErrorSyntax protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ExampleUseOfErrorSyntax;
 
 pub mod example_use_of_error_syntax {

@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Int16Int8 {
     pub a: i16,
 
@@ -195,7 +195,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ArrayInt16Int8 {
     pub arr: [crate::Int16Int8; 3],
 }
@@ -360,7 +360,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Int8Int32 {
     pub a: i8,
 
@@ -553,7 +553,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct NonInlineStructTestStruct {
     pub element: Option<Box<crate::Int16Int8>>,
 
@@ -691,7 +691,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructPaddingTestStruct {
     pub trailing: crate::Int16Int8,
 
@@ -900,7 +900,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct TopLevelStruct {
     pub a: crate::StructPaddingTestStruct,
 

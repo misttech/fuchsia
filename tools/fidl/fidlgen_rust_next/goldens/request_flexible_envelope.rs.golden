@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum FlexibleFoo {
     S(String),
 
@@ -365,7 +365,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalFlexibleFoo<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StrictFoo {
     S(String),
 
@@ -717,7 +717,7 @@ impl<'de> ::core::fmt::Debug for WireOptionalStrictFoo<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ProtocolRequestStrictResponseFlexibleRequest {
     pub s: crate::StrictFoo,
 }
@@ -892,7 +892,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ProtocolRequestStrictResponseFlexibleResponse {
     pub f: crate::FlexibleFoo,
 }
@@ -1067,7 +1067,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ProtocolRequestFlexibleResponseStrictRequest {
     pub s: crate::FlexibleFoo,
 }
@@ -1242,7 +1242,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ProtocolRequestFlexibleResponseStrictResponse {
     pub f: crate::StrictFoo,
 }
@@ -1418,7 +1418,7 @@ where
 }
 
 /// The type corresponding to the Protocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Protocol;
 
 pub mod protocol {

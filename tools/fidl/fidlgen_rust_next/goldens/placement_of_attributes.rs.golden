@@ -253,7 +253,7 @@ impl ::core::convert::From<ExampleEnum> for WireExampleEnum {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ExampleProtocolMethodRequest {
     pub arg: ::fidl_next_test_exampleusing::Empty,
@@ -440,7 +440,7 @@ where
 }
 
 /// The type corresponding to the ExampleProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct ExampleProtocol;
 
 pub mod example_protocol {
@@ -638,7 +638,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct ExampleStruct {
     pub member: u32,
@@ -817,7 +817,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct ExampleTable {
     pub member: Option<u32>,
 }
@@ -1030,7 +1030,7 @@ impl<'de> ::core::fmt::Debug for WireExampleTable<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ExampleUnion {
     Variant(u32),
 }

@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct Empty {}
 
@@ -158,7 +158,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct EmptyProtocolSendRequest {
     pub e: crate::Empty,
@@ -337,7 +337,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct EmptyProtocolReceiveRequest {
     pub e: crate::Empty,
@@ -516,7 +516,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct EmptyProtocolSendAndReceiveRequest {
     pub e: crate::Empty,
@@ -705,7 +705,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct EmptyProtocolSendAndReceiveResponse {
     pub e: crate::Empty,
@@ -895,7 +895,7 @@ where
 }
 
 /// The type corresponding to the EmptyProtocol protocol.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct EmptyProtocol;
 
 pub mod empty_protocol {

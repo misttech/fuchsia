@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 #[repr(C)]
 pub struct SerializableStruct {}
 
@@ -158,7 +158,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct SerializableTable {}
 
 impl SerializableTable {
@@ -309,7 +309,7 @@ impl<'de> ::core::fmt::Debug for WireSerializableTable<'de> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum SerializableUnion {
     Unused(bool),
 }
