@@ -29,6 +29,12 @@ impl FDomainTransport {
     }
 }
 
+impl Drop for FDomainTransport {
+    fn drop(&mut self) {
+        log::debug!("FDomain connection being dropped");
+    }
+}
+
 impl fdomain_client::FDomainTransport for FDomainTransport {
     fn poll_send_message(
         mut self: Pin<&mut Self>,
@@ -81,6 +87,12 @@ impl futures::Stream for FDomainTransport {
             let buf = ready!(this.input.as_mut().poll_fill_buf(ctx))?;
 
             if buf.is_empty() {
+                match self.in_buf.len() {
+                    0 => log::debug!("FDomain transport closed, ending stream"),
+                    n => log::warn!(
+                        "FDomain transport closed with incomplete packet of length {n}, ending stream"
+                    ),
+                };
                 return Poll::Ready(None);
             }
 

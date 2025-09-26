@@ -98,6 +98,7 @@ impl Connection {
                     self.wrap_connection_errors(e).context("connecting to new RCS proxy"),
                 )
             })?;
+        log::debug!("Overnet RCS Proxy established");
         Ok(remote_proxy)
     }
 
@@ -105,12 +106,14 @@ impl Connection {
     /// time, this function will run indefinitely until it finds a remote control proxy, so it is
     /// the caller's responsibility to time out.
     pub async fn rcs_proxy_fdomain(&self) -> Result<FDRemoteControlProxy, ConnectionError> {
+        let mut pass_thru = false;
         let fdomain = {
             let mut fdomain = self.fdomain.lock().await;
             if let Some(fdomain) = fdomain.clone() {
                 fdomain
             } else {
                 let client = self.pass_thru_client().await?;
+                pass_thru = true;
                 *fdomain = Some(client);
                 fdomain.clone().unwrap()
             }
@@ -127,6 +130,7 @@ impl Connection {
         )
         .map_err(|e| ConnectionError::InternalError(e.into()))?;
 
+        log::debug!("FDomain RCS Proxy established (pass-thru: {pass_thru})");
         Ok(proxy)
     }
 
