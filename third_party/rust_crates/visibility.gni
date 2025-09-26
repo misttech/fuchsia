@@ -84,8 +84,6 @@ lazy_static_visibility = [
   "//src/connectivity/wlan/wlancfg:*",
   "//src/fonts:*",
   "//src/hwinfo/mock:*",
-  "//src/lib/intl/strings:*",
-  "//src/lib/intl/unicode_utils/unicode_blocks:*",
   "//src/lib/process_builder:*",
   "//src/lib/scoped_task:*",
   "//src/lib/test_util:*",

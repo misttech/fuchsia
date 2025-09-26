@@ -3,30 +3,26 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use lazy_static::lazy_static;
 use regex::Regex;
 use std::env;
 use std::fs::File;
 use std::io::Write;
+use std::sync::LazyLock;
 use unic_ucd_block::{Block, BlockIter};
 
-lazy_static! {
-    static ref REGEX_NON_IDENTIFIER: Regex = Regex::new(r"[^A-Za-z0-9]+").unwrap();
-}
+static REGEX_NON_IDENTIFIER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[^A-Za-z0-9]+").unwrap());
 
 const PREAMBLE: &str = r#"// Generated using //garnet/bin/fonts/unicode_blocks:generate_unicode_blocks. Do not edit.
 
 mod blocks {
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
     use unic_char_range::CharRange;
     use unic_ucd_block::{Block, BlockIter};
 "#;
 
 const BLOCKS_VEC: &str = r#"
-    lazy_static! {
-        static ref BLOCKS: Vec<Block> = BlockIter::new().collect();
-    }
-
+    static BLOCKS: LazyLock<Vec<Block>> = LazyLock::new(|| BlockIter::new().collect());
 "#;
 
 pub fn generate_unicode_blocks_enum() -> String {

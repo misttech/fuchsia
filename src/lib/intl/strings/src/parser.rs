@@ -4,11 +4,11 @@
 
 //! The XML parser that turns `strings.xml` into a [Dictionary].
 
-use anyhow::{anyhow, Context, Error, Result};
-use lazy_static::lazy_static;
+use anyhow::{Context, Error, Result, anyhow};
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::io;
+use std::sync::LazyLock;
 use xml::attribute;
 use xml::reader::{EventReader, ParserConfig, XmlEvent};
 
@@ -103,18 +103,16 @@ enum State {
     Done,
 }
 
-lazy_static! {
-    // All string names must match this regex string. (This should be fixed up
-    // to match the FIDL naming rules)
-    //
-    // Example:
-    // __hello_WORLD -- acceptable
-    // 0cool -- not acceptable, leading number
-    // добар_дан -- not acceptable, not A-Z.
-    static ref RAW_REGEX_STRING: &'static str = r"^[_a-zA-Z][_a-zA-Z_0-9]*$";
+// All string names must match this regex string. (This should be fixed up
+// to match the FIDL naming rules)
+//
+// Example:
+// __hello_WORLD -- acceptable
+// 0cool -- not acceptable, leading number
+// добар_дан -- not acceptable, not A-Z.
+static RAW_REGEX_STRING: &str = r"^[_a-zA-Z][_a-zA-Z_0-9]*$";
 
-    static ref VALID_TOKEN_NAME: Regex = Regex::new(&RAW_REGEX_STRING).unwrap();
-}
+static VALID_TOKEN_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(&RAW_REGEX_STRING).unwrap());
 
 // Verifies that [name] is a valid string name.
 pub(crate) fn validate_token_name(name: &str, verbose: bool) -> bool {
@@ -259,7 +257,7 @@ impl Instance {
                     return Err(anyhow!(
                         "name is not acceptable: '{}', does not match: {}",
                         &token_name,
-                        *RAW_REGEX_STRING
+                        RAW_REGEX_STRING
                     ));
                 }
                 self.messages.insert(token_name, text);
@@ -326,7 +324,7 @@ impl Instance {
                 return Err(anyhow!(
                     "document has been fully parsed, no other parse events expected, but got: {:?}",
                     e
-                ))
+                ));
             }
         }
         Ok(())
@@ -357,7 +355,7 @@ impl Instance {
 #[cfg(test)]
 mod tests {
     use super::{Dictionary, Instance};
-    use anyhow::{anyhow, Context, Error, Result};
+    use anyhow::{Context, Error, Result, anyhow};
 
     #[test]
     fn dictionary_api() -> Result<(), Error> {
