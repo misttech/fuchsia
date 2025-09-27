@@ -9,8 +9,8 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/device.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio.h>
 #include <threads.h>
 
 #include <optional>

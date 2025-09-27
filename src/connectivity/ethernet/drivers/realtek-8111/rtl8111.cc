@@ -11,7 +11,7 @@
 #include <lib/ddk/driver.h>
 #include <lib/ddk/io-buffer.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +24,7 @@
 // DISCLAIMER: This driver has not been tested since rewriting in C++. See fxr/727017 for details.
 
 #define HI32(val) (((val) >> 32) & 0xffffffff)
-#define LO32(val) ((val)&0xffffffff)
+#define LO32(val) ((val) & 0xffffffff)
 
 typedef struct eth_desc {
   uint32_t status1;

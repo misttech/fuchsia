@@ -10,8 +10,8 @@
 #include <fuchsia/hardware/ethernet/mac/cpp/banjo.h>
 #include <fuchsia/hardware/network/driver/cpp/banjo.h>
 #include <lib/ddk/device.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/vmo.h>

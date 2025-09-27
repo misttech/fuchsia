@@ -43,8 +43,8 @@ source_set("igc_core") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/driver/compat/cpp:logging",  # Used by io-buffer lib for zxlogf
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
-    "//src/devices/lib/mmio",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/devices/pci/lib/pci",
     "//src/lib/listnode",

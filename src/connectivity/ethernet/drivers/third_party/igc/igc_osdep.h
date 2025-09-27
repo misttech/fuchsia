@@ -14,7 +14,7 @@
 #include <inttypes.h>
 #include <lib/ddk/io-buffer.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <sdk/lib/driver/logging/cpp/logger.h>
 #include <stdbool.h>
 #include <stdio.h>
