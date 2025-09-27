@@ -28,6 +28,7 @@
 #include <vm/page_source.h>
 #include <vm/physical_page_borrowing_config.h>
 #include <vm/pmm.h>
+#include <vm/pmm_node.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object.h>
@@ -820,7 +821,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // this helper.
   void FreePages(list_node* pages) {
     if (!is_source_handling_free()) {
-      CacheFree(pages, delay_reuse_on_free());
+      CacheFree(pages, should_delay_reuse_on_free());
       return;
     }
     page_source_->FreePages(pages);
@@ -839,13 +840,21 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   void FreePage(vm_page_t* page) {
     DEBUG_ASSERT(!list_in_list(&page->queue_node));
     if (!is_source_handling_free()) {
-      CacheFree(page, delay_reuse_on_free());
+      CacheFree(page, should_delay_reuse_on_free());
       return;
     }
     list_node_t list;
     list_initialize(&list);
     list_add_tail(&list, &page->queue_node);
     page_source_->FreePages(&list);
+  }
+
+  // Returns an appropriate PmmOptDelayReuse value for use when freeing pages from this object.
+  PmmOptDelayReuse should_delay_reuse_on_free() const {
+    // If this object has ever held a pinned page, we want to delay reuse of its pages to reduced
+    // impact of a "bad DMA" bug should one occur.
+    return ever_pinned_.load(ktl::memory_order_acquire) ? PmmOptDelayReuse::Yes
+                                                        : PmmOptDelayReuse::Default;
   }
 
   static void DebugDumpReclaimCounters();
@@ -1543,15 +1552,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // call this.
   // Takes ownership, and will drop, the lock for this object as children are iterated.
   static void RangeChangeUpdateCowChildren(LockedPtr self, VmCowRange range, RangeChangeOp op);
-
-  // A helper function to compute an appropriate delay reuse option based on whether this object
-  // ever held pinned pages.
-  PmmOptDelayReuse delay_reuse_on_free() const {
-    if (ever_pinned_.load(ktl::memory_order_acquire)) {
-      return PmmOptDelayReuse::Yes;
-    }
-    return PmmOptDelayReuse::Default;
-  }
 
   // magic value
   fbl::Canary<fbl::magic("VMCP")> canary_;

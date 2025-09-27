@@ -37,7 +37,10 @@ PhysicalPageProvider::~PhysicalPageProvider() {
   // a needed optimization.
   UnloanRange(0, size_, &free_list_);
   ASSERT(list_length(&free_list_) == size_ / PAGE_SIZE);
-  Pmm::Node().FreeList(&free_list_);
+
+  const PmmOptDelayReuse delay_reuse =
+      cow_pages_ ? cow_pages_->should_delay_reuse_on_free() : PmmOptDelayReuse::Default;
+  Pmm::Node().FreeList(&free_list_, delay_reuse);
 }
 
 PageSourceProperties PhysicalPageProvider::properties() const {
@@ -147,7 +150,9 @@ void PhysicalPageProvider::FreePages(list_node* pages) {
   // manipulating the loaned state of pages that could get inspected by UnloanRange due to
   // interactions with cancelled page requests.
   Guard<Mutex> guard{&loaned_state_lock_};
-  Pmm::Node().BeginLoan(pages);
+  const PmmOptDelayReuse delay_reuse =
+      cow_pages_ ? cow_pages_->should_delay_reuse_on_free() : PmmOptDelayReuse::Default;
+  Pmm::Node().BeginLoan(pages, delay_reuse);
 }
 
 bool PhysicalPageProvider::DebugIsPageOk(vm_page_t* page, uint64_t offset) {
@@ -397,7 +402,12 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
         }
         if (!list_is_empty(&contiguous_pages)) {
           Guard<Mutex> guard{&loaned_state_lock_};
-          Pmm::Node().BeginLoan(&contiguous_pages);
+          // We're about to return these pages to the PMM.  There is no need to delay their reuse
+          // because we know these pages would have never been involved in a DMA, because they have
+          // never been pinned, because we don't pin loaned pages.  See
+          // |VmCowPages::ReplacePagesWithNonLoanedLocked|.
+          const PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default;
+          Pmm::Node().BeginLoan(&contiguous_pages, delay_reuse);
         }
       });
 

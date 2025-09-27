@@ -19,6 +19,8 @@
 #include <ktl/unique_ptr.h>
 #include <vm/anonymous_page_request.h>
 #include <vm/page.h>
+#include <vm/pmm.h>
+#include <vm/pmm_node.h>
 #include <vm/vm.h>
 
 // At the high level the goal of the objects here is to
@@ -152,6 +154,7 @@ class PageProvider : public fbl::RefCounted<PageProvider> {
   // Swaps the backing memory for a request. Assumes that |old|
   // and |new_request| have the same type, offset, and length.
   virtual void SwapAsyncRequest(PageRequest* old, PageRequest* new_req) = 0;
+  // Frees |pages|.
   // This will assert unless is_handling_free is true, in which case this will make the pages FREE.
   virtual void FreePages(list_node* pages) {
     // If is_handling_free true, must implement FreePages().
@@ -248,6 +251,7 @@ class PageSource final : public PageRequestInterface {
     return PopulateRequest(req, offset, len, vmo_debug_info, page_request_type::READ);
   }
 
+  // Frees |pages|.
   void FreePages(list_node* pages);
 
   // For asserting purposes only.  This gives the PageProvider a chance to check that a page is
