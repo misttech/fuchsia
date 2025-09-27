@@ -157,6 +157,10 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             builder.kernel_arg(KernelArg::HaltOnPanic(true))
         }
 
+        if context.board_config.kernel.experimental_allow_debug_uart_suspend {
+            builder.kernel_arg(KernelArg::ExperimentalAllowDebugUartSuspend(true));
+        }
+
         if let Some(page_scanner) = &kernel_config.page_scanner {
             match page_scanner.page_table_eviction_policy {
                 PagetableEvictionPolicy::Never => {

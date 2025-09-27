@@ -19,6 +19,8 @@
 ?kernel.enable-serial-syscalls=false
 ?kernel.enable-serial-syscalls=output-only
 ?kernel.enable-serial-syscalls=true
+?kernel.experimental_allow_debug_uart_suspend=false
+?kernel.experimental_allow_debug_uart_suspend=true
 ?kernel.halt-on-panic=false
 ?kernel.halt-on-panic=true
 ?kernel.jitterentropy.bc=*

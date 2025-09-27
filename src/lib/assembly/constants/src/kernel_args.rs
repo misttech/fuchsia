@@ -185,6 +185,9 @@ pub enum KernelArg {
 
     /// Sets the "entropy per 1000 bytes" parameter for jitterentropy.
     JitterentropyEntropyPer1000Bytes(u32),
+
+    /// Allow debug UART to be suspended.
+    ExperimentalAllowDebugUartSuspend(bool),
 }
 
 /// Options for zero page scanner configuration.
@@ -314,6 +317,9 @@ impl KernelArg {
             Self::JitterentropyEntropyPer1000Bytes(i) => {
                 ("kernel.jitterentropy.entropy_per_1000_bytes", i.to_string())
             }
+            Self::ExperimentalAllowDebugUartSuspend(b) => {
+                ("kernel.experimental_allow_debug_uart_suspend", b.to_string())
+            }
         };
         (key.to_string(), value)
     }
@@ -335,7 +341,8 @@ impl KernelArg {
             | Self::PageScannerEnableEviction(_)
             | Self::CprngReseedRequireJitterEntropy(_)
             | Self::CprngSeedRequireCmdline(_)
-            | Self::CprngSeedRequireJitterEntropy(_) => {
+            | Self::CprngSeedRequireJitterEntropy(_)
+            | Self::ExperimentalAllowDebugUartSuspend(_) => {
                 vec![format!("{}=true", key), format!("{}=false", key)]
             }
 
@@ -372,8 +379,42 @@ impl KernelArg {
 
 impl AddToImage for KernelArg {
     fn add_to_user_images(&self) -> bool {
-        // All args are available in user (for now).
-        true
+        match self {
+            Self::SchedulerPreferLittleCpus(_)
+            | Self::SchedulerEnableNewWakeupAccounting(_)
+            | Self::Serial(_)
+            | Self::OomEvictAtWarning(_)
+            | Self::OomEvictContinuous(_)
+            | Self::OomEvictionDelayMs(_)
+            | Self::OomEvictWithMinTarget(_)
+            | Self::OomEvictionDeltaAtOomMib(_)
+            | Self::OomOutOfMemoryMib(_)
+            | Self::OomCriticalMib(_)
+            | Self::OomWarningMib(_)
+            | Self::OomImminentOomDeltaMib(_)
+            | Self::OomDebounceMib(_)
+            | Self::OomHysteresisSeconds(_)
+            | Self::AslrEntropyBits(_)
+            | Self::CprngSeedRequireJitterEntropy(_)
+            | Self::CprngSeedRequireCmdline(_)
+            | Self::CprngReseedRequireJitterEntropy(_)
+            | Self::MemoryLimitMib(_)
+            | Self::PageScannerStartAtBoot(_)
+            | Self::PageScannerEnableEviction(_)
+            | Self::PageScannerZeroPageScanCount(_)
+            | Self::NetsvcNetboot(_)
+            | Self::UserbootNext(_)
+            | Self::KtraceBufsize(_)
+            | Self::PhysVerbose(_)
+            | Self::HaltOnPanic(_)
+            | Self::Arm64DebugDap(_)
+            | Self::JitterentropyBs(_)
+            | Self::JitterentropyBc(_)
+            | Self::JitterentropyMl(_)
+            | Self::JitterentropyLl(_)
+            | Self::JitterentropyEntropyPer1000Bytes(_) => true,
+            Self::ExperimentalAllowDebugUartSuspend(_) => false,
+        }
     }
     fn add_to_userdebug_images(&self) -> bool {
         // All args are available in userdebug.
