@@ -911,18 +911,18 @@ zx_status_t VmCowPages::CacheAllocPage(uint alloc_flags, vm_page_t** p, paddr_t*
   return ZX_OK;
 }
 
-void VmCowPages::CacheFree(list_node_t* list) {
-  if (!page_cache_) {
-    pmm_free(list);
+void VmCowPages::CacheFree(list_node_t* list, PmmOptDelayReuse delay_reuse) {
+  if (!page_cache_ || delay_reuse == PmmOptDelayReuse::Yes) {
+    pmm_free(list, delay_reuse);
     return;
   }
 
   page_cache_.Free(ktl::move(*list));
 }
 
-void VmCowPages::CacheFree(vm_page_t* p) {
-  if (!page_cache_) {
-    pmm_free_page(p);
+void VmCowPages::CacheFree(vm_page_t* p, PmmOptDelayReuse delay_reuse) {
+  if (!page_cache_ || delay_reuse == PmmOptDelayReuse::Yes) {
+    pmm_free_page(p, delay_reuse);
     return;
   }
 
@@ -3864,7 +3864,7 @@ zx_status_t VmCowPages::PinRangeLocked(VmCowRange range) {
   DEBUG_ASSERT(range.is_page_aligned());
   DEBUG_ASSERT(range.IsBoundedBy(size_));
 
-  ever_pinned_ = true;
+  ever_pinned_.store(true, ktl::memory_order_release);
 
   // Tracks our expected page offset when iterating to ensure all pages are present.
   uint64_t next_offset = range.offset;

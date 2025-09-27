@@ -305,7 +305,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     // We also don't want to borrow a page that might get pinned again since we want to mitigate the
     // possibility of an invalid DMA-after-free.
     const bool excluded_from_borrowing_for_latency_reasons =
-        high_priority_count_ != 0 || ever_pinned_;
+        high_priority_count_ != 0 || ever_pinned_.load(ktl::memory_order_relaxed);
     return !excluded_from_borrowing_for_latency_reasons;
   }
 
@@ -820,7 +820,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // this helper.
   void FreePages(list_node* pages) {
     if (!is_source_handling_free()) {
-      CacheFree(pages);
+      CacheFree(pages, delay_reuse_on_free());
       return;
     }
     page_source_->FreePages(pages);
@@ -839,7 +839,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   void FreePage(vm_page_t* page) {
     DEBUG_ASSERT(!list_in_list(&page->queue_node));
     if (!is_source_handling_free()) {
-      CacheFree(page);
+      CacheFree(page, delay_reuse_on_free());
       return;
     }
     list_node_t list;
@@ -1094,8 +1094,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
                                AnonymousPageRequest* request, vm_page_t** clone);
 
   static zx_status_t CacheAllocPage(uint alloc_flags, vm_page_t** p, paddr_t* pa);
-  static void CacheFree(list_node_t* list);
-  static void CacheFree(vm_page_t* p);
+  static void CacheFree(list_node_t* list, PmmOptDelayReuse delay_reuse);
+  static void CacheFree(vm_page_t* p, PmmOptDelayReuse delay_reuse);
 
   // Helper for allocating and initializing a loaned page.
   template <typename F>
@@ -1544,6 +1544,15 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Takes ownership, and will drop, the lock for this object as children are iterated.
   static void RangeChangeUpdateCowChildren(LockedPtr self, VmCowRange range, RangeChangeOp op);
 
+  // A helper function to compute an appropriate delay reuse option based on whether this object
+  // ever held pinned pages.
+  PmmOptDelayReuse delay_reuse_on_free() const {
+    if (ever_pinned_.load(ktl::memory_order_acquire)) {
+      return PmmOptDelayReuse::Yes;
+    }
+    return PmmOptDelayReuse::Default;
+  }
+
   // magic value
   fbl::Canary<fbl::magic("VMCP")> canary_;
 
@@ -1675,6 +1684,9 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // It is an error for this value to ever become negative.
   int64_t high_priority_count_ TA_GUARDED(lock()) = 0;
 
+  // This is a one-way bool (false -> true) indicating whether this object has ever held pinned
+  // pages.
+  //
   // With this bool we achieve these things:
   //  * Avoid using loaned pages for a VMO that will just get pinned and replace the loaned pages
   //    with non-loaned pages again, possibly repeatedly.
@@ -1683,7 +1695,14 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //  * Once we have any form of active sweeping (of data from non-loaned to loaned physical pages)
   //    this bool is part of mitigating any potential DMA-while-not-pinned (which is not permitted
   //    but is also difficult to detect or prevent without an IOMMU).
-  bool ever_pinned_ TA_GUARDED(lock()) = false;
+  //
+  // This value is an atomic because it can be read without holding the lock.
+  //
+  // The rules for accessing this value are as follows:
+  //  * Writes must have release semantics and be performed while holding |lock()|.
+  //  * For reads performed while holding |lock()|, relaxed semantics are sufficient.
+  //  * All other reads must use acquire semantics.
+  ktl::atomic<bool> ever_pinned_ = false;
 
   // Tracks whether this VMO was modified (written / resized) if backed by a pager. This gets reset
   // to false if QueryPagerVmoStatsLocked() is called with |reset| set to true.
