@@ -814,20 +814,22 @@ impl DeviceListener for Arc<Mutex<NetlinkSocketInner>> {
 /// Type for sending messages from [`netlink::Netlink`] to an individual socket.
 #[derive(Clone)]
 pub struct NetlinkToClientSender<M> {
-    _message_type: PhantomData<M>,
     /// The inner socket implementation, which holds a message queue.
     inner: Arc<Mutex<NetlinkSocketInner>>,
+
+    /// `PhantomData<fn(M) -> M>` is used instead of `PhantomData<M>` in order
+    /// to ensure that the type is invariant over `M` and that it implements
+    /// `Sync` even if `M` is not `Sync`.
+    _message_type: PhantomData<fn(M) -> M>,
 }
 
 impl<M> NetlinkToClientSender<M> {
     fn new(inner: Arc<Mutex<NetlinkSocketInner>>) -> Self {
-        NetlinkToClientSender { _message_type: PhantomData::<M>, inner }
+        NetlinkToClientSender { _message_type: Default::default(), inner }
     }
 }
 
-impl<M: Clone + NetlinkSerializable + Send + Sync + 'static> Sender<M>
-    for NetlinkToClientSender<M>
-{
+impl<M: Clone + NetlinkSerializable + Send> Sender<M> for NetlinkToClientSender<M> {
     fn send(&mut self, message: NetlinkMessage<M>, group: Option<ModernGroup>) {
         // Serialize the message
         let mut buf = vec![0; message.buffer_len()];
@@ -866,8 +868,8 @@ impl<M: Clone + NetlinkSerializable + Send + Sync + 'static> Sender<M>
 pub struct NetlinkSenderReceiverProvider;
 
 impl SenderReceiverProvider for NetlinkSenderReceiverProvider {
-    type Sender<M: Clone + NetlinkSerializable + Send + Sync + 'static> = NetlinkToClientSender<M>;
-    type Receiver<M: Send + 'static> = UnboundedReceiver<NetlinkMessage<M>>;
+    type Sender<M: Clone + NetlinkSerializable + Send> = NetlinkToClientSender<M>;
+    type Receiver<M: Send> = UnboundedReceiver<NetlinkMessage<M>>;
 }
 
 /// Socket implementation for the NETLINK_ROUTE family of netlink sockets.

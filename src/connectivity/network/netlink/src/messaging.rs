@@ -10,7 +10,7 @@ use netlink_packet_core::{NetlinkMessage, NetlinkSerializable};
 use crate::multicast_groups::ModernGroup;
 
 /// A type capable of sending messages, `M`, from Netlink to a client.
-pub trait Sender<M>: Clone + Send + Sync + 'static {
+pub trait Sender<M>: Clone + Send + Sync {
     /// Sends the given message to the client.
     ///
     /// If the message is a multicast, `group` will hold a `Some`; `None` for
@@ -23,17 +23,17 @@ pub trait Sender<M>: Clone + Send + Sync + 'static {
 /// A type capable of receiving messages, `M`, from a client to Netlink.
 ///
 /// [`Stream`] already provides a sufficient interface for this purpose.
-pub trait Receiver<M>: Stream<Item = NetlinkMessage<M>> + Send + 'static {}
+pub trait Receiver<M>: Stream<Item = NetlinkMessage<M>> + Send {}
 
 /// Blanket implementation allows any [`Stream`] to be used as a [`Receiver`].
-impl<M: Send, S> Receiver<M> for S where S: Stream<Item = NetlinkMessage<M>> + Send + 'static {}
+impl<M: Send, S> Receiver<M> for S where S: Stream<Item = NetlinkMessage<M>> + Send {}
 
 /// A type capable of providing a concrete type of [`Sender`] & [`Receiver`].
 pub trait SenderReceiverProvider {
     /// The type of [`Sender`] provided.
-    type Sender<M: Clone + NetlinkSerializable + Send + Sync + 'static>: Sender<M>;
+    type Sender<M: Clone + NetlinkSerializable + Send>: Sender<M>;
     /// The type of [`Receiver`] provided.
-    type Receiver<M: Send + 'static>: Receiver<M>;
+    type Receiver<M: Send>: Receiver<M>;
 }
 
 #[cfg(test)]
@@ -62,7 +62,7 @@ pub(crate) mod testutil {
         sender: futures::channel::mpsc::UnboundedSender<SentMessage<M>>,
     }
 
-    impl<M: Clone + Send + NetlinkSerializable + 'static> Sender<M> for FakeSender<M> {
+    impl<M: Clone + Send + NetlinkSerializable> Sender<M> for FakeSender<M> {
         fn send(&mut self, message: NetlinkMessage<M>, group: Option<ModernGroup>) {
             self.sender
                 .unbounded_send(SentMessage { message, group })

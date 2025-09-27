@@ -138,9 +138,7 @@ impl<M> Sender<M> {
     }
 }
 
-impl<M: Clone + Send + Sync + 'static> netlink::messaging::Sender<M>
-    for Sender<SentNetlinkMessage<M>>
-{
+impl<M: Clone + Send> netlink::messaging::Sender<M> for Sender<SentNetlinkMessage<M>> {
     fn send(&mut self, message: NetlinkMessage<M>, group: Option<ModernGroup>) {
         self.0
             .unbounded_send(SentNetlinkMessage { message, group })
@@ -153,9 +151,8 @@ type Receiver<M> = mpsc::UnboundedReceiver<M>;
 enum SenderReceiverProvider {}
 
 impl netlink::messaging::SenderReceiverProvider for SenderReceiverProvider {
-    type Sender<M: Clone + NetlinkSerializable + Send + Sync + 'static> =
-        Sender<SentNetlinkMessage<M>>;
-    type Receiver<M: Send + 'static> = Receiver<NetlinkMessage<M>>;
+    type Sender<M: Clone + NetlinkSerializable + Send> = Sender<SentNetlinkMessage<M>>;
+    type Receiver<M: Send> = Receiver<NetlinkMessage<M>>;
 }
 
 struct NetlinkClient {

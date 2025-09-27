@@ -24,17 +24,15 @@ use crate::multicast_groups::{
 use crate::route_tables::{NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex};
 
 /// A type representing a Netlink Protocol Family.
-pub(crate) trait ProtocolFamily:
-    MulticastCapableNetlinkFamily + Send + Sized + 'static
-{
+pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
     /// The message type associated with the protocol family.
-    type InnerMessage: Clone + Debug + NetlinkSerializable + Send + 'static;
+    type InnerMessage: Clone + Debug + NetlinkSerializable + Send;
     /// The implementation for handling requests from this protocol family.
     type RequestHandler<S: Sender<Self::InnerMessage>>: NetlinkFamilyRequestHandler<Self, S>;
 
     const NAME: &'static str;
 
-    type NotifiedMulticastGroup: PartialEq + Eq + Hash + Clone + Copy + Debug + Send + 'static;
+    type NotifiedMulticastGroup: PartialEq + Eq + Hash + Clone + Copy + Debug + Send;
 
     /// Returns `true` if we may need to notify the worker event loop in
     /// response to a client joining or leaving the given `ModernGroup`.
@@ -46,7 +44,7 @@ pub(crate) trait ProtocolFamily:
 #[async_trait]
 /// A request handler implementation for a particular Netlink protocol family.
 pub(crate) trait NetlinkFamilyRequestHandler<F: ProtocolFamily, S: Sender<F::InnerMessage>>:
-    Clone + Send + 'static
+    Clone + Send
 {
     /// Handles the given request and generates the associated response(s).
     async fn handle_request(

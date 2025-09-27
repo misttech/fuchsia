@@ -485,7 +485,7 @@ pub struct GenericNetlink<S> {
     new_client_sender: mpsc::UnboundedSender<GenericNetlinkClient<S>>,
 }
 
-impl<S: Sender<GenericMessage>> GenericNetlink<S> {
+impl<S: Sender<GenericMessage> + 'static> GenericNetlink<S> {
     pub fn new() -> (Self, GenericNetlinkWorkerParams<S>) {
         let (new_client_sender, new_client_receiver) = mpsc::unbounded();
         let server = GenericNetlinkServer::new();
@@ -543,7 +543,7 @@ mod test_utils {
         pub messages: Arc<Mutex<Vec<NetlinkMessage<M>>>>,
     }
 
-    impl<M: Clone + NetlinkSerializable + Send + Sync + 'static> Sender<M> for TestSender<M> {
+    impl<M: Clone + NetlinkSerializable + Send + Sync> Sender<M> for TestSender<M> {
         fn send(&mut self, message: NetlinkMessage<M>, _group: Option<ModernGroup>) {
             self.messages.lock().push(message);
         }
