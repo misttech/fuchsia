@@ -266,6 +266,7 @@ def get_action_graph_from_labels(
             compilation_mode,
             "--cpu={}".format(_map_bazel_cpu(cpu)),
             "--output=jsonproto",
+            "--noinclude_artifacts",
             "--ui_event_filters=-info,-warning",
             "--noshow_loading_progress",
             "--noshow_progress",

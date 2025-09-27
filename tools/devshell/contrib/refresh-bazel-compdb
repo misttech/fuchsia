@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+set -eo pipefail
+
 _script_dir="${BASH_SOURCE[0]%/*}"
 if [[ "${_script_dir}" == "${BASH_SOURCE[0]}" ]]; then _script_dir="."; fi
 readonly _script_dir
@@ -20,6 +22,7 @@ source "${_script_dir}/../lib/bazel_utils.sh" || exit $?
   fx-update-bazel-workspace
 } &> /dev/null
 
+fx-info "Refreshing compile_commands.json"
 # We need to figure out our compilation mode to pass to bazel
 fx-build-dir-if-present || return 1
 optimization=$(fx-command-run gn args ${FUCHSIA_BUILD_DIR} --list=optimize --json | fx-command-run jq ".[0] | if .current then .current else .default end |  .value")
