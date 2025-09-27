@@ -99,9 +99,9 @@ foreach(variant, e1000_variants) {
       "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
       "//sdk/lib/driver/compat/cpp:logging",
       "//sdk/lib/driver/component/cpp",
+      "//sdk/lib/driver/mmio/cpp",
       "//sdk/lib/syslog/structured_backend",
       "//src/connectivity/network/drivers/network-device/device:shared_lock",
-      "//src/devices/lib/mmio",
       "//src/devices/pci/lib/device-protocol-pci",
       "//zircon/system/public",
     ]

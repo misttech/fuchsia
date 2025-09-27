@@ -36,9 +36,9 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/defer.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/pci/hw.h>
 #include <net/ethernet.h>
 #include <zircon/hw/pci.h>

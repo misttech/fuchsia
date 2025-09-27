@@ -40,8 +40,8 @@
 #include <inttypes.h>
 #include <lib/ddk/hw/inout.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/pci/hw.h>
 #include <stdbool.h>
 #include <stdio.h>
