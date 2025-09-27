@@ -935,5 +935,17 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
 		},
+		// For https://fxbug.dev/447663424
+		&stringInLogCheck{
+			String:             "failed to start ffx monitor",
+			Type:               swarmingOutputType,
+			SkipAllPassedTests: true,
+		},
+		// For https://fxbug.dev/447663424
+		&stringInLogCheck{
+			String:             "failed to stop ffx monitor",
+			Type:               swarmingOutputType,
+			SkipAllPassedTests: true,
+		},
 	}
 }

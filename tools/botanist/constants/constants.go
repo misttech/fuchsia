@@ -34,4 +34,6 @@ const (
 
 	FFXPathEnvKey       = "FUCHSIA_FFX_PATH"
 	FFXConfigPathEnvKey = "FUCHSIA_FFX_CONFIG_PATH"
+
+	FFXMonitorPort = "FUCHSIA_FFX_MONITOR_PORT"
 )

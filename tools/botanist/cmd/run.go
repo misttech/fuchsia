@@ -336,7 +336,7 @@ func (r *RunCommand) setupPackageServer(ctx context.Context) (*botanist.PackageS
 	return pkgSrv, nil
 }
 
-func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFunc, eg *errgroup.Group, baseTargets []targets.Base, fuchsiaTargets []targets.FuchsiaTarget, primaryTarget targets.FuchsiaTarget, pkgSrv *botanist.PackageServer, testsPath string) {
+func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFunc, eg *errgroup.Group, baseTargets []targets.Base, fuchsiaTargets []targets.FuchsiaTarget, primaryTarget targets.FuchsiaTarget, pkgSrv *botanist.PackageServer, testsPath string, experiments botanist.Experiments) {
 	// Log any failures after running tests.
 	for _, t := range fuchsiaTargets {
 		t := t
@@ -408,7 +408,6 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					return err
 				}
 				t.GetFFX().SetTarget(addr.String())
-				experiments := botanist.GetExperiments(r.experiments)
 				if experiments.Contains(botanist.UseFFXStrict) {
 					sshSocketPath, cleanupControlMaster, err := r.setupSSHControlMaster(ctx, t.SSHKey(), addr.String())
 					if err != nil {
@@ -442,7 +441,14 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					}()
 				}
 			}
+			if experiments.Contains(botanist.UseFFXMonitor) {
+				ffx := primaryTarget.GetFFX()
+				ffx.StartFFXMonitor(ctx, os.Getenv(constants.FFXMonitorPort))
+				// Stop the ffx monitor when done
+				defer ffx.StopFFXMonitor(ctx)
+			}
 		}
+
 		err = r.runAgainstTarget(ctx, primaryTarget, testsPath, testbedConfig)
 		// Cancel ctx to notify other goroutines that this routine has completed.
 		// If another goroutine gets an error and the context is canceled, it
@@ -539,7 +545,7 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	r.dispatchTests(ctx, cancel, eg, baseTargets, fuchsiaTargets, primaryTarget, pkgSrv, testsPath)
+	r.dispatchTests(ctx, cancel, eg, baseTargets, fuchsiaTargets, primaryTarget, pkgSrv, testsPath, experiments)
 
 	if err := eg.Wait(); err != nil {
 		return err
