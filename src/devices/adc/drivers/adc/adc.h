@@ -9,7 +9,7 @@
 #include <fidl/fuchsia.hardware.adcimpl/cpp/driver/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
 
 #include <optional>

@@ -29,9 +29,9 @@ source_set("common") {
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/metadata/cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/lib/amlogic",
-    "//src/devices/lib/mmio",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
