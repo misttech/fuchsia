@@ -4,11 +4,6 @@
 
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
 
-#include <lib/async/cpp/task.h>
-
-#include "lib/async/default.h"
-#include "lib/syslog/cpp/macros.h"
-
 namespace utils {
 
 LoopDispatcherHolder::LoopDispatcherHolder(const async_loop_config_t* config,

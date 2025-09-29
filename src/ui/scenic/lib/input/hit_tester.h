@@ -5,9 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_HIT_TESTER_H_
 #define SRC_UI_SCENIC_LIB_INPUT_HIT_TESTER_H_
 
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "lib/inspect/cpp/inspect.h"
 #include "src/ui/scenic/lib/input/helper.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 

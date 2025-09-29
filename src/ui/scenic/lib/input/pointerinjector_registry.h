@@ -8,11 +8,11 @@
 #include <fuchsia/ui/pointerinjector/cpp/fidl.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/function.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <unordered_map>
 
-#include "lib/inspect/cpp/inspect.h"
 #include "src/ui/scenic/lib/input/injector.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 

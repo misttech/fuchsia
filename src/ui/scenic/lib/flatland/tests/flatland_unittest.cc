@@ -8,7 +8,9 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/default.h>
 #include <lib/async/time.h>
+#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -24,8 +26,6 @@
 #include <gtest/gtest.h>
 
 #include "fuchsia/ui/composition/cpp/fidl.h"
-#include "lib/async/default.h"
-#include "lib/fidl/cpp/hlcpp_conversion.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/lib/escher/util/epsilon_compare.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"

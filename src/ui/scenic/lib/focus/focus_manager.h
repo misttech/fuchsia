@@ -8,11 +8,11 @@
 #include <fuchsia/ui/focus/cpp/fidl.h>
 #include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/fidl/cpp/binding_set.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <unordered_map>
 
-#include "lib/inspect/cpp/inspect.h"
 #include "src/ui/scenic/lib/focus/view_focuser_registry.h"
 #include "src/ui/scenic/lib/focus/view_ref_focused_registry.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"

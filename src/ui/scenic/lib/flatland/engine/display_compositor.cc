@@ -15,6 +15,7 @@
 #include <lib/async/default.h>
 #include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
+#include <lib/fidl/cpp/wire/status.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/trace/event.h>
 #include <zircon/status.h>
@@ -23,8 +24,6 @@
 #include <vector>
 
 #include "fidl/fuchsia.hardware.display.types/cpp/common_types.h"
-#include "lib/fidl/cpp/hlcpp_conversion.h"
-#include "lib/fidl/cpp/wire/status.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/display/util.h"

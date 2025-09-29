@@ -16,12 +16,10 @@
 #include <memory>
 #include <unordered_map>
 
-#include "lib/fidl/cpp/wire/internal/transport_channel.h"
 #include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/display/display.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
-#include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/engine/color_conversion_state_machine.h"
 #include "src/ui/scenic/lib/flatland/engine/engine_types.h"
 #include "src/ui/scenic/lib/flatland/engine/release_fence_manager.h"

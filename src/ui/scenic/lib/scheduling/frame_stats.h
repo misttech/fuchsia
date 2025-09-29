@@ -6,12 +6,12 @@
 #define SRC_UI_SCENIC_LIB_SCHEDULING_FRAME_STATS_H_
 
 #include <lib/async/cpp/task.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/time.h>
 
 #include <deque>
 #include <functional>
 
-#include "lib/inspect/cpp/inspect.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
 #include "src/ui/scenic/lib/utils/metrics.h"
 #include "third_party/cobalt/src/lib/client/cpp/buckets_config.h"

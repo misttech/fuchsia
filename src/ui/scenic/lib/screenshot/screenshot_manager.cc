@@ -5,11 +5,11 @@
 #include "src/ui/scenic/lib/screenshot/screenshot_manager.h"
 
 #include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <memory>
 
-#include "lib/component/incoming/cpp/protocol.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 
 namespace screenshot {

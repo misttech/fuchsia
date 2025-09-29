@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_UTILS_OBJECT_LINKER_H_
 
 #include <lib/async/cpp/wait.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
 #include <lib/zx/handle.h>
 #include <lib/zx/object_traits.h>
@@ -18,7 +19,6 @@
 #include <type_traits>
 #include <unordered_map>
 
-#include "lib/async/dispatcher.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/scenic/lib/scenic/util/error_reporter.h"

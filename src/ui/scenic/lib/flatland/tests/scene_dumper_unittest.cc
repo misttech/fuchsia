@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/flatland/scene_dumper.h"
 
 #include <lib/ui/scenic/cpp/view_ref_pair.h>
+#include <lib/zx/eventpair.h>
 
 #include <iostream>
 #include <memory>
@@ -15,7 +16,6 @@
 #include <gtest/gtest.h>
 
 #include "gtest/gtest-matchers.h"
-#include "lib/zx/eventpair.h"
 #include "sdk/lib/syslog/cpp/macros.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/lib/escher/geometry/types.h"

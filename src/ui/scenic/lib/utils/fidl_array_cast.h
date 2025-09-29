@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <type_traits>
+#include <lib/fidl/cpp/wire/array.h>
 
-#include "lib/fidl/cpp/wire/array.h"
+#include <type_traits>
 
 #ifndef SRC_UI_SCENIC_LIB_UTILS_FIDL_ARRAY_CAST_H_
 #define SRC_UI_SCENIC_LIB_UTILS_FIDL_ARRAY_CAST_H_

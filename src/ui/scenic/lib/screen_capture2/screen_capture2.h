@@ -7,11 +7,11 @@
 
 #include <fuchsia/ui/composition/internal/cpp/fidl.h>
 #include <lib/fidl/cpp/binding.h>
+#include <lib/zx/eventpair.h>
 
 #include <deque>
 #include <unordered_map>
 
-#include "lib/zx/eventpair.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/scenic/lib/flatland/engine/engine.h"
 #include "src/ui/scenic/lib/flatland/renderer/renderer.h"
@@ -83,7 +83,8 @@ class ScreenCapture : public fuchsia::ui::composition::internal::ScreenCapture {
 
   // Acts as a lock to MaybeRenderFrame() so it can not be used while it is still on a previous
   // call.
-  // TODO(https://fxbug.dev/42055515): If we make ScreenCapture multi-threaded, this will need to be a mutex.
+  // TODO(https://fxbug.dev/42055515): If we make ScreenCapture multi-threaded, this will need to be
+  // a mutex.
   bool render_frame_in_progress_ = false;
 
   GetRenderables get_renderables_;

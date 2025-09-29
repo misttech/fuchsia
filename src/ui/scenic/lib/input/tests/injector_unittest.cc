@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 #include <lib/fpromise/single_threaded_executor.h>
+#include <lib/inspect/cpp/hierarchy.h>
+#include <lib/inspect/cpp/inspector.h>
+#include <lib/inspect/cpp/reader.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "lib/inspect/cpp/hierarchy.h"
-#include "lib/inspect/cpp/inspector.h"
-#include "lib/inspect/cpp/reader.h"
 #include "src/lib/fxl/strings/join_strings.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"

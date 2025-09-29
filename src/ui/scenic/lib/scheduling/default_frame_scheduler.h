@@ -7,12 +7,12 @@
 
 #include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/trace/event.h>
 #include <lib/zx/time.h>
 
 #include <queue>
 
-#include "lib/inspect/cpp/inspect.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/scenic/lib/scheduling/frame_predictor.h"

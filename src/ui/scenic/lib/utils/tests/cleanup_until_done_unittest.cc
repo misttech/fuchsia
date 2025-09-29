@@ -6,10 +6,9 @@
 
 #include <lib/async-testing/test_loop.h>
 #include <lib/async/cpp/time.h>
+#include <lib/async/default.h>
 
 #include <gtest/gtest.h>
-
-#include "lib/async/default.h"
 
 namespace utils {
 

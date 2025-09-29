@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/async/time.h>
+#include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/reader.h>
 
@@ -16,7 +17,6 @@
 
 #include <gtest/gtest.h>
 
-#include "lib/inspect/cpp/hierarchy.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/display/tests/mock_display_coordinator.h"

@@ -5,6 +5,8 @@
 #include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 
 #include <fuchsia/ui/composition/cpp/fidl.h>
+#include <lib/fidl/cpp/hlcpp_conversion.h>
+#include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 
@@ -13,8 +15,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "lib/fidl/cpp/hlcpp_conversion.h"
-#include "lib/fit/result.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/mock_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/flatland/renderer/mock_renderer.h"

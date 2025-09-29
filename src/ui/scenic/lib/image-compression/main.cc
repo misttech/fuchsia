@@ -4,10 +4,10 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "lib/component/outgoing/cpp/outgoing_directory.h"
 #include "src/ui/scenic/lib/image-compression/image_compression.h"
 
 int main(int argc, const char** argv) {

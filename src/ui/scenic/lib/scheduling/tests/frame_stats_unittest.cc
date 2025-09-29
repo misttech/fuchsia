@@ -9,16 +9,14 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/fit/defer.h>
 #include <lib/fpromise/bridge.h>
+#include <lib/inspect/cpp/inspect.h>
+#include <lib/inspect/cpp/reader.h>
+#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/zx/time.h>
-
-#include <thread>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "lib/inspect/cpp/inspect.h"
-#include "lib/inspect/cpp/reader.h"
-#include "lib/inspect/testing/cpp/inspect.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 

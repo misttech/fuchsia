@@ -6,6 +6,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/inspect/component/cpp/component.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/scheduler/role.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
@@ -14,7 +15,6 @@
 
 #include <memory>
 
-#include "lib/inspect/cpp/inspect.h"
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fxl/command_line.h"
 #include "src/lib/fxl/log_settings_command_line.h"

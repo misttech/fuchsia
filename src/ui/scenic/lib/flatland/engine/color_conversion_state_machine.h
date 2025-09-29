@@ -5,9 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_ENGINE_COLOR_CONVERSION_STATE_MACHINE_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_ENGINE_COLOR_CONVERSION_STATE_MACHINE_H_
 
-#include <optional>
+#include <lib/fidl/cpp/wire/array.h>
 
-#include "lib/fidl/cpp/wire/array.h"
+#include <optional>
 
 namespace flatland {
 

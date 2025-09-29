@@ -10,6 +10,7 @@
 #include <lib/async-testing/test_loop.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fdio/directory.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/eventpair.h>
@@ -20,7 +21,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "lib/async/dispatcher.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
@@ -29,9 +29,6 @@
 #include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
-#include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
-#include "src/ui/scenic/lib/flatland/renderer/renderer.h"
-#include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
 #include "src/ui/scenic/lib/scheduling/id.h"
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
 

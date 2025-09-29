@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
+#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 
 #include <functional>
@@ -14,7 +15,6 @@
 
 #include <gtest/gtest.h>
 
-#include "lib/fidl/cpp/hlcpp_conversion.h"
 #include "src/lib/fsl/vmo/sized_vmo.h"
 #include "src/lib/fsl/vmo/vector.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
