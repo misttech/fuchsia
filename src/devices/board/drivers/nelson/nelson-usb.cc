@@ -12,7 +12,7 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zbi-format/zbi.h>
 #include <lib/zircon-internal/align.h>
 #include <stdlib.h>
