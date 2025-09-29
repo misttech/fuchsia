@@ -11,6 +11,7 @@
 
 #include <memory>
 
+#include <fbl/algorithm.h>
 #include <zxtest/zxtest.h>
 
 #include "src/storage/lib/paver/block-devices.h"

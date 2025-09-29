@@ -175,8 +175,11 @@ class CurrentSlotUuidTest : public PaverTest {
   }
 
   void CreateGptDevice(const std::vector<PartitionDescription>& partitions) {
-    ASSERT_NO_FATAL_FAILURE(BlockDevice::CreateWithGpt(devmgr_.devfs_root(), kDiskBlocks,
-                                                       kBlockSize, partitions, &disk_));
+    fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+    fbl::unique_fd fd;
+    ASSERT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
+    ASSERT_NO_FATAL_FAILURE(
+        BlockDevice::CreateWithGpt(fd, kDiskBlocks, kBlockSize, partitions, &disk_));
   }
 
   IsolatedDevmgr devmgr_;
@@ -352,14 +355,8 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
   }
 
   zx::result<std::unique_ptr<gpt::GptDevice>> OpenGptDevice() {
-    zx::result new_connection = GetNewConnections(disk_->block_controller_interface());
-    if (new_connection.is_error()) {
-      return new_connection.take_error();
-    }
-    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(
-        std::move(new_connection->device));
-    zx::result remote_device = block_client::RemoteBlockDevice::Create(
-        std::move(volume), std::move(new_connection->controller));
+    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(disk_->Connect().TakeChannel());
+    zx::result remote_device = block_client::RemoteBlockDevice::Create(std::move(volume));
     if (remote_device.is_error()) {
       return remote_device.take_error();
     }

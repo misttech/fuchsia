@@ -58,7 +58,7 @@ class FvmTest : public PaverTest {
 
   void CreateRamdiskWithBlockCount(size_t block_count = kBlockCount) {
     ASSERT_NO_FATAL_FAILURE(
-        BlockDevice::Create(devmgr_.devfs_root(), kFvmType, block_count, &device_));
+        BlockDevice::CreateLegacy(&device_, devmgr_.devfs_root(), kFvmType, block_count));
     ASSERT_TRUE(device_);
   }
 
@@ -68,7 +68,7 @@ class FvmTest : public PaverTest {
 
   std::unique_ptr<paver::BlockPartitionClient> CreateClient() const {
     return paver::BlockPartitionClient::Create(
-               std::make_unique<paver::DevfsVolumeConnector>(device_->ConnectToController()))
+               std::make_unique<paver::DevfsVolumeConnector>(device_->ConnectToLegacyController()))
         .value();
   }
 

@@ -373,13 +373,13 @@ class FixedOffsetBlockPartitionClientTest : public PaverTest {
 
     constexpr uint8_t kEmptyType[GPT_GUID_LEN] = GUID_EMPTY_VALUE;
     ASSERT_NO_FATAL_FAILURE(
-        BlockDevice::Create(devmgr_.devfs_root(), kEmptyType, 2, 512, &gpt_dev_));
+        BlockDevice::CreateLegacy(&gpt_dev_, devmgr_.devfs_root(), kEmptyType, 2, 512));
   }
 
   // Creates a BlockPartitionClient which will read/write the entire device.
   zx::result<std::unique_ptr<paver::BlockPartitionClient>> RawClient() {
     return paver::BlockPartitionClient::Create(
-        std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToController()));
+        std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()));
   }
 
   // Creates a FixedOffsetBlockPartitionClient which will read/write with a partition
@@ -387,7 +387,7 @@ class FixedOffsetBlockPartitionClientTest : public PaverTest {
   zx::result<std::unique_ptr<paver::FixedOffsetBlockPartitionClient>> FixedOffsetClient(
       size_t partition_offset, size_t buffer_offset) {
     return paver::FixedOffsetBlockPartitionClient::Create(
-        std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToController()),
+        std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()),
         partition_offset, buffer_offset);
   }
 

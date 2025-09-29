@@ -2186,6 +2186,8 @@ class PaverServiceUefiTest : public PaverServiceTest {
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args;
     args.enable_storage_host = true;
+    args.fshost_config.emplace_back(component_testing::ConfigCapability{
+        .name = "fuchsia.fshost.GptAll", .value = component_testing::ConfigValue::Bool(true)});
     return args;
   }
 
@@ -2229,43 +2231,49 @@ std::unique_ptr<BlockDevice> PaverServiceUefiTest::InstallUefiGpt(paver::Partiti
   std::unique_ptr<BlockDevice> gpt_dev;
   constexpr uint64_t block_count = (64LU << 30) / kBlockSize;  // 64 GiB disk.
   bool legacy = (scheme == paver::PartitionScheme::kLegacy);
-  BlockDevice::CreateWithGpt(
-      devmgr_.devfs_root(), block_count, kBlockSize,
-      {
-          {.name = legacy ? "efi-system" : GUID_EFI_NAME,
-           .type = GUID_EFI_VALUE,  // Same for both schemes.
-           .start = kEfiBlockStart,
-           .length = kEfiBlockSize},
-          {.name = legacy ? GUID_ZIRCON_A_NAME : GPT_ZIRCON_A_NAME,
-           .type = legacy ? uuid::Uuid(GUID_ZIRCON_A_VALUE) : uuid::Uuid(GPT_ZIRCON_ABR_TYPE_GUID),
-           .start = kZirconABlockStart,
-           .length = kZirconABlockSize},
-          {.name = legacy ? GUID_ZIRCON_B_NAME : GPT_ZIRCON_B_NAME,
-           .type = legacy ? uuid::Uuid(GUID_ZIRCON_B_VALUE) : uuid::Uuid(GPT_ZIRCON_ABR_TYPE_GUID),
-           .start = kZirconBBlockStart,
-           .length = kZirconBBlockSize},
-          {.name = legacy ? GUID_ZIRCON_R_NAME : GPT_ZIRCON_R_NAME,
-           .type = legacy ? uuid::Uuid(GUID_ZIRCON_R_VALUE) : uuid::Uuid(GPT_ZIRCON_ABR_TYPE_GUID),
-           .start = kZirconRBlockStart,
-           .length = kZirconRBlockSize},
-          {.name = legacy ? GUID_VBMETA_A_NAME : GPT_VBMETA_A_NAME,
-           .type = legacy ? uuid::Uuid(GUID_VBMETA_A_VALUE) : uuid::Uuid(GPT_VBMETA_ABR_TYPE_GUID),
-           .start = kVbmetaABlockStart,
-           .length = kVbmetaABlockSize},
-          {.name = legacy ? GUID_VBMETA_B_NAME : GPT_VBMETA_B_NAME,
-           .type = legacy ? uuid::Uuid(GUID_VBMETA_B_VALUE) : uuid::Uuid(GPT_VBMETA_ABR_TYPE_GUID),
-           .start = kVbmetaBBlockStart,
-           .length = kVbmetaBBlockSize},
-          {.name = legacy ? GUID_VBMETA_R_NAME : GPT_VBMETA_R_NAME,
-           .type = legacy ? uuid::Uuid(GUID_VBMETA_R_VALUE) : uuid::Uuid(GPT_VBMETA_ABR_TYPE_GUID),
-           .start = kVbmetaRBlockStart,
-           .length = kVbmetaRBlockSize},
-          {.name = legacy ? GUID_FVM_NAME : GPT_FVM_NAME,
-           .type = legacy ? uuid::Uuid(GUID_FVM_VALUE) : uuid::Uuid(GPT_FVM_TYPE_GUID),
-           .start = kFvmBlockStart,
-           .length = kFvmBlockSize},
-      },
-      &gpt_dev);
+  std::vector<PartitionDescription> init_partitions = {
+      {.name = legacy ? "efi-system" : GUID_EFI_NAME,
+       .type = GUID_EFI_VALUE,  // Same for both schemes.
+       .start = kEfiBlockStart,
+       .length = kEfiBlockSize},
+      {.name = legacy ? GUID_ZIRCON_A_NAME : GPT_ZIRCON_A_NAME,
+       .type = legacy ? uuid::Uuid(GUID_ZIRCON_A_VALUE) : uuid::Uuid(GPT_ZIRCON_ABR_TYPE_GUID),
+       .start = kZirconABlockStart,
+       .length = kZirconABlockSize},
+      {.name = legacy ? GUID_ZIRCON_B_NAME : GPT_ZIRCON_B_NAME,
+       .type = legacy ? uuid::Uuid(GUID_ZIRCON_B_VALUE) : uuid::Uuid(GPT_ZIRCON_ABR_TYPE_GUID),
+       .start = kZirconBBlockStart,
+       .length = kZirconBBlockSize},
+      {.name = legacy ? GUID_ZIRCON_R_NAME : GPT_ZIRCON_R_NAME,
+       .type = legacy ? uuid::Uuid(GUID_ZIRCON_R_VALUE) : uuid::Uuid(GPT_ZIRCON_ABR_TYPE_GUID),
+       .start = kZirconRBlockStart,
+       .length = kZirconRBlockSize},
+      {.name = legacy ? GUID_VBMETA_A_NAME : GPT_VBMETA_A_NAME,
+       .type = legacy ? uuid::Uuid(GUID_VBMETA_A_VALUE) : uuid::Uuid(GPT_VBMETA_ABR_TYPE_GUID),
+       .start = kVbmetaABlockStart,
+       .length = kVbmetaABlockSize},
+      {.name = legacy ? GUID_VBMETA_B_NAME : GPT_VBMETA_B_NAME,
+       .type = legacy ? uuid::Uuid(GUID_VBMETA_B_VALUE) : uuid::Uuid(GPT_VBMETA_ABR_TYPE_GUID),
+       .start = kVbmetaBBlockStart,
+       .length = kVbmetaBBlockSize},
+      {.name = legacy ? GUID_VBMETA_R_NAME : GPT_VBMETA_R_NAME,
+       .type = legacy ? uuid::Uuid(GUID_VBMETA_R_VALUE) : uuid::Uuid(GPT_VBMETA_ABR_TYPE_GUID),
+       .start = kVbmetaRBlockStart,
+       .length = kVbmetaRBlockSize},
+      {.name = legacy ? GUID_FVM_NAME : GPT_FVM_NAME,
+       .type = legacy ? uuid::Uuid(GUID_FVM_VALUE) : uuid::Uuid(GPT_FVM_TYPE_GUID),
+       .start = kFvmBlockStart,
+       .length = kFvmBlockSize},
+  };
+  if (DevmgrArgs().enable_storage_host) {
+    fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+    fbl::unique_fd fd;
+    EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
+    BlockDevice::CreateWithGpt(fd, block_count, kBlockSize, init_partitions, &gpt_dev);
+  } else {
+    BlockDevice::CreateLegacyWithGpt(devmgr_.devfs_root(), block_count, kBlockSize, init_partitions,
+                                     &gpt_dev);
+  }
 
   return gpt_dev;
 }
@@ -2289,8 +2297,7 @@ void PaverServiceUefiTest::AssetTest(paver::PartitionScheme scheme,
 // cause all sorts of unpredictable things to happen.
 class PaverServiceUefiTestWithRamdisk : public PaverServiceUefiTest {
   IsolatedDevmgr::Args DevmgrArgs() override {
-    IsolatedDevmgr::Args args;
-    args.enable_storage_host = true;
+    IsolatedDevmgr::Args args = PaverServiceUefiTest::DevmgrArgs();
     args.fshost_config.emplace_back(
         component_testing::ConfigCapability{.name = "fuchsia.fshost.RamdiskImage",
                                             .value = component_testing::ConfigValue::Bool(true)});
@@ -2302,9 +2309,16 @@ TEST_F(PaverServiceUefiTestWithRamdisk, InitializePartitionTables) {
   std::unique_ptr<BlockDevice> gpt_dev;
   // 64GiB disk.
   constexpr uint64_t block_count = (64LU << 30) / kBlockSize;
+  fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+  fbl::unique_fd fd;
+  ASSERT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
   ASSERT_NO_FATAL_FAILURE(BlockDevice::CreateWithGpt(
-      devmgr_.devfs_root(), block_count, kBlockSize,
-      {{GUID_EFI_NAME, uuid::Uuid(GUID_EFI_VALUE), kEfiBlockStart, kEfiBlockSize}}, &gpt_dev));
+      fd, block_count, kBlockSize,
+      {
+          {GUID_EFI_NAME, uuid::Uuid(GUID_EFI_VALUE), kEfiBlockStart, kEfiBlockSize},
+          {GUID_FVM_NAME, uuid::Uuid(GUID_FVM_VALUE), kFvmBlockStart, kFvmBlockSize},
+      },
+      &gpt_dev));
 
   auto [data_sink, server] = fidl::Endpoints<fuchsia_paver::DynamicDataSink>::Create();
   fidl::OneWayStatus find_result = client_->FindPartitionTableManager(std::move(server));
@@ -2319,11 +2333,17 @@ TEST_F(PaverServiceUefiTestWithRamdisk, InitializePartitionTablesMultipleDevices
   std::unique_ptr<BlockDevice> gpt_dev1, gpt_dev2;
   // 64GiB disk.
   constexpr uint64_t block_count = (64LU << 30) / kBlockSize;
+  fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+  fbl::unique_fd fd;
+  ASSERT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
   ASSERT_NO_FATAL_FAILURE(BlockDevice::CreateWithGpt(
-      devmgr_.devfs_root(), block_count, kBlockSize,
-      {{GUID_EFI_NAME, uuid::Uuid(GUID_EFI_VALUE), kEfiBlockStart, kEfiBlockSize}}, &gpt_dev1));
-  ASSERT_NO_FATAL_FAILURE(
-      BlockDevice::Create(devmgr_.devfs_root(), kEmptyType, block_count, &gpt_dev2));
+      fd, block_count, kBlockSize,
+      {
+          {GUID_EFI_NAME, uuid::Uuid(GUID_EFI_VALUE), kEfiBlockStart, kEfiBlockSize},
+          {GUID_FVM_NAME, uuid::Uuid(GUID_FVM_VALUE), kFvmBlockStart, kFvmBlockSize},
+      },
+      &gpt_dev1));
+  ASSERT_NO_FATAL_FAILURE(BlockDevice::Create(&gpt_dev2, fd, kEmptyType, block_count));
 
   auto [data_sink, server] = fidl::Endpoints<fuchsia_paver::DynamicDataSink>::Create();
   fidl::OneWayStatus find_result = client_->FindPartitionTableManager(std::move(server));
@@ -2371,9 +2391,15 @@ class PaverServiceGptDeviceTest : public PaverServiceTest {
                            const std::vector<PartitionDescription>& partitions) {
     block_count_ = block_count;
     block_size_ = block_size;
-    ASSERT_NO_FATAL_FAILURE(BlockDevice::CreateWithGpt(devmgr_.devfs_root(), block_count,
-                                                       block_size, partitions, &gpt_dev_));
-    if (!DevmgrArgs().enable_storage_host) {
+    if (DevmgrArgs().enable_storage_host) {
+      fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+      fbl::unique_fd fd;
+      EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
+      ASSERT_NO_FATAL_FAILURE(
+          BlockDevice::CreateWithGpt(fd, block_count, block_size, partitions, &gpt_dev_));
+    } else {
+      ASSERT_NO_FATAL_FAILURE(BlockDevice::CreateLegacyWithGpt(devmgr_.devfs_root(), block_count,
+                                                               block_size, partitions, &gpt_dev_));
       std::string path = std::format("class/block/{:03d}", partitions.size());
       ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), path.c_str()).status_value());
     }
@@ -2460,7 +2486,7 @@ TEST_F(PaverServiceLuisTest, WriteOpaqueVolume) {
 
   // Create a block partition client to read the written content directly.
   zx::result block_client = paver::BlockPartitionClient::Create(
-      std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToController()));
+      std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()));
   ASSERT_OK(block_client);
 
   // Read the partition directly from block and verify.
@@ -2640,7 +2666,7 @@ TEST_F(PaverServiceLuisTest, WriteSparseVolume) {
 
   // Create a block partition client to read the written content directly.
   zx::result block_client = paver::BlockPartitionClient::Create(
-      std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToController()));
+      std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()));
   ASSERT_OK(block_client);
 
   // Read the partition directly from block and verify.  Read `image.image_length` bytes so we know

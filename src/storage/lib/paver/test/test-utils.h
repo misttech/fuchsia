@@ -16,8 +16,6 @@
 #include <memory>
 
 #include <fbl/array.h>
-#include <fbl/ref_ptr.h>
-#include <fbl/unique_fd.h>
 #include <phys/zbi.h>
 #include <ramdevice-client-test/ramnandctl.h>
 #include <ramdevice-client/ramdisk.h>
@@ -33,9 +31,6 @@
 #include "src/storage/lib/paver/sherlock.h"
 #include "src/storage/lib/paver/uefi.h"
 #include "src/storage/lib/paver/vim3.h"
-#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
-#include "src/storage/lib/vfs/cpp/service.h"
-#include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 
 constexpr uint64_t kBlockSize = 0x1000;
 constexpr uint32_t kBlockCount = 0x100;
@@ -82,43 +77,50 @@ struct PartitionDescription {
 
 class BlockDevice {
  public:
-  static void Create(const fbl::unique_fd& devfs_root, const uint8_t* guid,
-                     std::unique_ptr<BlockDevice>* device);
+  static void Create(std::unique_ptr<BlockDevice>* device, const fbl::unique_fd& svc_root,
+                     const uint8_t* guid, uint64_t block_count = kBlockCount,
+                     uint32_t block_size = kBlockSize);
 
-  static void Create(const fbl::unique_fd& devfs_root, const uint8_t* guid, uint64_t block_count,
-                     std::unique_ptr<BlockDevice>* device);
+  static void CreateFromVmo(std::unique_ptr<BlockDevice>* device, const fbl::unique_fd& svc_root,
+                            const uint8_t* guid, zx::vmo vmo, uint32_t block_size = kBlockSize);
 
-  static void Create(const fbl::unique_fd& devfs_root, const uint8_t* guid, uint64_t block_count,
-                     uint32_t block_size, std::unique_ptr<BlockDevice>* device);
-
-  static void CreateFromVmo(const fbl::unique_fd& devfs_root, const uint8_t* guid, zx::vmo vmo,
-                            uint32_t block_size, std::unique_ptr<BlockDevice>* device);
-
-  static void CreateWithGpt(const fbl::unique_fd& devfs_root, uint64_t block_count,
+  static void CreateWithGpt(const fbl::unique_fd& svc_root, uint64_t block_count,
                             uint32_t block_size,
                             const std::vector<PartitionDescription>& init_partitions,
                             std::unique_ptr<BlockDevice>* device);
 
+  static void CreateLegacy(std::unique_ptr<BlockDevice>* device, const fbl::unique_fd& devfs_root,
+                           const uint8_t* guid, uint64_t block_count = kBlockCount,
+                           uint32_t block_size = kBlockSize);
+
+  static void CreateLegacyFromVmo(std::unique_ptr<BlockDevice>* device,
+                                  const fbl::unique_fd& devfs_root, const uint8_t* guid,
+                                  zx::vmo vmo, uint32_t block_size = kBlockSize);
+
+  static void CreateLegacyWithGpt(const fbl::unique_fd& devfs_root, uint64_t block_count,
+                                  uint32_t block_size,
+                                  const std::vector<PartitionDescription>& init_partitions,
+                                  std::unique_ptr<BlockDevice>* device);
+
   fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_interface() const {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
-        ramdisk_get_block_interface(ramdisk_.client()));
+    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(volume_.channel().get());
   }
 
   fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume_interface() const {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume>(
-        ramdisk_get_block_interface(ramdisk_.client()));
+    return volume_.borrow();
   }
 
-  fidl::UnownedClientEnd<fuchsia_device::Controller> block_controller_interface() const {
-    return fidl::UnownedClientEnd<fuchsia_device::Controller>(
-        ramdisk_get_block_controller_interface(ramdisk_.client()));
+  fidl::ClientEnd<fuchsia_hardware_block::Block> Connect() const {
+    zx::result result = ramdisk_.ConnectBlock();
+    ZX_ASSERT(result.status_value() == ZX_OK);
+    return std::move(*result);
   }
 
-  fidl::ClientEnd<fuchsia_device::Controller> ConnectToController() const {
+  fidl::ClientEnd<fuchsia_device::Controller> ConnectToLegacyController() const {
     fidl::ClientEnd<fuchsia_device::Controller> controller;
     zx::result controller_server = fidl::CreateEndpoints(&controller);
     ZX_ASSERT(controller_server.is_ok());
-    fidl::OneWayStatus status = fidl::WireCall(block_controller_interface())
+    fidl::OneWayStatus status = fidl::WireCall(ramdisk_.LegacyController())
                                     ->ConnectToController(std::move(*controller_server));
     ZX_ASSERT(status.status() == ZX_OK);
     return controller;
@@ -128,13 +130,23 @@ class BlockDevice {
   uint64_t block_count() const { return block_count_; }
   uint32_t block_size() const { return block_size_; }
 
+  // Read `size` bytes from block offset `dev_offset` to *byte* offset `vmo_offset`.
   void Read(const zx::vmo& vmo, size_t size, size_t dev_offset, size_t vmo_offset) const;
 
+  // Read `size` bytes from block offset `dev_offset` to *byte* offset `vmo_offset`.
+  void Write(const zx::vmo& vmo, size_t size, size_t dev_offset, size_t vmo_offset) const;
+
  private:
-  BlockDevice(ramdevice_client::Ramdisk ramdisk, uint64_t block_count, uint32_t block_size)
-      : ramdisk_(std::move(ramdisk)), block_count_(block_count), block_size_(block_size) {}
+  BlockDevice(ramdevice_client::Ramdisk ramdisk,
+              fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume, uint64_t block_count,
+              uint32_t block_size)
+      : ramdisk_(std::move(ramdisk)),
+        volume_(std::move(volume)),
+        block_count_(block_count),
+        block_size_(block_size) {}
 
   ramdevice_client::Ramdisk ramdisk_;
+  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume_;
   const uint64_t block_count_;
   const uint32_t block_size_;
 };
