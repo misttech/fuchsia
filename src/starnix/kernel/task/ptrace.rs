@@ -48,8 +48,11 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use zerocopy::FromBytes;
 
-#[cfg(any(target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 use starnix_uapi::{PTRACE_GETREGS, user};
+
+#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+use starnix_uapi::arch32::PTRACE_GETREGS;
 
 type UserRegsStructPtr =
     MultiArchUserRef<starnix_uapi::user_regs_struct, starnix_uapi::arch32::user_regs_struct>;
@@ -911,7 +914,7 @@ where
             }
             error!(ESRCH)
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", all(target_arch = "aarch64", feature = "arch32")))]
         PTRACE_GETREGS => {
             if let Some(ref mut captured) = &mut state.captured_thread_state {
                 let mut len = usize::MAX;
@@ -1284,7 +1287,7 @@ pub fn ptrace_getregset(
             if *len < user_regs_struct_len {
                 return error!(EINVAL);
             }
-            *len = std::cmp::min(*len, user_regs_struct_len);
+            *len = user_regs_struct_len;
             let mut i: usize = 0;
             let mut reg_ptr = LongPtr::new(thread_state, base);
             while i < *len {
