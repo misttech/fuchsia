@@ -14,7 +14,7 @@ use crate::error_from_metrics_error;
 
 /// Collect and publish to Cobalt memory stall increase rate, every hour.
 pub async fn collect_stalls_forever(
-    stalls_provider: impl StallProvider + 'static,
+    stalls_provider: impl StallProvider,
     metric_event_logger: fmetrics::MetricEventLoggerProxy,
 ) -> Result<()> {
     let mut last_stall = MemoryStallMetrics::default();
@@ -65,7 +65,7 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
-    fn get_stall_provider() -> impl StallProvider + 'static {
+    fn get_stall_provider() -> impl StallProvider {
         #[derive(Clone)]
         struct FakeStallProvider {
             count: Arc<AtomicU32>,
@@ -107,10 +107,10 @@ mod tests {
         exec.set_fake_time(
             (zx::MonotonicInstant::ZERO + zx::Duration::from_seconds(3 * 60)).into(),
         );
-
         // Service under test.
-        let mut stalls_collector =
-            fuchsia_async::Task::spawn(collect_stalls_forever(data_provider, metric_event_logger));
+        let mut stalls_collector = fuchsia_async::Task::spawn(async move {
+            collect_stalls_forever(data_provider, metric_event_logger).await
+        });
 
         // Give the service the opportunity to run.
         assert!(

@@ -12,17 +12,16 @@ use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, select, try_join};
 use memory_monitor2_config::Config;
 use stalls::StallProvider;
-use std::sync::Arc;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memorypressure as fpressure};
 
 /// Subscribe to memory pressure events, and produce memory reports when appropriate.
 pub async fn serve_to_inspect(
-    memory_monitor2_config: Config,
-    attribution_data_service: Arc<impl AttributionDataProvider + 'static>,
+    memory_monitor2_config: &Config,
+    attribution_data_service: &impl AttributionDataProvider,
     stall_provider: impl StallProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     memorypressure_proxy: fpressure::ProviderProxy,
-    bucket_definitions: Arc<[BucketDefinition]>,
+    bucket_definitions: &[BucketDefinition],
     inspect_root: Node,
 ) -> Result<()> {
     let (watcher, pressure_stream) =
@@ -61,7 +60,7 @@ pub async fn serve_to_inspect(
                         // Don't do anything if the pressure has not changed.
                         if level == current_level { continue; }
                         current_level = level;
-                        let new_deadline = pressure_to_deadline(level, &memory_monitor2_config);
+                        let new_deadline = pressure_to_deadline(level, memory_monitor2_config);
                         if memory_monitor2_config.capture_on_pressure_change {
                             // Do a capture then use new schedule
                             deadline = new_deadline;
@@ -80,7 +79,7 @@ pub async fn serve_to_inspect(
                 },
             // If we reached the deadline, schedule the next capture and do the current one.
             _ = timer => {
-                deadline = pressure_to_deadline(current_level, &memory_monitor2_config);
+                deadline = pressure_to_deadline(current_level, memory_monitor2_config);
                 timer = Box::pin(deadline.into_timer());
             },
         };
@@ -98,7 +97,7 @@ pub async fn serve_to_inspect(
             &*attribution_data_service,
             &kmem_stats,
             &kmem_stats_compression,
-            &*bucket_definitions,
+            bucket_definitions,
         )
         .with_context(|| "Failed to compute the Digest")?;
 
@@ -227,7 +226,7 @@ mod tests {
         Ok(())
     }
 
-    fn get_attribution_data_provider() -> Arc<impl AttributionDataProvider + 'static> {
+    fn get_attribution_data_provider() -> impl AttributionDataProvider {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
                 identifier: PrincipalIdentifier(1),
@@ -256,7 +255,7 @@ mod tests {
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
         };
-        Arc::new(FakeAttributionDataProvider { attribution_data })
+        FakeAttributionDataProvider { attribution_data }
     }
 
     #[derive(Clone)]
@@ -284,21 +283,26 @@ mod tests {
 
         let (pressure_provider, pressure_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fpressure::ProviderMarker>();
-        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(serve_to_inspect(
-            Config {
-                capture_on_pressure_change: true,
-                imminent_oom_capture_delay_s: 10,
-                critical_capture_delay_s: 10,
-                warning_capture_delay_s: 10,
-                normal_capture_delay_s: 10,
-            },
-            get_attribution_data_provider(),
-            FakeStallProvider {},
-            stats_provider,
-            pressure_provider,
-            Default::default(),
-            inspector.root().create_child("logger"),
-        )));
+        let digest_node = inspector.root().create_child("logger");
+        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(async {
+            let attribution_data_provider = get_attribution_data_provider();
+            serve_to_inspect(
+                &Config {
+                    capture_on_pressure_change: true,
+                    imminent_oom_capture_delay_s: 10,
+                    critical_capture_delay_s: 10,
+                    warning_capture_delay_s: 10,
+                    normal_capture_delay_s: 10,
+                },
+                &attribution_data_provider,
+                FakeStallProvider {},
+                stats_provider,
+                pressure_provider,
+                Default::default(),
+                digest_node,
+            )
+            .await
+        }));
         // Expects digest_service to register a watcher, answers with
         // an initial pressure level, then returns the watcher for
         // further signaling. Panics if this whole transaction is not
@@ -421,21 +425,26 @@ mod tests {
         let (pressure_provider, pressure_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fpressure::ProviderMarker>();
         let inspector = fuchsia_inspect::Inspector::default();
-        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(serve_to_inspect(
-            Config {
-                capture_on_pressure_change: false,
-                imminent_oom_capture_delay_s: 10,
-                critical_capture_delay_s: 10,
-                warning_capture_delay_s: 10,
-                normal_capture_delay_s: 10,
-            },
-            get_attribution_data_provider(),
-            FakeStallProvider {},
-            stats_provider,
-            pressure_provider,
-            Default::default(),
-            inspector.root().create_child("logger"),
-        )));
+        let digest_node = inspector.root().create_child("logger");
+        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(async {
+            let attribution_data_provider = get_attribution_data_provider();
+            serve_to_inspect(
+                &Config {
+                    capture_on_pressure_change: false,
+                    imminent_oom_capture_delay_s: 10,
+                    critical_capture_delay_s: 10,
+                    warning_capture_delay_s: 10,
+                    normal_capture_delay_s: 10,
+                },
+                &attribution_data_provider,
+                FakeStallProvider {},
+                stats_provider,
+                pressure_provider,
+                Default::default(),
+                digest_node,
+            )
+            .await
+        }));
         // digest_service registers a watcher; make sure we answer.  Also, make sure not to drop the
         // proxy nor the pressure stream; early termination would get reported to digest_service,
         // which then prematurely interrupts it, before the timers have a chance to run.
@@ -534,21 +543,26 @@ mod tests {
         let (pressure_provider, pressure_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fpressure::ProviderMarker>();
         let inspector = fuchsia_inspect::Inspector::default();
-        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(serve_to_inspect(
-            Config {
-                capture_on_pressure_change: false,
-                imminent_oom_capture_delay_s: 10,
-                critical_capture_delay_s: 10,
-                warning_capture_delay_s: 100,
-                normal_capture_delay_s: 100,
-            },
-            get_attribution_data_provider(),
-            FakeStallProvider {},
-            stats_provider,
-            pressure_provider,
-            Default::default(),
-            inspector.root().create_child("logger"),
-        )));
+        let digest_node = inspector.root().create_child("logger");
+        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(async {
+            let attribution_data_provider = get_attribution_data_provider();
+            serve_to_inspect(
+                &Config {
+                    capture_on_pressure_change: false,
+                    imminent_oom_capture_delay_s: 10,
+                    critical_capture_delay_s: 10,
+                    warning_capture_delay_s: 100,
+                    normal_capture_delay_s: 100,
+                },
+                &attribution_data_provider,
+                FakeStallProvider {},
+                stats_provider,
+                pressure_provider,
+                Default::default(),
+                digest_node,
+            )
+            .await
+        }));
         // digest_service registers a watcher; make sure we answer.  Also, make sure not to drop the
         // proxy nor the pressure stream; early termination would get reported to digest_service,
         // which then prematurely interrupts it, before the timers have a chance to run.
@@ -666,21 +680,26 @@ mod tests {
                 Ok::<fpressure::WatcherProxy, anyhow::Error>(watcher_proxy)
             })
             .boxed();
-        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(serve_to_inspect(
-            Config {
-                capture_on_pressure_change: false,
-                imminent_oom_capture_delay_s: 10,
-                critical_capture_delay_s: 10,
-                warning_capture_delay_s: 10,
-                normal_capture_delay_s: 10,
-            },
-            get_attribution_data_provider(),
-            FakeStallProvider {},
-            stats_provider,
-            pressure_provider,
-            Default::default(),
-            inspector.root().create_child("logger"),
-        )));
+        let digest_node = inspector.root().create_child("logger");
+        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(async {
+            let attribution_data_provider = get_attribution_data_provider();
+            serve_to_inspect(
+                &Config {
+                    capture_on_pressure_change: false,
+                    imminent_oom_capture_delay_s: 10,
+                    critical_capture_delay_s: 10,
+                    warning_capture_delay_s: 10,
+                    normal_capture_delay_s: 10,
+                },
+                &attribution_data_provider,
+                FakeStallProvider {},
+                stats_provider,
+                pressure_provider,
+                Default::default(),
+                digest_node,
+            )
+            .await
+        }));
         let watcher =
             exec.run_singlethreaded(serve_pressure_stream.next()).transpose()?.expect("watcher");
         let _ = exec.run_singlethreaded(watcher.on_level_changed(fpressure::Level::Warning))?;
@@ -720,21 +739,26 @@ mod tests {
                 Ok::<fpressure::WatcherProxy, anyhow::Error>(watcher_proxy)
             })
             .boxed();
-        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(serve_to_inspect(
-            Config {
-                capture_on_pressure_change: true,
-                imminent_oom_capture_delay_s: 10,
-                critical_capture_delay_s: 10,
-                warning_capture_delay_s: 10,
-                normal_capture_delay_s: 10,
-            },
-            get_attribution_data_provider(),
-            FakeStallProvider {},
-            stats_provider,
-            pressure_provider,
-            Default::default(),
-            inspector.root().create_child("logger"),
-        )));
+        let digest_node = inspector.root().create_child("logger");
+        let mut digest_service = std::pin::pin!(fuchsia_async::Task::spawn(async {
+            let attribution_data_provider = get_attribution_data_provider();
+            serve_to_inspect(
+                &Config {
+                    capture_on_pressure_change: true,
+                    imminent_oom_capture_delay_s: 10,
+                    critical_capture_delay_s: 10,
+                    warning_capture_delay_s: 10,
+                    normal_capture_delay_s: 10,
+                },
+                &attribution_data_provider,
+                FakeStallProvider {},
+                stats_provider,
+                pressure_provider,
+                Default::default(),
+                digest_node,
+            )
+            .await
+        }));
         let watcher =
             exec.run_singlethreaded(serve_pressure_stream.next()).transpose()?.expect("watcher");
         let _ = exec.run_singlethreaded(watcher.on_level_changed(fpressure::Level::Warning))?;

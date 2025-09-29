@@ -119,68 +119,88 @@ async fn main() -> Result<()> {
     let mut inspect_nodes_service = fuchsia_async::Task::spawn(inspect_nodes::serve(
         kernel_stats.clone(),
         stall_provider.clone(),
-        Config { ..config }, // Config is not Clone
+        &config,
     )?)
     .fuse();
-
-    let mut pressure_service = fuchsia_async::Task::spawn(
-        pressure_monitoring::serve_to_inspect(
-            config,
-            attribution_data_provider.clone(),
-            stall_provider.clone(),
-            kernel_stats.clone(),
-            connect_to_protocol::<fpressure::ProviderMarker>()
-                .context("Failed to connect to the memory pressure provider")?,
-            bucket_definitions.clone(),
-            root_node.create_child("logger"),
-        )
+    let mut pressure_service = fuchsia_async::Task::spawn({
+        let config = Config { ..config }; // Config is not Clone
+        let attribution_data_provider = attribution_data_provider.clone();
+        let stall_provider = stall_provider.clone();
+        let kernel_stats = kernel_stats.clone();
+        let provider = connect_to_protocol::<fpressure::ProviderMarker>()
+            .context("Failed to connect to the memory pressure provider");
+        let bucket_definitions = bucket_definitions.clone();
+        async move {
+            let provider = provider?;
+            pressure_monitoring::serve_to_inspect(
+                &config,
+                &*attribution_data_provider,
+                stall_provider,
+                kernel_stats,
+                provider,
+                &bucket_definitions,
+                root_node.create_child("logger"),
+            )
+            .await
+        }
         .inspect_ok(|_| error!("Digest service exited without error"))
-        .inspect_err(|e| error!("Digest service failed: {:?}", e)),
-    )
+        .inspect_err(|e| error!("Digest service failed: {:?}", e))
+    })
     .fuse();
     let pressure_health = task_health_node.create_string("pressure_monitoring_service", "ok");
 
     let metric_event_logger_factory =
         connect_to_protocol::<fmetrics::MetricEventLoggerFactoryMarker>()?;
-    let mut collect_metrics_task = fuchsia_async::Task::spawn(collect_metrics_forever(
-        attribution_data_provider.clone(),
-        kernel_stats.clone(),
-        create_metric_event_logger(metric_event_logger_factory.clone()).await?,
-        bucket_definitions.clone(),
-    ))
+    let mut collect_metrics_task = fuchsia_async::Task::spawn({
+        let attribution_data_provider = attribution_data_provider.clone();
+        let kernel_stats = kernel_stats.clone();
+        let bucket_definitions = bucket_definitions.clone();
+        create_metric_event_logger(metric_event_logger_factory.clone()).and_then(
+            move |metric_event_logger| {
+                collect_metrics_forever(
+                    attribution_data_provider,
+                    kernel_stats,
+                    metric_event_logger,
+                    bucket_definitions,
+                )
+                .map(|_| Ok(()))
+            },
+        )
+    })
     .fuse();
     let collect_metrics_health = task_health_node.create_string("collect_metrics_health", "ok");
 
-    let mut collect_stalls_task = fuchsia_async::Task::spawn(collect_stalls_forever(
-        stall_provider.clone(),
-        create_metric_event_logger(metric_event_logger_factory).await?,
-    ))
+    let mut collect_stalls_task = fuchsia_async::Task::spawn({
+        let stall_provider = stall_provider.clone();
+        create_metric_event_logger(metric_event_logger_factory).and_then(
+            move |metric_event_logger| collect_stalls_forever(stall_provider, metric_event_logger),
+        )
+    })
     .fuse();
     let collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
     let page_refault_tracker = stalls::refaults::RefaultProviderImpl::default();
 
     let mut services = service_fs.for_each_concurrent(None, |stream| async {
-        match stream {
+        let _ = match stream {
             Service::MemoryMonitor(stream) => {
-                if let Err(error) = serve_client_stream(
+                serve_client_stream(
                     stream,
-                    bucket_definitions.clone(),
-                    attribution_data_provider.clone(),
+                    &bucket_definitions,
+                    &*attribution_data_provider.clone(),
                     kernel_stats.clone(),
                     stall_provider.clone(),
                     page_refault_tracker.clone(),
                 )
+                .inspect_err(|error| warn!(error:%; ""))
                 .await
-                {
-                    warn!(error:%; "");
-                }
             }
             Service::PageRefaultSink(stream) => {
-                if let Err(e) = page_refault_tracker.listen_to_page_refaults(stream).await {
-                    warn!("PageRefaultSink disconnected: {:?}", e);
-                }
+                page_refault_tracker
+                    .listen_to_page_refaults(stream)
+                    .inspect_err(|e| warn!("PageRefaultSink disconnected: {:?}", e))
+                    .await
             }
-        }
+        };
     });
     let servicefs_health = task_health_node.create_string("servicefs_health", "ok");
 
@@ -219,8 +239,8 @@ async fn main() -> Result<()> {
 
 async fn serve_client_stream(
     mut stream: fattribution_plugin::MemoryMonitorRequestStream,
-    bucket_definitions: Arc<[BucketDefinition]>,
-    attribution_data_provider: Arc<AttributionDataProviderImpl>,
+    bucket_definitions: &[BucketDefinition],
+    attribution_data_provider: &impl AttributionDataProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
     refault_tracker: impl RefaultProvider,
@@ -229,11 +249,11 @@ async fn serve_client_stream(
         match request {
             fattribution_plugin::MemoryMonitorRequest::GetSnapshot { snapshot, control_handle } => {
                 if let Err(err) = provide_snapshot(
-                    attribution_data_provider.clone(),
+                    attribution_data_provider,
                     kernel_stats_proxy.clone(),
                     stall_provider.clone(),
                     refault_tracker.clone(),
-                    bucket_definitions.clone(),
+                    bucket_definitions,
                     snapshot,
                 )
                 .await
@@ -265,11 +285,11 @@ async fn serve_client_stream(
 
 /// Constructs a [Snapshot] and sends it, serialized, through the `snapshot` socket.
 async fn provide_snapshot(
-    attribution_data_provider: Arc<AttributionDataProviderImpl>,
+    attribution_data_provider: &impl AttributionDataProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
     refault_tracker: impl RefaultProvider,
-    bucket_definitions: Arc<[BucketDefinition]>,
+    bucket_definitions: &[BucketDefinition],
     snapshot: zx::Socket,
 ) -> Result<()> {
     duration!(CATEGORY_MEMORY_CAPTURE, c"provide_snapshot");
@@ -282,13 +302,12 @@ async fn provide_snapshot(
     };
 
     let memory_stalls = stall_provider.get_stall_info()?;
-
     let attribution_snapshot = AttributionSnapshot::new(
         attribution_data,
         kernel_stats,
         memory_stalls,
         refault_tracker,
-        &*bucket_definitions,
+        bucket_definitions,
     );
     attribution_snapshot.serve(snapshot).await
 }

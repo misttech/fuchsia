@@ -16,7 +16,7 @@ use std::u64;
 pub fn serve(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    memory_monitor2_config: memory_monitor2_config::Config,
+    memory_monitor2_config: &memory_monitor2_config::Config,
 ) -> Result<impl Future<Output = ()>> {
     debug!("Start serving inspect tree.");
 
@@ -29,7 +29,7 @@ pub fn serve(
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
             .ok_or_else(|| anyhow!("Failed to serve server handling `fuchsia.inspect.Tree`"))?;
 
-    build_inspect_tree(kernel_stats_proxy, stall_provider, inspector, &memory_monitor2_config);
+    build_inspect_tree(kernel_stats_proxy, stall_provider, inspector, memory_monitor2_config);
     Ok(inspect_controller)
 }
 
