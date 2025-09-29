@@ -97,6 +97,8 @@ int run_test_ui_stack(int argc, const char** argv) {
   AddPublicService<fuchsia_ui_display_singleton::DisplayPower>(context.get(),
                                                                realm_exposed_services.get());
   AddPublicService<fuchsia_ui_display_singleton::Info>(context.get(), realm_exposed_services.get());
+  AddPublicService<fuchsia_ui_display_singleton::VsyncSource>(context.get(),
+                                                              realm_exposed_services.get());
 
   // Helper services.
   AddPublicService<fuchsia_ui_test_input::Registry>(context.get(), realm_exposed_services.get());
