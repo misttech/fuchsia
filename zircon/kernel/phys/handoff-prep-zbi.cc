@@ -32,6 +32,7 @@
 #include <ktl/variant.h>
 #include <phys/allocation.h>
 #include <phys/arch/arch-handoff.h>
+#include <phys/boot-constants.h>
 #include <phys/handoff.h>
 #include <phys/main.h>
 #include <phys/uart.h>
@@ -78,7 +79,8 @@ void HandoffPrep::SummarizeMiscZbiItems(ktl::span<ktl::byte> zbi) {
     switch (header->type) {
       case ZBI_TYPE_HW_REBOOT_REASON:
         ZX_ASSERT(payload.size() >= sizeof(zbi_hw_reboot_reason_t));
-        handoff_->reboot_reason = *reinterpret_cast<const zbi_hw_reboot_reason_t*>(payload.data());
+        boot_constants_->hw_reboot_reason =
+            *reinterpret_cast<const zbi_hw_reboot_reason_t*>(payload.data());
         break;
 
       case ZBI_TYPE_NVRAM: {

@@ -157,11 +157,6 @@ void platform_serial_prepare_for_suspend();
 //
 void platform_serial_wakeup_from_suspend();
 
-// Accessors for the HW reboot reason which may or may not have been delivered
-// by the bootloader.
-void platform_set_hw_reboot_reason(zbi_hw_reboot_reason_t reason);
-zbi_hw_reboot_reason_t platform_hw_reboot_reason();
-
 // platform_panic_start informs the system that a panic message is about
 // to be printed and that platform_halt will be called shortly.  The
 // platform should stop other CPUs if requested and do whatever is necessary

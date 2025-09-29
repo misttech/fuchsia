@@ -791,6 +791,7 @@ source_set("zircon-abi-spec") {
 
 source_set("boot-constants") {
   public = [ "include/phys/boot-constants.h" ]
+  public_deps = [ "//sdk/lib/zbi-format" ]
   public_configs = [ ":includes" ]
 }
 

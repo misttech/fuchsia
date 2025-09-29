@@ -261,10 +261,6 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
 
   ArchPostHandoffBootstrap(handoff->arch_handoff);
 
-  if (gPhysHandoff->reboot_reason) {
-    platform_set_hw_reboot_reason(gPhysHandoff->reboot_reason.value());
-  }
-
   // This serves as a verification that code-patching was performed before
   // the kernel was booted; if unpatched, we would trap here and halt.
   CodePatchingNopTest();

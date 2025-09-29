@@ -367,9 +367,6 @@ struct PhysHandoff {
   // ZBI_TYPE_CRASHLOG payload.
   PhysHandoffTemporaryString crashlog;
 
-  // ZBI_TYPE_HW_REBOOT_REASON payload.
-  std::optional<zbi_hw_reboot_reason_t> reboot_reason;
-
   // A mapped ZBI_TYPE_NVRAM payload.
   // A physical memory region that will persist across warm boots.
   std::optional<MappedRange<std::byte>> nvram;

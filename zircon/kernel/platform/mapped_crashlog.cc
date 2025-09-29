@@ -6,13 +6,13 @@
 
 #include <lib/persistent-debuglog.h>
 #include <lib/zbi-format/reboot.h>
-#include <platform.h>
 #include <stdio.h>
 
 #include <kernel/timer.h>
 #include <ktl/algorithm.h>
 #include <ktl/limits.h>
 #include <ktl/span.h>
+#include <phys/boot-constants.h>
 #include <platform/mapped_crashlog.h>
 #include <ram-crashlog/ram-crashlog.h>
 
@@ -65,7 +65,7 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
   }
 
   // Create a string representation of the HW reboot reason.
-  zbi_hw_reboot_reason_t hw_reason = platform_hw_reboot_reason();
+  const zbi_hw_reboot_reason_t hw_reason = kBootConstants.hw_reboot_reason;
   const char* str_hw_reason;
   char str_hw_reason_buf[16];
   switch (hw_reason) {

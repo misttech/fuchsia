@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_CONSTANTS_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_CONSTANTS_H_
 
+#include <lib/zbi-format/reboot.h>
 #include <stdint.h>
 
 #include <ktl/type_traits.h>
@@ -31,6 +32,9 @@ struct BootConstants {
   // The physical address at which the kernel was loaded.
   // The virtual address __executable_start / __ehdr_start is mapped to this.
   uintptr_t kernel_physical_load_address = 0;
+
+  // ZBI_TYPE_HW_REBOOT_REASON payload (or as initialized if no ZBI item).
+  zbi_hw_reboot_reason_t hw_reboot_reason = ZBI_HW_REBOOT_REASON_UNDEFINED;
 };
 static_assert(ktl::is_trivially_destructible_v<BootConstants>);
 
