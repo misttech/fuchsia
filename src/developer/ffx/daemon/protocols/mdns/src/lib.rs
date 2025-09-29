@@ -4,7 +4,7 @@
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use ffx_config::get;
+use ffx_config::EnvironmentContext;
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx;
@@ -32,13 +32,15 @@ pub struct Mdns {
     mdns_port: Option<u16>,
 }
 
-struct ConfigLoader;
+struct ConfigLoader {
+    context: EnvironmentContext,
+}
 
 #[async_trait(?Send)]
 impl MdnsEnabledChecker for ConfigLoader {
     async fn enabled(&self) -> bool {
-        if get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
-            get(CONFIG_ENABLE_MDNS).unwrap_or(true)
+        if self.context.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+            self.context.get(CONFIG_ENABLE_MDNS).unwrap_or(true)
         } else {
             false
         }
@@ -71,7 +73,7 @@ impl FidlProtocol for Mdns {
         }
     }
 
-    async fn start(&mut self, _cx: &Context) -> Result<()> {
+    async fn start(&mut self, cx: &Context) -> Result<()> {
         let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
         let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
         self.inner.replace(inner.clone());
@@ -87,7 +89,7 @@ impl FidlProtocol for Mdns {
                 ttl: MDNS_TTL,
                 mdns_port,
             },
-            ConfigLoader {},
+            ConfigLoader { context: cx.environment() },
         )));
         Ok(())
     }
