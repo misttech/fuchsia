@@ -2,6 +2,46 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/// Get the size of a field in a struct.
+///
+/// This is a compile-time equivalent of `std::mem::size_of_val(&value.field)`.
+///
+/// Usage:
+///
+/// ```
+/// struct MyStruct {
+///     field1: u8,
+///     nested: Nested,
+/// }
+///
+/// struct Nested {
+///     field2: u32,
+/// }
+///
+/// const FIELD1_SIZE: usize = size_of_field!(MyStruct, field1);
+/// const FIELD2_SIZE: usize = size_of_field!(MyStruct, nested.field2);
+/// ```
+#[macro_export]
+macro_rules! size_of_field {
+    ($type_name:ty, $($field:ident).+) => {{
+        const fn size_of_pointee<T>(_val: *const T) -> usize {
+            std::mem::size_of::<T>()
+        }
+        const fn compute() -> usize {
+            let p = ::std::mem::MaybeUninit::<$type_name>::uninit();
+            // SAFETY
+            // This operation is safe because the pointer is never dereferenced. This is making the
+            // compiler compute the type of the field and then using function specialization to
+            // compute the size of the type.
+            // Moreover, this is only used in a const context, so the value will be compiled at
+            // compilation time.
+            size_of_pointee(unsafe { &raw const (*p.as_ptr()) . $($field).+ })
+        }
+        const size: usize = compute();
+        size
+    }};
+}
+
 /// Ensure 2 different types have the same layout.
 ///
 /// Usage:
