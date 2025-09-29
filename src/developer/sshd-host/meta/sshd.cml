@@ -338,6 +338,7 @@
                 "fuchsia.hardware.usb.peripheral.Service",
             ],
         },
+        { service: "fuchsia.hardware.clock.DebugService" },
         { service: "fuchsia.hardware.spmi.DebugService" },
         { service: "fuchsia.hardware.nfc.Service" },
         { service: "fuchsia.hardware.backlight.Service" },

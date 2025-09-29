@@ -601,6 +601,13 @@
             to: "#sshd-host",
         },
 
+        // Clock debug
+        {
+            service: "fuchsia.hardware.clock.DebugService",
+            from: "parent",
+            to: "#sshd-host",
+        },
+
         // Others
         {
             protocol: [

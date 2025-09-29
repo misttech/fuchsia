@@ -187,6 +187,10 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.clock.DebugService",
+            availability: "optional",
+        },
+        {
             // Used by usbctl
             service: "fuchsia.hardware.usb.peripheral.Service",
             availability: "optional",

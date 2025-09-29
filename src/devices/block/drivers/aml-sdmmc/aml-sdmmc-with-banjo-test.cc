@@ -208,6 +208,10 @@ class FakeClock : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
+  void GetProperties(GetPropertiesCompleter::Sync& completer) override {
+    completer.Reply(0, "test");
+  }
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     ZX_ASSERT_MSG(0, "Unexpected FIDL Method Ordinal, ord = 0x%lx", metadata.method_ordinal);

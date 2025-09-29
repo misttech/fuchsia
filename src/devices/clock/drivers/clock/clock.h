@@ -17,7 +17,8 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
       std::string_view, const fuchsia_driver_framework::NodePropertyVector&,
       const std::vector<fuchsia_driver_framework::Offer>&)>;
 
-  explicit ClockDevice(ClockDriver* parent, uint32_t id) : parent_(parent), id_(id) {}
+  explicit ClockDevice(ClockDriver* parent, uint32_t id, std::string_view name)
+      : parent_(parent), id_(id), name_(name) {}
 
   zx_status_t Init(const std::shared_ptr<fdf::Namespace>& incoming,
                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
@@ -25,7 +26,7 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
                    fidl::ClientEnd<fuchsia_driver_framework::Node>& parent);
 
   bool pending_driver() const;
-  std::string_view name() const;
+  std::string_view child_name() const;
 
  private:
   void WaitForDriverCompleted(
@@ -42,6 +43,7 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
   void SetInput(SetInputRequestView request, SetInputCompleter::Sync& completer) override;
   void GetNumInputs(GetNumInputsCompleter::Sync& completer) override;
   void GetInput(GetInputCompleter::Sync& completer) override;
+  void GetProperties(GetPropertiesCompleter::Sync& completer) override;
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
@@ -52,6 +54,8 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
   fidl::WireClient<fuchsia_driver_framework::NodeController> child_node_;
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
   std::string name_;
+  std::optional<std::string> impl_name_;
+  std::string child_name_;
   bool pending_driver_ = true;
 };
 

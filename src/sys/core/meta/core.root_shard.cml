@@ -291,6 +291,7 @@
         },
         {
             service: [
+                "fuchsia.hardware.clock.DebugService",
                 "fuchsia.hardware.gnss.Service",
                 "fuchsia.hardware.google.nanohub.DataChannelService",
                 "fuchsia.hardware.google.nanohub.DisplayService",

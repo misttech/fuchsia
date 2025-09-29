@@ -20,6 +20,9 @@ type ClockNodeDescriptor = table {
 
     // The unique node ID that uniqely identifies this node. This is optional.
     2: node_id uint32;
+
+    // The name of the clock node from the device tree.
+    3: name string:MAX_NAME_LEN;
 };
 
 /// Metadata containing the IDs of the available clocks.

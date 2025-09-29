@@ -219,10 +219,10 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   auto cells = ClockCells(specifiers);
   const uint32_t clock_id = cells.id();
   const uint32_t node_id = GetNextUniqueId();
+  const std::string name_string = clock_name ? std::string(*clock_name) : "<anonymous>";
 
   FDF_LOG(DEBUG, "Clock ID added - Unique ID %u, Clock ID 0x%x name '%s' to controller '%s'",
-          node_id, clock_id, clock_name ? std::string(*clock_name).c_str() : "<anonymous>",
-          parent.name().c_str());
+          node_id, clock_id, name_string.c_str(), parent.name().c_str());
 
   auto& clock_nodes = controller.clock_nodes_metadata.clock_nodes();
   if (!clock_nodes.has_value()) {
@@ -231,6 +231,7 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   clock_nodes.value().emplace_back(fuchsia_hardware_clockimpl::ClockNodeDescriptor{{
       .clock_id = clock_id,
       .node_id = node_id,
+      .name = name_string,
   }});
 
   return AddChildNodeSpec(child, clock_id, node_id, clock_name);

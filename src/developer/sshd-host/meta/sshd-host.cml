@@ -329,6 +329,11 @@
             to: "#shell",
         },
         {
+            service: "fuchsia.hardware.clock.DebugService",
+            from: "parent",
+            to: "#shell",
+        },
+        {
             service: "fuchsia.hardware.nfc.Service",
             from: "parent",
             to: "#shell",

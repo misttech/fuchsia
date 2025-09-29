@@ -6,6 +6,10 @@ library fuchsia.hardware.clock;
 
 using zx;
 
+/// Maximum length of the clock name.
+@available(added=NEXT)
+const MAX_CLOCK_NAME_LEN uint32 = 256;
+
 /// Used for driver-to-driver communication.
 @discoverable
 open protocol Clock {
@@ -84,8 +88,22 @@ open protocol Clock {
     flexible GetInput() -> (struct {
         index uint32;
     }) error zx.Status;
+
+    /// Returns the static properties of a clock.
+    @available(added=NEXT)
+    flexible GetProperties() -> (struct {
+        /// The platform-specific number of this clock, set as a bind property on the driver node.
+        id uint32;
+        /// The human-readable name of this clock. Either provided by the implementation, or the
+        /// device tree.
+        name string:MAX_CLOCK_NAME_LEN;
+    });
 };
 
 service Service {
     clock client_end:Clock;
+};
+@available(added=NEXT)
+service DebugService {
+    device client_end:Clock;
 };

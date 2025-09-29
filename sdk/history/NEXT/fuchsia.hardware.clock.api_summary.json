@@ -37,6 +37,14 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.hardware.clock/Clock.GetProperties",
+        "strictness": "flexible",
+        "ordinal": "2758748715462866138",
+        "direction": "two_way",
+        "response": "fuchsia.hardware.clock/Clock_GetProperties_Response"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.hardware.clock/Clock.GetRate",
         "strictness": "flexible",
         "ordinal": "1121163806855671421",
@@ -141,6 +149,22 @@
     },
     {
         "kind": "struct/member",
+        "name": "fuchsia.hardware.clock/Clock_GetProperties_Response.id",
+        "ordinal": "1",
+        "type": "uint32"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.hardware.clock/Clock_GetProperties_Response.name",
+        "ordinal": "2",
+        "type": "string:256"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.hardware.clock/Clock_GetProperties_Response"
+    },
+    {
+        "kind": "struct/member",
         "name": "fuchsia.hardware.clock/Clock_GetRate_Response.hz",
         "ordinal": "1",
         "type": "uint64"
@@ -168,6 +192,12 @@
     {
         "kind": "struct",
         "name": "fuchsia.hardware.clock/Clock_QuerySupportedRate_Response"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.hardware.clock/MAX_CLOCK_NAME_LEN",
+        "type": "uint32",
+        "value": "256"
     },
     {
         "kind": "library",
