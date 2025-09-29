@@ -149,9 +149,6 @@
                 "PtracePokeMemory/PokeInSharedMappingTest*",
                 "PtracePokeMemory/PokeInSharedROMappingTest*",
                 "PtracePokeMemory/PokeInSharedRXMappingTest*",
-
-                // TODO(https://fxbug.dev/445899985)
-                "PidFdTest.PidFdOpenAfterZombification",
             ],
         },
     ],

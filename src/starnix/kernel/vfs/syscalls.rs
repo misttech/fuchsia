@@ -6,8 +6,8 @@ use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::syscalls::time::{ITimerSpecPtr, TimeSpecPtr, TimeValPtr};
 use crate::task::{
-    CurrentTask, EnqueueEventHandler, EventHandler, ReadyItem, ReadyItemKey, Task, Timeline,
-    TimerWakeup, Waiter,
+    CurrentTask, EnqueueEventHandler, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey,
+    Timeline, TimerWakeup, Waiter,
 };
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
@@ -23,7 +23,7 @@ use crate::vfs::{
     FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
     NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget, StatxFlags,
     SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize, WdNumber,
-    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, splice,
+    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -2098,16 +2098,26 @@ pub fn sys_pidfd_open(
         return error!(EINVAL);
     }
 
-    // Validate that the pid exists and that it belongs to a thread group leader.
-    let task = current_task.get_task(pid);
-    let task = Task::from_weak(&task)?;
-    if !task.is_leader() {
-        return error!(EINVAL);
-    }
+    let file = {
+        let pid_table = current_task.kernel().pids.read();
 
-    let blocking = (flags & PIDFD_NONBLOCK) == 0;
-    let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
-    let file = new_pidfd(locked, current_task, task.thread_group(), open_flags);
+        // Validate that a process (and not just a task) entry exists for the PID.
+        let Some(process_entry) = pid_table.get_process(pid) else {
+            if pid_table.get_task(pid).upgrade().is_some() {
+                return error!(EINVAL);
+            } else {
+                return error!(ESRCH);
+            }
+        };
+
+        let blocking = (flags & PIDFD_NONBLOCK) == 0;
+        let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
+        match process_entry {
+            ProcessEntryRef::Process(proc) => new_pidfd(locked, current_task, &proc, open_flags),
+            ProcessEntryRef::Zombie(_) => new_zombie_pidfd(locked, current_task, open_flags),
+        }
+    };
+
     current_task.add_file(locked, file, FdFlags::CLOEXEC)
 }
 

@@ -11,6 +11,7 @@ use crate::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
@@ -110,5 +111,57 @@ impl FileOps for PidFdFileObject {
             Ok(zx::Signals::EVENTPAIR_PEER_CLOSED) => Ok(FdEvents::POLLIN),
             result => unreachable!("unexpected result: {result:?}"),
         }
+    }
+}
+
+pub fn new_zombie_pidfd<L>(
+    locked: &mut Locked<L>,
+    current_task: &CurrentTask,
+    flags: OpenFlags,
+) -> FileHandle
+where
+    L: LockEqualOrBefore<FileOpsCore>,
+{
+    Anon::new_private_file(
+        locked,
+        current_task,
+        Box::new(ZombiePidFdFileObject {}),
+        flags,
+        "[pidfd]",
+    )
+}
+
+struct ZombiePidFdFileObject {}
+
+impl FileOps for ZombiePidFdFileObject {
+    fileops_impl_nonseekable!();
+    fileops_impl_dataless!();
+    fileops_impl_noop_sync!();
+
+    fn as_thread_group_key(&self, _file: &FileObject) -> Result<ThreadGroupKey, Errno> {
+        // There's nothing really reasonable to return here?
+        error!(EINVAL)
+    }
+
+    fn wait_async(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _waiter: &Waiter,
+        _events: FdEvents,
+        _handler: EventHandler,
+    ) -> Option<WaitCanceler> {
+        // There's nothing to wait on; is denying blocking sufficient?
+        None
+    }
+
+    fn query_events(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        Ok(FdEvents::POLLIN)
     }
 }
