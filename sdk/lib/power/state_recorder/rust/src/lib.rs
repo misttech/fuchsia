@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
-use std::cell::RefCell;
 use std::cmp::Eq;
 pub use std::collections::HashMap;
 pub use std::ffi::{CStr, CString};
@@ -111,7 +110,12 @@ impl<T: Copy + Display + Eq + Hash + IntoEnumIterator + Into<u64>> RecordableEnu
 // String (for Inspect).
 struct StateName {
     trace_name: &'static CStr,
-    inspect_name: String,
+    // This is wrapped in an Arc so that StateRecorder can clone a reference to it that is separated
+    // from a borrow of `self`.
+    //
+    // The alternative -- while preserving `Send` for StateRecorder -- would be to wrap
+    // StateRecorder::trace_state_event and StateRecorder::transition_history in Mutexes.
+    inspect_name: Arc<String>,
 }
 
 /// Records state changes to Inspect and trace.
@@ -120,11 +124,11 @@ pub struct StateRecorder<T: RecordableEnum> {
     name: String,
     trace_category: &'static CStr,
     state_names: HashMap<T, StateName>,
-    transition_history: RefCell<BoundedListNode>,
+    transition_history: BoundedListNode,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
-    trace_state_event: RefCell<Option<ftrace::AsyncScope>>,
+    trace_state_event: Option<ftrace::AsyncScope>,
 }
 
 impl<T: RecordableEnum> std::fmt::Debug for StateRecorder<T> {
@@ -188,7 +192,7 @@ impl<T: RecordableEnum> StateRecorder<T> {
         // str.
         let mut state_names = HashMap::new();
         for variant in T::iter() {
-            let inspect_name = variant.to_string();
+            let inspect_name = Arc::new(variant.to_string());
             let trace_name = lazy_static_cstr(&inspect_name)?;
             state_names.insert(variant, StateName { inspect_name, trace_name });
         }
@@ -197,13 +201,13 @@ impl<T: RecordableEnum> StateRecorder<T> {
             metadata_node.record_string("name", &name);
             metadata_node.record_child("states", |states_node| {
                 for (state_enum, state_name) in state_names.iter() {
-                    states_node.record_uint(state_name.inspect_name.clone(), (*state_enum).into());
+                    states_node.record_uint(state_name.inspect_name.as_ref(), (*state_enum).into());
                 }
             });
         });
 
         let transition_history =
-            RefCell::new(BoundedListNode::new(node.create_child("transition_history"), capacity));
+            BoundedListNode::new(node.create_child("transition_history"), capacity);
 
         let trace_id = ftrace::Id::random();
         let trace_id_u64: u64 = trace_id.into();
@@ -218,7 +222,7 @@ impl<T: RecordableEnum> StateRecorder<T> {
             _root_node: node,
             trace_id,
             trace_track_name,
-            trace_state_event: RefCell::new(None),
+            trace_state_event: None,
         };
         this.record_transition(initial_state);
         Ok(this)
@@ -227,7 +231,7 @@ impl<T: RecordableEnum> StateRecorder<T> {
     fn state_name(&self, state_enum: T) -> &StateName {
         static UNKNOWN_NAME: LazyLock<StateName> = LazyLock::new(|| StateName {
             trace_name: c"<Unknown>",
-            inspect_name: "<Unknown>".to_string(),
+            inspect_name: Arc::new("<Unknown>".to_string()),
         });
         self.state_names.get(&state_enum).unwrap_or(&UNKNOWN_NAME)
     }
@@ -241,19 +245,20 @@ impl<T: RecordableEnum> StateRecorder<T> {
         // so we can mutate them without an overlapping mutable borrow of `self` that offends the
         // borrow checker.
         let state_name = self.state_name(state_enum);
+        let inspect_name = state_name.inspect_name.clone();
 
         // The async instant must be emitted before the async event begins to name the track
         // according to self.name.
         ftrace::async_instant!(self.trace_id, self.trace_category, self.trace_track_name);
 
-        *self.trace_state_event.borrow_mut() =
+        self.trace_state_event =
             ftrace::async_enter!(self.trace_id, self.trace_category, state_name.trace_name);
 
         let timestamp = zx::BootInstant::get().into_nanos();
 
-        self.transition_history.borrow_mut().add_entry(|node| {
+        self.transition_history.add_entry(|node| {
             node.record_int("@time", timestamp);
-            node.record_string("value", &state_name.inspect_name);
+            node.record_string("value", inspect_name.as_ref());
         });
     }
 }
@@ -549,5 +554,11 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fuchsia::test]
+    async fn test_recorder_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<StateRecorder<SwitchState>>();
     }
 }
