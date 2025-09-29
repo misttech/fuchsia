@@ -20,19 +20,22 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "ciborium-ll",
-    package_url = "https://github.com/enarx/ciborium",
-    package_version = "0.2.2",
+    package_name = "half",
+    package_url = "https://github.com/VoidStarKat/half-rs",
+    package_version = "2.6.0",
 )
 
 license(
     name = "license",
-    license_kinds = ["@rules_license//licenses/spdx:Apache-2.0"],
-    license_text = "LICENSE",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE-APACHE",
 )
 
 rust_library(
-    name = "ciborium_ll",
+    name = "half",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -49,6 +52,11 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "alloc",
+        "default",
+        "std",
+    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -56,7 +64,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=ciborium-ll",
+        "crate-name=half",
         "manual",
         "noclippy",
         "norustfmt",
@@ -69,9 +77,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.2",
+    version = "2.6.0",
     deps = [
-        "//third_party/rust_crates/vendor/ciborium-io-0.2.2:ciborium_io",
-        "//third_party/rust_crates/vendor/half-2.6.0:half",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
     ],
 )
