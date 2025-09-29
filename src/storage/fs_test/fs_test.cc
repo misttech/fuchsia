@@ -53,7 +53,6 @@
 #include "src/storage/lib/fs_management/cpp/mount.h"
 #include "src/storage/lib/fs_management/cpp/options.h"
 #include "src/storage/testing/fvm.h"
-#include "src/storage/testing/ram_disk.h"
 #include "zircon/rights.h"
 
 namespace fs_test {
@@ -63,7 +62,7 @@ namespace {
 constexpr zx::duration kDeviceWaitTime = zx::sec(30);
 
 // Creates a ram-disk with an optional FVM partition. Returns the ram-disk and the device path.
-zx::result<std::pair<storage::RamDisk, std::string>> CreateRamDisk(
+zx::result<std::pair<ramdevice_client::Ramdisk, std::string>> CreateRamDisk(
     const TestFilesystemOptions& options) {
   if (options.use_ram_nand) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -99,13 +98,14 @@ zx::result<std::pair<storage::RamDisk, std::string>> CreateRamDisk(
 
   // Create a ram-disk.  The DFv2 driver doesn't support fail_after,
   // ram_disk_discard_random_after_last_flush or FVM.
-  auto ram_disk_or = storage::RamDisk::CreateWithVmo(std::move(vmo), options.device_block_size);
-  if (ram_disk_or.is_error()) {
-    return ram_disk_or.take_error();
+  zx::result ramdisk =
+      ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo), options.device_block_size);
+  if (ramdisk.is_error()) {
+    return ramdisk.take_error();
   }
 
   if (options.fail_after) {
-    if (auto status = ram_disk_or->SleepAfter(options.fail_after); status.is_error()) {
+    if (auto status = ramdisk->SleepAfter(options.fail_after); status.is_error()) {
       return status.take_error();
     }
   }
@@ -114,11 +114,13 @@ zx::result<std::pair<storage::RamDisk, std::string>> CreateRamDisk(
     uint32_t flags = static_cast<uint32_t>(
         fuchsia_hardware_ramdisk::wire::RamdiskFlag::kDiscardRandom |
         fuchsia_hardware_ramdisk::wire::RamdiskFlag::kDiscardNotFlushedOnWake);
-    ramdisk_set_flags(ram_disk_or->client(), flags);
+    if (zx::result result = ramdisk->SetFlags(flags); result.is_error()) {
+      return result.take_error();
+    }
   }
 
-  std::string device_path = ram_disk_or.value().path();
-  return zx::ok(std::make_pair(std::move(ram_disk_or).value(), std::move(device_path)));
+  std::string device_path = ramdisk->path();
+  return zx::ok(std::make_pair(std::move(*ramdisk), std::move(device_path)));
 }
 
 // Creates a ram-nand device.  It does not create an FVM partition; that is left to the caller.

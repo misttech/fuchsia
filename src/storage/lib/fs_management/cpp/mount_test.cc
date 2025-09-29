@@ -36,7 +36,6 @@
 #include "src/storage/lib/fs_management/cpp/admin.h"
 #include "src/storage/lib/fs_management/cpp/fvm.h"
 #include "src/storage/testing/fvm.h"
-#include "src/storage/testing/ram_disk.h"
 
 namespace fs_management {
 namespace {
@@ -61,9 +60,9 @@ void CheckMountedFs(const char* path, const char* fs_name) {
 class RamdiskTestFixture : public testing::Test {
  public:
   void SetUp() override {
-    auto ramdisk_or = storage::RamDisk::Create(512, 1 << 16);
-    ASSERT_EQ(ramdisk_or.status_value(), ZX_OK);
-    ramdisk_ = std::move(*ramdisk_or);
+    zx::result ramdisk = ramdevice_client::Ramdisk::Create(512, 1 << 16);
+    ASSERT_EQ(ramdisk.status_value(), ZX_OK);
+    ramdisk_ = std::move(*ramdisk);
 
     auto component = FsComponent::FromDiskFormat(kDiskFormatMinfs);
     ASSERT_EQ(Mkfs(ramdisk_path().c_str(), component, {}), ZX_OK);
@@ -117,7 +116,7 @@ class RamdiskTestFixture : public testing::Test {
   }
 
  private:
-  storage::RamDisk ramdisk_;
+  ramdevice_client::Ramdisk ramdisk_;
 };
 
 using MountTest = RamdiskTestFixture;
@@ -251,9 +250,9 @@ class PartitionOverFvmWithRamdiskFixture : public testing::Test {
 
   void SetUp() override {
     size_t ramdisk_block_count = zx_system_get_physmem() / (1024);
-    auto ramdisk_or = storage::RamDisk::Create(kBlockSize, ramdisk_block_count);
-    ASSERT_EQ(ramdisk_or.status_value(), ZX_OK);
-    ramdisk_ = std::move(*ramdisk_or);
+    zx::result ramdisk = ramdevice_client::Ramdisk::Create(kBlockSize, ramdisk_block_count);
+    ASSERT_EQ(ramdisk.status_value(), ZX_OK);
+    ramdisk_ = std::move(*ramdisk);
 
     uint64_t slice_size = kBlockSize * (2 << 10);
     auto partition = storage::CreateFvmPartition(ramdisk_.path(), static_cast<size_t>(slice_size));
@@ -262,7 +261,7 @@ class PartitionOverFvmWithRamdiskFixture : public testing::Test {
   }
 
  private:
-  storage::RamDisk ramdisk_;
+  ramdevice_client::Ramdisk ramdisk_;
   std::optional<storage::FvmPartition> fvm_partition_;
 };
 

@@ -12,8 +12,7 @@
 #include <lib/fdio/directory.h>
 
 #include <gtest/gtest.h>
-
-#include "src/storage/testing/ram_disk.h"
+#include <ramdevice-client/ramdisk.h>
 
 namespace blobfs {
 namespace {
@@ -27,9 +26,9 @@ const fuchsia_component_decl::wire::ChildRef kBlobfsChildRef{.name = "test-blobf
 class BlobfsComponentTest : public testing::Test {
  public:
   void SetUp() override {
-    auto ramdisk_or = storage::RamDisk::Create(kBlockSize, kBlockCount);
-    ASSERT_EQ(ramdisk_or.status_value(), ZX_OK);
-    ramdisk_ = std::move(*ramdisk_or);
+    zx::result ramdisk = ramdevice_client::Ramdisk::Create(kBlockSize, kBlockCount);
+    ASSERT_EQ(ramdisk.status_value(), ZX_OK);
+    ramdisk_ = std::move(*ramdisk);
 
     auto realm_client_end = component::Connect<fuchsia_component::Realm>();
     ASSERT_EQ(realm_client_end.status_value(), ZX_OK);
@@ -89,7 +88,7 @@ class BlobfsComponentTest : public testing::Test {
   }
 
  private:
-  storage::RamDisk ramdisk_;
+  ramdevice_client::Ramdisk ramdisk_;
   fidl::WireSyncClient<fuchsia_component::Realm> realm_;
   fidl::WireSyncClient<fuchsia_fs_startup::Startup> startup_client_;
   fidl::ClientEnd<fuchsia_io::Directory> exposed_dir_;

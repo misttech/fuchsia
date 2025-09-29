@@ -15,6 +15,7 @@
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
+#include <ramdevice-client/ramdisk.h>
 
 #include "src/storage/fvm/format.h"
 #include "src/storage/fvm/fvm_sparse.h"
@@ -22,7 +23,6 @@
 #include "src/storage/lib/fs_management/cpp/admin.h"
 #include "src/storage/lib/fs_management/cpp/fvm.h"
 #include "src/storage/testing/fvm.h"
-#include "src/storage/testing/ram_disk.h"
 #include "src/storage/volume_image/ftl/ftl_image.h"
 #include "src/storage/volume_image/ftl/options.h"
 #include "src/storage/volume_image/utils/fd_reader.h"
@@ -44,7 +44,8 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
   // Create a ram-disk.
   constexpr int kDeviceBlockSize = 8192;
   const uint64_t disk_size = sparse_image_or.value().volume().size;
-  auto ram_disk_or = storage::RamDisk::Create(kDeviceBlockSize, disk_size / kDeviceBlockSize);
+  auto ram_disk_or =
+      ramdevice_client::Ramdisk::Create(kDeviceBlockSize, disk_size / kDeviceBlockSize);
   ASSERT_TRUE(ram_disk_or.is_ok()) << ram_disk_or.status_string();
 
   // Open the ram disk

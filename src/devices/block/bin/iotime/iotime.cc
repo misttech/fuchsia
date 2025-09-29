@@ -23,9 +23,10 @@
 #include <zircon/time.h>
 #include <zircon/types.h>
 
+#include <ramdevice-client/ramdisk.h>
+
 #include "src/storage/lib/block_client/cpp/client.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
-#include "src/storage/testing/ram_disk.h"
 
 static uint64_t number(const char* str) {
   char* end;
@@ -209,7 +210,7 @@ int main(int argc, char** argv) {
     return usage();
   }
 
-  storage::RamDisk ramdisk;
+  ramdevice_client::Ramdisk ramdisk;
   fbl::unique_fd fd;
   zx::duration io_duration;
   if (device == "--ramdisk") {
@@ -218,16 +219,20 @@ int main(int argc, char** argv) {
       return EXIT_FAILURE;
     }
     constexpr size_t kBlockSizeBytes = 512;
-    zx::result result = storage::RamDisk::Create(kBlockSizeBytes, total_io_size / kBlockSizeBytes);
+    zx::result result =
+        ramdevice_client::Ramdisk::Create(kBlockSizeBytes, total_io_size / kBlockSizeBytes);
     if (result.is_error()) {
       fprintf(stderr, "error: cannot create %zu-byte ramdisk: %s\n", total_io_size,
               result.status_string());
       return EXIT_FAILURE;
     }
     ramdisk = std::move(result.value());
-    zx_handle_t handle = ramdisk_get_block_interface(ramdisk.client());
-    fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block(handle);
-    io_duration = iotime_block(is_read, block, total_io_size, buffer_size);
+    zx::result block = ramdisk.ConnectBlock();
+    if (block.is_error()) {
+      fprintf(stderr, "error: cannot get ramdisk channel: %s\n", block.status_string());
+      return EXIT_FAILURE;
+    }
+    io_duration = iotime_block(is_read, block->borrow(), total_io_size, buffer_size);
   } else {
     fd.reset(open(device.c_str(), is_read ? O_RDONLY : O_WRONLY));
     if (fd.get() < 0) {

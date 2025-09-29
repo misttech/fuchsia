@@ -66,7 +66,7 @@ TestDevice::TestDevice() {
 
 TestDevice::~TestDevice() {
   Disconnect();
-  DestroyRamdisk();
+  ramdisk_.Reset();
   if (need_join_) {
     int res;
     thrd_join(tid_, &res);
@@ -125,8 +125,7 @@ void TestDevice::Bind(Volume::Version version, bool fvm) {
 
 void TestDevice::BindFvmDriver() {
   // Binds the FVM driver to the active ramdisk_.
-  const fidl::UnownedClientEnd<fuchsia_device::Controller> channel(
-      ramdisk_get_block_controller_interface(ramdisk_));
+  const fidl::UnownedClientEnd<fuchsia_device::Controller> channel(ramdisk_.LegacyController());
   const fidl::WireResult result =
       fidl::WireCall(channel)->Bind(fidl::StringView::FromExternal(kFvmDriver));
   ASSERT_OK(result.status());
@@ -135,7 +134,8 @@ void TestDevice::BindFvmDriver() {
 }
 
 void TestDevice::Rebind() {
-  const char* sep = strrchr(ramdisk_get_path(ramdisk_), '/');
+  std::string path = ramdisk_.path();
+  const char* sep = strrchr(path.c_str(), '/');
   ASSERT_NOT_NULL(sep);
 
   Disconnect();
@@ -144,8 +144,7 @@ void TestDevice::Rebind() {
   fvm_.reset();
 
   if (strlen(fvm_part_path_) != 0) {
-    const fidl::UnownedClientEnd<fuchsia_device::Controller> channel(
-        ramdisk_get_block_controller_interface(ramdisk_));
+    const fidl::UnownedClientEnd<fuchsia_device::Controller> channel(ramdisk_.LegacyController());
     // We need to explicitly rebind FVM here, since now that we're not
     // relying on the system-wide block-watcher, the driver won't rebind by
     // itself.
@@ -165,9 +164,8 @@ void TestDevice::Rebind() {
     ASSERT_OK(controller);
     fvm_controller_ = fidl::ClientEnd<fuchsia_device::Controller>(std::move(controller.value()));
   } else {
-    ASSERT_OK(ramdisk_rebind(ramdisk_));
-    const fidl::UnownedClientEnd<fuchsia_device::Controller> channel(
-        ramdisk_get_block_controller_interface(ramdisk_));
+    ASSERT_OK(ramdisk_.Rebind());
+    const fidl::UnownedClientEnd<fuchsia_device::Controller> channel(ramdisk_.LegacyController());
     zx::result server = fidl::CreateEndpoints(&fvm_controller_);
     ASSERT_OK(server);
     ASSERT_OK(fidl::WireCall(channel)->ConnectToController(std::move(server.value())).status());
@@ -191,10 +189,10 @@ void TestDevice::SleepUntil(uint64_t num, bool deferred) {
   if (deferred) {
     uint32_t flags =
         static_cast<uint32_t>(fuchsia_hardware_ramdisk::wire::RamdiskFlag::kResumeOnWake);
-    ASSERT_OK(ramdisk_set_flags(ramdisk_, flags));
+    ASSERT_OK(ramdisk_.SetFlags(flags));
   }
   uint64_t sleep_after = 0;
-  ASSERT_OK(ramdisk_sleep_after(ramdisk_, sleep_after));
+  ASSERT_OK(ramdisk_.SleepAfter(sleep_after));
 }
 
 void TestDevice::WakeUp() {
@@ -214,22 +212,22 @@ int TestDevice::WakeThread(void* arg) {
   fbl::AutoLock lock(&device->lock_);
 
   // Always send a wake-up call; even if we failed to go to sleep.
-  auto cleanup = fit::defer([&] { ramdisk_wake(device->ramdisk_); });
+  auto cleanup = fit::defer([&] { ASSERT_OK(device->ramdisk_.Wake()); });
 
   // Loop until timeout, |wake_after_| txns received, or error getting counts
-  ramdisk_block_write_counts_t counts;
+  zx::result<ramdisk_block_write_counts_t> counts;
   do {
     zx::nanosleep(zx::deadline_after(zx::msec(100)));
     if (device->wake_deadline_ < zx::clock::get_monotonic()) {
-      printf("Received %lu of %lu transactions before timing out.\n", counts.received,
-             device->wake_after_);
+      printf("Received %lu of %lu transactions before timing out.\n",
+             counts.is_ok() ? counts->received : 0, device->wake_after_);
       return ZX_ERR_TIMED_OUT;
     }
-    zx_status_t status = ramdisk_get_block_counts(device->ramdisk_, &counts);
-    if (status != ZX_OK) {
-      return status;
+    counts = device->ramdisk_.GetBlockCounts();
+    if (counts.is_error()) {
+      return counts.status_value();
     }
-  } while (counts.received < device->wake_after_);
+  } while (counts->received < device->wake_after_);
   return ZX_OK;
 }
 
@@ -292,14 +290,17 @@ void TestDevice::CreateRamdisk(size_t device_size, size_t block_size) {
   ASSERT_TRUE(ac.check());
   memset(as_read_.get(), 0, block_size);
 
-  ASSERT_EQ(ramdisk_create_at(devfs_root().get(), block_size, count, &ramdisk_), ZX_OK);
+  zx::result ramdisk =
+      ramdevice_client::Ramdisk::CreateLegacy(block_size, count, devfs_root().get());
+  ASSERT_OK(ramdisk);
+  ramdisk_ = std::move(*ramdisk);
 
   zx::result owned =
-      device_watcher::RecursiveWaitForFile(devfs_root().get(), ramdisk_get_path(ramdisk_));
+      device_watcher::RecursiveWaitForFile(devfs_root().get(), ramdisk_.path().c_str());
   ASSERT_OK(owned);
   fvm_ = fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(std::move(owned.value()));
 
-  std::string controller_path = std::string(ramdisk_get_path(ramdisk_)) + "/device_controller";
+  std::string controller_path = ramdisk_.path() + "/device_controller";
   zx::result controller =
       device_watcher::RecursiveWaitForFile(devfs_root().get(), controller_path.c_str());
   ASSERT_OK(controller);
@@ -309,12 +310,7 @@ void TestDevice::CreateRamdisk(size_t device_size, size_t block_size) {
   block_count_ = count;
 }
 
-void TestDevice::DestroyRamdisk() {
-  if (ramdisk_ != nullptr) {
-    ramdisk_destroy(ramdisk_);
-    ramdisk_ = nullptr;
-  }
-}
+void TestDevice::DestroyRamdisk() { ramdisk_.Reset(); }
 
 // Creates a ramdisk, formats it, and binds to it.
 void TestDevice::CreateFvmPart(size_t device_size, size_t block_size) {
@@ -326,8 +322,9 @@ void TestDevice::CreateFvmPart(size_t device_size, size_t block_size) {
   ASSERT_NO_FATAL_FAILURE(CreateRamdisk(fvm_header.fvm_partition_size, block_size));
 
   // Format the ramdisk as FVM
-  const fidl::UnownedClientEnd<fuchsia_hardware_block::Block> channel(
-      ramdisk_get_block_interface(ramdisk_));
+  zx::result block = ramdisk_.ConnectBlock();
+  ASSERT_OK(block);
+  const fidl::ClientEnd<fuchsia_hardware_block::Block> channel = std::move(block).value();
   ASSERT_OK(fs_management::FvmInit(channel, fvm::kBlockSize));
 
   // Bind the FVM driver to the now-formatted disk
@@ -335,7 +332,7 @@ void TestDevice::CreateFvmPart(size_t device_size, size_t block_size) {
 
   // Wait for the FVM driver to expose a block device, then open it
   char path[PATH_MAX];
-  snprintf(path, sizeof(path), "%s/fvm", ramdisk_get_path(ramdisk_));
+  snprintf(path, sizeof(path), "%s/fvm", ramdisk_.path().c_str());
   zx::result fvm_channel = device_watcher::RecursiveWaitForFile(devfs_root().get(), path);
   ASSERT_OK(fvm_channel.status_value());
   fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm_manager(
@@ -366,7 +363,7 @@ void TestDevice::CreateFvmPart(size_t device_size, size_t block_size) {
   // consistent after rebinding the ramdisk, whereas the
   // /dev/class/block/[NNN] will issue a new number.
   const fidl::WireResult result = fidl::WireCall(parent_controller())->GetTopologicalPath();
-  ASSERT_OK(result.status());
+  ASSERT_OK(block.status_value());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
   std::string_view topological_path = response.value()->path.get();

@@ -5,13 +5,22 @@
 #ifndef SRC_STORAGE_LIB_RAMDEVICE_CLIENT_CPP_INCLUDE_RAMDEVICE_CLIENT_RAMDISK_H_
 #define SRC_STORAGE_LIB_RAMDEVICE_CLIENT_CPP_INCLUDE_RAMDEVICE_CLIENT_RAMDISK_H_
 
-#include <inttypes.h>
+#include <fidl/fuchsia.device/cpp/wire.h>
+#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <lib/zx/result.h>
+#include <lib/zx/vmo.h>
 #include <stdlib.h>
 #include <zircon/compiler.h>
+#include <zircon/hw/gpt.h>
 #include <zircon/types.h>
+
+#include <array>
+#include <optional>
+#include <string>
 
 __BEGIN_CDECLS
 
+// TODO(https://446695911): Remove the C interface.  Clients should use `ramdevice_client::Ramdisk`.
 // A client library for creating, configuring and manipulating ramdisks.
 //
 // When creating a ramdisk always wait for the ramctl device to be ready to avoid racing with
@@ -35,38 +44,12 @@ typedef struct ramdisk_options {
   const uint8_t* type_guid;
   zx_handle_t vmo;
   bool v2;
+  // Only used for v2; set to -1 to open /svc
+  int svc_root_fd;
+  // Only used for v1; set to -1 to open /dev
+  int devfs_root_fd;
 } ramdisk_options_t;
 
-// Creates a ramdisk object and writes the pointer into `out`.
-zx_status_t ramdisk_create(uint64_t blk_size, uint64_t blk_count, ramdisk_client_t** out);
-// Same as above except that it opens the ramdisk relative to the passed in 'dev_root_fd'.
-// Ownership of 'dev_root_fd' is not transferred.
-zx_status_t ramdisk_create_at(int dev_root_fd, uint64_t blk_size, uint64_t blk_count,
-                              ramdisk_client_t** out);
-
-// Creates a ramdisk and writes the pointer into `out`.
-zx_status_t ramdisk_create_with_guid(uint64_t blk_size, uint64_t blk_count,
-                                     const uint8_t* type_guid, size_t guid_len,
-                                     ramdisk_client_t** out);
-// Same as above except that it opens the ramdisk relative to the passed in 'dev_root_fd'.
-// Ownership of 'dev_root_fd' is not transferred.
-zx_status_t ramdisk_create_at_with_guid(int dev_root_fd, uint64_t blk_size, uint64_t blk_count,
-                                        const uint8_t* type_guid, size_t guid_len,
-                                        ramdisk_client_t** out);
-
-// Same as above but uses an existing VMO as the ramdisk.
-// The handle is always consumed, and must be the only handle to this VMO.
-zx_status_t ramdisk_create_from_vmo(zx_handle_t vmo, ramdisk_client_t** out);
-// Same as above except that it opens the ramdisk relative to the passed in 'dev_root_fd'.
-// Ownership of 'dev_root_fd' is not transferred.
-zx_status_t ramdisk_create_at_from_vmo(int dev_root_fd, zx_handle_t vmo, ramdisk_client_t** out);
-// Same as previous two, but with optional parameters.
-zx_status_t ramdisk_create_from_vmo_with_params(zx_handle_t vmo, uint64_t block_size,
-                                                const uint8_t* type_guid, size_t guid_len,
-                                                ramdisk_client_t** out);
-zx_status_t ramdisk_create_at_from_vmo_with_params(int dev_root_fd, zx_handle_t vmo,
-                                                   uint64_t block_size, const uint8_t* type_guid,
-                                                   size_t guid_len, ramdisk_client_t** out);
 // Creates a ramdisk with the specified options.
 zx_status_t ramdisk_create_with_options(const ramdisk_options_t* options, ramdisk_client_t** out);
 
@@ -117,5 +100,115 @@ zx_status_t ramdisk_destroy(ramdisk_client_t* client);
 zx_status_t ramdisk_forget(ramdisk_client_t* client);
 
 __END_CDECLS
+
+namespace ramdevice_client {
+
+// Manages a ramdisk instance.
+class Ramdisk {
+ public:
+  struct Options {
+    // If set, the ram-disk will report this type guid using the partition protocol.
+    std::optional<std::array<uint8_t, GPT_GUID_LEN>> type_guid;
+  };
+  static constexpr Options kDefaultOptions;
+
+  // Creates a ram-disk with |block_count| blocks of |block_size| bytes.
+  // `svc_root_fd` can be overridden if desired; otherwise, "/svc" is opened to find
+  // fuchsia.hardware.ramdisk.Service.
+  static zx::result<Ramdisk> Create(int block_size, uint64_t block_count,
+                                    std::optional<int> svc_root_fd = std::nullopt,
+                                    const Options& options = kDefaultOptions);
+
+  // Creates a legacy ram-disk with |block_count| blocks of |block_size| bytes.
+  // `devfs_root_fd` can be overridden if desired; otherwise, "/dev" is opened.
+  static zx::result<Ramdisk> CreateLegacy(int block_size, uint64_t block_count,
+                                          std::optional<int> devfs_root_fd = std::nullopt,
+                                          const Options& options = kDefaultOptions);
+
+  // Creates a ram-disk with the given VMO.  If block_size is zero, a default block size is used.
+  // `svc_root_fd` can be overridden if desired; otherwise, "/svc" is opened to find
+  // fuchsia.hardware.ramdisk.Service.
+  static zx::result<Ramdisk> CreateWithVmo(zx::vmo vmo, uint64_t block_size = 0,
+                                           std::optional<int> svc_root_fd = std::nullopt,
+                                           const Options& options = kDefaultOptions);
+
+  // Creates a ram-disk with the given VMO.  If block_size is zero, a default block size is used.
+  // `devfs_root_fd` can be overridden if desired; otherwise, "/dev" is opened.
+  static zx::result<Ramdisk> CreateLegacyWithVmo(zx::vmo vmo, uint64_t block_size,
+                                                 std::optional<int> devfs_root_fd = std::nullopt,
+                                                 const Options& options = kDefaultOptions);
+
+  Ramdisk() = default;
+  Ramdisk(Ramdisk&& other) noexcept : client_(other.client_) { other.client_ = nullptr; }
+  Ramdisk& operator=(Ramdisk&& other) noexcept {
+    if (this == &other) {
+      return *this;
+    }
+    Reset();
+    client_ = other.client_;
+    other.client_ = nullptr;
+    return *this;
+  }
+
+  ~Ramdisk() { Reset(); }
+
+  // Frees the resources associated with the Ramdisk.  It is an error to call any methods after this
+  // has been called.
+  void Reset() {
+    if (client_) {
+      ramdisk_destroy(client_);
+    }
+    client_ = nullptr;
+  }
+
+  bool is_valid() const { return client_; }
+
+  // TODO(https://fxbug.dev/446695911: Remove.
+  ramdisk_client_t* client() const { return client_; }
+
+  // Returns the path to the device.
+  std::string path() const { return ramdisk_get_path(client_); }
+
+  // Creates a new connection to the Block protocol served by the ramdisk.
+  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> ConnectBlock() const;
+
+  // Gets the Controller proxy for the ramdisk (only valid with legacy ramdisks).
+  fidl::UnownedClientEnd<fuchsia_device::Controller> LegacyController() const;
+
+  // Reinds the ramdisk (synchronously, so the ramdisk will be ready after this returns).
+  zx::result<> Rebind() { return zx::make_result(ramdisk_rebind(client_)); }
+
+  // Puts the ramdisk to sleep after |blk_count| blocks written.  After this, transactions will no
+  // longer be immediately persisted to disk.
+  // If the |RAMDISK_FLAG_RESUME_ON_WAKE| flag has been set, transactions will be processed when
+  // |ramdisk_wake| is called, otherwise they will fail immediately.
+  zx::result<> SleepAfter(uint64_t block_count) {
+    return zx::make_result(ramdisk_sleep_after(client_, block_count));
+  }
+
+  // Wakes up the ramdisk.
+  zx::result<> Wake() { return zx::make_result(ramdisk_wake(client_)); }
+
+  // Sets flags on the ramdisk (see fuchsia.hardware.ramdisk.RamdiskFlag).
+  zx::result<> SetFlags(uint32_t flags) {
+    return zx::make_result(ramdisk_set_flags(client_, flags));
+  }
+
+  // Returns the ramdisk's current failed, successful, and total block counts.
+  zx::result<ramdisk_block_write_counts_t> GetBlockCounts() const {
+    ramdisk_block_write_counts_t counts;
+    if (zx_status_t status = ramdisk_get_block_counts(client_, &counts); status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(counts);
+  }
+
+ private:
+  explicit Ramdisk(ramdisk_client_t* client) : client_(client) {}
+
+  ramdisk_client_t* client_ = nullptr;
+};
+
+}  // namespace ramdevice_client
 
 #endif  // SRC_STORAGE_LIB_RAMDEVICE_CLIENT_CPP_INCLUDE_RAMDEVICE_CLIENT_RAMDISK_H_

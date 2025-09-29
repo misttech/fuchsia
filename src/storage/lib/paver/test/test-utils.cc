@@ -74,38 +74,58 @@ zx::result<DeviceAndController> GetNewConnections(
 
 void BlockDevice::Create(const fbl::unique_fd& devfs_root, const uint8_t* guid,
                          std::unique_ptr<BlockDevice>* device) {
-  ramdisk_client_t* client;
-  ASSERT_OK(ramdisk_create_at_with_guid(devfs_root.get(), kBlockSize, kBlockCount, guid,
-                                        ZBI_PARTITION_GUID_LEN, &client));
-  device->reset(new BlockDevice(client, kBlockCount, kBlockSize));
+  ramdevice_client::Ramdisk::Options options;
+  if (guid) {
+    options.type_guid = {{}};
+    std::copy(guid, guid + ZBI_PARTITION_GUID_LEN, options.type_guid->begin());
+  }
+  zx::result ramdisk =
+      ramdevice_client::Ramdisk::CreateLegacy(kBlockSize, kBlockCount, devfs_root.get(), options);
+  ASSERT_OK(ramdisk);
+  device->reset(new BlockDevice(std::move(*ramdisk), kBlockCount, kBlockSize));
 }
 
 void BlockDevice::Create(const fbl::unique_fd& devfs_root, const uint8_t* guid,
                          uint64_t block_count, std::unique_ptr<BlockDevice>* device) {
-  ramdisk_client_t* client;
-  ASSERT_OK(ramdisk_create_at_with_guid(devfs_root.get(), kBlockSize, block_count, guid,
-                                        ZBI_PARTITION_GUID_LEN, &client));
-  device->reset(new BlockDevice(client, block_count, kBlockSize));
+  ramdevice_client::Ramdisk::Options options;
+  if (guid) {
+    options.type_guid = {{}};
+    std::copy(guid, guid + ZBI_PARTITION_GUID_LEN, options.type_guid->begin());
+  }
+  zx::result ramdisk =
+      ramdevice_client::Ramdisk::CreateLegacy(kBlockSize, block_count, devfs_root.get(), options);
+  ASSERT_OK(ramdisk);
+  device->reset(new BlockDevice(std::move(*ramdisk), block_count, kBlockSize));
 }
 
 void BlockDevice::Create(const fbl::unique_fd& devfs_root, const uint8_t* guid,
                          uint64_t block_count, uint32_t block_size,
                          std::unique_ptr<BlockDevice>* device) {
-  ramdisk_client_t* client;
-  ASSERT_OK(ramdisk_create_at_with_guid(devfs_root.get(), block_size, block_count, guid,
-                                        ZBI_PARTITION_GUID_LEN, &client));
-  device->reset(new BlockDevice(client, block_count, block_size));
+  ramdevice_client::Ramdisk::Options options;
+  if (guid) {
+    options.type_guid = {{}};
+    std::copy(guid, guid + ZBI_PARTITION_GUID_LEN, options.type_guid->begin());
+  }
+  zx::result ramdisk =
+      ramdevice_client::Ramdisk::CreateLegacy(block_size, block_count, devfs_root.get(), options);
+  ASSERT_OK(ramdisk);
+  device->reset(new BlockDevice(std::move(*ramdisk), block_count, block_size));
 }
 
 void BlockDevice::CreateFromVmo(const fbl::unique_fd& devfs_root, const uint8_t* guid, zx::vmo vmo,
                                 uint32_t block_size, std::unique_ptr<BlockDevice>* device) {
-  ramdisk_client_t* client;
   uint64_t block_count;
   ASSERT_OK(vmo.get_size(&block_count));
   block_count /= block_size;
-  ASSERT_OK(ramdisk_create_at_from_vmo_with_params(devfs_root.get(), vmo.release(), block_size,
-                                                   guid, ZBI_PARTITION_GUID_LEN, &client));
-  device->reset(new BlockDevice(client, block_count, block_size));
+  ramdevice_client::Ramdisk::Options options;
+  if (guid) {
+    options.type_guid = {{}};
+    std::copy(guid, guid + ZBI_PARTITION_GUID_LEN, options.type_guid->begin());
+  }
+  zx::result ramdisk = ramdevice_client::Ramdisk::CreateLegacyWithVmo(std::move(vmo), block_size,
+                                                                      devfs_root.get(), options);
+  ASSERT_OK(ramdisk);
+  device->reset(new BlockDevice(std::move(*ramdisk), block_count, block_size));
 }
 
 void BlockDevice::CreateWithGpt(const fbl::unique_fd& devfs_root, uint64_t block_count,

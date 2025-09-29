@@ -10,7 +10,7 @@ group("cpp") {
   public_deps = [ ":ramdevice-client" ]
 }
 
-shared_library("ramdevice-client") {
+source_set("ramdevice-client") {
   public_configs = [ ":headers_config" ]
   public = [
     "include/ramdevice-client/ramdisk.h",
@@ -21,22 +21,27 @@ shared_library("ramdevice-client") {
     "ramnand.cc",
   ]
   public_deps = [
+    # <ramdevice-client/ramdisk.h> has #include <fidl/fuchsia.hardware.block/cpp/wire.h>
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+
     # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.device/cpp/wire.h>
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
 
     # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
+
+    # <ramdevice-client/ramdisk.h> has #include <zircon/compiler.h>
+    "//zircon/system/ulib/zx",
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
-    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
-    "//sdk/lib/zbi-format",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/ddk",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
@@ -56,7 +61,7 @@ group("ramdevice-client-test") {
   ]
 }
 
-shared_library("ramdevice-client-test-lib") {
+source_set("ramdevice-client-test-lib") {
   testonly = true
   output_name = "ramdevice-client-test"
   visibility = [ ":*" ]
@@ -88,39 +93,4 @@ shared_library("ramdevice-client-test-lib") {
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
   ]
-  configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
-}
-
-static_library("ramdevice-client-static") {
-  public_configs = [ ":headers_config" ]
-  public = [
-    "include/ramdevice-client/ramdisk.h",
-    "include/ramdevice-client/ramnand.h",
-  ]
-  sources = [
-    "ramdisk.cc",
-    "ramnand.cc",
-  ]
-  public_deps = [
-    # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.device/cpp/wire.h>
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-
-    # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
-    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
-  ]
-  deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
-    "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
-    "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/device-watcher/cpp",
-    "//sdk/lib/fdio",
-    "//src/lib/ddk",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
-    "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/zx",
-  ]
-  configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
 }

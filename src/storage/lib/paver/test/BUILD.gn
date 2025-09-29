@@ -17,6 +17,7 @@ source_set("test-utils") {
     "//sdk/lib/fdio",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/storage/lib/paver",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/lib/ramdevice_client/cpp:ramdevice-client-test",
     "//src/storage/lib/vfs/cpp",
     "//zircon/kernel/lib/arch",

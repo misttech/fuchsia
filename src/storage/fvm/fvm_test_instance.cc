@@ -95,11 +95,11 @@ void DriverFvmInstance::SetUp() {
       device_watcher::RecursiveWaitForFile(devfs_root().get(), "sys/platform/ram-disk/ramctl"));
 }
 
-void DriverFvmInstance::TearDown() { ASSERT_OK(ramdisk_destroy(ramdisk_)); }
+void DriverFvmInstance::TearDown() { ramdisk_.Reset(); }
 
 void DriverFvmInstance::CreateRamdisk(uint64_t block_size, uint64_t block_count) {
-  if (ramdisk_ != nullptr) {
-    ASSERT_OK(ramdisk_destroy(ramdisk_));
+  if (ramdisk_.is_valid()) {
+    ramdisk_.Reset();
     // We assume if the caller didn't destroy the ramdisk itself it wants a completely new disk.
     vmo_ = {};
   }
@@ -108,10 +108,10 @@ void DriverFvmInstance::CreateRamdisk(uint64_t block_size, uint64_t block_count)
   }
   zx::vmo duplicate_vmo;
   ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo));
-  static uint8_t type_guid[16] = {0};
-  ASSERT_OK(ramdisk_create_at_from_vmo_with_params(devfs_root().get(), duplicate_vmo.release(),
-                                                   block_size, type_guid, sizeof(type_guid),
-                                                   &ramdisk_));
+  zx::result ramdisk = ramdevice_client::Ramdisk::CreateLegacyWithVmo(
+      std::move(duplicate_vmo), block_size, devfs_root_.get());
+  ASSERT_OK(ramdisk.status_value());
+  ramdisk_ = std::move(*ramdisk);
 }
 
 void DriverFvmInstance::CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) {
@@ -126,7 +126,9 @@ void DriverFvmInstance::CreateFvm(uint64_t block_size, uint64_t block_count, uin
 void DriverFvmInstance::StartFvm() {
   auto resp = fidl::WireCall(GetRamdiskControllerInterface())->Bind(kFvmDriverLib);
   ASSERT_OK(resp.status());
-  ASSERT_TRUE(resp->is_ok());
+  if (!resp->is_ok()) {
+    ASSERT_OK(resp->error_value());
+  }
 
   ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root().get(), GetFvmPath().c_str()));
 }
@@ -146,15 +148,14 @@ void DriverFvmInstance::RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t 
   uint32_t found_block_size = resp->value()->info.block_size;
   ASSERT_EQ(found_block_size, block_size);
 
-  ASSERT_OK(ramdisk_destroy(ramdisk_));
-  ramdisk_ = nullptr;
+  ramdisk_.Reset();
 
   zx::vmo vmo;
   ASSERT_OK(vmo_.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, block_count * block_size, &vmo));
   vmo_ = std::move(vmo);
 
-  CreateRamdisk(block_size, block_count);
-  StartFvm();
+  ASSERT_NO_FATAL_FAILURE(CreateRamdisk(block_size, block_count));
+  ASSERT_NO_FATAL_FAILURE(StartFvm());
 }
 
 fuchsia_hardware_block_volume::wire::VolumeManagerInfo DriverFvmInstance::GetFvmInfo() const {
@@ -201,16 +202,16 @@ void DriverFvmInstance::DestroyPartition(std::string_view label) const {
   ASSERT_OK(result->status);
 }
 
-fidl::UnownedClientEnd<fuchsia_hardware_block::Block> DriverFvmInstance::GetRamdiskPartition()
-    const {
-  return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
-      ramdisk_get_block_interface(ramdisk_));
+fidl::ClientEnd<fuchsia_hardware_block::Block> DriverFvmInstance::GetRamdiskPartition() const {
+  zx::result result = ramdisk_.ConnectBlock();
+  ZX_ASSERT(result.status_value() == ZX_OK);
+  EXPECT_OK(result);
+  return std::move(result).value();
 }
 
 fidl::UnownedClientEnd<fuchsia_device::Controller>
 DriverFvmInstance::GetRamdiskControllerInterface() const {
-  return fidl::UnownedClientEnd<fuchsia_device::Controller>(
-      ramdisk_get_block_controller_interface(ramdisk_));
+  return ramdisk_.LegacyController();
 }
 
 zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>>
@@ -231,9 +232,7 @@ zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartitionNoWa
   return DriverBlockConnector::Create(std::move(controller.value()));
 }
 
-std::string DriverFvmInstance::GetFvmPath() const {
-  return std::string(ramdisk_get_path(ramdisk_)) + "/fvm";
-}
+std::string DriverFvmInstance::GetFvmPath() const { return std::string(ramdisk_.path()) + "/fvm"; }
 
 class ComponentBlockConnector : public BlockConnector {
  public:
@@ -389,8 +388,11 @@ class ComponentFvmInstance : public FvmInstance {
     ASSERT_OK(fvm_->RemoveVolume(label));
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override {
-    return block_.borrow();
+  fidl::ClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override {
+    auto [block_client, block_server] =
+        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+    device_->Serve(std::move(block_server));
+    return fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel());
   }
 
  private:

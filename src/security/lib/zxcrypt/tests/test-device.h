@@ -268,7 +268,7 @@ class TestDevice final {
   driver_integration_test::IsolatedDevmgr devmgr_;
 
   // The ramdisk client
-  ramdisk_client_t* ramdisk_ = nullptr;
+  ramdevice_client::Ramdisk ramdisk_;
 
   // The pathname of the FVM partition.
   char fvm_part_path_[PATH_MAX];

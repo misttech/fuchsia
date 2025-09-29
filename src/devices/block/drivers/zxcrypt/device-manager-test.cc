@@ -110,17 +110,16 @@ TEST_F(ZxcryptInspect, ExportsGuid) {
   fbl::unique_fd devfs_root_fd = devmgr().devfs_root().duplicate();
 
   // Create a new ramdisk to stick our zxcrypt instance on.
-  ramdisk_client_t* ramdisk = nullptr;
-  ASSERT_EQ(ZX_OK, ramdisk_create_at(devmgr().devfs_root().get(), kBlockSz, kBlockCnt, &ramdisk));
-  auto cleanup = fit::defer([ramdisk]() { ASSERT_EQ(ZX_OK, ramdisk_destroy(ramdisk)); });
-  zx::result channel =
-      device_watcher::RecursiveWaitForFile(devfs_root_fd.get(), ramdisk_get_path(ramdisk));
+  zx::result<ramdevice_client::Ramdisk> ramdisk =
+      ramdevice_client::Ramdisk::CreateLegacy(kBlockSz, kBlockCnt, devmgr().devfs_root().get());
+  ASSERT_TRUE(ramdisk.is_ok());
+  std::string path = ramdisk->path();
+  zx::result channel = device_watcher::RecursiveWaitForFile(devfs_root_fd.get(), path.c_str());
   ASSERT_EQ(ZX_OK, channel.status_value());
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_device::Controller>::Create();
   {
-    fidl::UnownedClientEnd<fuchsia_device::Controller> client(
-        ramdisk_get_block_controller_interface(ramdisk));
+    fidl::UnownedClientEnd<fuchsia_device::Controller> client = ramdisk->LegacyController();
     ASSERT_EQ(
         ZX_OK,
         fidl::WireCall(client)->ConnectToController(std::move(controller_server_end)).status());

@@ -278,12 +278,6 @@ static_assert(kGptMetadataSize <= kAcceptableMinimumSize,
 
 class LibGptTest {
  public:
-  ~LibGptTest() {
-    if (ramdisk_ != nullptr) {
-      ramdisk_destroy(ramdisk_);
-    }
-  }
-
   // Test environment options.
   struct Options {
     // Path to the block device to use for the test. If empty, an internal ramdisk will
@@ -512,8 +506,10 @@ class LibGptTest {
 
   // Create and initialize and ramdisk.
   void InitRamDisk(const Options& options) {
-    ASSERT_OK(ramdisk_create(options.block_size, options.block_count, &ramdisk_));
-    InitDisk(ramdisk_get_path(ramdisk_));
+    zx::result ramdisk = ramdevice_client::Ramdisk::Create(options.block_size, options.block_count);
+    ASSERT_OK(ramdisk.status_value());
+    ramdisk_ = std::move(*ramdisk);
+    InitDisk(ramdisk_.path().c_str());
   }
 
   // Block size of the device.
@@ -529,7 +525,7 @@ class LibGptTest {
   std::unique_ptr<gpt::GptDevice> gpt_;
 
   // An optional ramdisk structure.
-  ramdisk_client_t* ramdisk_ = nullptr;
+  ramdevice_client::Ramdisk ramdisk_;
 
   // usable start block offset.
   uint64_t usable_start_block_ = UINT64_MAX;

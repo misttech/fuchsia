@@ -117,7 +117,7 @@ class MinfsFvmTest : public BaseFilesystemTest {
   zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>> GetVolumeManager() {
     // This expects to be set up with a RamDisk. The filesystem has some variants and this could be
     // on a RamNand, but then this code would need updating.
-    storage::RamDisk* ram_disk = fs().GetRamDisk();
+    ramdevice_client::Ramdisk* ram_disk = fs().GetRamDisk();
     if (ram_disk == nullptr) {
       return zx::error(ZX_ERR_BAD_STATE);
     }

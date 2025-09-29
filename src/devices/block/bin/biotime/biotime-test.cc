@@ -19,13 +19,14 @@ namespace {
 // measurement tool).  It runs biotime on a ramdisk and just checks that it
 // returns a success status.
 void run_biotime(fbl::Vector<const char*>&& args) {
-  ramdisk_client_t* ramdisk;
-  ASSERT_OK(device_watcher::RecursiveWaitForFile("/dev/sys/platform/ram-disk/ramctl"));
-  ASSERT_OK(ramdisk_create(1024, 100, &ramdisk));
-  auto cleanup = fit::defer([&] { EXPECT_OK(ramdisk_destroy(ramdisk)); });
+  ASSERT_OK(
+      device_watcher::RecursiveWaitForFile("/dev/sys/platform/ram-disk/ramctl").status_value());
+  zx::result ramdisk = ramdevice_client::Ramdisk::Create(1024, 100);
+  ASSERT_OK(ramdisk.status_value());
 
+  std::string path = ramdisk->path();
   args.insert(0, "/pkg/bin/biotime");
-  args.push_back(ramdisk_get_path(ramdisk));
+  args.push_back(path.c_str());
   args.push_back(nullptr);  // fdio_spawn() wants a null-terminated array.
 
   zx::process process;

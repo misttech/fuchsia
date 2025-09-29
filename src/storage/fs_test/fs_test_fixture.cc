@@ -4,9 +4,14 @@
 
 #include "src/storage/fs_test/fs_test_fixture.h"
 
+#include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
 #include <zircon/errors.h>
 
+#include <iostream>
+
 #include <gtest/gtest-spi.h>
+
+#include "src/storage/fs_test/fs_test.h"
 
 namespace fs_test {
 
@@ -25,13 +30,13 @@ void BaseFilesystemTest::RunSimulatedPowerCutTest(const PowerCutOptions& options
   // Make sure the test function runs without any failures.
   ASSERT_NO_FATAL_FAILURE(test_function());
 
-  ramdisk_block_write_counts_t counts;
-  ASSERT_EQ(ramdisk_get_block_counts(fs().GetRamDisk()->client(), &counts), ZX_OK);
+  zx::result counts = fs().GetRamDisk()->GetBlockCounts();
+  ASSERT_EQ(counts.status_value(), ZX_OK);
 
-  std::cout << "Total block count: " << counts.received << std::endl;
+  std::cout << "Total block count: " << counts->received << std::endl;
 
   // Now repeatedly stop writes after a certain block number.
-  for (uint64_t block_cut = 1; block_cut < counts.received; block_cut += options.stride) {
+  for (uint64_t block_cut = 1; block_cut < counts->received; block_cut += options.stride) {
     ASSERT_EQ(fs().GetRamDisk()->SleepAfter(block_cut).status_value(), ZX_OK);
     {
       // Ignore any test failures whilst we are doing this.

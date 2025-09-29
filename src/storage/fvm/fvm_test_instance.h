@@ -100,7 +100,7 @@ class FvmInstance {
   virtual void DestroyPartition(std::string_view label) const = 0;
 
   // Returns the block interface of the underlying ramdisk.
-  virtual fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const = 0;
+  virtual fidl::ClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const = 0;
 };
 
 class DriverFvmInstance : public FvmInstance {
@@ -117,7 +117,7 @@ class DriverFvmInstance : public FvmInstance {
       const AllocatePartitionRequest& request) const override;
   zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override;
   void DestroyPartition(std::string_view label) const override;
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override;
+  fidl::ClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override;
 
   fidl::UnownedClientEnd<fuchsia_device::Controller> GetRamdiskControllerInterface() const;
   const fbl::unique_fd& devfs_root() const { return devfs_root_; }
@@ -130,7 +130,7 @@ class DriverFvmInstance : public FvmInstance {
   std::unique_ptr<async::Loop> loop_;
   std::unique_ptr<component_testing::RealmRoot> realm_;
   fbl::unique_fd devfs_root_;
-  ramdisk_client_t* ramdisk_ = nullptr;
+  ramdevice_client::Ramdisk ramdisk_;
   zx::vmo vmo_;
 };
 

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <ramdevice-client/ramdisk.h>
 
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
-#include "src/storage/testing/ram_disk.h"
 
 namespace block_client {
 
@@ -13,10 +13,10 @@ namespace block_client {
 // messages with the block device.
 TEST(BlockClientRamdiskTest, WriteReadBlock) {
   constexpr int kBlockSize = 4096;
-  auto ram_disk = storage::RamDisk::Create(kBlockSize, 10);
+  auto ram_disk = ramdevice_client::Ramdisk::Create(kBlockSize, 10);
   ASSERT_EQ(ram_disk.status_value(), ZX_OK);
 
-  auto block = ram_disk->channel();
+  auto block = ram_disk->ConnectBlock();
   ASSERT_EQ(block.status_value(), ZX_OK);
 
   constexpr size_t max_count = 3;

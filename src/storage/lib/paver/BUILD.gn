@@ -56,7 +56,7 @@ source_set("paver-core") {
     "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/storage/gpt",
     "//src/storage/lib/fs_management",
-    "//src/storage/lib/ramdevice_client/cpp:ramdevice-client-static",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/lib/sparse/c:sparse",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/third_party/ulib/cksum",

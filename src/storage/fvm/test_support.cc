@@ -125,7 +125,6 @@ std::unique_ptr<RamdiskRef> RamdiskRef::Create(const fbl::unique_fd& devfs_root,
     return nullptr;
   }
 
-  ramdisk_client_t* client;
   if (!vmo) {
     zx::vmo created_vmo;
     if (zx_status_t status = zx::vmo::create(block_size * block_count, 0, &created_vmo);
@@ -135,24 +134,21 @@ std::unique_ptr<RamdiskRef> RamdiskRef::Create(const fbl::unique_fd& devfs_root,
     }
     vmo = std::move(created_vmo);
   }
-  static uint8_t type_guid[16] = {0};
   zx::vmo duplicate_vmo;
   if (zx_status_t status = vmo->duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo); status != ZX_OK) {
     ADD_FAILURE("Failed to duplicate VMO. Reason: %s", zx_status_get_string(status));
     return nullptr;
   }
-  if (zx_status_t status =
-          ramdisk_create_at_from_vmo_with_params(devfs_root.get(), duplicate_vmo.release(),
-                                                 block_size, type_guid, sizeof(type_guid), &client);
-      status != ZX_OK) {
-    ADD_FAILURE("Failed to create ramdisk. Reason: %s", zx_status_get_string(status));
+  zx::result<ramdevice_client::Ramdisk> ramdisk;
+  if (ramdisk = ramdevice_client::Ramdisk::CreateLegacyWithVmo(std::move(duplicate_vmo), block_size,
+                                                               devfs_root.get());
+      ramdisk.is_error()) {
+    ADD_FAILURE("Failed to create ramdisk. Reason: %s", ramdisk.status_string());
     return nullptr;
   }
-  const char* path = ramdisk_get_path(client);
-  return std::make_unique<RamdiskRef>(devfs_root, block_size, path, *std::move(vmo), client);
+  return std::make_unique<RamdiskRef>(devfs_root, block_size, std::move(vmo).value(),
+                                      std::move(*ramdisk));
 }
-
-RamdiskRef::~RamdiskRef() { ramdisk_destroy(ramdisk_client_); }
 
 zx::result<std::unique_ptr<RamdiskRef>> RamdiskRef::Clone(uint64_t target_size) {
   zx::vmo vmo;
@@ -289,13 +285,13 @@ std::unique_ptr<FvmAdapter> FvmAdapter::CreateGrowable(const fbl::unique_fd& dev
   }
 
   {
-    zx::result channel = GetChannel<fuchsia_hardware_block::Block>(device);
-    if (channel.is_error()) {
-      ADD_FAILURE("ConnectAt(%s): %s", device->path(), channel.status_string());
+    zx::result block = reinterpret_cast<RamdiskRef*>(device)->Connect();
+    if (block.is_error()) {
+      ADD_FAILURE("ConnectAt(%s): %s", device->path(), block.status_string());
       return nullptr;
     }
     if (zx_status_t status =
-            fs_management::FvmInitPreallocated(channel.value(), initial_block_count * block_size,
+            fs_management::FvmInitPreallocated(block.value(), initial_block_count * block_size,
                                                maximum_block_count * block_size, slice_size);
         status != ZX_OK) {
       ADD_FAILURE("FvmInitPreallocated(%s): %s", device->path(), zx_status_get_string(status));

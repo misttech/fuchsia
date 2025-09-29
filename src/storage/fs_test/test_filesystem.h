@@ -59,7 +59,7 @@ class TestFilesystem {
   RamDevice* GetRamDevice() const { return filesystem_->GetRamDevice(); }
 
   // Returns the ramdisk, or nullptr if one isn't being used.
-  storage::RamDisk* GetRamDisk() const { return filesystem_->GetRamDisk(); }
+  ramdevice_client::Ramdisk* GetRamDisk() const { return filesystem_->GetRamDisk(); }
 
   // Returns the ram-nand device, or nullptr if one isn't being used.
   ramdevice_client::RamNand* GetRamNand() const { return filesystem_->GetRamNand(); }

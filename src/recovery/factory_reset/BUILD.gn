@@ -107,7 +107,6 @@ test("factory_reset_unittests") {
 
   deps = [
     ":lib",
-    "////src/lib/testing/loop_fixture",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_testing",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
@@ -117,6 +116,7 @@ test("factory_reset_unittests") {
     "//sdk/lib/component/incoming/cpp",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
     "//src/lib/uuid",
     "//src/security/lib/fcrypto",
     "//src/security/lib/zxcrypt:zxcrypt-client",

@@ -52,7 +52,6 @@
 #include <fbl/string.h>
 #include <fbl/unique_fd.h>
 #include <fbl/vector.h>
-#include <ramdevice-client/ramdisk.h>
 #include <zxtest/zxtest.h>
 
 #include "lib/fidl/cpp/wire/internal/transport_channel.h"
@@ -90,7 +89,7 @@ class FvmTest : public zxtest::TestWithParam<fvm::FvmImplementation> {
 
   void TearDown() override { instance_->TearDown(); }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
+  fidl::ClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
     return instance_->GetRamdiskPartition();
   }
 
@@ -192,7 +191,7 @@ class VmoBuf;
 
 class VmoClient : public fbl::RefCounted<VmoClient> {
  public:
-  explicit VmoClient(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device);
+  explicit VmoClient(fidl::ClientEnd<fuchsia_hardware_block::Block> device);
   ~VmoClient() = default;
 
   void CheckWrite(VmoBuf& vbuf, size_t buf_off, size_t dev_off, size_t len);
@@ -204,12 +203,12 @@ class VmoClient : public fbl::RefCounted<VmoClient> {
     return client_->RegisterVmo(vmo);
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device() const { return device_; }
+  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device() const { return device_.borrow(); }
 
   static groupid_t group() { return 0; }
 
  private:
-  const fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device_;
+  fidl::ClientEnd<fuchsia_hardware_block::Block> device_;
   uint32_t block_size_;
   std::unique_ptr<block_client::Client> client_;
 };
@@ -245,10 +244,10 @@ class VmoBuf {
   storage::OwnedVmoid vmoid_;
 };
 
-VmoClient::VmoClient(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device)
-    : device_(device) {
+VmoClient::VmoClient(fidl::ClientEnd<fuchsia_hardware_block::Block> device)
+    : device_(std::move(device)) {
   {
-    const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
+    const fidl::WireResult result = fidl::WireCall(device_.borrow())->GetInfo();
     ASSERT_OK(result.status());
     const fit::result response = result.value();
     ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
@@ -257,7 +256,7 @@ VmoClient::VmoClient(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> devic
 
   auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
 
-  const fidl::Status result = fidl::WireCall(device)->OpenSession(std::move(server));
+  const fidl::Status result = fidl::WireCall(device_.borrow())->OpenSession(std::move(server));
   ASSERT_OK(result.status());
 
   const fidl::WireResult fifo_result = fidl::WireCall(session)->GetFifo();
@@ -394,8 +393,9 @@ TEST_P(FvmTest, TestTooSmall) {
 
   CreateRamdisk(block_size, block_count);
   size_t slice_size = block_size * block_count;
-  ASSERT_EQ(fs_management::FvmInit(ramdisk_block_interface(), slice_size), ZX_ERR_NO_SPACE);
-  ValidateFVM(ramdisk_block_interface(), ValidationResult::Corrupted);
+  auto ramdisk = ramdisk_block_interface();
+  ASSERT_EQ(fs_management::FvmInit(ramdisk.borrow(), slice_size), ZX_ERR_NO_SPACE);
+  ValidateFVM(ramdisk.borrow(), ValidationResult::Corrupted);
 }
 
 // Test initializing the FVM on a large partition, with metadata size > the max transfer size
@@ -408,17 +408,18 @@ TEST_P(FvmTest, TestLarge) {
   fvm::Header fvm_header =
       fvm::Header::FromDiskSize(fvm::kMaxUsablePartitions, kBlockSize * kBlockCount, kSliceSize);
 
-  const fidl::WireResult result = fidl::WireCall(ramdisk_block_interface())->GetInfo();
+  auto ramdisk = ramdisk_block_interface();
+  const fidl::WireResult result = fidl::WireCall(ramdisk.borrow())->GetInfo();
   ASSERT_OK(result.status());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
   const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
   ASSERT_LT(block_info.max_transfer_size, fvm_header.GetMetadataAllocatedBytes());
 
-  ASSERT_OK(fs_management::FvmInit(ramdisk_block_interface(), kSliceSize));
+  ASSERT_OK(fs_management::FvmInit(ramdisk.borrow(), kSliceSize));
 
   StartFVM();
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk.borrow());
 }
 
 // Load and unload an empty FVM
@@ -428,7 +429,7 @@ TEST_P(FvmTest, TestEmpty) {
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
   CreateFVM(kBlockSize, kBlockCount, kSliceSize);
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test allocating a single partition
@@ -466,7 +467,7 @@ TEST_P(FvmTest, TestAllocateOne) {
   vp = {};
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test Reading and writing with RemoteBlockDevice helpers
@@ -491,7 +492,7 @@ TEST_P(FvmTest, TestReadWriteSingle) {
   vp = {};
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test allocating a collection of partitions
@@ -535,7 +536,7 @@ TEST_P(FvmTest, TestAllocateMany) {
   sys = {};
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test allocating additional slices to a vpartition.
@@ -670,7 +671,7 @@ TEST_P(FvmTest, TestVPartitionExtend) {
   ASSERT_NOT_OK(vp2_or, "Expected VPart allocation failure");
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test allocating very sparse VPartition
@@ -738,7 +739,7 @@ TEST_P(FvmTest, TestVPartitionExtendSparse) {
 
   vp = {};
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test removing slices from a VPartition.
@@ -894,7 +895,7 @@ TEST_P(FvmTest, TestVPartitionShrink) {
   }
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test splitting a contiguous slice extent into multiple parts
@@ -1219,7 +1220,7 @@ TEST_P(FvmTest, TestSliceAccessContiguous) {
   });
   ASSERT_OK(vp_or);
   std::unique_ptr<fvm::BlockConnector> vp = *std::move(vp_or);
-  fidl::UnownedClientEnd device = vp->as_block();
+  fidl::ClientEnd device = vp->connect_block();
 
   const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
   ASSERT_OK(result.status());
@@ -1231,7 +1232,7 @@ TEST_P(FvmTest, TestSliceAccessContiguous) {
   size_t last_block = (slice_size / block_info.block_size) - 1;
 
   {
-    auto vc = fbl::MakeRefCounted<VmoClient>(device);
+    auto vc = fbl::MakeRefCounted<VmoClient>(vp->connect_block());
     VmoBuf vb(vc, block_info.block_size * static_cast<size_t>(2));
     vc->CheckWrite(vb, 0, block_info.block_size * last_block, block_info.block_size);
     vc->CheckRead(vb, 0, block_info.block_size * last_block, block_info.block_size);
@@ -1287,7 +1288,7 @@ TEST_P(FvmTest, TestSliceAccessMany) {
   ASSERT_OK(vp_or);
   std::unique_ptr<fvm::BlockConnector> vp = *std::move(vp_or);
 
-  fidl::UnownedClientEnd device = vp->as_block();
+  fidl::ClientEnd device = vp->connect_block();
 
   const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
   ASSERT_OK(result.status());
@@ -1297,7 +1298,7 @@ TEST_P(FvmTest, TestSliceAccessMany) {
   ASSERT_EQ(block_info.block_size, kBlockSize);
 
   {
-    auto vc = fbl::MakeRefCounted<VmoClient>(device);
+    auto vc = fbl::MakeRefCounted<VmoClient>(vp->connect_block());
     VmoBuf vb(vc, kSliceSize * 3);
 
     // Access the first slice
@@ -1392,7 +1393,7 @@ TEST_P(FvmTest, TestSliceAccessNonContiguousPhysical) {
     // This is the last 'accessible' block.
     size_t last_block = (vparts[i].slices_used * (kSliceSize / block_info.block_size)) - 1;
 
-    auto vc = fbl::MakeRefCounted<VmoClient>(vparts[i].partition->as_block());
+    auto vc = fbl::MakeRefCounted<VmoClient>(vparts[i].partition->connect_block());
     VmoBuf vb(vc, block_info.block_size * static_cast<size_t>(2));
 
     vc->CheckWrite(vb, 0, block_info.block_size * last_block, block_info.block_size);
@@ -1436,7 +1437,7 @@ TEST_P(FvmTest, TestSliceAccessNonContiguousPhysical) {
     ASSERT_GE(vparts[i].slices_used, 5);
 
     {
-      auto vc = fbl::MakeRefCounted<VmoClient>(vparts[i].partition->as_block());
+      auto vc = fbl::MakeRefCounted<VmoClient>(vparts[i].partition->connect_block());
       VmoBuf vb(vc, kSliceSize * 4);
 
       // Try accessing 3 noncontiguous slices at once, with the
@@ -1478,7 +1479,7 @@ TEST_P(FvmTest, TestSliceAccessNonContiguousPhysical) {
   }
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test allocating and accessing slices which are
@@ -1566,7 +1567,7 @@ TEST_P(FvmTest, TestSliceAccessNonContiguousVirtual) {
   }
 
   FVMCheckSliceSize(kSliceSize);
-  ValidateFVM(ramdisk_block_interface());
+  ValidateFVM(ramdisk_block_interface().borrow());
 }
 
 // Test that the FVM driver actually persists updates.
@@ -2062,11 +2063,11 @@ TEST_P(FvmTest, TestCorruptionOk) {
       fvm::Header::FromDiskSize(fvm::kMaxUsablePartitions, kBlockSize * kBlockCount, kSliceSize);
   auto off = static_cast<off_t>(header.GetSuperblockOffset(fvm::SuperblockType::kSecondary));
   uint8_t buf[fvm::kBlockSize];
-  fidl::UnownedClientEnd device = ramdisk_block_interface();
-  ASSERT_OK(block_client::SingleReadBytes(device, buf, sizeof(buf), off));
+  fidl::ClientEnd device = ramdisk_block_interface();
+  ASSERT_OK(block_client::SingleReadBytes(device.borrow(), buf, sizeof(buf), off));
   // Modify an arbitrary byte (not the magic bits; we still want it to mount!)
   buf[128]++;
-  ASSERT_OK(block_client::SingleWriteBytes(device, buf, sizeof(buf), off));
+  ASSERT_OK(block_client::SingleWriteBytes(device.borrow(), buf, sizeof(buf), off));
 
   FVMRebind();
 
@@ -2129,10 +2130,10 @@ TEST_P(FvmTest, TestCorruptionRegression) {
   // The 'primary' was the last one written, so the backup will be used.
   off_t off = 0;
   uint8_t buf[fvm::kBlockSize];
-  fidl::UnownedClientEnd device = ramdisk_block_interface();
-  ASSERT_OK(block_client::SingleReadBytes(device, buf, sizeof(buf), off));
+  fidl::ClientEnd device = ramdisk_block_interface();
+  ASSERT_OK(block_client::SingleReadBytes(device.borrow(), buf, sizeof(buf), off));
   buf[128]++;
-  ASSERT_OK(block_client::SingleWriteBytes(device, buf, sizeof(buf), off));
+  ASSERT_OK(block_client::SingleWriteBytes(device.borrow(), buf, sizeof(buf), off));
 
   FVMRebind();
 
@@ -2191,31 +2192,31 @@ TEST_P(FvmTest, TestCorruptionUnrecoverable) {
   // The 'primary' was the last one written, so the backup will be used.
   off_t off = 0;
   uint8_t buf[fvm::kBlockSize];
-  fidl::UnownedClientEnd device = ramdisk_block_interface();
-  ASSERT_OK(block_client::SingleReadBytes(device, buf, sizeof(buf), off));
+  fidl::ClientEnd device = ramdisk_block_interface();
+  ASSERT_OK(block_client::SingleReadBytes(device.borrow(), buf, sizeof(buf), off));
   buf[128]++;
-  ASSERT_OK(block_client::SingleWriteBytes(device, buf, sizeof(buf), off));
+  ASSERT_OK(block_client::SingleWriteBytes(device.borrow(), buf, sizeof(buf), off));
 
   fvm::Header header =
       fvm::Header::FromDiskSize(fvm::kMaxUsablePartitions, kBlockSize * kBlockCount, kSliceSize);
   off = static_cast<off_t>(header.GetSuperblockOffset(fvm::SuperblockType::kSecondary));
-  ASSERT_OK(block_client::SingleReadBytes(device, buf, sizeof(buf), off));
+  ASSERT_OK(block_client::SingleReadBytes(device.borrow(), buf, sizeof(buf), off));
   buf[128]++;
-  ASSERT_OK(block_client::SingleWriteBytes(device, buf, sizeof(buf), off));
+  ASSERT_OK(block_client::SingleWriteBytes(device.borrow(), buf, sizeof(buf), off));
 
-  ValidateFVM(ramdisk_block_interface(), ValidationResult::Corrupted);
+  ValidateFVM(ramdisk_block_interface().borrow(), ValidationResult::Corrupted);
 }
 
 // Tests the FVM checker against a just-initialized FVM.
 TEST_P(FvmTest, TestCheckNewFVM) {
   CreateFVM(512, 1 << 20, 64LU * (1 << 20));
-  fidl::UnownedClientEnd device = ramdisk_block_interface();
-  const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
+  fidl::ClientEnd device = ramdisk_block_interface();
+  const fidl::WireResult result = fidl::WireCall(device.borrow())->GetInfo();
   ASSERT_OK(result.status());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
   const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
-  fvm::Checker checker(device, block_info.block_size, true);
+  fvm::Checker checker(device.borrow(), block_info.block_size, true);
   ASSERT_TRUE(checker.Validate());
 }
 
@@ -2228,8 +2229,8 @@ TEST_P(FvmTest, TestPreventDuplicateDeviceNames) {
   // When a partition is destroyed, the slot in FVM is synchronously freed but the device is
   // asynchronously removed. DFv2 prevents multiple child devices with the same name from being
   // bound. This test rapidly allocates and destroys the same partition to try and get a race
-  // between the new device being bound and the old device being removed to try and get FVM to bind
-  // multiple devices with the same name.
+  // between the new device being bound and the old device being removed to try and get FVM to
+  // bind multiple devices with the same name.
   for (int i = 0; i < 10; ++i) {
     zx::result vp_or = AllocatePartition({
         .type = kTestPartDataGuid,

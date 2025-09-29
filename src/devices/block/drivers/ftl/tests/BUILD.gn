@@ -86,6 +86,7 @@ test("ftl-integration") {
     "//sdk/lib/fdio",
     "//sdk/lib/zxio",
     "//src/devices/testing/driver-integration-test-shim",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/lib/ramdevice_client/cpp:ramdevice-client-test",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",

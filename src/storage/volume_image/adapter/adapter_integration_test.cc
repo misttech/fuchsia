@@ -32,7 +32,6 @@
 #include "src/storage/lib/fs_management/cpp/format.h"
 #include "src/storage/lib/fs_management/cpp/fvm.h"
 #include "src/storage/testing/fvm.h"
-#include "src/storage/testing/ram_disk.h"
 #include "src/storage/volume_image/adapter/blobfs_partition.h"
 #include "src/storage/volume_image/adapter/empty_partition.h"
 #include "src/storage/volume_image/adapter/minfs_partition.h"
@@ -196,23 +195,23 @@ fpromise::result<WriteResult, std::string> WriteFvmImage(const FvmDescriptor& fv
   return fpromise::ok(WriteResult{std::move(fvm_vmo), std::move(fvm_writer)});
 }
 
-fpromise::result<storage::RamDisk, std::string> LaunchRamdisk(zx::vmo& fvm_vmo) {
+fpromise::result<ramdevice_client::Ramdisk, std::string> LaunchRamdisk(zx::vmo& fvm_vmo) {
   zx::vmo ramdisk_vmo;
   if (auto result = fvm_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &ramdisk_vmo); result != ZX_OK) {
     return fpromise::error("Failed to extend fvm image vmo to block boundary. Error Code: " +
                            std::to_string(result) + ".");
   }
-  auto ramdisk_or = storage::RamDisk::CreateWithVmo(std::move(ramdisk_vmo), kBlockSize);
-  if (ramdisk_or.is_error()) {
-    return fpromise::error("Failed to create ramdisk for FVM. Error: " +
-                           std::string(ramdisk_or.status_string()) + ".");
+  zx::result ramdisk = ramdevice_client::Ramdisk::CreateWithVmo(std::move(ramdisk_vmo), kBlockSize);
+  if (ramdisk.is_error()) {
+    return fpromise::error(
+        "Failed to create ramdisk for FVM. Error: " + std::string(ramdisk.status_string()) + ".");
   }
-  auto ramdisk = std::move(ramdisk_or.value());
 
-  return fpromise::ok(std::move(ramdisk));
+  return fpromise::ok(std::move(*ramdisk));
 }
 
-void CheckPartitionsInRamdisk(const RamDisk& ramdisk, const FvmDescriptor& fvm_descriptor) {
+void CheckPartitionsInRamdisk(const ramdevice_client::Ramdisk& ramdisk,
+                              const FvmDescriptor& fvm_descriptor) {
   for (const auto& partition : fvm_descriptor.partitions()) {
     zx::result instance = OpenFvmPartition(ramdisk.path(), partition.volume().name);
     ASSERT_EQ(instance.status_value(), ZX_OK);

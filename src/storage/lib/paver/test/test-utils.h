@@ -99,21 +99,19 @@ class BlockDevice {
                             const std::vector<PartitionDescription>& init_partitions,
                             std::unique_ptr<BlockDevice>* device);
 
-  ~BlockDevice() { ramdisk_destroy(client_); }
-
   fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_interface() const {
     return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
-        ramdisk_get_block_interface(client_));
+        ramdisk_get_block_interface(ramdisk_.client()));
   }
 
   fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume_interface() const {
     return fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume>(
-        ramdisk_get_block_interface(client_));
+        ramdisk_get_block_interface(ramdisk_.client()));
   }
 
   fidl::UnownedClientEnd<fuchsia_device::Controller> block_controller_interface() const {
     return fidl::UnownedClientEnd<fuchsia_device::Controller>(
-        ramdisk_get_block_controller_interface(client_));
+        ramdisk_get_block_controller_interface(ramdisk_.client()));
   }
 
   fidl::ClientEnd<fuchsia_device::Controller> ConnectToController() const {
@@ -133,10 +131,10 @@ class BlockDevice {
   void Read(const zx::vmo& vmo, size_t size, size_t dev_offset, size_t vmo_offset) const;
 
  private:
-  BlockDevice(ramdisk_client_t* client, uint64_t block_count, uint32_t block_size)
-      : client_(client), block_count_(block_count), block_size_(block_size) {}
+  BlockDevice(ramdevice_client::Ramdisk ramdisk, uint64_t block_count, uint32_t block_size)
+      : ramdisk_(std::move(ramdisk)), block_count_(block_count), block_size_(block_size) {}
 
-  ramdisk_client_t* client_;
+  ramdevice_client::Ramdisk ramdisk_;
   const uint64_t block_count_;
   const uint32_t block_size_;
 };

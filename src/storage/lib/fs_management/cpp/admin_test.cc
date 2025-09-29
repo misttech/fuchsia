@@ -17,7 +17,6 @@
 #include "src/storage/lib/fs_management/cpp/format.h"
 #include "src/storage/lib/fs_management/cpp/mkfs_with_default.h"
 #include "src/storage/lib/fs_management/cpp/mount.h"
-#include "src/storage/testing/ram_disk.h"
 
 namespace fs_management {
 namespace {
@@ -73,10 +72,10 @@ class OutgoingDirectoryFixture : public testing::Test {
         component_ = fs_management::FsComponent::FromDiskFormat(format_);
     }
 
-    if (!ramdisk_.client()) {
-      auto ramdisk_or = storage::RamDisk::Create(512, 1 << 17);
-      ASSERT_EQ(ramdisk_or.status_value(), ZX_OK);
-      ramdisk_ = std::move(*ramdisk_or);
+    if (!ramdisk_.is_valid()) {
+      zx::result ramdisk = ramdevice_client::Ramdisk::Create(512, 1 << 17);
+      ASSERT_EQ(ramdisk.status_value(), ZX_OK);
+      ramdisk_ = std::move(*ramdisk);
 
       zx_status_t status;
       if (format_ == kDiskFormatFxfs) {
@@ -94,7 +93,7 @@ class OutgoingDirectoryFixture : public testing::Test {
           << zx_status_get_string(status);
     }
 
-    zx::result device = ramdisk_.channel();
+    zx::result device = ramdisk_.ConnectBlock();
     ASSERT_EQ(device.status_value(), ZX_OK);
 
     if (format_ == kDiskFormatFxfs) {
@@ -127,7 +126,7 @@ class OutgoingDirectoryFixture : public testing::Test {
   }
 
  private:
-  storage::RamDisk ramdisk_;
+  ramdevice_client::Ramdisk ramdisk_;
   DiskFormat format_;
   Mode mode_;
   std::optional<fs_management::FsComponent> component_;

@@ -101,8 +101,6 @@ class FactoryResetTest : public gtest::RealLoopFixture {
     CreateFvmPartition();
   }
 
-  void TearDown() override { ASSERT_EQ(ramdisk_destroy(ramdisk_client_), ZX_OK); }
-
   void WithPartitionHasFormat(void (*fn)(fs_management::DiskFormat)) {
     fdio_cpp::UnownedFdioCaller caller(devfs_root_fd());
     zx::result channel =
@@ -239,19 +237,20 @@ class FactoryResetTest : public gtest::RealLoopFixture {
 
   void CreateRamdisk() {
     ASSERT_EQ(WaitForDevice(kRamCtlPath).status_value(), ZX_OK);
-    ASSERT_EQ(ramdisk_create_at(devfs_root_fd().get(), kBlockSize, kBlockCount, &ramdisk_client_),
-              ZX_OK);
+    zx::result<ramdevice_client::Ramdisk> ramdisk =
+        ramdevice_client::Ramdisk::CreateLegacy(kBlockSize, kBlockCount, devfs_root_fd().get());
+    ASSERT_EQ(ramdisk.status_value(), ZX_OK);
+    ramdisk_ = std::move(*ramdisk);
+    zx::result block = ramdisk_.ConnectBlock();
+    ASSERT_EQ(block.status_value(), ZX_OK);
     ASSERT_EQ(
-        fs_management::FvmInitPreallocated(fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
-                                               ramdisk_get_block_interface(ramdisk_client_)),
-                                           kDeviceSize, kDeviceSize, kSliceSize),
+        fs_management::FvmInitPreallocated(block.value(), kDeviceSize, kDeviceSize, kSliceSize),
         ZX_OK);
   }
 
   void BindFvm() {
     const std::string_view driver = "fvm.cm";
-    fidl::UnownedClientEnd<fuchsia_device::Controller> channel(
-        ramdisk_get_block_controller_interface(ramdisk_client_));
+    fidl::UnownedClientEnd<fuchsia_device::Controller> channel = ramdisk_.LegacyController();
     const fidl::WireResult result =
         fidl::WireCall(channel)->Bind(fidl::StringView::FromExternal(driver));
     ASSERT_TRUE(result->is_ok()) << result.FormatDescription();
@@ -261,8 +260,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
 
   void CreateFvmPartition() {
     BindFvm();
-    char fvm_path[PATH_MAX];
-    snprintf(fvm_path, PATH_MAX, "%s/fvm", ramdisk_get_path(ramdisk_client_));
+    std::string fvm_path = ramdisk_.path() + "/fvm";
     zx::result channel = WaitForDevice(fvm_path);
     ASSERT_EQ(channel.status_value(), ZX_OK);
 
@@ -287,7 +285,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
     return device_watcher::RecursiveWaitForFile(devfs_root_fd().get(), path.c_str());
   }
 
-  ramdisk_client_t* ramdisk_client_;
+  ramdevice_client::Ramdisk ramdisk_;
   std::string fvm_block_path_;
   IsolatedDevmgr devmgr_;
 };

@@ -12,8 +12,7 @@
 #include <lib/fdio/directory.h>
 
 #include <gtest/gtest.h>
-
-#include "src/storage/testing/ram_disk.h"
+#include <ramdevice-client/ramdisk.h>
 
 namespace f2fs {
 namespace {
@@ -65,9 +64,10 @@ class F2fsComponentTest : public testing::Test {
         << "destroy error: " << static_cast<uint32_t>(destroy_res->error_value());
   }
 
-  void CreateRamDisk(int block_size = kBlockSize, uint64_t block_count = kBlockCount,
-                     const storage::RamDisk::Options& options = storage::RamDisk::Options{}) {
-    zx::result ramdisk = storage::RamDisk::Create(block_size, block_count);
+  void CreateRamDisk(
+      int block_size = kBlockSize, uint64_t block_count = kBlockCount,
+      const ramdevice_client::Ramdisk::Options& options = ramdevice_client::Ramdisk::Options{}) {
+    zx::result ramdisk = ramdevice_client::Ramdisk::Create(block_size, block_count);
     ASSERT_EQ(ramdisk.status_value(), ZX_OK);
     ramdisk_ = std::move(*ramdisk);
   }
@@ -92,7 +92,7 @@ class F2fsComponentTest : public testing::Test {
   }
 
  private:
-  storage::RamDisk ramdisk_;
+  ramdevice_client::Ramdisk ramdisk_;
   fidl::WireSyncClient<fuchsia_component::Realm> realm_;
   fidl::WireSyncClient<fuchsia_fs_startup::Startup> startup_client_;
   fidl::ClientEnd<fuchsia_io::Directory> exposed_dir_;

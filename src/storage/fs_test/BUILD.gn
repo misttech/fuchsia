@@ -50,6 +50,7 @@ static_library("fs_test") {
     "//sdk/lib/diagnostics/reader/cpp:archive_reader",
     "//src/storage/blobfs",
     "//src/storage/lib/fs_management",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/testing:storage_driver_test_support",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",

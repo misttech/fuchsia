@@ -138,26 +138,29 @@ class RamdiskRef final : public BlockDeviceAdapter {
                                             uint64_t block_count,
                                             std::optional<zx::vmo> vmo = std::nullopt);
 
-  RamdiskRef(const fbl::unique_fd& devfs_root, uint64_t block_size, const std::string& path,
-             zx::vmo vmo, ramdisk_client_t* client)
-      : BlockDeviceAdapter(devfs_root, path),
-        ramdisk_client_(client),
-        block_size_(block_size),
-        vmo_(std::move(vmo)) {}
+  RamdiskRef(const fbl::unique_fd& devfs_root, uint64_t block_size, zx::vmo vmo,
+             ramdevice_client::Ramdisk ramdisk)
+      : BlockDeviceAdapter(devfs_root, ramdisk.path()),
+        ramdisk_(std::move(ramdisk)),
+        vmo_(std::move(vmo)),
+        block_size_(block_size) {}
   RamdiskRef(const RamdiskRef&) = delete;
   RamdiskRef(RamdiskRef&&) = delete;
   RamdiskRef& operator=(const RamdiskRef&) = delete;
   RamdiskRef& operator=(RamdiskRef&&) = delete;
-  ~RamdiskRef() final;
 
   // Clones this ramdisk into a new ram-disk with given `target_size`.
   zx::result<std::unique_ptr<RamdiskRef>> Clone(uint64_t target_size);
 
+  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> Connect() const {
+    return ramdisk_.ConnectBlock();
+  }
+
  private:
   // Only set when a ramdisk is created.
-  ramdisk_client_t* ramdisk_client_ = nullptr;
-  uint64_t block_size_;
+  ramdevice_client::Ramdisk ramdisk_;
   zx::vmo vmo_;
+  uint64_t block_size_;
 };
 
 // Wrapper over a VPartitionAdapter, that provides common methods using in fvm-tests.

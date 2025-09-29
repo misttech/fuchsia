@@ -33,8 +33,6 @@ source_set("storage_driver_test_support") {
   sources = [
     "fvm.cc",
     "fvm.h",
-    "ram_disk.cc",
-    "ram_disk.h",
     "zxcrypt.cc",
     "zxcrypt.h",
   ]

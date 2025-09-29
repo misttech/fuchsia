@@ -26,7 +26,7 @@ class FvmDriverTest : public zxtest::Test {
     return instance_->GetRamdiskControllerInterface();
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
+  fidl::ClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
     return instance_->GetRamdiskPartition();
   }
 
@@ -35,7 +35,7 @@ class FvmDriverTest : public zxtest::Test {
   void StartFVM() { instance_->StartFvm(); }
 
   void RestartFVMWithNewDiskSize(uint64_t block_size, uint64_t block_count) {
-    instance_->RestartFvmWithNewDiskSize(block_size, block_count);
+    ASSERT_NO_FATAL_FAILURE(instance_->RestartFvmWithNewDiskSize(block_size, block_count));
   }
 
   void CreateFVM(uint64_t block_size, uint64_t block_count, uint64_t slice_size) {
@@ -222,7 +222,7 @@ TEST_F(FvmDriverTest, TestAbortDriverLoadSmallDevice) {
   ASSERT_EQ(resp->error_value(), ZX_ERR_INTERNAL);
 
   // Resize the disk and make sure it starts successfully. This asserts on failures.
-  RestartFVMWithNewDiskSize(kBlockSize, kFvmPartitionSize / kBlockSize);
+  ASSERT_NO_FATAL_FAILURE(RestartFVMWithNewDiskSize(kBlockSize, kFvmPartitionSize / kBlockSize));
 }
 
 }  // namespace

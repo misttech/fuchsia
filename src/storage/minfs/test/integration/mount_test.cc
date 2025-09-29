@@ -42,7 +42,6 @@
 #include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/runner.h"
-#include "src/storage/testing/ram_disk.h"
 
 namespace minfs {
 namespace {
@@ -51,9 +50,10 @@ template <bool repairable>
 class MountTestTemplate : public testing::Test {
  public:
   void SetUp() final {
-    ramdisk_ = storage::RamDisk::Create(/*block_size=*/512, /*block_count=*/1 << 16).value();
+    ramdisk_ =
+        ramdevice_client::Ramdisk::Create(/*block_size=*/512, /*block_count=*/1 << 16).value();
 
-    ramdisk_path_ = ramdisk_->path();
+    ramdisk_path_ = ramdisk_.path();
     auto component = fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatMinfs);
     ASSERT_EQ(fs_management::Mkfs(ramdisk_path_.c_str(), component, fs_management::MkfsOptions()),
               0);
@@ -97,7 +97,7 @@ class MountTestTemplate : public testing::Test {
   void TearDown() final { Unmount(); }
 
  protected:
-  ramdisk_client_t* ramdisk() const { return ramdisk_->client(); }
+  ramdisk_client_t* ramdisk() const { return ramdisk_.client(); }
 
   const char* ramdisk_path() const { return ramdisk_path_.c_str(); }
 
@@ -149,7 +149,7 @@ class MountTestTemplate : public testing::Test {
 
  private:
   bool unmounted_ = false;
-  std::optional<storage::RamDisk> ramdisk_;
+  ramdevice_client::Ramdisk ramdisk_;
   std::string ramdisk_path_;
   std::unique_ptr<minfs::Bcache> bcache_ = nullptr;
   fidl::ClientEnd<fuchsia_io::Directory> root_client_end_;

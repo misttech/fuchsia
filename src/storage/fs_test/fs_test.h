@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <fbl/unique_fd.h>
+#include <ramdevice-client/ramdisk.h>
 #include <ramdevice-client/ramnand.h>
 
 #include "src/storage/blobfs/blob_layout.h"
@@ -36,7 +37,6 @@
 #include "src/storage/lib/fs_management/cpp/mount.h"
 #include "src/storage/lib/fs_management/cpp/options.h"
 #include "src/storage/testing/fvm.h"
-#include "src/storage/testing/ram_disk.h"
 
 namespace fs_test {
 
@@ -45,7 +45,7 @@ class Filesystem;
 // Holds the ram disk or nand and additional required drivers (e.g. FVM).
 class RamDevice {
  public:
-  RamDevice(storage::RamDisk ram_disk, std::string_view path)
+  RamDevice(ramdevice_client::Ramdisk ram_disk, std::string_view path)
       : device_(std::move(ram_disk)), path_(path) {}
   RamDevice(ramdevice_client::RamNand ram_nand, std::string_view path)
       : device_(std::move(ram_nand)), path_(path) {}
@@ -58,13 +58,13 @@ class RamDevice {
   void set_path(std::string_view path) { path_ = path; }
   const std::string& path() const { return path_; }
 
-  storage::RamDisk* ram_disk() { return std::get_if<storage::RamDisk>(&device_); }
+  ramdevice_client::Ramdisk* ram_disk() { return std::get_if<ramdevice_client::Ramdisk>(&device_); }
   ramdevice_client::RamNand* ram_nand() { return std::get_if<ramdevice_client::RamNand>(&device_); }
 
   std::optional<storage::FvmPartition>& fvm_partition() { return fvm_partition_; }
 
  private:
-  std::variant<storage::RamDisk, ramdevice_client::RamNand> device_;
+  std::variant<ramdevice_client::Ramdisk, ramdevice_client::RamNand> device_;
   std::string path_;
   std::optional<storage::FvmPartition> fvm_partition_;
 };
@@ -167,7 +167,7 @@ class [[clang::lto_visibility_public]] FilesystemInstance {
       return zx::error(ZX_ERR_BAD_STATE);
     }
   }
-  virtual storage::RamDisk* GetRamDisk() {
+  virtual ramdevice_client::Ramdisk* GetRamDisk() {
     RamDevice* device = GetRamDevice();
     return device ? device->ram_disk() : nullptr;
   }

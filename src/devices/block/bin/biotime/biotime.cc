@@ -82,17 +82,17 @@ struct BlockDevice {
 };
 
 zx::result<BlockDevice> OpenBlockDevice(const char* dev, size_t buffer_size) {
-  zx::result channel = component::Connect<fuchsia_hardware_block::Block>(dev);
-  if (channel.is_error()) {
-    fprintf(stderr, "error: cannot open '%s': %s\n", dev, channel.status_string());
-    return channel.take_error();
+  zx::result block = component::Connect<fuchsia_hardware_block::Block>(dev);
+  if (block.is_error()) {
+    fprintf(stderr, "error: cannot open '%s': %s\n", dev, block.status_string());
+    return block.take_error();
   }
   BlockDevice block_device = {
       .buffer_size = buffer_size,
   };
 
   {
-    const fidl::WireResult result = fidl::WireCall(channel.value())->GetInfo();
+    const fidl::WireResult result = fidl::WireCall(block.value())->GetInfo();
     if (!result.ok()) {
       fprintf(stderr, "error: cannot get block device info for '%s': %s\n", dev,
               result.FormatDescription().c_str());
@@ -113,8 +113,7 @@ zx::result<BlockDevice> OpenBlockDevice(const char* dev, size_t buffer_size) {
       fprintf(stderr, "error: cannot create server for '%s': %s\n", dev, server.status_string());
       return zx::error(server.status_value());
     }
-    if (fidl::Status result =
-            fidl::WireCall(channel.value())->OpenSession(std::move(server.value()));
+    if (fidl::Status result = fidl::WireCall(block.value())->OpenSession(std::move(server.value()));
         !result.ok()) {
       fprintf(stderr, "error: cannot open session for '%s': %s\n", dev,
               result.FormatDescription().c_str());
