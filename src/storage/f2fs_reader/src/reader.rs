@@ -406,14 +406,15 @@ mod test {
         let f2fs = F2fsReader::open_device(Arc::new(device)).await.expect("open ok");
         let root_ino = f2fs.root_ino();
         let root_entries = f2fs.readdir(root_ino).await.expect("readdir");
-        assert_eq!(root_entries.len(), 6);
+        assert_eq!(root_entries.len(), 7);
         assert_eq!(root_entries[0].filename, "a");
         assert_eq!(root_entries[0].file_type, FileType::Directory);
         assert_eq!(root_entries[1].filename, "large_dir");
         assert_eq!(root_entries[2].filename, "large_dir2");
         assert_eq!(root_entries[3].filename, "sparse.dat");
-        assert_eq!(root_entries[4].filename, "fscrypt");
-        assert_eq!(root_entries[5].filename, "large_zero");
+        assert_eq!(root_entries[4].filename, "verity");
+        assert_eq!(root_entries[5].filename, "fscrypt");
+        assert_eq!(root_entries[6].filename, "large_zero");
 
         let inlined_file_ino =
             resolve_inode_path(&f2fs, "/a/b/c/inlined").await.expect("resolve inlined");
@@ -532,6 +533,29 @@ mod test {
     }
 
     #[fuchsia::test]
+    async fn test_fsverity() {
+        let device = open_test_image("/pkg/testdata/f2fs.img.zst");
+        let mut f2fs = F2fsReader::open_device(Arc::new(device)).await.expect("open ok");
+        f2fs.add_key(&[0u8; 64]);
+        let verity_files = vec![
+            "/verity/inlined",
+            "/verity/regular",
+            "/verity/merkle_layers.dat",
+            "/fscrypt/a/b/regular",
+        ];
+        for file_path in verity_files {
+            let file = resolve_inode_path(&f2fs, file_path).await.expect("resolve file");
+            let inode = Inode::try_load(&f2fs, file).await.expect("load inode");
+            assert!(inode.header.advise_flags.contains(inode::AdviseFlags::Verity));
+        }
+        // Verify other files aren't marked for verity.
+        let file = resolve_inode_path(&f2fs, "/a/b/c/regular").await.expect("resolve file");
+        let inode = Inode::try_load(&f2fs, file).await.expect("load inode");
+        assert!(!inode.header.advise_flags.contains(inode::AdviseFlags::Verity));
+        // TODO(https://fxbug.dev/399727919): Handle the verity descriptor and merkle tree parsing.
+    }
+
+    #[fuchsia::test]
     async fn test_fbe() {
         // Note: The synthetic filenames below are based on the nonce generated at file/directory
         // creation time. This will differ each time a new image is generated.
@@ -540,22 +564,23 @@ mod test {
         //   $ sudo mount testdata/f2fs.img /mnt
         //   $ ls /mnt/fscrypt -lR
 
-        let str_a = "iUVQ8QAAAACKGCrbr-bLCTkXu6PS0HXV"; // a (/fscrypt/<a>/<b>))
-        let str_b = "OhTWiwAAAAAx1quUaAG0dp7tJBTCuBSl"; // b (4096 bytes)
-        let str_symlink = "QYEbJQAAAADQk_ZO2kpiowGuBKuhct2L"; // symlink
-        let bytes_symlink_content = b"AAAAAAAAAAAzHOOo5BwLI7X0Yckn1kRx";
-        let mut expected : HashSet<_> = [ // files in fscrypt/ dir.
-            "G8tpkQAAAACvRyVWDS1uth15k0H4JifRABRFZBnmePk819BnTOTN6srPUnwFvzcVB2YhKlov19X-_FcDjShqkg733g9l1xDLnQmXLQLy_PPTWqHOQUqDUvBB5sbxjd1iZntg2VvQuaHb7BhCuX3ekVCugWV1HkAp-qAWteDnr6yoPoBf9LK4hMTrwvpoNjo_RWCGecv2tIDPDdIVERjLtStwQsIO7nVbxqKhvhjwyU5eDzEiyBXf8ZSq05dv",
-            "5OAb0wAAAAAnmedhSJ4gvbd7pcU5arPH",
-            "BVNy_gAAAABEBdxfYviVu3rsZacmVmIB",
-            "DdxUxQAAAADG2j9HdHCopkYVDmziU3Nm",
-            "Hby0jwAAAAB7kE-M84n1_xCrBRkNCpzi",
-            "iUVQ8QAAAACKGCrbr-bLCTkXu6PS0HXV",
-            "KgKe4AAAAADSl7xWJpsiDJEZo_4qes4a",
-            "XiBSDwAAAACaxU39oX9QOQt2vk0zhxFl",
-            "YSax1AAAAAB9E2jks4AJNs7iOVHVrIHv",
+        // /fscrypt/<a>/<b>/<symlink>
+        let str_a = "4YcLcwAAAAD6allZAfGJFpP31ROAxIy6";
+        let str_b = "ow5mzwAAAACVD0noEySQOMXcUcZ-PLf6";
+        let str_symlink = "GpkLmwAAAABIDwEnUVhPF0d_QW1bN7ll";
+        let bytes_symlink_content = b"AAAAAAAAAAAA5y-_DtaC-ysnS51ywyqn";
 
-            ].into_iter().collect();
+        let mut expected : HashSet<_> = [ // files in fscrypt/ dir.
+            "4YcLcwAAAAD6allZAfGJFpP31ROAxIy6",
+            "-96hJwAAAAC2QK8ehk2GtP_81mo61N8P",
+            "hZTqlwAAAACyEkf7g28pvfSLJ6yp6qRr",
+            "LeWdQAAAAADldpVMpGHaAhzUwFGRKGfH",
+            "MTWYaAAAAACM-8awOstsx4okTPdq_7v8",
+            "nIpZJgAAAABevALynLVQJCzO6CQ0314G",
+            "rSA6ugAAAADZcEttcoXm3wfX5ixA4ugQulC9QKk0Qj1N3Mx04i_oP41jdz5GRTST1BM5BPWM_e_Qn1q376U-hXaq3ZQ3kNDdKDsGQ74ZNcnfNzaoqZU_qTR3IUi6inf7GqIjOhDEeT3LQ2qvs9hdfoULJMlSZAgv744p0Pr-vpz0vgtT1DFAT4P54P3sJUyv7puI6E8xRbZ9cOTrHiNxAKrfgm2VCBOYQhPukmBt0VftwUDEmDbESi2yajic",
+            "Tya-hQAAAAAvvou7mQ2HkhA61gVKNNSK",
+            "ZdtW8QAAAACvQHfaZ2dYAob61MEljf-t",
+        ].into_iter().collect();
 
         let device = open_test_image("/pkg/testdata/f2fs.img.zst");
 
@@ -575,6 +600,7 @@ mod test {
         for entry in entries {
             assert!(expected.remove(entry.filename.as_str()), "unexpected entry {entry:?}");
         }
+        assert!(expected.is_empty());
 
         resolve_inode_path(&f2fs, &format!("/fscrypt/{str_a}"))
             .await

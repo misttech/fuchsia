@@ -18,28 +18,29 @@ set -e
 PATH=${PATH}:/usr/local/bin/
 
 # Prerequisites.
-apt-get install f2fs-tools zstd
+apt-get install f2fs-tools zstd fsverity
 modprobe f2fs
 rm -f /tmp/f2fs.img ../testdata/f2fs.img.zst
 
 # Build empty image.
 dd if=/dev/zero bs=4096 count=65536 of=/tmp/f2fs.img
-mkfs.f2fs -f -O encrypt -l testimage /tmp/f2fs.img
+mkfs.f2fs -f -O encrypt,verity -l testimage /tmp/f2fs.img
 
 # Mount and populate.
 MOUNT_PATH=/tmp/f2fs_mnt
 mkdir -p ${MOUNT_PATH}
 mount -o loop -t f2fs /tmp/f2fs.img ${MOUNT_PATH}
 
-mkdir -p ${MOUNT_PATH}/a/b/c
-echo "inline_data" > ${MOUNT_PATH}/a/b/c/inlined
-dd if=/dev/zero bs=4096 count=8 of=${MOUNT_PATH}/a/b/c/regular
-echo -n "01234567" >> ${MOUNT_PATH}/a/b/c/regular
+REGULAR_PATH=${MOUNT_PATH}/a/b/c
+mkdir -p ${REGULAR_PATH}
+echo "inline_data" > ${REGULAR_PATH}/inlined
+dd if=/dev/zero bs=4096 count=8 of=${REGULAR_PATH}/regular
+echo -n "01234567" >> ${REGULAR_PATH}/regular
 
-ln -s regular ${MOUNT_PATH}/a/b/c/symlink
-ln ${MOUNT_PATH}/a/b/c/regular ${MOUNT_PATH}/a/b/c/hardlink
-touch ${MOUNT_PATH}/a/b/c/chowned
-chown 999:999 ${MOUNT_PATH}/a/b/c/chowned
+ln -s regular ${REGULAR_PATH}/symlink
+ln ${REGULAR_PATH}/regular ${REGULAR_PATH}/hardlink
+touch ${REGULAR_PATH}/chowned
+chown 999:999 ${REGULAR_PATH}/chowned
 
 # Large directory (2,000 entries)
 mkdir ${MOUNT_PATH}/large_dir
@@ -77,6 +78,24 @@ attr -s b -V "value" ${MOUNT_PATH}/sparse.dat
 attr -s c -V "value" ${MOUNT_PATH}/sparse.dat
 attr -r b ${MOUNT_PATH}/sparse.dat
 
+VERITY_PATH=${MOUNT_PATH}/verity
+mkdir -p ${VERITY_PATH}
+#Enable verity on a file that is normally inlined, but will not be after setting verity.
+echo "inline_data" > ${VERITY_PATH}/inlined
+fsverity enable ${VERITY_PATH}/inlined
+#Enable verity on an otherwise normal file.
+dd if=/dev/zero bs=4096 count=8 of=${VERITY_PATH}/regular
+echo -n "01234567" >> ${VERITY_PATH}/regular
+fsverity enable ${VERITY_PATH}/regular
+
+# Enable verity on a large file. The digest will include all the zeroed areas making for a large
+# merkle tree, to ensure that we can support however they handle layers. Not using the above
+# sparse file because it is huge and would create many MB of merkle tree.
+echo -n "foo" > ${VERITY_PATH}/merkle_layers.dat
+dd conv=notrunc if=/dev/zero bs=4096 count=1 seek=129 of=${VERITY_PATH}/merkle_layers.dat
+echo -n "bar" >> ${VERITY_PATH}/merkle_layers.dat
+fsverity enable ${VERITY_PATH}/merkle_layers.dat
+
 # fscrypt
 #
 # We will use a hard-coded 512-bit key of all zeros for this test.
@@ -85,12 +104,20 @@ KEY_IDENTIFIER=$(dd if=/dev/zero bs=1 count=64 status=none | fscryptctl add_key 
 mkdir ${MOUNT_PATH}/fscrypt
 fscryptctl set_policy --padding=16 --iv-ino-lblk-32 ${KEY_IDENTIFIER} ${MOUNT_PATH}/fscrypt
 
+# Track inode number to get the encrypted names out later.
+declare -A INODES
+
 mkdir -p ${MOUNT_PATH}/fscrypt/a/b
+INODES["$(stat -c "%i" ${MOUNT_PATH}/fscrypt/a)"]="a"
+INODES["$(stat -c "%i" ${MOUNT_PATH}/fscrypt/a/b)"]="b"
 # Nb: encrypted files should never be inlined.
 # The following data is more than 16 bytes to ensure that we validate the xts tweak during decoding.
 echo -n "test45678abcdef_12345678" > ${MOUNT_PATH}/fscrypt/a/b/inlined
 dd if=/dev/zero bs=4096 count=1 of=${MOUNT_PATH}/fscrypt/a/b/regular
+#Enable verity on a "regular" encrypted file.
+fsverity enable ${MOUNT_PATH}/fscrypt/a/b/regular
 ln -s "inlined" ${MOUNT_PATH}/fscrypt/a/b/symlink
+INODES["$(stat -c "%i" ${MOUNT_PATH}/fscrypt/a/b/symlink)"]="symlink"
 
 # Test filenames of different lengths to ensure we use a compatible proxy
 # filename scheme.
@@ -123,6 +150,41 @@ $(
 	done
 	touch f
 )
+
+# Args: "decrypted_name" "file_path1" "file_path2" ...
+lookup_inode() {
+	local target="${1}"
+	shift 1
+	for f in $@
+	do
+		if [[ ${INODES["$(stat -c "%i" $f)"]} == "${target}" ]]
+		then
+			echo $(basename $f)
+			return 0
+		fi
+	done
+	"Inode for '${target}' not found" >&2
+	return 1
+}
+
+# Remove the key and get the encrypted names back from the inodes.
+fscryptctl remove_key ${KEY_IDENTIFIER} ${MOUNT_PATH}
+str_a=$(lookup_inode "a" ${MOUNT_PATH}/fscrypt/*)
+echo "let str_a = \"${str_a}\";"
+
+str_b=$(lookup_inode "b" ${MOUNT_PATH}/fscrypt/${str_a}/*)
+echo "let str_b = \"${str_b}\";"
+
+str_symlink=$(lookup_inode "symlink" ${MOUNT_PATH}/fscrypt/${str_a}/${str_b}/*)
+echo "let str_symlink = \"${str_symlink}\";"
+echo -n "let bytes_symlink_content = "
+echo "b\"$(readlink ${MOUNT_PATH}/fscrypt/${str_a}/${str_b}/${str_symlink})\";"
+
+echo "Expected:"
+for f in ${MOUNT_PATH}/fscrypt/*
+do
+	echo "\"$(basename $f)\"",
+done
 
 umount ${MOUNT_PATH}
 zstd /tmp/f2fs.img -o ../testdata/f2fs.img.zst

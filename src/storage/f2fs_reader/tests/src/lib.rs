@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context, Error, bail, ensure};
-use f2fs_reader::{BLOCK_SIZE, F2fsReader, FileType, Flags, InlineFlags, Inode, XattrIndex};
+use f2fs_reader::{
+    AdviseFlags, BLOCK_SIZE, F2fsReader, FileType, Flags, InlineFlags, Inode, XattrIndex,
+};
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::{ObjectHandle, ObjectProperties};
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
@@ -20,6 +22,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
+
+const PLACEHOLDER_VERITY_ATTR: u64 = 513; // Just out of the xattr range.
 
 fn open_test_image(path: &str) -> FakeDevice {
     let path = std::path::PathBuf::from(path);
@@ -85,6 +89,10 @@ fn migrate_xattr(
                         ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
                     ),
                 );
+            }
+            XattrIndex::Verity => {
+                ensure!(&*xattr.name == b"v", "unexpected verity xattr {:?}", xattr.name);
+                // TODO(https://fxbug.dev/399727919): Handle the rest of the verity migration.
             }
             _ => {
                 panic!("Unexpected xattr {xattr:?}");
@@ -299,10 +307,30 @@ async fn migrate(
                     // Add inode block and related blocks to set of f2fs metadata blocks.
                     f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
 
+                    let verity_offset = if inode.header.advise_flags.contains(AdviseFlags::Verity) {
+                        // TODO(https://fxbug.dev/399727919): Handle the rest of verity migration.
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::insert_object(
+                                ObjectKey::attribute(
+                                    object_id,
+                                    PLACEHOLDER_VERITY_ATTR,
+                                    AttributeKey::Attribute,
+                                ),
+                                ObjectValue::attribute(1024 * 1024 * 1024, false),
+                            ),
+                        );
+                        Some(inode.header.size.next_multiple_of(64 * 1024))
+                    } else {
+                        None
+                    };
+
                     let mut allocated_size = 0;
                     let inline_flags = inode.header.inline_flags;
                     //let mut mutation_count = 4;
                     if inline_flags.contains(InlineFlags::Data) {
+                        // Marking a file for verity moves the data out of inline.
+                        assert!(verity_offset.is_none());
                         if inode.header.size > 0 {
                             // We have to allocate inline files.
                             // Encrypted inline files are not possible, so this is relatively uncommon.
@@ -314,8 +342,16 @@ async fn migrate(
                         for (block_offset, block_addr) in inode.data_blocks() {
                             let device_range = block_addr as u64 * BLOCK_SIZE as u64
                                 ..(block_addr as u64 + 1) * BLOCK_SIZE as u64;
-                            let logical_range = block_offset as u64 * BLOCK_SIZE as u64
+                            let mut logical_range = block_offset as u64 * BLOCK_SIZE as u64
                                 ..(block_offset as u64 + 1) * BLOCK_SIZE as u64;
+                            let attr_id = match verity_offset {
+                                Some(verity_offset) if logical_range.start >= verity_offset => {
+                                    logical_range.start -= verity_offset;
+                                    logical_range.end -= verity_offset;
+                                    PLACEHOLDER_VERITY_ATTR
+                                }
+                                _ => DEFAULT_DATA_ATTRIBUTE_ID,
+                            };
                             dir.store().mark_allocated(
                                 &mut transaction,
                                 dir.store().store_object_id(),
@@ -324,11 +360,7 @@ async fn migrate(
                             transaction.add(
                                 dir.store().store_object_id(),
                                 Mutation::merge_object(
-                                    ObjectKey::extent(
-                                        object_id,
-                                        DEFAULT_DATA_ATTRIBUTE_ID,
-                                        logical_range,
-                                    ),
+                                    ObjectKey::extent(object_id, attr_id, logical_range),
                                     ObjectValue::Extent(ExtentValue::new_raw(
                                         device_range.start,
                                         key_id,
@@ -820,7 +852,20 @@ async fn migrate_device(
                     .expect("write inline data");
                 transaction.commit().await.expect("commit default encrypted file");
             } else {
-                for (block_offset, block_addr) in inode.data_blocks() {
+                let verity_block_offset = if inode.header.advise_flags.contains(AdviseFlags::Verity)
+                {
+                    Some((inode.header.size.next_multiple_of(64 * 1024) / BLOCK_SIZE as u64) as u32)
+                } else {
+                    None
+                };
+                for (mut block_offset, block_addr) in inode.data_blocks() {
+                    let attr_id = match verity_block_offset {
+                        Some(verity_block_offset) if block_offset >= verity_block_offset => {
+                            block_offset -= verity_block_offset;
+                            PLACEHOLDER_VERITY_ATTR
+                        }
+                        _ => DEFAULT_DATA_ATTRIBUTE_ID,
+                    };
                     let mut buffer = object.allocate_buffer(BLOCK_SIZE).await;
                     fxfs.device()
                         .read(block_addr as u64 * BLOCK_SIZE as u64, buffer.as_mut())
@@ -837,7 +882,7 @@ async fn migrate_device(
                     object
                         .raw_multi_write(
                             &mut transaction,
-                            0,
+                            attr_id,
                             Some(VOLUME_DATA_KEY_ID),
                             &[block_offset as u64 * BLOCK_SIZE as u64
                                 ..(block_offset as u64 + 1) * BLOCK_SIZE as u64],
