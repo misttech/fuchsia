@@ -70,7 +70,7 @@ source_set("mmio") {
     "//src/graphics/magma/lib/magma/util:macros",
     "//src/graphics/magma/lib/magma/util:short_macros",
   ]
-  public_deps = [ "//src/devices/lib/mmio" ]
+  public_deps = [ "//sdk/lib/driver/mmio/cpp" ]
 }
 
 source_set("device_dfv2") {
@@ -84,7 +84,7 @@ source_set("device_dfv2") {
   public_deps = [
     ":interrupt",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//zircon/system/ulib/trace",
   ]
 
