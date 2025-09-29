@@ -93,15 +93,19 @@
   mov x9, #HCR_EL2_RW
   msr hcr_el2, x9
 
-  mrs x9, cnthctl_el2
-  // Disable EL1 timer traps and the timer offset.
-  orr x9, x9, #CNTHCTL_EL2_EL1PCEN | CNTHCTL_EL2_EL1PCTEN
-  // Make sure the EL2 physical event stream is not running.
-  bic x9, x9, #CNTHCTL_EL2_EVNTEN
+  // Disable traps from EL1/EL0 regarding the physical counter.
+  // Disable EL2 Event counter.
+  // FEAT_ECV: Disable Enhanced Counter Virtualization feature and
+  //   traps of virtual timer registers.
+  mov x9, #CNTHCTL_EL2_EL1PCEN | CNTHCTL_EL2_EL1PCTEN
   msr cnthctl_el2, x9
+
+  // Disable any virtual timer offset.
   msr cntvoff_el2, xzr
 
-  // Disable stage 2 translations.
+  // Clear stage 2 translation registers.
+  // Should already be disabled by writing 0 to HCR_EL2.VM.
+  msr tcr_el2, xzr
   msr vttbr_el2, xzr
 
   // Disable EL2 coprocessor traps.
