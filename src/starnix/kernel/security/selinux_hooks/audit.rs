@@ -4,6 +4,7 @@
 
 use crate::vfs::{NamespaceNode, PathWithReachability};
 use bstr::BStr;
+use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelPermission, SecurityId};
@@ -225,10 +226,10 @@ impl Display for Auditable<'_> {
             }
             Auditable::CurrentTask => Ok(()),
             Auditable::FileObject(file) => {
-                write!(f, " path=\"{}\"", file.name.path_escaping_chroot())
+                write!(f, " path={}", hex_escape(&file.name.path_escaping_chroot()))
             }
             Auditable::FileSystem(fs) => {
-                write!(f, " dev=\"{}\"", fs.options.source)
+                write!(f, " dev={}", hex_escape(&fs.options.source))
             }
             Auditable::FsNode(node) => {
                 write!(f, " ino={}", node.ino)
@@ -237,17 +238,41 @@ impl Display for Auditable<'_> {
                 write!(f, " ioctlcmd={:#x}", ioctl)
             }
             Auditable::Name(name) => {
-                write!(f, " name=\"{}\"", name)
+                write!(f, " name={}", hex_escape(name))
             }
             Auditable::NamespaceNode(node) => {
                 let PathWithReachability::Reachable(path) = node.path_from_root(None) else {
                     return Ok(());
                 };
-                write!(f, " path=\"{}\"", path)
+                write!(f, " path={}", hex_escape(&path))
             }
             Auditable::Task(task) => {
                 write!(f, " pid={}, comm={}", task.get_pid(), BStr::new(task.command().as_bytes()))
             }
         }
     }
+}
+
+struct EscapedString<'a> {
+    value: &'a [u8],
+}
+
+impl<'a> Display for EscapedString<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), Error> {
+        // SELinux escapes strings containing spaces or control characters, to prevent userspace
+        // being able to construct names that confuse audit-log parsing tooling.
+        // Additionally enforcing that strings are valid UTF-8 encoded allows non-UTF-8 strings to
+        // be expressed losslessy (via hex escaping) rather than being formatted lossily by `bstr`.
+        let maybe_utf8 = str::from_utf8(self.value).ok();
+        if let Some(utf8) = maybe_utf8 {
+            if utf8.find(|c| c <= ' ').is_none() {
+                return write!(f, "\"{}\"", BStr::new(self.value));
+            }
+        }
+        hex::encode_upper(self.value).fmt(f)
+    }
+}
+
+fn hex_escape<'a>(value: &'a [u8]) -> EscapedString<'a> {
+    EscapedString { value }
 }
