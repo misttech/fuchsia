@@ -25,7 +25,7 @@ use crate::experimental::series::buffer::{
     Uncompressed, ZigzagSimple8bRle, encoding,
 };
 use crate::experimental::series::interpolation::{
-    Constant, Interpolation, InterpolationFor, InterpolationState, LastAggregation, LastSample,
+    Constant, Interpolation, InterpolationFor, InterpolationState, LastSample,
 };
 use crate::experimental::series::metadata::{BitSetIndex, Metadata};
 use crate::experimental::series::statistic::{
@@ -79,10 +79,6 @@ pub trait DataSemantic {
 #[derive(Debug)]
 pub enum Counter {}
 
-impl BufferStrategy<u64, LastAggregation> for Counter {
-    type Buffer = DeltaSimple8bRle;
-}
-
 impl BufferStrategy<u64, LastSample> for Counter {
     type Buffer = DeltaSimple8bRle;
 }
@@ -112,20 +108,12 @@ impl BufferStrategy<i64, Constant> for Gauge {
     type Buffer = ZigzagSimple8bRle;
 }
 
-impl BufferStrategy<i64, LastAggregation> for Gauge {
-    type Buffer = DeltaZigzagSimple8bRle<i64>;
-}
-
 impl BufferStrategy<i64, LastSample> for Gauge {
     type Buffer = DeltaZigzagSimple8bRle<i64>;
 }
 
 impl BufferStrategy<u64, Constant> for Gauge {
     type Buffer = Simple8bRle;
-}
-
-impl BufferStrategy<u64, LastAggregation> for Gauge {
-    type Buffer = DeltaZigzagSimple8bRle<u64>;
 }
 
 impl BufferStrategy<u64, LastSample> for Gauge {
@@ -566,7 +554,7 @@ mod tests {
     use fuchsia_async as fasync;
 
     use crate::experimental::clock::{Timed, Timestamp};
-    use crate::experimental::series::interpolation::{Constant, LastAggregation, LastSample};
+    use crate::experimental::series::interpolation::{Constant, LastSample};
     use crate::experimental::series::statistic::{
         ArithmeticMean, LatchMax, Max, PostAggregation, Sum, Transform, Union,
     };
@@ -629,18 +617,13 @@ mod tests {
 
         let _ = TimeMatrix::<ArithmeticMean<f32>, Constant>::default();
         let _ = TimeMatrix::<ArithmeticMean<f32>, LastSample>::default();
-        let _ = TimeMatrix::<ArithmeticMean<f32>, LastAggregation>::default();
         let _ = TimeMatrix::<LatchMax<u64>, LastSample>::default();
-        let _ = TimeMatrix::<LatchMax<u64>, LastAggregation>::default();
         let _ = TimeMatrix::<Max<u64>, Constant>::default();
         let _ = TimeMatrix::<Max<u64>, LastSample>::default();
-        let _ = TimeMatrix::<Max<u64>, LastAggregation>::default();
         let _ = TimeMatrix::<Sum<u64>, Constant>::default();
         let _ = TimeMatrix::<Sum<u64>, LastSample>::default();
-        let _ = TimeMatrix::<Sum<u64>, LastAggregation>::default();
         let _ = TimeMatrix::<Union<u64>, Constant>::default();
         let _ = TimeMatrix::<Union<u64>, LastSample>::default();
-        let _ = TimeMatrix::<Union<u64>, LastAggregation>::default();
     }
 
     #[test]

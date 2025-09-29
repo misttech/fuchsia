@@ -91,10 +91,12 @@ impl Constant {
 }
 
 impl Interpolation for Constant {
-    type FillSample<F> = F::Sample
+    type FillSample<F>
+        = F::Sample
     where
         F: Statistic;
-    type State<F> = ConstantState<F::Sample>
+    type State<F>
+        = ConstantState<F::Sample>
     where
         F: Statistic;
 }
@@ -124,10 +126,12 @@ impl LastSample {
 }
 
 impl Interpolation for LastSample {
-    type FillSample<F> = F::Sample
+    type FillSample<F>
+        = F::Sample
     where
         F: Statistic;
-    type State<F> = LastSampleState<F::Sample>
+    type State<F>
+        = LastSampleState<F::Sample>
     where
         F: Statistic;
 }
@@ -156,54 +160,9 @@ where
     }
 }
 
-/// An interpolation over the last interval aggregation.
-#[derive(Debug)]
-pub enum LastAggregation {}
-
-impl LastAggregation {
-    pub fn or<A>(aggregation: A) -> LastAggregationState<A> {
-        LastAggregationState::or(aggregation)
-    }
-}
-
-impl Interpolation for LastAggregation {
-    type FillSample<F> = F::Aggregation
-    where
-        F: Statistic;
-    type State<F> = LastAggregationState<F::Aggregation>
-    where
-        F: Statistic;
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct LastAggregationState<A>(A);
-
-impl<A> LastAggregationState<A> {
-    pub fn or(aggregation: A) -> Self {
-        LastAggregationState(aggregation)
-    }
-}
-
-impl<A> InterpolationState<A> for LastAggregationState<A>
-where
-    A: Clone,
-{
-    type FillSample = A;
-
-    fn sample(&self) -> Self::FillSample {
-        self.0.clone()
-    }
-
-    fn fold_aggregation(&mut self, aggregation: A) {
-        let _prev = mem::replace(&mut self.0, aggregation);
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::experimental::series::interpolation::{
-        Constant, InterpolationState, LastAggregation, LastSample,
-    };
+    use crate::experimental::series::interpolation::{Constant, InterpolationState, LastSample};
 
     /// Erases type information such that the `InterpolationState` returned by `f` only supports
     /// `u64` samples and aggregations.
@@ -225,18 +184,6 @@ mod tests {
         interpolation.fold_sample(7);
         interpolation.fold_aggregation(7);
         assert_eq!(interpolation.sample(), 1); // Both samples and aggregations are ignored.
-    }
-
-    #[test]
-    fn interpolate_last_aggregation() {
-        let mut interpolation = erase(|| LastAggregation::or(1u64));
-        assert_eq!(interpolation.sample(), 1);
-
-        interpolation.fold_sample(7);
-        assert_eq!(interpolation.sample(), 1);
-
-        interpolation.fold_aggregation(7); // Last aggregation is cached.
-        assert_eq!(interpolation.sample(), 7);
     }
 
     #[test]
