@@ -20,6 +20,8 @@ load(
     "json_encode_dict_values",
 )
 
+visibility(["//build/bazel/bazel_idk/..."])
+
 # LINT.IfChange(idk_cc_source_library)
 
 # TODO(https://fxbug.dev/428229472): When migrating "zbi-format":

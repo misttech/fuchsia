@@ -4,6 +4,8 @@
 
 """Common functions for IDK macros."""
 
+visibility("private")
+
 def json_encode_dict_values(dict):
     """Returns the dictionary with each top-level value encoded as a JSON string.
 

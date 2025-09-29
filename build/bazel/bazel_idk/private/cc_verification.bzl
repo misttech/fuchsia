@@ -4,6 +4,8 @@
 
 """Rules related to verification of C++ atoms."""
 
+visibility("private")
+
 def _verify_no_pragma_once_impl(ctx):
     stamp_file = ctx.actions.declare_file(ctx.label.name + ".stamp")
     args = ctx.actions.args()

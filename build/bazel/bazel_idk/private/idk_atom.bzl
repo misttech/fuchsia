@@ -9,6 +9,8 @@ load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load(":idk_common.bzl", "get_allowlist_target")
 
+visibility(["//build/bazel/bazel_idk/..."])
+
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
     # LINT.IfChange(unstable_atom_types)
     "cc_source_library",

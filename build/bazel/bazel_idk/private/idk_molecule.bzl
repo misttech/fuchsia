@@ -6,6 +6,8 @@
 
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkMoleculeInfo")
 
+visibility(["//build/bazel/bazel_idk/..."])
+
 def _idk_molecule_impl(ctx):
     all_deps_depset = depset(direct = ctx.files.deps)
     idk_deps = ctx.attr.deps
