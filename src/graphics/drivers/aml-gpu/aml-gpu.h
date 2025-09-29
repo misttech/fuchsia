@@ -8,9 +8,9 @@
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
 #include <lib/sync/cpp/completion.h>
 
 #include <memory>
