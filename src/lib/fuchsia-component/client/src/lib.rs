@@ -23,7 +23,6 @@ use futures::{Stream, StreamExt};
 use pin_project::pin_project;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
-use std::pin::pin;
 use std::task::Poll;
 
 /// Trait that for types that can be returned when you connect to protocols.

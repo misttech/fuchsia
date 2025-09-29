@@ -17,7 +17,7 @@ use core::sync::atomic::{self, AtomicU16};
 use derivative::Derivative;
 use explicit::ResultExt as _;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
-use log::{debug, error, trace};
+use log::{debug, trace};
 use net_types::ip::{
     GenericOverIp, Ip, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr, Mtu, Subnet,
 };

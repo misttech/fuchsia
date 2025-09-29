@@ -4,7 +4,6 @@
 
 use fuchsia_hash::Hash;
 use futures::future::FutureExt as _;
-use log::error;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug)]

@@ -6,9 +6,9 @@ use crate::client::connection_selection::scoring_functions;
 use crate::client::types;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use fuchsia_inspect_auto_persist::AutoPersist;
+use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::log::InspectList;
 use fuchsia_inspect_contrib::nodes::BoundedListNode as InspectBoundedListNode;
-use fuchsia_inspect_contrib::{inspect_insert, inspect_log};
 use futures::lock::Mutex;
 use log::{error, info};
 use std::cmp::Reverse;
@@ -87,7 +87,7 @@ mod test {
     };
     use assert_matches::assert_matches;
     use diagnostics_assertions::{
-        assert_data_tree, AnyBoolProperty, AnyNumericProperty, AnyProperty, AnyStringProperty,
+        AnyBoolProperty, AnyNumericProperty, AnyProperty, AnyStringProperty, assert_data_tree,
     };
     use futures::channel::mpsc;
     use ieee80211_testutils::{BSSID_REGEX, SSID_REGEX};
@@ -395,14 +395,15 @@ mod test {
         let reason_code = generate_random_connect_reason();
         let candidates =
             vec![generate_random_scanned_candidate(), generate_random_scanned_candidate()];
-        assert!(exec
-            .run_singlethreaded(select_bss(
+        assert!(
+            exec.run_singlethreaded(select_bss(
                 candidates.clone(),
                 reason_code,
                 test_values.inspect_node.clone(),
                 test_values.telemetry_sender.clone()
             ))
-            .is_some());
+            .is_some()
+        );
 
         assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => {
             assert_matches!(event, TelemetryEvent::BssSelectionResult {

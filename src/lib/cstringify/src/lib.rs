@@ -23,7 +23,6 @@ macro_rules! cstringify {
 
 #[cfg(test)]
 mod tests {
-    use super::cstringify;
     use std::ffi;
 
     #[test]

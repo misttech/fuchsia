@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::checksum::Checksum;
-use crate::debug_assert_not_too_long;
 use crate::filesystem::{FxFilesystem, TxnGuard};
 use crate::log::*;
 use crate::lsm_tree::types::Item;

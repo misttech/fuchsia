@@ -6,7 +6,6 @@
 
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
-use log::error;
 use std::collections::HashSet;
 use std::convert::TryInto as _;
 use std::future::Future;

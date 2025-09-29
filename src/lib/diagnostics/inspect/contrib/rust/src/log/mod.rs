@@ -59,6 +59,7 @@ pub trait WriteInspect {
 #[macro_export]
 macro_rules! inspect_log {
     ($bounded_list_node:expr, $($args:tt)+) => {{
+        #[allow(unused_imports)] // This macro may be used multiple times in one file
         use $crate::{inspect_insert, nodes::{NodeTimeExt, BootTimeline}};
         $bounded_list_node.add_entry(|node| {
             NodeTimeExt::<BootTimeline>::record_time(node, "@time");
@@ -185,6 +186,7 @@ macro_rules! inspect_insert {
 #[macro_export]
 macro_rules! make_inspect_loggable {
     ($($args:tt)+) => {{
+        #[allow(unused_imports)] // This macro may be used multiple times in one file
         use $crate::inspect_insert;
         use fuchsia_inspect::Node;
         use std::borrow::Cow;

@@ -5,6 +5,7 @@
 use crate::errors::FxfsError;
 use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
 use crate::log::*;
+use crate::metrics;
 use crate::object_store::allocator::{Allocator, Hold, Reservation};
 use crate::object_store::directory::Directory;
 use crate::object_store::graveyard::Graveyard;
@@ -19,7 +20,6 @@ use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
 use crate::object_store::{NO_OWNER, ObjectStore};
 use crate::range::RangeExt;
 use crate::serialized_types::{LATEST_VERSION, Version};
-use crate::{debug_assert_not_too_long, metrics};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use event_listener::Event;

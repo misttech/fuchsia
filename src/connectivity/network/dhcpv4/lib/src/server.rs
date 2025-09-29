@@ -15,9 +15,9 @@ use anyhow::{Context as _, Error};
 use zx::Status;
 
 #[cfg(target_os = "fuchsia")]
-use log::info;
+use log::{error, info};
 
-use log::{error, warn};
+use log::warn;
 use net_types::ethernet::Mac as MacAddr;
 use net_types::ip::{Ipv4, PrefixLength};
 use serde::{Deserialize, Serialize};

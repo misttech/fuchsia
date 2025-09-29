@@ -292,7 +292,6 @@ pub(crate) use {ordered_state_accessor, state_accessor, state_implementation};
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use macro_rules_attribute::apply;
     use starnix_sync::RwLock;
 

@@ -32,7 +32,7 @@ use anyhow::{Context as _, Result};
 use assert_matches::assert_matches;
 use byteorder::{NetworkEndian, WriteBytesExt as _};
 use dns_server_watcher::DEFAULT_DNS_PORT;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use net_types::MulticastAddress as _;
 use net_types::ip::{Ip as _, Ipv6, Ipv6Addr, Subnet, SubnetError};
 use packet::ParsablePacket;

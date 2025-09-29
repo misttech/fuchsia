@@ -22,7 +22,7 @@ use ring_buffer::{self, RingBuffer, ring_buffer_record_len};
 use std::collections::VecDeque;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut, Range};
-use std::pin::{Pin, pin};
+use std::pin::{Pin};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;

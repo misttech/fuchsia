@@ -6,7 +6,7 @@ mod test_server;
 
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
-use log::{error, info, warn};
+use log::{info, warn};
 use test_runners_lib::elf;
 use test_server::TestServer;
 use thiserror::Error;

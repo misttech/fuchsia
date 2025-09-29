@@ -14,7 +14,7 @@ use std::fmt::{Debug, Display};
 use std::future::poll_fn;
 use std::mem::swap;
 use std::ops::Deref;
-use std::pin::{Pin, pin};
+use std::pin::Pin;
 use std::process::Stdio;
 use std::task::Poll;
 use symbol_index::ensure_symbol_index_registered;

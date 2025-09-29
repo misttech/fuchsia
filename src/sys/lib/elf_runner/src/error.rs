@@ -4,7 +4,6 @@
 
 use clonable_error::ClonableError;
 
-use log::error;
 use thiserror::Error;
 
 /// Errors produced when starting a component.

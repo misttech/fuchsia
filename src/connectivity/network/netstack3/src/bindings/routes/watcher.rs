@@ -17,7 +17,7 @@ use futures::channel::mpsc;
 use futures::future::FusedFuture as _;
 use futures::{FutureExt, StreamExt as _, TryStreamExt as _};
 use itertools::Itertools as _;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use netstack3_core::sync::Mutex;
 use thiserror::Error;
 

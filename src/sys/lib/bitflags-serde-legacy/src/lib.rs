@@ -9,7 +9,7 @@ macro_rules! impl_traits {
     ($ty:ident) => {
         mod __private_bitflags_serde_legacy {
             use ::bitflags::Flags;
-            use ::serde::{de, Deserialize, Serialize};
+            use ::serde::{Deserialize, Serialize, de};
             use ::std::marker::PhantomData;
 
             #[derive(Serialize, Deserialize)]
@@ -127,7 +127,6 @@ macro_rules! impl_traits {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde::{Deserialize, Serialize};
 
     bitflags::bitflags! {

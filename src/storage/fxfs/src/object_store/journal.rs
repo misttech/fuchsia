@@ -23,7 +23,6 @@ pub mod super_block;
 mod writer;
 
 use crate::checksum::{Checksum, Checksums, ChecksumsV38};
-use crate::debug_assert_not_too_long;
 use crate::errors::FxfsError;
 use crate::filesystem::{ApplyContext, ApplyMode, FxFilesystem, SyncOptions};
 use crate::log::*;

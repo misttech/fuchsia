@@ -7,10 +7,9 @@ use crate::client::{Context, TimedEvent};
 use crate::device::DeviceOps;
 use anyhow::bail;
 use futures::Future;
-use log::error;
 use wlan_common::mac::BeaconHdr;
 use wlan_common::timer::EventHandle;
-use wlan_common::{ie, TimeUnit};
+use wlan_common::{TimeUnit, ie};
 use zerocopy::SplitByteSlice;
 use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fuchsia_async as fasync};
 
@@ -319,7 +318,7 @@ impl<B: SplitByteSlice> ChannelSwitchBuilder<B> {
             other => {
                 return ChannelSwitchResult::Error(ChannelSwitchError::InvalidChannelSwitchMode(
                     other,
-                ))
+                ));
             }
         };
 

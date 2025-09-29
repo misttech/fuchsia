@@ -379,10 +379,10 @@ pub fn serve(
 #[cfg(test)]
 mod tests {
     use super::{Connection, Symlink};
+    use crate::ToObjectRequest;
     use crate::directory::entry::{EntryInfo, GetEntryInfo};
     use crate::execution_scope::ExecutionScope;
     use crate::node::Node;
-    use crate::{ToObjectRequest, immutable_attributes};
     use assert_matches::assert_matches;
     use fidl::endpoints::{ServerEnd, create_proxy};
     use fidl_fuchsia_io as fio;

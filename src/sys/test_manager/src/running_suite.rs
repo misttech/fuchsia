@@ -34,7 +34,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::future::join_all;
 use futures::prelude::*;
 use futures::{FutureExt, lock};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use moniker::Moniker;
 use resolver::AllowedPackages;
 use std::collections::HashSet;

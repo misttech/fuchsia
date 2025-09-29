@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use fuchsia_sync::Mutex;
-use log::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 use thiserror::Error;

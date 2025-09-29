@@ -58,7 +58,6 @@ macro_rules! fable {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use fidl_fuchsia_intl::{CalendarId, LocaleId, Profile, TemperatureUnit};
 
     #[test]
