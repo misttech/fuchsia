@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-use lazy_static::lazy_static;
-use rand::distr::Alphanumeric;
 use rand::Rng;
+use rand::distr::Alphanumeric;
+use std::sync::LazyLock;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
     fidl_fuchsia_wlan_sme as fidl_sme,
 };
 
-lazy_static! {
-    pub static ref DEFAULT_OPEN_AP_CONFIG: fidl_sme::ApConfig = fidl_sme::ApConfig {
+pub static DEFAULT_OPEN_AP_CONFIG: LazyLock<fidl_sme::ApConfig> =
+    LazyLock::new(|| fidl_sme::ApConfig {
         ssid: random_ssid(),
         password: vec![],
         radio_cfg: fidl_sme::RadioConfig {
@@ -22,8 +22,7 @@ lazy_static! {
                 secondary80: 0,
             },
         },
-    };
-}
+    });
 
 pub async fn get_client_sme(
     generic_sme_proxy: &fidl_sme::GenericSmeProxy,

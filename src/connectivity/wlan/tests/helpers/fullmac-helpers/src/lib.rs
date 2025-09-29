@@ -5,7 +5,7 @@
 use assert_matches::assert_matches;
 use fidl::endpoints::{create_endpoints, create_proxy};
 use futures::StreamExt;
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
 use wlan_common::{bss, fake_fidl_bss_description};
 use {
@@ -20,29 +20,33 @@ pub mod recorded_request_stream;
 // Compatible BSS descriptions are defined here.
 // "Compatible" here means that that an SME  with default configuration
 // will accept a connect request to a BSS with the returned BssDescription.
-lazy_static! {
-    pub static ref COMPATIBLE_OPEN_BSS: bss::BssDescription = fake_fidl_bss_description!(
+pub static COMPATIBLE_OPEN_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
+    fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Open,
         channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20),
         rates: vec![2, 4, 11],
     )
     .try_into()
-    .expect("Could not convert BSS description from FIDL");
-    pub static ref COMPATIBLE_WPA2_BSS: bss::BssDescription = fake_fidl_bss_description!(
+    .expect("Could not convert BSS description from FIDL")
+});
+pub static COMPATIBLE_WPA2_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
+    fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Wpa2,
         channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20),
         rates: vec![2, 4, 11],
     )
     .try_into()
-    .expect("Could not convert BSS description from FIDL");
-    pub static ref COMPATIBLE_WPA3_BSS: bss::BssDescription = fake_fidl_bss_description!(
+    .expect("Could not convert BSS description from FIDL")
+});
+pub static COMPATIBLE_WPA3_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
+    fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Wpa3,
         channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20),
         rates: vec![2, 4, 11],
     )
     .try_into()
-    .expect("Could not convert BSS description from FIDL");
-}
+    .expect("Could not convert BSS description from FIDL")
+});
 
 /// Creates and starts fullmac driver using |testcontroller_proxy|.
 /// This handles the request to start SME through the UsmeBootstrap protocol,
