@@ -1404,96 +1404,108 @@ pub fn ptrace_syscall_exit(
 mod tests {
     use super::*;
     use crate::task::syscalls::sys_prctl;
-    use crate::testing::{create_kernel_task_and_unlocked, create_task};
+    use crate::testing::{create_task, spawn_kernel_and_run};
     use starnix_uapi::PR_SET_PTRACER;
 
     #[::fuchsia::test]
     async fn test_set_ptracer() {
-        let (kernel, mut tracee, locked) = create_kernel_task_and_unlocked();
-        let mut tracer = create_task(locked, &kernel, "tracer");
-        kernel.ptrace_scope.store(RESTRICTED_SCOPE, Ordering::Relaxed);
-        assert_eq!(sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0), error!(EINVAL));
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel().clone();
+            let mut tracee = create_task(locked, &kernel, "tracee");
+            let mut tracer = create_task(locked, &kernel, "tracer");
+            kernel.ptrace_scope.store(RESTRICTED_SCOPE, Ordering::Relaxed);
+            assert_eq!(
+                sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0),
+                error!(EINVAL)
+            );
 
-        assert_eq!(
-            ptrace_attach(
-                locked,
-                &mut tracer,
-                tracee.as_ref().task.tid,
-                PtraceAttachType::Attach,
-                UserAddress::NULL,
-            ),
-            error!(EPERM)
-        );
+            assert_eq!(
+                ptrace_attach(
+                    locked,
+                    &mut tracer,
+                    tracee.as_ref().task.tid,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL,
+                ),
+                error!(EPERM)
+            );
 
-        assert!(
-            sys_prctl(
-                locked,
-                &mut tracee,
-                PR_SET_PTRACER,
-                tracer.thread_group().leader as u64,
-                0,
-                0,
-                0
-            )
-            .is_ok()
-        );
+            assert!(
+                sys_prctl(
+                    locked,
+                    &mut tracee,
+                    PR_SET_PTRACER,
+                    tracer.thread_group().leader as u64,
+                    0,
+                    0,
+                    0
+                )
+                .is_ok()
+            );
 
-        let mut not_tracer = create_task(locked, &kernel, "not-tracer");
-        assert_eq!(
-            ptrace_attach(
-                locked,
-                &mut not_tracer,
-                tracee.as_ref().task.tid,
-                PtraceAttachType::Attach,
-                UserAddress::NULL,
-            ),
-            error!(EPERM)
-        );
+            let mut not_tracer = create_task(locked, &kernel, "not-tracer");
+            assert_eq!(
+                ptrace_attach(
+                    locked,
+                    &mut not_tracer,
+                    tracee.as_ref().task.tid,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL,
+                ),
+                error!(EPERM)
+            );
 
-        assert!(
-            ptrace_attach(
-                locked,
-                &mut tracer,
-                tracee.as_ref().task.tid,
-                PtraceAttachType::Attach,
-                UserAddress::NULL,
-            )
-            .is_ok()
-        );
+            assert!(
+                ptrace_attach(
+                    locked,
+                    &mut tracer,
+                    tracee.as_ref().task.tid,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL,
+                )
+                .is_ok()
+            );
+        });
     }
 
     #[::fuchsia::test]
     async fn test_set_ptracer_any() {
-        let (kernel, mut tracee, locked) = create_kernel_task_and_unlocked();
-        let mut tracer = create_task(locked, &kernel, "tracer");
-        kernel.ptrace_scope.store(RESTRICTED_SCOPE, Ordering::Relaxed);
-        assert_eq!(sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0), error!(EINVAL));
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel().clone();
+            let mut tracee = create_task(locked, &kernel, "tracee");
+            let mut tracer = create_task(locked, &kernel, "tracer");
+            kernel.ptrace_scope.store(RESTRICTED_SCOPE, Ordering::Relaxed);
+            assert_eq!(
+                sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0),
+                error!(EINVAL)
+            );
 
-        assert_eq!(
-            ptrace_attach(
-                locked,
-                &mut tracer,
-                tracee.as_ref().task.tid,
-                PtraceAttachType::Attach,
-                UserAddress::NULL,
-            ),
-            error!(EPERM)
-        );
+            assert_eq!(
+                ptrace_attach(
+                    locked,
+                    &mut tracer,
+                    tracee.as_ref().task.tid,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL,
+                ),
+                error!(EPERM)
+            );
 
-        assert!(
-            sys_prctl(locked, &mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0)
+            assert!(
+                sys_prctl(locked, &mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0)
+                    .is_ok()
+            );
+
+            assert!(
+                ptrace_attach(
+                    locked,
+                    &mut tracer,
+                    tracee.as_ref().task.tid,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL,
+                )
                 .is_ok()
-        );
-
-        assert!(
-            ptrace_attach(
-                locked,
-                &mut tracer,
-                tracee.as_ref().task.tid,
-                PtraceAttachType::Attach,
-                UserAddress::NULL,
-            )
-            .is_ok()
-        );
+            );
+        });
     }
 }
