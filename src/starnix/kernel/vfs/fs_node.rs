@@ -583,7 +583,7 @@ impl FallocMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CheckAccessReason {
     Access,
     Chdir,
@@ -1383,6 +1383,7 @@ impl FsNode {
         } else {
             PermissionFlags::empty()
         };
+        // TODO: https://fxbug.dev/364568874 - Fold this into `self.check_access()` (see above).
         security::fs_node_permission(
             current_task,
             self,
@@ -1984,7 +1985,19 @@ impl FsNode {
                 return Ok(());
             }
         }
-        check_access(self, current_task, access, reason, node_uid, node_gid, mode)
+        check_access(self, current_task, access, reason, node_uid, node_gid, mode)?;
+
+        // TODO: https://fxbug.dev/364568874 - Integrate the `fs_node_permission()` check into the
+        // check_access() implementation, for all `CheckAccessReason`s.
+        if reason == CheckAccessReason::Access {
+            security::fs_node_permission(
+                current_task,
+                self,
+                PermissionFlags::ACCESS | access.into(),
+                (&[]).into(),
+            )?;
+        }
+        Ok(())
     }
 
     /// Check whether the node can be accessed in the current context with the specified access
@@ -2777,8 +2790,6 @@ fn check_access(
     if requested.is_empty() {
         return Ok(());
     }
-
-    // TODO: https://fxbug.dev/364568874 - Integrate the security::inode_permission() hook here.
 
     return error!(EACCES);
 }
