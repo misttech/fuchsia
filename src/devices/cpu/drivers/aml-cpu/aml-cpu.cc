@@ -6,9 +6,9 @@
 
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
 #include <lib/trace/event_args.h>

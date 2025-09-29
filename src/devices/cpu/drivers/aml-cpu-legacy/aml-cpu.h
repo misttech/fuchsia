@@ -9,8 +9,8 @@
 #include <fidl/fuchsia.hardware.cpu.ctrl/cpp/wire.h>
 #include <fidl/fuchsia.hardware.thermal/cpp/wire.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/mmio/mmio.h>
 
 #include <mutex>
 

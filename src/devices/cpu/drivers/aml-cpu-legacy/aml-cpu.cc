@@ -9,9 +9,9 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/mmio/mmio.h>
 #include <zircon/errors.h>
 
 #include <map>
