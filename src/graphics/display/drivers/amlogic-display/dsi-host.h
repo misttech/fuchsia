@@ -8,8 +8,8 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/incoming/cpp/namespace.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 

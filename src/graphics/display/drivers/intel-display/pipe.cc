@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zx/time.h>

@@ -8,9 +8,9 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fit/function.h>
 #include <lib/mipi-dsi/mipi-dsi.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 

@@ -9,9 +9,9 @@
 #include <lib/driver/compat/cpp/logging.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>

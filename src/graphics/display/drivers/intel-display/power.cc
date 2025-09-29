@@ -4,7 +4,7 @@
 
 #include "src/graphics/display/drivers/intel-display/power.h"
 
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
 

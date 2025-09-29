@@ -4,9 +4,9 @@
 
 #include "src/graphics/display/drivers/intel-display/dp-display.h"
 
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio.h>
 
 #include <cstdint>
 #include <memory>

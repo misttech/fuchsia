@@ -31,7 +31,7 @@ fuchsia_cc_driver("driver") {
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/graphics/display/lib/api-types/cpp",
     "//src/graphics/display/lib/framebuffer-display",

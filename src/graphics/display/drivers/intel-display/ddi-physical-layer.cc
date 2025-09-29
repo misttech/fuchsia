@@ -5,8 +5,8 @@
 #include "src/graphics/display/drivers/intel-display/ddi-physical-layer.h"
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fit/defer.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 

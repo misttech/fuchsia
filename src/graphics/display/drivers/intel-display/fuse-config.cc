@@ -5,7 +5,7 @@
 #include "src/graphics/display/drivers/intel-display/fuse-config.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/assert.h>
 
 #include "src/graphics/display/drivers/intel-display/pci-ids.h"
@@ -69,7 +69,8 @@ FuseConfig ReadFuseConfigSkylake(fdf::MmioBuffer& mmio_space) {
       .graphics_enabled = !dfsm_register.graphics_disabled(),
       .pipe_enabled =
           {
-              !dfsm_register.pipe_a_disabled(), !dfsm_register.pipe_b_disabled(),
+              !dfsm_register.pipe_a_disabled(),
+              !dfsm_register.pipe_b_disabled(),
               !dfsm_register.pipe_c_disabled(),
               false,  // No pipe D on these models.
           },

@@ -5,6 +5,7 @@
 #include "src/graphics/display/drivers/intel-display/pipe-manager.h"
 
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 
 #include <cstddef>

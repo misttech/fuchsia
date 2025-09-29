@@ -6,10 +6,10 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AML_CANVAS_AML_CANVAS_H_
 
 #include <fidl/fuchsia.hardware.amlogiccanvas/cpp/wire.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/pmt.h>
 #include <zircon/compiler.h>

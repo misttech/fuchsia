@@ -8,9 +8,9 @@
 #include <lib/async-loop/testing/cpp/real_loop.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>

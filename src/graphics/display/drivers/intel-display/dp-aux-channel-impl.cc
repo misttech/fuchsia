@@ -5,7 +5,7 @@
 #include "src/graphics/display/drivers/intel-display/dp-aux-channel-impl.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <threads.h>

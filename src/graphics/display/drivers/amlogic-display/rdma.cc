@@ -6,8 +6,8 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/clock.h>

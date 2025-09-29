@@ -4,7 +4,7 @@
 
 #include "src/graphics/display/drivers/intel-display/pipe-manager.h"
 
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <zircon/assert.h>
 
 #include <algorithm>

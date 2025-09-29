@@ -6,8 +6,8 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AMLOGIC_DISPLAY_VIDEO_INPUT_UNIT_H_
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/result.h>
 
 #include <cstdint>

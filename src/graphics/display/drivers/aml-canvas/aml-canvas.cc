@@ -5,9 +5,9 @@
 #include "src/graphics/display/drivers/aml-canvas/aml-canvas.h"
 
 #include <lib/driver/compat/cpp/logging.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/zx/bti.h>
 #include <zircon/assert.h>

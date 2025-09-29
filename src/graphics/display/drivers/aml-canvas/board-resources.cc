@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/driver/compat/cpp/logging.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>

@@ -6,7 +6,7 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AML_CANVAS_BOARD_RESOURCES_H_
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/bti.h>
 
 namespace aml_canvas {

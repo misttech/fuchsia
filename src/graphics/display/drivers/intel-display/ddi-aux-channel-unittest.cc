@@ -4,9 +4,9 @@
 
 #include "src/graphics/display/drivers/intel-display/ddi-aux-channel.h"
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mock-mmio/cpp/globally-ordered-region.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>

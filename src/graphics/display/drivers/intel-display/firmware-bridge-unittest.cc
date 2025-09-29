@@ -7,9 +7,9 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/loop.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>

@@ -5,7 +5,7 @@
 #include "src/graphics/display/drivers/amlogic-display/video-input-unit.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>

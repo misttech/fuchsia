@@ -12,9 +12,9 @@
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/mmio/mmio.h>
 #include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>

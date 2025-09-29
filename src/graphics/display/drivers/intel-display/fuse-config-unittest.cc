@@ -4,9 +4,9 @@
 
 #include "src/graphics/display/drivers/intel-display/fuse-config.h"
 
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mock-mmio/cpp/globally-ordered-region.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/mmio/mmio.h>
 
 #include <cstdint>
 

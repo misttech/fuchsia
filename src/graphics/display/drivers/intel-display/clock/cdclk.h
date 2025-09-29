@@ -5,8 +5,8 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_CLOCK_CDCLK_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_CLOCK_CDCLK_H_
 
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/assert.h>
 
 namespace intel_display {

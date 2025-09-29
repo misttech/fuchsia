@@ -4,8 +4,8 @@
 
 #include "src/graphics/display/drivers/intel-display/registers-ddi.h"
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mock-mmio/cpp/globally-ordered-region.h>
-#include <lib/mmio/mmio-buffer.h>
 
 #include <gtest/gtest.h>
 

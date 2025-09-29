@@ -5,7 +5,7 @@
 #include "src/graphics/display/drivers/intel-display/ddi-aux-channel.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>

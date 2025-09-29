@@ -5,9 +5,9 @@
 #include "src/graphics/display/drivers/intel-display/power.h"
 
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio.h>
 
 #include <memory>
 #include <vector>
