@@ -29,7 +29,6 @@ group("tests") {
     "fdio-caller:tests",
     "ffl:tests",
     "fzl:tests",
-    "gfx:tests",
     "hwreg:tests",
     "id_allocator:tests",
     "image-format:tests",

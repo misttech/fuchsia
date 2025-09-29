@@ -6,9 +6,8 @@
 ## Summary
 
 This document proposes a plan for converting the Virtual Console (Virtcon)
-from a C++ program with a custom low-level graphics library
-(See [gfx](/zircon/system/ulib/gfx)) to a Rust based
-[Carnelian](/src/lib/ui/carnelian) application. The Terminal application
+from a C++ program with a custom low-level graphics library (gfx) to a Rust
+based [Carnelian](/src/lib/ui/carnelian) application. The Terminal application
 code used for Workstation and Terminal products will be unified with Virtcon
 in the process, and Virtcon will gain the ability to use advanced vector
 graphics and scalable text with high quality anti-aliasing.
@@ -26,10 +25,9 @@ Virtcon implements its own limited software rendering library, while the
 Terminal application is powered by Carnelian's advanced vector graphics
 rendering backend. There is a large amount of code duplication between
 these implementations and reducing that would be a net positive for the
-platform. The legacy graphics library ([gfx](/zircon/system/ulib/gfx))
-used by Virtcon today can be deleted and we can reduce the number of ways
-that we interact with the display controller API when this transition has
-completed.
+platform. The legacy graphics library gfx used by Virtcon today can be
+deleted and we can reduce the number of ways that we interact with the
+display controller API when this transition has completed.
 
 ### New features
 
