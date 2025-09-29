@@ -654,7 +654,7 @@ impl CpuManagerMain {
             // transition from throttled to unthrottled. (There is some redundant logic in the
             // conditions to improve clarity.)
             if current_index == 0 && index > 0 {
-                log::info!("Starting CPU throttling")
+                log::info!("Starting CPU throttling because thermal state is {index}")
             }
             if current_index > 0 && index == 0 {
                 log::info!("Ending CPU throttling");
