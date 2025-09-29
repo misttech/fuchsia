@@ -81,6 +81,7 @@ success("RecursiveOptionalStructUnderLimit") {
 }
 
 encode_failure("RecursiveOptionalStructExceedLimit") {
+    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveOptionalStruct { // 0
     inner: RecursiveOptionalStruct { // 1
@@ -156,6 +157,7 @@ encode_failure("RecursiveOptionalStructExceedLimit") {
 }
 
 decode_failure("RecursiveOptionalStructExceedLimit") {
+    bindings_denylist = [rust_next],
     type = RecursiveOptionalStruct,
     bytes = {
         v2 = [
@@ -249,6 +251,7 @@ success("RecursiveOptionalStructArrayWrapperUnderLimit") {
 }
 
 encode_failure("RecursiveOptionalStructArrayWrapperExceedLimit") {
+    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveOptionalStructArrayWrapper { // 0
     arr: [ // 0
@@ -328,6 +331,7 @@ encode_failure("RecursiveOptionalStructArrayWrapperExceedLimit") {
 }
 
 decode_failure("RecursiveOptionalStructArrayWrapperExceedLimit") {
+    bindings_denylist = [rust_next],
     type = RecursiveOptionalStructArrayWrapper,
     bytes = {
         v2 = [
@@ -421,6 +425,7 @@ success("RecursiveOptionalAndUnionUnderLimit") {
 }
 
 encode_failure("RecursiveOptionalAndUnionExceedLimit") {
+    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveOptionalAndUnionStruct { // 0
     u: RecursiveOptionalAndUnion { // 0
@@ -498,6 +503,7 @@ encode_failure("RecursiveOptionalAndUnionExceedLimit") {
 }
 
 decode_failure("RecursiveOptionalAndUnionExceedLimit") {
+    bindings_denylist = [rust_next],
     type = RecursiveOptionalAndUnionStruct,
     bytes = {
         v2 = [
@@ -592,6 +598,7 @@ success("RecursiveOptionalAndTableUnderLimit") {
 }
 
 encode_failure("RecursiveOptionalAndTableExceedLimit") {
+    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveOptionalAndTableStruct { // 0
     t: RecursiveOptionalAndTable { // 0
@@ -668,7 +675,7 @@ encode_failure("RecursiveOptionalAndTableExceedLimit") {
 
 decode_failure("RecursiveOptionalAndTableExceedLimit") {
     // TODO(https://fxbug.dev/42084096): Fix in C++.
-    bindings_denylist = [cpp],
+    bindings_denylist = [cpp, rust_next],
     type = RecursiveOptionalAndTableStruct,
     bytes = {
         v2 = [
@@ -764,6 +771,7 @@ success("RecursiveOptionalAndVectorUnderLimit") {
 }
 
 encode_failure("RecursiveOptionalAndVectorExceedLimit") {
+    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveOptionalAndVectorStruct { // 0
     vec: [ RecursiveOptionalStruct { // 1
@@ -840,6 +848,7 @@ encode_failure("RecursiveOptionalAndVectorExceedLimit") {
 }
 
 decode_failure("RecursiveOptionalAndVectorExceedLimit") {
+    bindings_denylist = [rust_next],
     type = RecursiveOptionalAndVectorStruct,
     bytes = {
         v2 = [
@@ -1057,6 +1066,7 @@ success("RecursiveOptionalStructWithStringUnderLimit") {
 }
 
 encode_failure("RecursiveOptionalStructWithStringExceedLimit") {
+    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveOptionalStructWithString { // 0
     inner: RecursiveOptionalStructWithString { // 1
@@ -1130,6 +1140,7 @@ encode_failure("RecursiveOptionalStructWithStringExceedLimit") {
 }
 
 decode_failure("RecursiveOptionalStructWithStringExceedLimit") {
+    bindings_denylist = [rust_next],
     type = RecursiveOptionalStructWithString,
     bytes = {
         v2 = [

@@ -105,7 +105,7 @@ decode_failure("AbsentNonnullableVectorOfHandlesError") {
 
 decode_failure("InvalidAbsentNonnullableVectorOfHandlesError") {
     // TODO(https://fxbug.dev/42136336): Close handles on encode/decode failure.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -226,7 +226,7 @@ decode_failure("AbsentNonnullableBoundedVectorOfHandlesError") {
 
 decode_failure("InvalidAbsentNonnullableBoundedVectorOfHandlesError") {
     // TODO(https://fxbug.dev/42136336): Close handles on encode/decode failure.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -448,6 +448,7 @@ success("PresentNullableBoundedVectorOfUint32") {
 }
 
 decode_failure("AbsentNonnullableBoundedVectorOfUint32Error") {
+    bindings_denylist = [rust_next],
     type = UnboundedNonnullableVectorOfUint32s,
     bytes = {
         v2 = [

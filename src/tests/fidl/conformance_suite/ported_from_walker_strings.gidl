@@ -85,6 +85,7 @@ decode_failure("AbsentNonnullableStringError") {
 }
 
 decode_failure("InvalidAbsentNonnullableStringError") {
+    bindings_denylist = [rust_next],
     type = UnboundedNonnullableString,
     bytes = {
         v2 = [
@@ -145,6 +146,7 @@ decode_failure("AbsentNonnullableBoundedStringError") {
 }
 
 decode_failure("InvalidAbsentNonnullableBoundedStringError") {
+    bindings_denylist = [rust_next],
     type = Bounded32NonnullableString,
     bytes = {
         v2 = [

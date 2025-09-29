@@ -29,6 +29,7 @@ encode_failure("AbsentNonOptionalHandle") {
 }
 
 decode_failure("AbsentNonOptionalHandle") {
+    bindings_denylist = [rust_next],
     bytes = {
         v2 = [
             repeat(0x00):4, padding:4,
@@ -266,7 +267,7 @@ success("StructOfOptionalUnionOfHandleAbsent") {
 // do not exit early upon failure.
 encode_failure("HandlesBeforeAndAfterFailureAreClosed") {
     // TODO(96626): Should close handles in some constraint violation cases.
-    bindings_denylist = [hlcpp, go, dart],
+    bindings_denylist = [hlcpp, go, dart, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -322,7 +323,7 @@ decode_failure("HandlesBeforeAndAfterFailureAreClosed") {
 // has a constraint error.
 encode_failure("TooManyHandlesInVector") {
     // TODO(96626): Should close handles in some constraint violation cases.
-    bindings_denylist = [llcpp, hlcpp, go, dart],
+    bindings_denylist = [llcpp, hlcpp, go, dart, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -338,7 +339,7 @@ encode_failure("TooManyHandlesInVector") {
 // has a constraint error.
 encode_failure("UnrelatedConstraintErrorBeforeHandle") {
     // TODO(96626): Should close handles in some constraint violation cases.
-    bindings_denylist = [hlcpp, go, dart],
+    bindings_denylist = [hlcpp, go, dart, rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -393,7 +394,7 @@ success("MultipleHandleSubtypes") {
 }
 
 decode_failure("TooManyHandles") {
-    bindings_denylist = [rust],
+    bindings_denylist = [rust, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),

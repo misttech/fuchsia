@@ -24,6 +24,7 @@ success("UnionWithBoundString") {
 }
 
 encode_failure("UnionWithBoundString_ExceedsBounds") {
+    bindings_denylist = [rust_next],
     value = UnionWithBoundStringStruct{
         v: UnionWithBoundString{
             boundFiveStr: "abcdef",
@@ -461,6 +462,7 @@ success("UnionEnvelopeInlining_LargeValue_Outlined") {
 }
 
 decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerLower") {
+    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -473,6 +475,7 @@ decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerLower") {
 }
 
 decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerUpper") {
+    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -485,6 +488,7 @@ decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerUpper") {
 }
 
 decode_failure("UnionEnvelopeInlining_LargeValue_BadOutlinedMarker") {
+    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -655,6 +659,7 @@ decode_success("UnionEnvelopeInlining_UnknownHandleValue_Inlined") {
 // Tests decode of a value in a union that can be represented inline in the
 // envelope but is incorrectly using the out of line representation.
 decode_failure("UnionOutOfLineEnvelopeWhenInlineRequired") {
+    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -672,6 +677,7 @@ decode_failure("UnionOutOfLineEnvelopeWhenInlineRequired") {
 // Tests decode of a value in a union that can be represented out of line in
 // the envelope but is incorrectly using the inline representation.
 decode_failure("UnionInlineEnvelopeWhenOutOfLineRequired") {
+    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -700,6 +706,7 @@ encode_failure("RequiredFlexibleValueUnionZeroOrdinalNoPayloadOld") {
 encode_failure("RequiredFlexibleValueUnionZeroOrdinalNoPayload") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
     bindings_allowlist = [rust],
+    bindings_denylist = [rust_next],
     value = TestFlexibleXUnionInStruct{
         xu: SampleXUnion{
             0: null,
@@ -790,6 +797,7 @@ encode_failure("OptionalFlexibleResourceUnionZeroOrdinalWithPayload") {
 }
 
 decode_failure("RequiredStrictValueUnionZeroOrdinalNoPayload") {
+    bindings_denylist = [rust_next],
     type = TestStrictXUnionInStruct,
     bytes = {
         v2 = [
@@ -801,6 +809,7 @@ decode_failure("RequiredStrictValueUnionZeroOrdinalNoPayload") {
 }
 
 decode_failure("RequiredStrictValueUnionZeroOrdinalWithPayload") {
+    bindings_denylist = [rust_next],
     type = TestStrictXUnionInStruct,
     bytes = {
         v2 = [
@@ -813,6 +822,7 @@ decode_failure("RequiredStrictValueUnionZeroOrdinalWithPayload") {
 }
 
 decode_failure("RequiredStrictResourceUnionZeroOrdinalNoPayload") {
+    bindings_denylist = [rust_next],
     type = TestStrictResourceXUnionInStruct,
     bytes = {
         v2 = [
@@ -824,6 +834,7 @@ decode_failure("RequiredStrictResourceUnionZeroOrdinalNoPayload") {
 }
 
 decode_failure("RequiredStrictResourceUnionZeroOrdinalWithPayload") {
+    bindings_denylist = [rust_next],
     type = TestStrictResourceXUnionInStruct,
     bytes = {
         v2 = [
@@ -836,6 +847,7 @@ decode_failure("RequiredStrictResourceUnionZeroOrdinalWithPayload") {
 }
 
 decode_failure("RequiredFlexibleValueUnionZeroOrdinalNoPayload") {
+    bindings_denylist = [rust_next],
     type = TestFlexibleXUnionInStruct,
     bytes = {
         v2 = [
@@ -847,6 +859,8 @@ decode_failure("RequiredFlexibleValueUnionZeroOrdinalNoPayload") {
 }
 
 decode_failure("RequiredFlexibleValueUnionZeroOrdinalWithPayload") {
+    // unsafe precondition(s) violated: hint::unreachable_unchecked must never be reached
+    bindings_denylist = [rust_next],
     type = TestFlexibleXUnionInStruct,
     bytes = {
         v2 = [
@@ -859,6 +873,7 @@ decode_failure("RequiredFlexibleValueUnionZeroOrdinalWithPayload") {
 }
 
 decode_failure("RequiredFlexibleResourceUnionZeroOrdinalNoPayload") {
+    bindings_denylist = [rust_next],
     type = TestFlexibleResourceXUnionInStruct,
     bytes = {
         v2 = [
@@ -870,6 +885,8 @@ decode_failure("RequiredFlexibleResourceUnionZeroOrdinalNoPayload") {
 }
 
 decode_failure("RequiredFlexibleResourceUnionZeroOrdinalWithPayload") {
+    // unsafe precondition(s) violated: hint::unreachable_unchecked must never be reached
+    bindings_denylist = [rust_next],
     type = TestFlexibleResourceXUnionInStruct,
     bytes = {
         v2 = [
@@ -1048,7 +1065,7 @@ encode_failure("OptionalFlexibleResourceUnionDefaultInitialized") {
 decode_failure("EnvelopeByteCountExceedsMessageByteCount") {
     // TODO(https://fxbug.dev/42169965) Fix in Rust.
     // TODO(https://fxbug.dev/42169966) Fix in Dart.
-    bindings_denylist = [rust, dart],
+    bindings_denylist = [rust, dart, rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -1062,7 +1079,7 @@ decode_failure("EnvelopeByteCountExceedsMessageByteCount") {
 decode_failure("EnvelopeHandleCountExceedsMessageHandleCount") {
     // TODO(https://fxbug.dev/42169966) Fix in Dart.
     // TODO(https://fxbug.dev/42051692) Fix in Go.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart, go, rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -1076,7 +1093,7 @@ decode_failure("EnvelopeHandleCountExceedsMessageHandleCount") {
 decode_failure("EnvelopeHandleCountExceedsMessageHandleCountUnknown") {
     // TODO(https://fxbug.dev/42169965) Fix in Rust.
     // TODO(https://fxbug.dev/42169966) Fix in Dart.
-    bindings_denylist = [rust, dart],
+    bindings_denylist = [rust, dart, rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [

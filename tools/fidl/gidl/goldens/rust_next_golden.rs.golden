@@ -6,7 +6,10 @@
 
 use {
     assert_matches::assert_matches,
-    fidl_next::{Chunk, Decode, DecoderExt as _, Encode, EncoderExt as _, WireU64, ClientEnd, ServerEnd},
+    fidl_next::{Chunk, WireU64,
+        Decode, DecodeError, DecoderExt as _,
+        Encode, EncodeError, EncoderExt as _,
+        ClientEnd, ServerEnd},
     fidl_next::fuchsia::channel::Buffer,
     fidl_next::fuchsia::channel::RecvBuffer,
     fidl_next::fuchsia::zx as zx,
@@ -745,10 +748,6 @@ copy_handle(&handle_defs[0]),], &[
 
 
 
-// TODO: golden_string_with_max_size2_encode_failure
 
-
-
-// TODO: golden_string_struct_null_body_decode_failure
 
 

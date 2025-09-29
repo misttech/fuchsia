@@ -42,12 +42,12 @@ type decodeSuccessCase struct {
 }
 
 type encodeFailureCase struct {
-	Name, HandleDefs, ValueType, Value, ErrorCode string
-	IsResource                                    bool
+	Name, HandleDefs, ValueType, Value, ErrorPattern string
+	IsResource                                       bool
 }
 
 type decodeFailureCase struct {
-	Name, HandleDefs, ValueType, Bytes, Handles, ErrorCode string
+	Name, HandleDefs, ValueType, Bytes, Handles, HandleValues, ErrorPattern string
 }
 
 // GenerateConformanceTests generates Rust tests.
@@ -158,7 +158,7 @@ func encodeFailureCases(gidlEncodeFailures []ir.EncodeFailure, schema mixer.Sche
 		if err != nil {
 			return nil, fmt.Errorf("encode failure %s: %s", encodeFailure.Name, err)
 		}
-		errorCode, err := rustErrorCode(encodeFailure.Err)
+		errorPattern, err := encodeErrorPattern(encodeFailure.Err)
 		if err != nil {
 			return nil, fmt.Errorf("encode failure %s: %s", encodeFailure.Name, err)
 		}
@@ -167,12 +167,12 @@ func encodeFailureCases(gidlEncodeFailures []ir.EncodeFailure, schema mixer.Sche
 
 		for _, wireFormat := range supportedWireFormats {
 			encodeFailureCases = append(encodeFailureCases, encodeFailureCase{
-				Name:       testCaseName(encodeFailure.Name, wireFormat),
-				HandleDefs: buildHandleDefs(encodeFailure.HandleDefs),
-				ValueType:  valueType,
-				Value:      value,
-				ErrorCode:  errorCode,
-				IsResource: decl.IsResourceType(),
+				Name:         testCaseName(encodeFailure.Name, wireFormat),
+				HandleDefs:   buildHandleDefs(encodeFailure.HandleDefs),
+				ValueType:    valueType,
+				Value:        value,
+				ErrorPattern: errorPattern,
+				IsResource:   decl.IsResourceType(),
 			})
 		}
 	}
@@ -186,7 +186,7 @@ func decodeFailureCases(gidlDecodeFailures []ir.DecodeFailure, schema mixer.Sche
 		if err != nil {
 			return nil, fmt.Errorf("decode failure %s: %s", decodeFailure.Name, err)
 		}
-		errorCode, err := rustErrorCode(decodeFailure.Err)
+		errorPattern, err := decodeErrorPattern(decodeFailure.Err)
 		if err != nil {
 			return nil, fmt.Errorf("decode failure %s: %s", decodeFailure.Name, err)
 		}
@@ -196,12 +196,13 @@ func decodeFailureCases(gidlDecodeFailures []ir.DecodeFailure, schema mixer.Sche
 				continue
 			}
 			decodeFailureCases = append(decodeFailureCases, decodeFailureCase{
-				Name:       testCaseName(decodeFailure.Name, encoding.WireFormat),
-				HandleDefs: buildHandleDefs(decodeFailure.HandleDefs),
-				ValueType:  valueType,
-				Bytes:      rust.BuildBytes(encoding.Bytes),
-				Handles:    buildHandles(encoding.Handles),
-				ErrorCode:  errorCode,
+				Name:         testCaseName(decodeFailure.Name, encoding.WireFormat),
+				HandleDefs:   buildHandleDefs(decodeFailure.HandleDefs),
+				ValueType:    valueType,
+				Bytes:        rust.BuildBytes(encoding.Bytes),
+				Handles:      buildHandles(encoding.Handles),
+				HandleValues: buildHandleValues(encoding.Handles),
+				ErrorPattern: errorPattern,
 			})
 		}
 	}
@@ -228,47 +229,54 @@ func wireFormatSupported(wireFormat ir.WireFormat) bool {
 	return false
 }
 
-// Rust errors are defined in src/lib/fidl/rust/fidl/src/error.rs.
-var rustErrorCodeNames = map[ir.ErrorCode]string{
-	ir.CountExceedsLimit:                  "VectorTooLong",
-	ir.EnvelopeBytesExceedMessageLength:   "InvalidNumBytesInEnvelope",
-	ir.EnvelopeHandlesExceedMessageLength: "InvalidNumHandlesInEnvelope",
-	ir.ExceededMaxOutOfLineDepth:          "MaxRecursionDepth",
-	ir.FlexibleUnionUnknownField:          "UnknownUnionTag",
-	ir.IncorrectHandleType:                "IncorrectHandleSubtype",
-	ir.InvalidBoolean:                     "InvalidBoolean",
-	ir.InvalidEmptyStruct:                 "Invalid",
-	ir.InvalidHandlePresenceIndicator:     "InvalidPresenceIndicator",
-	ir.InvalidInlineBitInEnvelope:         "InvalidInlineBitInEnvelope",
-	ir.InvalidInlineMarkerInEnvelope:      "InvalidInlineMarkerInEnvelope",
-	ir.InvalidNumBytesInEnvelope:          "InvalidNumBytesInEnvelope",
-	ir.InvalidNumHandlesInEnvelope:        "InvalidNumHandlesInEnvelope",
-	ir.InvalidPaddingByte:                 "NonZeroPadding",
-	ir.InvalidPresenceIndicator:           "InvalidPresenceIndicator",
-	ir.MissingRequiredHandleRights:        "MissingExpectedHandleRights",
-	ir.NonEmptyStringWithNullBody:         "UnexpectedNullRef",
-	ir.NonEmptyVectorWithNullBody:         "UnexpectedNullRef",
-	ir.NonNullableTypeWithNullValue:       "NotNullable",
-	ir.StrictBitsUnknownBit:               "InvalidBitsValue",
-	ir.StrictEnumUnknownValue:             "InvalidEnumValue",
-	ir.StrictUnionUnknownField:            "UnknownUnionTag",
-	ir.StringCountExceeds32BitLimit:       "OutOfRange",
-	ir.StringNotUtf8:                      "Utf8Error",
-	ir.StringTooLong:                      "StringTooLong",
-	ir.TableCountExceeds32BitLimit:        "OutOfRange",
-	ir.TooFewBytes:                        "OutOfRange",
-	ir.TooFewBytesInPrimaryObject:         "OutOfRange",
-	ir.TooFewHandles:                      "OutOfRange",
-	ir.TooManyBytesInMessage:              "ExtraBytes",
-	ir.TooManyHandlesInMessage:            "ExtraHandles",
-	ir.UnexpectedOrdinal:                  "OutOfRange",
-	ir.UnionFieldNotSet:                   "UnknownUnionTag",
-	ir.VectorCountExceeds32BitLimit:       "OutOfRange",
+var encodeErrorPatternNames = map[ir.ErrorCode]string{
+	ir.NonNullableTypeWithNullValue: "EncodeError::InvalidRequiredHandle",
 }
 
-func rustErrorCode(code ir.ErrorCode) (string, error) {
-	if str, ok := rustErrorCodeNames[code]; ok {
-		return fmt.Sprintf("Error::%s", str), nil
+func encodeErrorPattern(code ir.ErrorCode) (string, error) {
+	if str, ok := encodeErrorPatternNames[code]; ok {
+		return str, nil
 	}
-	return "", fmt.Errorf("no rust error string defined for error code %s", code)
+	return "", fmt.Errorf("no rust error string defined for encode error code %s", code)
+}
+
+var decodeErrorPatternMap = map[ir.ErrorCode]string{
+	ir.CountExceedsLimit:                  "DecodeError::VectorTooLong{ .. }",
+	ir.EnvelopeBytesExceedMessageLength:   "DecodeError::InvalidEnvelopeSize(_)",
+	ir.EnvelopeHandlesExceedMessageLength: "DecodeError::InvalidEnvelopeSize(_)",
+	ir.ExceededMaxOutOfLineDepth:          `"TODO: ExceededMaxOutOfLineDepth"`,
+	ir.IncorrectHandleType:                "DecodeError::ExpectedDriverHandle", // probably wrong
+	ir.InvalidBoolean:                     "DecodeError::InvalidBool(_)",
+	ir.InvalidEmptyStruct:                 `"TODO: InvalidEmptyStruct"`,
+	ir.InvalidHandlePresenceIndicator:     "DecodeError::InvalidHandlePresence(_)",
+	ir.InvalidInlineBitInEnvelope:         `"TODO: InvalidInlineBitInEnvelope"`,
+	ir.InvalidInlineMarkerInEnvelope:      `"TODO: InvalidInlineMarkerInEnvelope"`,
+	ir.InvalidNumBytesInEnvelope:          "DecodeError::InvalidEnvelopeSize(_)",
+	ir.InvalidNumHandlesInEnvelope:        "DecodeError::InvalidEnvelopeSize(_)",
+	ir.InvalidPaddingByte:                 `"TODO: InvalidPaddingByte"`,
+	ir.InvalidPresenceIndicator:           "DecodeError::InvalidPointerPresence(_)",
+	ir.MissingRequiredHandleRights:        `"TODO: MissingRequiredHandleRights"`,
+	ir.NonEmptyStringWithNullBody:         "DecodeError::InvalidOptionalSize(_)",
+	ir.NonEmptyVectorWithNullBody:         "DecodeError::InvalidOptionalSize(_)",
+	ir.NonNullableTypeWithNullValue:       "DecodeError::RequiredValueAbsent",
+	ir.StrictBitsUnknownBit:               "DecodeError::InvalidBits{ .. }",
+	ir.StrictEnumUnknownValue:             "DecodeError::InvalidEnumOrdinal(_)",
+	ir.StrictUnionUnknownField:            "DecodeError::InvalidUnionOrdinal(_)",
+	ir.StringCountExceeds32BitLimit:       "DecodeError::VectorTooLong{ .. }",
+	ir.StringNotUtf8:                      "DecodeError::InvalidUtf8(_)",
+	ir.StringTooLong:                      "DecodeError::VectorTooLong{ .. }", // probably should have a different error
+	ir.TableCountExceeds32BitLimit:        "DecodeError::VectorTooLong{ .. }",
+	ir.TooFewBytes:                        "DecodeError::InsufficientData",
+	ir.TooFewHandles:                      "DecodeError::InsufficientHandles",
+	ir.TooManyBytesInMessage:              "DecodeError::ExtraBytes{ .. }",
+	ir.TooManyHandlesInMessage:            "DecodeError::ExtraHandles{ .. }",
+	ir.UnionFieldNotSet:                   "DecodeError::InvalidUnionEnvelope",
+	ir.VectorCountExceeds32BitLimit:       "DecodeError::VectorTooLong{ .. }",
+}
+
+func decodeErrorPattern(code ir.ErrorCode) (string, error) {
+	if str, ok := decodeErrorPatternMap[code]; ok {
+		return str, nil
+	}
+	return "", fmt.Errorf("no rust error string defined for decode error code %s", code)
 }

@@ -362,6 +362,7 @@ success("GoldenNullableHandleStructNull") {
 
 // Golden test for an encode_failure case.
 encode_failure("GoldenStringWithMaxSize2") {
+    bindings_denylist = [rust_next],
     value = GoldenStringWithMaxSize2{
         s: "abc", // exceeds the string length
     },
@@ -370,6 +371,7 @@ encode_failure("GoldenStringWithMaxSize2") {
 
 // Golden test for a decode_failure case.
 decode_failure("GoldenStringStructNullBody") {
+    bindings_denylist = [rust_next],
     type = GoldenStringStruct,
     bytes = {
         v2 = [

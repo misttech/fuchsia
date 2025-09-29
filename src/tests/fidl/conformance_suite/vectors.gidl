@@ -29,6 +29,7 @@ success("VectorWrapper_randomly_generated") {
 }
 
 encode_failure("VectorExceedsLimit") {
+    bindings_denylist = [rust_next],
     value = VectorWithLimit{
         v: [1, 2, 3], // exceeds the string length
     },
@@ -62,7 +63,7 @@ success("EmptyOptionalVectorWithNullPtrBody") {
 
 decode_failure("NonEmptyVectorWithNullPtrBody") {
     // TODO(https://fxbug.dev/42170063) Fix this on dart.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [
@@ -114,6 +115,7 @@ decode_failure("OptionalVectorWrongPointerValue") {
 
 // Test vector with a 2^64-1 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("VectorCountExceedsLimitByALot") {
+    bindings_denylist = [rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [
@@ -126,6 +128,7 @@ decode_failure("VectorCountExceedsLimitByALot") {
 
 // Test vector with a 2^32 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("VectorCountExceedsLimitByOne") {
+    bindings_denylist = [rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [

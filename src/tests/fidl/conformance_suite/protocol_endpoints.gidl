@@ -102,7 +102,7 @@ decode_success("DecodeStructOfEndpoints_ExpectedRights") {
 
 decode_failure("DecodeStructOfEndpoints_WrongType") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     handle_defs = {
         #0 = channel(rights: channel_default),
         #1 = channel(rights: channel_default),
@@ -128,7 +128,7 @@ decode_failure("DecodeStructOfEndpoints_WrongType") {
 
 decode_failure("DecodeStructOfEndpoints_InsufficientRights") {
     // TODO(https://fxbug.dev/42141063): Support client_end/server_end.
-    bindings_denylist = [dart],
+    bindings_denylist = [dart, rust_next],
     handle_defs = {
         #0 = channel(rights: channel_default),
         #1 = channel(rights: channel_default - signal),

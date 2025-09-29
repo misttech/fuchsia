@@ -10,7 +10,10 @@
 
 use {
     assert_matches::assert_matches,
-    fidl_next::{Chunk, Decode, DecoderExt as _, Encode, EncoderExt as _, WireU64, ClientEnd, ServerEnd},
+    fidl_next::{Chunk, WireU64,
+        Decode, DecodeError, DecoderExt as _,
+        Encode, EncodeError, EncoderExt as _,
+        ClientEnd, ServerEnd},
     fidl_next::fuchsia::channel::Buffer,
     fidl_next::fuchsia::channel::RecvBuffer,
     fidl_next::fuchsia::zx as zx,
@@ -75,10 +78,49 @@ use {
 {{ end }}
 
 {{ range .EncodeFailureCases }}
-// TODO: {{ .Name }}_encode_failure
+    #[test]
+    fn encode_failure_{{ .Name }}() {
+        {{- if .HandleDefs }}
+            let handle_defs = create_handles(&{{ .HandleDefs }});
+        {{- end }}
+
+        let mut buffer = Buffer::new();
+        let value = {{ .Value }};
+        match buffer.encode_next(value) {
+            Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
+            Ok(_) => panic!("unexpected successful encoding"),
+        }
+        // TODO: check that we get the right error.
+        // TODO: check that handles are closed
+    }
 {{ end }}
 
 {{ range .DecodeFailureCases }}
+    #[test]
+    fn decode_failure_{{ .Name }}() {
+        {{- if .HandleDefs }}
+            let handle_defs = create_handles(&{{ .HandleDefs }});
+            let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
+            #[allow(unused)]
+            let mut handle_infos = select_handle_infos(&handle_defs, &{{ .Handles }});
+        {{- end }}
+
+        let buffer = Buffer::from_raw_bytes(vec!{{ .HandleValues }}, &{{ .Bytes }});
+        let recv_buffer = RecvBuffer::new(buffer);
+
+        match recv_buffer.decode::< <{{ .ValueType }} as fidl_next::Encodable>::Encoded>() {
+            Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
+            Ok(value) => panic!("unexpected successful decoding to: {:?}", value.take()),
+        }
+
+        {{- if .HandleDefs }}
+            assert_eq!(
+                handle_defs.iter().map(get_info_handle_valid).collect::<Vec<_>>(),
+                repeat(Err(Status::BAD_HANDLE), handle_defs.len()),
+            );
+        {{- end }}
+
+    }
 // TODO: {{ .Name }}_decode_failure
 {{ end }}
 

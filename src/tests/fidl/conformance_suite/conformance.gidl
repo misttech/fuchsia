@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 decode_failure("UnconsumedBytesInline") {
+    bindings_denylist = [rust_next],
     type = EmptyStruct,
     bytes = {
         v2 = [
@@ -14,6 +15,7 @@ decode_failure("UnconsumedBytesInline") {
 }
 
 decode_failure("UnconsumedBytesOutOfLine") {
+    bindings_denylist = [rust_next],
     type = OutOfLinePaddingZeroed7,
     bytes = {
         v2 = [
@@ -204,6 +206,7 @@ decode_failure("OptionalXUnionInStructPresentInvalidNumBytes") {
 }
 
 decode_failure("OptionalXUnionInStructPresentInvalidNumHandles") {
+    bindings_denylist = [rust_next],
     type = TestOptionalXUnionInStruct,
     bytes = {
         v2 = [

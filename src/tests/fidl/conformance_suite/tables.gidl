@@ -180,6 +180,7 @@ success("TableFieldOutOfLine") {
 }
 
 decode_failure("TableFieldBadInlineMarkerLower") {
+    bindings_denylist = [rust_next],
     type = TableFieldInlinedStruct,
     bytes = {
         v2 = [
@@ -193,6 +194,7 @@ decode_failure("TableFieldBadInlineMarkerLower") {
 }
 
 decode_failure("TableFieldBadInlineMarkerUpper") {
+    bindings_denylist = [rust_next],
     type = TableFieldInlinedStruct,
     bytes = {
         v2 = [
@@ -206,6 +208,7 @@ decode_failure("TableFieldBadInlineMarkerUpper") {
 }
 
 decode_failure("TableFieldOutOfLineBadOutlinedMarker") {
+    bindings_denylist = [rust_next],
     type = TableFieldOutOfLineStruct,
     bytes = {
         v2 = [
@@ -437,6 +440,7 @@ encode_success("TableFieldUnknownOutOfLineDropped") {
 // Tests decode of a value in a table that can be represented inline in the
 // envelope but is incorrectly using the out of line representation.
 decode_failure("TableOutOfLineEnvelopeWhenInlineRequired") {
+    bindings_denylist = [rust_next],
     type = TableFieldInlinedStruct,
     bytes = {
         v2 = [
@@ -454,6 +458,7 @@ decode_failure("TableOutOfLineEnvelopeWhenInlineRequired") {
 // Tests decode of a value in a table that can be represented out of line in
 // the envelope but is incorrectly using the inline representation.
 decode_failure("TableInlineEnvelopeWhenOutOfLineRequired") {
+    bindings_denylist = [rust_next],
     type = TableFieldOutOfLineStruct,
     bytes = {
         v2 = [
@@ -468,6 +473,8 @@ decode_failure("TableInlineEnvelopeWhenOutOfLineRequired") {
 
 // Test table with a 2^64-1 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("TableCountExceedsLimitByALot") {
+    // attempt to multiply with overflow
+    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -480,6 +487,7 @@ decode_failure("TableCountExceedsLimitByALot") {
 
 // Test table with a 2^32 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("TableCountExceedsLimitByOne") {
+    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [
@@ -531,6 +539,7 @@ success("EmptyTable") {
 }
 
 decode_failure("TableWithAbsentAlloc") {
+    bindings_denylist = [rust_next],
     type = StructOfEmptyTable,
     bytes = {
         v2 = [

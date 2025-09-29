@@ -91,6 +91,7 @@ success("StrictBitsUint64CombinedValue") {
 }
 
 encode_failure("StrictBitsUint8UnknownBit") {
+    bindings_denylist = [rust_next],
     value = StrictBitsUint8Struct{
         b: 4,
     },
@@ -98,6 +99,7 @@ encode_failure("StrictBitsUint8UnknownBit") {
 }
 
 encode_failure("StrictBitsUint16UnknownBit") {
+    bindings_denylist = [rust_next],
     value = StrictBitsUint16Struct{
         b: 4,
     },
@@ -105,6 +107,7 @@ encode_failure("StrictBitsUint16UnknownBit") {
 }
 
 encode_failure("StrictBitsUint32UnknownBit") {
+    bindings_denylist = [rust_next],
     value = StrictBitsUint32Struct{
         b: 4,
     },
@@ -112,6 +115,7 @@ encode_failure("StrictBitsUint32UnknownBit") {
 }
 
 encode_failure("StrictBitsUint64UnknownBit") {
+    bindings_denylist = [rust_next],
     value = StrictBitsUint64Struct{
         b: 4,
     },
