@@ -4,6 +4,7 @@
 
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/fdio/directory.h>
 #include <lib/mmio-ptr/fake.h>
 
@@ -13,7 +14,6 @@
 #include <gtest/gtest.h>
 
 #include "amlogic-video.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/media/drivers/amlogic_decoder/decoder_core.h"
 #include "tests/test_support.h"
 #include "vdec1.h"

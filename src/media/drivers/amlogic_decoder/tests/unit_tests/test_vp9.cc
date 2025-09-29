@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/media/codec_impl/codec_diagnostics.h>
 #include <lib/mmio-ptr/fake.h>
 
@@ -12,7 +13,6 @@
 #include <gtest/gtest.h>
 
 #include "amlogic-video.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "tests/test_basic_client.h"
 #include "tests/test_support.h"
 #include "vp9_decoder.h"

@@ -5,7 +5,7 @@
 #ifndef SRC_MEDIA_DRIVERS_AMLOGIC_DECODER_REGISTERS_H_
 #define SRC_MEDIA_DRIVERS_AMLOGIC_DECODER_REGISTERS_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include <hwreg/bitfields.h>
 
@@ -91,16 +91,16 @@ class DemuxRegisterIo : public fdf::MmioView {
   DemuxRegisterIo(const fdf::MmioBuffer& mmio, zx_off_t off) : fdf::MmioView(mmio.View(off)) {}
 };
 
-#define DEFINE_REGISTER(name, type, address)                           \
-  class name : public TypedRegisterBase<type, name, uint32_t> {        \
-   public:                                                             \
-    static auto Get() { return TypedRegisterAddr<name>((address)*4); } \
+#define DEFINE_REGISTER(name, type, address)                             \
+  class name : public TypedRegisterBase<type, name, uint32_t> {          \
+   public:                                                               \
+    static auto Get() { return TypedRegisterAddr<name>((address) * 4); } \
   }
 
 #define REGISTER_NAME(name, type, address)                      \
   class name : public TypedRegisterBase<type, name, uint32_t> { \
    public:                                                      \
-    static auto Get() { return AddrType((address)*4); }
+    static auto Get() { return AddrType((address) * 4); }
 
 // clang-format off
 DEFINE_REGISTER(Mpsr, DosRegisterIo, 0x301);
