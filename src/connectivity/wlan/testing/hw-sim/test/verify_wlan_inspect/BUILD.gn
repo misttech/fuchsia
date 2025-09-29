@@ -19,7 +19,6 @@ rust_wlan_integration_test("verify_wlan_inspect") {
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:lazy_static",
   ]
 
   sources = [ "src/lib.rs" ]

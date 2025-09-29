@@ -4,25 +4,24 @@
 
 use fidl_test_wlan_realm::WlanConfig;
 use futures::channel::oneshot;
-use futures::{future, join, FutureExt, StreamExt, TryFutureExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, future, join};
 use ieee80211::MacAddr;
-use lazy_static::lazy_static;
 use std::fmt::Display;
 use std::panic;
 use std::pin::pin;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use wlan_common::bss::Protection::Open;
-use wlan_hw_sim::event::{action, branch, Handler};
+use wlan_hw_sim::event::{Handler, action, branch};
 use wlan_hw_sim::*;
 use {
     fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_tap as fidl_tap,
     fuchsia_async as fasync,
 };
 
-lazy_static! {
-    static ref CLIENT1_MAC_ADDR: MacAddr = [0x68, 0x62, 0x6f, 0x6e, 0x69, 0x6c].into();
-    static ref CLIENT2_MAC_ADDR: MacAddr = [0x68, 0x62, 0x6f, 0x6e, 0x69, 0x6d].into();
-}
+static CLIENT1_MAC_ADDR: LazyLock<MacAddr> =
+    LazyLock::new(|| [0x68, 0x62, 0x6f, 0x6e, 0x69, 0x6c].into());
+static CLIENT2_MAC_ADDR: LazyLock<MacAddr> =
+    LazyLock::new(|| [0x68, 0x62, 0x6f, 0x6e, 0x69, 0x6d].into());
 
 #[derive(Debug)]
 struct ClientPhy<N> {

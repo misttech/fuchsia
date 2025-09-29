@@ -6,14 +6,14 @@ use anyhow::{Context, Error};
 use fidl_fuchsia_wlan_common::{WlanTxResult, WlanTxResultCode, WlanTxResultEntry};
 use fidl_test_wlan_realm::WlanConfig;
 use fuchsia_async::Interval;
-use futures::channel::mpsc;
 use futures::StreamExt;
+use futures::channel::mpsc;
 use ieee80211::{Bssid, MacAddrBytes};
-use lazy_static::lazy_static;
 use log::info;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::pin::pin;
+use std::sync::LazyLock;
 use wlan_common::big_endian::BigEndianU16;
 use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
@@ -21,8 +21,8 @@ use wlan_common::mac;
 use wlan_hw_sim::event::buffered::{Buffered, DataFrame};
 use wlan_hw_sim::event::{self, Handler};
 use wlan_hw_sim::{
-    connect_or_timeout, default_wlantap_config_client, loop_until_iface_is_found, netdevice_helper,
-    test_utils, ApAdvertisement, Beacon, AP_SSID, CLIENT_MAC_ADDR, ETH_DST_MAC,
+    AP_SSID, ApAdvertisement, Beacon, CLIENT_MAC_ADDR, ETH_DST_MAC, connect_or_timeout,
+    default_wlantap_config_client, loop_until_iface_is_found, netdevice_helper, test_utils,
 };
 use zerocopy::IntoBytes;
 use {fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_tap as fidl_tap};
@@ -30,9 +30,8 @@ use {fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_tap as fidl_tap}
 // Refer to |KMinstrelUpdateIntervalForHwSim| in //src/connectivity/wlan/drivers/wlan/device.cpp
 const DATA_FRAME_INTERVAL_NANOS: i64 = 4_000_000;
 
-lazy_static! {
-    static ref BSS_MINSTL: Bssid = Bssid::from([0x6d, 0x69, 0x6e, 0x73, 0x74, 0x0a]);
-}
+static BSS_MINSTL: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x6d, 0x69, 0x6e, 0x73, 0x74, 0x0a]));
 
 // Simulated hardware supports eight ERP transmission vectors with indices 129 to 136, inclusive.
 // See the `send_association_response` function.

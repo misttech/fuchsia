@@ -5,21 +5,22 @@
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
-use lazy_static::lazy_static;
 use std::pin::pin;
+use std::sync::LazyLock;
 use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_hw_sim::event::action;
 use wlan_hw_sim::*;
 
-lazy_static! {
-    static ref BSS_WPA1: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x6f]);
-    static ref BSS_WEP: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x72]);
-    static ref BSS_MIXED: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x7a]);
-    static ref SSID_WPA1: Ssid = Ssid::try_from("wpa1___how_nice").unwrap();
-    static ref SSID_WEP: Ssid = Ssid::try_from("wep_is_soooo_secure").unwrap();
-    static ref SSID_MIXED: Ssid = Ssid::try_from("this_is_fine").unwrap();
-}
+static BSS_WPA1: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x6f]));
+static BSS_WEP: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x72]));
+static BSS_MIXED: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x7a]));
+static SSID_WPA1: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("wpa1___how_nice").unwrap());
+static SSID_WEP: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("wep_is_soooo_secure").unwrap());
+static SSID_MIXED: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("this_is_fine").unwrap());
 
 /// Test a client cannot connect to a wep or wpa network when configured off.
 #[fuchsia::test]

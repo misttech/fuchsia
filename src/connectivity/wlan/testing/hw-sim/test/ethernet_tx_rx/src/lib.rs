@@ -5,8 +5,8 @@
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::Bssid;
-use lazy_static::lazy_static;
 use std::pin::pin;
+use std::sync::LazyLock;
 use wlan_common::bss::Protection;
 use wlan_common::buffer_reader::BufferReader;
 use wlan_common::channel::{Cbw, Channel};
@@ -14,13 +14,11 @@ use wlan_common::mac;
 use wlan_hw_sim::event::buffered::{Buffered, DataFrame};
 use wlan_hw_sim::event::{self};
 use wlan_hw_sim::{
-    connect_or_timeout, default_wlantap_config_client, loop_until_iface_is_found, netdevice_helper,
-    rx_wlan_data_frame, test_utils, AP_SSID, CLIENT_MAC_ADDR, ETH_DST_MAC,
+    AP_SSID, CLIENT_MAC_ADDR, ETH_DST_MAC, connect_or_timeout, default_wlantap_config_client,
+    loop_until_iface_is_found, netdevice_helper, rx_wlan_data_frame, test_utils,
 };
 
-lazy_static! {
-    static ref BSS: Bssid = [0x65, 0x74, 0x68, 0x6e, 0x65, 0x74].into();
-}
+static BSS: LazyLock<Bssid> = LazyLock::new(|| [0x65, 0x74, 0x68, 0x6e, 0x65, 0x74].into());
 
 async fn send_and_receive<'a>(
     session: &'a netdevice_client::Session,

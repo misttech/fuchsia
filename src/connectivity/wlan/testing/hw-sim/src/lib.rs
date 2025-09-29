@@ -3,22 +3,22 @@
 // found in the LICENSE file.
 
 use crate::event::action::{self, AuthenticationControl, AuthenticationTap};
-use crate::event::{branch, Handler};
+use crate::event::{Handler, branch};
 use fidl::endpoints::{create_endpoints, create_proxy};
 use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_tap::{WlanRxInfo, WlantapPhyConfig, WlantapPhyProxy};
 use fuchsia_component::client::connect_to_protocol_at;
 use ieee80211::{Bssid, MacAddr, Ssid};
-use lazy_static::lazy_static;
 use std::future::Future;
 use std::pin::pin;
+use std::sync::LazyLock;
 use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
-use wlan_common::ie::rsn::cipher::{Cipher, CIPHER_CCMP_128, CIPHER_TKIP};
+use wlan_common::ie::rsn::cipher::{CIPHER_CCMP_128, CIPHER_TKIP, Cipher};
 use wlan_common::ie::rsn::rsne;
 use wlan_common::ie::rsn::suite_filter::DEFAULT_GROUP_MGMT_CIPHER;
 use wlan_common::ie::wpa;
-use wlan_common::{data_writer, mac, mgmt_writer, TimeUnit};
+use wlan_common::{TimeUnit, data_writer, mac, mgmt_writer};
 use wlan_frame_writer::write_frame_to_vec;
 use wlan_rsn::rsna::UpdateSink;
 use {
@@ -38,26 +38,27 @@ mod wlancfg_helper;
 
 pub const PSK_STR_LEN: usize = 64;
 
-lazy_static! {
-    pub static ref CLIENT_MAC_ADDR: MacAddr = [0x67, 0x62, 0x6f, 0x6e, 0x69, 0x6b].into();
-    pub static ref AP_MAC_ADDR: Bssid = [0x70, 0xf1, 0x1c, 0x05, 0x2d, 0x7f].into();
-    pub static ref AP_SSID: Ssid = Ssid::try_from("ap_ssid").unwrap();
-    pub static ref ETH_DST_MAC: MacAddr = [0x65, 0x74, 0x68, 0x64, 0x73, 0x74].into();
-}
+pub static CLIENT_MAC_ADDR: LazyLock<MacAddr> =
+    LazyLock::new(|| [0x67, 0x62, 0x6f, 0x6e, 0x69, 0x6b].into());
+pub static AP_MAC_ADDR: LazyLock<Bssid> =
+    LazyLock::new(|| [0x70, 0xf1, 0x1c, 0x05, 0x2d, 0x7f].into());
+pub static AP_SSID: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("ap_ssid").unwrap());
+pub static ETH_DST_MAC: LazyLock<MacAddr> =
+    LazyLock::new(|| [0x65, 0x74, 0x68, 0x64, 0x73, 0x74].into());
 
 pub const WLANCFG_DEFAULT_AP_CHANNEL: Channel = Channel { primary: 11, cbw: Cbw::Cbw20 };
 
-lazy_static! {
-    // TODO(https://fxbug.dev/42060050): This sleep was introduced to preserve the old timing behavior
-    // of scanning when hw-sim depending on the SoftMAC driver iterating through all of the
-    // channels.
-    pub static ref ARTIFICIAL_SCAN_SLEEP: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+// TODO(https://fxbug.dev/42060050): This sleep was introduced to preserve the old timing behavior
+// of scanning when hw-sim depending on the SoftMAC driver iterating through all of the
+// channels.
+pub static ARTIFICIAL_SCAN_SLEEP: LazyLock<zx::MonotonicDuration> =
+    LazyLock::new(|| zx::MonotonicDuration::from_seconds(2));
 
-    // Once a client interface is available for scanning, it takes up to around 30s for a scan
-    // to complete (see https://fxbug.dev/42061276). Allow at least double that amount of time to reduce
-    // flakiness and longer than the timeout WLAN policy should have.
-    pub static ref SCAN_RESPONSE_TEST_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(70);
-}
+// Once a client interface is available for scanning, it takes up to around 30s for a scan
+// to complete (see https://fxbug.dev/42061276). Allow at least double that amount of time to reduce
+// flakiness and longer than the timeout WLAN policy should have.
+pub static SCAN_RESPONSE_TEST_TIMEOUT: LazyLock<zx::MonotonicDuration> =
+    LazyLock::new(|| zx::MonotonicDuration::from_seconds(70));
 
 /// A client supplicant.
 ///

@@ -15,7 +15,6 @@ rust_wlan_integration_test("simulate-scan") {
     "//src/connectivity/wlan/testing/hw-sim:wlan-hw-sim",
     "//src/connectivity/wlan/tests/helpers/realm-factory/fidl:test.wlan.realm_rust",
     "//src/lib/fuchsia",
-    "//third_party/rust_crates:lazy_static",
   ]
 
   sources = [ "src/lib.rs" ]

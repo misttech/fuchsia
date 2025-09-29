@@ -5,24 +5,28 @@
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
-use lazy_static::lazy_static;
 use std::pin::pin;
+use std::sync::LazyLock;
 use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_hw_sim::event::action;
 use wlan_hw_sim::*;
 
-lazy_static! {
-    static ref BSS_FOO: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x6f]);
-    static ref BSS_FOO_2: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x66, 0x66, 0x66]);
-    static ref BSS_BAR: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x62, 0x61, 0x72]);
-    static ref BSS_BAR_2: Bssid = Bssid::from([0x63, 0x74, 0x74, 0x63, 0x62, 0x73]);
-    static ref BSS_BAZ: Bssid = Bssid::from([0x62, 0x73, 0x73, 0x62, 0x61, 0x7a]);
-    static ref BSS_BAZ_2: Bssid = Bssid::from([0x60, 0x70, 0x70, 0x60, 0x60, 0x70]);
-    static ref SSID_FOO: Ssid = Ssid::try_from("foo").unwrap();
-    static ref SSID_BAR: Ssid = Ssid::try_from("bar").unwrap();
-    static ref SSID_BAZ: Ssid = Ssid::try_from("baz").unwrap();
-}
+static BSS_FOO: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x66, 0x6f, 0x6f]));
+static BSS_FOO_2: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x66, 0x66, 0x66]));
+static BSS_BAR: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x62, 0x61, 0x72]));
+static BSS_BAR_2: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x63, 0x74, 0x74, 0x63, 0x62, 0x73]));
+static BSS_BAZ: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x62, 0x73, 0x73, 0x62, 0x61, 0x7a]));
+static BSS_BAZ_2: LazyLock<Bssid> =
+    LazyLock::new(|| Bssid::from([0x60, 0x70, 0x70, 0x60, 0x60, 0x70]));
+static SSID_FOO: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("foo").unwrap());
+static SSID_BAR: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("bar").unwrap());
+static SSID_BAZ: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("baz").unwrap());
 
 // TODO(https://fxbug.dev/42164611): This is a test of scan functionality from the perspective of wlancfg,
 // but the results of wlanstack itself are untested.

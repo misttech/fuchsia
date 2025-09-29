@@ -3,18 +3,15 @@
 // found in the LICENSE file.
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
-
 use ieee80211::{Bssid, Ssid};
-use lazy_static::lazy_static;
 use log::info;
 use std::pin::pin;
+use std::sync::LazyLock;
 use wlan_common::bss::Protection;
-use wlan_common::ie::rsn::cipher::{Cipher, CIPHER_CCMP_128, CIPHER_TKIP};
+use wlan_common::ie::rsn::cipher::{CIPHER_CCMP_128, CIPHER_TKIP, Cipher};
 use wlan_hw_sim::*;
 
-lazy_static! {
-    static ref BSSID: Bssid = Bssid::from(*b"wpa2ok");
-}
+static BSSID: LazyLock<Bssid> = LazyLock::new(|| Bssid::from(*b"wpa2ok"));
 const AUTHENTICATOR_PASSWORD: &str = "goodpassword";
 const SUPPLICANT_PASSWORD: &str = "badpassword";
 
