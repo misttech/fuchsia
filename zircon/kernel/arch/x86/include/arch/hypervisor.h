@@ -49,7 +49,6 @@ class Guest {
   Guest& operator=(const Guest&) = delete;
   Guest& operator=(Guest&&) = delete;
 
-  Guest() = default;
   virtual ~Guest();
 
   zx::result<> SetTrap(uint32_t kind, zx_vaddr_t addr, size_t len, fbl::RefPtr<PortDispatcher> port,
@@ -64,7 +63,7 @@ class Guest {
   zx::result<> FreeVpid(uint16_t vpid) { return vpid_allocator_.Free(vpid); }
 
  private:
-  static zx::result<ktl::unique_ptr<Guest>> CreateInternal();
+  explicit Guest(hypervisor::GuestPhysicalAspace gpa);
 
   hypervisor::GuestPhysicalAspace gpa_;
   hypervisor::TrapMap traps_;
@@ -127,9 +126,6 @@ class Vcpu {
   zx_info_vcpu_t GetInfo() const;
 
  private:
-  static zx::result<ktl::unique_ptr<Vcpu>> CreateInternal(Guest& guest, uint16_t vpid,
-                                                          zx_vaddr_t entry);
-
   Vcpu(Guest& guest, uint16_t vpid, Thread* thread);
 
   void Migrate(Thread* thread, Thread::MigrateStage stage)
@@ -137,11 +133,6 @@ class Vcpu {
   void ContextSwitch(bool include_gs);
   void LoadExtendedRegisters(AutoVmcs& vmcs);
   void SaveExtendedRegisters(AutoVmcs& vmcs);
-
-  // `PreEnterFn` must have type `(AutoVmcs&) -> zx::result<>`
-  // `PostExitFn` must have type `(AutoVmcs&, zx_port_packet_t&) -> zx::result<>`
-  template <typename PreEnterFn, typename PostExitFn>
-  zx::result<> EnterInternal(PreEnterFn pre_enter, PostExitFn post_exit, zx_port_packet_t& packet);
 
   // Some explanation is required for why we disable static lock analysis here.
   // `thread_` is initially set during our construction in a context where the

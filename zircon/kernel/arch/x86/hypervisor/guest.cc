@@ -37,23 +37,31 @@ void IgnoreMsr(const VmxPage& msr_bitmaps_page, uint32_t msr) {
 }  // namespace
 
 // static
-zx::result<ktl::unique_ptr<Guest>> Guest::CreateInternal() {
+zx::result<ktl::unique_ptr<Guest>> Guest::Create() {
   // Check that the CPU supports VMX.
   if (!x86_feature_test(X86_FEATURE_VMX)) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
+  auto gpa = hypervisor::GuestPhysicalAspace::Create();
+  if (gpa.is_error()) {
+    return gpa.take_error();
+  }
+
+  // Invalidate the EPT across all CPUs.
+  uint64_t eptp = ept_pointer_from_pml4(gpa->arch_aspace().arch_table_phys());
+  broadcast_invept(eptp);
+
   if (auto result = alloc_vmx_state(); result.is_error()) {
     return result.take_error();
   }
-  auto defer = fit::defer([] { free_vmx_state(); });
 
   fbl::AllocChecker ac;
-  auto guest = ktl::make_unique<Guest>(&ac);
+  ktl::unique_ptr<Guest> guest(new (&ac) Guest(std::move(*gpa)));
   if (!ac.check()) {
+    free_vmx_state();
     return zx::error(ZX_ERR_NO_MEMORY);
   }
-  defer.cancel();
 
   // Setup common MSR bitmaps.
   VmxInfo vmx_info;
@@ -80,23 +88,7 @@ zx::result<ktl::unique_ptr<Guest>> Guest::CreateInternal() {
   return zx::ok(ktl::move(guest));
 }
 
-// static
-zx::result<ktl::unique_ptr<Guest>> Guest::Create() {
-  auto gpa = hypervisor::GuestPhysicalAspace::Create();
-  if (gpa.is_error()) {
-    return gpa.take_error();
-  }
-  // Invalidate the EPT across all CPUs.
-  uint64_t eptp = ept_pointer_from_pml4(gpa->arch_aspace().arch_table_phys());
-  broadcast_invept(eptp);
-
-  auto guest = Guest::CreateInternal();
-  if (guest.is_error()) {
-    return guest.take_error();
-  }
-  guest->gpa_ = ktl::move(*gpa);
-  return zx::ok(*ktl::move(guest));
-}
+Guest::Guest(hypervisor::GuestPhysicalAspace gpa) : gpa_(std::move(gpa)) {}
 
 Guest::~Guest() { free_vmx_state(); }
 
