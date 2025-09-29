@@ -12,6 +12,7 @@
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <cstdint>
@@ -21,7 +22,6 @@
 #include <src/devices/temperature/drivers/aml-trip/aml-trip-device.h>
 
 #include "../aml-trip-device.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace temperature::test {

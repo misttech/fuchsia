@@ -12,7 +12,7 @@
 #include <fidl/fuchsia.hardware.trippoint/cpp/wire_types.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/dispatcher.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/interrupt.h>
 
 #include <deque>

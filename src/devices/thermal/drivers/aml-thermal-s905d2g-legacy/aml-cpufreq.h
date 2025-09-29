@@ -7,7 +7,7 @@
 
 #include <lib/ddk/device.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/types.h>
 
 #include <optional>

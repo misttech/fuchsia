@@ -8,8 +8,8 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/defer.h>
-#include <lib/mmio/mmio.h>
 #include <lib/thermal/metadata.h>
 #include <lib/zx/interrupt.h>
 #include <string.h>

@@ -6,7 +6,7 @@
 #define SRC_DEVICES_THERMAL_DRIVERS_AML_THERMAL_AML_TSENSOR_H_
 
 #include <fidl/fuchsia.hardware.thermal/cpp/fidl.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
 #include <threads.h>
 

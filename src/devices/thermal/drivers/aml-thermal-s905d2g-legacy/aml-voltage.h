@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.hardware.pwm/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 

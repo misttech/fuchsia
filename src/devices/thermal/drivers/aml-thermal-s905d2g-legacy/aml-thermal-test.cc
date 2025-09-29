@@ -11,8 +11,9 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <stdint.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -26,8 +27,6 @@
 #include <fbl/array.h>
 #include <mock-mmio-reg/mock-mmio-reg.h>
 #include <zxtest/zxtest.h>
-
-#include "src/devices/lib/mmio/test-helper.h"
 
 bool operator==(const fuchsia_hardware_pwm::wire::PwmConfig& lhs,
                 const fuchsia_hardware_pwm::wire::PwmConfig& rhs) {

@@ -42,9 +42,9 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/lib/amlogic",
-    "//src/devices/lib/mmio",
     "//zircon/system/ulib/hwreg",
   ]
 }

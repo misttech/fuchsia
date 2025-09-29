@@ -6,8 +6,8 @@
 
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/testing/cpp/driver_test.h>
-#include <lib/mmio/mmio.h>
 
 #include <gtest/gtest.h>
 #include <mock-mmio-reg/mock-mmio-reg.h>

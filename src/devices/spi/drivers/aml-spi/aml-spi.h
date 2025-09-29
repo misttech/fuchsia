@@ -16,11 +16,11 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/promise.h>
 #include <lib/fzl/pinned-vmo.h>
 #include <lib/fzl/vmo-mapper.h>
-#include <lib/mmio/mmio.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/result.h>

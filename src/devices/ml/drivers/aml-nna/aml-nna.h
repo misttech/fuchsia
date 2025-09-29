@@ -8,8 +8,8 @@
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio.h>
 #include <zircon/fidl.h>
 
 #include <soc/aml-common/aml-power-domain.h>

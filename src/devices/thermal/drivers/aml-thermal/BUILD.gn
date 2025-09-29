@@ -46,7 +46,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -82,7 +82,7 @@ test("aml-thermal-test-bin") {
     ":common",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/testing/mock-mmio-reg:mock-mmio-reg-zxtest",
     "//src/devices/testing/no_ddk",
     "//src/lib/ddk",

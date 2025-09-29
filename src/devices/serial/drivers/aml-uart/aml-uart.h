@@ -9,10 +9,10 @@
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/wait.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/driver/power/cpp/wake-lease.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
 #include <fbl/mutex.h>

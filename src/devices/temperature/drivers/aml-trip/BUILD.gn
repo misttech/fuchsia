@@ -46,7 +46,7 @@ source_set("common") {
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_cpp",
     "//sdk/lib/driver/devfs/cpp",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//zircon/system/ulib/zx",
   ]
 }
