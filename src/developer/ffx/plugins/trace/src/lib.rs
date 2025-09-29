@@ -302,7 +302,6 @@ pub async fn trace(
     mut writer: Writer,
     cmd: TraceCommand,
 ) -> Result<()> {
-    let target_spec: Option<String> = get_target_specifier(&context).await?;
     let trace_proxy: SessionManagerProxyType = match session_manager.await {
         Ok(p) => p.into(),
         Err(e) => {
@@ -400,10 +399,7 @@ pub async fn trace(
                 defer_transfer: Some(defer_transfer),
                 ..ffx_trace::map_categories_to_providers(&expanded_categories)
             };
-            let output = canonical_path(
-                opts.output
-                    .unwrap_or_else(|| target_spec.unwrap_or_else(|| "trace.fxt".to_owned())),
-            )?;
+            let output = canonical_path(opts.output.unwrap_or_else(|| "trace.fxt".to_owned()))?;
 
             let options = TraceOptions {
                 duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
@@ -476,10 +472,9 @@ pub async fn trace(
             )?;
         }
         TraceSubCommand::Stop(ref opts) => {
-            let output = match &opts.output {
-                Some(o) => canonical_path(o)?,
-                None => canonical_path(target_spec.unwrap_or_else(|| "trace.fxt".to_owned()))?,
-            };
+            let output =
+                canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
+
             let trace_data = match trace_proxy {
                 SessionManagerProxyType::Provisioner(_) => {
                     ffx_bail!(
