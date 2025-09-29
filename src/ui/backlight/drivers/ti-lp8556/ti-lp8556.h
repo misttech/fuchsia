@@ -11,7 +11,7 @@
 #include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include <optional>
 

@@ -45,9 +45,9 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_cpp",
     "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/i2c/lib/i2c-channel",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/devices/lib/mmio",
     "//src/graphics/display/lib/device-protocol-display",
     "//zircon/system/ulib/hwreg",
   ]
