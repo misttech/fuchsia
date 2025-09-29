@@ -17,7 +17,12 @@
         { service: "fuchsia.hardware.power.sensor.Service" },
     ],
     use: [
-        { service: "fuchsia.hardware.i2c.Service" },
+        {
+            service: [
+                "fuchsia.hardware.i2c.Service",
+                "fuchsia.hardware.platform.device.Service",
+            ],
+        },
     ],
     expose: [
         {

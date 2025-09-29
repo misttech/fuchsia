@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
@@ -27,7 +28,6 @@
 
 #include "nelson-gpios.h"
 #include "nelson.h"
-#include "src/devices/power/drivers/ti-ina231/ti-ina231-metadata.h"
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -42,54 +42,41 @@ enum : uint32_t {
   kPowerSensorDomainAudio = 1,
 };
 
-constexpr power_sensor::Ina231Metadata kMlbSensorMetadata = {
-    .mode = power_sensor::Ina231Metadata::kModeShuntAndBusContinuous,
-    .shunt_voltage_conversion_time = power_sensor::Ina231Metadata::kConversionTime332us,
-    .bus_voltage_conversion_time = power_sensor::Ina231Metadata::kConversionTime332us,
-    .averages = power_sensor::Ina231Metadata::kAverages1024,
-    .shunt_resistance_microohm = 10'000,
-    .bus_voltage_limit_microvolt = 0,
-    .alert = power_sensor::Ina231Metadata::kAlertNone,
-    .power_sensor_domain = kPowerSensorDomainMlb,
-};
-
-static const std::vector<fpbus::Metadata> kMlbMetadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&kMlbSensorMetadata),
-            reinterpret_cast<const uint8_t*>(&kMlbSensorMetadata) + sizeof(kMlbSensorMetadata)),
-    }},
-};
-
-constexpr power_sensor::Ina231Metadata kAudioSensorMetadata = {
-    .mode = power_sensor::Ina231Metadata::kModeShuntAndBusContinuous,
-    .shunt_voltage_conversion_time = power_sensor::Ina231Metadata::kConversionTime332us,
-    .bus_voltage_conversion_time = power_sensor::Ina231Metadata::kConversionTime332us,
-    .averages = power_sensor::Ina231Metadata::kAverages1024,
-    .shunt_resistance_microohm = 10'000,
-    .bus_voltage_limit_microvolt = 11'000'000,
-    .alert = power_sensor::Ina231Metadata::kAlertBusUnderVoltage,
-    .power_sensor_domain = kPowerSensorDomainAudio,
-};
-
-static const std::vector<fpbus::Metadata> kSpeakersMetadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_PRIVATE),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&kAudioSensorMetadata),
-            reinterpret_cast<const uint8_t*>(&kAudioSensorMetadata) + sizeof(kAudioSensorMetadata)),
-    }},
-};
-
 zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                             fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
-  fpbus::Node mlb_dev;
-  mlb_dev.name() = "ti-ina231-mlb";
-  mlb_dev.vid() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI;
-  mlb_dev.pid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON;
-  mlb_dev.did() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_INA231_MLB;
-  mlb_dev.metadata() = kMlbMetadata;
+  static const fuchsia_hardware_ti_metadata::Ina231Metadata kMetadata({
+      .mode = fuchsia_hardware_ti_metadata::Mode::kShuntAndBusContinuous,
+      .shunt_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .bus_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .averages = fuchsia_hardware_ti_metadata::Averages::kAverages1024,
+      .shunt_resistance_microohm = 10'000,
+      .bus_voltage_limit_microvolt = 0,
+      .alert = fuchsia_hardware_ti_metadata::Alert::kNone,
+      .power_sensor_domain = kPowerSensorDomainMlb,
+  });
+
+  fit::result persisted_metadata = fidl::Persist(kMetadata);
+  if (!persisted_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to persist metadata: %s",
+           persisted_metadata.error_value().FormatDescription().c_str());
+    return persisted_metadata.error_value().status();
+  }
+
+  fpbus::Node node({
+      .name = "ti-ina231-mlb",
+      .vid = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI,
+      .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON,
+      .did = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_INA231_MLB,
+      .metadata =
+          std::vector<fpbus::Metadata>{
+              {{
+                  .id = fuchsia_hardware_ti_metadata::Ina231Metadata::kSerializableName,
+                  .data = std::move(persisted_metadata.value()),
+              }},
+          },
+  });
 
   const auto kI2cRules = std::vector{
       fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
@@ -107,7 +94,7 @@ zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
   const std::vector<fdf::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
-      fidl::ToWire(fidl_arena, mlb_dev),
+      fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
                                    {.name = "ti_ina231_mlb", .parents2 = kParents}}));
   if (!result.ok()) {
@@ -125,12 +112,39 @@ zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
 zx_status_t AddSpeakerComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                                 fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
-  fpbus::Node speakers_dev;
-  speakers_dev.name() = "ti-ina231-speakers";
-  speakers_dev.vid() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI;
-  speakers_dev.pid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON;
-  speakers_dev.did() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_INA231_SPEAKERS;
-  speakers_dev.metadata() = kSpeakersMetadata;
+  static const fuchsia_hardware_ti_metadata::Ina231Metadata kMetadata({
+      .mode = fuchsia_hardware_ti_metadata::Mode::kShuntAndBusContinuous,
+      .shunt_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .bus_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .averages = fuchsia_hardware_ti_metadata::Averages::kAverages1024,
+      .shunt_resistance_microohm = 10'000,
+      .bus_voltage_limit_microvolt = 11'000'000,
+      .alert = fuchsia_hardware_ti_metadata::Alert::kBusUnderVoltage,
+      .power_sensor_domain = kPowerSensorDomainAudio,
+  });
+
+  fit::result persisted_metadata = fidl::Persist(kMetadata);
+  if (!persisted_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to persist metadata: %s",
+           persisted_metadata.error_value().FormatDescription().c_str());
+    return persisted_metadata.error_value().status();
+  }
+
+  fpbus::Node node({
+      .name = "ti-ina231-speakers",
+      .vid = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI,
+      .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_NELSON,
+      .did = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_INA231_SPEAKERS,
+      .metadata =
+          std::vector<fpbus::Metadata>{
+              {{
+                  .id = fuchsia_hardware_ti_metadata::Ina231Metadata::kSerializableName,
+                  .data = std::move(persisted_metadata.value()),
+              }},
+          },
+  });
 
   const auto kI2cRules = std::vector{
       fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
@@ -148,7 +162,7 @@ zx_status_t AddSpeakerComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
   const std::vector<fdf::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
-      fidl::ToWire(fidl_arena, speakers_dev),
+      fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
                                    {.name = "ti_ina231_speakers", .parents2 = kParents}}));
   if (!result.ok()) {

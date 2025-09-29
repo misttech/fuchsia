@@ -7,10 +7,6 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
-source_set("metadata") {
-  public = [ "ti-ina231-metadata.h" ]
-}
-
 source_set("common") {
   configs += [
     "//build/config:all_source",
@@ -21,9 +17,9 @@ source_set("common") {
     "ti-ina231.h",
   ]
   deps = [
-    ":metadata",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
+    "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_cpp",
@@ -78,10 +74,10 @@ test("ti-ina231-test-bin") {
   sources = [ "ti-ina231-test.cc" ]
   deps = [
     ":common",
-    ":metadata",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
+    "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/i2c/testing/fake-i2c",
-    "//src/lib/ddk:ddk_metadata",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
   ]

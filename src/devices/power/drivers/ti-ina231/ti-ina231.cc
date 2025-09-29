@@ -5,14 +5,13 @@
 #include "ti-ina231.h"
 
 #include <endian.h>
-#include <lib/ddk/metadata.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-
-#include "ti-ina231-metadata.h"
 
 namespace {
 
@@ -93,15 +92,51 @@ zx::result<> TiIna231::Start() {
     name_ = name.value()->name.get();
   }
 
-  zx::result metadata_result =
-      compat::GetMetadata<Ina231Metadata>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  zx::result pdev_client =
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  if (pdev_client.is_error()) {
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
+    return pdev_client.take_error();
+  }
+  fdf::PDev pdev(std::move(pdev_client.value()));
+
+  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_ti_metadata::Ina231Metadata>();
   if (metadata_result.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata_result);
     return metadata_result.take_error();
   }
-  Ina231Metadata& metadata = *metadata_result.value();
+  const fuchsia_hardware_ti_metadata::Ina231Metadata& metadata = metadata_result.value();
 
-  shunt_resistor_uohms_ = metadata.shunt_resistance_microohm;
+  if (!metadata.shunt_resistance_microohm().has_value()) {
+    fdf::error("Metadata missing `shunt_resistance_microohm` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!metadata.shunt_voltage_conversion_time().has_value()) {
+    fdf::error("Metadata missing `shunt_voltage_conversion_time` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!metadata.alert().has_value()) {
+    fdf::error("Metadata missing `alert` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!metadata.power_sensor_domain().has_value()) {
+    fdf::error("Metadata missing `power_sensor_domain` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!metadata.mode().has_value()) {
+    fdf::error("Metadata missing `mode` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!metadata.bus_voltage_conversion_time().has_value()) {
+    fdf::error("Metadata missing `bus_voltage_conversion_time` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!metadata.averages().has_value()) {
+    fdf::error("Metadata missing `averages` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  shunt_resistor_uohms_ = metadata.shunt_resistance_microohm().value();
   if (shunt_resistor_uohms_ == 0) {
     fdf::error("Shunt resistance cannot be zero");
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -114,9 +149,14 @@ zx::result<> TiIna231::Start() {
       result.is_error()) {
     return result.take_error();
   }
-
-  if (metadata.alert == Ina231Metadata::kAlertBusUnderVoltage) {
-    const uint64_t alert_limit_reg_value = metadata.bus_voltage_limit_microvolt / kMicrovoltsPerBit;
+  fuchsia_hardware_ti_metadata::Alert alert = metadata.alert().value();
+  if (alert == fuchsia_hardware_ti_metadata::Alert::kBusUnderVoltage) {
+    if (!metadata.bus_voltage_limit_microvolt().has_value()) {
+      fdf::error("Metadata missing `bus_voltage_limit_microvolt` field");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    const uint64_t alert_limit_reg_value =
+        metadata.bus_voltage_limit_microvolt().value() / kMicrovoltsPerBit;
     if (alert_limit_reg_value > UINT16_MAX) {
       fdf::error("Bus voltage limit is out of range");
       return zx::error(ZX_ERR_OUT_OF_RANGE);
@@ -129,7 +169,8 @@ zx::result<> TiIna231::Start() {
     }
   }
 
-  if (zx::result result = Write16(Register::kMaskEnableReg, metadata.alert); result.is_error()) {
+  if (zx::result result = Write16(Register::kMaskEnableReg, static_cast<uint16_t>(alert));
+      result.is_error()) {
     return result.take_error();
   }
 
@@ -138,8 +179,11 @@ zx::result<> TiIna231::Start() {
     return config_status.take_error();
   }
 
-  const int metadata_value = metadata.mode | (metadata.shunt_voltage_conversion_time << 3) |
-                             (metadata.bus_voltage_conversion_time << 6) | (metadata.averages << 9);
+  const int metadata_value =
+      static_cast<uint16_t>(metadata.mode().value()) |
+      (static_cast<uint16_t>(metadata.shunt_voltage_conversion_time().value()) << 3) |
+      (static_cast<uint16_t>(metadata.bus_voltage_conversion_time().value()) << 6) |
+      (static_cast<uint16_t>(metadata.averages().value()) << 9);
   const int configuration_reg_value =
       (config_status.value() & kConfigurationRegMask) | metadata_value;
   if (zx::result result =
@@ -174,7 +218,7 @@ zx::result<> TiIna231::Start() {
       fdf::MakeOffer2<fuchsia_hardware_power_sensor::Service>(component::kDefaultInstance)};
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
-      fdf::MakeProperty2(bind_fuchsia::POWER_SENSOR_DOMAIN, metadata.power_sensor_domain),
+      fdf::MakeProperty2(bind_fuchsia::POWER_SENSOR_DOMAIN, metadata.power_sensor_domain().value()),
   };
 
   zx::result child = AddChild(kChildNodeName, devfs_args, properties, offers);

@@ -4,17 +4,16 @@
 
 #include "ti-ina231.h"
 
-#include <lib/ddk/metadata.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
+#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-i2c/fake-i2c.h>
 
-#include <memory>
 #include <string_view>
 
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/predicates/status.h"
-#include "ti-ina231-metadata.h"
 
 namespace power_sensor {
 
@@ -62,15 +61,16 @@ class FakeI2c : public fake_i2c::FakeI2c {
 
 class TiIna231TestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(const Ina231Metadata& metadata) {
-    device_server_.Initialize("pdev", std::nullopt, {});
-    device_server_.AddMetadata(DEVICE_METADATA_PRIVATE, &metadata, sizeof(metadata));
+  void Init(const fuchsia_hardware_ti_metadata::Ina231Metadata& metadata) {
+    pdev_.AddFidlMetadata(fuchsia_hardware_ti_metadata::Ina231Metadata::kSerializableName,
+                          metadata);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    EXPECT_OK(device_server_.Serve(dispatcher, &to_driver_vfs));
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        pdev_.GetInstanceHandler(dispatcher), "pdev"));
 
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_i2c::Service>(
         i2c_.CreateInstanceHandler(dispatcher), "i2c"));
@@ -81,7 +81,7 @@ class TiIna231TestEnvironment : public fdf_testing::Environment {
   FakeI2c& i2c() { return i2c_; }
 
  private:
-  compat::DeviceServer device_server_;
+  fdf_fake::FakePDev pdev_;
   FakeI2c i2c_;
 };
 
@@ -96,7 +96,7 @@ class TiIna231Test : public ::testing::Test {
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
  protected:
-  void StartDriver(const Ina231Metadata& metadata) {
+  void StartDriver(const fuchsia_hardware_ti_metadata::Ina231Metadata& metadata) {
     driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(metadata); });
     ASSERT_OK(driver_test_.StartDriver().status_value());
 
@@ -130,14 +130,17 @@ class TiIna231Test : public ::testing::Test {
 };
 
 TEST_F(TiIna231Test, GetPowerWatts) {
-  static constexpr Ina231Metadata kMetadata = {
-      .mode = Ina231Metadata::kModeShuntAndBusContinuous,
-      .shunt_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .bus_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .averages = Ina231Metadata::kAverages1024,
+  static const fuchsia_hardware_ti_metadata::Ina231Metadata kMetadata({
+      .mode = fuchsia_hardware_ti_metadata::Mode::kShuntAndBusContinuous,
+      .shunt_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .bus_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .averages = fuchsia_hardware_ti_metadata::Averages::kAverages1024,
       .shunt_resistance_microohm = 10'000,
-      .alert = Ina231Metadata::kAlertNone,
-  };
+      .alert = fuchsia_hardware_ti_metadata::Alert::kNone,
+      .power_sensor_domain = 0,
+  });
 
   StartDriver(kMetadata);
 
@@ -174,15 +177,18 @@ TEST_F(TiIna231Test, GetPowerWatts) {
 }
 
 TEST_F(TiIna231Test, SetAlertLimit) {
-  static constexpr Ina231Metadata kMetadata = {
-      .mode = Ina231Metadata::kModeShuntAndBusContinuous,
-      .shunt_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .bus_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .averages = Ina231Metadata::kAverages1024,
+  static const fuchsia_hardware_ti_metadata::Ina231Metadata kMetadata({
+      .mode = fuchsia_hardware_ti_metadata::Mode::kShuntAndBusContinuous,
+      .shunt_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .bus_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .averages = fuchsia_hardware_ti_metadata::Averages::kAverages1024,
       .shunt_resistance_microohm = 10'000,
       .bus_voltage_limit_microvolt = 11'000'000,
-      .alert = Ina231Metadata::kAlertBusUnderVoltage,
-  };
+      .alert = fuchsia_hardware_ti_metadata::Alert::kBusUnderVoltage,
+      .power_sensor_domain = 0,
+  });
 
   StartDriver(kMetadata);
 
@@ -196,14 +202,17 @@ TEST_F(TiIna231Test, SetAlertLimit) {
 }
 
 TEST_F(TiIna231Test, GetVoltageVolts) {
-  static constexpr Ina231Metadata kMetadata = {
-      .mode = Ina231Metadata::kModeShuntAndBusContinuous,
-      .shunt_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .bus_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .averages = Ina231Metadata::kAverages1024,
+  static const fuchsia_hardware_ti_metadata::Ina231Metadata kMetadata({
+      .mode = fuchsia_hardware_ti_metadata::Mode::kShuntAndBusContinuous,
+      .shunt_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .bus_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .averages = fuchsia_hardware_ti_metadata::Averages::kAverages1024,
       .shunt_resistance_microohm = 10'000,
-      .alert = Ina231Metadata::kAlertNone,
-  };
+      .alert = fuchsia_hardware_ti_metadata::Alert::kNone,
+      .power_sensor_domain = 0,
+  });
 
   StartDriver(kMetadata);
 
@@ -242,14 +251,17 @@ TEST_F(TiIna231Test, GetVoltageVolts) {
 TEST_F(TiIna231Test, GetSensorName) {
   static constexpr std::string_view kSensorName = "sensor name";
 
-  static constexpr Ina231Metadata kMetadata = {
-      .mode = Ina231Metadata::kModeShuntAndBusContinuous,
-      .shunt_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .bus_voltage_conversion_time = Ina231Metadata::kConversionTime332us,
-      .averages = Ina231Metadata::kAverages1024,
+  static const fuchsia_hardware_ti_metadata::Ina231Metadata kMetadata({
+      .mode = fuchsia_hardware_ti_metadata::Mode::kShuntAndBusContinuous,
+      .shunt_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .bus_voltage_conversion_time =
+          fuchsia_hardware_ti_metadata::ConversionTime::kConversionTime332Us,
+      .averages = fuchsia_hardware_ti_metadata::Averages::kAverages1024,
       .shunt_resistance_microohm = 10'000,
-      .alert = Ina231Metadata::kAlertNone,
-  };
+      .alert = fuchsia_hardware_ti_metadata::Alert::kNone,
+      .power_sensor_domain = 0,
+  });
 
   driver_test().RunInEnvironmentTypeContext(
       [](auto& env) { env.i2c().set_name(std::optional<std::string>{kSensorName}); });
