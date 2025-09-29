@@ -6,8 +6,8 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/driver/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio.h>
 
 namespace adc_buttons {
 

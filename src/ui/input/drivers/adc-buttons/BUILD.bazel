@@ -35,10 +35,10 @@ cc_library(
         "@fuchsia_sdk//fidl/fuchsia.input.report:fuchsia.input.report_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_devfs_cpp",
+        "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/driver_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
         "@fuchsia_sdk//pkg/input_report_reader",
-        "@fuchsia_sdk//pkg/mmio",
     ],
 )
 
