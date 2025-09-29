@@ -303,10 +303,11 @@ mod tests {
     #[fuchsia::test]
     async fn test_valid_target_state() {
         const TEST_SOCKETADDR: &'static str = "[fe80::1%1]:22";
-        let daemon = FakeDaemonBuilder::new().build();
         let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context).build();
         let cx = Context::new(daemon, env.context.clone());
         let target = Target::new_with_addr_entries(
+            &env.context,
             Some("pride-and-prejudice"),
             vec![TargetAddrEntry::new(
                 SocketAddr::from_str(TEST_SOCKETADDR).unwrap().into(),
@@ -317,7 +318,7 @@ mod tests {
         );
         target.update_connection_state(|_| TargetConnectionState::Mdns(std::time::Instant::now()));
         let (proxy, server) = fidl::endpoints::create_proxy::<ffx::TargetMarker>();
-        let tc = Rc::new(TargetCollection::new());
+        let tc = Rc::new(TargetCollection::new(&env.context));
         let _handle = Task::local(TargetHandle::new(target, cx, server, tc.clone()).unwrap());
         let result = proxy.get_ssh_address().await.unwrap();
         if let ffx::TargetIpAddrInfo::IpPort(ffx::TargetIpPort {
@@ -389,6 +390,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_open_rcs_valid() {
         const TEST_NODE_NAME: &'static str = "villete";
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let node2 = overnet_core::Router::new(None).unwrap();
         let (rx2, tx2) = fidl::Socket::create_stream();
@@ -437,7 +439,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let daemon = FakeDaemonBuilder::new().build();
+        let daemon = FakeDaemonBuilder::new(&env.context).build();
         let cx = Context::new(daemon.clone(), daemon.context.clone());
         let lpc = local_node.new_list_peers_context().await;
         while lpc.list_peers().await.unwrap().iter().all(|x| x.is_self) {}
@@ -456,11 +458,11 @@ mod tests {
 
         let identify = rcs.identify_host().await.unwrap();
         let (update, _) = TargetUpdateBuilder::from_rcs_identify(rcs.clone(), &identify);
-        let target = Target::new();
+        let target = Target::new(&env.context);
         target.apply_update(update.build());
 
         let (target_proxy, server) = fidl::endpoints::create_proxy::<ffx::TargetMarker>();
-        let tc = Rc::new(TargetCollection::new());
+        let tc = Rc::new(TargetCollection::new(&env.context));
         let _handle = Task::local(TargetHandle::new(target, cx, server, tc.clone()).unwrap());
         let (rcs, rcs_server) = fidl::endpoints::create_proxy::<fidl_rcs::RemoteControlMarker>();
         let res = target_proxy.open_remote_control(rcs_server).await.unwrap();

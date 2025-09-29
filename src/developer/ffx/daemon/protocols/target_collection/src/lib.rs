@@ -72,9 +72,10 @@ impl Default for TargetCollectionProtocol {
     }
 }
 
-async fn target_is_fastboot_tcp(addr: SocketAddr) -> bool {
+async fn target_is_fastboot_tcp(context: &EnvironmentContext, addr: SocketAddr) -> bool {
     log::info!("Checking if target at addr: {addr:?} in fastboot over tcp");
     let tclone = Target::new_with_fastboot_addrs(
+        context,
         Option::<String>::None,
         Option::<String>::None,
         [addr].iter().map(|x| From::from(*x)).collect(),
@@ -109,7 +110,7 @@ async fn add_manual_target(
 
     // When adding a manual target we need to test if the target behind the
     // address is running in fastboot over tcp or not
-    let is_fastboot_tcp = target_is_fastboot_tcp(addr).await;
+    let is_fastboot_tcp = target_is_fastboot_tcp(tc.context(), addr).await;
 
     log::debug!("Is manual target in Fastboot over TCP: {}", is_fastboot_tcp);
 
@@ -884,9 +885,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_mdns_non_fastboot() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
-        let t = Target::new_named("this-is-a-thing");
-        let tc = Rc::new(TargetCollection::new());
+        let t = Target::new_named(&env.context, "this-is-a-thing");
+        let tc = Rc::new(TargetCollection::new(&env.context));
         tc.merge_insert(t.clone());
         let before_update = Instant::now();
 
@@ -902,9 +904,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_mdns_fastboot() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
-        let t = Target::new_named("this-is-a-thing");
-        let tc = Rc::new(TargetCollection::new());
+        let t = Target::new_named(&env.context, "this-is-a-thing");
+        let tc = Rc::new(TargetCollection::new(&env.context));
         tc.merge_insert(t.clone());
         let before_update = Instant::now();
 
@@ -1025,7 +1028,7 @@ mod tests {
         let (target_sender, r) = async_channel::unbounded::<ffx::MdnsEventType>();
         let mdns_protocol =
             Rc::new(RefCell::new(TestMdns { call_started: call_started_sender, next_event: r }));
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .inject_fidl_protocol(mdns_protocol)
             .register_fidl_protocol::<FakeFastboot>()
             .register_fidl_protocol::<TargetCollectionProtocol>()
@@ -1112,14 +1115,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_fastboot_target_no_serial() {
-        let tc = Rc::new(TargetCollection::new());
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = Rc::new(TargetCollection::new(&env.context));
         handle_fastboot_target(&tc, ffx::FastbootTarget::default());
         assert_eq!(tc.targets(None).len(), 0, "target collection should remain empty");
     }
 
     #[fuchsia::test]
     async fn test_handle_fastboot_target() {
-        let tc = Rc::new(TargetCollection::new());
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = Rc::new(TargetCollection::new(&env.context));
         handle_fastboot_target(
             &tc,
             ffx::FastbootTarget { serial: Some("12345".to_string()), ..Default::default() },
@@ -1135,9 +1140,10 @@ mod tests {
 
         const NODE_NAME: &str = "Teletechternacon";
 
+        let env = ffx_config::test_init().await.unwrap();
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let tc = Rc::new(TargetCollection::new());
+        let tc = Rc::new(TargetCollection::new(&env.context));
         let tc_clone = Rc::clone(&tc);
         let local_node = overnet_core::Router::new(None).unwrap();
 
@@ -1238,7 +1244,7 @@ mod tests {
         let (manual_targets_loaded_sender, manual_targets_loaded_receiver) = channel::<()>();
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
         tc_impl.borrow_mut().manual_targets_loaded_signal.replace(manual_targets_loaded_sender);
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .inject_fidl_protocol(tc_impl.clone())
@@ -1270,7 +1276,7 @@ mod tests {
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .register_fidl_protocol::<TargetCollectionProtocol>()
@@ -1298,7 +1304,7 @@ mod tests {
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .register_fidl_protocol::<TargetCollectionProtocol>()
@@ -1327,7 +1333,7 @@ mod tests {
         init_test_config(&env, temp.path()).await;
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .inject_fidl_protocol(tc_impl.clone())
@@ -1365,7 +1371,7 @@ mod tests {
         init_test_config(&env, temp.path()).await;
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .inject_fidl_protocol(tc_impl.clone())
@@ -1395,7 +1401,7 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
-        let fake_daemon = FakeDaemonBuilder::new()
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .inject_fidl_protocol(tc_impl.clone())

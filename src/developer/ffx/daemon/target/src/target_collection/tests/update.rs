@@ -15,9 +15,10 @@ const ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 2324);
 
 #[fuchsia::test]
 async fn test_update_single() {
-    let tc = TargetCollection::new_with_queue();
+    let env = ffx_config::test_init().await.unwrap();
+    let tc = TargetCollection::new_with_queue(&env.context);
 
-    let t = tc.merge_insert(Target::new());
+    let t = tc.merge_insert(Target::new(&env.context));
 
     tc.update_target(
         &[TargetUpdateFilter::Ids(&[t.id()])],
@@ -79,7 +80,8 @@ async fn test_update_single() {
 
 #[fuchsia::test]
 async fn test_update_create_new() {
-    let tc = TargetCollection::new_with_queue();
+    let env = ffx_config::test_init().await.unwrap();
+    let tc = TargetCollection::new_with_queue(&env.context);
 
     tc.update_target(
         &[TargetUpdateFilter::Ids(&[1234])],
@@ -101,10 +103,11 @@ async fn test_update_create_new() {
 
 #[fuchsia::test]
 async fn test_update_multi() {
-    let tc = TargetCollection::new_with_queue();
+    let env = ffx_config::test_init().await.unwrap();
+    let tc = TargetCollection::new_with_queue(&env.context);
 
-    let t = tc.merge_insert(Target::new());
-    let t2 = tc.merge_insert(Target::new());
+    let t = tc.merge_insert(Target::new(&env.context));
+    let t2 = tc.merge_insert(Target::new(&env.context));
 
     tc.update_target(
         &[TargetUpdateFilter::Ids(&[t.id()])],

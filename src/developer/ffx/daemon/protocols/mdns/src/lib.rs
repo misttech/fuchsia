@@ -142,13 +142,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_get_targets_empty() {
+        let env = ffx_config::test_init().await.unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let daemon = FakeDaemonBuilder::new().inject_fidl_protocol::<Mdns>(mdns).build();
+        let daemon =
+            FakeDaemonBuilder::new(&env.context).inject_fidl_protocol::<Mdns>(mdns).build();
         let proxy = daemon.open_proxy::<ffx::MdnsMarker>().await;
         let targets = proxy.get_targets().await.unwrap();
         assert_eq!(targets.len(), 0);
@@ -156,7 +158,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_stop() {
-        let daemon = FakeDaemonBuilder::new().build();
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             mdns_task: None,
             inner: None,
@@ -171,13 +174,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_bind_event_on_first_listen() {
+        let env = ffx_config::test_init().await.unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let daemon = FakeDaemonBuilder::new().inject_fidl_protocol::<Mdns>(mdns).build();
+        let daemon =
+            FakeDaemonBuilder::new(&env.context).inject_fidl_protocol::<Mdns>(mdns).build();
         let proxy = daemon.open_proxy::<ffx::MdnsMarker>().await;
         while let Some(e) = proxy.get_next_event().await.unwrap() {
             if matches!(*e, ffx::MdnsEventType::SocketBound(_)) {
@@ -189,13 +194,15 @@ mod tests {
     #[fuchsia::test]
     #[ignore] // TODO(b/297919461) -- re-enable or delete
     async fn test_mdns_network_traffic_valid() {
+        let env = ffx_config::test_init().await.unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let daemon = FakeDaemonBuilder::new().inject_fidl_protocol::<Mdns>(mdns).build();
+        let daemon =
+            FakeDaemonBuilder::new(&env.context).inject_fidl_protocol::<Mdns>(mdns).build();
         let proxy = daemon.open_proxy::<ffx::MdnsMarker>().await;
         let bound_port = wait_for_port_binds(&proxy).await;
 
@@ -267,13 +274,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_network_traffic_invalid() {
+        let env = ffx_config::test_init().await.unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let daemon = FakeDaemonBuilder::new().inject_fidl_protocol::<Mdns>(mdns).build();
+        let daemon =
+            FakeDaemonBuilder::new(&env.context).inject_fidl_protocol::<Mdns>(mdns).build();
         let proxy = daemon.open_proxy::<ffx::MdnsMarker>().await;
         let bound_port = wait_for_port_binds(&proxy).await;
 
@@ -313,13 +322,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_network_traffic_wrong_protocol() {
+        let env = ffx_config::test_init().await.unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let daemon = FakeDaemonBuilder::new().inject_fidl_protocol::<Mdns>(mdns).build();
+        let daemon =
+            FakeDaemonBuilder::new(&env.context).inject_fidl_protocol::<Mdns>(mdns).build();
         let proxy = daemon.open_proxy::<ffx::MdnsMarker>().await;
         let bound_port = wait_for_port_binds(&proxy).await;
         let socket = socket2::Socket::new(
@@ -365,7 +376,8 @@ mod tests {
     #[fuchsia::test]
     #[ignore] // TODO(b/297919461) -- re-enable or delete
     async fn test_new_and_rediscovered_target() {
-        let daemon = FakeDaemonBuilder::new().build();
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -407,7 +419,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_eviction() {
-        let daemon = FakeDaemonBuilder::new().build();
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -445,7 +458,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_eviction_timer_override() {
-        let daemon = FakeDaemonBuilder::new().build();
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,

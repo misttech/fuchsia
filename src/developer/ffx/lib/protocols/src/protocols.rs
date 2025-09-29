@@ -305,7 +305,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn noop_test() {
-        let daemon = FakeDaemonBuilder::new()
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(noop_protocol_closure())
             .build();
         let proxy = daemon.open_proxy::<ffx_test::NoopMarker>().await;
@@ -346,7 +347,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn counter_test() {
-        let daemon = FakeDaemonBuilder::new()
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(noop_protocol_closure())
             .register_fidl_protocol::<CounterProtocol>()
             .target(ffx::TargetInfo { nodename: Some("foobar".to_string()), ..Default::default() })
@@ -392,8 +394,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn protocol_error_ensures_drop_test() -> Result<()> {
-        let daemon =
-            FakeDaemonBuilder::new().register_fidl_protocol::<NoopProtocolPanicker>().build();
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context)
+            .register_fidl_protocol::<NoopProtocolPanicker>()
+            .build();
         let proxy = daemon.open_proxy::<ffx_test::NoopMarker>().await;
         assert!(proxy.do_noop().await.is_err());
         daemon.shutdown().await
@@ -456,7 +460,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn counter_test_singleton() {
-        let daemon = FakeDaemonBuilder::new()
+        let env = ffx_config::test_init().await.unwrap();
+        let daemon = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(noop_protocol_closure())
             .register_fidl_protocol::<SingletonCounterProtocol>()
             .target(ffx::TargetInfo { nodename: Some("foobar".to_string()), ..Default::default() })

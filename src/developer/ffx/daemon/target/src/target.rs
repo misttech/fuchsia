@@ -328,10 +328,12 @@ pub struct Target {
     preferred_ssh_address: RefCell<Option<TargetIpAddr>>,
 
     compatibility_status: RefCell<Option<CompatibilityInfo>>,
+
+    context: EnvironmentContext,
 }
 
 impl Target {
-    pub(crate) fn new_with_id(id: u64) -> Rc<Self> {
+    pub(crate) fn new_with_id(context: &EnvironmentContext, id: u64) -> Rc<Self> {
         let target_event_synthesizer = Rc::new(TargetEventSynthesizer::default());
         let events = events::Queue::new(&target_event_synthesizer);
 
@@ -359,15 +361,16 @@ impl Target {
             ssh_host_address: RefCell::new(None),
             preferred_ssh_address: RefCell::new(None),
             compatibility_status: RefCell::new(None),
+            context: context.clone(),
         });
         target.target_event_synthesizer.target.replace(Rc::downgrade(&target));
         target
     }
 
     pub async fn init_usb_driver(context: &EnvironmentContext) {
-        if ffx_config::get(CONFIG_ENABLE_USB).unwrap_or(false) {
+        if context.get(CONFIG_ENABLE_USB).unwrap_or(false) {
             let socket_path =
-                ffx_config::get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
+                context.get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
             let socket_path = if let Some(socket_path) = socket_path {
                 socket_path
             } else {
@@ -400,24 +403,28 @@ impl Target {
         (*USB_DRIVER_CONNECTION.lock().unwrap()).clone()
     }
 
-    pub fn new() -> Rc<Self> {
-        Self::new_with_id(random::<u64>())
+    pub fn new(context: &EnvironmentContext) -> Rc<Self> {
+        Self::new_with_id(context, random::<u64>())
     }
 
-    pub fn new_named<S>(nodename: S) -> Rc<Self>
+    pub fn new_named<S>(context: &EnvironmentContext, nodename: S) -> Rc<Self>
     where
         S: Into<String>,
     {
-        let target = Self::new();
+        let target = Self::new(context);
         target.replace_identity(Identity::from_name(nodename.into()));
         target
     }
 
-    pub fn new_with_addrs<S>(nodename: Option<S>, addrs: BTreeSet<TargetIpAddr>) -> Rc<Self>
+    pub fn new_with_addrs<S>(
+        context: &EnvironmentContext,
+        nodename: Option<S>,
+        addrs: BTreeSet<TargetIpAddr>,
+    ) -> Rc<Self>
     where
         S: Into<String>,
     {
-        let target = Self::new();
+        let target = Self::new(context);
         if let Some(nodename) = nodename {
             target.replace_identity(Identity::from_name(nodename));
         }
@@ -430,12 +437,16 @@ impl Target {
         target
     }
 
-    pub fn new_with_addr_entries<S, I>(nodename: Option<S>, entries: I) -> Rc<Self>
+    pub fn new_with_addr_entries<S, I>(
+        context: &EnvironmentContext,
+        nodename: Option<S>,
+        entries: I,
+    ) -> Rc<Self>
     where
         S: Into<String>,
         I: Iterator<Item = TargetAddrEntry>,
     {
-        let target = Self::new();
+        let target = Self::new(context);
         if let Some(nodename) = nodename {
             target.replace_identity(Identity::from_name(nodename));
         }
@@ -444,6 +455,7 @@ impl Target {
     }
 
     pub fn new_with_fastboot_addrs<S>(
+        context: &EnvironmentContext,
         nodename: Option<S>,
         serial: Option<String>,
         addrs: BTreeSet<TargetIpAddr>,
@@ -452,7 +464,7 @@ impl Target {
     where
         S: Into<String>,
     {
-        let target = Self::new();
+        let target = Self::new(context);
 
         let identity = Identity::try_from_name_serial(nodename, serial);
 
@@ -483,11 +495,15 @@ impl Target {
         target
     }
 
-    pub fn new_with_netsvc_addrs<S>(nodename: Option<S>, addrs: BTreeSet<TargetIpAddr>) -> Rc<Self>
+    pub fn new_with_netsvc_addrs<S>(
+        context: &EnvironmentContext,
+        nodename: Option<S>,
+        addrs: BTreeSet<TargetIpAddr>,
+    ) -> Rc<Self>
     where
         S: Into<String>,
     {
-        let target = Self::new();
+        let target = Self::new(context);
         if let Some(nodename) = nodename {
             target.replace_identity(Identity::from_name(nodename));
         }
@@ -503,8 +519,8 @@ impl Target {
 
     /// Constructs a Target based on the given serial number.
     /// Assumes the Target is in Fastboot mode and connected via USB
-    pub fn new_for_usb(serial: &str) -> Rc<Self> {
-        let target = Self::new();
+    pub fn new_for_usb(context: &EnvironmentContext, serial: &str) -> Rc<Self> {
+        let target = Self::new(context);
         target.replace_identity(Identity::from_serial(serial));
         target.fastboot_interface.replace(Some(FastbootInterface::Usb));
         target.update_connection_state(|_| TargetConnectionState::Fastboot(Instant::now()));
@@ -518,17 +534,22 @@ impl Target {
     /// Dependency injection constructor so we can insert a fake time for
     /// testing.
     #[cfg(test)]
-    pub fn new_with_time<S: Into<String>>(nodename: S, time: DateTime<Utc>) -> Rc<Self> {
-        let target = Self::new_named(nodename);
+    pub fn new_with_time<S: Into<String>>(
+        context: &EnvironmentContext,
+        nodename: S,
+        time: DateTime<Utc>,
+    ) -> Rc<Self> {
+        let target = Self::new_named(context, nodename);
         target.last_response.replace(time);
         target
     }
 
-    pub fn from_target_event_info(mut t: Description) -> Rc<Self> {
+    pub fn from_target_event_info(context: &EnvironmentContext, mut t: Description) -> Rc<Self> {
         if let Some(s) = t.serial {
-            Self::new_for_usb(&s)
+            Self::new_for_usb(context, &s)
         } else {
             let res = Self::new_with_addrs(
+                context,
                 t.nodename.take(),
                 t.addresses.drain(..).filter_map(|x| x.try_into().ok()).collect(),
             );
@@ -1108,8 +1129,8 @@ impl Target {
     }
 
     /// Intended for testing only.
-    pub fn new_autoconnected(n: &str) -> Rc<Self> {
-        let s = Self::new_named(n);
+    pub fn new_autoconnected(context: &EnvironmentContext, n: &str) -> Rc<Self> {
+        let s = Self::new_named(context, n);
         s.update_connection_state(|s| {
             assert_eq!(s, TargetConnectionState::Disconnected);
             TargetConnectionState::Mdns(Instant::now())
@@ -1304,6 +1325,7 @@ impl Target {
         let overnet_node = Arc::clone(overnet_node);
         let roid_waiters =
             if let Some(roid_sender) = roid_sender { vec![roid_sender] } else { vec![] };
+        let context_clone = self.context.clone();
         let task = async move {
             // The purpose of a host pipe is to ultimately get us connected to RCS and let us transition
             // to the RCS connected state. If we're already in that state, and the RCS connection is
@@ -1328,7 +1350,7 @@ impl Target {
 
                 target.addrs().into_iter().find_map(|addr| {
                     if let TargetAddr::VSockCtx(cid) = addr {
-                        if ffx_config::get(CONFIG_ENABLE_VSOCK).unwrap_or(false) {
+                        if context_clone.get(CONFIG_ENABLE_VSOCK).unwrap_or(false) {
                             Some((cid, None))
                         } else {
                             None
@@ -1387,14 +1409,14 @@ impl Target {
                 return;
             }
 
-            if !ffx_config::get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+            if !context_clone.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
                 log::debug!("Networking disabled, quitting host pipe");
                 return;
             }
 
-            let watchdogs: bool = ffx_config::get("watchdogs.host_pipe.enabled").unwrap_or(false);
+            let watchdogs: bool = context_clone.get("watchdogs.host_pipe.enabled").unwrap_or(false);
 
-            let ssh_timeout: u16 = ffx_config::get(CONFIG_HOST_PIPE_SSH_TIMEOUT).unwrap_or(50);
+            let ssh_timeout: u16 = context_clone.get(CONFIG_HOST_PIPE_SSH_TIMEOUT).unwrap_or(50);
             let nr = spawn(
                 weak_target.clone(),
                 watchdogs,
@@ -1872,8 +1894,9 @@ mod test {
     // Most of this is now handled in `task.rs`
     #[fuchsia::test]
     async fn test_target_disconnect_multiple_invocations() {
+        let env = ffx_config::test_init().await.unwrap();
         let node = overnet_core::Router::new(None).unwrap();
-        let t = Rc::new(Target::new_named("flabbadoobiedoo"));
+        let t = Rc::new(Target::new_named(&env.context, "flabbadoobiedoo"));
         {
             let addr: TargetAddr = TargetAddr::new(IpAddr::from([192, 168, 0, 1]), 0, 0);
             t.addrs_insert(addr);
@@ -1893,6 +1916,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_rcs_states() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         for test in vec![
@@ -1917,7 +1941,7 @@ mod test {
                 expected: ffx::RemoteControlState::Unknown,
             },
         ] {
-            let t = Target::new_named("schlabbadoo");
+            let t = Target::new_named(&env.context, "schlabbadoo");
             t.enable();
             let a2 = IpAddr::V6(Ipv6Addr::new(
                 0xfe80, 0xcafe, 0xf00d, 0xf000, 0xb412, 0xb455, 0x1337, 0xfeed,
@@ -1943,7 +1967,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_into_bridge_target() {
-        let t = Target::new_named("cragdune-the-impaler");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "cragdune-the-impaler");
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let a2 = IpAddr::V6(Ipv6Addr::new(
             0xfe80, 0xcafe, 0xf00d, 0xf000, 0xb412, 0xb455, 0x1337, 0xfeed,
@@ -1972,6 +1997,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_event_synthesis_wait() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let conn = RcsConnection::new_with_proxy(
@@ -1979,7 +2005,7 @@ mod test {
             setup_fake_remote_control_service(false, "foo".to_owned()),
             &NodeId { id: 1234 },
         );
-        let t = Target::new();
+        let t = Target::new(&env.context);
         t.update_connection_state(|_| TargetConnectionState::Rcs(conn));
         // This will hang forever if no synthesis happens.
         t.events.wait_for(None, |e| e == TargetEvent::RcsActivated).await.unwrap();
@@ -1987,9 +2013,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_event_fire() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
-        let t = Target::new_named("balaowihf");
+        let t = Target::new_named(&env.context, "balaowihf");
         let conn = RcsConnection::new_with_proxy(
             local_node,
             setup_fake_remote_control_service(false, "balaowihf".to_owned()),
@@ -2003,7 +2030,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_update_connection_state() {
-        let t = Target::new_named("have-you-seen-my-cat");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "have-you-seen-my-cat");
         let instant = Instant::now();
         let instant_clone = instant.clone();
         t.update_connection_state(move |s| {
@@ -2016,9 +2044,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_connection_state_will_not_drop_rcs_on_mdns_events() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
-        let t = Target::new_named("hello-kitty");
+        let t = Target::new_named(&env.context, "hello-kitty");
         let rcs_state = TargetConnectionState::Rcs(
             RcsConnection::new(local_node.clone(), &mut NodeId { id: 1234 }).unwrap(),
         );
@@ -2033,9 +2062,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_connection_state_will_not_drop_rcs_on_manual_events() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
-        let t = Target::new_named("hello-kitty");
+        let t = Target::new_named(&env.context, "hello-kitty");
         let rcs_state = TargetConnectionState::Rcs(
             RcsConnection::new(local_node.clone(), &mut NodeId { id: 1234 }).unwrap(),
         );
@@ -2050,7 +2080,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_mdns() {
-        let t = Target::new_named("yo-yo-ma-plays-that-cello-ya-hear");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "yo-yo-ma-plays-that-cello-ya-hear");
         let then = Instant::now() - (MDNS_MAX_AGE + Duration::from_secs(1));
         t.update_connection_state(|_| TargetConnectionState::Mdns(then));
 
@@ -2069,7 +2100,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_fastboot() {
-        let t = Target::new_named("platypodes-are-venomous");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "platypodes-are-venomous");
         let then = Instant::now() - (FASTBOOT_MAX_AGE + Duration::from_secs(1));
         t.update_connection_state(|_| TargetConnectionState::Fastboot(then));
 
@@ -2088,7 +2120,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_zedboot() {
-        let t = Target::new_named("platypodes-are-venomous");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "platypodes-are-venomous");
         let then = Instant::now() - (ZEDBOOT_MAX_AGE + Duration::from_secs(1));
         t.update_connection_state(|_| TargetConnectionState::Zedboot(then));
 
@@ -2107,7 +2140,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_manual_fastboot() {
+        let env = ffx_config::test_init().await.unwrap();
         let t = Target::new_with_addr_entries(
+            &env.context,
             Some("platypodes-are-venomous"),
             [TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
@@ -2128,7 +2163,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_addresses_order_preserved() {
-        let t = Target::new_named("this-is-a-target-i-guess");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "this-is-a-target-i-guess");
         let addrs_pre = vec![
             SocketAddr::V6(SocketAddrV6::new("fe80::1".parse().unwrap(), 0, 0, 0)),
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)),
@@ -2164,7 +2200,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_addresses_order() {
-        let t = Target::new_named("hi-hi-hi");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "hi-hi-hi");
         let expected = SocketAddr::V6(SocketAddrV6::new(
             "fe80::4559:49b2:462d:f46b".parse().unwrap(),
             0,
@@ -2195,8 +2232,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_set_preferred_ssh_address() {
+        let env = ffx_config::test_init().await.unwrap();
         let target_addr: TargetIpAddr = TargetIpAddr::new("fe80::2".parse().unwrap(), 1, 0);
         let target = Target::new_with_addr_entries(
+            &env.context,
             Some("foo"),
             vec![TargetAddrEntry::new((&target_addr).into(), Utc::now(), TargetAddrStatus::ssh())]
                 .into_iter(),
@@ -2207,7 +2246,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_set_preferred_ssh_address_with_non_existent_address() {
+        let env = ffx_config::test_init().await.unwrap();
         let target = Target::new_with_addr_entries(
+            &env.context,
             Some("foo"),
             vec![TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
@@ -2226,13 +2267,17 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_ssh_address_priority() {
+        let env = ffx_config::test_init().await.unwrap();
         let name = Some("bubba");
         let start = std::time::SystemTime::now();
         use std::iter::FromIterator;
 
         // An empty set returns nothing.
         let addrs = BTreeSet::<TargetAddrEntry>::new();
-        assert_eq!(Target::new_with_addr_entries(name, addrs.into_iter()).ssh_address(), None);
+        assert_eq!(
+            Target::new_with_addr_entries(&env.context, name, addrs.into_iter()).ssh_address(),
+            None
+        );
 
         // Given two addresses, from the exact same time, neither manual, prefer any link-local address.
         let addrs = BTreeSet::from_iter(vec![
@@ -2248,7 +2293,7 @@ mod test {
             ),
         ]);
         assert_eq!(
-            Target::new_with_addr_entries(name, addrs.into_iter()).ssh_address(),
+            Target::new_with_addr_entries(&env.context, name, addrs.into_iter()).ssh_address(),
             Some("[fe80::1%2]:22".parse().unwrap())
         );
 
@@ -2266,7 +2311,7 @@ mod test {
             ),
         ]);
         assert_eq!(
-            Target::new_with_addr_entries(name, addrs.into_iter()).ssh_address(),
+            Target::new_with_addr_entries(&env.context, name, addrs.into_iter()).ssh_address(),
             Some("[fe80::1%2]:22".parse().unwrap())
         );
 
@@ -2284,7 +2329,7 @@ mod test {
             ),
         ]);
         assert_eq!(
-            Target::new_with_addr_entries(name, addrs.into_iter()).ssh_address(),
+            Target::new_with_addr_entries(&env.context, name, addrs.into_iter()).ssh_address(),
             Some("[fe80::2%1]:22".parse().unwrap())
         );
 
@@ -2302,7 +2347,7 @@ mod test {
             ),
         ]);
         assert_eq!(
-            Target::new_with_addr_entries(name, addrs.into_iter()).ssh_address(),
+            Target::new_with_addr_entries(&env.context, name, addrs.into_iter()).ssh_address(),
             Some("[2000::1]:22".parse().unwrap())
         );
 
@@ -2320,7 +2365,7 @@ mod test {
             ),
         ]);
         assert_eq!(
-            Target::new_with_addr_entries(name, addrs.into_iter()).ssh_address(),
+            Target::new_with_addr_entries(&env.context, name, addrs.into_iter()).ssh_address(),
             Some("[2000::2]:22".parse().unwrap())
         );
 
@@ -2341,14 +2386,16 @@ mod test {
             ),
         ]);
 
-        let target = Target::new_with_addr_entries(name, addrs.into_iter());
+        let target = Target::new_with_addr_entries(&env.context, name, addrs.into_iter());
         target.set_preferred_ssh_address(preferred_target_addr);
         assert_eq!(target.ssh_address(), Some("[fe80::2%1]:22".parse().unwrap()));
     }
 
     #[fuchsia::test]
     async fn test_ssh_address_info_no_port_provides_default_port() {
+        let env = ffx_config::test_init().await.unwrap();
         let target = Target::new_with_addr_entries(
+            &env.context,
             Some("foo"),
             vec![TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
@@ -2372,7 +2419,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_address_info_with_port() {
+        let env = ffx_config::test_init().await.unwrap();
         let target = Target::new_with_addr_entries(
+            &env.context,
             Some("foo"),
             vec![TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
@@ -2398,7 +2447,9 @@ mod test {
     #[fuchsia::test]
     async fn test_netsvc_target_has_no_ssh() {
         use std::iter::FromIterator;
+        let env = ffx_config::test_init().await.unwrap();
         let target = Target::new_with_netsvc_addrs(
+            &env.context,
             Some("foo"),
             BTreeSet::from_iter(
                 vec!["[fe80::1%1]:0".parse::<SocketAddr>().unwrap().into()].into_iter(),
@@ -2406,7 +2457,7 @@ mod test {
         );
         assert_eq!(target.ssh_address(), None);
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
         target.addrs_insert_entry(
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
@@ -2428,17 +2479,19 @@ mod test {
 
     #[fuchsia::test]
     async fn test_netsvc_ssh_address_info_should_be_none() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip, 0xbadf00d, 0));
-        let target = Target::new_with_netsvc_addrs(Some("foo"), addr_set);
+        let target = Target::new_with_netsvc_addrs(&env.context, Some("foo"), addr_set);
 
         assert!(target.ssh_address_info().is_none());
     }
 
     #[fuchsia::test]
     async fn test_target_is_manual() {
-        let target = Target::new();
+        let env = ffx_config::test_init().await.unwrap();
+        let target = Target::new(&env.context);
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
@@ -2446,15 +2499,16 @@ mod test {
         ));
         assert!(target.is_manual());
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
         assert!(!target.is_manual());
     }
 
     #[fuchsia::test]
     async fn test_update_connection_state_manual_disconnect() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
@@ -2483,8 +2537,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_disconnect() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
-        let target = Target::new();
+        let target = Target::new(&env.context);
         target.set_state(TargetConnectionState::Mdns(Instant::now()));
         target.host_pipe.borrow_mut().replace(HostPipeState {
             task: Task::local(future::pending()),
@@ -2501,10 +2556,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_state_borrow() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let (done_send, done_recv) = channel::oneshot::channel::<()>();
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
         // We want run_host_pipe() to reach the point of knock_rcs(), so we
         // need to set up an RCS first. But we'll set it up so it doesn't respond
         let conn = RcsConnection::new_with_proxy(
@@ -2523,8 +2579,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_from_target_for_targetinfo() {
+        let env = ffx_config::test_init().await.unwrap();
         {
-            let target = Target::new_for_usb("IANTHE");
+            let target = Target::new_for_usb(&env.context, "IANTHE");
 
             let info: ffx::TargetInfo = ffx::TargetInfo::from(target.borrow());
             assert_eq!(info.fastboot_interface, Some(ffx::FastbootInterface::Usb));
@@ -2533,7 +2590,8 @@ mod test {
             let mut addrs = BTreeSet::new();
             addrs.insert(TargetIpAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
             let interface = FastbootInterface::Tcp;
-            let target = Target::new_with_fastboot_addrs(Some("Babs"), None, addrs, interface);
+            let target =
+                Target::new_with_fastboot_addrs(&env.context, Some("Babs"), None, addrs, interface);
 
             let info: ffx::TargetInfo = ffx::TargetInfo::from(target.borrow());
             assert_eq!(info.fastboot_interface, Some(ffx::FastbootInterface::Tcp));
@@ -2542,14 +2600,20 @@ mod test {
             let mut addrs = BTreeSet::new();
             addrs.insert(TargetIpAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
             let interface = FastbootInterface::Udp;
-            let target =
-                Target::new_with_fastboot_addrs(Some("Coronabeth"), None, addrs, interface);
+            let target = Target::new_with_fastboot_addrs(
+                &env.context,
+                Some("Coronabeth"),
+                None,
+                addrs,
+                interface,
+            );
 
             let info: ffx::TargetInfo = ffx::TargetInfo::from(target.borrow());
             assert_eq!(info.fastboot_interface, Some(ffx::FastbootInterface::Udp));
         }
         {
             let target = Target::new_with_addr_entries(
+                &env.context,
                 Some("manual"),
                 [TargetAddrEntry::new(
                     TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
@@ -2566,8 +2630,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_infer_fastboot_interface() {
+        let env = ffx_config::test_init().await.unwrap();
         {
-            let target = Target::new();
+            let target = Target::new(&env.context);
 
             let interface = target.infer_fastboot_interface();
             assert!(interface.is_none());
@@ -2576,7 +2641,8 @@ mod test {
             let mut addrs = BTreeSet::new();
             addrs.insert(TargetIpAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
             let interface = FastbootInterface::Tcp;
-            let target = Target::new_with_fastboot_addrs(Some("Babs"), None, addrs, interface);
+            let target =
+                Target::new_with_fastboot_addrs(&env.context, Some("Babs"), None, addrs, interface);
 
             // Purposefully remove the interface
             target.fastboot_interface.replace(None);
@@ -2587,8 +2653,13 @@ mod test {
             let mut addrs = BTreeSet::new();
             addrs.insert(TargetIpAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
             let interface = FastbootInterface::Udp;
-            let target =
-                Target::new_with_fastboot_addrs(Some("Coronabeth"), None, addrs, interface);
+            let target = Target::new_with_fastboot_addrs(
+                &env.context,
+                Some("Coronabeth"),
+                None,
+                addrs,
+                interface,
+            );
 
             // Purposefully remove the interface
             target.fastboot_interface.replace(None);
@@ -2640,8 +2711,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_query_new_overnet_id() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("foo"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -2656,8 +2729,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_query_existing_overnet_id() {
+        let env = ffx_config::test_init().await.unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("foo"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -2681,7 +2756,8 @@ mod test {
 
         #[fuchsia::test]
         async fn test_enable() {
-            let target = Target::new();
+            let env = ffx_config::test_init().await.unwrap();
+            let target = Target::new(&env.context);
 
             assert!(!target.is_enabled());
             target.enable();
@@ -2690,7 +2766,9 @@ mod test {
 
         #[fuchsia::test]
         async fn test_manual_targets_always_enable() {
+            let env = ffx_config::test_init().await.unwrap();
             let target = Target::new_with_addr_entries(
+                &env.context,
                 Some("foo"),
                 std::iter::once(TargetAddrEntry::new(
                     SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 22).into(),
@@ -2707,7 +2785,8 @@ mod test {
 
         #[fuchsia::test]
         async fn test_disable() {
-            let target = Target::new_autoconnected("foo");
+            let env = ffx_config::test_init().await.unwrap();
+            let target = Target::new_autoconnected(&env.context, "foo");
 
             assert!(target.is_enabled());
             target.disable();
@@ -2719,7 +2798,8 @@ mod test {
         #[cfg(not(target_os = "macos"))]
         #[fuchsia::test]
         async fn test_transient_expire() {
-            let target = Target::new_autoconnected("foo");
+            let env = ffx_config::test_init().await.unwrap();
+            let target = Target::new_autoconnected(&env.context, "foo");
 
             target.mark_transient();
             assert!(target.is_transient());
@@ -2751,7 +2831,8 @@ mod test {
         #[cfg(not(target_os = "macos"))]
         #[fuchsia::test]
         async fn test_non_transient_expire() {
-            let target = Target::new_autoconnected("foo");
+            let env = ffx_config::test_init().await.unwrap();
+            let target = Target::new_autoconnected(&env.context, "foo");
 
             assert!(!target.is_transient());
 
@@ -2773,7 +2854,8 @@ mod test {
 
         #[fuchsia::test]
         async fn test_reset_transient_on_rediscovery() {
-            let target = Target::new_autoconnected("foo");
+            let env = ffx_config::test_init().await.unwrap();
+            let target = Target::new_autoconnected(&env.context, "foo");
 
             target.mark_transient();
             assert!(target.is_transient());

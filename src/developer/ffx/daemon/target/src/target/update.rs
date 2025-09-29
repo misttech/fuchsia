@@ -436,7 +436,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_simple() {
-        let target = Target::new();
+        let env = ffx_config::test_init().await.unwrap();
+        let target = Target::new(&env.context);
 
         assert!(!target.is_transient());
         assert!(!target.has_identity());
@@ -506,6 +507,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_discovered() {
+        let env = ffx_config::test_init().await.unwrap();
         let now = Instant::now();
 
         const ADDRS: &[SocketAddr] = &[
@@ -522,7 +524,7 @@ mod tests {
         }
 
         {
-            let target = Target::new();
+            let target = Target::new(&env.context);
 
             target.apply_update(
                 TargetUpdateBuilder::new()
@@ -537,7 +539,7 @@ mod tests {
         }
 
         {
-            let target = Target::new();
+            let target = Target::new(&env.context);
 
             target.apply_update(
                 TargetUpdateBuilder::new()
@@ -552,7 +554,7 @@ mod tests {
         }
 
         {
-            let target = Target::new();
+            let target = Target::new(&env.context);
 
             target.apply_update(
                 TargetUpdateBuilder::new()
@@ -567,7 +569,7 @@ mod tests {
         }
 
         {
-            let target = Target::new();
+            let target = Target::new(&env.context);
 
             target.apply_update(
                 TargetUpdateBuilder::new()
@@ -583,7 +585,7 @@ mod tests {
         }
 
         {
-            let target = Target::new();
+            let target = Target::new(&env.context);
 
             target.apply_update(
                 TargetUpdateBuilder::new()
@@ -605,9 +607,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_disconnect() {
+        let env = ffx_config::test_init().await.unwrap();
         let now = Instant::now();
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
 
         target.apply_update(
             TargetUpdateBuilder::new()
@@ -625,9 +628,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_rcs() {
+        let env = ffx_config::test_init().await.unwrap();
         let now = Instant::now();
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
 
         target.apply_update(
             TargetUpdateBuilder::new()
@@ -652,6 +656,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn from_rcs_identify() {
+        let env = ffx_config::test_init().await.unwrap();
         use fidl_fuchsia_developer_remotecontrol as rcs;
 
         let local_node = overnet_core::Router::new(None).unwrap();
@@ -714,7 +719,7 @@ mod tests {
 
         let (update, addr_filter) = TargetUpdateBuilder::from_rcs_identify(conn, &identify_host);
 
-        let target = Target::new();
+        let target = Target::new(&env.context);
 
         target.apply_update(update.build());
 

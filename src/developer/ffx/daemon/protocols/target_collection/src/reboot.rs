@@ -481,12 +481,12 @@ mod tests {
     }
 
     async fn setup(context: &EnvironmentContext) -> (Rc<Target>, TargetProxy) {
-        let target = Target::new_named("scooby-dooby-doo");
+        let target = Target::new_named(context, "scooby-dooby-doo");
         setup_inner(context, target).await
     }
 
     async fn setup_usb(context: &EnvironmentContext) -> (Rc<Target>, TargetProxy) {
-        let target = Target::new_for_usb("1DISTHISAREALSERIAL");
+        let target = Target::new_for_usb(context, "1DISTHISAREALSERIAL");
         setup_inner(context, target).await
     }
 

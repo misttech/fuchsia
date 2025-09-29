@@ -12,6 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use async_utils::event::Event;
 use chrono::Utc;
+use ffx_config::EnvironmentContext;
 use ffx_daemon_core::events::{self, EventSynthesizer};
 use ffx_daemon_events::{DaemonEvent, TargetEvent};
 use ffx_target::TargetInfoQuery;
@@ -35,6 +36,8 @@ pub struct TargetCollection {
     // Unlike the daemon event, these also fire for discovered targets.
     // TODO(b/303144137): Stop publishing events to the daemon-wide event queue.
     on_targets_changed: RefCell<Event>,
+
+    context: EnvironmentContext,
 }
 
 #[async_trait(?Send)]
@@ -54,18 +57,23 @@ impl EventSynthesizer<DaemonEvent> for TargetCollection {
 }
 
 impl TargetCollection {
-    pub fn new() -> Self {
+    pub fn new(context: &EnvironmentContext) -> Self {
         Self {
             targets: RefCell::new(HashMap::new()),
             identities: vec![].into(),
             events: RefCell::new(None),
             on_targets_changed: RefCell::new(Event::new()),
+            context: context.clone(),
         }
     }
 
+    pub fn context(&self) -> &EnvironmentContext {
+        &self.context
+    }
+
     #[cfg(test)]
-    fn new_with_queue() -> Rc<Self> {
-        let target_collection = Rc::new(Self::new());
+    fn new_with_queue(context: &EnvironmentContext) -> Rc<Self> {
+        let target_collection = Rc::new(Self::new(context));
         let queue = events::Queue::new(&target_collection);
         target_collection.set_event_queue(queue);
         target_collection
@@ -764,7 +772,7 @@ impl TargetCollection {
             .filter(|target| filters.iter().any(|f| f.borrow().matches(target)))
             .map(|target| {
                 // Create a target with the same ID so we can specifically update it.
-                let target = Target::new_with_id(target.id());
+                let target = Target::new_with_id(&self.context, target.id());
                 // Apply update to the newly created target since we are reusing merge_insert.
                 target.apply_update(update.clone());
                 target
@@ -773,10 +781,10 @@ impl TargetCollection {
 
         if create_new && merge_targets.is_empty() {
             // Insert a fresh & empty target to apply an update against.
-            let target = self.merge_insert(Target::new());
+            let target = self.merge_insert(Target::new(&self.context));
             log::debug!("No existing targets; creating new target with id {}", target.id());
 
-            let target = Target::new_with_id(target.id());
+            let target = Target::new_with_id(&self.context, target.id());
             target.apply_update(update.clone());
 
             merge_targets.push(target);
@@ -1194,26 +1202,30 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_insert_new_disabled() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("what");
         let query = nodename.clone().into();
         let t = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
         tc.merge_insert(t.clone());
         expect_no_enabled_target(&tc, &query);
         assert_eq!(expect_target(&tc, &query), t);
-        tc.merge_insert(Target::new_autoconnected(&nodename));
+        tc.merge_insert(Target::new_autoconnected(&env.context, &nodename));
         assert_eq!(expect_enabled_target(&tc, &query), t);
     }
 
     #[fuchsia::test]
     async fn test_target_collection_insert_new() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("what");
         let query = nodename.clone().into();
         let t = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
@@ -1224,9 +1236,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_merge_evict_old_addresses() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("schplew");
         let t = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
@@ -1254,8 +1268,11 @@ mod tests {
         t.addrs.borrow_mut().insert(tae2);
         t.addrs.borrow_mut().insert(tae3);
         tc.merge_insert(t.clone());
-        let t2 =
-            Target::new_with_time(&nodename, Utc.with_ymd_and_hms(2014, 11, 2, 13, 2, 1).unwrap());
+        let t2 = Target::new_with_time(
+            &tc.context,
+            &nodename,
+            Utc.with_ymd_and_hms(2014, 11, 2, 13, 2, 1).unwrap(),
+        );
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
         t2.addrs_insert(TargetAddr::new(a1.clone(), 1, 0));
         let merged_target = tc.merge_insert(t2);
@@ -1267,14 +1284,19 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_merge() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("bananas");
         let t1 = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
-        let t2 =
-            Target::new_with_time(&nodename, Utc.with_ymd_and_hms(2014, 11, 2, 13, 2, 1).unwrap());
+        let t2 = Target::new_with_time(
+            &tc.context,
+            &nodename,
+            Utc.with_ymd_and_hms(2014, 11, 2, 13, 2, 1).unwrap(),
+        );
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let a2 = IpAddr::V6(Ipv6Addr::new(
             0xfe80, 0x0000, 0x0000, 0x0000, 0xb412, 0xb455, 0x1337, 0xfeed,
@@ -1295,6 +1317,7 @@ mod tests {
         // scope_id, and ensure that the new address does not affect the address
         // collection.
         let t3 = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
@@ -1307,6 +1330,7 @@ mod tests {
 
         // Insert another instance of the a2 address, but with a new scope_id, and ensure that the new scope is used.
         let t3 = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
@@ -1319,13 +1343,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_merge_disjointed() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
 
         const NODENAME: &str = "bananas";
         const SERIAL: &str = "pears";
 
-        let t1 = tc.merge_insert(Target::new_named(NODENAME));
-        let t2 = tc.merge_insert(Target::new_for_usb(SERIAL));
+        let t1 = tc.merge_insert(Target::new_named(&tc.context, NODENAME));
+        let t2 = tc.merge_insert(Target::new_for_usb(&tc.context, SERIAL));
 
         // Disjointed, cannot compare
         assert_eq!(
@@ -1383,12 +1408,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_merge_manual() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
 
         const NODENAME1: &str = "discovered";
         const NODENAME2: &str = "manual";
 
         let _ = tc.merge_insert(Target::new_with_addr_entries(
+            &tc.context,
             Some(NODENAME1),
             std::iter::once(TargetAddrEntry::new(
                 SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 22).into(),
@@ -1398,6 +1425,7 @@ mod tests {
         ));
 
         let _ = tc.merge_insert(Target::new_with_addr_entries(
+            &tc.context,
             Some(NODENAME2),
             std::iter::once(TargetAddrEntry::new(
                 SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 22).into(),
@@ -1417,14 +1445,19 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_no_scopeless_ipv6() {
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("bananas");
         let t1 = Target::new_with_time(
+            &tc.context,
             &nodename,
             Utc.with_ymd_and_hms(2014, 10, 31, 9, 10, 12).unwrap(),
         );
-        let t2 =
-            Target::new_with_time(&nodename, Utc.with_ymd_and_hms(2014, 11, 2, 13, 2, 1).unwrap());
+        let t2 = Target::new_with_time(
+            &tc.context,
+            &nodename,
+            Utc.with_ymd_and_hms(2014, 11, 2, 13, 2, 1).unwrap(),
+        );
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let a2 = IpAddr::V6(Ipv6Addr::new(
             0xfe80, 0x0000, 0x0000, 0x0000, 0xb412, 0xb455, 0x1337, 0xfeed,
@@ -1444,6 +1477,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_query_target_by_addr() {
+        let env = ffx_config::test_init().await.unwrap();
         let ipv4_addr: TargetIpAddr = TargetIpAddr::new(IpAddr::from([192, 168, 0, 1]), 0, 0);
 
         let ipv6_addr: TargetIpAddr = TargetIpAddr::new(
@@ -1452,9 +1486,9 @@ mod tests {
             0,
         );
 
-        let t = Target::new_named("foo");
+        let t = Target::new_named(&env.context, "foo");
         t.addrs_insert(ipv4_addr.into());
-        let tc = TargetCollection::new_with_queue();
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
 
         let ipv4_query = TargetInfoQuery::Addr(ipv4_addr.into());
@@ -1463,7 +1497,7 @@ mod tests {
         assert_eq!(expect_target(&tc, &ipv4_query), t);
         expect_no_target(&tc, &ipv6_query);
 
-        let t = Target::new_named("fooberdoober");
+        let t = Target::new_named(&tc.context, "fooberdoober");
         t.addrs_insert(ipv6_addr.into());
         tc.merge_insert(t.clone());
 
@@ -1473,8 +1507,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_new_target_event_synthesis() {
-        let t = Target::new_named("clopperdoop");
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "clopperdoop");
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
         let vec = tc.synthesize_events().await;
         assert_eq!(vec.len(), 0);
@@ -1492,11 +1527,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_event_synthesis_all_connected() {
-        let t = Target::new_autoconnected("clam-chowder-is-tasty");
-        let t2 = Target::new_autoconnected("this-is-a-crunchy-falafel");
-        let t3 = Target::new_autoconnected("i-should-probably-eat-lunch");
-        let t4 = Target::new_autoconnected("i-should-probably-eat-lunch");
-        let tc = TargetCollection::new_with_queue();
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_autoconnected(&env.context, "clam-chowder-is-tasty");
+        let t2 = Target::new_autoconnected(&env.context, "this-is-a-crunchy-falafel");
+        let t3 = Target::new_autoconnected(&env.context, "i-should-probably-eat-lunch");
+        let t4 = Target::new_autoconnected(&env.context, "i-should-probably-eat-lunch");
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t);
         tc.merge_insert(t2);
         tc.merge_insert(t3);
@@ -1523,12 +1559,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_event_synthesis_none_connected() {
-        let t = Target::new_named("clam-chowder-is-tasty");
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let t3 = Target::new_named("i-should-probably-eat-lunch");
-        let t4 = Target::new_named("i-should-probably-eat-lunch");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_named(&env.context, "clam-chowder-is-tasty");
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let t3 = Target::new_named(&env.context, "i-should-probably-eat-lunch");
+        let t4 = Target::new_named(&env.context, "i-should-probably-eat-lunch");
 
-        let tc = TargetCollection::new_with_queue();
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t);
         tc.merge_insert(t2);
         tc.merge_insert(t3);
@@ -1563,11 +1600,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_events() {
-        let t = Target::new_autoconnected("clam-chowder-is-tasty");
-        let t2 = Target::new_autoconnected("this-is-a-crunchy-falafel");
-        let t3 = Target::new_autoconnected("i-should-probably-eat-lunch");
+        let env = ffx_config::test_init().await.unwrap();
+        let t = Target::new_autoconnected(&env.context, "clam-chowder-is-tasty");
+        let t2 = Target::new_autoconnected(&env.context, "this-is-a-crunchy-falafel");
+        let t3 = Target::new_autoconnected(&env.context, "i-should-probably-eat-lunch");
 
-        let tc = Rc::new(TargetCollection::new());
+        let tc = Rc::new(TargetCollection::new(&env.context));
         let queue = events::Queue::new(&tc);
         let (handler, rx) = EventPusher::new();
         queue.add_handler(handler).await;
@@ -1583,10 +1621,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_discover_target() {
+        let env = ffx_config::test_init().await.unwrap();
         let default = "clam-chowder-is-tasty";
-        let t = Target::new_autoconnected(default);
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
+        let t = Target::new_autoconnected(&env.context, default);
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
 
         let query = TargetInfoQuery::from(default.to_owned());
@@ -1610,7 +1649,7 @@ mod tests {
             t
         );
 
-        tc.merge_insert(Target::new_autoconnected("this-is-a-crunchy-falafel"));
+        tc.merge_insert(Target::new_autoconnected(&env.context, "this-is-a-crunchy-falafel"));
         tc.discover_target(&TargetInfoQuery::First).await.unwrap_err(); // Too many targets found
     }
 
@@ -1687,12 +1726,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_discover_target_updated_target() {
+        let env = ffx_config::test_init().await.unwrap();
         let address = "f111::1";
         let ip = address.parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip, 0, 0));
-        let t = Target::new_with_addrs(Option::<String>::None, addr_set);
-        let tc = TargetCollection::new_with_queue();
+        let t = Target::new_with_addrs(&env.context, Option::<String>::None, addr_set);
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t);
         let target_name = "fesenjoon-is-my-jam";
         let wait_fut = Box::pin(async {
@@ -1703,7 +1743,7 @@ mod tests {
         });
         // Now we will update the target with a nodename. This should merge into
         // the collection and create an updated target event.
-        let t2 = Target::new_autoconnected(target_name);
+        let t2 = Target::new_autoconnected(&env.context, target_name);
         t2.addrs.borrow_mut().replace(TargetAddrEntry::new(
             TargetAddr::new(ip, 0, 0),
             Utc::now(),
@@ -1715,6 +1755,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_merge_no_name() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip = "f111::3".parse().unwrap();
 
         // t1 is a target as we would naturally discover it via mdns, or from a
@@ -1722,19 +1763,19 @@ mod tests {
         // link-local address.
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip, 0xbadf00d, 0));
-        let t1 = Target::new_with_addrs(Option::<String>::None, addr_set);
+        let t1 = Target::new_with_addrs(&env.context, Option::<String>::None, addr_set);
 
         // t2 is an incoming target that has the same address, but, it is
         // missing scope information, this is essentially what occurs when we
         // ask the target for its addresses.
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
         t2.addrs.borrow_mut().replace(TargetAddrEntry::new(
             TargetAddr::new(ip, 0xbadf00d, 0),
             Utc::now(),
             TargetAddrStatus::ssh(),
         ));
 
-        let tc = TargetCollection::new_with_queue();
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t1);
         tc.merge_insert(t2);
         let targets = tc.targets.borrow();
@@ -1752,16 +1793,17 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_does_not_merge_different_ports_with_no_name() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip = "fe80::1".parse().unwrap();
 
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip, 1, 0));
-        let t1 = Target::new_with_addrs(Option::<String>::None, addr_set.clone());
+        let t1 = Target::new_with_addrs(&env.context, Option::<String>::None, addr_set.clone());
         t1.set_ssh_port(Some(8022));
-        let t2 = Target::new_with_addrs(Option::<String>::None, addr_set.clone());
+        let t2 = Target::new_with_addrs(&env.context, Option::<String>::None, addr_set.clone());
         t2.set_ssh_port(Some(8023));
 
-        let tc = TargetCollection::new_with_queue();
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t1);
         tc.merge_insert(t2);
 
@@ -1789,16 +1831,17 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_does_not_merge_different_ports() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip = "fe80::1".parse().unwrap();
 
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip, 1, 0));
-        let t1 = Target::new_with_addrs(Some("t1"), addr_set.clone());
+        let t1 = Target::new_with_addrs(&env.context, Some("t1"), addr_set.clone());
         t1.set_ssh_port(Some(8022));
-        let t2 = Target::new_with_addrs(Some("t2"), addr_set.clone());
+        let t2 = Target::new_with_addrs(&env.context, Some("t2"), addr_set.clone());
         t2.set_ssh_port(Some(8023));
 
-        let tc = TargetCollection::new_with_queue();
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t1);
         tc.merge_insert(t2);
 
@@ -1823,17 +1866,18 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_merge_enabled_and_transient() {
-        let tc = TargetCollection::new();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new(&env.context);
 
         const NAME: &str = "foo";
 
-        let target = tc.merge_insert(Target::new_named(NAME));
+        let target = tc.merge_insert(Target::new_named(&env.context, NAME));
 
         assert!(!target.is_enabled());
         assert!(!target.is_transient());
 
         tc.merge_insert({
-            let target = Target::new_named(NAME);
+            let target = Target::new_named(&env.context, NAME);
             target.enable();
             target
         });
@@ -1842,7 +1886,7 @@ mod tests {
         assert!(!target.is_transient());
 
         tc.merge_insert({
-            let target = Target::new_named(NAME);
+            let target = Target::new_named(&env.context, NAME);
             target.mark_transient();
             target
         });
@@ -1853,13 +1897,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_unnamed_by_addr() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip1, 0xbadf00d, 0));
-        let t1 = Target::new_with_addrs::<String>(None, addr_set);
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
+        let t1 = Target::new_with_addrs::<String>(&env.context, None, addr_set);
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let tc = TargetCollection::new_with_queue(&env.context);
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
@@ -1892,13 +1937,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_named_by_addr() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip1, 0xbadf00d, 0));
-        let t1 = Target::new_with_addrs::<String>(None, addr_set);
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
+        let t1 = Target::new_with_addrs::<String>(&env.context, None, addr_set);
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let tc = TargetCollection::new_with_queue(&env.context);
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
@@ -1930,12 +1976,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_address() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip1, 0xbadf00d, 0));
-        let t1 = Target::new_with_addrs::<String>(None, addr_set);
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
+        let t1 = Target::new_with_addrs::<String>(&env.context, None, addr_set);
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let tc = TargetCollection::new_with_queue(&env.context);
         t2.addrs.borrow_mut().replace(TargetAddr::UsbCtx(3).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
@@ -1967,13 +2014,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_address_no_drop() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip1, 0xbadf00d, 0));
-        let t1 = Target::new_with_addrs::<String>(None, addr_set);
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
+        let t1 = Target::new_with_addrs::<String>(&env.context, None, addr_set);
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let tc = TargetCollection::new_with_queue(&env.context);
         t2.addrs.borrow_mut().replace(TargetAddr::UsbCtx(3).into());
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
@@ -2016,13 +2064,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_by_name() {
+        let env = ffx_config::test_init().await.unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip1, 0xbadf00d, 0));
-        let t1 = Target::new_with_addrs::<String>(None, addr_set);
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
+        let t1 = Target::new_with_addrs::<String>(&env.context, None, addr_set);
+        let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
+        let tc = TargetCollection::new_with_queue(&env.context);
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
@@ -2055,9 +2104,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_collection_removal_disconnects_target() {
+        let env = ffx_config::test_init().await.unwrap();
         use crate::target::HostPipeState;
         let local_node = overnet_core::Router::new(None).unwrap();
-        let target = Target::new_named("soggy-falafel");
+        let target = Target::new_named(&env.context, "soggy-falafel");
         target.set_state(TargetConnectionState::Mdns(Instant::now()));
         target.host_pipe.borrow_mut().replace(HostPipeState {
             task: Task::local(future::pending()),
@@ -2066,7 +2116,7 @@ mod tests {
             remote_overnet_id: target::RemoteOvernetIdState::Pending(vec![]),
         });
 
-        let collection = TargetCollection::new();
+        let collection = TargetCollection::new(&env.context);
         collection.merge_insert(target.clone());
         collection.remove_target("soggy-falafel".to_owned());
 
@@ -2076,9 +2126,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_vsock_resets_host_pipe() {
+        let env = ffx_config::test_init().await.unwrap();
         use crate::target::HostPipeState;
         let local_node = overnet_core::Router::new(None).unwrap();
-        let target = Target::new_named("soggy-falafel");
+        let target = Target::new_named(&env.context, "soggy-falafel");
         target.set_state(TargetConnectionState::Mdns(Instant::now()));
         target.host_pipe.borrow_mut().replace(HostPipeState {
             task: Task::local(future::pending()),
@@ -2096,10 +2147,10 @@ mod tests {
         ));
         target.enable();
 
-        let collection = TargetCollection::new();
+        let collection = TargetCollection::new(&env.context);
         collection.merge_insert(target.clone());
 
-        let new_target = Target::new_named("soggy-falafel");
+        let new_target = Target::new_named(&env.context, "soggy-falafel");
         new_target.set_state(TargetConnectionState::Vsock(Instant::now()));
         new_target.addrs.borrow_mut().insert(TargetAddrEntry {
             addr: TargetAddr::VSockCtx(4),
@@ -2117,9 +2168,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_vsock_preserves_host_pipe() {
+        let env = ffx_config::test_init().await.unwrap();
         use crate::target::HostPipeState;
         let local_node = overnet_core::Router::new(None).unwrap();
-        let target = Target::new_named("soggy-falafel");
+        let target = Target::new_named(&env.context, "soggy-falafel");
         target.set_state(TargetConnectionState::Vsock(Instant::now()));
         target.addrs.borrow_mut().insert(TargetAddrEntry {
             addr: TargetAddr::VSockCtx(4),
@@ -2134,12 +2186,12 @@ mod tests {
         });
         target.enable();
 
-        let collection = TargetCollection::new();
+        let collection = TargetCollection::new(&env.context);
         collection.merge_insert(target.clone());
 
         let address = "f111::1";
         let ip = address.parse().unwrap();
-        let new_target = Target::new_named("soggy-falafel");
+        let new_target = Target::new_named(&env.context, "soggy-falafel");
         new_target.set_state(TargetConnectionState::Mdns(Instant::now()));
         new_target.addrs.borrow_mut().replace(TargetAddrEntry::new(
             TargetAddr::new(ip, 0xbadf00d, 0),
@@ -2158,9 +2210,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_match_serial() {
+        let env = ffx_config::test_init().await.unwrap();
         let string = "turritopsis-dohrnii-is-an-immortal-jellyfish";
-        let t = Target::new_for_usb(string);
-        let tc = TargetCollection::new_with_queue();
+        let t = Target::new_for_usb(&env.context, string);
+        let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
         let found_target =
             expect_target(&tc, &TargetInfoQuery::NodenameOrSerial(string.to_owned()));
@@ -2172,8 +2225,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_query_matches_nodename() {
+        let env = ffx_config::test_init().await.unwrap();
         let query = TargetInfoQuery::from("foo");
-        let target = Rc::new(Target::new_named("foo"));
+        let target = Rc::new(Target::new_named(&env.context, "foo"));
         assert!(query.match_description(&target.target_info()));
     }
 
@@ -2350,8 +2404,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_find_overnet_id() {
-        let tc = TargetCollection::new();
-        let target = Target::new();
+        let env = ffx_config::test_init().await.unwrap();
+        let tc = TargetCollection::new(&env.context);
+        let target = Target::new(&env.context);
         let node = overnet_core::Router::new(None).unwrap();
         let rcs = RcsConnection::new(node, &mut fidl_fuchsia_overnet_protocol::NodeId { id: 1234 })
             .expect("couldn't make RcsConnection");

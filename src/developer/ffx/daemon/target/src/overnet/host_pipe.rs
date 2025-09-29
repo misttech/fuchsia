@@ -789,7 +789,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_start_and_stop_normal_operation() {
+        let env = ffx_config::test_init().await.unwrap();
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("flooooooooberdoober"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -813,7 +815,9 @@ mod test {
     #[fuchsia::test]
     async fn test_host_pipe_start_and_stop_internal_failure() {
         // TODO(awdavies): Verify the error matches.
+        let env = ffx_config::test_init().await.unwrap();
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("flooooooooberdoober"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -835,7 +839,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_start_and_stop_ssh_failure() {
+        let env = ffx_config::test_init().await.unwrap();
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("flooooooooberdoober"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -922,6 +928,7 @@ mod test {
         write_test_ssh_keys(&env).await;
 
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("test_target"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -954,6 +961,7 @@ mod test {
         write_test_ssh_keys(&env).await;
 
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("test_target"),
             [TargetIpAddr::from_str("192.168.1.1:22").unwrap()].into(),
         );
@@ -1001,7 +1009,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_with_overnet_id() {
+        let env = ffx_config::test_init().await.unwrap();
         let target = crate::target::Target::new_with_addrs(
+            &env.context,
             Some("overnetid"),
             [TargetIpAddr::from_str("10.0.2.2:22").unwrap()].into(),
         );

@@ -139,18 +139,6 @@ impl FakeDaemon {
     }
 }
 
-impl Default for FakeDaemon {
-    fn default() -> Self {
-        FakeDaemon {
-            register: Default::default(),
-            target_collection: TargetCollection::new().into(),
-            rcs_handler: Default::default(),
-            overnet_node: overnet_core::Router::new(None).unwrap(),
-            context: Default::default(),
-        }
-    }
-}
-
 #[async_trait(?Send)]
 impl DaemonProtocolProvider for FakeDaemon {
     async fn open_protocol(&self, protocol_name: String) -> Result<fidl::Channel> {
@@ -245,11 +233,17 @@ pub struct FakeDaemonBuilder {
     map: NameToStreamHandlerMap,
     target_collection: Rc<TargetCollection>,
     rcs_handler: Option<Arc<dyn Fn(rcs::RemoteControlRequest, Option<String>)>>,
+    context: EnvironmentContext,
 }
 
 impl FakeDaemonBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(context: &EnvironmentContext) -> Self {
+        Self {
+            map: Default::default(),
+            rcs_handler: Default::default(),
+            target_collection: TargetCollection::new(context).into(),
+            context: context.clone(),
+        }
     }
 
     pub fn target(self, target: ffx::TargetInfo) -> Self {
@@ -262,7 +256,7 @@ impl FakeDaemonBuilder {
             ssh_host_address: target.ssh_host_address.map(|a| a.address),
             ..Default::default()
         };
-        let built_target = Target::from_target_event_info(t.into());
+        let built_target = Target::from_target_event_info(&self.context, t.into());
         built_target.update_connection_state(|_| TargetConnectionState::Mdns(Instant::now()));
 
         // Need to set for `ssh` target testing.
@@ -337,20 +331,11 @@ impl FakeDaemonBuilder {
 
     pub fn build(self) -> FakeDaemon {
         FakeDaemon {
+            context: self.context.clone(),
             register: Some(ProtocolRegister::new(self.map)),
             rcs_handler: self.rcs_handler,
             target_collection: self.target_collection,
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for FakeDaemonBuilder {
-    fn default() -> Self {
-        Self {
-            map: Default::default(),
-            rcs_handler: Default::default(),
-            target_collection: TargetCollection::new().into(),
+            overnet_node: overnet_core::Router::new(None).unwrap(),
         }
     }
 }
@@ -362,7 +347,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_err_double_shutdown() {
-        let f = FakeDaemonBuilder::new()
+        let env = ffx_config::test_init().await.unwrap();
+        let f = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(|_, req| match req {
                 ffx_test::NoopRequest::DoNoop { responder } => responder.send().map_err(Into::into),
             })
