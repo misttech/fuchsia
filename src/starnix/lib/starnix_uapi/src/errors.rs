@@ -417,41 +417,47 @@ macro_rules! from_status_like_fdio {
     ($status:expr) => {{ $crate::from_status_like_fdio!($status, "") }};
     ($status:expr, $context:expr) => {{
         match $status {
-            zx_status::Status::NOT_FOUND => $crate::errno!(ENOENT, $context),
-            zx_status::Status::NO_MEMORY => $crate::errno!(ENOMEM, $context),
-            zx_status::Status::INVALID_ARGS => $crate::errno!(EINVAL, $context),
-            zx_status::Status::BUFFER_TOO_SMALL => $crate::errno!(EINVAL, $context),
-            zx_status::Status::TIMED_OUT => $crate::errno!(ETIMEDOUT, $context),
-            zx_status::Status::UNAVAILABLE => $crate::errno!(EBUSY, $context),
-            zx_status::Status::ALREADY_EXISTS => $crate::errno!(EEXIST, $context),
-            zx_status::Status::PEER_CLOSED => $crate::errno!(EPIPE, $context),
-            zx_status::Status::BAD_STATE => $crate::errno!(EPIPE, $context),
-            zx_status::Status::BAD_PATH => $crate::errno!(ENAMETOOLONG, $context),
-            zx_status::Status::IO => $crate::errno!(EIO, $context),
-            zx_status::Status::NOT_FILE => $crate::errno!(EISDIR, $context),
-            zx_status::Status::NOT_DIR => $crate::errno!(ENOTDIR, $context),
-            zx_status::Status::NOT_SUPPORTED => $crate::errno!(EOPNOTSUPP, $context),
-            zx_status::Status::WRONG_TYPE => $crate::errno!(EOPNOTSUPP, $context),
-            zx_status::Status::OUT_OF_RANGE => $crate::errno!(EINVAL, $context),
-            zx_status::Status::NO_RESOURCES => $crate::errno!(ENOMEM, $context),
-            zx_status::Status::BAD_HANDLE => $crate::errno!(EBADF, $context),
-            zx_status::Status::ACCESS_DENIED => $crate::errno!(EACCES, $context),
-            zx_status::Status::SHOULD_WAIT => $crate::errno!(EAGAIN, $context),
-            zx_status::Status::FILE_BIG => $crate::errno!(EFBIG, $context),
-            zx_status::Status::NO_SPACE => $crate::errno!(ENOSPC, $context),
-            zx_status::Status::NOT_EMPTY => $crate::errno!(ENOTEMPTY, $context),
-            zx_status::Status::IO_REFUSED => $crate::errno!(ECONNREFUSED, $context),
-            zx_status::Status::IO_INVALID => $crate::errno!(EIO, $context),
-            zx_status::Status::CANCELED => $crate::errno!(EBADF, $context),
-            zx_status::Status::PROTOCOL_NOT_SUPPORTED => {
+            $crate::__zx_status::Status::NOT_FOUND => $crate::errno!(ENOENT, $context),
+            $crate::__zx_status::Status::NO_MEMORY => $crate::errno!(ENOMEM, $context),
+            $crate::__zx_status::Status::INVALID_ARGS => $crate::errno!(EINVAL, $context),
+            $crate::__zx_status::Status::BUFFER_TOO_SMALL => $crate::errno!(EINVAL, $context),
+            $crate::__zx_status::Status::TIMED_OUT => $crate::errno!(ETIMEDOUT, $context),
+            $crate::__zx_status::Status::UNAVAILABLE => $crate::errno!(EBUSY, $context),
+            $crate::__zx_status::Status::ALREADY_EXISTS => $crate::errno!(EEXIST, $context),
+            $crate::__zx_status::Status::PEER_CLOSED => $crate::errno!(EPIPE, $context),
+            $crate::__zx_status::Status::BAD_STATE => $crate::errno!(EPIPE, $context),
+            $crate::__zx_status::Status::BAD_PATH => $crate::errno!(ENAMETOOLONG, $context),
+            $crate::__zx_status::Status::IO => $crate::errno!(EIO, $context),
+            $crate::__zx_status::Status::NOT_FILE => $crate::errno!(EISDIR, $context),
+            $crate::__zx_status::Status::NOT_DIR => $crate::errno!(ENOTDIR, $context),
+            $crate::__zx_status::Status::NOT_SUPPORTED => $crate::errno!(EOPNOTSUPP, $context),
+            $crate::__zx_status::Status::WRONG_TYPE => $crate::errno!(EOPNOTSUPP, $context),
+            $crate::__zx_status::Status::OUT_OF_RANGE => $crate::errno!(EINVAL, $context),
+            $crate::__zx_status::Status::NO_RESOURCES => $crate::errno!(ENOMEM, $context),
+            $crate::__zx_status::Status::BAD_HANDLE => $crate::errno!(EBADF, $context),
+            $crate::__zx_status::Status::ACCESS_DENIED => $crate::errno!(EACCES, $context),
+            $crate::__zx_status::Status::SHOULD_WAIT => $crate::errno!(EAGAIN, $context),
+            $crate::__zx_status::Status::FILE_BIG => $crate::errno!(EFBIG, $context),
+            $crate::__zx_status::Status::NO_SPACE => $crate::errno!(ENOSPC, $context),
+            $crate::__zx_status::Status::NOT_EMPTY => $crate::errno!(ENOTEMPTY, $context),
+            $crate::__zx_status::Status::IO_REFUSED => $crate::errno!(ECONNREFUSED, $context),
+            $crate::__zx_status::Status::IO_INVALID => $crate::errno!(EIO, $context),
+            $crate::__zx_status::Status::CANCELED => $crate::errno!(EBADF, $context),
+            $crate::__zx_status::Status::PROTOCOL_NOT_SUPPORTED => {
                 $crate::errno!(EPROTONOSUPPORT, $context)
             }
-            zx_status::Status::ADDRESS_UNREACHABLE => $crate::errno!(ENETUNREACH, $context),
-            zx_status::Status::ADDRESS_IN_USE => $crate::errno!(EADDRINUSE, $context),
-            zx_status::Status::NOT_CONNECTED => $crate::errno!(ENOTCONN, $context),
-            zx_status::Status::CONNECTION_REFUSED => $crate::errno!(ECONNREFUSED, $context),
-            zx_status::Status::CONNECTION_RESET => $crate::errno!(ECONNRESET, $context),
-            zx_status::Status::CONNECTION_ABORTED => $crate::errno!(ECONNABORTED, $context),
+            $crate::__zx_status::Status::ADDRESS_UNREACHABLE => {
+                $crate::errno!(ENETUNREACH, $context)
+            }
+            $crate::__zx_status::Status::ADDRESS_IN_USE => $crate::errno!(EADDRINUSE, $context),
+            $crate::__zx_status::Status::NOT_CONNECTED => $crate::errno!(ENOTCONN, $context),
+            $crate::__zx_status::Status::CONNECTION_REFUSED => {
+                $crate::errno!(ECONNREFUSED, $context)
+            }
+            $crate::__zx_status::Status::CONNECTION_RESET => $crate::errno!(ECONNRESET, $context),
+            $crate::__zx_status::Status::CONNECTION_ABORTED => {
+                $crate::errno!(ECONNABORTED, $context)
+            }
             _ => $crate::errno!(EIO, $context),
         }
     }};

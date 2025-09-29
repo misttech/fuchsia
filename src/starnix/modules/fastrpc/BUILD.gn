@@ -37,7 +37,6 @@ rustc_library("fastrpc") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.qualcomm.fastrpc:fuchsia.hardware.qualcomm.fastrpc_rust",
     "//sdk/rust/zx",
-    "//sdk/rust/zx-status",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel:starnix_core",

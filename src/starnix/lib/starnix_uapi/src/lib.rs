@@ -69,3 +69,6 @@ pub mod arch32 {
 }
 
 pub use uapi::*;
+
+#[doc(hidden)]
+pub use zx_status as __zx_status;

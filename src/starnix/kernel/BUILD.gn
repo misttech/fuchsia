@@ -341,7 +341,6 @@ rustc_library("starnix_core") {
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_rust",
     "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
-    "//sdk/rust/zx-status",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/netlink",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_rust",
