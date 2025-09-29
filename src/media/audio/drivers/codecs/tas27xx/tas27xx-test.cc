@@ -270,28 +270,28 @@ TEST_F(Tas27xxTest, DISABLED_CodecResetDueToErrorState) {
 TEST_F(Tas27xxTest, ExternalConfig) {
   auto fake_parent = MockDevice::FakeRootParent();
 
-  static const fuchsia_hardware_audio_ti::TasConfig kMetadata(
+  static const fuchsia_hardware_ti_metadata::TasMetadata kMetadata(
       {.init_sequence1 =
            {
-               fuchsia_hardware_audio_ti::RegisterSetting({
+               fuchsia_hardware_ti_metadata::Register({
                    .address = 0x12,
                    .value = 0x34,
                }),
-               fuchsia_hardware_audio_ti::RegisterSetting({
+               fuchsia_hardware_ti_metadata::Register({
                    .address = 0x56,
                    .value = 0x78,
                }),
            },
        .init_sequence2 = {
-           fuchsia_hardware_audio_ti::RegisterSetting({
+           fuchsia_hardware_ti_metadata::Register({
                .address = 0x11,
                .value = 0x22,
            }),
-           fuchsia_hardware_audio_ti::RegisterSetting({
+           fuchsia_hardware_ti_metadata::Register({
                .address = 0x33,
                .value = 0x44,
            }),
-           fuchsia_hardware_audio_ti::RegisterSetting({
+           fuchsia_hardware_ti_metadata::Register({
                .address = 0x55,
                .value = 0x66,
            }),

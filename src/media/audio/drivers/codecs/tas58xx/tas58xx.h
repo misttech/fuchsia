@@ -5,8 +5,8 @@
 #ifndef SRC_MEDIA_AUDIO_DRIVERS_CODECS_TAS58XX_TAS58XX_H_
 #define SRC_MEDIA_AUDIO_DRIVERS_CODECS_TAS58XX_TAS58XX_H_
 
-#include <fidl/fuchsia.hardware.audio.ti/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
@@ -129,7 +129,7 @@ class Tas58xx : public SimpleCodecServer,
 
   ddk::I2cChannel i2c_;
   GainState gain_state_ = {};
-  fuchsia_hardware_audio_ti::TasConfig metadata_;
+  fuchsia_hardware_ti_metadata::TasMetadata metadata_;
   bool started_ = false;
   uint32_t number_of_channels_ = 2;
   uint32_t rate_ = 48'000;

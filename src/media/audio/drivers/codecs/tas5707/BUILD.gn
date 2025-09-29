@@ -20,7 +20,7 @@ fuchsia_cc_driver("tas5707-driver") {
   sources = [ "tas5707.cc" ]
   deps = [
     ":ti_tas5707-bind",
-    "//sdk/fidl/fuchsia.hardware.audio.ti:fuchsia.hardware.audio.ti_cpp",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//src/devices/i2c/lib/i2c-channel-legacy",
     "//src/devices/lib/driver",
     "//src/lib/ddk",

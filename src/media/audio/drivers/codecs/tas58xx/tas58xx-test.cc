@@ -343,7 +343,7 @@ class Tas58xxSignalProcessingTest : public ::testing::Test {
   void SetUp() override {
     fake_parent_ = MockDevice::FakeRootParent();
 
-    const fuchsia_hardware_audio_ti::TasConfig kMetadata({.bridged = true});
+    const fuchsia_hardware_ti_metadata::TasMetadata kMetadata({.bridged = true});
     const fit::result persisted_metadata = fidl::Persist(kMetadata);
     ASSERT_TRUE(persisted_metadata.is_ok());
     fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata.value().data(),
@@ -1578,7 +1578,7 @@ TEST(Tas58xxCustomEnvTest, Bridged) {
 
   mock_i2c.ExpectWrite({0x67}).ExpectReadStop({0x95});  // Check DIE ID.
 
-  const fuchsia_hardware_audio_ti::TasConfig kMetadata({.bridged = true});
+  const fuchsia_hardware_ti_metadata::TasMetadata kMetadata({.bridged = true});
   const fit::result persisted_metadata = fidl::Persist(kMetadata);
   ASSERT_TRUE(persisted_metadata.is_ok());
   fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata.value().data(),
@@ -1683,28 +1683,28 @@ TEST(Tas58xxExternalConfigTest, ExternalConfig) {
 
   mock_i2c.ExpectWrite({0x67}).ExpectReadStop({0x95});  // Check DIE ID.
 
-  static const fuchsia_hardware_audio_ti::TasConfig kMetadata(
+  static const fuchsia_hardware_ti_metadata::TasMetadata kMetadata(
       {.init_sequence1 =
            {
-               fuchsia_hardware_audio_ti::RegisterSetting({
+               fuchsia_hardware_ti_metadata::Register({
                    .address = 0x12,
                    .value = 0x34,
                }),
-               fuchsia_hardware_audio_ti::RegisterSetting({
+               fuchsia_hardware_ti_metadata::Register({
                    .address = 0x56,
                    .value = 0x78,
                }),
            },
        .init_sequence2 = {
-           fuchsia_hardware_audio_ti::RegisterSetting({
+           fuchsia_hardware_ti_metadata::Register({
                .address = 0x02,
                .value = 0x22,
            }),
-           fuchsia_hardware_audio_ti::RegisterSetting({
+           fuchsia_hardware_ti_metadata::Register({
                .address = 0x03,  // DeviceCtrl2 affects mute state.
                .value = 0x33,
            }),
-           fuchsia_hardware_audio_ti::RegisterSetting({
+           fuchsia_hardware_ti_metadata::Register({
                .address = 0x04,
                .value = 0x44,
            }),

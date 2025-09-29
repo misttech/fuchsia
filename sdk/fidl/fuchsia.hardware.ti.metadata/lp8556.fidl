@@ -6,14 +6,6 @@ library fuchsia.hardware.ti.metadata;
 
 const MAX_REGISTER_COUNT uint64 = 64;
 
-type Register = struct {
-    /// Address of the register.
-    address uint8;
-
-    /// Value to write to the register.
-    value uint8;
-};
-
 /// Metadata for the Ti-LP8556 backlight driver.
 @serializable
 type Lp8556Metadata = table {

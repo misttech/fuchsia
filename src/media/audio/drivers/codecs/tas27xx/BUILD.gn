@@ -31,8 +31,8 @@ fuchsia_cc_driver("tas27xx-driver") {
   sources = [ "tas27xx.cc" ]
   deps = [
     ":ti_tas27xx-bind",
-    "//sdk/fidl/fuchsia.hardware.audio.ti:fuchsia.hardware.audio.ti_cpp",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//sdk/lib/async:async-cpp",
     "//src/devices/i2c/lib/i2c-channel-legacy",
     "//src/devices/lib/driver",
@@ -71,9 +71,9 @@ test("tas27xx-test-bin") {
   deps = [
     ":tas27xx",
     ":ti_tas27xx-bind",
-    "//sdk/fidl/fuchsia.hardware.audio.ti:fuchsia.hardware.audio.ti_cpp",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

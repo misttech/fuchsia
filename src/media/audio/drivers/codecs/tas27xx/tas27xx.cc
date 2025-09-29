@@ -51,7 +51,7 @@ Tas27xx::Tas27xx(zx_device_t* device, ddk::I2cChannel i2c,
       fault_gpio_(std::move(fault_gpio)),
       ena_vsens_(vsense),
       ena_isens_(isense) {
-  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_audio_ti::TasConfig>(
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_ti_metadata::TasMetadata>(
       parent(), DEVICE_METADATA_PRIVATE);
   if (metadata.is_ok()) {
     metadata_ = std::move(metadata.value());
@@ -384,7 +384,7 @@ zx_status_t Tas27xx::Reset() {
     DelayMs(2);
     return status;
   }
-  for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+  for (const fuchsia_hardware_ti_metadata::Register& register_setting :
        metadata_.init_sequence1()) {
     auto status = WriteReg(register_setting.address(), register_setting.value());
     if (status != ZX_OK) {
@@ -395,7 +395,7 @@ zx_status_t Tas27xx::Reset() {
 
   DelayMs(2);
   // Run the second init sequence from metadata if available.
-  for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+  for (const fuchsia_hardware_ti_metadata::Register& register_setting :
        metadata_.init_sequence2()) {
     auto status = WriteReg(register_setting.address(), register_setting.value());
     if (status != ZX_OK) {

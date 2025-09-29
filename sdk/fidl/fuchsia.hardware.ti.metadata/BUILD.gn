@@ -8,5 +8,7 @@ fidl("fuchsia.hardware.ti.metadata") {
   sources = [
     "ina231.fidl",
     "lp8556.fidl",
+    "register.fidl",
+    "tas.fidl",
   ]
 }

@@ -96,7 +96,7 @@ Tas58xx::Tas58xx(zx_device_t* device, ddk::I2cChannel i2c,
   if (fault_gpio.is_valid()) {
     fault_gpio_.Bind(std::move(fault_gpio));
   }
-  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_audio_ti::TasConfig>(
+  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_hardware_ti_metadata::TasMetadata>(
       parent(), DEVICE_METADATA_PRIVATE);
   if (metadata.is_ok()) {
     metadata_ = std::move(metadata.value());
@@ -152,7 +152,7 @@ zx_status_t Tas58xx::Reset() {
 
   // Run the first init sequence from metadata if available otherwise kDefaultsStart.
   if (!metadata_.init_sequence1().empty()) {
-    for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+    for (const fuchsia_hardware_ti_metadata::Register& register_setting :
          metadata_.init_sequence1()) {
       auto status = WriteReg(register_setting.address(), register_setting.value());
       if (status != ZX_OK) {
@@ -852,7 +852,7 @@ zx::result<CodecFormatInfo> Tas58xx::SetDaiFormat(const DaiFormat& format) {
   // This allows for initialization sequences that are affected by the DAI format to be applied
   // after the DAI format is set.
   if (!metadata_.init_sequence2().empty()) {
-    for (const fuchsia_hardware_audio_ti::RegisterSetting& register_setting :
+    for (const fuchsia_hardware_ti_metadata::Register& register_setting :
          metadata_.init_sequence2()) {
       auto status = WriteReg(register_setting.address(), register_setting.value());
       if (status != ZX_OK) {

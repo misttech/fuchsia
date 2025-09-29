@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.audio.ti/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
@@ -260,19 +260,19 @@ zx_status_t Astro::AudioInit() {
 #endif
   // Add TDM OUT to the codec.
   {
-    fuchsia_hardware_audio_ti::TasConfig metadata;
+    fuchsia_hardware_ti_metadata::TasMetadata metadata;
 #ifdef TAS2770_CONFIG_PATH
     const size_t number_of_writes1 = sizeof(tas2770_init_sequence1) / sizeof(cfg_reg);
     metadata.init_sequence1().reserve(number_of_writes1);
     for (const cfg_reg& reg : tas2770_init_sequence1) {
       metadata.init_sequence1().emplace_back(
-          fuchsia_hardware_audio_ti::RegisterSetting({.address = reg.offset, .value = reg.value}));
+          fuchsia_hardware_ti_metadata::Register({.address = reg.offset, .value = reg.value}));
     }
     const size_t number_of_writes2 = sizeof(tas2770_init_sequence2) / sizeof(cfg_reg);
     metadata.init_sequence2().reserve(number_of_writes2);
     for (const cfg_reg& reg : tas2770_init_sequence2) {
       metadata.init_sequence2().emplace_back(
-          fuchsia_hardware_audio_ti::RegisterSetting({.address = reg.offset, .value = reg.value}));
+          fuchsia_hardware_ti_metadata::Register({.address = reg.offset, .value = reg.value}));
     }
 #endif
 
