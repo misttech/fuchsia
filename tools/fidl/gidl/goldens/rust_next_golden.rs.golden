@@ -735,6 +735,12 @@ copy_handle(&handle_defs[0]),], &[
         let _value: test_conformance::GoldenTableStruct = recv_buffer.decode::< <test_conformance::GoldenTableStruct as fidl_next::Encodable>::Encoded>().unwrap().take();
         assert_eq!(_value, test_conformance::GoldenTableStruct { v: test_conformance::GoldenTable { ..Default::default() } });
 
+        let unused_handles = select_raw_handle_infos(&handle_defs, &[
+0,]);
+        assert_eq!(
+            unused_handles.iter().map(get_info_handle_valid).collect::<Vec<_>>(),
+            repeat(Err(Status::BAD_HANDLE), unused_handles.len()),
+        );
     }
 
 

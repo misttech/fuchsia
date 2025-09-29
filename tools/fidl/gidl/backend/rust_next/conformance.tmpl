@@ -64,6 +64,13 @@ use {
         let recv_buffer = RecvBuffer::new(buffer);
         let {{ .ValueVar }}: {{ .ValueType }} = recv_buffer.decode::< <{{ .ValueType }} as fidl_next::Encodable>::Encoded>().unwrap().take();
         {{ .EqualityCheck }}
+        {{- if .UnusedHandles }}
+        let unused_handles = select_raw_handle_infos(&handle_defs, &{{ .UnusedHandles }});
+        assert_eq!(
+            unused_handles.iter().map(get_info_handle_valid).collect::<Vec<_>>(),
+            repeat(Err(Status::BAD_HANDLE), unused_handles.len()),
+        );
+        {{- end }}
     }
 {{ end }}
 
