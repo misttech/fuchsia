@@ -5044,24 +5044,56 @@ int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
   } else {
     delta = 0;
   }
-  if (delta != 0) {
-    // If we moved to or from zero then update every page into the correct page queue for
-    // tracking. MoveToNotPinnedLocked will check the high_priority_count_, which has already been
-    // updated, so can just call that on every page.
-    current.page_list_.ForEveryPage([&](const VmPageOrMarker* page_or_marker, uint64_t offset) {
-      if (page_or_marker->IsPage()) {
-        vm_page_t* page = page_or_marker->Page();
-        AssertHeld(current.lock_ref());
-        if (page->is_loaned()) {
-          (void)root_deferred;
-        }
-        if (page->object.pin_count == 0) {
-          current.MoveToNotPinnedLocked(page, offset);
-        }
-      }
-      return ZX_ERR_NEXT;
-    });
+  if (delta == 0) {
+    // Nothing to do here. Propagation should stop.
+    return delta;
   }
+
+  // will become populated once we find loaned pages
+  ktl::optional<BatchPQRemove> page_remover;
+
+  const auto remove_pages_callback = [&](VmPageOrMarker* page_or_marker, uint64_t offset) {
+    if (!page_or_marker->IsPage()) {
+      return ZX_ERR_NEXT;
+    }
+    vm_page_t* page = page_or_marker->Page();
+    AssertHeld(current.lock_ref());
+    if (page->is_loaned()) {
+      if (!page_remover) {
+        // we must be transitioning from low to high priority, otherwise we wouldn't have seen a
+        // loaned page. There are no loaned pages allowed in high priority VMOs.
+        DEBUG_ASSERT(delta == 1);
+        // we can only have loaned pages in pager-backed root VMOs
+        DEBUG_ASSERT(!current.parent_ && current.can_borrow());
+        DEBUG_ASSERT(root_deferred);
+        // Populate this only once we know that we have an available DeferredOps.
+        // The caller doesn't promise to provide it unless we actually have loaned pages.
+        page_remover.emplace(root_deferred->FreedList(&current));
+      }
+      VmCowRange current_page_range(offset, PAGE_SIZE);
+      DEBUG_ASSERT(root_deferred);
+      current.RangeChangeUpdateLocked(current_page_range, VmCowPages::RangeChangeOp::Unmap,
+                                       &*root_deferred);
+      // we're about to remove it, so it better not be pinned
+      DEBUG_ASSERT(page->object.pin_count == 0);
+      page_remover->Push(page_or_marker->ReleasePage());
+    } else if (page->object.pin_count == 0) {
+      // If we moved to or from zero then update every page into the correct page queue for
+      // tracking. MoveToNotPinnedLocked will check the high_priority_count_, which has already been
+      // updated, so can just call that on every page.
+      current.MoveToNotPinnedLocked(page, offset);
+    }
+    return ZX_ERR_NEXT;
+  };
+
+  zx_status_t status = current.page_list_.RemovePages(remove_pages_callback, 0, current.size_);
+  (void)status;
+  DEBUG_ASSERT(status == ZX_OK);  // infallible
+
+  if (page_remover) {
+    page_remover->Flush();
+  }
+
   vm_vmo_high_priority.Add(delta);
   return delta;
 }
@@ -6978,6 +7010,10 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   if (auto reason = CannotReclaimPageLocked(page, page_or_marker)) {
     return fit::error(reason.value());
   }
+
+  // High priority VMOs cannot have loaned pages.
+  DEBUG_ASSERT(!page->is_loaned() || high_priority_count_ == 0);
+
   // Since CanReclaimPageLocked() succeeded, we know that this page is owned by us at the provided
   // offset. So it should be safe to call MarkAccessed() on the page if reclamation fails, provided
   // we don't drop the lock.
