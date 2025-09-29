@@ -701,13 +701,6 @@ impl HrTimerManager {
                     let setup_event = zx::Event::create();
                     let deadline = new_timer_node.deadline;
 
-                    // A hrtimer may enter Start while signaled, let's see if this improves on the
-                    // situation, though I'm skeptical.
-                    signal_handle(
-                        &hr_timer.event(),
-                        zx::Signals::TIMER_SIGNALED,
-                        zx::Signals::NONE,
-                    )?;
                     ftrace::duration!(c"alarms", c"starnix:hrtimer:signaled", "timer_id" => timer_id);
 
                     // Make a request here. Move it into the closure after. Current FIDL semantics
