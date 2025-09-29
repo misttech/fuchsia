@@ -194,8 +194,13 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   // Try ArmEhAbi before the others because it will play well with CFI. Note that this is only
   // possible today by running a 32 bit ARM binary in Starnix - which will be running as a typical
   // 64 bit Fuchsia program. The unwinder implementation will only participate in unwinding if it
-  // can successfully probe that the current PC is within a 32 bit ELF module.
-  if (!success) {
+  // can successfully probe that the current PC is within a 32 bit ELF module. It's also possible
+  // for some binaries to have both CFI and EHABI for a particular address. We want to make sure
+  // that the CFI gets to go first, since that will recover the most information, if and only if the
+  // CFI was not able to recover PC, we should also consult the EHABI instructions for this address
+  // as well.
+  uint64_t maybe_pc = 0;
+  if (!success || next.regs.GetPC(maybe_pc).has_err() || maybe_pc == 0) {
     if (auto err = TryUnwinder(&arm_ehabi_unwinder, Frame::Trust::kArmEhAbi, stack, current, next);
         err.ok()) {
       success = true;

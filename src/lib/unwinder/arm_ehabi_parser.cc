@@ -133,7 +133,10 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
   // the end of the instructions.
   for (size_t i = 0; i < static_cast<size_t>(RegisterID::kArm32_last); i++) {
     uint64_t v;
-    if (i != static_cast<size_t>(RegisterID::kArm32_pc)) {
+    // Some registers in |next| may have been set from CFI instructions, which we don't want to
+    // overwrite.
+    if (i != static_cast<size_t>(RegisterID::kArm32_pc) &&
+        next.Get(static_cast<RegisterID>(i), v).has_err()) {
       // Not an error if something isn't set here.
       if (current.Get(static_cast<RegisterID>(i), v).ok()) {
         next.Set(static_cast<RegisterID>(i), v);
