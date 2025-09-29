@@ -91,9 +91,10 @@ pub fn create_kernel_and_task() -> (Arc<Kernel>, AutoReleasableTask) {
 ///
 /// This function is useful if you want to test code that requires a CurrentTask because
 /// your callback is called with the init process as the CurrentTask.
-pub fn spawn_kernel_and_run<F>(callback: F)
+pub fn spawn_kernel_and_run<F, R>(callback: F) -> R
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    R: Send + Sync + 'static,
 {
     spawn_kernel_and_run_internal(callback, None, TmpFs::new_fs)
 }
@@ -103,9 +104,10 @@ where
 ///
 /// This function is useful if you want to test code that requires a CurrentTask because
 /// your callback is called with the init process as the CurrentTask.
-pub fn spawn_kernel_and_run_with_pkgfs<F>(callback: F)
+pub fn spawn_kernel_and_run_with_pkgfs<F, R>(callback: F) -> R
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    R: Send + Sync + 'static,
 {
     spawn_kernel_and_run_internal(callback, None, create_pkgfs)
 }
@@ -115,12 +117,13 @@ where
 /// SELinux security-server.
 // TODO: https://fxbug.dev/335397745 - Only provide an admin/test API to the test, so that tests
 // must generally exercise hooks via public entrypoints.
-pub fn spawn_kernel_with_selinux_and_run<F>(callback: F)
+pub fn spawn_kernel_with_selinux_and_run<F, R>(callback: F) -> R
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>)
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>) -> R
         + Send
         + Sync
         + 'static,
+    R: Send + Sync + 'static,
 {
     let security_server = SecurityServer::new_default();
     let security_server_for_callback = security_server.clone();
@@ -139,13 +142,15 @@ where
 
 /// Create a Kernel object, with the optional caller-supplied `security_server`, and run the given
 /// callback in the init process for that kernel.
-fn spawn_kernel_and_run_internal<F, FS>(
+fn spawn_kernel_and_run_internal<F, FS, R>(
     callback: F,
     security_server: Option<Arc<SecurityServer>>,
     fs_factory: FS,
-) where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
+) -> R
+where
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     FS: FnOnce(&mut Locked<Unlocked>, &Kernel) -> FileSystemHandle,
+    R: Send + Sync + 'static,
 {
     #[allow(
         clippy::undocumented_unsafe_blocks,
@@ -156,13 +161,10 @@ fn spawn_kernel_and_run_internal<F, FS>(
     let fs = create_test_fs_context(locked, &kernel, fs_factory);
     let init_task = create_test_init_task(locked, &kernel, fs);
     let (sender, receiver) = mpsc::channel();
-    execute_task_with_prerun_result(
+    let res = execute_task_with_prerun_result(
         locked,
         init_task,
-        |locked, current_task| {
-            callback(locked, current_task);
-            Ok(())
-        },
+        |locked, current_task| Ok(callback(locked, current_task)),
         move |result| {
             sender.send(result).expect("send task result");
         },
@@ -170,6 +172,7 @@ fn spawn_kernel_and_run_internal<F, FS>(
     )
     .expect("successfully started task");
     let _ = receiver.recv().expect("received task result");
+    res
 }
 
 /// An old way of creating a task for testing

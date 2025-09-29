@@ -3878,216 +3878,236 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_sys_lseek() -> Result<(), Errno> {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
-        let fd = FdNumber::from_raw(10);
-        let file_handle =
-            current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
-        let file_size = file_handle.node().stat(locked, &current_task).unwrap().st_size;
-        current_task.files.insert(locked, &current_task, fd, file_handle).unwrap();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let fd = FdNumber::from_raw(10);
+            let file_handle =
+                current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
+            let file_size = file_handle.node().stat(locked, current_task).unwrap().st_size;
+            current_task.files.insert(locked, current_task, fd, file_handle).unwrap();
 
-        assert_eq!(sys_lseek(locked, &current_task, fd, 0, SEEK_CUR)?, 0);
-        assert_eq!(sys_lseek(locked, &current_task, fd, 1, SEEK_CUR)?, 1);
-        assert_eq!(sys_lseek(locked, &current_task, fd, 3, SEEK_SET)?, 3);
-        assert_eq!(sys_lseek(locked, &current_task, fd, -3, SEEK_CUR)?, 0);
-        assert_eq!(sys_lseek(locked, &current_task, fd, 0, SEEK_END)?, file_size);
-        assert_eq!(sys_lseek(locked, &current_task, fd, -5, SEEK_SET), error!(EINVAL));
+            assert_eq!(sys_lseek(locked, current_task, fd, 0, SEEK_CUR)?, 0);
+            assert_eq!(sys_lseek(locked, current_task, fd, 1, SEEK_CUR)?, 1);
+            assert_eq!(sys_lseek(locked, current_task, fd, 3, SEEK_SET)?, 3);
+            assert_eq!(sys_lseek(locked, current_task, fd, -3, SEEK_CUR)?, 0);
+            assert_eq!(sys_lseek(locked, current_task, fd, 0, SEEK_END)?, file_size);
+            assert_eq!(sys_lseek(locked, current_task, fd, -5, SEEK_SET), error!(EINVAL));
 
-        // Make sure that the failed call above did not change the offset.
-        assert_eq!(sys_lseek(locked, &current_task, fd, 0, SEEK_CUR)?, file_size);
+            // Make sure that the failed call above did not change the offset.
+            assert_eq!(sys_lseek(locked, current_task, fd, 0, SEEK_CUR)?, file_size);
 
-        // Prepare for an overflow.
-        assert_eq!(sys_lseek(locked, &current_task, fd, 3, SEEK_SET)?, 3);
+            // Prepare for an overflow.
+            assert_eq!(sys_lseek(locked, current_task, fd, 3, SEEK_SET)?, 3);
 
-        // Check for overflow.
-        assert_eq!(sys_lseek(locked, &current_task, fd, i64::MAX, SEEK_CUR), error!(EINVAL));
+            // Check for overflow.
+            assert_eq!(sys_lseek(locked, current_task, fd, i64::MAX, SEEK_CUR), error!(EINVAL));
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[::fuchsia::test]
     async fn test_sys_dup() -> Result<(), Errno> {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
-        let file_handle =
-            current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
-        let oldfd = current_task.add_file(locked, file_handle, FdFlags::empty())?;
-        let newfd = sys_dup(locked, &current_task, oldfd)?;
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let file_handle =
+                current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
+            let oldfd = current_task.add_file(locked, file_handle, FdFlags::empty())?;
+            let newfd = sys_dup(locked, current_task, oldfd)?;
 
-        assert_ne!(oldfd, newfd);
-        let files = &current_task.files;
-        assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(newfd).unwrap()));
+            assert_ne!(oldfd, newfd);
+            let files = &current_task.files;
+            assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(newfd).unwrap()));
 
-        assert_eq!(sys_dup(locked, &current_task, FdNumber::from_raw(3)), error!(EBADF));
+            assert_eq!(sys_dup(locked, current_task, FdNumber::from_raw(3)), error!(EBADF));
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[::fuchsia::test]
     async fn test_sys_dup3() -> Result<(), Errno> {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
-        let file_handle =
-            current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
-        let oldfd = current_task.add_file(locked, file_handle, FdFlags::empty())?;
-        let newfd = FdNumber::from_raw(2);
-        sys_dup3(locked, &current_task, oldfd, newfd, O_CLOEXEC)?;
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let file_handle =
+                current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
+            let oldfd = current_task.add_file(locked, file_handle, FdFlags::empty())?;
+            let newfd = FdNumber::from_raw(2);
+            sys_dup3(locked, current_task, oldfd, newfd, O_CLOEXEC)?;
 
-        assert_ne!(oldfd, newfd);
-        let files = &current_task.files;
-        assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(newfd).unwrap()));
-        assert_eq!(files.get_fd_flags_allowing_opath(oldfd).unwrap(), FdFlags::empty());
-        assert_eq!(files.get_fd_flags_allowing_opath(newfd).unwrap(), FdFlags::CLOEXEC);
+            assert_ne!(oldfd, newfd);
+            let files = &current_task.files;
+            assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(newfd).unwrap()));
+            assert_eq!(files.get_fd_flags_allowing_opath(oldfd).unwrap(), FdFlags::empty());
+            assert_eq!(files.get_fd_flags_allowing_opath(newfd).unwrap(), FdFlags::CLOEXEC);
 
-        assert_eq!(sys_dup3(locked, &current_task, oldfd, oldfd, O_CLOEXEC), error!(EINVAL));
+            assert_eq!(sys_dup3(locked, current_task, oldfd, oldfd, O_CLOEXEC), error!(EINVAL));
 
-        // Pass invalid flags.
-        let invalid_flags = 1234;
-        assert_eq!(sys_dup3(locked, &current_task, oldfd, newfd, invalid_flags), error!(EINVAL));
+            // Pass invalid flags.
+            let invalid_flags = 1234;
+            assert_eq!(sys_dup3(locked, current_task, oldfd, newfd, invalid_flags), error!(EINVAL));
 
-        // Makes sure that dup closes the old file handle before the fd points
-        // to the new file handle.
-        let second_file_handle =
-            current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
-        let different_file_fd =
-            current_task.add_file(locked, second_file_handle, FdFlags::empty())?;
-        assert!(!Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(different_file_fd).unwrap()));
-        sys_dup3(locked, &current_task, oldfd, different_file_fd, O_CLOEXEC)?;
-        assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(different_file_fd).unwrap()));
+            // Makes sure that dup closes the old file handle before the fd points
+            // to the new file handle.
+            let second_file_handle =
+                current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
+            let different_file_fd =
+                current_task.add_file(locked, second_file_handle, FdFlags::empty())?;
+            assert!(!Arc::ptr_eq(
+                &files.get(oldfd).unwrap(),
+                &files.get(different_file_fd).unwrap()
+            ));
+            sys_dup3(locked, current_task, oldfd, different_file_fd, O_CLOEXEC)?;
+            assert!(Arc::ptr_eq(
+                &files.get(oldfd).unwrap(),
+                &files.get(different_file_fd).unwrap()
+            ));
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[::fuchsia::test]
     async fn test_sys_open_cloexec() -> Result<(), Errno> {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
-        let path_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        let path = b"data/testfile.txt\0";
-        current_task.write_memory(path_addr, path)?;
-        let fd = sys_openat(
-            locked,
-            &current_task,
-            FdNumber::AT_FDCWD,
-            UserCString::new(&current_task, path_addr),
-            O_RDONLY | O_CLOEXEC,
-            FileMode::default(),
-        )?;
-        assert!(current_task.files.get_fd_flags_allowing_opath(fd)?.contains(FdFlags::CLOEXEC));
-        Ok(())
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let path_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            let path = b"data/testfile.txt\0";
+            current_task.write_memory(path_addr, path)?;
+            let fd = sys_openat(
+                locked,
+                &current_task,
+                FdNumber::AT_FDCWD,
+                UserCString::new(current_task, path_addr),
+                O_RDONLY | O_CLOEXEC,
+                FileMode::default(),
+            )?;
+            assert!(current_task.files.get_fd_flags_allowing_opath(fd)?.contains(FdFlags::CLOEXEC));
+            Ok(())
+        })
     }
 
     #[::fuchsia::test]
     async fn test_sys_epoll() -> Result<(), Errno> {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            let epoll_fd =
+                sys_epoll_create1(locked, current_task, 0).expect("sys_epoll_create1 failed");
+            sys_close(locked, current_task, epoll_fd).expect("sys_close failed");
 
-        let epoll_fd =
-            sys_epoll_create1(locked, &current_task, 0).expect("sys_epoll_create1 failed");
-        sys_close(locked, &current_task, epoll_fd).expect("sys_close failed");
-
-        Ok(())
+            Ok(())
+        })
     }
 
     #[::fuchsia::test]
     async fn test_fstat_tmp_file() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            // Create the file that will be used to stat.
+            let file_path = "data/testfile.txt";
+            let _file_handle =
+                current_task.open_file(locked, file_path.into(), OpenFlags::RDONLY).unwrap();
 
-        // Create the file that will be used to stat.
-        let file_path = "data/testfile.txt";
-        let _file_handle =
-            current_task.open_file(locked, file_path.into(), OpenFlags::RDONLY).unwrap();
+            // Write the path to user memory.
+            let path_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(path_addr, file_path.as_bytes())
+                .expect("failed to clear struct");
 
-        // Write the path to user memory.
-        let path_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task.write_memory(path_addr, file_path.as_bytes()).expect("failed to clear struct");
+            let memory_len = (path_addr + file_path.len()).expect("OOB memory allocation!");
+            let user_stat = UserRef::new(memory_len);
+            current_task
+                .write_object(user_stat, &default_statfs(0))
+                .expect("failed to clear struct");
 
-        let memory_len = (path_addr + file_path.len()).expect("OOB memory allocation!");
-        let user_stat = UserRef::new(memory_len);
-        current_task.write_object(user_stat, &default_statfs(0)).expect("failed to clear struct");
+            let user_path = UserCString::new(current_task, path_addr);
 
-        let user_path = UserCString::new(&current_task, path_addr);
+            assert_eq!(sys_statfs(locked, current_task, user_path, user_stat.into()), Ok(()));
 
-        assert_eq!(sys_statfs(locked, &current_task, user_path, user_stat.into()), Ok(()));
-
-        let returned_stat = current_task.read_object(user_stat).expect("failed to read struct");
-        assert_eq!(
-            returned_stat.as_bytes(),
-            default_statfs(u32::from_be_bytes(*b"f.io")).as_bytes()
-        );
+            let returned_stat = current_task.read_object(user_stat).expect("failed to read struct");
+            assert_eq!(
+                returned_stat.as_bytes(),
+                default_statfs(u32::from_be_bytes(*b"f.io")).as_bytes()
+            );
+        })
     }
 
     #[::fuchsia::test]
     async fn test_unlinkat_dir() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
-
-        // Create the dir that we will attempt to unlink later.
-        let no_slash_path = b"testdir";
-        let no_slash_path_addr =
-            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task.write_memory(no_slash_path_addr, no_slash_path).expect("failed to write path");
-        let no_slash_user_path = UserCString::new(&current_task, no_slash_path_addr);
-        sys_mkdirat(
-            locked,
-            &current_task,
-            FdNumber::AT_FDCWD,
-            no_slash_user_path,
-            FileMode::ALLOW_ALL.with_type(FileMode::IFDIR),
-        )
-        .unwrap();
-
-        let slash_path = b"testdir/";
-        let slash_path_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task.write_memory(slash_path_addr, slash_path).expect("failed to write path");
-        let slash_user_path = UserCString::new(&current_task, slash_path_addr);
-
-        // Try to remove a directory without specifying AT_REMOVEDIR.
-        // This should fail with EISDIR, irrespective of the terminating slash.
-        let error = sys_unlinkat(locked, &current_task, FdNumber::AT_FDCWD, slash_user_path, 0)
-            .unwrap_err();
-        assert_eq!(error, errno!(EISDIR));
-        let error = sys_unlinkat(locked, &current_task, FdNumber::AT_FDCWD, no_slash_user_path, 0)
-            .unwrap_err();
-        assert_eq!(error, errno!(EISDIR));
-
-        // Success with AT_REMOVEDIR.
-        sys_unlinkat(locked, &current_task, FdNumber::AT_FDCWD, slash_user_path, AT_REMOVEDIR)
+        spawn_kernel_and_run(|locked, current_task| {
+            // Create the dir that we will attempt to unlink later.
+            let no_slash_path = b"testdir";
+            let no_slash_path_addr =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(no_slash_path_addr, no_slash_path)
+                .expect("failed to write path");
+            let no_slash_user_path = UserCString::new(current_task, no_slash_path_addr);
+            sys_mkdirat(
+                locked,
+                &current_task,
+                FdNumber::AT_FDCWD,
+                no_slash_user_path,
+                FileMode::ALLOW_ALL.with_type(FileMode::IFDIR),
+            )
             .unwrap();
+
+            let slash_path = b"testdir/";
+            let slash_path_addr =
+                map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(slash_path_addr, slash_path).expect("failed to write path");
+            let slash_user_path = UserCString::new(current_task, slash_path_addr);
+
+            // Try to remove a directory without specifying AT_REMOVEDIR.
+            // This should fail with EISDIR, irrespective of the terminating slash.
+            let error = sys_unlinkat(locked, current_task, FdNumber::AT_FDCWD, slash_user_path, 0)
+                .unwrap_err();
+            assert_eq!(error, errno!(EISDIR));
+            let error =
+                sys_unlinkat(locked, current_task, FdNumber::AT_FDCWD, no_slash_user_path, 0)
+                    .unwrap_err();
+            assert_eq!(error, errno!(EISDIR));
+
+            // Success with AT_REMOVEDIR.
+            sys_unlinkat(locked, current_task, FdNumber::AT_FDCWD, slash_user_path, AT_REMOVEDIR)
+                .unwrap();
+        });
     }
 
     #[::fuchsia::test]
     async fn test_rename_noreplace() {
-        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked_with_pkgfs();
+        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+            // Create the file that will be renamed.
+            let old_user_path = "data/testfile.txt";
+            let _old_file_handle =
+                current_task.open_file(locked, old_user_path.into(), OpenFlags::RDONLY).unwrap();
 
-        // Create the file that will be renamed.
-        let old_user_path = "data/testfile.txt";
-        let _old_file_handle =
-            current_task.open_file(locked, old_user_path.into(), OpenFlags::RDONLY).unwrap();
+            // Write the path to user memory.
+            let old_path_addr =
+                map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(old_path_addr, old_user_path.as_bytes())
+                .expect("failed to clear struct");
 
-        // Write the path to user memory.
-        let old_path_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(old_path_addr, old_user_path.as_bytes())
-            .expect("failed to clear struct");
+            // Create a second file that we will attempt to rename to.
+            let new_user_path = "data/testfile2.txt";
+            let _new_file_handle =
+                current_task.open_file(locked, new_user_path.into(), OpenFlags::RDONLY).unwrap();
 
-        // Create a second file that we will attempt to rename to.
-        let new_user_path = "data/testfile2.txt";
-        let _new_file_handle =
-            current_task.open_file(locked, new_user_path.into(), OpenFlags::RDONLY).unwrap();
+            // Write the path to user memory.
+            let new_path_addr =
+                map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task
+                .write_memory(new_path_addr, new_user_path.as_bytes())
+                .expect("failed to clear struct");
 
-        // Write the path to user memory.
-        let new_path_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
-        current_task
-            .write_memory(new_path_addr, new_user_path.as_bytes())
-            .expect("failed to clear struct");
-
-        // Try to rename first file to second file's name with RENAME_NOREPLACE flag.
-        // This should fail with EEXIST.
-        let error = sys_renameat2(
-            locked,
-            &current_task,
-            FdNumber::AT_FDCWD,
-            UserCString::new(&current_task, old_path_addr),
-            FdNumber::AT_FDCWD,
-            UserCString::new(&current_task, new_path_addr),
-            RenameFlags::NOREPLACE.bits(),
-        )
-        .unwrap_err();
-        assert_eq!(error, errno!(EEXIST));
+            // Try to rename first file to second file's name with RENAME_NOREPLACE flag.
+            // This should fail with EEXIST.
+            let error = sys_renameat2(
+                locked,
+                &current_task,
+                FdNumber::AT_FDCWD,
+                UserCString::new(current_task, old_path_addr),
+                FdNumber::AT_FDCWD,
+                UserCString::new(current_task, new_path_addr),
+                RenameFlags::NOREPLACE.bits(),
+            )
+            .unwrap_err();
+            assert_eq!(error, errno!(EEXIST));
+        });
     }
 }
