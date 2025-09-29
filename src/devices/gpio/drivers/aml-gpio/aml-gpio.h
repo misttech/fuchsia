@@ -11,8 +11,8 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fpromise/promise.h>
-#include <lib/mmio/mmio.h>
 #include <lib/stdcompat/span.h>
 
 #include <array>
