@@ -3859,6 +3859,7 @@ mod arch32 {
         sys_statfs as sys_arch32_statfs, sys_statx as sys_arch32_statx,
         sys_symlinkat as sys_arch32_symlinkat, sys_sync as sys_arch32_sync,
         sys_tee as sys_arch32_tee, sys_timerfd_create as sys_arch32_timerfd_create,
+        sys_timerfd_gettime as sys_arch32_timerfd_gettime,
         sys_timerfd_settime as sys_arch32_timerfd_settime, sys_truncate as sys_arch32_truncate,
         sys_umask as sys_arch32_umask, sys_utimensat as sys_arch32_utimensat,
         sys_vmsplice as sys_arch32_vmsplice,
