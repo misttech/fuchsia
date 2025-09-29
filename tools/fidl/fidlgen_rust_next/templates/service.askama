@@ -48,7 +48,7 @@ where
                 {{ self.natural_id(self.member_protocol(member)) }},
                 {{ self.member_transport(member) }},
             >,
-        ) -> Result<
+        ) -> ::core::result::Result<
             (),
             <___C as ::fidl_next::protocol::ServiceConnector<
                 {{ self.member_transport(member) }}

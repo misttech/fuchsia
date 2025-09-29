@@ -32,7 +32,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -46,7 +46,7 @@ where
         &self,
         _: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireBitsType { value } = out);
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
@@ -100,7 +100,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { value } = slot);
         let set = u32::from(*value);
         if set & !BitsType::all().bits() != 0 {

@@ -154,20 +154,20 @@ pub mod {{ module_name }} {
                     #[inline]
                     fn encode(
                         self,
-                        encoder: &mut ___E,
-                        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                    ) -> Result<(), ::fidl_next::EncodeError> {
+                        encoder_: &mut ___E,
+                        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                         ::fidl_next::munge! {
                             let Self::Encoded {
                                 {% for member in args.members -%}
                                     {{ member.name|snake }},
                                 {% endfor %}
-                            } = out;
+                            } = out_;
                         }
 
                         {% for member in args.members %}
                             {% let member_name = filters::escape_snake(member.name) %}
-                            ::fidl_next::Encode::encode(self.{{ member_name }}, encoder, {{ member_name }})?;
+                            ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }})?;
                         {% endfor %}
                         Ok(())
                     }

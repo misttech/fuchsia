@@ -206,7 +206,7 @@ where
     pub fn first_member(
         &self,
         server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
-    ) -> Result<
+    ) -> ::core::result::Result<
         (),
         <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
     > {
@@ -226,7 +226,7 @@ where
             crate::SecondProtocol,
             ::fidl_next::fuchsia::zx::Channel,
         >,
-    ) -> Result<
+    ) -> ::core::result::Result<
         (),
         <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
     > {
@@ -301,7 +301,7 @@ where
     pub fn first_member(
         &self,
         server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
-    ) -> Result<
+    ) -> ::core::result::Result<
         (),
         <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
     > {
@@ -318,7 +318,7 @@ where
     pub fn second_member(
         &self,
         server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
-    ) -> Result<
+    ) -> ::core::result::Result<
         (),
         <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
     > {
@@ -527,7 +527,7 @@ where
     pub fn single_member(
         &self,
         server_end: ::fidl_next::ServerEnd<crate::FirstProtocol, ::fidl_next::fuchsia::zx::Channel>,
-    ) -> Result<
+    ) -> ::core::result::Result<
         (),
         <___C as ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>>::Error,
     > {

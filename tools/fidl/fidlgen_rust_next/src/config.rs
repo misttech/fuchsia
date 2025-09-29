@@ -36,7 +36,7 @@ impl HandleResourceBinding {
             HandleSubtype::Port => "Port",
             HandleSubtype::Interrupt => "Interrupt",
             HandleSubtype::PciDevice => "PciDevice",
-            HandleSubtype::Log => "Log",
+            HandleSubtype::DebugLog => "DebugLog",
             HandleSubtype::Socket => "Socket",
             HandleSubtype::Resource => "Resource",
             HandleSubtype::EventPair => "EventPair",
@@ -57,6 +57,7 @@ impl HandleResourceBinding {
             HandleSubtype::Stream => "Stream",
             HandleSubtype::Msi => "Msi",
             HandleSubtype::Iob => "Iob",
+            HandleSubtype::Counter => "Counter",
         }
     }
 

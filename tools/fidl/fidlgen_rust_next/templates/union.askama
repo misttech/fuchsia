@@ -35,7 +35,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_name }} { raw, _phantom: _ } = out);
 
         match self {
@@ -69,7 +69,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_name }} { raw, _phantom: _ } = out);
 
         match self {
@@ -104,10 +104,10 @@ where
 {
     #[inline]
     fn encode_option(
-        this: Option<Self>,
+        this: ::core::option::Option<Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_optional_name }} { raw, _phantom: _ } = &mut *out);
 
         if let Some(inner) = this {
@@ -133,10 +133,10 @@ where
 {
     #[inline]
     fn encode_option_ref(
-        this: Option<&Self>,
+        this: ::core::option::Option<&Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_optional_name }} { raw, _phantom: _ } = &mut *out);
 
         if let Some(inner) = this {
@@ -196,7 +196,7 @@ impl{{ de }} ::fidl_next::FromWireRef<{{ wire_name }}{{ de }}> for {{ name }} {
 
 impl{{ de }} ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}> for {{ name }} {
     #[inline]
-    fn from_wire_option(wire: {{ wire_optional_name }}{{ de }}) -> Option<Self> {
+    fn from_wire_option(wire: {{ wire_optional_name }}{{ de }}) -> ::core::option::Option<Self> {
         if let Some(inner) = wire.into_option() {
             Some(::fidl_next::FromWire::from_wire(inner))
         } else {
@@ -211,7 +211,7 @@ impl{{ de }} ::fidl_next::IntoNatural for {{ wire_optional_name }}{{ de }} {
 
 impl{{ de }} ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}> for Box<{{ name }}> {
     #[inline]
-    fn from_wire_option(wire: {{ wire_optional_name }}{{ de }}) -> Option<Self> {
+    fn from_wire_option(wire: {{ wire_optional_name }}{{ de }}) -> ::core::option::Option<Self> {
         <
             {{ name }} as ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}>
         >::from_wire_option(wire).map(Box::new)
@@ -221,7 +221,7 @@ impl{{ de }} ::fidl_next::FromWireOption<{{ wire_optional_name }}{{ de }}> for B
 {% if !union_.is_resource %}
 impl{{ de }} ::fidl_next::FromWireOptionRef<{{ wire_optional_name }}{{ de }}> for Box<{{ name }}> {
     #[inline]
-    fn from_wire_option_ref(wire: &{{ wire_optional_name }}{{ de }}) -> Option<Self> {
+    fn from_wire_option_ref(wire: &{{ wire_optional_name }}{{ de }}) -> ::core::option::Option<Self> {
         if let Some(inner) = wire.as_ref() {
             Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
         } else {
@@ -341,7 +341,7 @@ where
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
         decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
@@ -403,7 +403,7 @@ impl{{ de }} {{ wire_optional_name }}{{ de }} {
         self.raw.is_none()
     }
 
-    pub fn as_ref(&self) -> Option<&{{ wire_name }}{{ de }}> {
+    pub fn as_ref(&self) -> ::core::option::Option<&{{ wire_name }}{{ de }}> {
         if self.is_some() {
             Some(unsafe { &*(self as *const Self).cast() })
         } else {
@@ -411,7 +411,7 @@ impl{{ de }} {{ wire_optional_name }}{{ de }} {
         }
     }
 
-    pub fn into_option(self) -> Option<{{ wire_name }}{{ de }}> {
+    pub fn into_option(self) -> ::core::option::Option<{{ wire_name }}{{ de }}> {
         if self.is_some() {
             Some({{ wire_name }} {
                 raw: self.raw,
@@ -466,7 +466,7 @@ where
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
         decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}

@@ -17,7 +17,6 @@ template("fidl_golden_library") {
     ]
 
     enable_hlcpp = true
-    enable_rust_drivers = true
     enable_rust_next = true
     disable_rustdoc = true
 

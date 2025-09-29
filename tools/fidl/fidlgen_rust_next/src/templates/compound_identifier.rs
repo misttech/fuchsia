@@ -44,15 +44,26 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
         let (lib, ty) = self.id.split();
 
         // Special case: zx::ObjType
-        if lib == "zx" && ty.non_canonical() == "ObjType" {
-            return write!(f, "::fidl_next::fuchsia::zx::ObjectType");
-        }
-
-        // Crate prefix
-        if lib == self.library().name {
+        if lib == "zx" {
+            if self.prefix.is_empty() {
+                // Natural type
+                match ty.non_canonical() {
+                    "ObjType" => return write!(f, "::fidl_next::fuchsia::zx::ObjectType"),
+                    "Rights" => return write!(f, "::fidl_next::fuchsia::zx::Rights"),
+                    _ => (),
+                }
+            } else if self.prefix == "Wire" || self.prefix == "WireOptional" {
+                // Wire type
+                match ty.non_canonical() {
+                    "ObjType" => return write!(f, "::fidl_next::fuchsia::WireObjectType"),
+                    "Rights" => return write!(f, "::fidl_next::fuchsia::WireRights"),
+                    _ => (),
+                }
+            } else {
+                panic!("Unexpected compound identifier prefix")
+            }
+        } else if lib == self.library().name {
             write!(f, "crate::")?;
-        } else if lib == "zx" {
-            write!(f, "::fidl_next::fuchsia::zx::")?;
         } else {
             let escaped = lib.replace('.', "_");
             write!(f, "::{}_{escaped}::", self.context.crate_prefix())?;

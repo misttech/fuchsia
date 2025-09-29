@@ -34,23 +34,23 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
             TypeKind::Vector { element_type, nullable, .. } => {
                 let natural_ty = Self::new(element_type, self.context);
                 if *nullable {
-                    write!(f, "Option<Vec<{natural_ty}>>")?;
+                    write!(f, "::core::option::Option<::std::vec::Vec<{natural_ty}>>")?;
                 } else {
-                    write!(f, "Vec<{natural_ty}>")?;
+                    write!(f, "::std::vec::Vec<{natural_ty}>")?;
                 }
             }
             TypeKind::String { nullable, .. } => {
                 if *nullable {
-                    write!(f, "Option<String>")?;
+                    write!(f, "::core::option::Option<::std::string::String>")?;
                 } else {
-                    write!(f, "String")?;
+                    write!(f, "::std::string::String")?;
                 }
             }
             TypeKind::Handle { nullable, subtype, resource_identifier, .. } => {
                 let handle_ty =
                     self.resource_bindings().handle(resource_identifier).natural_path(*subtype);
                 if *nullable {
-                    write!(f, "Option<{handle_ty}>")?;
+                    write!(f, "::core::option::Option<{handle_ty}>")?;
                 } else {
                     write!(f, "{handle_ty}")?;
                 }
@@ -64,7 +64,7 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                 if *nullable {
                     write!(
                         f,
-                        "Option<{role}<{protocol_id}, {}>>",
+                        "::core::option::Option<{role}<{protocol_id}, {}>>",
                         self.resource_bindings().endpoint(protocol_transport).natural_path,
                     )?;
                 } else {
@@ -81,7 +81,7 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
             TypeKind::Identifier { identifier, nullable, .. } => {
                 let natural_id = self.natural_id(identifier);
                 if *nullable {
-                    write!(f, "Option<Box<{natural_id}>>")?;
+                    write!(f, "::core::option::Option<::std::boxed::Box<{natural_id}>>")?;
                 } else {
                     write!(f, "{natural_id}")?;
                 }

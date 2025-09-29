@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-pub const BOOL: bool = true;
+pub const BOOL: bool = true as bool;
 
 ::fidl_next::bitflags! {
     #[derive(
@@ -32,7 +32,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -46,7 +46,7 @@ where
         &self,
         _: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireBits { value } = out);
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
@@ -100,7 +100,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { value } = slot);
         let set = u32::from(*value);
         if set & !Bits::all().bits() != 0 {
@@ -120,7 +120,7 @@ impl ::core::convert::From<Bits> for WireBits {
     }
 }
 
-pub const UINT32: u32 = 4;
+pub const UINT32: u32 = 4 as u32;
 
 ::fidl_next::bitflags! {
     #[derive(
@@ -152,7 +152,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -166,7 +166,7 @@ where
         &self,
         _: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireBitsType { value } = out);
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
@@ -220,7 +220,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { value } = slot);
         let set = u32::from(*value);
         if set & !BitsType::all().bits() != 0 {
@@ -251,7 +251,9 @@ impl ::fidl_next::Encodable for Enum {
 }
 impl ::core::convert::TryFrom<u32> for Enum {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: u32) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
+    fn try_from(
+        value: u32,
+    ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             170 => Ok(Self::E),
 
@@ -269,7 +271,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -283,7 +285,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireEnum { value } = out);
         let _ = value.write(::fidl_next::WireU32::from(match *self {
             Self::E => 170,
@@ -348,7 +350,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { value } = slot);
 
         match u32::from(*value) {
@@ -380,7 +382,9 @@ impl ::fidl_next::Encodable for EnumType {
 }
 impl ::core::convert::TryFrom<i32> for EnumType {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: i32) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
+    fn try_from(
+        value: i32,
+    ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             3 => Ok(Self::Value),
             4 => Ok(Self::SecondValue),
@@ -399,7 +403,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -413,7 +417,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireEnumType { value } = out);
         let _ = value.write(::fidl_next::WireI32::from(match *self {
             Self::Value => 3,
@@ -484,7 +488,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { value } = slot);
 
         match i32::from(*value) {
@@ -506,17 +510,17 @@ impl ::core::convert::From<EnumType> for WireEnumType {
     }
 }
 
-pub const FLOAT32: f32 = 3.14159;
+pub const FLOAT32: f32 = 3.14159 as f32;
 
-pub const FLOAT64: f64 = 3.14159;
+pub const FLOAT64: f64 = 3.14159 as f64;
 
-pub const INT16: i16 = 4;
+pub const INT16: i16 = 4 as i16;
 
-pub const INT32: i32 = 4;
+pub const INT32: i32 = 4 as i32;
 
-pub const INT64: i64 = 4;
+pub const INT64: i64 = 4 as i64;
 
-pub const INT8: i8 = 4;
+pub const INT8: i8 = 4 as i8;
 
 pub const STRING: &str = "string";
 
@@ -524,7 +528,7 @@ pub const STRING: &str = "string";
 pub struct Struct {
     pub int64_with_default: i64,
 
-    pub string_with_default: String,
+    pub string_with_default: ::std::string::String,
 
     pub bool_with_default: bool,
 
@@ -545,9 +549,9 @@ where
     #[inline]
     fn encode(
         self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 int64_with_default,
@@ -556,18 +560,18 @@ where
                 enum_with_default,
                 bits_with_default,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::Encode::encode(self.int64_with_default, encoder, int64_with_default)?;
+        ::fidl_next::Encode::encode(self.int64_with_default, encoder_, int64_with_default)?;
 
-        ::fidl_next::Encode::encode(self.string_with_default, encoder, string_with_default)?;
+        ::fidl_next::Encode::encode(self.string_with_default, encoder_, string_with_default)?;
 
-        ::fidl_next::Encode::encode(self.bool_with_default, encoder, bool_with_default)?;
+        ::fidl_next::Encode::encode(self.bool_with_default, encoder_, bool_with_default)?;
 
-        ::fidl_next::Encode::encode(self.enum_with_default, encoder, enum_with_default)?;
+        ::fidl_next::Encode::encode(self.enum_with_default, encoder_, enum_with_default)?;
 
-        ::fidl_next::Encode::encode(self.bits_with_default, encoder, bits_with_default)?;
+        ::fidl_next::Encode::encode(self.bits_with_default, encoder_, bits_with_default)?;
 
         Ok(())
     }
@@ -581,9 +585,9 @@ where
     #[inline]
     fn encode_ref(
         &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 int64_with_default,
@@ -592,22 +596,22 @@ where
                 enum_with_default,
                 bits_with_default,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::EncodeRef::encode_ref(&self.int64_with_default, encoder, int64_with_default)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.int64_with_default, encoder_, int64_with_default)?;
 
         ::fidl_next::EncodeRef::encode_ref(
             &self.string_with_default,
-            encoder,
+            encoder_,
             string_with_default,
         )?;
 
-        ::fidl_next::EncodeRef::encode_ref(&self.bool_with_default, encoder, bool_with_default)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.bool_with_default, encoder_, bool_with_default)?;
 
-        ::fidl_next::EncodeRef::encode_ref(&self.enum_with_default, encoder, enum_with_default)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.enum_with_default, encoder_, enum_with_default)?;
 
-        ::fidl_next::EncodeRef::encode_ref(&self.bits_with_default, encoder, bits_with_default)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.bits_with_default, encoder_, bits_with_default)?;
 
         Ok(())
     }
@@ -624,10 +628,10 @@ where
 {
     #[inline]
     fn encode_option(
-        this: Option<Self>,
+        this: ::core::option::Option<Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -646,10 +650,10 @@ where
 {
     #[inline]
     fn encode_option_ref(
-        this: Option<&Self>,
+        this: ::core::option::Option<&Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -756,9 +760,9 @@ where
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+        slot_: ::fidl_next::Slot<'_, Self>,
+        decoder_: &mut ___D,
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
                 mut int64_with_default,
@@ -767,40 +771,40 @@ where
                 mut enum_with_default,
                 mut bits_with_default,
 
-            } = slot;
+            } = slot_;
         }
 
-        ::fidl_next::Decode::decode(int64_with_default.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(int64_with_default.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(string_with_default.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(string_with_default.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(bool_with_default.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(bool_with_default.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(enum_with_default.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(enum_with_default.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(bits_with_default.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(bits_with_default.as_mut(), decoder_)?;
 
         Ok(())
     }
 }
 
-pub const UINT16: u16 = 4;
+pub const UINT16: u16 = 4 as u16;
 
-pub const UINT64: u64 = 4;
+pub const UINT64: u64 = 4 as u64;
 
-pub const UINT8: u8 = 4;
+pub const UINT8: u8 = 4 as u8;
 
-pub const BITS_PRIMITIVE_VAL: u32 = 1;
+pub const BITS_PRIMITIVE_VAL: u32 = 1 as u32;
 
 pub const BITS_VAL: crate::BitsType = crate::BitsType::VALUE;
 
-pub const ENUM_PRIMITIVE_VAL: i32 = 3;
+pub const ENUM_PRIMITIVE_VAL: i32 = 3 as i32;
 
 pub const ENUM_VAL: crate::EnumType = crate::EnumType::Value;
 
 pub const OR_RESULT: crate::BitsType = crate::BitsType::from_bits_retain(7);
 
-pub const OR_RESULT_PRIMITIVE_VAL: u32 = 5;
+pub const OR_RESULT_PRIMITIVE_VAL: u32 = 5 as u32;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {

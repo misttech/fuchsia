@@ -190,4 +190,6 @@ define_wire_handle_types! {
     WireClock(WireOptionalClock): Clock,
     WireStream(WireOptionalStream): Stream,
     WireIob(WireOptionalIob): Iob,
+    WireCounter(WireOptionalCounter): Counter,
+    WireDebugLog(WireOptionalDebugLog): DebugLog,
 }

@@ -60,6 +60,8 @@ rustc_library("fidl_next_codec") {
       "src/fuchsia/handle.rs",
       "src/fuchsia/handle_types.rs",
       "src/fuchsia/mod.rs",
+      "src/fuchsia/object_type.rs",
+      "src/fuchsia/rights.rs",
     ]
     deps += [ "//sdk/rust/zx" ]
     features += [ "fuchsia" ]

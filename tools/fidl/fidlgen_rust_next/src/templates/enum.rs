@@ -20,12 +20,19 @@ pub struct EnumTemplate<'a> {
     wire_name: String,
     natural_int: NaturalIntTemplate<'a>,
     wire_int: WireIntTemplate<'a>,
+    unknown_ordinal_value: i128,
 }
 
 impl<'a> EnumTemplate<'a> {
     pub fn new(enm: &'a Enum, context: Context<'a>) -> Self {
         let base_name = enm.name.decl_name().camel();
         let wire_name = format!("Wire{base_name}");
+        let unknown_ordinal_value = enm
+            .members
+            .iter()
+            .map(|m| m.value.value.parse::<i128>().unwrap() + 1)
+            .max()
+            .unwrap_or(0);
 
         Self {
             enm,
@@ -35,6 +42,7 @@ impl<'a> EnumTemplate<'a> {
             wire_name: escape(wire_name),
             natural_int: context.natural_int(&enm.ty),
             wire_int: context.wire_int(&enm.ty),
+            unknown_ordinal_value,
         }
     }
 }

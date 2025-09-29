@@ -6,6 +6,8 @@
 
 mod handle;
 mod handle_types;
+mod object_type;
+mod rights;
 
 use zx::Handle;
 use zx::sys::zx_handle_t;
@@ -16,6 +18,8 @@ use crate::{DecodeError, EncodeError};
 
 pub use self::handle::*;
 pub use self::handle_types::*;
+pub use self::object_type::*;
+pub use self::rights::*;
 pub use zx;
 
 /// A decoder which support Zircon handles.

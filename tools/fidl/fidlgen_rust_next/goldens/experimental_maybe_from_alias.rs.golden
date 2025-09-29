@@ -17,24 +17,25 @@ pub type AliasOfArrayContainingAliasOfArray = [u64; 2];
 /// The wire type corresponding to [`AliasOfArrayContainingAliasOfArray`].
 pub type WireAliasOfArrayContainingAliasOfArray = [::fidl_next::WireU64; 2];
 
-pub type AliasOfBytes = Vec<u8>;
+pub type AliasOfBytes = ::std::vec::Vec<u8>;
 
 /// The wire type corresponding to [`AliasOfBytes`].
 pub type WireAliasOfBytes<'de> = ::fidl_next::WireVector<'de, u8>;
 
-pub type AliasOfRequest =
-    Option<::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>>;
+pub type AliasOfRequest = ::core::option::Option<
+    ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+>;
 
 /// The wire type corresponding to [`AliasOfRequest`].
 pub type WireAliasOfRequest =
     ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>;
 
-pub type AliasOfString = String;
+pub type AliasOfString = ::std::string::String;
 
 /// The wire type corresponding to [`AliasOfString`].
 pub type WireAliasOfString<'de> = ::fidl_next::WireString<'de>;
 
-pub type AliasOfVectorContainingAliasOfVector = Vec<u64>;
+pub type AliasOfVectorContainingAliasOfVector = ::std::vec::Vec<u64>;
 
 /// The wire type corresponding to [`AliasOfVectorContainingAliasOfVector`].
 pub type WireAliasOfVectorContainingAliasOfVector<'de> =
@@ -146,7 +147,7 @@ where
     }
 }
 
-pub type Vector = Option<Vec<u64>>;
+pub type Vector = ::core::option::Option<::std::vec::Vec<u64>>;
 
 /// The wire type corresponding to [`Vector`].
 pub type WireVector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>;
@@ -155,59 +156,65 @@ pub type WireVector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::Wir
 pub struct Testing {
     pub u1: u64,
 
-    pub u2: Vec<u64>,
+    pub u2: ::std::vec::Vec<u64>,
 
     pub u3: [u64; 1],
 
-    pub u4: Vec<Vec<u64>>,
+    pub u4: ::std::vec::Vec<::std::vec::Vec<u64>>,
 
-    pub u5: Vec<[u64; 1]>,
+    pub u5: ::std::vec::Vec<[u64; 1]>,
 
-    pub u6: [Vec<u64>; 4],
+    pub u6: [::std::vec::Vec<u64>; 4],
 
     pub u7: [[u64; 1]; 4],
 
-    pub v1: Option<Vec<u64>>,
+    pub v1: ::core::option::Option<::std::vec::Vec<u64>>,
 
-    pub v2: Vec<Option<Vec<u64>>>,
+    pub v2: ::std::vec::Vec<::core::option::Option<::std::vec::Vec<u64>>>,
 
-    pub v3: [Option<Vec<u64>>; 4],
+    pub v3: [::core::option::Option<::std::vec::Vec<u64>>; 4],
 
     pub a1: [u64; 1],
 
-    pub a2: Vec<[u64; 1]>,
+    pub a2: ::std::vec::Vec<[u64; 1]>,
 
     pub a3: [[u64; 1]; 4],
 
-    pub r1: Option<::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>>,
+    pub r1: ::core::option::Option<
+        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    >,
 
-    pub r2:
-        Vec<Option<::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>>>,
+    pub r2: ::std::vec::Vec<
+        ::core::option::Option<
+            ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+        >,
+    >,
 
-    pub r3:
-        [Option<::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>>; 4],
+    pub r3: [::core::option::Option<
+        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    >; 4],
 
-    pub b1: Vec<u8>,
+    pub b1: ::std::vec::Vec<u8>,
 
-    pub b2: Vec<Vec<u8>>,
+    pub b2: ::std::vec::Vec<::std::vec::Vec<u8>>,
 
-    pub b3: [Vec<u8>; 4],
+    pub b3: [::std::vec::Vec<u8>; 4],
 
-    pub s1: String,
+    pub s1: ::std::string::String,
 
-    pub s2: Vec<String>,
+    pub s2: ::std::vec::Vec<::std::string::String>,
 
-    pub s3: [String; 4],
+    pub s3: [::std::string::String; 4],
 
-    pub vv1: Vec<u64>,
+    pub vv1: ::std::vec::Vec<u64>,
 
-    pub vv2: Vec<Vec<u64>>,
+    pub vv2: ::std::vec::Vec<::std::vec::Vec<u64>>,
 
-    pub vv3: [Vec<u64>; 3],
+    pub vv3: [::std::vec::Vec<u64>; 3],
 
     pub aa1: [u64; 2],
 
-    pub aa2: Vec<[u64; 2]>,
+    pub aa2: ::std::vec::Vec<[u64; 2]>,
 
     pub aa3: [[u64; 2]; 3],
 }
@@ -225,9 +232,9 @@ where
     #[inline]
     fn encode(
         self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 u1,
@@ -259,64 +266,64 @@ where
                 aa2,
                 aa3,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::Encode::encode(self.u1, encoder, u1)?;
+        ::fidl_next::Encode::encode(self.u1, encoder_, u1)?;
 
-        ::fidl_next::Encode::encode(self.u2, encoder, u2)?;
+        ::fidl_next::Encode::encode(self.u2, encoder_, u2)?;
 
-        ::fidl_next::Encode::encode(self.u3, encoder, u3)?;
+        ::fidl_next::Encode::encode(self.u3, encoder_, u3)?;
 
-        ::fidl_next::Encode::encode(self.u4, encoder, u4)?;
+        ::fidl_next::Encode::encode(self.u4, encoder_, u4)?;
 
-        ::fidl_next::Encode::encode(self.u5, encoder, u5)?;
+        ::fidl_next::Encode::encode(self.u5, encoder_, u5)?;
 
-        ::fidl_next::Encode::encode(self.u6, encoder, u6)?;
+        ::fidl_next::Encode::encode(self.u6, encoder_, u6)?;
 
-        ::fidl_next::Encode::encode(self.u7, encoder, u7)?;
+        ::fidl_next::Encode::encode(self.u7, encoder_, u7)?;
 
-        ::fidl_next::Encode::encode(self.v1, encoder, v1)?;
+        ::fidl_next::Encode::encode(self.v1, encoder_, v1)?;
 
-        ::fidl_next::Encode::encode(self.v2, encoder, v2)?;
+        ::fidl_next::Encode::encode(self.v2, encoder_, v2)?;
 
-        ::fidl_next::Encode::encode(self.v3, encoder, v3)?;
+        ::fidl_next::Encode::encode(self.v3, encoder_, v3)?;
 
-        ::fidl_next::Encode::encode(self.a1, encoder, a1)?;
+        ::fidl_next::Encode::encode(self.a1, encoder_, a1)?;
 
-        ::fidl_next::Encode::encode(self.a2, encoder, a2)?;
+        ::fidl_next::Encode::encode(self.a2, encoder_, a2)?;
 
-        ::fidl_next::Encode::encode(self.a3, encoder, a3)?;
+        ::fidl_next::Encode::encode(self.a3, encoder_, a3)?;
 
-        ::fidl_next::Encode::encode(self.r1, encoder, r1)?;
+        ::fidl_next::Encode::encode(self.r1, encoder_, r1)?;
 
-        ::fidl_next::Encode::encode(self.r2, encoder, r2)?;
+        ::fidl_next::Encode::encode(self.r2, encoder_, r2)?;
 
-        ::fidl_next::Encode::encode(self.r3, encoder, r3)?;
+        ::fidl_next::Encode::encode(self.r3, encoder_, r3)?;
 
-        ::fidl_next::Encode::encode(self.b1, encoder, b1)?;
+        ::fidl_next::Encode::encode(self.b1, encoder_, b1)?;
 
-        ::fidl_next::Encode::encode(self.b2, encoder, b2)?;
+        ::fidl_next::Encode::encode(self.b2, encoder_, b2)?;
 
-        ::fidl_next::Encode::encode(self.b3, encoder, b3)?;
+        ::fidl_next::Encode::encode(self.b3, encoder_, b3)?;
 
-        ::fidl_next::Encode::encode(self.s1, encoder, s1)?;
+        ::fidl_next::Encode::encode(self.s1, encoder_, s1)?;
 
-        ::fidl_next::Encode::encode(self.s2, encoder, s2)?;
+        ::fidl_next::Encode::encode(self.s2, encoder_, s2)?;
 
-        ::fidl_next::Encode::encode(self.s3, encoder, s3)?;
+        ::fidl_next::Encode::encode(self.s3, encoder_, s3)?;
 
-        ::fidl_next::Encode::encode(self.vv1, encoder, vv1)?;
+        ::fidl_next::Encode::encode(self.vv1, encoder_, vv1)?;
 
-        ::fidl_next::Encode::encode(self.vv2, encoder, vv2)?;
+        ::fidl_next::Encode::encode(self.vv2, encoder_, vv2)?;
 
-        ::fidl_next::Encode::encode(self.vv3, encoder, vv3)?;
+        ::fidl_next::Encode::encode(self.vv3, encoder_, vv3)?;
 
-        ::fidl_next::Encode::encode(self.aa1, encoder, aa1)?;
+        ::fidl_next::Encode::encode(self.aa1, encoder_, aa1)?;
 
-        ::fidl_next::Encode::encode(self.aa2, encoder, aa2)?;
+        ::fidl_next::Encode::encode(self.aa2, encoder_, aa2)?;
 
-        ::fidl_next::Encode::encode(self.aa3, encoder, aa3)?;
+        ::fidl_next::Encode::encode(self.aa3, encoder_, aa3)?;
 
         Ok(())
     }
@@ -333,10 +340,10 @@ where
 {
     #[inline]
     fn encode_option(
-        this: Option<Self>,
+        this: ::core::option::Option<Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -589,9 +596,9 @@ where
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+        slot_: ::fidl_next::Slot<'_, Self>,
+        decoder_: &mut ___D,
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
                 mut u1,
@@ -623,12 +630,12 @@ where
                 mut aa2,
                 mut aa3,
 
-            } = slot;
+            } = slot_;
         }
 
-        ::fidl_next::Decode::decode(u1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(u2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u2.as_mut(), decoder_)?;
 
         let u2 = unsafe { u2.deref_unchecked() };
 
@@ -639,47 +646,47 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(u3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(u4.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u4.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(u5.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u5.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(u6.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u6.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(u7.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(u7.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(v1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(v1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(v2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(v2.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(v3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(v3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(a1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(a1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(a2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(a2.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(a3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(a3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(r1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(r1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(r2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(r2.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(r3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(r3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(b1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(b1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(b2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(b2.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(b3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(b3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(s1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(s1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(s2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(s2.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(s3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(s3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(vv1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(vv1.as_mut(), decoder_)?;
 
         let vv1 = unsafe { vv1.deref_unchecked() };
 
@@ -690,7 +697,7 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(vv2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(vv2.as_mut(), decoder_)?;
 
         let vv2 = unsafe { vv2.deref_unchecked() };
 
@@ -701,11 +708,11 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(vv3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(vv3.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(aa1.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(aa1.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(aa2.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(aa2.as_mut(), decoder_)?;
 
         let aa2 = unsafe { aa2.deref_unchecked() };
 
@@ -716,7 +723,7 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(aa3.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(aa3.as_mut(), decoder_)?;
 
         Ok(())
     }

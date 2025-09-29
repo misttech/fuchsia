@@ -56,8 +56,7 @@ pub enum HandleSubtype {
     Port = 6,
     Interrupt = 9,
     PciDevice = 11,
-    #[serde(rename = "debuglog")]
-    Log = 12,
+    DebugLog = 12,
     Socket = 14,
     Resource = 15,
     EventPair = 16,
@@ -78,4 +77,5 @@ pub enum HandleSubtype {
     Stream = 31,
     Msi = 32,
     Iob = 33,
+    Counter = 34,
 }

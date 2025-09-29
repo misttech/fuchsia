@@ -34,9 +34,9 @@ where
     #[inline]
     fn encode(
         self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 monotonic,
@@ -44,16 +44,16 @@ where
                 monotonic_ticks,
                 boot_ticks,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::Encode::encode(self.monotonic, encoder, monotonic)?;
+        ::fidl_next::Encode::encode(self.monotonic, encoder_, monotonic)?;
 
-        ::fidl_next::Encode::encode(self.boot, encoder, boot)?;
+        ::fidl_next::Encode::encode(self.boot, encoder_, boot)?;
 
-        ::fidl_next::Encode::encode(self.monotonic_ticks, encoder, monotonic_ticks)?;
+        ::fidl_next::Encode::encode(self.monotonic_ticks, encoder_, monotonic_ticks)?;
 
-        ::fidl_next::Encode::encode(self.boot_ticks, encoder, boot_ticks)?;
+        ::fidl_next::Encode::encode(self.boot_ticks, encoder_, boot_ticks)?;
 
         Ok(())
     }
@@ -66,9 +66,9 @@ where
     #[inline]
     fn encode_ref(
         &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 monotonic,
@@ -76,16 +76,16 @@ where
                 monotonic_ticks,
                 boot_ticks,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::EncodeRef::encode_ref(&self.monotonic, encoder, monotonic)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.monotonic, encoder_, monotonic)?;
 
-        ::fidl_next::EncodeRef::encode_ref(&self.boot, encoder, boot)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.boot, encoder_, boot)?;
 
-        ::fidl_next::EncodeRef::encode_ref(&self.monotonic_ticks, encoder, monotonic_ticks)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.monotonic_ticks, encoder_, monotonic_ticks)?;
 
-        ::fidl_next::EncodeRef::encode_ref(&self.boot_ticks, encoder, boot_ticks)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.boot_ticks, encoder_, boot_ticks)?;
 
         Ok(())
     }
@@ -102,10 +102,10 @@ where
 {
     #[inline]
     fn encode_option(
-        this: Option<Self>,
+        this: ::core::option::Option<Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -124,10 +124,10 @@ where
 {
     #[inline]
     fn encode_option_ref(
-        this: Option<&Self>,
+        this: ::core::option::Option<&Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -229,9 +229,9 @@ where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
 {
     fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+        slot_: ::fidl_next::Slot<'_, Self>,
+        decoder_: &mut ___D,
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
                 mut monotonic,
@@ -239,16 +239,16 @@ where
                 mut monotonic_ticks,
                 mut boot_ticks,
 
-            } = slot;
+            } = slot_;
         }
 
-        ::fidl_next::Decode::decode(monotonic.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(monotonic.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(boot.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(boot.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(monotonic_ticks.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(monotonic_ticks.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(boot_ticks.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(boot_ticks.as_mut(), decoder_)?;
 
         Ok(())
     }
@@ -256,13 +256,13 @@ where
 
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct ComplexInstants {
-    pub monotonic: Option<[i64; 10]>,
+    pub monotonic: ::core::option::Option<[i64; 10]>,
 
-    pub boot: Option<Vec<i64>>,
+    pub boot: ::core::option::Option<::std::vec::Vec<i64>>,
 
-    pub monotonic_ticks: Option<[i64; 10]>,
+    pub monotonic_ticks: ::core::option::Option<[i64; 10]>,
 
-    pub boot_ticks: Option<[i64; 10]>,
+    pub boot_ticks: ::core::option::Option<[i64; 10]>,
 }
 
 impl ComplexInstants {
@@ -300,7 +300,7 @@ where
         mut self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireComplexInstants { table } = out);
 
         let max_ord = self.__max_ordinal();
@@ -314,9 +314,9 @@ where
         for i in 1..=max_ord {
             match i {
                 4 => {
-                    if let Some(boot_ticks) = self.boot_ticks.take() {
+                    if let Some(value) = self.boot_ticks.take() {
                         ::fidl_next::WireEnvelope::encode_value(
-                            boot_ticks,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -326,9 +326,9 @@ where
                 }
 
                 3 => {
-                    if let Some(monotonic_ticks) = self.monotonic_ticks.take() {
+                    if let Some(value) = self.monotonic_ticks.take() {
                         ::fidl_next::WireEnvelope::encode_value(
-                            monotonic_ticks,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -338,9 +338,9 @@ where
                 }
 
                 2 => {
-                    if let Some(boot) = self.boot.take() {
+                    if let Some(value) = self.boot.take() {
                         ::fidl_next::WireEnvelope::encode_value(
-                            boot,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -350,9 +350,9 @@ where
                 }
 
                 1 => {
-                    if let Some(monotonic) = self.monotonic.take() {
+                    if let Some(value) = self.monotonic.take() {
                         ::fidl_next::WireEnvelope::encode_value(
-                            monotonic,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -383,7 +383,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireComplexInstants { table } = out);
 
         let max_ord = self.__max_ordinal();
@@ -397,9 +397,9 @@ where
         for i in 1..=max_ord {
             match i {
                 4 => {
-                    if let Some(boot_ticks) = &self.boot_ticks {
+                    if let Some(value) = &self.boot_ticks {
                         ::fidl_next::WireEnvelope::encode_value(
-                            boot_ticks,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -409,9 +409,9 @@ where
                 }
 
                 3 => {
-                    if let Some(monotonic_ticks) = &self.monotonic_ticks {
+                    if let Some(value) = &self.monotonic_ticks {
                         ::fidl_next::WireEnvelope::encode_value(
-                            monotonic_ticks,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -421,9 +421,9 @@ where
                 }
 
                 2 => {
-                    if let Some(boot) = &self.boot {
+                    if let Some(value) = &self.boot {
                         ::fidl_next::WireEnvelope::encode_value(
-                            boot,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -433,9 +433,9 @@ where
                 }
 
                 1 => {
-                    if let Some(monotonic) = &self.monotonic {
+                    if let Some(value) = &self.monotonic {
                         ::fidl_next::WireEnvelope::encode_value(
-                            monotonic,
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -459,16 +459,16 @@ where
 
 impl<'de> ::fidl_next::FromWire<WireComplexInstants<'de>> for ComplexInstants {
     #[inline]
-    fn from_wire(wire: WireComplexInstants<'de>) -> Self {
-        let wire = ::core::mem::ManuallyDrop::new(wire);
+    fn from_wire(wire_: WireComplexInstants<'de>) -> Self {
+        let wire_ = ::core::mem::ManuallyDrop::new(wire_);
 
-        let monotonic = wire.table.get(1);
+        let monotonic = wire_.table.get(1);
 
-        let boot = wire.table.get(2);
+        let boot = wire_.table.get(2);
 
-        let monotonic_ticks = wire.table.get(3);
+        let monotonic_ticks = wire_.table.get(3);
 
-        let boot_ticks = wire.table.get(4);
+        let boot_ticks = wire_.table.get(4);
 
         Self {
             monotonic: monotonic.map(|envelope| {
@@ -579,7 +579,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { table } = slot);
 
         ::fidl_next::WireTable::decode_with(table, decoder, |ordinal, mut slot, decoder| {
@@ -629,25 +629,30 @@ where
 }
 
 impl<'de> WireComplexInstants<'de> {
-    pub fn monotonic(&self) -> Option<&[::fidl_next::WireI64; 10]> {
+    pub fn monotonic(&self) -> ::core::option::Option<&[::fidl_next::WireI64; 10]> {
         unsafe { Some(self.table.get(1)?.deref_unchecked()) }
     }
 
-    pub fn boot(&self) -> Option<&::fidl_next::WireVector<'de, ::fidl_next::WireI64>> {
+    pub fn boot(
+        &self,
+    ) -> ::core::option::Option<&::fidl_next::WireVector<'de, ::fidl_next::WireI64>> {
         unsafe { Some(self.table.get(2)?.deref_unchecked()) }
     }
 
-    pub fn monotonic_ticks(&self) -> Option<&[::fidl_next::WireI64; 10]> {
+    pub fn monotonic_ticks(&self) -> ::core::option::Option<&[::fidl_next::WireI64; 10]> {
         unsafe { Some(self.table.get(3)?.deref_unchecked()) }
     }
 
-    pub fn boot_ticks(&self) -> Option<&[::fidl_next::WireI64; 10]> {
+    pub fn boot_ticks(&self) -> ::core::option::Option<&[::fidl_next::WireI64; 10]> {
         unsafe { Some(self.table.get(4)?.deref_unchecked()) }
     }
 }
 
 impl<'de> ::core::fmt::Debug for WireComplexInstants<'de> {
-    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> Result<(), ::core::fmt::Error> {
+    fn fmt(
+        &self,
+        f: &mut ::core::fmt::Formatter<'_>,
+    ) -> ::core::result::Result<(), ::core::fmt::Error> {
         f.debug_struct("ComplexInstants")
             .field("monotonic", &self.monotonic())
             .field("boot", &self.boot())

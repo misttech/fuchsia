@@ -10,7 +10,7 @@ Default,
 )]
 pub struct {{ name }} {
     {% for member in table.members %}
-        pub {{ member.name|snake }}: Option<{{ self.natural_type(member.ty) }}>,
+        pub {{ member.name|snake }}: ::core::option::Option<{{ self.natural_type(member.ty) }}>,
     {% endfor %}
 }
 
@@ -39,7 +39,7 @@ where
         mut self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_name }} { table } = out);
 
         let max_ord = self.__max_ordinal();
@@ -53,9 +53,9 @@ where
             match i {
                 {% for member in table.members.iter().rev() %}
                     {% let member_name = filters::escape_snake(member.name) %}
-                    {{ member.ordinal }} => if let Some({{ member_name }}) = self.{{ member_name }}.take() {
+                    {{ member.ordinal }} => if let Some(value) = self.{{ member_name }}.take() {
                         ::fidl_next::WireEnvelope::encode_value(
-                            {{ member_name }},
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -86,7 +86,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_name }} { table } = out);
 
         let max_ord = self.__max_ordinal();
@@ -100,9 +100,9 @@ where
             match i {
                 {% for member in table.members.iter().rev() %}
                     {% let member_name = filters::escape_snake(member.name) %}
-                    {{ member.ordinal }} => if let Some({{ member_name }}) = &self.{{ member_name }} {
+                    {{ member.ordinal }} => if let Some(value) = &self.{{ member_name }} {
                         ::fidl_next::WireEnvelope::encode_value(
-                            {{ member_name }},
+                            value,
                             preallocated.encoder,
                             &mut out,
                         )?;
@@ -126,11 +126,11 @@ where
 
 impl<'de> ::fidl_next::FromWire<{{ wire_name }}<'de>> for {{ name }} {
     #[inline]
-    fn from_wire(wire: {{ wire_name }}<'de>) -> Self {
-        let wire = ::core::mem::ManuallyDrop::new(wire);
+    fn from_wire(wire_: {{ wire_name }}<'de>) -> Self {
+        let wire_ = ::core::mem::ManuallyDrop::new(wire_);
 
         {% for member in table.members %}
-            let {{ member.name|snake }} = wire.table.get({{ member.ordinal }});
+            let {{ member.name|snake }} = wire_.table.get({{ member.ordinal }});
         {% endfor %}
 
         Self {
@@ -202,7 +202,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { table } = slot);
 
         ::fidl_next::WireTable::decode_with(
@@ -211,7 +211,6 @@ where
             |ordinal, mut slot, decoder| match ordinal {
                 0 => unsafe { ::core::hint::unreachable_unchecked() },
                 {% for member in table.members %}
-                    {% let member_name = filters::escape_snake(member.name) %}
                     {{ member.ordinal }} => {
                         ::fidl_next::WireEnvelope::decode_as::<
                             ___D,
@@ -222,7 +221,7 @@ where
                             {% when TypeKind::Array { element_count, element_type } %}
                             {% when TypeKind::Vector { element_count, element_type, nullable } -%}
                                 {% if let Some(limit) = element_count -%}
-                                    let {{ member_name }} = unsafe {
+                                    let value = unsafe {
                                         slot
                                             .deref_unchecked()
                                             .deref_unchecked::<
@@ -230,11 +229,11 @@ where
                                             >()
                                     };
                                     {% if nullable -%}
-                                        if let Some({{ member_name }}) = {{ member_name }}.as_ref() {
+                                        if let Some(value) = value.as_ref() {
                                     {%- endif %}
-                                            if {{ member_name }}.len() > {{ limit }} {
+                                            if value.len() > {{ limit }} {
                                                 return Err(::fidl_next::DecodeError::VectorTooLong {
-                                                    size: {{ member_name }}.len() as u64,
+                                                    size: value.len() as u64,
                                                     limit: {{ limit }},
                                                 });
                                             }
@@ -244,7 +243,7 @@ where
                                 {%- endif %}
                             {% when TypeKind::String { element_count, nullable } %}
                                 {% if let Some(limit) = element_count -%}
-                                    let {{ member_name }} = unsafe {
+                                    let value = unsafe {
                                         slot
                                             .deref_unchecked()
                                             .deref_unchecked::<
@@ -252,11 +251,11 @@ where
                                             >()
                                     };
                                     {% if nullable -%}
-                                        if let Some({{ member_name }}) = {{ member_name }}.as_ref() {
+                                        if let Some(value) = value.as_ref() {
                                     {%- endif %}
-                                            if {{ member_name }}.len() > {{ limit }} {
+                                            if value.len() > {{ limit }} {
                                                 return Err(::fidl_next::DecodeError::VectorTooLong {
-                                                    size: {{ member_name }}.len() as u64,
+                                                    size: value.len() as u64,
                                                     limit: {{ limit }},
                                                 });
                                             }
@@ -278,7 +277,7 @@ where
 
 impl<'de> {{ wire_name }}<'de> {
     {% for member in table.members %}
-        pub fn {{ member.name|snake }}(&self) -> Option<&{{ self.wire_type(member.ty) }}> {
+        pub fn {{ member.name|snake }}(&self) -> ::core::option::Option<&{{ self.wire_type(member.ty) }}> {
             unsafe {
                 Some(self.table.get({{ member.ordinal }})?.deref_unchecked())
             }
@@ -291,7 +290,7 @@ impl<'de> {{ wire_name }}<'de> {
         fn fmt(
             &self,
             f: &mut ::core::fmt::Formatter<'_>,
-        ) -> Result<(), ::core::fmt::Error> {
+        ) -> ::core::result::Result<(), ::core::fmt::Error> {
             f.debug_struct("{{ name }}")
             {% for member in table.members %}
                 {% let member_name = filters::escape_snake(member.name) %}

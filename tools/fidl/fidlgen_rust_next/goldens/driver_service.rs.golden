@@ -33,7 +33,7 @@ where
     pub fn member(
         &self,
         server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, ::fdf_fidl::DriverChannel>,
-    ) -> Result<
+    ) -> ::core::result::Result<
         (),
         <___C as ::fidl_next::protocol::ServiceConnector<::fdf_fidl::DriverChannel>>::Error,
     > {

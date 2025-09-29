@@ -14,7 +14,7 @@ pub enum {{ name }} {
         {{ member.name|camel }} = {{ member.value.value }},
     {%- endfor %}
     {%- if !enm.is_strict -%}
-        UnknownOrdinal_({{ natural_int }}),
+        UnknownOrdinal_({{ natural_int }}) = {{ unknown_ordinal_value }},
     {%- endif %}
 }
 
@@ -25,7 +25,7 @@ impl ::fidl_next::Encodable for {{ name }} {
 {%- if enm.is_strict %}
 impl ::core::convert::TryFrom<{{ natural_int }}> for {{ name }} {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: {{ natural_int }}) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
+    fn try_from(value: {{ natural_int }}) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             {% for member in enm.members -%}
                 {{ member.value.value }} => Ok(Self::{{ member.name|camel }}),
@@ -56,7 +56,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -70,7 +70,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_name }} { value } = out);
         let _ = value.write({{ wire_int }}::from(match *self {
             {% for member in enm.members %}
@@ -162,7 +162,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _ : &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         {% if enm.is_strict %}
             ::fidl_next::munge!(let Self { value } = slot);
 

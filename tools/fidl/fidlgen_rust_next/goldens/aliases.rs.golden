@@ -7,12 +7,12 @@ pub type U32 = u32;
 /// The wire type corresponding to [`U32`].
 pub type WireU32 = ::fidl_next::WireU32;
 
-pub type VecOfStrings = Vec<String>;
+pub type VecOfStrings = ::std::vec::Vec<::std::string::String>;
 
 /// The wire type corresponding to [`VecOfStrings`].
 pub type WireVecOfStrings<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
 
-pub type VecOfStringsAtMost5 = Vec<String>;
+pub type VecOfStringsAtMost5 = ::std::vec::Vec<::std::string::String>;
 
 /// The wire type corresponding to [`VecOfStringsAtMost5`].
 pub type WireVecOfStringsAtMost5<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
@@ -34,7 +34,9 @@ impl ::fidl_next::Encodable for ObjType {
 }
 impl ::core::convert::TryFrom<u32> for ObjType {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(value: u32) -> Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
+    fn try_from(
+        value: u32,
+    ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
         match value {
             0 => Ok(Self::None),
             4 => Ok(Self::Channel),
@@ -53,7 +55,7 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
     }
 }
@@ -67,7 +69,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireObjType { value } = out);
         let _ = value.write(::fidl_next::WireU32::from(match *self {
             Self::None => 0,
@@ -138,7 +140,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { value } = slot);
 
         match u32::from(*value) {
@@ -174,19 +176,20 @@ pub type WireAliasOfChannel = ::fidl_next::fuchsia::WireChannel;
 pub struct ExampleOfUseOfAliases {
     pub field_of_u32: u32,
 
-    pub field_of_vec_of_strings: Vec<String>,
+    pub field_of_vec_of_strings: ::std::vec::Vec<::std::string::String>,
 
-    pub field_of_vec_of_strings_at_most_nine: Vec<String>,
+    pub field_of_vec_of_strings_at_most_nine: ::std::vec::Vec<::std::string::String>,
 
-    pub field_of_vec_of_strings_at_most_5: Vec<String>,
+    pub field_of_vec_of_strings_at_most_5: ::std::vec::Vec<::std::string::String>,
 
-    pub field_of_vec_of_ref_me_at_most_5: Vec<::fidl_next_test_someotherlibrary::ReferenceMe>,
+    pub field_of_vec_of_ref_me_at_most_5:
+        ::std::vec::Vec<::fidl_next_test_someotherlibrary::ReferenceMe>,
 
     pub field_of_channel: ::fidl_next::fuchsia::zx::Channel,
 
     pub field_of_client_end: ::fidl_next::fuchsia::zx::Channel,
 
-    pub field_of_nullable_client_end: Option<::fidl_next::fuchsia::zx::Channel>,
+    pub field_of_nullable_client_end: ::core::option::Option<::fidl_next::fuchsia::zx::Channel>,
 }
 
 impl ::fidl_next::Encodable for ExampleOfUseOfAliases {
@@ -202,9 +205,9 @@ where
     #[inline]
     fn encode(
         self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 field_of_u32,
@@ -216,42 +219,42 @@ where
                 field_of_client_end,
                 field_of_nullable_client_end,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::Encode::encode(self.field_of_u32, encoder, field_of_u32)?;
+        ::fidl_next::Encode::encode(self.field_of_u32, encoder_, field_of_u32)?;
 
         ::fidl_next::Encode::encode(
             self.field_of_vec_of_strings,
-            encoder,
+            encoder_,
             field_of_vec_of_strings,
         )?;
 
         ::fidl_next::Encode::encode(
             self.field_of_vec_of_strings_at_most_nine,
-            encoder,
+            encoder_,
             field_of_vec_of_strings_at_most_nine,
         )?;
 
         ::fidl_next::Encode::encode(
             self.field_of_vec_of_strings_at_most_5,
-            encoder,
+            encoder_,
             field_of_vec_of_strings_at_most_5,
         )?;
 
         ::fidl_next::Encode::encode(
             self.field_of_vec_of_ref_me_at_most_5,
-            encoder,
+            encoder_,
             field_of_vec_of_ref_me_at_most_5,
         )?;
 
-        ::fidl_next::Encode::encode(self.field_of_channel, encoder, field_of_channel)?;
+        ::fidl_next::Encode::encode(self.field_of_channel, encoder_, field_of_channel)?;
 
-        ::fidl_next::Encode::encode(self.field_of_client_end, encoder, field_of_client_end)?;
+        ::fidl_next::Encode::encode(self.field_of_client_end, encoder_, field_of_client_end)?;
 
         ::fidl_next::Encode::encode(
             self.field_of_nullable_client_end,
-            encoder,
+            encoder_,
             field_of_nullable_client_end,
         )?;
 
@@ -270,10 +273,10 @@ where
 {
     #[inline]
     fn encode_option(
-        this: Option<Self>,
+        this: ::core::option::Option<Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -396,9 +399,9 @@ where
     ___D: ::fidl_next::fuchsia::HandleDecoder,
 {
     fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+        slot_: ::fidl_next::Slot<'_, Self>,
+        decoder_: &mut ___D,
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
                 mut field_of_u32,
@@ -410,14 +413,14 @@ where
                 mut field_of_client_end,
                 mut field_of_nullable_client_end,
 
-            } = slot;
+            } = slot_;
         }
 
-        ::fidl_next::Decode::decode(field_of_u32.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_u32.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(field_of_vec_of_strings.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_vec_of_strings.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_nine.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_nine.as_mut(), decoder_)?;
 
         let field_of_vec_of_strings_at_most_nine =
             unsafe { field_of_vec_of_strings_at_most_nine.deref_unchecked() };
@@ -429,7 +432,7 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_5.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_5.as_mut(), decoder_)?;
 
         let field_of_vec_of_strings_at_most_5 =
             unsafe { field_of_vec_of_strings_at_most_5.deref_unchecked() };
@@ -441,7 +444,7 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(field_of_vec_of_ref_me_at_most_5.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_vec_of_ref_me_at_most_5.as_mut(), decoder_)?;
 
         let field_of_vec_of_ref_me_at_most_5 =
             unsafe { field_of_vec_of_ref_me_at_most_5.deref_unchecked() };
@@ -453,11 +456,11 @@ where
             });
         }
 
-        ::fidl_next::Decode::decode(field_of_channel.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_channel.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(field_of_client_end.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_client_end.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(field_of_nullable_client_end.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(field_of_nullable_client_end.as_mut(), decoder_)?;
 
         Ok(())
     }

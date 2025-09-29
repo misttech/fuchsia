@@ -4,9 +4,9 @@
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ExampleUseOfVectors {
-    pub vector_of_uint8: Vec<u8>,
+    pub vector_of_uint8: ::std::vec::Vec<u8>,
 
-    pub vector_of_vector_of_bool: Vec<Vec<bool>>,
+    pub vector_of_vector_of_bool: ::std::vec::Vec<::std::vec::Vec<bool>>,
 }
 
 impl ::fidl_next::Encodable for ExampleUseOfVectors {
@@ -21,22 +21,22 @@ where
     #[inline]
     fn encode(
         self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 vector_of_uint8,
                 vector_of_vector_of_bool,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::Encode::encode(self.vector_of_uint8, encoder, vector_of_uint8)?;
+        ::fidl_next::Encode::encode(self.vector_of_uint8, encoder_, vector_of_uint8)?;
 
         ::fidl_next::Encode::encode(
             self.vector_of_vector_of_bool,
-            encoder,
+            encoder_,
             vector_of_vector_of_bool,
         )?;
 
@@ -52,22 +52,22 @@ where
     #[inline]
     fn encode_ref(
         &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+        encoder_: &mut ___E,
+        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
                 vector_of_uint8,
                 vector_of_vector_of_bool,
 
-            } = out;
+            } = out_;
         }
 
-        ::fidl_next::EncodeRef::encode_ref(&self.vector_of_uint8, encoder, vector_of_uint8)?;
+        ::fidl_next::EncodeRef::encode_ref(&self.vector_of_uint8, encoder_, vector_of_uint8)?;
 
         ::fidl_next::EncodeRef::encode_ref(
             &self.vector_of_vector_of_bool,
-            encoder,
+            encoder_,
             vector_of_vector_of_bool,
         )?;
 
@@ -86,10 +86,10 @@ where
 {
     #[inline]
     fn encode_option(
-        this: Option<Self>,
+        this: ::core::option::Option<Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -108,10 +108,10 @@ where
 {
     #[inline]
     fn encode_option_ref(
-        this: Option<&Self>,
+        this: ::core::option::Option<&Self>,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> Result<(), ::fidl_next::EncodeError> {
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
             ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
             ::fidl_next::WireBox::encode_present(out);
@@ -187,20 +187,20 @@ where
     ___D: ::fidl_next::Decoder,
 {
     fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        decoder: &mut ___D,
-    ) -> Result<(), ::fidl_next::DecodeError> {
+        slot_: ::fidl_next::Slot<'_, Self>,
+        decoder_: &mut ___D,
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
                 mut vector_of_uint8,
                 mut vector_of_vector_of_bool,
 
-            } = slot;
+            } = slot_;
         }
 
-        ::fidl_next::Decode::decode(vector_of_uint8.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(vector_of_uint8.as_mut(), decoder_)?;
 
-        ::fidl_next::Decode::decode(vector_of_vector_of_bool.as_mut(), decoder)?;
+        ::fidl_next::Decode::decode(vector_of_vector_of_bool.as_mut(), decoder_)?;
 
         Ok(())
     }
