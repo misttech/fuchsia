@@ -11,10 +11,10 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fzl/pinned-vmo.h>
 #include <lib/fzl/vmar-manager.h>
 #include <lib/fzl/vmo-mapper.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/interrupt.h>
 #include <threads.h>

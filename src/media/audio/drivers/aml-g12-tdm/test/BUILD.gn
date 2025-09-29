@@ -51,9 +51,9 @@ cc_test_executable("aml-g12-tdm-dai-test-bin") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/fake-mmio-reg/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/devices/lib/amlogic",
-    "//src/devices/lib/mmio",
     "//src/devices/testing/mock-ddk",
     "//zircon/system/ulib/zxtest",
   ]

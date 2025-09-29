@@ -8,8 +8,8 @@
 #include <fuchsia/hardware/intelhda/codec/c/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/ddk/device.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fzl/vmo-mapper.h>
-#include <lib/mmio/mmio.h>
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>

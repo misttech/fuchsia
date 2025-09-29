@@ -48,8 +48,8 @@ source_set("aml-g12-tdm-source") {
     "audio-stream.h",
   ]
   deps = [
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/lib/driver",
-    "//src/devices/lib/mmio",
     "//src/media/audio/drivers/lib/audio-proto-utils",
     "//src/media/audio/lib/simple-codec",
     "//zircon/system/ulib/inspect",
@@ -121,13 +121,13 @@ source_set("aml-g12-tdm-dai-source") {
   ]
   deps = [
     "//sdk/lib/async:async-cpp",
+    "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//sdk/lib/fit-promise",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/driver",
-    "//src/devices/lib/mmio",
     "//zircon/system/ulib/fbl",
   ]
   public_deps = [
