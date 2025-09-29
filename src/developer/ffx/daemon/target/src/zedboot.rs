@@ -4,6 +4,7 @@
 
 use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Context as _, Result, anyhow, bail};
+use ffx_config::EnvironmentContext;
 use ffx_daemon_core::events;
 use ffx_daemon_events::{DaemonEvent, TryIntoTargetEventInfo, WireTrafficType};
 use ffx_target::Description;
@@ -29,13 +30,23 @@ const DISCOVERY_ZEDBOOT_ENABLED: &str = "discovery.zedboot.enabled";
 const ZEDBOOT_MCAST_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1);
 const ZEDBOOT_REDISCOVERY_INTERFACE_INTERVAL: Duration = Duration::from_secs(5);
 
-pub async fn zedboot_discovery(e: events::Queue<DaemonEvent>) -> Result<Task<()>> {
-    let port = port().await?;
-    Ok(Task::local(interface_discovery(port, e, ZEDBOOT_REDISCOVERY_INTERFACE_INTERVAL)))
+pub async fn zedboot_discovery(
+    context: &EnvironmentContext,
+    e: events::Queue<DaemonEvent>,
+) -> Result<Task<()>> {
+    let port = port(&context).await?;
+    let context_clone = context.clone();
+    Ok(Task::local(interface_discovery(
+        context_clone,
+        port,
+        e,
+        ZEDBOOT_REDISCOVERY_INTERFACE_INTERVAL,
+    )))
 }
 
-async fn port() -> Result<NonZeroU16> {
-    ffx_config::get(DISCOVERY_ZEDBOOT_ADVERT_PORT)
+async fn port(context: &EnvironmentContext) -> Result<NonZeroU16> {
+    context
+        .get(DISCOVERY_ZEDBOOT_ADVERT_PORT)
         .map(|port| {
             NonZeroU16::new(port).ok_or_else(|| anyhow::anyhow!("advert port must be nonzero"))
         })
@@ -44,6 +55,7 @@ async fn port() -> Result<NonZeroU16> {
 
 // interface_discovery iterates over all multicast interfaces
 pub async fn interface_discovery(
+    context: EnvironmentContext,
     port: NonZeroU16,
     e: events::Queue<DaemonEvent>,
     discovery_interval: Duration,
@@ -63,13 +75,13 @@ pub async fn interface_discovery(
     let mut should_log_v6_listen_error = true;
     let mut v6_listen_socket: Weak<UdpSocket> = Weak::new();
 
-    if ffx_config::get(DISCOVERY_ZEDBOOT_ENABLED).unwrap_or(false) {
+    if context.get(DISCOVERY_ZEDBOOT_ENABLED).unwrap_or(false) {
         log::debug!("Starting Zedboot discovery loop");
     };
 
     loop {
         // https://fxbug.dev/42171647 - disabled by default
-        let is_enabled: bool = ffx_config::get(DISCOVERY_ZEDBOOT_ENABLED).unwrap_or(false);
+        let is_enabled: bool = context.get(DISCOVERY_ZEDBOOT_ENABLED).unwrap_or(false);
         if is_enabled {
             if v6_listen_socket.upgrade().is_none() {
                 match make_listen_socket((ZEDBOOT_MCAST_V6, port.get()).into())
@@ -78,7 +90,8 @@ pub async fn interface_discovery(
                     Ok(sock) => {
                         let sock = Arc::new(sock);
                         v6_listen_socket = Arc::downgrade(&sock);
-                        Task::local(recv_loop(sock.clone(), e.clone())).detach();
+                        let context_clone = context.clone();
+                        Task::local(recv_loop(context_clone, sock.clone(), e.clone())).detach();
                         should_log_v6_listen_error = true;
                     }
                     Err(err) => {
@@ -113,10 +126,14 @@ pub async fn interface_discovery(
 // recv_loop reads packets from sock. If the packet is a Fuchsia zedboot packet, a
 // corresponding zedboot event is published to the queue. All other packets are
 // silently discarded.
-async fn recv_loop(sock: Arc<UdpSocket>, e: events::Queue<DaemonEvent>) {
+async fn recv_loop(
+    context: EnvironmentContext,
+    sock: Arc<UdpSocket>,
+    e: events::Queue<DaemonEvent>,
+) {
     loop {
         // https://fxbug.dev/42171647 - disabled by default
-        let is_enabled: bool = ffx_config::get(DISCOVERY_ZEDBOOT_ENABLED).unwrap_or(false);
+        let is_enabled: bool = context.get(DISCOVERY_ZEDBOOT_ENABLED).unwrap_or(false);
         if !is_enabled {
             return;
         }
