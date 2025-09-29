@@ -345,6 +345,7 @@ mod test {
     use futures::StreamExt as _;
     use pretty_assertions::assert_eq;
     use starnix_core::task::{EventHandler, Waiter};
+    #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::create_kernel_task_and_unlocked;
     use starnix_core::vfs::FileHandle;
     use starnix_core::vfs::buffers::VecOutputBuffer;
@@ -779,6 +780,7 @@ mod test {
 
     #[::fuchsia::test()]
     async fn initial_watch_request_has_empty_responses_arg() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         // Set up resources.
         let (_input_device, _input_file, mut touch_source_stream) =
@@ -795,6 +797,7 @@ mod test {
     #[::fuchsia::test]
     async fn later_watch_requests_have_responses_arg_matching_earlier_watch_replies() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, _input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -831,6 +834,7 @@ mod test {
     #[::fuchsia::test]
     async fn notifies_polling_waiters_of_new_data() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -874,6 +878,7 @@ mod test {
     #[::fuchsia::test]
     async fn notifies_blocked_waiter_of_new_data() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -906,6 +911,7 @@ mod test {
     #[::fuchsia::test]
     async fn does_not_notify_polling_waiters_without_new_data() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -962,6 +968,7 @@ mod test {
     #[::fuchsia::test]
     async fn honors_wait_cancellation() {
         // Set up input resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1003,6 +1010,7 @@ mod test {
     #[::fuchsia::test]
     async fn query_events() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1054,6 +1062,7 @@ mod test {
     async fn touch_event_ignored() {
         // Set up resources.
         let inspector = fuchsia_inspect::Inspector::default();
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input_inspect(locked, &current_task, &inspector).await;
@@ -1122,6 +1131,7 @@ mod test {
     async fn touch_event_unexpected(event: TouchEvent) {
         // Set up resources.
         let inspector = fuchsia_inspect::Inspector::default();
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input_inspect(locked, &current_task, &inspector).await;
@@ -1184,6 +1194,7 @@ mod test {
     #[::fuchsia::test]
     async fn translates_touch_add() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1220,6 +1231,7 @@ mod test {
     #[::fuchsia::test]
     async fn translates_touch_change() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1268,6 +1280,7 @@ mod test {
     #[::fuchsia::test]
     async fn translates_touch_remove() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1316,6 +1329,7 @@ mod test {
     #[::fuchsia::test]
     async fn multi_touch_event_sequence() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1444,6 +1458,7 @@ mod test {
     #[::fuchsia::test]
     async fn multi_event_sequence_unsorted_in_one_watch() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1503,6 +1518,7 @@ mod test {
     #[::fuchsia::test]
     async fn sends_acceptable_coordinates((x, y): (f32, f32)) {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1556,6 +1572,7 @@ mod test {
         event: TouchEvent,
     ) -> Option<TouchResponse> {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, _input_file, mut touch_source_stream) =
             start_touch_input(locked, &current_task).await;
@@ -1576,6 +1593,7 @@ mod test {
     #[test_case(fidl_fuchsia_input::Key::A, uapi::KEY_A; "A maps to A")]
     #[::fuchsia::test]
     async fn sends_keyboard_events(fkey: fidl_fuchsia_input::Key, lkey: u32) {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_keyboard_device, keyboard_file, keyboard_listener) =
             start_keyboard_input(locked, &current_task).await;
@@ -1596,6 +1614,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn skips_unknown_keyboard_events() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_keyboard_device, keyboard_file, keyboard_listener) =
             start_keyboard_input(locked, &current_task).await;
@@ -1615,6 +1634,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn sends_power_button_events() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, buttons_listener) =
             start_button_input(locked, &current_task).await;
@@ -1640,6 +1660,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn sends_function_button_events() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, buttons_listener) =
             start_button_input(locked, &current_task).await;
@@ -1665,6 +1686,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn sends_overlapping_button_events() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, buttons_listener) =
             start_button_input(locked, &current_task).await;
@@ -1729,6 +1751,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn sends_simultaneous_button_events() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, buttons_listener) =
             start_button_input(locked, &current_task).await;
@@ -1765,6 +1788,7 @@ mod test {
             code: uapi::REL_WHEEL as u16,
             value: ticks as i32,
         };
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_mouse_device, mouse_file, mut mouse_stream) =
             start_mouse_input(locked, &current_task).await;
@@ -1804,6 +1828,7 @@ mod test {
             }),
             ..Default::default()
         };
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_mouse_device, mouse_file, mut mouse_stream) =
             start_mouse_input(locked, &current_task).await;
@@ -1822,6 +1847,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn touch_input_initialized_with_inspect_node() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let inspector = fuchsia_inspect::Inspector::default();
         let touch_device = InputDevice::new_touch(
@@ -1856,6 +1882,7 @@ mod test {
     #[::fuchsia::test]
     async fn touch_relay_updates_touch_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut touch_source_stream) =
             start_touch_input_inspect(locked, &current_task, &inspector).await;
@@ -1951,6 +1978,7 @@ mod test {
     #[::fuchsia::test]
     async fn new_file_updates_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
 
         let input_device = InputDevice::new_touch(700, 700, inspector.root());
@@ -2116,6 +2144,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn keyboard_input_initialized_with_inspect_node() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let inspector = fuchsia_inspect::Inspector::default();
         let keyboard_device = InputDevice::new_keyboard(&inspector.root());
@@ -2146,6 +2175,7 @@ mod test {
     #[::fuchsia::test]
     async fn button_relay_updates_keyboard_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, buttons_listener) =
             start_button_input_inspect(locked, &current_task, &inspector).await;
@@ -2210,6 +2240,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn mouse_input_initialized_with_inspect_node() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let inspector = fuchsia_inspect::Inspector::default();
         let mouse_device = InputDevice::new_mouse(&inspector.root());
@@ -2240,6 +2271,7 @@ mod test {
     #[::fuchsia::test]
     async fn mouse_relay_updates_mouse_inspect_status() {
         let inspector = fuchsia_inspect::Inspector::default();
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (_input_device, input_file, mut mouse_source_stream) =
             start_mouse_input_inspect(locked, &current_task, &inspector).await;

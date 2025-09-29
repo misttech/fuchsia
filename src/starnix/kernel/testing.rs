@@ -59,34 +59,6 @@ where
     .unwrap()
 }
 
-/// An old way of creating a task for testing
-///
-/// This way of creating a task has problems because the test isn't actually run with that task
-/// being current, which means that functions that expect a CurrentTask to actually be mapped into
-/// memory can operate incorrectly.
-///
-/// Please use `spawn_kernel_and_run` instead. If there isn't a variant of `spawn_kernel_and_run`
-/// for this use case, please consider adding one that follows the new pattern of actually running
-/// the test on the spawned task.
-pub fn create_kernel_task_and_unlocked_with_pkgfs()
--> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
-    create_kernel_task_and_unlocked_with_fs(create_pkgfs)
-}
-
-/// An old way of creating a task for testing
-///
-/// This way of creating a task has problems because the test isn't actually run with that task
-/// being current, which means that functions that expect a CurrentTask to actually be mapped into
-/// memory can operate incorrectly.
-///
-/// Please use `spawn_kernel_and_run` instead. If there isn't a variant of `spawn_kernel_and_run`
-/// for this use case, please consider adding one that follows the new pattern of actually running
-/// the test on the spawned task.
-pub fn create_kernel_and_task() -> (Arc<Kernel>, AutoReleasableTask) {
-    let (kernel, task, _) = create_kernel_task_and_unlocked();
-    (kernel, task)
-}
-
 /// Create a Kernel object and run the given callback in the init process for that kernel.
 ///
 /// This function is useful if you want to test code that requires a CurrentTask because
@@ -175,15 +147,7 @@ where
     res
 }
 
-/// An old way of creating a task for testing
-///
-/// This way of creating a task has problems because the test isn't actually run with that task
-/// being current, which means that functions that expect a CurrentTask to actually be mapped into
-/// memory can operate incorrectly.
-///
-/// Please use `spawn_kernel_and_run` instead. If there isn't a variant of `spawn_kernel_and_run`
-/// for this use case, please consider adding one that follows the new pattern of actually running
-/// the test on the spawned task.
+#[deprecated = "Do not add new callers, use spawn_kernel_and_run() instead."]
 pub fn create_kernel_task_and_unlocked()
 -> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
     create_kernel_task_and_unlocked_with_fs(TmpFs::new_fs)

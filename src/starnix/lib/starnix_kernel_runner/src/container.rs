@@ -1026,6 +1026,7 @@ mod test {
     use super::wait_for_init_file;
     use fuchsia_async as fasync;
     use futures::{SinkExt, StreamExt};
+    #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::create_kernel_task_and_unlocked;
     use starnix_core::vfs::FdNumber;
     use starnix_uapi::CLONE_FS;
@@ -1036,6 +1037,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_file_already_exists() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
@@ -1066,6 +1068,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_file_wait_required() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
@@ -1104,6 +1107,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_exits_before_file_exists() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 

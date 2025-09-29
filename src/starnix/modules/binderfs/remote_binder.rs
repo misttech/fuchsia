@@ -1557,7 +1557,9 @@ mod tests {
     #[test]
     fn container_power_controller_drop_wake_lock() {
         let mut exec = fasync::TestExecutor::new();
-        let (kernel, _init_task) = create_kernel_and_task();
+        #[allow(deprecated, reason = "pre-existing usage")]
+        let (kernel, _init_task, _locked) =
+            starnix_core::testing::create_kernel_task_and_unlocked();
 
         let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
         let message_counter = zx::Counter::create();

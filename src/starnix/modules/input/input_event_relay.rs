@@ -1059,6 +1059,7 @@ mod test {
         TouchSourceRequest, TouchSourceRequestStream,
     };
     use starnix_core::task::CurrentTask;
+    #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::create_kernel_task_and_unlocked;
     use starnix_core::vfs::{FileHandle, FileObject, VecOutputBuffer};
     use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
@@ -1222,6 +1223,7 @@ mod test {
     #[::fuchsia::test]
     async fn route_touch_event_by_device_id() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             input_relay,
@@ -1287,6 +1289,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn route_touch_event_by_device_id_multi_device_events_in_one_sequence() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             input_relay,
@@ -1368,6 +1371,7 @@ mod test {
     #[::fuchsia::test]
     async fn route_key_event_by_device_id() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             input_relay,
@@ -1434,6 +1438,7 @@ mod test {
     #[::fuchsia::test]
     async fn route_media_button_event_by_device_id() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             input_relay,
@@ -1514,6 +1519,7 @@ mod test {
     #[::fuchsia::test]
     async fn route_touch_button_event_by_device_id() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             input_relay,
@@ -1572,6 +1578,7 @@ mod test {
     #[::fuchsia::test]
     async fn touch_device_multi_reader() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             _input_relay,
@@ -1618,6 +1625,7 @@ mod test {
     #[::fuchsia::test]
     async fn keyboard_device_multi_reader() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             _input_relay,
@@ -1659,6 +1667,7 @@ mod test {
     #[::fuchsia::test]
     async fn button_device_multi_reader() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             _input_relay,
@@ -1703,6 +1712,7 @@ mod test {
     #[::fuchsia::test]
     async fn mouse_device_multi_reader() {
         // Set up resources.
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (
             _input_relay,

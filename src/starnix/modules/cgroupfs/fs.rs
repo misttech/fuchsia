@@ -183,11 +183,13 @@ impl DirectoryNodes {
 mod test {
     use super::*;
 
+    #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::create_kernel_task_and_unlocked;
     use starnix_core::vfs::fs_registry::FsRegistry;
 
     #[::fuchsia::test]
     async fn test_filesystem_creates_nodes() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let registry = kernel.expando.get::<FsRegistry>();
         registry.register(b"cgroup2".into(), cgroup2_fs);

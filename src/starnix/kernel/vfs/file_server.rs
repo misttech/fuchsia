@@ -780,6 +780,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn access_file_system() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let fs = TmpFs::new_fs(locked, &kernel);
 
@@ -917,6 +918,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn open() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let fs = TmpFs::new_fs(locked, &kernel);
 
@@ -999,6 +1001,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn use_credentials() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
         let fs = TmpFs::new_fs(locked, &kernel);
 

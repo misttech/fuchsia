@@ -615,6 +615,7 @@ mod test {
     use super::*;
     use crate::start_input_relays_for_test;
     use starnix_core::task::Kernel;
+    #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::{AutoReleasableTask, create_kernel_task_and_unlocked};
     use starnix_core::vfs::FileHandle;
     use std::sync::Arc;
@@ -627,6 +628,7 @@ mod test {
         FileHandle,
         &'static mut Locked<Unlocked>,
     ) {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (input_relay_handle, _, _, _, _, _, _, _, _, _, _, _) =
             start_input_relays_for_test(locked, &current_task).await;

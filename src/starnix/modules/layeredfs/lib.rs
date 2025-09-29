@@ -290,6 +290,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_remove_duplicates() {
+        #[allow(deprecated, reason = "pre-existing usage")]
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let base = TmpFs::new_fs(locked, &kernel);
         base.root().create_dir_for_testing(locked, &current_task, "d1".into()).expect("create_dir");
