@@ -203,7 +203,7 @@ Reboot the Target to the bootloader and re-run this command."
                                 );
                                 socket_addr.to_string()
                             };
-                            let config = FastbootNetworkConnectionConfig::new_tcp().await;
+                            let config = FastbootNetworkConnectionConfig::new_tcp(&self.ctx).await;
                             let fastboot_device_file_path: Option<PathBuf> =
                                 self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = tcp_proxy(
@@ -236,7 +236,7 @@ Reboot the Target to the bootloader and re-run this command."
                                 );
                                 socket_addr.to_string()
                             };
-                            let config = FastbootNetworkConnectionConfig::new_udp().await;
+                            let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx).await;
                             let fastboot_device_file_path: Option<PathBuf> =
                                 self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = udp_proxy(

@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_fastboot_interface::fastboot_proxy::FastbootProxy;
 use ffx_fastboot_interface::interface_factory::InterfaceFactoryBase;
@@ -32,7 +33,15 @@ pub trait FastbootConnectionFactory {
     ) -> Result<Box<dyn FastbootInterface>>;
 }
 
-pub struct ConnectionFactory {}
+pub struct ConnectionFactory {
+    context: EnvironmentContext,
+}
+
+impl ConnectionFactory {
+    pub fn new(context: &EnvironmentContext) -> Self {
+        Self { context: context.clone() }
+    }
+}
 
 #[async_trait(?Send)]
 impl FastbootConnectionFactory for ConnectionFactory {
@@ -45,17 +54,17 @@ impl FastbootConnectionFactory for ConnectionFactory {
                 Ok(Box::new(usb_proxy(serial_number).await?))
             }
             FastbootConnectionKind::Tcp(target_name, addr) => {
-                let config = FastbootNetworkConnectionConfig::new_tcp().await;
+                let config = FastbootNetworkConnectionConfig::new_tcp(&self.context).await;
                 let fastboot_device_file_path: Option<PathBuf> =
-                    ffx_config::get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
+                    self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
                     tcp_proxy(target_name, fastboot_device_file_path, &addr, config).await?,
                 ))
             }
             FastbootConnectionKind::Udp(target_name, addr) => {
-                let config = FastbootNetworkConnectionConfig::new_udp().await;
+                let config = FastbootNetworkConnectionConfig::new_udp(&self.context).await;
                 let fastboot_device_file_path: Option<PathBuf> =
-                    ffx_config::get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
+                    self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
                     udp_proxy(target_name, fastboot_device_file_path, &addr, config).await?,
                 ))
@@ -84,18 +93,20 @@ impl FastbootNetworkConnectionConfig {
     }
 
     async fn new_from_config(
+        context: &EnvironmentContext,
         retry_key: &str,
         retry_default: u64,
         wait_key: &str,
         wait_default: u64,
     ) -> Self {
-        let retry_count = ffx_config::get(retry_key).unwrap_or(retry_default);
-        let retry_wait_seconds = ffx_config::get(wait_key).unwrap_or(wait_default);
+        let retry_count = context.get(retry_key).unwrap_or(retry_default);
+        let retry_wait_seconds = context.get(wait_key).unwrap_or(wait_default);
         Self::new(retry_wait_seconds, retry_count)
     }
 
-    pub async fn new_tcp() -> Self {
+    pub async fn new_tcp(context: &EnvironmentContext) -> Self {
         Self::new_from_config(
+            context,
             TCP_RETRY_COUNT,
             TCP_RETRY_COUNT_DEFAULT,
             TCP_WAIT_SECONDS,
@@ -104,8 +115,9 @@ impl FastbootNetworkConnectionConfig {
         .await
     }
 
-    pub async fn new_udp() -> Self {
+    pub async fn new_udp(context: &EnvironmentContext) -> Self {
         Self::new_from_config(
+            context,
             UDP_RETRY_COUNT,
             UDP_RETRY_COUNT_DEFAULT,
             UDP_WAIT_SECONDS,

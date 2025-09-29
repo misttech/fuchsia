@@ -1537,7 +1537,7 @@ impl Target {
             None => Ok(false),
             Some(addr) => {
                 let target_name = self.nodename_str();
-                let builder = ConnectionFactory {};
+                let builder = ConnectionFactory::new(&self.context);
                 let mut fastboot_interface = builder
                     .build_interface(FastbootConnectionKind::Tcp(
                         target_name,

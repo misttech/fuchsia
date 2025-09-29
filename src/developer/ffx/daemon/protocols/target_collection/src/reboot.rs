@@ -69,7 +69,7 @@ impl RebootController {
             remote_proxy: Once::new(),
             admin_proxy: Once::new(),
             overnet_node,
-            fastboot_connection_builder: Box::new(ConnectionFactory {}),
+            fastboot_connection_builder: Box::new(ConnectionFactory::new(context)),
         }
     }
 

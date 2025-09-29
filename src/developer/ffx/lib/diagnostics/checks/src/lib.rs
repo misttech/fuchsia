@@ -85,7 +85,9 @@ where
         TargetState::Product { .. } => {
             check_product_device(env_context, notifier, target_handle, product_timeout).await?
         }
-        TargetState::Fastboot(_) => check_fastboot_device(notifier, target_handle).await?,
+        TargetState::Fastboot(_) => {
+            check_fastboot_device(env_context, notifier, target_handle).await?
+        }
         TargetState::Unknown => {
             fho::return_user_error!("Device is in an unknown state. No way to check status.")
         }
@@ -132,11 +134,15 @@ where
     Ok(())
 }
 
-async fn check_fastboot_device<N>(notifier: &mut N, device: TargetHandle) -> fho::Result<()>
+async fn check_fastboot_device<N>(
+    context: &EnvironmentContext,
+    notifier: &mut N,
+    device: TargetHandle,
+) -> fho::Result<()>
 where
     N: Notifier + std::marker::Unpin,
 {
-    let factory = ConnectionFactory {};
+    let factory = ConnectionFactory::new(context);
     let (info, notifier) = FastbootDeviceStatus::new(&factory)
         .check_with_notifier(device, notifier)
         .await
