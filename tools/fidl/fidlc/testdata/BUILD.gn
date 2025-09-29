@@ -85,6 +85,12 @@ foreach(filename, standalone_libraries) {
       versioned = "test:1"
     }
 
+    # Don't emit compatibility impls for this test. Handles have very special handling in the
+    # current Rust bindings.
+    if (filename == "handles.test.fidl") {
+      rust_next_emit_compat = false
+    }
+
     if (filter_include(libaries_with_drivers, [ filename ]) == [ filename ]) {
       contains_drivers = true
       enable_rust_drivers = true

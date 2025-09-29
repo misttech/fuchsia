@@ -7,4 +7,5 @@ import("//build/fidl/fidl.gni")
 fidl("fdf") {
   sources = [ "handle.fidl" ]
   enable_hlcpp = true
+  enable_rust_next = true
 }

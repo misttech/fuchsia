@@ -50,14 +50,14 @@ impl HandleResourceBinding {
             HandleSubtype::Bti => "Bti",
             HandleSubtype::Profile => "Profile",
             HandleSubtype::Pmt => "Pmt",
-            HandleSubtype::SuspendToken => "SuspendToken",
             HandleSubtype::Pager => "Pager",
             HandleSubtype::Exception => "Exception",
             HandleSubtype::Clock => "Clock",
             HandleSubtype::Stream => "Stream",
-            HandleSubtype::Msi => "Msi",
             HandleSubtype::Iob => "Iob",
             HandleSubtype::Counter => "Counter",
+            // These handle subtypes do not have newtypes in zx yet. Generate them as handles.
+            HandleSubtype::SuspendToken | HandleSubtype::Msi => "Handle",
         }
     }
 

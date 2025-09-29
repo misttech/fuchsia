@@ -214,6 +214,10 @@ template("fidl") {
   enable_rust_drivers =
       defined(invoker.enable_rust_drivers) && invoker.enable_rust_drivers
 
+  # Compatibility impls are enabled by default
+  rust_next_emit_compat =
+      !defined(invoker.rust_next_emit_compat) || invoker.rust_next_emit_compat
+
   not_needed([
                "enable_bindlib",
                "enable_cpp",
@@ -224,6 +228,7 @@ template("fidl") {
                "enable_hlcpp",
                "enable_python",
                "enable_zither",
+               "rust_next_emit_compat",
              ])
 
   # Allow generated targets visibility to their dependant generated targets
@@ -527,8 +532,7 @@ template("fidl") {
         forward_variables_from(common_parameters, "*")
         deps = [ "//sdk/categories:marker-${marker_category}" ]
         fidl_gen_dir += "/rust_next"
-        if (!defined(invoker.rust_next_emit_compat) ||
-            invoker.rust_next_emit_compat) {
+        if (rust_next_emit_compat) {
           emit_compat = true
           assert(enable_rust)
           deps += [ ":${invoker.target_name}_rust" ]

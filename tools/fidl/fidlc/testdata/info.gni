@@ -232,11 +232,12 @@ fidl_testdata_info = [
   {
     name = "handles"
     target = "//tools/fidl/fidlc/testdata:test.handles"
-    denylist = [
-      # TODO(https://fxbug.dev/362963403): fidlgen_rust_next doesn't support bindings denylists yet.
+    host_build_denylist = [
+      "fidlgen_cpp",
+
+      # Host-side FIDL doesn't support handles
       "fidlgen_rust_next",
     ]
-    host_build_denylist = [ "fidlgen_cpp" ]
   },
   {
     name = "handles_in_types"
