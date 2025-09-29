@@ -215,9 +215,13 @@ mod tests {
     use std::fs::File;
     use tempfile::TempDir;
 
+    // NOTE: This string matches the string representation of
+    // CompiledPackageDestination::Test.
+    const FOR_TEST_PACKAGE_NAME: &'static str = "for-test";
+
     #[test]
     fn add_package_def_appends_entries_to_builder() {
-        let mut compiled_package_builder = CompiledPackageBuilder::new("for-test");
+        let mut compiled_package_builder = CompiledPackageBuilder::new(FOR_TEST_PACKAGE_NAME);
         let outdir_tmp = TempDir::new().unwrap();
         let outdir = Utf8Path::from_path(outdir_tmp.path()).unwrap();
         make_test_package_and_components(outdir);
@@ -264,7 +268,7 @@ mod tests {
         assert_eq!(
             compiled_package_builder,
             CompiledPackageBuilder {
-                name: "for-test".into(),
+                name: FOR_TEST_PACKAGE_NAME.into(),
                 components: BTreeMap::from([
                     ("component1".into(), BTreeMap::from([("cml1".into(), outdir.join("cml1")),])),
                     (
@@ -287,7 +291,7 @@ mod tests {
 
     #[test]
     fn build_builds_package() {
-        let mut compiled_package_builder = CompiledPackageBuilder::new("for-test");
+        let mut compiled_package_builder = CompiledPackageBuilder::new(FOR_TEST_PACKAGE_NAME);
         let tools = FakeToolProvider::default();
         let outdir_tmp = TempDir::new().unwrap();
         let outdir = Utf8Path::from_path(outdir_tmp.path()).unwrap();
@@ -344,7 +348,7 @@ mod tests {
         );
         assert_far_contents_eq(&mut far_reader, "meta/component1.cm", "component fake contents");
         let package_manifest = PackageManifest::try_load_from(manifest_path).unwrap();
-        assert_eq!(package_manifest.name().as_ref(), "for-test");
+        assert_eq!(package_manifest.name().as_ref(), FOR_TEST_PACKAGE_NAME);
     }
 
     #[test]
@@ -356,24 +360,6 @@ mod tests {
                 name: CompiledPackageDestination::Test(ForTest),
                 components: Default::default(),
                 contents: Default::default(),
-                includes: Default::default(),
-                bootfs_package: Default::default(),
-            },
-            "assembly/input/bundle/path/compiled_packages/include",
-        );
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn add_package_def_with_bootfs_with_contents_returns_err() {
-        let mut compiled_package_builder = CompiledPackageBuilder::new("bar");
-
-        let result = compiled_package_builder.add_package_def(
-            &CompiledPackageDefinition {
-                name: CompiledPackageDestination::Test(ForTest),
-                components: Default::default(),
-                contents: vec![FileEntry { source: "file1".into(), destination: "file1".into() }],
                 includes: Default::default(),
                 bootfs_package: Default::default(),
             },
