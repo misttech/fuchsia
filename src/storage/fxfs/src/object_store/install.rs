@@ -39,7 +39,8 @@ impl ObjectStore {
     /// which must be a file containing an fxfs filesystem. The filesystem should contain a volume
     /// named `dst`, the contents of which will replace the existing `dst` volume. Installation
     /// takes place across several transactions to ensure that the filesystem remains consistent,
-    /// and that no volumes are modified until they are atomically swapped.
+    /// and that no volumes are modified until they are atomically swapped. Neither `src` nor `dst`
+    /// can be encrypted.
     ///
     /// *NOTE*: It is the responsibility of the caller to ensure that neither `src` nor `dest` are
     /// mounted or otherwise in use during this process.
@@ -49,8 +50,22 @@ impl ObjectStore {
         image_file: &str,
         dst: &str,
     ) -> Result<(), Error> {
+        // If we're going to replace an existing volume, make sure it isn't encrypted.
+        if root.volume_directory().lookup(dst).await?.is_some() {
+            let dst_vol = root.volume(dst, NO_OWNER, None).await?;
+            if dst_vol.is_encrypted() {
+                return Err(FxfsError::AccessDenied)
+                    .context("cannot install volume: dst volume is encrypted");
+            }
+        }
+
         let src_vol =
-            root.volume(src, NO_OWNER, None).await.context("could not open pending volume")?;
+            root.volume(src, NO_OWNER, None).await.context("could not open src volume")?;
+        if src_vol.is_encrypted() {
+            return Err(FxfsError::AccessDenied)
+                .context("cannot install volume: src volume is encrypted");
+        }
+
         let image_handle = {
             let src_root_dir =
                 Directory::open(&src_vol, src_vol.root_directory_object_id()).await?;
@@ -85,6 +100,10 @@ impl ObjectStore {
                 .volume(dst, NO_OWNER, None)
                 .await
                 .context("could not open target volume in mounted image")?;
+            if inner_volume.is_encrypted() {
+                return Err(FxfsError::AccessDenied)
+                    .context("cannot install volume: volume in image encrypted");
+            }
             src_vol.install_volume_impl(root, src, dst, inner_volume, extents).await?;
         }
 
@@ -394,6 +413,8 @@ mod tests {
     use crate::fsck::{FsckOptions, fsck_with_options};
     use crate::object_handle::WriteObjectHandle as _;
     use crate::object_store::directory::Directory;
+    use fxfs_crypto::Crypt;
+    use fxfs_insecure_crypto::InsecureCrypt;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -650,23 +671,21 @@ mod tests {
             .unwrap();
         {
             let root = root_volume(fs.clone()).await.unwrap();
-            let pending_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
             let dst_volume = root.volume(DST_NAME, NO_OWNER, None).await.unwrap();
 
             // Write the image into a file in the pending volume.
-            write_image_to_file(&pending_volume, &image, INSTALL_FILE).await;
+            write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
 
             // To ensure compactions have work to do, create additional layers in both the pending
             // and destination volumes.
             let pending_dir =
-                Directory::open(&pending_volume, pending_volume.root_directory_object_id())
-                    .await
-                    .unwrap();
+                Directory::open(&src_volume, src_volume.root_directory_object_id()).await.unwrap();
             let dst_dir =
                 Directory::open(&dst_volume, dst_volume.root_directory_object_id()).await.unwrap();
             for i in 0..10 {
                 let keys = lock_keys![
-                    LockKey::object(pending_volume.store_object_id(), pending_dir.object_id()),
+                    LockKey::object(src_volume.store_object_id(), pending_dir.object_id()),
                     LockKey::object(dst_volume.store_object_id(), dst_dir.object_id())
                 ];
                 let mut transaction =
@@ -710,8 +729,8 @@ mod tests {
             ];
             let image = create_test_filesystem(512, 4096, DST_NAME, &files).await;
             let root = root_volume(fs).await.unwrap();
-            let pending_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
-            write_image_to_file(&pending_volume, &image, INSTALL_FILE).await;
+            let src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
             ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
             verify_volume_contents(&root, DST_NAME, &files).await;
         }
@@ -740,5 +759,76 @@ mod tests {
         );
 
         do_fsck(&fs, DST_NAME).await;
+    }
+
+    /// Volume installation should fail if either the `src` volume or `image_file` is missing.
+    #[fuchsia::test]
+    async fn test_install_volume_fails_if_sources_missing() {
+        let fs =
+            FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(1024, 4096))).await.unwrap();
+        {
+            let root = root_volume(fs.clone()).await.unwrap();
+            let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
+                .await
+                .expect_err("install_volume should fail if src volume is missing");
+            assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::NotFound);
+            let _src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
+                .await
+                .expect_err("install_volume should fail if src install file missing");
+            assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::NotFound);
+        };
+
+        fs.close().await.unwrap();
+    }
+
+    /// Volume installation should fail if `src` is encrypted.
+    #[fuchsia::test]
+    async fn test_install_volume_requires_unencrypted_src_volume() {
+        let fs =
+            FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(1024, 4096))).await.unwrap();
+        {
+            let crypt = Arc::new(InsecureCrypt::new());
+            let root = root_volume(fs.clone()).await.unwrap();
+            // Write the image into an encrypted source volume.
+            let image = create_test_filesystem(512, 4096, DST_NAME, &[]).await;
+            let src_volume = root
+                .new_volume(SRC_NAME, NO_OWNER, Some(crypt.clone() as Arc<dyn Crypt>))
+                .await
+                .unwrap();
+            write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
+            let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
+                .await
+                .expect_err("install_volume should fail if src volume is encrypted");
+            assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::AccessDenied);
+        };
+
+        fs.close().await.unwrap();
+    }
+
+    /// Volume installation should fail if `dst` is encrypted.
+    #[fuchsia::test]
+    async fn test_install_volume_requires_unencrypted_dst_volume() {
+        let fs =
+            FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(1024, 4096))).await.unwrap();
+        {
+            let crypt = Arc::new(InsecureCrypt::new());
+            let root = root_volume(fs.clone()).await.unwrap();
+            // Create an encrypted destination volume.
+            let _dst_volume = root
+                .new_volume(DST_NAME, NO_OWNER, Some(crypt.clone() as Arc<dyn Crypt>))
+                .await
+                .unwrap();
+            // Write the image to an unencrypted source volume.
+            let image = create_test_filesystem(512, 4096, DST_NAME, &[]).await;
+            let src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
+            let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
+                .await
+                .expect_err("install_volume should fail if existing dst volume is encrypted");
+            assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::AccessDenied);
+        };
+
+        fs.close().await.unwrap();
     }
 }
