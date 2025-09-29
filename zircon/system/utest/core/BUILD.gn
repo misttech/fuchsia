@@ -64,6 +64,7 @@ core_tests = [
 requires_next_vdso = [
   "pager-writeback",
   "restricted-mode",
+  "system-membarrier",
 ]
 
 # These tests require custom component manifests to execute as components.

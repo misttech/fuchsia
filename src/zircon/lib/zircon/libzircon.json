@@ -154,6 +154,7 @@
     "zx_syscall_test_widening_unsigned_narrow",
     "zx_syscall_test_widening_unsigned_wide",
     "zx_syscall_test_wrapper",
+    "zx_system_barrier",
     "zx_system_get_dcache_line_size",
     "zx_system_get_event",
     "zx_system_get_features",

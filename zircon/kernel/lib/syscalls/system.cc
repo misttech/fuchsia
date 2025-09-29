@@ -923,3 +923,34 @@ zx_status_t sys_system_set_processor_power_state(
              ps.control_argument)
       .status_value();
 }
+
+zx_status_t sys_system_barrier(uint32_t options) {
+  auto DataMemBarrierIpiTask = [](void* context) { arch::ThreadMemoryBarrier(); };
+  auto InstructionStreamBarrierIpiTask = [](void* context) {
+    // All architectures require a memory barrier before serializing the instruction stream.
+    arch::ThreadMemoryBarrier();
+    // The intrinsics for serializing the instruction stream vary by architecture.
+    // TODO(https://fxbug.dev/42126965): Rationalize these.
+#if defined(__aarch64__)
+    __isb(ARM_MB_SY);
+#elif defined(__x86_64__)
+    arch::SerializeInstructions();
+#elif defined(__riscv)
+    __asm__ volatile("fence.i");
+#else
+#error Unknown architecture.
+#endif
+  };
+  switch (options) {
+    case ZX_SYSTEM_BARRIER_DATA_MEMORY:
+      mp_sync_exec(mp_ipi_target::ALL, 0u, DataMemBarrierIpiTask, nullptr);
+      break;
+    case ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM: {
+      mp_sync_exec(mp_ipi_target::ALL, 0u, InstructionStreamBarrierIpiTask, nullptr);
+      break;
+    }
+    default:
+      return ZX_ERR_INVALID_ARGS;
+  }
+  return ZX_OK;
+}

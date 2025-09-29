@@ -1306,4 +1306,47 @@ closed protocol System {
         power_levels vector<ProcessorPowerLevel>:MAX_POWER_LEVELS;
         transitions vector<ProcessorPowerLevelTransition>:MAX_POWER_LEVEL_TRANSITIONS;
     }) -> () error Status;
+
+    /// ## Summary
+    ///
+    /// Issue a barrier on other running threads.
+    ///
+    /// ## Declaration
+    ///
+    /// ```c
+    /// #include <zircon/syscalls-next.h>
+    ///
+    /// zx_status_t zx_system_barrier(uint32_t options);
+    /// ```
+    ///
+    /// ## Description
+    ///
+    /// Issues a barrier of the requested type on all running threads.
+    ///
+    /// ### Options: types of barriers
+    ///
+    /// #### ZX_SYSTEM_BARRIER_DATA_MEMORY
+    ///
+    /// This issues a data memory barrier on all running threads.
+    ///
+    /// #### ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM
+    ///
+    /// This issues a memory barrier and serializes the instruction stream on all running threads.
+    ///
+    /// ## Rights
+    ///
+    /// This operation does not require any rights.
+    ///
+    /// ## Return value
+    ///
+    /// `ZX_OK` if the requested barriers were issued.
+    ///
+    /// ## Errors
+    ///
+    /// `ZX_ERR_INVALID_ARGS` *options* contains invalid options.
+    ///
+    @next
+    strict Barrier(struct {
+        options uint32;
+    }) -> () error Status;
 };

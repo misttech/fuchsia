@@ -362,6 +362,10 @@ typedef struct zx_wake_source_report_entry {
 
 // ====== End of wake vector reporting support //
 
+// Options used by zx_system_barrier
+#define ZX_SYSTEM_BARRIER_DATA_MEMORY ((uint32_t)0u)
+#define ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM ((uint32_t)1u)
+
 #ifndef _KERNEL
 
 #include <zircon/syscalls.h>
