@@ -38,6 +38,7 @@
 class BatchPQRemove;
 class VmObjectPaged;
 class DiscardableVmoTracker;
+class PriorityChanger;
 
 enum class VmCowPagesOptions : uint32_t {
   // Externally-usable flags:
@@ -754,9 +755,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // pages.
   zx_status_t DecompressInRange(VmCowRange range);
 
-  // See VmObject::ChangeHighPriorityCountLocked
-  void ChangeHighPriorityCountLocked(int64_t delta) TA_REQ(lock());
-
   zx_status_t LockRangeLocked(VmCowRange range, zx_vmo_lock_state_t* lock_state_out) TA_REQ(lock());
   zx_status_t TryLockRangeLocked(VmCowRange range) TA_REQ(lock());
   zx_status_t UnlockRangeLocked(VmCowRange range) TA_REQ(lock());
@@ -869,6 +867,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   friend class fbl::RefPtr<VmCowPages>;
   friend class LockedParentWalker;
+  friend class PriorityChanger;
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmCowPages);
 
@@ -1533,12 +1532,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Internal helper for discarding a VMO. Will discard if VMO is unlocked returning the count.
   zx::result<uint64_t> DiscardPagesLocked(DeferredOps& deferred) TA_REQ(lock());
 
-  // Internal helper for modifying just this value of high_priority_count_ without performing any
-  // propagating.
-  // Returns any delta that needs to be applied to the parent. If a zero value is returned then
-  // propagation can be halted.
-  int64_t ChangeSingleHighPriorityCountLocked(int64_t delta) TA_REQ(lock());
-
   // Specialized internal version of ZeroPagesLocked that only operates for a VMO where
   // |is_source_preserving_page_content| is true. |dirty_track| can be set to |true| if any zeroes
   // inserted are to be treated as Dirty, otherwise they are not dirty tracked.
@@ -2137,6 +2130,7 @@ class VmCowPages::DeferredOps {
   // Methods are private as they are only intended for use by the VmCowPages and not the external
   // caller holding this object on their stack.
   friend VmCowPages;
+  friend PriorityChanger;
 
   // Indicate that the given range change operation should be performed later. Multiple ranges can
   // be specified, although only a single range that covers all of them will actually be invalidated
@@ -2176,6 +2170,120 @@ class VmCowPages::DeferredOps {
   // node with the page source to be destroyed. Holding a RefPtr to the page source of the mutex we
   // are holding therefore prevents a use-after-free of the guard.
   ktl::optional<ktl::pair<Guard<Mutex>, fbl::RefPtr<PageSource>>> page_source_lock_;
+};
+
+// PriorityChanger is a transaction object for changing the high priority count of VmCowPages
+// objects. The high priority count is used to manage page reclamation. This object ensures that a
+// DeferredOps object is created against the correct VmCowPages, which might be an ancestor of
+// |target_|. PriorityChanger does the following:
+//
+// * Manages the lifetime of VmCowPages to ensure they last until the
+// priority change operation, by holding a RefPtr.
+// * Handles the construction of the DeferredOps object.
+// * Clarifies which operations need to be done within the VmCowPages lock and which need to happen
+// without the lock being held.
+// * Presents a high-level API to VmMapping and VmObjectPaged.
+// * Handles traversing up the VmCowPages hierarchy to ensure that high priority status is
+// propagated.
+//
+// Callers should prefer |VmMapping::SetMemoryPriorityLocked|,
+// |VmMapping::SetMemoryPriorityDefaultLockedObject|, or
+// |VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject|, if applicable.
+//
+// To change the high priority count of a VmCowPages, you should first construct the PriorityChanger
+// object. Then,
+// * If |delta| < 0, you must immediately call one of the Change* methods, which change the high
+// priority count of |target|.
+// * If |delta| > 0, you must call an applicable Prepare* method to set up the prerequisites for the
+// priority change operation, then call one of the Change* methods.
+//
+// This class is not thread-safe.
+class PriorityChanger {
+ public:
+  // Construct a priority changer to change the high priority count of |target|. When |delta| is
+  // positive, we go towards high priority. When it's negative, we move towards default
+  // priority.
+  //
+  // The constructor may be called with or without |target|'s lock being held.
+  //
+  // The caller must ensure that |target| remains valid during the lifetime of PriorityChanger.
+  PriorityChanger(int64_t delta, VmCowPages* target);
+
+  ~PriorityChanger() {
+    // Setting up a PriorityChanger without using it is wasteful.
+    DEBUG_ASSERT(state_ == PriorityChangerState::DONE);
+  }
+
+  DISALLOW_COPY_ASSIGN_AND_MOVE(PriorityChanger);
+
+  Lock<CriticalMutex>* lock() const TA_RET_CAP(target_->lock()) { return target_->lock(); }
+  Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(target_->lock()) { return target_->lock_ref(); }
+
+  // This method may be called if |target|'s root page source has no loaned pages. Prefer other
+  // Prepare* methods as this is typically hard to reason about.
+  //
+  // If you call this method, please leave a comment explaining how you know there are no loaned
+  // pages in the current VmObject hierarchy.
+  //
+  // This method must be called with |target|'s lock held.
+  void PrepareHasNoLoanedPagesLocked() TA_REQ(lock());
+
+  // This method may be called if |target| already has a |high_priority_count_| > 0.
+  //
+  // This method must be called with |target|'s lock held.
+  void PrepareIsAlreadyHighPriorityLocked() TA_REQ(lock());
+
+  // This method must be called *without* holding |target|'s VmCowPages lock. In addition, the
+  // caller must not hold a PriorityChanger or DeferredOps on any other VmCowPages in |target|'s
+  // hierarchy.
+  void PrepareMayNotAlreadyBeHighPriority() TA_EXCL(lock());
+
+  // Increments or decrements the priority count of this VMO. The high priority count is used to
+  // control any page reclamation, and applies to the whole VMO, including its parents. The count is
+  // never allowed to go negative and so callers must only subtract what they have already added.
+  // Further, callers are required to remove any additions before the VMO is destroyed.
+  void ChangeHighPriorityCountLocked() TA_REQ(lock());
+
+  // Internal (to VmCowPages) helper for modifying just this value of |high_priority_count_| without
+  // performing any propagating.
+  void ChangeSingleHighPriorityCountLocked() TA_REQ(lock());
+
+ private:
+  enum class PriorityChangerState : uint8_t {
+    // User must call one of the Prepare* methods next.
+    CONSTRUCTED,
+    // User can call one of the Change* methods next.
+    READY_TO_CHANGE,
+    // User already called Change* so the only thing we can do is call the destructor.
+    DONE
+  };
+
+  // Helper for PriorityChanger::ChangeSingleHighPriorityCountLocked and
+  // PriorityChanger::ChangeHighPriorityCountLocked. Returns a new delta for whatever priority
+  // change needs to be applied to the parent. With a zero return value, propagation must be
+  // halted.
+  //
+  // This method is called with |current| starting as |target_|, and may eventually be called with
+  // |current| as |root_|.
+  //
+  // Provide root_deferred whenever there may be loaned pages in the root.
+  //
+  // This method is static so that we can keep delta_ const, and propagate the change by using the
+  // return value.
+  static int64_t ChangeSingleHighPriorityCountLockedHelper(
+      VmCowPages& current, int64_t delta, ktl::optional<VmCowPages::DeferredOps>& root_deferred)
+      TA_REQ(current.lock());
+
+  PriorityChangerState state_ = PriorityChangerState::CONSTRUCTED;
+  // When delta_ > 0, move towards high priority, when delta_ < 0, move towards default priority.
+  const int64_t delta_;
+  // This must be present whenever root_deferred_ is present, since we are holding the VmCowPages to
+  // ensure it stays live while root_deferred_ is live.
+  fbl::RefPtr<VmCowPages> root_;
+  // Always non-null.
+  VmCowPages* const target_;
+  // Must be present when there are loaned pages.
+  ktl::optional<VmCowPages::DeferredOps> root_deferred_;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_H_

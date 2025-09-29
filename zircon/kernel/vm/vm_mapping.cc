@@ -302,6 +302,16 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   ASSERT(status == ZX_OK);
 
   const MemoryPriority old_priority = memory_priority_;
+  auto set_priority =
+      [old_priority](VmMapping& self) TA_REQ(self.lock()) TA_REQ(self.object_->lock()) {
+        if (old_priority == VmAddressRegion::MemoryPriority::HIGH) {
+          self.SetMemoryPriorityHighAlreadyPositiveLockedObject</*SplitOnUnmap=*/true>();
+        } else {
+          DEBUG_ASSERT(old_priority == VmAddressRegion::MemoryPriority::DEFAULT);
+          self.SetMemoryPriorityDefaultLockedObject</*SplitOnUnmap=*/true>();
+        }
+      };
+
   // Split the protection_ranges_ from this mapping into the new mapping(s). This has be done after
   // the mapping construction as this step is destructive and hard to rollback.
   //
@@ -313,16 +323,14 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     AssertHeld(right->object_lock_ref());
     MappingProtectionRanges right_prot = protection_ranges_.SplitAt(base + size);
     right->protection_ranges_ = ktl::move(right_prot);
-    status = right->SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>(old_priority);
-    ASSERT(status == ZX_OK);
+    set_priority(*right);
   }
   if (left) {
     AssertHeld(left->lock_ref());
     AssertHeld(left->object_lock_ref());
     protection_ranges_.DiscardAbove(base);
     left->protection_ranges_ = ktl::move(protection_ranges_);
-    status = left->SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>(old_priority);
-    ASSERT(status == ZX_OK);
+    set_priority(*left);
   }
 
   // Now finish destroying this mapping.
@@ -862,11 +870,11 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   }
 
   // Remove any priority.
-  zx_status_t status = SetMemoryPriorityLockedObject(MemoryPriority::DEFAULT);
-  DEBUG_ASSERT(status == ZX_OK);
+  SetMemoryPriorityDefaultLockedObject();
 
   if (unmap) {
-    status = aspace_->arch_aspace().Unmap(base_, size_ / PAGE_SIZE, aspace_->EnlargeArchUnmap());
+    zx_status_t status =
+        aspace_->arch_aspace().Unmap(base_, size_ / PAGE_SIZE, aspace_->EnlargeArchUnmap());
     if (status != ZX_OK) {
       return status;
     }
@@ -1334,29 +1342,63 @@ void VmMapping::MarkMergeable(fbl::RefPtr<VmMapping> mapping) {
 
 zx_status_t VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) {
   DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+  const bool to_high = priority == VmAddressRegion::MemoryPriority::HIGH;
+  const int64_t delta = to_high ? 1 : -1;
   if (priority == memory_priority_) {
     return ZX_OK;
   }
-  Guard<CriticalMutex> guard{object_->lock()};
-  return SetMemoryPriorityLockedObject(priority);
+  memory_priority_ = priority;
+  aspace_->ChangeHighPriorityCountLocked(delta);
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
+    PriorityChanger pc = paged->MakePriorityChanger(delta);
+    if (priority == VmAddressRegion::MemoryPriority::HIGH) {
+      pc.PrepareMayNotAlreadyBeHighPriority();
+    }
+    Guard<CriticalMutex> guard{AliasedLock, object_->lock(), pc.lock()};
+    pc.ChangeHighPriorityCountLocked();
+  }
+  return ZX_OK;
 }
 
 template <bool SplitOnUnmap>
-zx_status_t VmMapping::SetMemoryPriorityLockedObject(VmAddressRegion::MemoryPriority priority) {
+void VmMapping::SetMemoryPriorityDefaultLockedObject() {
   if constexpr (SplitOnUnmap) {
     // all that's required to set our priority is to have object_ and aspace_ set up
     DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY && object_ && aspace_);
   } else {
     DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
   }
-  if (priority == memory_priority_) {
-    return ZX_OK;
+  if (memory_priority_ == VmAddressRegion::MemoryPriority::DEFAULT) {
+    return;
   }
-  memory_priority_ = priority;
-  const bool is_high = priority == VmAddressRegion::MemoryPriority::HIGH;
-  aspace_->ChangeHighPriorityCountLocked(is_high ? 1 : -1);
-  object_->ChangeHighPriorityCountLocked(is_high ? 1 : -1);
-  return ZX_OK;
+  memory_priority_ = VmAddressRegion::MemoryPriority::DEFAULT;
+  aspace_->ChangeHighPriorityCountLocked(-1);
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
+    PriorityChanger pc = paged->MakePriorityChanger(-1);
+    AssertHeld(pc.lock_ref());  // we have the object lock
+    pc.ChangeHighPriorityCountLocked();
+  }
+}
+
+template <bool SplitOnUnmap>
+void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject() {
+  if constexpr (SplitOnUnmap) {
+    // all that's required to set our priority is to have object_ and aspace_ set up
+    DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY && object_ && aspace_);
+  } else {
+    DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+  }
+  if (memory_priority_ == VmAddressRegion::MemoryPriority::HIGH) {
+    return;
+  }
+  memory_priority_ = VmAddressRegion::MemoryPriority::HIGH;
+  aspace_->ChangeHighPriorityCountLocked(1);
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
+    PriorityChanger pc = paged->MakePriorityChanger(1);
+    AssertHeld(pc.lock_ref());  // we have the object lock
+    pc.PrepareIsAlreadyHighPriorityLocked();
+    pc.ChangeHighPriorityCountLocked();
+  }
 }
 
 void VmMapping::CommitHighMemoryPriority() {

@@ -1497,7 +1497,17 @@ void VmCowPages::AddChildLocked(VmCowPages* child, uint64_t offset, uint64_t par
   // If the child has a non-zero high priority count, then it is counting as an incoming edge to our
   // count.
   if (child->high_priority_count_ > 0) {
-    ChangeSingleHighPriorityCountLocked(1);
+    PriorityChanger pc(1, this);
+    AssertHeld(pc.lock_ref());
+    // Why can we be sure there are no loaned pages in `this`? The only callers of
+    // AddChildLocked are:
+    // * CloneNewHiddenParentLocked, which calls AddChildLocked on hidden_parent, which it
+    // constructs for the first time. It also calls AddChildLocked on cow_clone, which it constructs
+    // for the first time.
+    // * CloneChildLocked, which calls AddChildLocked with a |child| that it newly constructs and
+    // isn't already high priority.
+    pc.PrepareHasNoLoanedPagesLocked();
+    pc.ChangeSingleHighPriorityCountLocked();
   }
 
   child->parent_ = fbl::RefPtr(this);
@@ -2056,7 +2066,12 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
   // count to parent, everything is correct.
   // Although the final hierarchy has correct counts, there is still an assertion in our destructor
   // that our count is zero, so subtract of any count that we might have.
-  ChangeSingleHighPriorityCountLocked(-high_priority_count_);
+
+  if (is_high_memory_priority_locked()) {
+    PriorityChanger pc(-high_priority_count_, this);
+    AssertHeld(pc.lock_ref());
+    pc.ChangeSingleHighPriorityCountLocked();
+  }
 
   // Drop the child from our list, but don't recurse back into this function. Then
   // remove ourselves from the clone tree and dead transition ourselves.
@@ -4956,11 +4971,70 @@ zx_status_t VmCowPages::DecompressInRange(VmCowRange range) {
   return status;
 }
 
-int64_t VmCowPages::ChangeSingleHighPriorityCountLocked(int64_t delta) {
-  const bool was_zero = high_priority_count_ == 0;
-  high_priority_count_ += delta;
-  DEBUG_ASSERT(high_priority_count_ >= 0);
-  const bool is_zero = high_priority_count_ == 0;
+// Construct a priority changer for target. When delta is positive, we go towards high priority.
+// When it's negative, we move towards default priority.
+PriorityChanger::PriorityChanger(int64_t delta, VmCowPages* target)
+    : delta_(delta), target_(target) {
+  // This doesn't do anything meaningful if delta == 0
+  DEBUG_ASSERT(delta_ != 0);
+  DEBUG_ASSERT(target_);
+  if (delta < 0) {
+    // callers don't have to do anything to get the PriorityChanger ready to decrement the
+    // priority count.
+    state_ = PriorityChangerState::READY_TO_CHANGE;
+  }
+}
+
+void PriorityChanger::PrepareHasNoLoanedPagesLocked() {
+  DEBUG_ASSERT(state_ == PriorityChangerState::CONSTRUCTED);
+  state_ = PriorityChangerState::READY_TO_CHANGE;
+  DEBUG_ASSERT(delta_ > 0);  // the constructor does prepare for us if delta_ < 0
+  DEBUG_ASSERT(!root_ && !root_deferred_ && target_);
+  // NB: the assertions to check that there are no loaned pages are actually in
+  // PriorityChanger::ChangeSingleHighPriorityCountLockedHelper
+}
+
+void PriorityChanger::PrepareIsAlreadyHighPriorityLocked() {
+  DEBUG_ASSERT(state_ == PriorityChangerState::CONSTRUCTED);
+  state_ = PriorityChangerState::READY_TO_CHANGE;
+  DEBUG_ASSERT(delta_ > 0);  // the constructor does prepare for us if delta_ < 0
+  DEBUG_ASSERT(!root_ && !root_deferred_ && target_);
+  DEBUG_ASSERT(target_->is_high_memory_priority_locked());
+}
+
+void PriorityChanger::PrepareMayNotAlreadyBeHighPriority() {
+  DEBUG_ASSERT(state_ == PriorityChangerState::CONSTRUCTED);
+  state_ = PriorityChangerState::READY_TO_CHANGE;
+  DEBUG_ASSERT(delta_ > 0);  // the constructor does prepare for us if delta_ < 0
+  DEBUG_ASSERT(!root_deferred_ && !root_ && target_);
+
+  if (!target_->root_has_page_source()) {
+    // we don't actually need the DeferredOps, so return early
+    return;
+  }
+
+  {
+    // traverse up the hierarchy to find the root
+    Guard<CriticalMutex> guard(target_->lock());
+    VmCowPages::LockedPtr current;
+    while (current.locked_or(target_).parent_) {
+      current = VmCowPages::LockedPtr(current.locked_or(target_).parent_.get());
+    }
+    VmCowPages& raw = current.locked_or(target_);
+    AssertHeld(raw.lock_ref());
+    root_ = fbl::MakeRefPtrUpgradeFromRaw(&raw, raw.lock_ref());
+  }
+  DEBUG_ASSERT(root_);
+  root_deferred_.emplace(root_.get());
+}
+
+// static
+int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
+    VmCowPages& current, int64_t delta, ktl::optional<VmCowPages::DeferredOps>& root_deferred) {
+  const bool was_zero = current.high_priority_count_ == 0;
+  current.high_priority_count_ += delta;
+  DEBUG_ASSERT(current.high_priority_count_ >= 0);
+  const bool is_zero = current.high_priority_count_ == 0;
   // Any change to or from zero means we need to add or remove a count from our parent (if we have
   // one) and potentially move pages in the page queues.
   if (is_zero && !was_zero) {
@@ -4971,15 +5045,18 @@ int64_t VmCowPages::ChangeSingleHighPriorityCountLocked(int64_t delta) {
     delta = 0;
   }
   if (delta != 0) {
-    // If we moved to or from zero then update every page into the correct page queue for tracking.
-    // MoveToNotPinnedLocked will check the high_priority_count_, which has already been updated, so
-    // can just call that on every page.
-    page_list_.ForEveryPage([this](const VmPageOrMarker* page_or_marker, uint64_t offset) {
+    // If we moved to or from zero then update every page into the correct page queue for
+    // tracking. MoveToNotPinnedLocked will check the high_priority_count_, which has already been
+    // updated, so can just call that on every page.
+    current.page_list_.ForEveryPage([&](const VmPageOrMarker* page_or_marker, uint64_t offset) {
       if (page_or_marker->IsPage()) {
         vm_page_t* page = page_or_marker->Page();
+        AssertHeld(current.lock_ref());
+        if (page->is_loaned()) {
+          (void)root_deferred;
+        }
         if (page->object.pin_count == 0) {
-          AssertHeld(lock_ref());
-          MoveToNotPinnedLocked(page, offset);
+          current.MoveToNotPinnedLocked(page, offset);
         }
       }
       return ZX_ERR_NEXT;
@@ -4989,19 +5066,33 @@ int64_t VmCowPages::ChangeSingleHighPriorityCountLocked(int64_t delta) {
   return delta;
 }
 
-void VmCowPages::ChangeHighPriorityCountLocked(int64_t delta) {
-  canary_.Assert();
+// Internal (to VmCowPages) helper for modifying just this value of high_priority_count_ without
+// performing any propagating.
+void PriorityChanger::ChangeSingleHighPriorityCountLocked() {
+  DEBUG_ASSERT(state_ == PriorityChangerState::READY_TO_CHANGE);
+  state_ = PriorityChangerState::DONE;
+  AssertHeld(target_->lock_ref());
+  ChangeSingleHighPriorityCountLockedHelper(*target_, delta_, root_deferred_);
+}
 
-  LockedPtr cur;
+void PriorityChanger::ChangeHighPriorityCountLocked() {
+  DEBUG_ASSERT(state_ == PriorityChangerState::READY_TO_CHANGE);
+  state_ = PriorityChangerState::DONE;
+  DEBUG_ASSERT(target_);
+
+  int64_t delta = delta_;
+
+  VmCowPages::LockedPtr cur;
   // Any change to or from zero requires updating a count in the parent, so we need to walk up the
   // parent chain as long as a transition is happening.
   while (delta != 0) {
-    delta = cur.locked_or(this).ChangeSingleHighPriorityCountLocked(delta);
-    VmCowPages* parent = cur.locked_or(this).parent_.get();
+    delta =
+        ChangeSingleHighPriorityCountLockedHelper(cur.locked_or(target_), delta, root_deferred_);
+    VmCowPages* parent = cur.locked_or(target_).parent_.get();
     if (!parent) {
       break;
     }
-    cur = LockedPtr(parent);
+    cur = VmCowPages::LockedPtr(parent);
   }
 }
 
@@ -7973,6 +8064,9 @@ void VmCowPages::CopyPageMetadataForReplacementLocked(vm_page_t* dst_page, vm_pa
 }
 
 VmCowPages::DeferredOps::DeferredOps(VmCowPages* self) : self_(self) {
+  DEBUG_ASSERT(self_);
+  DEBUG_ASSERT(!page_source_lock_.has_value());
+
   // If we are referencing a pager backed object then we must acquire the pager hierarchy lock,
   // which requires walking up to the root to find the page_source_.
   if (self_->root_has_page_source()) {

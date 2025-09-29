@@ -400,8 +400,9 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   void CommitHighPriorityPages(uint64_t offset, uint64_t len) override;
 
-  void ChangeHighPriorityCountLocked(int64_t delta) override TA_REQ(lock()) {
-    cow_pages_locked()->ChangeHighPriorityCountLocked(delta);
+  // See the comments on |PriorityChanger| for how to use this object.
+  PriorityChanger MakePriorityChanger(int64_t delta) {
+    return PriorityChanger(delta, cow_pages_.get());
   }
 
   void MaybeDeadTransition() {}

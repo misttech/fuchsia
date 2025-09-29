@@ -3430,8 +3430,12 @@ static bool vmo_high_priority_dirty_state_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page));
 
   auto change_priority = [&vmo](int64_t delta) {
-    Guard<CriticalMutex> guard{vmo->lock()};
-    vmo->ChangeHighPriorityCountLocked(delta);
+    PriorityChanger pc = vmo->MakePriorityChanger(delta);
+    if (delta > 0) {
+      pc.PrepareMayNotAlreadyBeHighPriority();
+    }
+    Guard<CriticalMutex> guard{AliasedLock, vmo->lock(), pc.lock()};
+    pc.ChangeHighPriorityCountLocked();
   };
 
   // Mark the VMO as high priority. This will move the page to the high priority queue.
@@ -3701,8 +3705,12 @@ static bool vmo_high_priority_reclaim_test() {
   ASSERT_EQ(ZX_OK, status);
 
   auto change_priority = [&vmo](int64_t delta) {
-    Guard<CriticalMutex> guard{vmo->lock()};
-    vmo->ChangeHighPriorityCountLocked(delta);
+    PriorityChanger pc = vmo->MakePriorityChanger(delta);
+    if (delta > 0) {
+      pc.PrepareMayNotAlreadyBeHighPriority();
+    }
+    Guard<CriticalMutex> guard{AliasedLock, vmo->lock(), pc.lock()};
+    pc.ChangeHighPriorityCountLocked();
   };
 
   // Our page should be in a pager backed page queue.
@@ -4253,10 +4261,12 @@ static bool vmo_loaned_high_priority_parent_test() {
 
     fbl::RefPtr<VmCowPages> parent_cow = parent_vmo->DebugGetCowPages();
 
-    fbl::RefPtr<VmObject> child_vmo;
+    fbl::RefPtr<VmObject> child_vmo_no_paged;
     ASSERT_OK(parent_vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite,
                                       /*offset*/ 0, parent_size_bytes, /*copy_name*/ true,
-                                      &child_vmo));
+                                      &child_vmo_no_paged));
+    VmObjectPaged* child_vmo = DownCastVmObject<VmObjectPaged>(child_vmo_no_paged.get());
+    ASSERT_NONNULL(child_vmo);
 
     // commit the first child page so that the first parent page becomes inaccessible from the
     // child
@@ -4265,10 +4275,13 @@ static bool vmo_loaned_high_priority_parent_test() {
     // replace the parent page with a loaned page
     ASSERT_OK(parent_cow->ReplacePageWithLoaned(parent_cow->DebugGetPage(0), 0));
 
-    // simulate a user calling `zx_object_set_profile`
-    const auto change_priority = [&child_vmo](int64_t delta) {
-      Guard<CriticalMutex> guard{child_vmo->lock()};
-      child_vmo->ChangeHighPriorityCountLocked(delta);
+    auto change_priority = [&child_vmo](int64_t delta) {
+      PriorityChanger pc = child_vmo->MakePriorityChanger(delta);
+      if (delta > 0) {
+        pc.PrepareMayNotAlreadyBeHighPriority();
+      }
+      Guard<CriticalMutex> guard{AliasedLock, child_vmo->lock(), pc.lock()};
+      pc.ChangeHighPriorityCountLocked();
     };
 
     change_priority(1);

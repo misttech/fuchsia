@@ -24,6 +24,7 @@
 #include <ktl/optional.h>
 #include <vm/vm_address_region_subtree_state.h>
 #include <vm/vm_aspace.h>
+#include <vm/vm_cow_pages.h>
 #include <vm/vm_object.h>
 #include <vm/vm_page_list.h>
 
@@ -1194,14 +1195,29 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   AttributionCounts GetAttributedMemoryLocked() const TA_REQ(lock()) override;
 
-  zx_status_t SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) override
-      TA_REQ(lock());
+  // If MemoryPriority::HIGH, then disable dynamic reclamation within this region. If
+  // MemoryPriority::DEFAULT, move towards allowing reclamation.
+  zx_status_t SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
+      TA_EXCL(object_->lock()) override;
 
+  // Move towards allowing dynamic reclamation in the region. You may call this method with the
+  // object_ lock, in contrast to SetMemoryPriorityLocked.
+  //
   // When called with SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>, we set the memory
   // priority assuming the object has not been |Activate|'d yet.
   template <bool SplitOnUnmap = false>
-  zx_status_t SetMemoryPriorityLockedObject(VmAddressRegion::MemoryPriority priority) TA_REQ(lock())
-      TA_REQ(object_->lock());
+  void SetMemoryPriorityDefaultLockedObject() TA_REQ(lock()) TA_REQ(object_->lock());
+
+  // Marks the address region as high priority. Only call this method if the mapped
+  // VmObject is already high priority (for example if you have already called
+  // SetMemoryPriorityLocked on a child).
+  //
+  // You may call this method with the object_ lock, in contrast to SetMemoryPriorityLocked.
+  //
+  // When called with SetMemoryPriorityLockedObject</*SplitOnUnmap=*/true>, we set the memory
+  // priority assuming the object has not been |Activate|'d yet.
+  template <bool SplitOnUnmap = false>
+  void SetMemoryPriorityHighAlreadyPositiveLockedObject() TA_REQ(lock()) TA_REQ(object_->lock());
 
   void CommitHighMemoryPriority() override TA_EXCL(lock());
 
