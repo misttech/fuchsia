@@ -19,7 +19,7 @@ use ffx_target::fho::target_interface;
 use ffx_target::{get_remote_proxy, open_target_with_fut};
 use fho::{FhoEnvironment, TryFromEnv, TryFromEnvWith};
 use fidl::endpoints::{Proxy, ServerEnd};
-use fidl_fuchsia_developer_ffx::{DaemonError, DaemonProxy, TargetInfo, TargetProxy, VersionInfo};
+use fidl_fuchsia_developer_ffx::{DaemonError, DaemonProxy, TargetInfo, TargetProxy};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use futures::FutureExt;
 use std::future::Future;
@@ -352,23 +352,6 @@ impl Injector for Injection {
         self.daemon_factory_impl(should_autostart).await
     }
 
-    async fn try_daemon(&self) -> anyhow::Result<Option<DaemonProxy>> {
-        let result = self
-            .daemon_once
-            .get_or_try_init(|first_connection| {
-                init_daemon_proxy(
-                    DaemonStart::DoNotAutoStart,
-                    Arc::clone(&self.node),
-                    self.env_context.clone(),
-                    self.version_info.clone(),
-                    first_connection,
-                )
-            })
-            .await
-            .ok();
-        Ok(result)
-    }
-
     async fn target_factory(&self) -> anyhow::Result<TargetProxy> {
         let timeout_error = self.daemon_timeout_error();
         let proxy_timeout = self.env_context.get_proxy_timeout().await?;
@@ -414,26 +397,6 @@ impl Injector for Injection {
         let toolbox = rcs::toolbox::open_toolbox(&rcs).await?;
 
         self.remote_factory_fdomain_inner(toolbox).await
-    }
-
-    async fn is_experiment(&self, key: &str) -> bool {
-        self.env_context.get(key).unwrap_or(false)
-    }
-
-    async fn build_info(&self) -> anyhow::Result<VersionInfo> {
-        let version_info = ffx_build_version::build_info();
-        let ffx_version_info = VersionInfo {
-            commit_hash: version_info.commit_hash,
-            commit_timestamp: version_info.commit_timestamp,
-            build_version: version_info.build_version,
-            abi_revision: version_info.abi_revision,
-            api_level: version_info.api_level,
-            exec_path: version_info.exec_path,
-            build_id: version_info.build_id,
-            ..Default::default()
-        };
-
-        Ok(ffx_version_info)
     }
 }
 
@@ -527,7 +490,7 @@ mod test {
     use fidl_fuchsia_developer_ffx::{
         DaemonMarker, DaemonRequest, DaemonRequestStream, TargetCollectionMarker,
         TargetCollectionRequest, TargetCollectionRequestStream, TargetConnectionError,
-        TargetMarker, TargetRequest,
+        TargetMarker, TargetRequest, VersionInfo,
     };
     use fidl_fuchsia_developer_remotecontrol::RemoteControlRequestStream;
     use fuchsia_async::Task;

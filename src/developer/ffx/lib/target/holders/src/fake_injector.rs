@@ -61,10 +61,6 @@ impl Injector for FakeInjector {
         downcast_injector_error((self.daemon_factory_closure)().await)
     }
 
-    async fn try_daemon(&self) -> Result<Option<DaemonProxy>> {
-        (self.try_daemon_closure)().await
-    }
-
     async fn remote_factory(&self) -> Result<RemoteControlProxy> {
         (self.remote_factory_closure)().await
     }
@@ -77,12 +73,5 @@ impl Injector for FakeInjector {
 
     async fn target_factory(&self) -> Result<TargetProxy> {
         (self.target_factory_closure)().await
-    }
-    async fn is_experiment(&self, key: &str) -> bool {
-        (self.is_experiment_closure)(key).await
-    }
-
-    async fn build_info(&self) -> anyhow::Result<VersionInfo> {
-        (self.build_info_closure)().await
     }
 }

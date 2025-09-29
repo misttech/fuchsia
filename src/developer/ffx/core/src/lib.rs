@@ -7,7 +7,7 @@ pub use core_macros::ffx_command;
 use anyhow::Result;
 use async_trait::async_trait;
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy as FRemoteControlProxy;
-use fidl_fuchsia_developer_ffx::{DaemonProxy, TargetProxy, VersionInfo};
+use fidl_fuchsia_developer_ffx::{DaemonProxy, TargetProxy};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use thiserror::Error;
 
@@ -44,13 +44,9 @@ pub trait Injector {
     /// Creates the daemon, ignoring autostart. This should generally not be used
     /// unless you're running `ffx daemon start`.
     async fn daemon_factory_force_autostart(&self) -> Result<DaemonProxy, FfxInjectorError>;
-    /// Attempts to get a handle to the ffx daemon.
-    async fn try_daemon(&self) -> Result<Option<DaemonProxy>>;
     async fn remote_factory(&self) -> Result<RemoteControlProxy>;
     async fn remote_factory_fdomain(&self) -> Result<FRemoteControlProxy>;
     async fn target_factory(&self) -> Result<TargetProxy>;
-    async fn is_experiment(&self, key: &str) -> bool;
-    async fn build_info(&self) -> Result<VersionInfo>;
 }
 
 #[cfg(test)]
