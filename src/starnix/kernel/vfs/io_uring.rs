@@ -3,14 +3,18 @@
 // found in the LICENSE file.
 
 #![allow(non_upper_case_globals)]
+// Expects are used for programming errors.
+#![allow(clippy::unwrap_in_result)]
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{
-    DesiredAddress, IOVecPtr, MappingName, MappingOptions, PAGE_SIZE, ProtectionFlags,
-    read_to_object_as_bytes,
+    DesiredAddress, IOVecPtr, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt,
+    PAGE_SIZE, ProtectionFlags, read_to_object_as_bytes,
 };
 use crate::task::CurrentTask;
-use crate::vfs::socket::syscalls::{MsgHdrPtr, sys_recvfrom, sys_recvmsg, sys_sendmsg, sys_sendto};
+use crate::vfs::socket::syscalls::{
+    MsgHdrPtr, MsgHdrRef, WithAlternateBuffer, recvmsg_impl, sys_recvfrom, sys_sendmsg, sys_sendto,
+};
 use crate::vfs::syscalls::{
     sys_pread64, sys_preadv2, sys_pwrite64, sys_pwritev2, sys_read, sys_write,
 };
@@ -22,7 +26,7 @@ use bitflags::bitflags;
 use starnix_logging::{set_zx_name, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, OrderedMutex, TerminalLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_types::user_buffer::UserBuffers;
+use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
@@ -139,6 +143,18 @@ impl IoRingSetupFlags {
 
 type RingIndex = u32;
 
+type UserRingBufferHeader = uapi::io_uring_buf_ring__bindgen_ty_1__bindgen_ty_1;
+type UserRingBufferEntry = uapi::io_uring_buf;
+
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<u16>(),
+    uapi::size_of_field!(UserRingBufferHeader, tail)
+);
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<UserRingBufferHeader>(),
+    std::mem::size_of::<UserRingBufferEntry>()
+);
+
 /// The control header at the start of the shared buffer.
 ///
 /// This structure is not declared in the Linux UAPI. Instead, userspace learns about its structure
@@ -248,13 +264,22 @@ uapi::check_arch_independent_same_layout! {
     }
 }
 
+uapi::check_arch_independent_layout! {
+    io_uring_recvmsg_out{
+        namelen,
+        controllen,
+        payloadlen,
+        flags,
+    }
+}
+
 impl SqEntry {
-    fn complete(&self, result: Result<SyscallResult, Errno>) -> CqEntry {
+    fn complete(&self, result: Result<SyscallResult, Errno>, flags: u32) -> CqEntry {
         let res = match result {
             Ok(return_value) => return_value.value() as i32,
             Err(errno) => errno.return_value() as i32,
         };
-        CqEntry { user_data: self.user_data, res, flags: 0 }
+        CqEntry { user_data: self.user_data, res, flags }
     }
 
     fn fd(&self) -> FdNumber {
@@ -283,6 +308,10 @@ impl SqEntry {
 
     fn buf_index(&self) -> usize {
         self.buf_index_or_group as usize
+    }
+
+    fn group(&self) -> u16 {
+        self.buf_index_or_group
     }
 }
 
@@ -717,7 +746,10 @@ impl IoUringFileObject {
         if buffer_definition.ring_entries > IORING_MAX_ENTRIES {
             return error!(EINVAL);
         }
-        self.state.lock(locked).registered_iobuffers.push(buffer_definition.into());
+        self.state
+            .lock(locked)
+            .registered_iobuffers
+            .push(IoUringProviderRingBuffer::new(buffer_definition)?);
         Ok(())
     }
 
@@ -752,7 +784,7 @@ impl IoUringFileObject {
         else {
             return error!(EINVAL);
         };
-        buffer_status.head = buffer.head;
+        buffer_status.head = buffer.head as u32;
         Ok(())
     }
 
@@ -768,8 +800,9 @@ impl IoUringFileObject {
         while let Some(sq_entry) = self.queue.pop_sq_entry()? {
             submitted += 1;
             // We currently act as if every SqEntry has IOSQE_IO_DRAIN.
-            let result = self.execute(locked, current_task, &sq_entry);
-            let cq_entry = sq_entry.complete(result);
+            let mut complete_flags: u32 = 0;
+            let result = self.execute(locked, current_task, &sq_entry, &mut complete_flags);
+            let cq_entry = sq_entry.complete(result, complete_flags);
             self.queue.push_cq_entry(&cq_entry)?;
             if submitted >= to_submit {
                 break;
@@ -798,11 +831,17 @@ impl IoUringFileObject {
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         entry: &SqEntry,
+        complete_flags: &mut u32,
     ) -> Result<SyscallResult, Errno> {
-        let _flags = SqEntryFlags::from_bits(entry.flags).ok_or_else(|| errno!(EINVAL))?;
+        assert_eq!(*complete_flags, 0);
+
+        let flags = SqEntryFlags::from_bits(entry.flags).ok_or_else(|| errno!(EINVAL))?;
         match Op::from_code(entry.opcode as io_uring_op)? {
             Op::NOP => Ok(SUCCESS),
             Op::ReadV => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
                 if entry.ioprio != 0 || entry.buf_index() != 0 {
                     return error!(EINVAL);
                 }
@@ -819,6 +858,9 @@ impl IoUringFileObject {
                 .map(Into::into)
             }
             Op::WriteV => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
                 if entry.ioprio != 0 || entry.buf_index() != 0 {
                     return error!(EINVAL);
                 }
@@ -835,6 +877,9 @@ impl IoUringFileObject {
                 .map(Into::into)
             }
             Op::ReadFixed => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
                 if entry.ioprio != 0 {
                     return error!(EINVAL);
                 }
@@ -845,6 +890,9 @@ impl IoUringFileObject {
                 do_read(locked, current_task, entry)
             }
             Op::WriteFixed => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
                 if entry.ioprio != 0 {
                     return error!(EINVAL);
                 }
@@ -855,55 +903,184 @@ impl IoUringFileObject {
                 do_write(locked, current_task, entry)
             }
             Op::Read => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
                 if self.has_registered_buffers(locked) {
                     return error!(EINVAL);
                 }
                 do_read(locked, current_task, entry)
             }
             Op::Write => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
                 if self.has_registered_buffers(locked) {
                     return error!(EINVAL);
                 }
                 do_write(locked, current_task, entry)
             }
-            Op::SendMsg => sys_sendmsg(
-                locked,
-                current_task,
-                entry.fd(),
-                MsgHdrPtr::new(current_task, entry.address()),
-                entry.op_flags,
-            )
-            .map(Into::into),
-            Op::RecvMsg => sys_recvmsg(
-                locked,
-                current_task,
-                entry.fd(),
-                MsgHdrPtr::new(current_task, entry.address()),
-                entry.op_flags,
-            )
-            .map(Into::into),
-            Op::Send => sys_sendto(
-                locked,
-                current_task,
-                entry.fd(),
-                entry.address(),
-                entry.length(),
-                entry.op_flags,
-                UserAddress::default(),
-                socklen_t::default(),
-            )
-            .map(Into::into),
-            Op::Recv => sys_recvfrom(
-                locked,
-                current_task,
-                entry.fd(),
-                entry.address(),
-                entry.length(),
-                entry.op_flags,
-                UserAddress::default(),
-                UserRef::default(),
-            )
-            .map(Into::into),
+            Op::SendMsg => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
+                if entry.ioprio != 0 {
+                    return error!(EINVAL);
+                }
+                sys_sendmsg(
+                    locked,
+                    current_task,
+                    entry.fd(),
+                    MsgHdrPtr::new(current_task, entry.address()),
+                    entry.op_flags,
+                )
+                .map(Into::into)
+            }
+            Op::RecvMsg => {
+                // A struct to hold the information about the provided buffer.
+                // This is needed because the buffer is claimed before the call to `recvmsg_impl`
+                // but the result is adjusted after.
+                struct RecvMsgBufferInfo {
+                    buffer: UserBuffer,
+                    header: uapi::io_uring_recvmsg_out,
+                    buffer_adjustment: usize,
+                }
+                let mut flags = flags;
+                let mut ioprio = entry.ioprio as u32;
+                let msg_hdr_ptr = MsgHdrPtr::new(current_task, entry.address());
+                let (mut msg_hdr_ref, recv_msg_buffer_info): (
+                    MsgHdrRef,
+                    Option<RecvMsgBufferInfo>,
+                ) = if flags.contains(SqEntryFlags::BUFFER_SELECT) {
+                    flags -= SqEntryFlags::BUFFER_SELECT;
+                    // If BUFFER_SELECT is set, the application is providing a buffer for the
+                    // recvmsg operation.
+                    let buffer = self.claim_next_buffer(
+                        locked,
+                        current_task,
+                        entry.group(),
+                        complete_flags,
+                    )?;
+                    let mut msg_hdr = current_task.read_multi_arch_object(msg_hdr_ptr)?;
+                    // The buffer is laid out as follows:
+                    // - io_uring_recvmsg_out
+                    // - sockaddr (name)
+                    // - msghdr.msg_control
+                    // - payload
+                    let headerlen: u32 = std::mem::size_of::<uapi::io_uring_recvmsg_out>() as u32;
+                    let namelen: u32 = msg_hdr.name_len.try_into().map_err(|_| errno!(EINVAL))?;
+                    let controllen: u32 =
+                        msg_hdr.control_len.try_into().map_err(|_| errno!(EINVAL))?;
+                    let buffer_adjustment: u32 = headerlen
+                        .checked_add(namelen)
+                        .and_then(|v| v.checked_add(controllen))
+                        .ok_or_else(|| errno!(EINVAL))?;
+                    let payloadlen: u32 = (buffer.length as u32)
+                        .checked_sub(buffer_adjustment)
+                        .ok_or_else(|| errno!(EINVAL))?;
+                    let io_uring_hdr = uapi::io_uring_recvmsg_out {
+                        namelen,
+                        controllen,
+                        payloadlen,
+                        flags: msg_hdr.flags,
+                    };
+
+                    let name_addr = (buffer.address + headerlen as usize)?;
+                    let control_addr = (name_addr + namelen as usize)?;
+                    let payload_addr = (control_addr + controllen as usize)?;
+                    msg_hdr.name = name_addr;
+                    msg_hdr.control = control_addr;
+
+                    // Zero out the prefix of the buffer that will contain the header, name and
+                    // control bytes.
+                    current_task.zero(buffer.address, buffer_adjustment as usize)?;
+
+                    let msg_hdr = WithAlternateBuffer::WithAux(
+                        msg_hdr,
+                        UserBuffer { address: payload_addr, length: payloadlen as usize },
+                    );
+                    (
+                        msg_hdr.into(),
+                        Some(RecvMsgBufferInfo {
+                            buffer,
+                            header: io_uring_hdr,
+                            buffer_adjustment: buffer_adjustment as usize,
+                        }),
+                    )
+                } else {
+                    (msg_hdr_ptr.into(), None)
+                };
+                if ioprio & uapi::IORING_RECV_MULTISHOT > 0 {
+                    // Ignoring IORING_RECV_MULTISHOT
+                    // Because the IORING_CQE_F_BUFFER flags will never be set, the client will
+                    // always have to call the syscall again.
+                    ioprio &= !uapi::IORING_RECV_MULTISHOT;
+                }
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
+                if ioprio != 0 {
+                    return error!(EINVAL);
+                }
+                let mut count = recvmsg_impl(
+                    locked,
+                    current_task,
+                    entry.fd(),
+                    &mut msg_hdr_ref,
+                    entry.op_flags,
+                )?;
+                if let Some(recv_msg_buffer_info) = recv_msg_buffer_info {
+                    // The result from `recvmsg_impl` is the number of bytes written to the
+                    // payload. The result of the io_uring operation is the number of bytes
+                    // written to the provided buffer.
+                    // 1. Write the io_uring buffer header.
+                    current_task.write_object(
+                        recv_msg_buffer_info.buffer.address.into(),
+                        &recv_msg_buffer_info.header,
+                    )?;
+                    // 2. Adjust the written count.
+                    count += recv_msg_buffer_info.buffer_adjustment;
+                }
+                Ok(count.into())
+            }
+            Op::Send => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
+                if entry.ioprio != 0 {
+                    return error!(EINVAL);
+                }
+                sys_sendto(
+                    locked,
+                    current_task,
+                    entry.fd(),
+                    entry.address(),
+                    entry.length(),
+                    entry.op_flags,
+                    UserAddress::default(),
+                    socklen_t::default(),
+                )
+                .map(Into::into)
+            }
+            Op::Recv => {
+                if !flags.is_empty() {
+                    return error!(EINVAL);
+                }
+                if entry.ioprio != 0 {
+                    return error!(EINVAL);
+                }
+                sys_recvfrom(
+                    locked,
+                    current_task,
+                    entry.fd(),
+                    entry.address(),
+                    entry.length(),
+                    entry.op_flags,
+                    UserAddress::default(),
+                    UserRef::default(),
+                )
+                .map(Into::into)
+            }
             Op::FSync
             | Op::PollAdd
             | Op::PollRemove
@@ -925,17 +1102,59 @@ impl IoUringFileObject {
             | Op::EpollCtl => error!(EOPNOTSUPP),
         }
     }
+
+    fn claim_next_buffer(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        bgid: u16,
+        complete_flags: &mut u32,
+    ) -> Result<UserBuffer, Errno> {
+        let mut state = self.state.lock(locked);
+        let Some(buffer) =
+            state.registered_iobuffers.iter_mut().find(|buffer| buffer.config.bgid == bgid)
+        else {
+            return error!(EINVAL);
+        };
+        buffer.claim_next(current_task, complete_flags)
+    }
 }
 
 #[derive(Debug)]
 struct IoUringProviderRingBuffer {
     config: uapi::io_uring_buf_reg,
-    head: u32,
+    tail_ptr: UserRef<u16>,
+    entries_ptr: UserRef<UserRingBufferEntry>,
+    head: u16,
 }
 
-impl From<uapi::io_uring_buf_reg> for IoUringProviderRingBuffer {
-    fn from(config: uapi::io_uring_buf_reg) -> Self {
-        Self { config, head: 0 }
+impl IoUringProviderRingBuffer {
+    fn new(config: uapi::io_uring_buf_reg) -> Result<Self, Errno> {
+        let ring_addr = UserAddress::from(config.ring_addr);
+        let tail_ptr =
+            UserRef::<u16>::from((ring_addr + std::mem::offset_of!(UserRingBufferHeader, tail))?);
+        let entries_ptr = UserRef::<UserRingBufferEntry>::from(ring_addr);
+        Ok(Self { config, tail_ptr, entries_ptr, head: 0 })
+    }
+
+    fn claim_next(
+        &mut self,
+        current_task: &CurrentTask,
+        complete_flags: &mut u32,
+    ) -> Result<UserBuffer, Errno> {
+        // TODO(https://fxbug.dev/297431387): Reading the tail field should be atomic with ordering
+        // acquire.
+        let tail = current_task.read_object(self.tail_ptr)?;
+        if self.head == tail {
+            return error!(ENOBUFS);
+        }
+        let buffer_info = current_task.read_object(
+            self.entries_ptr.at((self.head as usize) % (self.config.ring_entries as usize))?,
+        )?;
+        self.head += 1;
+        *complete_flags |=
+            uapi::IORING_CQE_F_BUFFER | ((buffer_info.bid as u32) << uapi::IORING_CQE_BUFFER_SHIFT);
+        Ok(UserBuffer { address: buffer_info.addr.into(), length: buffer_info.len as usize })
     }
 }
 

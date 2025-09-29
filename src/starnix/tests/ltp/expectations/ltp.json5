@@ -229,6 +229,9 @@
 
                 // TODO(https://fxbug.dev/399387742): fix invocation path and re-enable
                 "vma05",
+
+                // TODO(https://fxbug.dev/297431387): Require more io_uring feature
+                "cve-2020-29373",
             ],
         },
         {

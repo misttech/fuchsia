@@ -35,7 +35,7 @@ use starnix_uapi::{
     MSG_CTRUNC, MSG_DONTWAIT, MSG_TRUNC, MSG_WAITFORONE, SHUT_RD, SHUT_RDWR, SHUT_WR, SOCK_CLOEXEC,
     SOCK_NONBLOCK, UIO_MAXIOV, errno, error, socklen_t, uapi,
 };
-use std::ops::Deref;
+use std::ops::DerefMut;
 
 uapi::check_arch_independent_layout! {
     socklen_t {}
@@ -46,14 +46,38 @@ uapi::check_arch_independent_layout! {
 pub type WithAlternateBuffer<T> = Augmented<T, UserBuffer>;
 pub type MsgHdrPtr = MappingMultiArchUserRef<MsgHdr, uapi::msghdr, uapi::arch32::msghdr>;
 
+#[derive(Debug, Clone)]
 pub struct MsgHdr {
-    name: UserAddress,
-    name_len: socklen_t,
-    iov: IOVecPtr,
-    iovlen: UserValue<usize>,
-    control: UserAddress,
-    control_len: usize,
-    flags: u32,
+    pub name: UserAddress,
+    pub name_len: socklen_t,
+    pub iov: IOVecPtr,
+    pub iovlen: UserValue<usize>,
+    pub control: UserAddress,
+    pub control_len: usize,
+    pub flags: u32,
+}
+
+/// A reference to a `msghdr`.
+///
+/// This enum is used to abstract over whether the `msghdr` is in user memory (and needs to be
+/// read) or has been constructed in the kernel. This is used by `io_uring` to provide a buffer
+/// for `recvmsg`.
+#[derive(Debug, Clone)]
+pub enum MsgHdrRef {
+    Ptr(MsgHdrPtr),
+    Value(WithAlternateBuffer<MsgHdr>),
+}
+
+impl From<MsgHdrPtr> for MsgHdrRef {
+    fn from(ptr: MsgHdrPtr) -> Self {
+        Self::Ptr(ptr)
+    }
+}
+
+impl From<WithAlternateBuffer<MsgHdr>> for MsgHdrRef {
+    fn from(value: WithAlternateBuffer<MsgHdr>) -> Self {
+        Self::Value(value)
+    }
 }
 
 pub type MMsgHdrPtr = MappingMultiArchUserRef<MMsgHdr, uapi::mmsghdr, uapi::arch32::mmsghdr>;
@@ -519,16 +543,17 @@ fn recvmsg_internal<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
     file: &FileHandle,
-    user_message_header: WithAlternateBuffer<MsgHdrPtr>,
+    user_message_header: &mut MsgHdrRef,
     flags: u32,
     deadline: Option<zx::MonotonicInstant>,
 ) -> Result<usize, Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let user_message_header_addr = user_message_header.deref().clone();
-    let mut message_header =
-        user_message_header.map(|h| current_task.read_multi_arch_object(h)).transpose()?;
+    let mut message_header = match *user_message_header {
+        MsgHdrRef::Ptr(ptr) => current_task.read_multi_arch_object(ptr)?.into(),
+        MsgHdrRef::Value(ref value) => value.clone(),
+    };
     let result = recvmsg_internal_with_header(
         locked,
         current_task,
@@ -537,7 +562,14 @@ where
         flags,
         deadline,
     )?;
-    current_task.write_multi_arch_object(user_message_header_addr, message_header.extract())?;
+    match *user_message_header {
+        MsgHdrRef::Ptr(ptr) => {
+            current_task.write_multi_arch_object(ptr, message_header.extract())?;
+        }
+        MsgHdrRef::Value(ref mut value) => {
+            *value.deref_mut() = message_header.extract();
+        }
+    }
     Ok(result)
 }
 
@@ -643,7 +675,7 @@ pub fn sys_recvmsg(
     user_message_header: MsgHdrPtr,
     flags: u32,
 ) -> Result<usize, Errno> {
-    recvmsg_impl(locked, current_task, fd, user_message_header.into(), flags)
+    recvmsg_impl(locked, current_task, fd, &mut user_message_header.into(), flags)
 }
 
 /// Implementation of `recvmsg`.
@@ -655,7 +687,7 @@ pub fn recvmsg_impl(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
-    user_message_header: WithAlternateBuffer<MsgHdrPtr>,
+    user_message_header: &mut MsgHdrRef,
     flags: u32,
 ) -> Result<usize, Errno> {
     let file = current_task.files.get(fd)?;

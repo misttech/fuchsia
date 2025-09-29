@@ -10,7 +10,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 /// Typically, these values are received in syscall arguments and need to be validated before they
 /// can be used directly. For example, integers need to be checked for overflow during arithmetical
 /// operation.
-#[derive(Clone, Copy, Eq, PartialEq, IntoBytes, KnownLayout, FromBytes, Immutable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, IntoBytes, KnownLayout, FromBytes, Immutable)]
 #[repr(transparent)]
 pub struct UserValue<T>(T);
 
