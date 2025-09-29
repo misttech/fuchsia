@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.hardware.rtc/cpp/wire.h>
 #include <lib/ddk/device.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include <ddktl/device.h>
 
