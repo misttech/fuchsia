@@ -21,13 +21,22 @@ import collections
 import json
 import os
 import sys
+import typing as T
 
 # The following runtime libraries are provided directly by the SDK sysroot,
 # and not as SDK atoms.
 _SYSROOT_LIBS = ["libc.so", "libzircon.so"]
 
+# Information about an atom.
+AtomInfo: T.TypeAlias = dict[str, T.Any]
 
-def parse_sdk_manifest(manifest):
+# The contents of a JSON file.
+JsonFileContent: T.TypeAlias = dict[str, T.Any]
+
+
+def parse_sdk_manifest(
+    manifest: JsonFileContent,
+) -> tuple[str, dict[str, AtomInfo]]:
     """Parse SDK manifest file and extract atom id and dependencies.
 
     Args:
@@ -41,10 +50,11 @@ def parse_sdk_manifest(manifest):
     """
     atom_id = manifest["ids"][0]
 
-    def find_atom(id):
+    def find_atom(id: str) -> AtomInfo:
         return next(a for a in manifest["atoms"] if a["id"] == id)
 
     atom = find_atom(atom_id)
+    # print(atom)
     deps = [find_atom(a) for a in atom["deps"]]
     deps += [atom]
 
@@ -78,14 +88,14 @@ HINT: Add the missing atom(s)'s targets to the 'runtime_deps' list.
 class DependencyErrors(object):
     """Models list of errors found during verification."""
 
-    def __init__(self):
-        self._errors = []
+    def __init__(self) -> None:
+        self._errors: list[tuple[dict[str, str], str]] = []
 
-    def has_error(self):
+    def has_error(self) -> bool:
         """Return True iff this instance contains errors."""
         return bool(self._errors)
 
-    def add_non_sdk_dependency(self, entry):
+    def add_non_sdk_dependency(self, entry: dict[str, str]) -> None:
         """Add an entry for a non-SDK dependency.
 
         This happens when an SDK atom depends on a shared_library() instance
@@ -93,15 +103,15 @@ class DependencyErrors(object):
         """
         self._errors.append((entry, "non_sdk_deps"))
 
-    def add_bad_sdk_dependency(self, entry):
+    def add_bad_sdk_dependency(self, entry: dict[str, str]) -> None:
         """Add an entry for a non-prebuilt shared library."""
         self._errors.append((entry, "bad_sdk_deps"))
 
-    def add_missing_sdk_dependency(self, entry):
+    def add_missing_sdk_dependency(self, entry: dict[str, str]) -> None:
         """Add an entry for a non-SDK shared library dependency."""
         self._errors.append((entry, "missing_sdk_deps"))
 
-    def __str__(self):
+    def __str__(self) -> str:
         result = ""
         # Split errors by categories
         errors = collections.defaultdict(list)
@@ -137,12 +147,14 @@ class DependencyErrors(object):
                 result += _MISSING_SDK_DEPS_ERROR_FOOTER
 
             else:
-                assert False, "Unknown category: " % category
+                assert False, "Unknown category: %s" % category
 
         return result
 
 
-def check_missing_files(runtime_files, atom_deps):
+def check_missing_files(
+    runtime_files: list[dict[str, str]], atom_deps: dict[str, AtomInfo]
+) -> DependencyErrors:
     """Verify runtime requirements, and return a DependencyErrors instance."""
     errors = DependencyErrors()
 
@@ -174,7 +186,7 @@ def check_missing_files(runtime_files, atom_deps):
     return errors
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
