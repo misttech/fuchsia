@@ -5,8 +5,8 @@
 #include <fidl/fuchsia.hardware.tpmimpl/cpp/wire.h>
 #include <fuchsia/hardware/tpmimpl/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>

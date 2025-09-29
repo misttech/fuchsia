@@ -8,9 +8,9 @@
 #include <fidl/fuchsia.hardware.tpmimpl/cpp/wire.h>
 #include <fuchsia/hardware/tpmimpl/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio.h>
 
 #include <ddktl/device.h>
 #include <ddktl/unbind-txn.h>
