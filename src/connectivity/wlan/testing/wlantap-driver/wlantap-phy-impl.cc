@@ -249,6 +249,13 @@ void WlanPhyImplDevice::GetPowerState(fdf::Arena& arena, GetPowerStateCompleter:
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void WlanPhyImplDevice::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request,
+                                             fdf::Arena& arena,
+                                             SetBtCoexistenceModeCompleter::Sync& completer) {
+  FDF_LOG(WARNING, "%s: SetBtCoexistenceMode() not supported", name_.c_str());
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
                                                  zx::channel mlme_channel) {
   static size_t n = 0;

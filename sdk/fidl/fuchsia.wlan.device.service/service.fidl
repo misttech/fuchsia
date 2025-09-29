@@ -6,6 +6,7 @@ library fuchsia.wlan.device.service;
 
 using fuchsia.wlan.common;
 using fuchsia.wlan.ieee80211 as ieee80211;
+using fuchsia.wlan.internal;
 using fuchsia.wlan.sme;
 using fuchsia.wlan.stats;
 using zx;
@@ -148,6 +149,15 @@ closed protocol DeviceMonitor {
     }) -> (struct {
         power_on bool;
     }) error zx.Status;
+
+    /// Set the Bluetooth coexistence mode.
+    /// Likely errors include:
+    ///     * NOT_FOUND: The given phy_id does not exist.
+    ///     * NOT_SUPPORTED: The specified BT coexistence mode is not supported.
+    strict SetBtCoexistenceMode(struct {
+        phy_id uint16;
+        mode fuchsia.wlan.internal.BtCoexistenceMode;
+    }) -> () error zx.Status;
 
     // Iface methods
     strict CreateIface(table {

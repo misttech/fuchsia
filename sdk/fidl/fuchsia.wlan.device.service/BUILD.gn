@@ -16,6 +16,7 @@ fidl("fuchsia.wlan.device.service") {
   public_deps = [
     "//sdk/fidl/fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211",
+    "//sdk/fidl/fuchsia.wlan.internal",
     "//sdk/fidl/fuchsia.wlan.sme",
     "//sdk/fidl/fuchsia.wlan.stats",
   ]

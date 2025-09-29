@@ -53,6 +53,8 @@ class Device final : public fdf::DriverBase,
   void PowerUp(PowerUpCompleter::Sync& completer) override;
   void Reset(ResetCompleter::Sync& completer) override;
   void GetPowerState(GetPowerStateCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request,
+                            SetBtCoexistenceModeCompleter::Sync& completer) override;
 
   // Function implementations in protocol fuchsia_wlan_device::Connector.
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;

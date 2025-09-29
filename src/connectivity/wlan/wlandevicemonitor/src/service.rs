@@ -5,14 +5,14 @@
 use crate::device::{self, IfaceDevice, IfaceMap, NewIface, PhyDevice, PhyMap};
 use crate::inspect::IfacesTree;
 use crate::watcher_service;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use core::sync::atomic::AtomicUsize;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_wlan_device_service::{self as fidl_svc, DeviceMonitorRequest};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use ieee80211::{MacAddr, MacAddrBytes, NULL_ADDR};
 use log::{error, info, warn};
 use std::sync::atomic::Ordering;
@@ -20,7 +20,7 @@ use std::sync::{Arc, LazyLock};
 use wlan_fidl_ext::{ResponderExt, WithName};
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_device as fidl_dev,
-    fidl_fuchsia_wlan_sme as fidl_sme,
+    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
 };
 
 /// Thread-safe counter for spawned ifaces.
@@ -157,6 +157,15 @@ pub(crate) async fn handle_monitor_request(
                 get_power_state(phys, phy_id).await.as_ref().map_err(|s| s.into_raw()).copied(),
             )?;
         }
+        DeviceMonitorRequest::SetBtCoexistenceMode { phy_id, mode, responder } => {
+            responder.send(
+                set_bt_coexistence_mode(phys, phy_id, mode)
+                    .await
+                    .as_ref()
+                    .map_err(|s| s.into_raw())
+                    .copied(),
+            )?;
+        }
         DeviceMonitorRequest::GetClientSme { iface_id, sme_server, responder } => {
             let result = get_client_sme(ifaces, iface_id, sme_server).await;
             responder.send(result.map_err(|e| e.into_raw()))?;
@@ -235,7 +244,10 @@ async fn handle_single_new_iface(
     match destroy_iface(phys, ifaces, ifaces_tree, new_iface.id).await {
         Ok(()) => info!("Destroyed iface {} after its SME event stream ended", new_iface.id),
         Err(e) if e == zx::Status::NOT_FOUND => {
-            info!("iface {} not found when attempting to destroy after its SME event stream ended; assume successful destruction ", new_iface.id)
+            info!(
+                "iface {} not found when attempting to destroy after its SME event stream ended; assume successful destruction ",
+                new_iface.id
+            )
         }
         Err(e) => error!("Error while destroying iface {}: {}", new_iface.id, e),
     }
@@ -391,6 +403,24 @@ async fn get_supported_mac_roles(
         error!("get_supported_mac_roles(id = {}): returned an error: {}", id, status);
         status.into_raw()
     })
+}
+
+async fn set_bt_coexistence_mode(
+    phys: &PhyMap,
+    phy_id: u16,
+    mode: fidl_internal::BtCoexistenceMode,
+) -> Result<(), zx::Status> {
+    let phy = phys.get(&phy_id).ok_or(Err(zx::Status::NOT_FOUND))?;
+    match phy.proxy.set_bt_coexistence_mode(mode).await {
+        Ok(result) => match result {
+            Ok(()) => Ok(()),
+            Err(status) => Err(zx::Status::from_raw(status)),
+        },
+        Err(e) => {
+            error!("Error sending 'GetPowerSaveMode' request to phy #{}: {}", phy_id, e);
+            Err(zx::Status::INTERNAL)
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments, reason = "mass allow for https://fxbug.dev/381896734")]
@@ -554,7 +584,10 @@ async fn destroy_iface(
     let destroy_iface_result = match phy.proxy.destroy_iface(&phy_req).await {
         Ok(result) => result,
         Err(fidl::Error::ClientChannelClosed { .. }) => {
-            warn!("Failed to send 'DestroyIface' request to phy {:?}: client channel closed. Assuming phy removed.", phy_ownership);
+            warn!(
+                "Failed to send 'DestroyIface' request to phy {:?}: client channel closed. Assuming phy removed.",
+                phy_ownership
+            );
             Ok(())
         }
         Err(error) => {
@@ -654,11 +687,11 @@ mod tests {
     use super::*;
     use crate::device::PhyOwnership;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, create_proxy_and_stream, ControlHandle};
+    use fidl::endpoints::{ControlHandle, create_proxy, create_proxy_and_stream};
     use fuchsia_inspect::Inspector;
+    use futures::TryStreamExt;
     use futures::future::BoxFuture;
     use futures::task::Poll;
-    use futures::TryStreamExt;
     use ieee80211::NULL_ADDR;
     use std::convert::Infallible;
     use std::pin::pin;
@@ -1981,6 +2014,30 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_set_bt_coexistence_mode() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id = 10u16;
+        test_values.phys.insert(phy_id, phy);
+
+        let req_fut = super::set_bt_coexistence_mode(
+            &test_values.phys,
+            phy_id,
+            fidl_internal::BtCoexistenceMode::ModeAuto,
+        );
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
+
+        let (mode, responder) = assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetBtCoexistenceMode { mode, responder }))) => (mode, responder));
+        assert_eq!(mode, fidl_internal::BtCoexistenceMode::ModeAuto);
+        responder.send(Ok(())).expect("failed to send the response to SetBtCoexistenceMode");
+
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
+    }
+
+    #[fuchsia::test]
     fn test_iface_counter() {
         let iface_counter = IfaceCounter::new();
         assert_eq!(0, iface_counter.next_iface_id());
@@ -2337,16 +2394,16 @@ mod tests {
 
             // The new interface should be pushed into the new iface stream.
             assert_matches!(
-		exec.run_until_stalled(&mut test_values.new_iface_stream.next()),
-                Poll::Ready(Some(NewIface {
-                    id,
-                    phy_ownership,
-                    ..
-                })) => {
-                    assert_eq!(sme_assigned_iface_id, id);
-                    assert_eq!(phy_assigned_iface_id, phy_ownership.phy_assigned_id);
-                    assert_eq!(phy_id, phy_ownership.phy_id);
-                });
+            exec.run_until_stalled(&mut test_values.new_iface_stream.next()),
+                    Poll::Ready(Some(NewIface {
+                        id,
+                        phy_ownership,
+                        ..
+                    })) => {
+                        assert_eq!(sme_assigned_iface_id, id);
+                        assert_eq!(phy_assigned_iface_id, phy_ownership.phy_assigned_id);
+                        assert_eq!(phy_id, phy_ownership.phy_id);
+                    });
         }
 
         // Request the list of available ifaces.

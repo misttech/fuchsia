@@ -25,7 +25,8 @@ use {
     fidl_fuchsia_wlan_common as fidl_common,
     fidl_fuchsia_wlan_device_service as fidl_device_service,
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, state_recorder as power_observability_state_recorder,
+    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
+    state_recorder as power_observability_state_recorder,
 };
 
 // A long amount of time that a scan should be able to finish within. If a scan takes longer than
@@ -302,6 +303,10 @@ pub(crate) trait ClientIface: Sync + Send {
 
     fn on_disconnect(&self, info: &fidl_sme::DisconnectSource);
     fn on_signal_report(&self, ind: fidl_internal::SignalReportIndication);
+    async fn set_bt_coexistence_mode(
+        &self,
+        mode: fidl_internal::BtCoexistenceMode,
+    ) -> Result<(), fidl_wlanix::WlanixError>;
     async fn set_power_save_mode(&self, enabled: bool) -> Result<(), Error>;
     async fn set_suspend_mode(&self, enabled: bool) -> Result<(), Error>;
     async fn set_country(&self, code: [u8; 2]) -> Result<(), Error>;
@@ -608,6 +613,25 @@ impl ClientIface for SmeClientIface {
         let _prev = self.connected_network_rssi.lock().replace(ind.rssi_dbm);
     }
 
+    async fn set_bt_coexistence_mode(
+        &self,
+        mode: fidl_internal::BtCoexistenceMode,
+    ) -> Result<(), fidl_wlanix::WlanixError> {
+        let result = self
+            .monitor_svc
+            .set_bt_coexistence_mode(self.phy_id, mode)
+            .await
+            .map_err(|e| {
+                warn!("Encountered FIDL error when setting BT coexistence mode: {:?}", e);
+                fidl_wlanix::WlanixError::InternalError
+            })?
+            .map_err(|e| {
+                warn!("Failed to set BT coexistence mode: {:?}", e);
+                fidl_wlanix::WlanixError::InternalError
+            });
+        result
+    }
+
     async fn set_power_save_mode(&self, enabled: bool) -> Result<(), Error> {
         // Update our cache
         let mut power_state = self.power_state.lock().await;
@@ -767,6 +791,7 @@ pub mod test_utils {
         GetConnectedNetworkRssi,
         OnDisconnect { info: fidl_sme::DisconnectSource },
         OnSignalReport { ind: fidl_internal::SignalReportIndication },
+        SetBtCoexistenceMode { mode: fidl_internal::BtCoexistenceMode },
         SetPowerSaveMode(bool),
         SetSuspendMode(bool),
         SetCountry([u8; 2]),
@@ -869,6 +894,14 @@ pub mod test_utils {
 
         fn on_signal_report(&self, ind: fidl_internal::SignalReportIndication) {
             self.calls.lock().push(ClientIfaceCall::OnSignalReport { ind });
+        }
+
+        async fn set_bt_coexistence_mode(
+            &self,
+            mode: fidl_internal::BtCoexistenceMode,
+        ) -> Result<(), fidl_wlanix::WlanixError> {
+            self.calls.lock().push(ClientIfaceCall::SetBtCoexistenceMode { mode });
+            Ok(())
         }
 
         async fn set_power_save_mode(&self, enabled: bool) -> Result<(), Error> {
@@ -2128,6 +2161,23 @@ mod tests {
         assert_matches!(iface.get_connected_network_rssi(), None);
         iface.on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
         assert_matches!(iface.get_connected_network_rssi(), Some(-40));
+    }
+
+    #[test]
+    fn test_set_bt_coexistence_mode() {
+        let (mut exec, mut monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
+            setup_test_manager_with_iface();
+
+        let mut set_bt_coex_fut =
+            iface.set_bt_coexistence_mode(fidl_internal::BtCoexistenceMode::ModeAuto);
+        assert_matches!(exec.run_until_stalled(&mut set_bt_coex_fut), Poll::Pending);
+        let (mode, responder) = assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::SetBtCoexistenceMode { mode, responder, .. })) => (mode, responder));
+        assert_eq!(mode, fidl_internal::BtCoexistenceMode::ModeAuto);
+        assert_matches!(responder.send(Ok(())), Ok(()));
+
+        assert_matches!(exec.run_until_stalled(&mut set_bt_coex_fut), Poll::Ready(Ok(())));
     }
 
     #[derive(PartialEq)]

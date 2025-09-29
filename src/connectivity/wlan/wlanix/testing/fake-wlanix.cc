@@ -283,6 +283,12 @@ void FakeWlanix::GetMacAddress(GetMacAddressCompleter::Sync& completer) {
   completer.Reply(fit::ok(&response));
 }
 
+void FakeWlanix::SetBtCoexistenceMode(
+    fuchsia_wlan_wlanix::wire::SupplicantStaIfaceSetBtCoexistenceModeRequest* request,
+    SetBtCoexistenceModeCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kSupplicantStaIfaceSetBtCoexistenceMode});
+}
+
 void FakeWlanix::SetPowerSave(
     fuchsia_wlan_wlanix::wire::SupplicantStaIfaceSetPowerSaveRequest* request,
     SetPowerSaveCompleter::Sync& completer) {

@@ -152,6 +152,12 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
     completer.buffer(arena).ReplySuccess(builder.Build());
     test_completion_.Signal();
   }
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
+                            SetBtCoexistenceModeCompleter::Sync& completer) override {
+    bt_coex_mode_ = request->mode();
+    completer.buffer(arena).ReplySuccess();
+    test_completion_.Signal();
+  }
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
@@ -163,6 +169,7 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
   uint16_t GetDestroyIfaceId() { return destroy_iface_id_; }
   fuchsia_wlan_phyimpl::wire::WlanPhyCountry& GetCountryReq() { return country_; }
   fuchsia_wlan_common::wire::PowerSaveType GetPSType() { return ps_mode_; }
+  fuchsia_wlan_phyimpl::wire::BtCoexistenceMode GetBtCoexMode() { return bt_coex_mode_; }
   // Record the create iface request data when fake phyimpl device gets it.
   fuchsia_wlan_device::wire::CreateIfaceRequest create_iface_req_;
   bool has_init_sta_addr_;
@@ -175,6 +182,9 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
 
   // Record the power save mode data when fake phyimpl device gets it.
   fuchsia_wlan_common::wire::PowerSaveType ps_mode_;
+
+  // Record the bt coexistence mode data when fake phyimpl device gets it.
+  fuchsia_wlan_phyimpl::wire::BtCoexistenceMode bt_coex_mode_;
 
   static constexpr fuchsia_wlan_common::wire::WlanMacRole kFakeMacRole =
       fuchsia_wlan_common::wire::WlanMacRole::kAp;
@@ -392,6 +402,17 @@ TEST_F(WlanphyDeviceTest, GetPowerState) {
   EXPECT_EQ(
       driver_test().RunInEnvironmentTypeContext<bool>([](TestEnvironment& env) { return true; }),
       result->value()->power_on);
+}
+
+TEST_F(WlanphyDeviceTest, SetBtCoexistenceMode) {
+  auto result =
+      client_phy_->SetBtCoexistenceMode(fuchsia_wlan_internal::wire::BtCoexistenceMode::kModeAuto);
+  ASSERT_TRUE(result.ok());
+  WaitForCommandCompletion();
+  EXPECT_EQ(
+      driver_test().RunInEnvironmentTypeContext<fuchsia_wlan_phyimpl::wire::BtCoexistenceMode>(
+          [](TestEnvironment& env) { return env.fake_phyimpl_parent_.GetBtCoexMode(); }),
+      fuchsia_wlan_phyimpl::wire::BtCoexistenceMode::kModeAuto);
 }
 
 }  // namespace

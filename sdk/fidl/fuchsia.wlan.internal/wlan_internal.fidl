@@ -52,3 +52,8 @@ type ChannelSwitchInfo = struct {
     // The operating class/country may also be modified by an extended channel switch request, but
     // we do not currently support this.
 };
+
+type BtCoexistenceMode = strict enum {
+    MODE_AUTO = 1;
+    MODE_OFF = 2;
+};

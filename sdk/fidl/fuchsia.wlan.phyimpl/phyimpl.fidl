@@ -24,6 +24,12 @@ type WlanPhyCountry = flexible union {
     1: alpha2 array<uint8, WLANPHY_ALPHA2_LEN>;
 };
 
+@available(added=HEAD)
+type BtCoexistenceMode = flexible enum {
+    MODE_AUTO = 1;
+    MODE_OFF = 2;
+};
+
 @discoverable
 @transport("Driver")
 open protocol WlanPhyImpl {
@@ -126,6 +132,14 @@ open protocol WlanPhyImpl {
     flexible GetPowerState() -> (table {
         1: power_on bool;
     }) error zx.Status;
+
+    /// Set the Bluetooth coexistence mode.
+    /// Possible error codes are: \
+    /// ZX_ERR_NOT_SUPPORTED: device does not support the specified BT coexistence mode.
+    @available(added=HEAD)
+    flexible SetBtCoexistenceMode(table {
+        1: mode BtCoexistenceMode;
+    }) -> () error zx.Status;
 };
 
 service Service {

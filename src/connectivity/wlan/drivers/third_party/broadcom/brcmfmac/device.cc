@@ -603,6 +603,11 @@ void Device::GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& comp
   completer.buffer(arena).ReplySuccess(builder.Build());
 }
 
+void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
+                                  SetBtCoexistenceModeCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void Device::ServiceConnectHandler(fdf_dispatcher_t* dispatcher,
                                    fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end) {
   bindings_.AddBinding(dispatcher, std::move(server_end), this, [](fidl::UnbindInfo info) {

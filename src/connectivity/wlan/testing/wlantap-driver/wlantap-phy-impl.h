@@ -49,6 +49,8 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
   void PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) override;
   void Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) override;
   void GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
+                            SetBtCoexistenceModeCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}

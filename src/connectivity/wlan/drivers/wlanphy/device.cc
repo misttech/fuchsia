@@ -462,5 +462,50 @@ void Device::GetPowerState(GetPowerStateCompleter::Sync& completer) {
         completer.ReplySuccess(result->value()->power_on());
       });
 }
+
+void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request,
+                                  SetBtCoexistenceModeCompleter::Sync& completer) {
+  ltrace_fn();
+  ldebug_device("SetBtCoexistenceMode to %d", request->mode);
+  fdf::Arena fdf_arena(0u);
+
+  fidl::Arena fidl_arena;
+  auto builder =
+      fuchsia_wlan_phyimpl::wire::WlanPhyImplSetBtCoexistenceModeRequest::Builder(fidl_arena);
+  switch (request->mode) {
+    case ::fuchsia_wlan_internal::wire::BtCoexistenceMode::kModeAuto:
+      builder.mode(fuchsia_wlan_phyimpl::wire::BtCoexistenceMode::kModeAuto);
+      break;
+    case ::fuchsia_wlan_internal::wire::BtCoexistenceMode::kModeOff:
+      builder.mode(fuchsia_wlan_phyimpl::wire::BtCoexistenceMode::kModeOff);
+      break;
+    default:
+      lwarn("Unknown BtCoexistenceMode: %d, defaulting to kModeAuto", request->mode);
+      builder.mode(fuchsia_wlan_phyimpl::wire::BtCoexistenceMode::kModeAuto);
+      break;
+  }
+
+  client_.buffer(fdf_arena)
+      ->SetBtCoexistenceMode(builder.Build())
+      .ThenExactlyOnce(
+          [completer = completer.ToAsync()](
+              fdf::WireUnownedResult<fuchsia_wlan_phyimpl::WlanPhyImpl::SetBtCoexistenceMode>&
+                  result) mutable {
+            if (!result.ok()) {
+              lerror("SetBtCoexistenceMode failed with FIDL error %s", result.status_string());
+              completer.ReplyError(result.status());
+              return;
+            }
+            if (result->is_error()) {
+              lerror("SetPowerSaveMode failed with error %s",
+                     zx_status_get_string(result->error_value()));
+              completer.ReplyError(result->error_value());
+              return;
+            }
+
+            completer.ReplySuccess();
+          });
+}
+
 }  // namespace wlanphy
 FUCHSIA_DRIVER_EXPORT(::wlanphy::Device);

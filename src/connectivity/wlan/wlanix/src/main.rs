@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::security::wep::WepKeys;
 use crate::security::Credential;
-use anyhow::{bail, format_err, Context, Error};
+use crate::security::wep::WepKeys;
+use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
@@ -24,8 +24,9 @@ use wlan_common::channel::{Cbw, Channel};
 use wlan_telemetry::{self, TelemetryEvent, TelemetrySender};
 use {
     fidl_fuchsia_wlan_device_service as fidl_device_service,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-    fidl_fuchsia_wlan_wlanix as fidl_wlanix, fuchsia_async as fasync,
+    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
+    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
+    fuchsia_async as fasync,
 };
 
 mod bss_scorer;
@@ -1075,6 +1076,39 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager>(
             let result = result.as_ref().map_err(|status| *status);
             responder.send(result).context("send GetMacAddress response")?;
         }
+        fidl_wlanix::SupplicantStaIfaceRequest::SetBtCoexistenceMode { payload, responder } => {
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::SetBtCoexistenceMode",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
+            let result = match payload.mode {
+                Some(mode) => {
+                    use fidl_wlanix::BtCoexistenceMode as BtCoexMode;
+                    let internal_mode = match mode {
+                        BtCoexMode::Enabled => fidl_internal::BtCoexistenceMode::ModeAuto,
+                        BtCoexMode::Disabled => fidl_internal::BtCoexistenceMode::ModeOff,
+                        BtCoexMode::Sense => fidl_internal::BtCoexistenceMode::ModeAuto,
+                        _ => {
+                            warn!(
+                                "Unrecognized BtCoexistenceMode: {:?}, defaulting to Enabled",
+                                mode
+                            );
+                            fidl_internal::BtCoexistenceMode::ModeAuto
+                        }
+                    };
+                    iface.set_bt_coexistence_mode(internal_mode).await
+                }
+                None => {
+                    error!("Got SetBtCoexistenceMode without a payload");
+                    Err(fidl_wlanix::WlanixError::InvalidArgs)
+                }
+            };
+            if let Err(e) = responder.send(result) {
+                warn!("Failed to send SetBtCoexistenceMode response: {}", e);
+            }
+        }
         fidl_wlanix::SupplicantStaIfaceRequest::SetPowerSave { payload, responder } => {
             let (iface, _) = get_iface_and_log(
                 "fidl_wlanix::SupplicantStaIfaceRequest::SetPowerSave",
@@ -1320,7 +1354,7 @@ fn get_supported_frequencies() -> Vec<Vec<Nl80211FrequencyAttr>> {
 
 trait MessageResponder {
     fn send(self, result: Result<Vec<fidl_wlanix::Nl80211Message>, i32>)
-        -> Result<(), fidl::Error>;
+    -> Result<(), fidl::Error>;
 }
 
 impl MessageResponder for Nl80211MessageV2Responder {
@@ -1920,14 +1954,14 @@ mod tests {
     use super::*;
     use anyhow::format_err;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_wlan_wlanix::Nl80211Message;
+    use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
-    use futures::Future;
     use ieee80211::Ssid;
-    use ifaces::test_utils::{ClientIfaceCall, TestIfaceManager, FAKE_IFACE_RESPONSE};
-    use std::pin::{pin, Pin};
+    use ifaces::test_utils::{ClientIfaceCall, FAKE_IFACE_RESPONSE, TestIfaceManager};
+    use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
     use {
@@ -2720,6 +2754,36 @@ mod tests {
             test_helper.exec.run_until_stalled(&mut get_mac_address_fut),
             Poll::Ready(Ok(Ok(response))) => response);
         assert_eq!(response.mac_addr.unwrap(), [13u8, 37, 13, 37, 13, 37]);
+    }
+
+    #[test_case(
+        fidl_wlanix::BtCoexistenceMode::Enabled,
+        fidl_internal::BtCoexistenceMode::ModeAuto
+    )]
+    #[test_case(
+        fidl_wlanix::BtCoexistenceMode::Disabled,
+        fidl_internal::BtCoexistenceMode::ModeOff
+    )]
+    #[test_case(fidl_wlanix::BtCoexistenceMode::Sense, fidl_internal::BtCoexistenceMode::ModeAuto)]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_supplicant_sta_iface_set_bt_coexistence_mode(
+        mocked_mode: fidl_wlanix::BtCoexistenceMode,
+        desired_mode: fidl_internal::BtCoexistenceMode,
+    ) {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+        let mut set_bt_coexistence_mode_fut = test_helper
+            .supplicant_sta_iface_proxy
+            .set_bt_coexistence_mode(&fidl_wlanix::SupplicantStaIfaceSetBtCoexistenceModeRequest {
+                mode: Some(mocked_mode),
+                ..Default::default()
+            });
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut set_bt_coexistence_mode_fut),
+            Poll::Pending
+        );
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::SetBtCoexistenceMode { mode } => assert_eq!(*mode, desired_mode));
     }
 
     #[fuchsia::test]
@@ -3668,10 +3732,12 @@ mod tests {
         assert_eq!(message.payload.cmd, Nl80211Cmd::NewInterface);
         assert!(message.payload.attrs.iter().any(|attr| *attr
             == Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())));
-        assert!(message
-            .payload
-            .attrs
-            .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr)));
+        assert!(
+            message
+                .payload
+                .attrs
+                .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr))
+        );
         assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
     }
 

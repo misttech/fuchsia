@@ -6,6 +6,7 @@ library fuchsia.wlan.device;
 
 using fuchsia.wlan.common;
 using fuchsia.wlan.ieee80211 as ieee80211;
+using fuchsia.wlan.internal;
 using zx;
 
 /// IEEE Std 802.11-206 Section 9.4.1.4 Capability Information Field
@@ -101,6 +102,10 @@ closed protocol Phy {
     strict GetPowerState() -> (struct {
         power_on bool;
     }) error zx.Status;
+
+    strict SetBtCoexistenceMode(struct {
+        mode fuchsia.wlan.internal.BtCoexistenceMode;
+    }) -> () error zx.Status;
 };
 
 // Temporary interface for bridging between the devhost-owned channel model and

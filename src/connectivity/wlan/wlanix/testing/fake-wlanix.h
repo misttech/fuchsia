@@ -48,6 +48,7 @@ enum class CommandTag {
   kSupplicantStaIfaceAddNetwork,
   kSupplicantStaIfaceDisconnect,
   kSupplicantStaIfaceGetMacAddress,
+  kSupplicantStaIfaceSetBtCoexistenceMode,
   kSupplicantStaIfaceSetPowerSave,
   kSupplicantStaIfaceSetSuspendModeEnabled,
   kSupplicantStaIfaceSetStaCountryCode,
@@ -145,6 +146,9 @@ class FakeWlanix : public fidl::WireServer<fuchsia_wlan_wlanix::Wlanix>,
                   AddNetworkCompleter::Sync& completer) override;
   void Disconnect(DisconnectCompleter::Sync& completer) override;
   void GetMacAddress(GetMacAddressCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(
+      fuchsia_wlan_wlanix::wire::SupplicantStaIfaceSetBtCoexistenceModeRequest* request,
+      SetBtCoexistenceModeCompleter::Sync& completer) override;
   void SetPowerSave(fuchsia_wlan_wlanix::wire::SupplicantStaIfaceSetPowerSaveRequest* request,
                     SetPowerSaveCompleter::Sync& completer) override;
   void SetSuspendModeEnabled(

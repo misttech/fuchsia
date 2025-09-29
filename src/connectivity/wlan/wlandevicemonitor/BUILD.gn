@@ -28,6 +28,7 @@ wlandevicemonitor_deps = [
   "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
   "//sdk/fidl/fuchsia.wlan.device:fuchsia.wlan.device_rust",
   "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+  "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
   "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
   "//sdk/rust/zx",
   "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext",

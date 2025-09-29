@@ -7,6 +7,11 @@ library fuchsia.wlan.wlanix;
 using fuchsia.wlan.ieee80211;
 using zx;
 
+type WlanixError = flexible enum {
+    INTERNAL_ERROR = 1;
+    INVALID_ARGS = 2;
+};
+
 /// Protocol used to proxy Wlanix requests from Starnix into Fuchsia.
 @discoverable
 open protocol Wlanix {
@@ -140,6 +145,12 @@ open protocol Supplicant {
     });
 };
 
+type BtCoexistenceMode = flexible enum {
+    ENABLED = 1;
+    DISABLED = 2;
+    SENSE = 3;
+};
+
 open protocol SupplicantStaIface {
     flexible RegisterCallback(resource table {
         1: callback client_end:SupplicantStaIfaceCallback;
@@ -151,6 +162,9 @@ open protocol SupplicantStaIface {
     flexible GetMacAddress() -> (table {
         1: mac_addr fuchsia.wlan.ieee80211.MacAddr;
     }) error zx.Status;
+    flexible SetBtCoexistenceMode(table {
+        1: mode BtCoexistenceMode;
+    }) -> () error WlanixError;
     flexible SetPowerSave(resource table {
         1: enable bool;
     }) -> ();
