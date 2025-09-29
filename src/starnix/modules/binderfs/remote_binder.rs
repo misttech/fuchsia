@@ -1525,24 +1525,33 @@ mod tests {
 
     #[::fuchsia::test]
     async fn container_power_controller() {
-        let (kernel, _init_task) = create_kernel_and_task();
+        spawn_kernel_and_run(move |_locked, current_task| {
+            let kernel = current_task.kernel().clone();
 
-        let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
-        let message_counter = zx::Counter::create();
-        let message_counter_clone =
-            message_counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup");
-        // Simulate the proxy incrementing the message counter.
-        message_counter.add(1).expect("Failed to add to counter");
+            let mut executor = fuchsia_async::LocalExecutor::new();
+            let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
+            let message_counter = zx::Counter::create();
+            let message_counter_clone = message_counter
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("Failed handle dup");
+            // Simulate the proxy incrementing the message counter.
+            message_counter.add(1).expect("Failed to add to counter");
 
-        let _server_task = fasync::Task::local(async move {
-            let result = RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(power_controller_server_end, message_counter_clone, kernel, "test").await;
-            assert_matches::assert_matches!(result, Ok(_));
+            let _server_task = fasync::Task::local(async move {
+                let result = RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(
+                    power_controller_server_end,
+                    message_counter_clone,
+                    kernel,
+                    "test",
+                ).await;
+                assert_matches::assert_matches!(result, Ok(_));
+            });
+
+            power_controller
+                .wake(fbinder::ContainerPowerControllerWakeRequest { ..Default::default() })
+                .unwrap();
+            executor.run_singlethreaded(wait_for_message(&message_counter));
         });
-
-        power_controller
-            .wake(fbinder::ContainerPowerControllerWakeRequest { ..Default::default() })
-            .unwrap();
-        wait_for_message(&message_counter).await;
     }
 
     #[test]
