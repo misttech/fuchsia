@@ -339,6 +339,32 @@ impl PackageBuilder {
         Ok(())
     }
 
+    /// Same as [add_file_as_blob], but deduplicates identical images at the same path.
+    ///
+    /// Deduplication is based on image contents, not the `file` source path.
+    pub fn add_file_as_blob_with_dedup(
+        &mut self,
+        at_path: impl AsRef<str>,
+        file: impl AsRef<str>,
+    ) -> Result<()> {
+        let at_path = at_path.as_ref();
+        let file = file.as_ref();
+
+        if let Some(existing_file) = self.blobs.get(at_path) {
+            let existing_contents =
+                std::fs::read(existing_file).context(format!("reading {}", existing_file))?;
+            let new_contents = std::fs::read(file).context(format!("reading {}", file))?;
+
+            // If the exact contents already exist, we're done. Otherwise continue on to the default
+            // behavior which may either error out or override the existing blob.
+            if existing_contents == new_contents {
+                return Ok(());
+            }
+        }
+
+        self.add_file_as_blob(at_path, file)
+    }
+
     /// Remove a file currently in the package as a blob
     ///
     /// Errors
@@ -1071,6 +1097,57 @@ mod tests {
         builder.overwrite_files(true);
         builder.add_file_as_blob("some/far/file", "some/src/file").unwrap();
         assert!(builder.add_file_as_blob("some/far/file", "some/src/file").is_ok());
+    }
+
+    /// Helper to wrap common boilerplate for testing [add_file_as_blob_with_dedup]:
+    ///
+    /// 1. Creates 2 temporary files containing the given contents
+    /// 2. Calls [add_file_as_blob] on the first file, which must succeed
+    /// 3. Calls [add_file_as_blob_with_dedup] on the second file, returning the result
+    fn add_blob_with_dedup(
+        builder: &mut PackageBuilder,
+        contents_1: &str,
+        contents_2: &str,
+    ) -> Result<()> {
+        // Write to real files since the contents need to be compared, not the paths.
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let file_1 = NamedTempFile::new_in(outdir).unwrap();
+        let file_2 = NamedTempFile::new_in(outdir).unwrap();
+        std::fs::write(&file_1, contents_1).unwrap();
+        std::fs::write(&file_2, contents_2).unwrap();
+        let path_1 = file_1.path().to_str().unwrap();
+        let path_2 = file_2.path().to_str().unwrap();
+
+        // The first blob should always succeed, return the second blob status.
+        builder.add_file_as_blob("path/to/blob", path_1).unwrap();
+        builder.add_file_as_blob_with_dedup("path/to/blob", path_2)
+    }
+
+    #[test]
+    fn test_builder_add_file_as_blob_dedup() {
+        let mut builder = PackageBuilder::new("some_pkg_name", FAKE_ABI_REVISION);
+
+        // Same contents: add should succeed with second blob deduplicated.
+        assert!(add_blob_with_dedup(&mut builder, "blob contents", "blob contents").is_ok());
+    }
+
+    #[test]
+    fn test_builder_add_file_as_blob_dedup_rejects_different_contents() {
+        let mut builder = PackageBuilder::new("some_pkg_name", FAKE_ABI_REVISION);
+
+        // Different contents: second blob add should fail.
+        assert!(add_blob_with_dedup(&mut builder, "blob contents", "other blob contents").is_err());
+    }
+
+    #[test]
+    fn test_builder_add_file_as_blob_dedup_respects_overwrite_flag() {
+        let mut builder = PackageBuilder::new("some_pkg_name", FAKE_ABI_REVISION);
+        builder.overwrite_files(true);
+
+        // Second addition should now succeed since we've set the overwrite flag.
+        assert!(add_blob_with_dedup(&mut builder, "blob contents", "other blob contents").is_ok());
     }
 
     #[test]

@@ -393,7 +393,10 @@ impl UpdatePackageBuilder {
             let mut firmware = BTreeMap::new();
 
             for FirmwareImage { source, destination, .. } in &firmware_images {
-                builder.package.add_file_as_blob(destination, source)?;
+                // Use `_with_dedup()` to ignore duplicates. A/B firmware images currently need to
+                // be added separately for each slot for flashing but want to be de-duped when
+                // building the package (b/434935097).
+                builder.package.add_file_as_blob_with_dedup(destination, source)?;
             }
 
             let (url, manifest) = builder.build()?;
