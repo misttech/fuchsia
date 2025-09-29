@@ -131,5 +131,12 @@
             instance_id: "2e76933b4eb7ff47b2fd4abbd7c1aa5ec0ada042d88aa880d819cc9461e31572",
             moniker: "/core/trace_manager",
         },
+
+        // trace_session_manager uses persistent storage to store a trace configuration file for
+        // use when starting tracing when rebooting.
+        {
+            instance_id: "edcc0879e88fe3360c11bfaaffc6a6ab7785e5561bd9cf2353f0da409b201d04",
+            moniker: "/core/trace_manager/trace_session_manager",
+        },
     ],
 }
