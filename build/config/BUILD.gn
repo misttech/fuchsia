@@ -51,18 +51,6 @@ config("language") {
     defines += [ "_LIBCPP_DISABLE_DEPRECATION_WARNINGS" ]
   }
 
-  if (current_os == "mac") {
-    # macOS needs this to not complain about C++17isms that older macOS
-    # system libc++ doesn't support.  But we use our own toolchain's static
-    # libc++ anyway.
-    cflags_cc += [ "-faligned-allocation" ]
-
-    # libc++ headers mark some symbols as unavailable on macOS by default
-    # because the system libc++ doesn't support them.  But we use our own
-    # toolchain's static libc++ anyway.
-    defines += [ "_LIBCPP_DISABLE_AVAILABILITY" ]
-  }
-
   # Pass the same C/C++ flags to the Objective-C/C++ compiler.
   cflags_objc = cflags_c
   cflags_objcc = cflags_cc
@@ -75,10 +63,7 @@ config("color_diagnostics") {
     asmflags = cflags
     ldflags = cflags
 
-    # The macOS linker does not support `--color-diagnostics`.
-    if (current_os != "mac") {
-      ldflags += [ "-Wl,--color-diagnostics" ]
-    }
+    ldflags += [ "-Wl,--color-diagnostics" ]
   }
 }
 
@@ -105,21 +90,18 @@ config("stack-size-section") {
       ldflags = cflags
     }
 
-    #TODO(https://fxbug.dev/434231527): remove the is_mac guard once rustc passes the flag to the linker itself.
-    if (!is_mac) {
-      if (is_fuchsia) {
-        rust_link_prefix = ""
-      } else {
-        rust_link_prefix = "-Wl,"
-      }
-
-      rustflags = [
-        "-Zemit-stack-sizes",
-
-        #TODO(https://fxbug.dev/434231527): remove the stack-size-section workaround once the rustc does this.
-        "-Clink-arg=${rust_link_prefix}--mllvm=--stack-size-section",
-      ]
+    if (is_fuchsia) {
+      rust_link_prefix = ""
+    } else {
+      rust_link_prefix = "-Wl,"
     }
+
+    rustflags = [
+      "-Zemit-stack-sizes",
+
+      #TODO(https://fxbug.dev/434231527): remove the stack-size-section workaround once the rustc does this.
+      "-Clink-arg=${rust_link_prefix}--mllvm=--stack-size-section",
+    ]
   }
 }
 
@@ -178,8 +160,6 @@ config("compiler") {
   } else {
     if (current_os == "linux") {
       configs += [ "//build/config/linux:compiler" ]
-    } else if (current_os == "mac") {
-      configs += [ "//build/config/mac:compiler" ]
     } else if (current_cpu == "wasm32" && current_os == "unknown") {
       configs += [ "//build/config/wasm:compiler" ]
     }
@@ -418,9 +398,7 @@ variant("linker_gc") {
 
   # These are the link-time flags to take advantage of the code generation
   # flags in config("linker_gc.compiler").
-  if (current_os == "mac") {
-    ldflags = [ "-Wl,-dead_strip" ]
-  } else if (current_os == "win") {
+  if (current_os == "win") {
     ldflags = [ "-Wl,/opt:ref" ]
   } else {
     ldflags = [ "-Wl,--gc-sections" ]
@@ -457,7 +435,7 @@ config("default_linker_gc") {
 config("linker_string_merging") {
   if (current_os == "win") {
     ldflags = [ "-Wl,/opt:lldtailmerge" ]
-  } else if (current_os != "mac") {
+  } else {
     ldflags = [ "-Wl,-O2" ]
   }
 }
@@ -1373,11 +1351,7 @@ config("symbol_visibility_hidden") {
 }
 
 config("symbol_no_undefined") {
-  if (current_os == "mac") {
-    ldflags = [ "-Wl,-undefined,error" ]
-  } else {
-    ldflags = [ "-Wl,--no-undefined" ]
-  }
+  ldflags = [ "-Wl,--no-undefined" ]
 }
 
 config("shared_library_config") {
@@ -1385,8 +1359,6 @@ config("shared_library_config") {
     configs = [ "//build/config/fuchsia:shared_library_config" ]
   } else if (current_os == "linux") {
     cflags = [ "-fPIC" ]
-  } else if (current_os == "mac") {
-    configs = [ "//build/config/mac:mac_dynamic_flags" ]
   }
 }
 
@@ -1395,20 +1367,11 @@ config("executable_config") {
 
   if (current_os == "fuchsia") {
     configs += [ "//build/config/fuchsia:executable_config" ]
-  } else if (current_os == "mac") {
-    configs += [
-      "//build/config/mac:mac_dynamic_flags",
-      "//build/config/mac:mac_executable_flags",
-    ]
   }
 }
 
 config("default_libs") {
   configs = []
-
-  if (current_os == "mac") {
-    configs += [ "//build/config/mac:default_libs" ]
-  }
 }
 
 config("werror") {
@@ -1427,10 +1390,7 @@ config("werror") {
 
     # New versions of C++ often include new deprecations, so treat them as
     # warnings by default.
-    if (experimental_cxx_version != false ||
-        # TODO(https://fxbug.dev/327227416): Remove after addressing
-        # Xcode-specific deprecation warnings.
-        is_mac) {
+    if (experimental_cxx_version != false) {
       cflags += [ "-Wno-error=deprecated-declarations" ]
     }
   }

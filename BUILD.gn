@@ -135,10 +135,6 @@ declare_args() {
   product_bundle_labels = []
 }
 
-if (host_os == "mac") {
-  import("//build/config/mac/mac_sdk.gni")
-}
-
 assert(
     current_toolchain == default_toolchain,
     "The root build file (//BUILD.gn) can only be processed in the `default_toolchain`.")

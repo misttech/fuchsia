@@ -57,7 +57,7 @@ if (target_os == "fuchsia") {
   assert(false, "Target OS not supported")
 }
 
-if (host_os == "linux" || host_os == "mac") {
+if (host_os == "linux") {
   host_toolchain = "//build/toolchain:host_${host_cpu}"
 } else {
   assert(false, "Host OS not supported")
@@ -462,9 +462,6 @@ if (zircon_toolchain == false) {
     ]
   }
 
-  if (is_mac) {
-    default_common_binary_configs += [ "//build/config/mac:compiler" ]
-  }
   if (is_linux) {
     default_common_binary_configs += [
       "//build/config/linux:compiler",
@@ -3131,9 +3128,7 @@ template("_fuchsia_shared_library") {
       output_name = _prefixless
     }
     if (!defined(output_extension)) {
-      if (current_os == "mac") {
-        output_extension = "dylib"
-      } else if (current_os == "win") {
+      if (current_os == "win") {
         output_extension = "dll"
       } else if (current_os == "unknown" && current_cpu == "wasm32") {
         output_extension = "wasm"
@@ -3221,7 +3216,7 @@ template("_fuchsia_shared_library") {
           os = current_os
           debug = rebase_path(link_output_file, root_build_dir)
           dist = rebased_output_file
-          if (current_os != "mac" && current_os != "win") {
+          if (current_os != "win") {
             elf_build_id = rebased_output_file + ".build-id.stamp"
           }
           if (output_breakpad_syms && current_os == "fuchsia") {
@@ -3238,7 +3233,7 @@ template("_fuchsia_shared_library") {
           cpu = current_cpu
           dest_path = "lib/${toolchain_variant.libprefix}$install_name"
           debug = rebase_path(link_output_file, root_build_dir)
-          if (current_os != "mac" && current_os != "win") {
+          if (current_os != "win") {
             elf_build_id_file = rebased_output_file + ".build-id.stamp"
           }
           if (output_breakpad_syms && current_os == "fuchsia") {
@@ -3741,9 +3736,7 @@ template("executable") {
           os = current_os
           debug = rebased_debug_file
           dist = rebased_output_file
-          if (current_os != "mac") {
-            elf_build_id = _rebased_elf_build_id_file
-          }
+          elf_build_id = _rebased_elf_build_id_file
           if (output_breakpad_syms && current_os == "fuchsia") {
             breakpad = rebase_path("${output_file}.sym", root_build_dir)
           }
@@ -3760,9 +3753,7 @@ template("executable") {
             dest_path = "bin/$output_name"
           }
           debug = rebased_debug_file
-          if (current_os != "mac") {
-            elf_build_id_file = _rebased_elf_build_id_file
-          }
+          elf_build_id_file = _rebased_elf_build_id_file
           if (output_breakpad_syms && current_os == "fuchsia") {
             breakpad = rebase_path("${output_file}.sym", root_build_dir)
           }
@@ -3912,9 +3903,7 @@ template("loadable_module") {
       output_name = target_name
     }
     if (!defined(output_extension)) {
-      if (current_os == "mac") {
-        output_extension = "dylib"
-      } else if (current_os == "win") {
+      if (current_os == "win") {
         output_extension = "dll"
       } else {
         output_extension = "so"
@@ -3968,7 +3957,7 @@ template("loadable_module") {
           os = current_os
           debug = rebased_link_output_file
           dist = rebased_output_file
-          if (current_os != "mac" && current_os != "win") {
+          if (current_os != "win") {
             elf_build_id =
                 rebase_path("${output_file}.build-id.stamp", root_build_dir)
           }
@@ -3988,7 +3977,7 @@ template("loadable_module") {
             dest_path = "lib/$output_file_name"
           }
           debug = rebased_link_output_file
-          if (current_os != "mac" && current_os != "win") {
+          if (current_os != "win") {
             elf_build_id_file = _rebased_elf_build_id_file
             rebase_path("${output_file}.build-id.stamp", root_build_dir)
           }
@@ -4294,9 +4283,6 @@ template("rust_proc_macro") {
       }
     }
     _output_extension = "so"
-    if (host_os == "mac") {
-      _output_extension = "dylib"
-    }
     _rlib_path = "$_searchdir_path/lib${invoker.output_name}.$_output_extension"
     _rmeta_path = "${_searchdir_path}/lib${invoker.output_name}.rmeta"
 

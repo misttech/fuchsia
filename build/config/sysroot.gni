@@ -22,9 +22,6 @@ if (current_os == target_os && target_sysroot != "") {
   } else {
     sysroot = "//prebuilt/third_party/sysroot/ubuntu20.04"
   }
-} else if (is_mac) {
-  import("//build/config/mac/mac_sdk.gni")
-  sysroot = mac_sdk_path
 } else if (is_win) {
   # Building C/C++ on Windows requires a complicated SDK setup
   # and cannot be simplified as a single sysroot directory. Leave
