@@ -13,7 +13,14 @@
 namespace display {
 
 CoordinatorProxy::CoordinatorProxy(
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator,
+    fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
+    async_dispatcher_t* dispatcher, inspect::Node inspect_node)
+    : CoordinatorProxy(fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>(
+                           std::move(coordinator), dispatcher),
+                       std::move(inspect_node)) {}
+
+CoordinatorProxy::CoordinatorProxy(
+    fidl::WireSharedClient<fuchsia_hardware_display::Coordinator> coordinator,
     inspect::Node inspect_node)
     : coordinator_(std::move(coordinator)), inspect_node_(std::move(inspect_node)) {
   FX_DCHECK(coordinator_);
@@ -42,7 +49,7 @@ zx::result<> CoordinatorProxy::ImportImage(types::Extent2 image_dimensions,
       .tiling_type = image_tiling_type,
   };
 
-  const auto import_image_result = coordinator_->sync()->ImportImage(
+  const auto import_image_result = coordinator_.sync()->ImportImage(
       image_metadata, buffer_collection_id, buffer_index, image_id.ToFidl());
   if (!import_image_result.ok()) {
     FX_LOGS(ERROR) << "ImportImage transport error: " << import_image_result.status_string();
@@ -63,7 +70,7 @@ void CoordinatorProxy::ReleaseImage(const ImageId& image_id) {
   FX_DCHECK(images_.erase(image_id)) << "Expected to find image_id=" << image_id.value();
   UpdateCurrentImageCount();
 
-  fidl::OneWayStatus result = coordinator_->sync()->ReleaseImage(image_id.ToFidl());
+  fidl::OneWayStatus result = coordinator_.sync()->ReleaseImage(image_id.ToFidl());
   if (!result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL ReleaseImage method: " << result.status_string();
   }
@@ -73,8 +80,7 @@ void CoordinatorProxy::ImportEvent(zx::event event, const EventId& event_id) {
   IncrementImportEventCallsSent();
   FX_DCHECK(!events_.contains(event_id)) << "Not expecting to find event_id=" << event_id.value();
 
-  fidl::OneWayStatus result =
-      coordinator_->sync()->ImportEvent(std::move(event), event_id.ToFidl());
+  fidl::OneWayStatus result = coordinator_.sync()->ImportEvent(std::move(event), event_id.ToFidl());
   if (!result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL ImportEvent method: " << result.status_string();
   }
@@ -103,7 +109,7 @@ void CoordinatorProxy::ReleaseEvent(const EventId& event_id) {
   FX_DCHECK(events_.erase(event_id)) << "Expected to find event_id=" << event_id.value();
   UpdateCurrentEventCount();
 
-  fidl::OneWayStatus result = coordinator_->sync()->ReleaseEvent(event_id.ToFidl());
+  fidl::OneWayStatus result = coordinator_.sync()->ReleaseEvent(event_id.ToFidl());
   if (!result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent method: " << result.status_string();
   }
@@ -113,7 +119,7 @@ LayerId CoordinatorProxy::CreateLayer() {
   IncrementApiCallsReceived();
   IncrementApiCallsSent();
 
-  const auto create_layer_result = coordinator_->sync()->CreateLayer();
+  const auto create_layer_result = coordinator_.sync()->CreateLayer();
 
   if (!create_layer_result.ok()) {
     FX_LOGS(ERROR) << "CreateLayer transport error: " << create_layer_result.status_string();
@@ -142,7 +148,7 @@ void CoordinatorProxy::DestroyLayer(const LayerId& layer_id) {
   FX_DCHECK(std::ranges::find(applied_display_layers_, layer_id) == applied_display_layers_.end());
   FX_DCHECK(std::ranges::find(draft_display_layers_, layer_id) == draft_display_layers_.end());
 
-  const fidl::OneWayStatus status = coordinator_->sync()->DestroyLayer(layer_id.ToFidl());
+  const fidl::OneWayStatus status = coordinator_.sync()->DestroyLayer(layer_id.ToFidl());
 
   FX_DCHECK(status.ok()) << "Failed to call FIDL DestroyLayer method: " << status.status_string();
 }
@@ -314,7 +320,7 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
   // This matches the semantics implemented by the display coordinator, and is sensible: doing
   // otherwise would complicate both the user's mental model and the state tracking implementation.
   for (auto& [id, layer] : layers_) {
-    uint64_t api_calls_sent_for_layer = layer.SendDiffsToCoordinator(id, *coordinator_);
+    uint64_t api_calls_sent_for_layer = layer.SendDiffsToCoordinator(id, coordinator_);
     IncrementApiCallsSent(api_calls_sent_for_layer);
   }
 
@@ -326,7 +332,7 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
         reinterpret_cast<WireLayerId*>(draft_display_layers_.data()), draft_display_layers_.size());
 
     const fidl::OneWayStatus status =
-        coordinator_->sync()->SetDisplayLayers(display_id_.ToFidl(), wire_layer_ids);
+        coordinator_.sync()->SetDisplayLayers(display_id_.ToFidl(), wire_layer_ids);
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayLayers method: "
                            << status.status_string();
@@ -335,7 +341,7 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
     IncrementApiCallsSent();
 
     const fidl::OneWayStatus status =
-        coordinator_->sync()->SetDisplayMode(display_id_.ToFidl(), draft_display_mode_.ToWire());
+        coordinator_.sync()->SetDisplayMode(display_id_.ToFidl(), draft_display_mode_.ToWire());
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayMode method: "
                            << status.status_string();
@@ -346,7 +352,7 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
       draft_color_conversion_postoffsets_ != applied_color_conversion_postoffsets_) {
     IncrementApiCallsSent();
 
-    const fidl::OneWayStatus status = coordinator_->sync()->SetDisplayColorConversion(
+    const fidl::OneWayStatus status = coordinator_.sync()->SetDisplayColorConversion(
         display_id_.ToFidl(),
         utils::ReinterpretStdArrayAsFidlArray(draft_color_conversion_preoffsets_),
         utils::ReinterpretStdArrayAsFidlArray(draft_color_conversion_coefficients_),
@@ -379,7 +385,7 @@ void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
   IncrementApplyConfigCallsSent();
 
   fidl::Arena arena;
-  const fidl::OneWayStatus result = coordinator_->sync()->ApplyConfig3(
+  const fidl::OneWayStatus result = coordinator_.sync()->ApplyConfig3(
       fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
           .stamp(config_stamp)
           .Build());
@@ -389,7 +395,7 @@ void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
 void CoordinatorProxy::FidlDiscardConfig() {
   TRACE_DURATION("gfx", "display::CoordinatorProxy::FidlDiscardConfig");
 
-  const fidl::OneWayStatus result = coordinator_->sync()->DiscardConfig();
+  const fidl::OneWayStatus result = coordinator_.sync()->DiscardConfig();
   FX_DCHECK(result.ok()) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
 }
 
@@ -398,7 +404,7 @@ WireConfigResult CoordinatorProxy::FidlCheckConfig() {
 
   IncrementCheckConfigCallsSent();
 
-  const auto status = coordinator_->sync()->CheckConfig();
+  const auto status = coordinator_.sync()->CheckConfig();
   FX_DCHECK(status.ok()) << "Failed to call FIDL CheckConfig method: " << status.status_string();
 
   return status->res;

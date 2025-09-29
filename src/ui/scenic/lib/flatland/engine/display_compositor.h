@@ -18,6 +18,7 @@
 
 #include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
+#include "src/ui/scenic/lib/display/coordinator_proxy.h"
 #include "src/ui/scenic/lib/display/display.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/engine/color_conversion_state_machine.h"
@@ -85,8 +86,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // mechanisms, as other display-coordinator clients could be accessing the same functions and/or
   // state at the same time as the DisplayCompositor without making use of locks.
   DisplayCompositor(async_dispatcher_t* main_dispatcher,
-                    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-                        display_coordinator,
+                    std::shared_ptr<display::CoordinatorProxy> coordinator_proxy,
                     const std::shared_ptr<Renderer>& renderer,
                     fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
                     const DisplayCompositorConfig& config);
@@ -289,8 +289,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   mutable std::mutex lock_;
 
   // References the coordinator to keep it alive. Don't use; instead use `display_coordinator_`.
-  const std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-      display_coordinator_shared_ptr_ FXL_GUARDED_BY(lock_);
+  std::shared_ptr<display::CoordinatorProxy> display_coordinator_shared_ptr_ FXL_GUARDED_BY(lock_);
 
   // Reference to the `display_coordinator_shared_ptr_`.
   fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator_

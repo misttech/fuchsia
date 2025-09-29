@@ -90,6 +90,11 @@ class DisplayTest : public gtest::RealLoopFixture {
     gtest::RealLoopFixture::TearDown();
   }
 
+  fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& raw_display_coordinator() {
+    FX_CHECK(display_manager_->coordinator_proxy());
+    return display_manager_->coordinator_proxy()->raw();
+  }
+
   display::WireLayerId InitializeDisplayLayer(
       const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
       display::Display* display) {
@@ -149,9 +154,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   const uint64_t kHeight = 16;
 
   // Grab the display coordinator.
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-      display_coordinator = display_manager_->default_display_coordinator();
-  EXPECT_TRUE(display_coordinator);
+  auto& display_coordinator = raw_display_coordinator();
 
   // Create the VK renderer.
   auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
@@ -196,13 +199,13 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   fuchsia_hardware_display_types::wire::ImageBufferUsage image_buffer_usage = {
       .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
   };
-  bool res = display::ImportBufferCollection(collection_id, *display_coordinator,
+  bool res = display::ImportBufferCollection(collection_id, display_coordinator,
                                              std::move(natural_token), image_buffer_usage);
   ASSERT_TRUE(res);
-  auto release_buffer_collection = fit::defer([display_coordinator, display_collection_id] {
+  auto release_buffer_collection = fit::defer([&display_coordinator, display_collection_id] {
     // Release the buffer collection.
     const fidl::OneWayStatus release_buffer_collection_result =
-        display_coordinator->sync()->ReleaseBufferCollection(display_collection_id);
+        display_coordinator.sync()->ReleaseBufferCollection(display_collection_id);
     EXPECT_TRUE(release_buffer_collection_result.ok())
         << "Failed to call FIDL ReleaseBufferCollection: "
         << release_buffer_collection_result.status_string();
@@ -253,7 +256,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   // Try to import the image into the display coordinator API and make sure it succeeds.
   allocation::GlobalImageId display_image_id = allocation::GenerateUniqueImageId();
 
-  const auto import_image_result = display_coordinator->sync()->ImportImage(
+  const auto import_image_result = display_coordinator.sync()->ImportImage(
       image_metadata, display_collection_id, 0, display_image_id.ToFidl());
   ASSERT_TRUE(import_image_result.ok())
       << "Failed to call FIDL ImportImage: " << import_image_result.status_string();
@@ -271,14 +274,12 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 // cases being covered by this test.
 VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   // Grab the display coordinator.
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-      display_coordinator = display_manager_->default_display_coordinator();
-  ASSERT_TRUE(display_coordinator);
+  auto& display_coordinator = raw_display_coordinator();
 
   auto display = display_manager_->default_display();
   ASSERT_TRUE(display);
 
-  display::WireLayerId layer_id = InitializeDisplayLayer(*display_coordinator, display);
+  display::WireLayerId layer_id = InitializeDisplayLayer(display_coordinator, display);
   ASSERT_NE(layer_id.value, fuchsia_hardware_display_types::kInvalidDispId);
 
   const uint32_t kWidth = display->width_in_px();
@@ -299,7 +300,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
 
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token(
       std::move(tokens.dup_token).Unbind().TakeChannel());
-  bool res = display::ImportBufferCollection(global_collection_id, *display_coordinator,
+  bool res = display::ImportBufferCollection(global_collection_id, display_coordinator,
                                              std::move(dup_token), image_buffer_usage);
   ASSERT_TRUE(res);
 
@@ -314,7 +315,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   allocation::GlobalImageId image_ids[kNumVmos];
   for (uint32_t i = 0; i < kNumVmos; i++) {
     image_ids[i] = allocation::GenerateUniqueImageId();
-    const auto import_image_result = display_coordinator->sync()->ImportImage(
+    const auto import_image_result = display_coordinator.sync()->ImportImage(
         image_metadata, display_collection_id, i, image_ids[i].ToFidl());
     ASSERT_TRUE(import_image_result.ok())
         << "Failed to call FIDL ImportImage: " << import_image_result.status_string();
@@ -326,7 +327,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
 
   // It is safe to release buffer collection because we are not going to import any more images.
   const fidl::OneWayStatus release_result =
-      display_coordinator->sync()->ReleaseBufferCollection(display_collection_id);
+      display_coordinator.sync()->ReleaseBufferCollection(display_collection_id);
   EXPECT_TRUE(release_result.ok())
       << "Failed to call FIDL ReleaseBufferCollection: " << release_result.status_string();
 
@@ -337,12 +338,12 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
 
   // Import the above events to the display.
   display::EventId display_wait_event_id =
-      display::ImportEvent(*display_coordinator, display_wait_fence);
+      display::ImportEvent(display_coordinator, display_wait_fence);
   EXPECT_NE(display_wait_event_id, display::kInvalidEventId);
 
   // Set the layer image and apply the config.
   const fidl::OneWayStatus set_layer_primary_config_result =
-      display_coordinator->sync()->SetLayerPrimaryConfig(layer_id, image_metadata);
+      display_coordinator.sync()->SetLayerPrimaryConfig(layer_id, image_metadata);
   EXPECT_TRUE(set_layer_primary_config_result.ok())
       << "Failed to call FIDL SetLayerPrimaryConfig: "
       << set_layer_primary_config_result.status_string();
@@ -351,12 +352,12 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
       .value = fuchsia_hardware_display_types::kInvalidDispId,
   };
   const fidl::OneWayStatus set_layer_image_result =
-      display_coordinator->sync()->SetLayerImage2(layer_id, image_ids[0].ToFidl(), kInvalidEventId);
+      display_coordinator.sync()->SetLayerImage2(layer_id, image_ids[0].ToFidl(), kInvalidEventId);
   EXPECT_TRUE(set_layer_image_result.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result.status_string();
 
   // Apply the config.
-  const auto check_config_result = display_coordinator->sync()->CheckConfig();
+  const auto check_config_result = display_coordinator.sync()->CheckConfig();
   EXPECT_TRUE(check_config_result.ok())
       << "Failed to call FIDL CheckConfig: " << check_config_result.status_string();
 
@@ -366,7 +367,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
     auto request = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
                        .stamp(kFirstConfigStamp)
                        .Build();
-    const fidl::OneWayStatus result = display_coordinator->sync()->ApplyConfig3(request);
+    const fidl::OneWayStatus result = display_coordinator.sync()->ApplyConfig3(request);
     EXPECT_TRUE(result.ok()) << "Failed to call FIDL ApplyConfig3: " << result.status_string();
   }
 
@@ -378,13 +379,13 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
 
   // Set the layer image again, to the second image, so that our first call to SetLayerImage2()
   // above will signal.
-  const fidl::OneWayStatus set_layer_image_result2 = display_coordinator->sync()->SetLayerImage2(
+  const fidl::OneWayStatus set_layer_image_result2 = display_coordinator.sync()->SetLayerImage2(
       layer_id, image_ids[1].ToFidl(), display_wait_event_id.ToFidl());
   EXPECT_TRUE(set_layer_image_result2.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result2.status_string();
 
   // Apply the config to display the second image.
-  const auto check_config_result2 = display_coordinator->sync()->CheckConfig();
+  const auto check_config_result2 = display_coordinator.sync()->CheckConfig();
   ASSERT_TRUE(check_config_result2.ok())
       << "Failed to call FIDL CheckConfig: " << check_config_result2.status_string();
   EXPECT_EQ(check_config_result2->res, fuchsia_hardware_display_types::ConfigResult::kOk);
@@ -395,7 +396,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
     auto request = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
                        .stamp(kSecondConfigStamp)
                        .Build();
-    const fidl::OneWayStatus result = (*display_coordinator)->ApplyConfig3(request);
+    const fidl::OneWayStatus result = display_coordinator->ApplyConfig3(request);
     EXPECT_TRUE(result.ok()) << "Failed to call FIDL ApplyConfig3: " << result.status_string();
   }
 

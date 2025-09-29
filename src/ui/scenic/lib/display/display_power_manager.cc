@@ -49,12 +49,12 @@ void DisplayPowerManager::SetDisplayPower(bool power_on,
   // the DisplayPowerManager will only control power of the default display.
   // Once Scenic and DisplayManager supports multiple displays, this needs to
   // be updated to control power of all available displays.
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator =
-      display_manager_.default_display_coordinator();
-  FX_DCHECK(coordinator);
+  auto& coordinator_proxy = display_manager_.coordinator_proxy();
+  FX_DCHECK(coordinator_proxy);
   display::DisplayId id = display_manager_.default_display()->display_id();
 
-  auto set_display_power_result = coordinator->sync()->SetDisplayPower(id.ToFidl(), power_on);
+  auto set_display_power_result =
+      coordinator_proxy->raw().sync()->SetDisplayPower(id.ToFidl(), power_on);
   if (!set_display_power_result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL SetDisplayPower(): "
                    << set_display_power_result.status_string();

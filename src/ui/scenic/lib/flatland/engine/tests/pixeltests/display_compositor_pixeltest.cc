@@ -332,9 +332,6 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
         }));
 
     RunLoopUntil([this] { return display_manager_->default_display() != nullptr; });
-
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-        display_coordinator = display_manager_->default_display_coordinator();
   }
 
   void TearDown() override {
@@ -348,6 +345,11 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
                           allocation::GlobalBufferCollectionId id) {
     std::scoped_lock lock(display_compositor->lock_);
     return display_compositor->buffer_collection_supports_display_[id];
+  }
+
+  fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& raw_display_coordinator() {
+    FX_CHECK(display_manager_->coordinator_proxy());
+    return display_manager_->coordinator_proxy()->raw();
   }
 
  protected:
@@ -392,15 +394,12 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
   // these processes to have been completed.
   void WaitOnVSync() {
     auto display = display_manager_->default_display();
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-        display_coordinator = display_manager_->default_display_coordinator();
-
-    ASSERT_TRUE(display_coordinator != nullptr);
+    auto& display_coordinator = raw_display_coordinator();
 
     // Get the latest applied config stamp. This will be used to compare against the config
     // stamp in the OnSync callback function used by the display. If the two stamps match,
     // then we know that the vsync has completed and it is safe to do readbacks.
-    const auto config_stamp_result = display_coordinator->sync()->GetLatestAppliedConfigStamp();
+    const auto config_stamp_result = display_coordinator.sync()->GetLatestAppliedConfigStamp();
     ASSERT_TRUE(config_stamp_result.ok())
         << "Failed to call FIDL GetLatestAppliedConfigStamp method: "
         << config_stamp_result.status_string();
@@ -444,13 +443,12 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
       allocation::GlobalBufferCollectionId collection_id, fuchsia::images2::PixelFormat pixel_type,
       fuchsia::sysmem2::BufferCollectionInfo* collection_info, allocation::GlobalImageId image_id) {
     auto display = display_manager_->default_display();
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-        display_coordinator = display_manager_->default_display_coordinator();
+    auto& display_coordinator = raw_display_coordinator();
     EXPECT_TRUE(display);
     EXPECT_TRUE(display_coordinator);
 
     // This should only be running on devices with capture support.
-    bool capture_supported = display::IsCaptureSupported(*display_coordinator);
+    bool capture_supported = display::IsCaptureSupported(display_coordinator);
     if (!capture_supported) {
       FX_LOGS(FATAL) << "Capture is not supported on this device. Test skipped.";
       return fpromise::error(ZX_ERR_NOT_SUPPORTED);
@@ -464,7 +462,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token(
         std::move(tokens.dup_token).Unbind().TakeChannel());
-    auto result = display::ImportBufferCollection(collection_id, *display_coordinator,
+    auto result = display::ImportBufferCollection(collection_id, display_coordinator,
                                                   std::move(dup_token), image_buffer_usage);
     EXPECT_TRUE(result);
     fuchsia::sysmem2::BufferCollectionSyncPtr collection;
@@ -533,7 +531,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
         .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeCapture,
     };
 
-    zx_status_t import_status = display::ImportImageForCapture(*display_coordinator, image_metadata,
+    zx_status_t import_status = display::ImportImageForCapture(display_coordinator, image_metadata,
                                                                collection_id, 0, image_id);
     EXPECT_EQ(import_status, ZX_OK);
     if (import_status != ZX_OK) {
@@ -579,12 +577,10 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     const display::WireBufferCollectionId display_collection_id =
         display::ToDisplayFidlBufferCollectionId(collection_id);
     auto display = display_manager_->default_display();
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-        display_coordinator = display_manager_->default_display_coordinator();
-    ASSERT_TRUE(display_coordinator != nullptr);
+    auto& display_coordinator = raw_display_coordinator();
 
     const fidl::OneWayStatus result =
-        display_coordinator->sync()->ReleaseBufferCollection(display_collection_id);
+        display_coordinator.sync()->ReleaseBufferCollection(display_collection_id);
     ASSERT_TRUE(result.ok()) << "Failed to call FIDL ReleaseBufferCollection: "
                              << result.status_string();
   }
@@ -607,16 +603,15 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
 
     auto display = display_manager_->default_display();
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-        display_coordinator = display_manager_->default_display_coordinator();
+    auto& display_coordinator = raw_display_coordinator();
 
     zx::event capture_signal_fence;
     auto status = zx::event::create(0, &capture_signal_fence);
     EXPECT_EQ(status, ZX_OK);
 
     display::EventId capture_signal_fence_id =
-        display::ImportEvent(*display_coordinator, capture_signal_fence);
-    const auto start_capture_result = display_coordinator->sync()->StartCapture(
+        display::ImportEvent(display_coordinator, capture_signal_fence);
+    const auto start_capture_result = display_coordinator.sync()->StartCapture(
         capture_signal_fence_id.ToFidl(), fidl_capture_image_id);
     ASSERT_TRUE(start_capture_result.ok())
         << "Failed to call FIDL StartCapture: " << start_capture_result.status_string();
@@ -638,7 +633,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // Cleanup the capture.
     if (release_capture_image) {
       const fidl::OneWayStatus result =
-          display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
+          display_coordinator.sync()->ReleaseImage(fidl_capture_image_id);
       EXPECT_TRUE(result.ok()) << "Failed to call FIDL ReleaseImage: " << result.status_string();
     }
   }
@@ -814,7 +809,7 @@ Vulkan Renderer, try creating a DisplayCompositor with the NullRenderer
 
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
@@ -822,7 +817,7 @@ Lastly, if you are specifically testing the Vulkan Renderer and do not need Disp
 creating a DisplayCompositor with enable_direct_to_display=false:
 
    auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{.enable_direct_to_display = false});
 
@@ -843,12 +838,12 @@ class DisplayCompositorParameterizedPixelTest
 VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -980,7 +975,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   // Manually clean up the capture since we didn't in CaptureDisplayOutput.
   const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
   const fidl::OneWayStatus release_result =
-      display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
+      display_coordinator.sync()->ReleaseImage(fidl_capture_image_id);
   EXPECT_TRUE(release_result.ok())
       << "Failed to call FIDL ReleaseImage: " << release_result.status_string();
 }
@@ -993,12 +988,12 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
 VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1104,12 +1099,12 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
 VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangleTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1206,12 +1201,12 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
 VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1343,7 +1338,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   }
 
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1382,7 +1377,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   // Use the VK renderer here so we can make use of software rendering.
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
@@ -1530,7 +1525,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto blend_mode_param = GetParam();
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1570,7 +1565,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   // Use the VK renderer here so we can make use of software rendering.
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{
           // Force GPU composition.
@@ -1744,12 +1739,12 @@ INSTANTIATE_TEST_SUITE_P(PixelFormats, DisplayCompositorParameterizedTest,
 VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   // Use the VK renderer here so we can make use of software rendering.
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{.enable_direct_to_display = false});
 
@@ -1905,7 +1900,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
         // Manually clean up the capture since we didn't in CaptureDisplayOutput.
         const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
         const fidl::OneWayStatus result =
-            display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
+            display_coordinator.sync()->ReleaseImage(fidl_capture_image_id);
         EXPECT_TRUE(result.ok()) << "Failed to call FIDL ReleaseImage: " << result.status_string();
 
         // |vmo_host| has BGRA sequence in pixel values.
@@ -2004,12 +1999,12 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
 VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
+  auto& display_coordinator = raw_display_coordinator();
 
   // Use the VK renderer here so we can make use of software rendering.
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{.enable_direct_to_display = false});
 
@@ -2193,16 +2188,11 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
 
   auto display = display_manager_->default_display();
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-      display_coordinator = display_manager_->default_display_coordinator();
-
-  ASSERT_TRUE(display_coordinator != nullptr);
-
   const auto kPixelFormat = fuchsia::images2::PixelFormat::B8G8R8A8;
 
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_coordinator, renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
@@ -2401,7 +2391,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   // Cleanup.
   display::WireImageId image_id = capture_image_id.ToFidl();
   const fidl::OneWayStatus release_image_result =
-      display_coordinator->sync()->ReleaseImage(image_id);
+      raw_display_coordinator().sync()->ReleaseImage(image_id);
   EXPECT_TRUE(release_image_result.ok())
       << "Failed to call FIDL ReleaseImage: " << release_image_result.status_string();
 }

@@ -300,7 +300,7 @@ TEST(DisplayManager, ICanHazDisplayMode) {
 
   DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
                                  /*display_mode_index_override=*/std::make_optional(1),
-                                 DisplayModeConstraints{},
+                                 DisplayModeConstraints{}, inspect::Node(),
                                  /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
@@ -364,7 +364,7 @@ TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
 
   DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
                                  /*display_mode_index_override=*/std::nullopt,
-                                 kDisplayModeConstraints,
+                                 kDisplayModeConstraints, inspect::Node(),
                                  /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
@@ -428,7 +428,7 @@ TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
 
   DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
                                  /*display_mode_index_override=*/std::nullopt,
-                                 kDisplayModeConstraints,
+                                 kDisplayModeConstraints, inspect::Node(),
                                  /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
@@ -492,7 +492,7 @@ TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
 
   DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
                                  /*display_mode_index_override=*/std::nullopt,
-                                 kDisplayModeConstraints,
+                                 kDisplayModeConstraints, inspect::Node(),
                                  /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
@@ -561,7 +561,7 @@ TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
 
   DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
                                  /*display_mode_index_override=*/std::make_optional(2),
-                                 kDisplayModeConstraints,
+                                 kDisplayModeConstraints, inspect::Node(),
                                  /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));

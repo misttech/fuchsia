@@ -185,12 +185,10 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
   // see set in a real production setting are reproduced here.
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
-      dispatcher(), display_manager_->default_display_coordinator(), renderer,
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
-
   auto display = display_manager_->default_display();
-  auto display_coordinator = display_manager_->default_display_coordinator();
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
 

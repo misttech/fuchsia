@@ -62,16 +62,12 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
     display_coordinator_loop_.StartThread("display-coordinator-loop");
     completion.Wait();
 
-    raw_coordinator_ =
-        std::make_shared<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>(
-            std::move(coordinator_client), dispatcher());
-
-    coordinator_proxy_ = std::make_shared<CoordinatorProxy>(raw_coordinator_);
+    coordinator_proxy_ =
+        std::make_unique<CoordinatorProxy>(std::move(coordinator_client), dispatcher());
   }
 
   void TearDown() override {
     coordinator_proxy_.reset();
-    raw_coordinator_.reset();
 
     // This is to make sure that the display coordinator loop has finished
     // handling all its pending tasks.
@@ -107,7 +103,7 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
   // receive the response from this, we know that the coordinator has also received/processed any
   // previously-sent messages.
   void PingMockDisplayCoordinator() {
-    auto _ = raw_coordinator_->sync()->GetLatestAppliedConfigStamp();
+    auto _ = coordinator_proxy_->raw().sync()->GetLatestAppliedConfigStamp();
   }
 
  protected:
@@ -117,8 +113,7 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
   async::Loop display_coordinator_loop_{&kAsyncLoopConfigNeverAttachToThread};
 
   std::unique_ptr<MockDisplayCoordinator> mock_coordinator_;
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> raw_coordinator_;
-  std::shared_ptr<CoordinatorProxy> coordinator_proxy_;
+  std::unique_ptr<CoordinatorProxy> coordinator_proxy_;
 
   // Only for use on the main thread. Establish a new connection when on the MockDisplayCoordinator
   // thread.

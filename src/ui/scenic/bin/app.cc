@@ -293,6 +293,7 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
   // it becomes available.
   display_manager_.emplace(GetDisplayId(config_values_), GetDisplayMode(config_values_),
                            GetDisplayModeConstraints(config_values_),
+                           this->inspect_node_.CreateChild("DisplayManager"),
                            [this, completer = std::move(display_bridge.completer),
                             display_wait_log = std::move(display_wait_log)]() mutable {
                              completer.complete_ok(display_manager_->default_display_shared());
@@ -436,8 +437,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     TRACE_DURATION("gfx", "App::InitializeServices[flatland_display_compositor]");
 
     flatland_compositor_ = std::make_shared<flatland::DisplayCompositor>(
-        async_get_default_dispatcher(), display_manager_->default_display_coordinator(),
-        flatland_renderer, utils::CreateSysmemAllocatorSyncPtr("flatland::DisplayCompositor"),
+        async_get_default_dispatcher(), display_manager_->coordinator_proxy(), flatland_renderer,
+        utils::CreateSysmemAllocatorSyncPtr("flatland::DisplayCompositor"),
         flatland::DisplayCompositorConfig{
             .enable_direct_to_display = config_values_.display_composition(),
             .max_display_layers = kMaxDisplayLayers,

@@ -8,10 +8,12 @@
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <lib/fit/function.h>
+#include <lib/inspect/cpp/inspect.h>
 
 #include <optional>
 
 #include "src/lib/fxl/macros.h"
+#include "src/ui/scenic/lib/display/coordinator_proxy.h"
 #include "src/ui/scenic/lib/display/display.h"
 #include "src/ui/scenic/lib/display/display_coordinator_listener.h"
 #include "src/ui/scenic/lib/display/fidl_typedefs.h"
@@ -36,7 +38,7 @@ class DisplayManager {
   explicit DisplayManager(fit::closure display_available_cb);
   DisplayManager(std::optional<WireDisplayId> i_can_haz_display_id,
                  std::optional<size_t> display_mode_index_override,
-                 DisplayModeConstraints display_mode_constraints,
+                 DisplayModeConstraints display_mode_constraints, inspect::Node inspect_node,
                  fit::closure display_available_cb);
   ~DisplayManager() = default;
 
@@ -52,13 +54,10 @@ class DisplayManager {
   // Only use this during Scenic initialization to pass a reference to FrameScheduler.
   std::shared_ptr<Display> default_display_shared() const { return default_display_; }
 
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-  default_display_coordinator() {
-    return default_display_coordinator_;
-  }
+  const std::shared_ptr<CoordinatorProxy>& coordinator_proxy() const { return coordinator_proxy_; }
 
-  std::shared_ptr<display::DisplayCoordinatorListener> default_display_coordinator_listener() {
-    return default_display_coordinator_listener_;
+  std::shared_ptr<display::DisplayCoordinatorListener> display_coordinator_listener() {
+    return display_coordinator_listener_;
   }
 
   // For testing.
@@ -73,10 +72,9 @@ class DisplayManager {
   void OnVsync(WireDisplayId display_id, zx::time_monotonic timestamp,
                WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie);
 
-  // Must outlive `default_display_coordinator_`.
-  std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-      default_display_coordinator_;
-  std::shared_ptr<display::DisplayCoordinatorListener> default_display_coordinator_listener_;
+  std::shared_ptr<CoordinatorProxy> coordinator_proxy_;
+
+  std::shared_ptr<display::DisplayCoordinatorListener> display_coordinator_listener_;
 
   std::shared_ptr<Display> default_display_;
 
@@ -94,6 +92,8 @@ class DisplayManager {
   // A boolean indicating whether or not we have ownership of the display
   // coordinator (not just individual displays). The default is no.
   bool owns_display_coordinator_ = false;
+
+  inspect::Node inspect_node_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(DisplayManager);
 };

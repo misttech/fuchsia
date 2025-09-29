@@ -160,12 +160,11 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
     display_coordinator_loop_.StartThread("display-coordinator-loop");
     completion.Wait();
 
-    auto shared_display_coordinator =
-        std::make_shared<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>(
-            std::move(coordinator_client), dispatcher());
+    auto coordinator_proxy =
+        std::make_shared<display::CoordinatorProxy>(std::move(coordinator_client), dispatcher());
 
     display_compositor_ = std::make_shared<flatland::DisplayCompositor>(
-        dispatcher(), std::move(shared_display_coordinator), renderer_,
+        dispatcher(), std::move(coordinator_proxy), renderer_,
         utils::CreateSysmemAllocatorSyncPtr("display_compositor_unittest"),
         flatland::DisplayCompositorConfig{.max_display_layers = 2});
   }

@@ -229,14 +229,13 @@ std::optional<fuchsia::images2::PixelFormatModifier> DetermineDisplaySupportFor(
 
 }  // anonymous namespace
 
-DisplayCompositor::DisplayCompositor(
-    async_dispatcher_t* main_dispatcher,
-    std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
-        display_coordinator,
-    const std::shared_ptr<Renderer>& renderer, fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
-    const DisplayCompositorConfig& config)
-    : display_coordinator_shared_ptr_(std::move(display_coordinator)),
-      display_coordinator_(*display_coordinator_shared_ptr_),
+DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
+                                     std::shared_ptr<display::CoordinatorProxy> coordinator_proxy,
+                                     const std::shared_ptr<Renderer>& renderer,
+                                     fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+                                     const DisplayCompositorConfig& config)
+    : display_coordinator_shared_ptr_(std::move(coordinator_proxy)),
+      display_coordinator_(display_coordinator_shared_ptr_->raw()),
       renderer_(renderer),
       release_fence_manager_(main_dispatcher),
       sysmem_allocator_(std::move(sysmem_allocator)),

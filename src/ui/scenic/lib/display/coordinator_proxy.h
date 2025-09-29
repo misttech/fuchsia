@@ -43,8 +43,12 @@ namespace display {
 // Thread-safety: This class is thread-unsafe; concurrent access must be externally synchronized.
 class CoordinatorProxy {
  public:
+  explicit CoordinatorProxy(fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
+                            async_dispatcher_t* dispatcher,
+                            inspect::Node inspect_node = inspect::Node());
+
   explicit CoordinatorProxy(
-      std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator,
+      fidl::WireSharedClient<fuchsia_hardware_display::Coordinator> coordinator,
       inspect::Node inspect_node = inspect::Node());
 
   // Corresponds to `fuchsia.hardware.display.Coordinator/ImportImage()`.
@@ -153,8 +157,11 @@ class CoordinatorProxy {
   uint64_t check_config_calls_skipped() const { return check_config_calls_skipped_; }
   uint64_t check_config_calls_sent() const { return check_config_calls_sent_; }
 
-  fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& raw() { return *coordinator_; }
-  bool is_valid() const { return coordinator_->is_valid(); }
+  // TODO(https://fxbug.dev/447416966): Fix call sites to remove the need for this escape hatch, at
+  // least in production; maybe some test-only use cases will remain.
+  fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& raw() { return coordinator_; }
+
+  bool is_valid() const { return coordinator_.is_valid(); }
 
  private:
   // Returns layer after checking that it exists.
@@ -230,8 +237,7 @@ class CoordinatorProxy {
   // forever after; this should be asserted by using `CheckDisplayId()`.
   DisplayId display_id_ = kInvalidDisplayId;
 
-  // Must outlive `coordinator_`.
-  const std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator_;
+  fidl::WireSharedClient<fuchsia_hardware_display::Coordinator> coordinator_;
 
   std::unordered_map<LayerId, internal::Layer> layers_;
   std::unordered_set<ImageId> images_;

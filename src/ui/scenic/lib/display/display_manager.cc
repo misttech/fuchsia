@@ -42,28 +42,30 @@ bool DisplayModeConstraints::ModeSatisfiesConstraints(const WireDisplayMode& mod
 }
 
 DisplayManager::DisplayManager(fit::closure display_available_cb)
-    : DisplayManager(std::nullopt, std::nullopt, /*display_mode_constraints=*/{},
+    : DisplayManager(std::nullopt, std::nullopt, /*display_mode_constraints=*/{}, inspect::Node(),
                      std::move(display_available_cb)) {}
 
 DisplayManager::DisplayManager(std::optional<WireDisplayId> i_can_haz_display_id,
                                std::optional<size_t> display_mode_index_override,
                                DisplayModeConstraints display_mode_constraints,
-                               fit::closure display_available_cb)
+                               inspect::Node inspect_node, fit::closure display_available_cb)
     : i_can_haz_display_id_(i_can_haz_display_id),
       display_mode_index_override_(display_mode_index_override),
       display_mode_constraints_(std::move(display_mode_constraints)),
-      display_available_cb_(std::move(display_available_cb)) {}
+      display_available_cb_(std::move(display_available_cb)),
+      inspect_node_(std::move(inspect_node)) {}
 
 void DisplayManager::BindDefaultDisplayCoordinator(
     async_dispatcher_t* dispatcher,
     fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
     fidl::ServerEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener) {
-  FX_DCHECK(!default_display_coordinator_);
+  FX_DCHECK(!coordinator_proxy_);
   FX_DCHECK(coordinator.is_valid());
-  default_display_coordinator_ =
-      std::make_shared<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>(
-          std::move(coordinator), dispatcher);
-  default_display_coordinator_listener_ = std::make_shared<display::DisplayCoordinatorListener>(
+
+  coordinator_proxy_ = std::make_shared<CoordinatorProxy>(
+      std::move(coordinator), dispatcher, inspect_node_.CreateChild("Display Coordinator Proxy"));
+
+  display_coordinator_listener_ = std::make_shared<display::DisplayCoordinatorListener>(
       std::move(coordinator_listener), fit::bind_member<&DisplayManager::OnDisplaysChanged>(this),
       fit::bind_member<&DisplayManager::OnVsync>(this),
       fit::bind_member<&DisplayManager::OnClientOwnershipChange>(this));
@@ -108,9 +110,10 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
       }
 
       if (mode_index != 0) {
+        // TODO(https://fxbug.dev/402804098): `flatland::DisplayCompositor` now handles this, so
+        // this is redundant, right?  Verify and delete.
         [[maybe_unused]] fidl::OneWayStatus set_display_mode_result =
-            default_display_coordinator_->sync()->SetDisplayMode(display.id,
-                                                                 display.modes[mode_index]);
+            coordinator_proxy_->raw().sync()->SetDisplayMode(display.id, display.modes[mode_index]);
       }
 
       const WireDisplayMode& mode = display.modes[mode_index];
@@ -160,7 +163,7 @@ void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timest
                          << "  applied_config_stamp=" << applied_config_stamp.value
                          << "  cookie=" << cookie.value;
     [[maybe_unused]] fidl::OneWayStatus acknowledge_vsync_result =
-        default_display_coordinator_->sync()->AcknowledgeVsync(cookie.value);
+        coordinator_proxy_->raw().sync()->AcknowledgeVsync(cookie.value);
   } else {
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): received vsync display_id="
                          << display_id.value << "  timestamp=" << timestamp.get()
