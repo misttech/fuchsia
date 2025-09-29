@@ -7,8 +7,8 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/object.h>

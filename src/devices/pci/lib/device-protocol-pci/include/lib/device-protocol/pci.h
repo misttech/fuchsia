@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_PCI_LIB_DEVICE_PROTOCOL_PCI_INCLUDE_LIB_DEVICE_PROTOCOL_PCI_H_
 #define SRC_DEVICES_PCI_LIB_DEVICE_PROTOCOL_PCI_INCLUDE_LIB_DEVICE_PROTOCOL_PCI_H_
 
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <stdio.h>
 #include <zircon/syscalls.h>
 

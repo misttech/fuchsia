@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_PCI_LIB_DESIGNWARE_INCLUDE_DEV_PCI_DESIGNWARE_DW_PCIE_H_
 #define SRC_DEVICES_PCI_LIB_DESIGNWARE_INCLUDE_DEV_PCI_DESIGNWARE_DW_PCIE_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <stdint.h>
 #include <zircon/types.h>
 

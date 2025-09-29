@@ -12,8 +12,8 @@ zx_library("designware") {
   ]
   sources = [ "dw-pcie.cc" ]
   deps = [
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/lib/driver",
-    "//src/devices/lib/mmio",
     "//src/lib/ddk",
     "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",

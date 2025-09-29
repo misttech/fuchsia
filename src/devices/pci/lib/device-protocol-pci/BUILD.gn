@@ -13,7 +13,7 @@ zx_library("device-protocol-pci") {
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
 
     # <lib/device-protocol/pci.h> has #include <lib/mmio/mmio-buffer.h>
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
 
     # <lib/device-protocol/pci.h> has #include <ddktl/device.h>
     "//src/lib/ddktl",

@@ -4,7 +4,7 @@
 
 #include <fidl/fuchsia.hardware.pci/cpp/wire_types.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 namespace ddk {
 

@@ -6,8 +6,8 @@
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zx/vmo.h>
 #include <zircon/errors.h>
 

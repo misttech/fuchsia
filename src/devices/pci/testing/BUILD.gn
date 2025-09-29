@@ -36,7 +36,7 @@ test("pci-protocol-fake-test") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/devices/pci/testing:pci-protocol-fake",
     "//zircon/system/ulib/zxtest",
