@@ -51,6 +51,13 @@ fn get_valid_platform_mmap_flags() -> u32 {
     0
 }
 
+// Options for zx_system_barrier
+// source: zircon/system/public/zircon/syscalls-next.h
+// TODO(https://fxbug.dev/297526152): When this API is stabilized, move the definitions for these
+// constants into the zx crate.
+const ZX_SYSTEM_BARRIER_DATA_MEMORY: u32 = 0;
+const ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM: u32 = 1;
+
 /// sys_mmap takes a mutable reference to current_task because it may modify the IP register.
 pub fn sys_mmap(
     locked: &mut Locked<Unlocked>,
@@ -411,11 +418,48 @@ pub fn sys_membarrier(
     _flags: u32,
     _cpu_id: i32,
 ) -> Result<u32, Errno> {
-    track_stub!(TODO("https://fxbug.dev/297526152"), "membarrier", cmd);
     match cmd {
-        uapi::membarrier_cmd_MEMBARRIER_CMD_QUERY => Ok(0),
-        uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ => Ok(0),
-        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ => Ok(0),
+        // This command returns a bit mask of all supported commands.
+        // We support everything except for the RSEQ family.
+        uapi::membarrier_cmd_MEMBARRIER_CMD_QUERY => Ok(uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL
+            | uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL_EXPEDITED
+            | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED
+            | uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED
+            | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
+            | uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE
+            | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE),
+        // All data memory barriers are treated as a global data memory barrier.
+        uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL
+        | uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL_EXPEDITED
+        | uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED => {
+            // SAFETY: This wraps the zx_system_barrier call which is safe.
+            let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
+            Ok(0)
+        }
+        // Private sync core barriers are treated as global instruction stream barriers.
+        uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE => {
+            // SAFETY: This wraps the zx_system_barrier call which is safe.
+            let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM) };
+            Ok(0)
+        }
+        // All registration commands are ignored.
+        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED
+        | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
+        | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE => {
+            // TODO(https://fxbug.dev/297526152): This isn't quite right, even when treating all
+            // barriers as global. The Linux API returns an error when issuing a barrier with no
+            // registered processes. To implement this, we can either track registrations in
+            // Starnix and generate an error here or we could add the check in the Zircon API.
+            Ok(0)
+        }
+        uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ => {
+            track_stub!(TODO("https://fxbug.dev/447158570"), "membarrier rseq");
+            error!(ENOSYS)
+        }
+        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ => {
+            track_stub!(TODO("https://fxbug.dev/447158570"), "membarrier rseq");
+            error!(ENOSYS)
+        }
         _ => error!(EINVAL),
     }
 }
@@ -1478,14 +1522,6 @@ mod tests {
                     }
                 }
             }
-        });
-    }
-
-    #[::fuchsia::test]
-    async fn test_membarrier() {
-        spawn_kernel_and_run(|locked, current_task| {
-            assert_eq!(sys_membarrier(locked, &current_task, 0, 0, 0), Ok(0));
-            assert_eq!(sys_membarrier(locked, &current_task, 3, 0, 0), error!(EINVAL));
         });
     }
 }

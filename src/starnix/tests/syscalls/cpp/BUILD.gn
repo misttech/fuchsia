@@ -70,6 +70,7 @@ syscall_tests = [
   "getrandom_test",
   "io_uring_test",
   "loop_test",
+  "membarrier_test",
   "memfd_test",
   "mmap_test",
   "mount_test",
