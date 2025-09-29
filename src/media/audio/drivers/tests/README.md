@@ -6,6 +6,10 @@ The audio driver test suites validate implementations of the interfaces
 `fuchsia.hardware.audio.RingBuffer`, `fuchsia.hardware.audio.StreamConfig` and
 `fuchsia.hardware.audio.signalprocessing`.
 
+Because these tests run _non-hermetically_, they generally _cannot_ be run on a
+product that includes the `audio_core` or `audio_device_registry` services. For
+more detail, see the "Test case groups" section below.
+
 ### Test targets
 These suites detect, initialize and test all audio device drivers registered
 with devfs under `/dev/class/audio-composite` `/dev/class/audio-input`,
@@ -32,7 +36,7 @@ initialization and configuration. This means that on these products,
 detected audio devices before these tests can run, thus blocking the majority of
 test cases from working as expected.
 
-`audio_driver_tests` uses generous timeout durations, enabling these tests to
+The `audio_driver_tests` suites use generous timeout durations, enabling them to
 function correctly even in heavily loaded test execution environments such as a
 device emulator instance on a multi-tenant CQ server, or a build compiled with
 significant instrumentation (ASAN) or without standard optimizations (debug).
@@ -74,7 +78,8 @@ Note: all flags mentioned here are _suite-specific_. Any `fx test` command that
 includes them must include an extra `-- ` before these flags.
 
 Thus, to ***fully*** validate a devfs-based audio driver, execute any of the
-following in a release build running on a non-emulated system:
+following on a non-emulated system, running a release build without `audio_core`
+or `audio_device_registry` (e.g. core.x64-release, minimal.vim3-release):
 
 ```
  fx test audio_driver_basic_tests -- --all
