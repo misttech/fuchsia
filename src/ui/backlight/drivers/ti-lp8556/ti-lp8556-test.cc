@@ -49,7 +49,8 @@ class TestTiLp8556 : public TiLp8556 {
 
 class TiLp8556TestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(std::optional<TiLp8556Metadata> metadata, std::optional<display::PanelType> panel_type,
+  void Init(const std::optional<fuchsia_hardware_ti_metadata::Lp8556Metadata>& metadata,
+            std::optional<display::PanelType> panel_type,
             std::optional<uint32_t> bootloader_panel_id,
             std::optional<fdf::PDev::BoardInfo> board_info) {
     std::map<uint32_t, fdf_fake::Mmio> mmios;
@@ -61,8 +62,8 @@ class TiLp8556TestEnvironment : public fdf_testing::Environment {
     pdev_.SetConfig(std::move(config));
 
     if (metadata.has_value()) {
-      device_server_.AddMetadata(DEVICE_METADATA_PRIVATE, &metadata.value(),
-                                 sizeof(metadata.value()));
+      pdev_.AddFidlMetadata(fuchsia_hardware_ti_metadata::Lp8556Metadata::kSerializableName,
+                            metadata.value());
     }
     if (bootloader_panel_id.has_value()) {
       device_server_.AddMetadata(DEVICE_METADATA_BOARD_PRIVATE, &bootloader_panel_id.value(),
@@ -178,7 +179,7 @@ class TiLp8556Test : public ::testing::Test {
   }
 
  protected:
-  void StartDriver(std::optional<TiLp8556Metadata> metadata,
+  void StartDriver(const std::optional<fuchsia_hardware_ti_metadata::Lp8556Metadata>& metadata,
                    std::optional<display::PanelType> panel_type,
                    std::optional<uint32_t> bootloader_panel_id,
                    std::optional<fdf::PDev::BoardInfo> board_info) {
@@ -195,12 +196,6 @@ class TiLp8556Test : public ::testing::Test {
         driver_test_.Connect<fuchsia_hardware_power_sensor::Service::Device>();
     ASSERT_OK(power_sensor_client);
     power_sensor_client_.Bind(std::move(power_sensor_client.value()));
-  }
-
-  void FailStartDriver(std::optional<TiLp8556Metadata> metadata) {
-    driver_test_.RunInEnvironmentTypeContext(
-        [&](auto& env) { env.Init(metadata, std::nullopt, std::nullopt, std::nullopt); });
-    ASSERT_NE(driver_test_.StartDriver().status_value(), ZX_OK);
   }
 
   void WithBacklightClient(
@@ -263,29 +258,33 @@ TEST_F(TiLp8556Test, Brightness) {
 }
 
 TEST_F(TiLp8556Test, InitRegisters) {
-  const TiLp8556Metadata kDeviceMetadata = {
-      .panel_id = 0,
-      .registers =
-          {
-              // Registers
-              0x01,
-              0x85,  // Device Control
-                     // EPROM
-              0xa2,
-              0x30,  // CFG2
-              0xa3,
-              0x32,  // CFG3
-              0xa5,
-              0x54,  // CFG5
-              0xa7,
-              0xf4,  // CFG7
-              0xa9,
-              0x60,  // CFG9
-              0xae,
-              0x09,  // CFGE
-          },
-      .register_count = 14,
-  };
+  static const fuchsia_hardware_ti_metadata::Lp8556Metadata kDeviceMetadata(
+      {.panel_id = 0,
+       .registers =
+           std::vector<fuchsia_hardware_ti_metadata::Register>{
+               // Device Control
+               // EPROM
+               {{.address = 0x01, .value = 0x85}},
+
+               // CFG2
+               {{.address = 0xa2, .value = 0x30}},
+
+               // CFG3
+               {{.address = 0xa3, .value = 0x32}},
+
+               // CFG5
+               {{.address = 0xa5, .value = 0x54}},
+
+               // CFG7
+               {{.address = 0xa7, .value = 0xf4}},
+
+               // CFG9
+               {{.address = 0xa9, .value = 0x60}},
+
+               // CFGE
+               {{.address = 0xae, .value = 0x09}},
+           },
+       .backlight_max_brightness = 0});
   // constexpr uint8_t kInitialRegisterValues[] = {
   //     0x01, 0x85, 0xa2, 0x30, 0xa3, 0x32, 0xa5, 0x54, 0xa7, 0xf4, 0xa9, 0x60, 0xae, 0x09,
   // };
@@ -342,36 +341,6 @@ TEST_F(TiLp8556Test, InitNoRegisters) {
   });
 }
 
-TEST_F(TiLp8556Test, InitInvalidRegisters) {
-  TiLp8556Metadata kDeviceMetadata = {
-      .panel_id = 0,
-      .registers =
-          {
-              0x01,
-              0x85,
-              0xa2,
-              0x30,
-              0xa3,
-              0x32,
-              0xa5,
-              0x54,
-              0xa7,
-              0xf4,
-              0xa9,
-              0x60,
-              0xae,
-          },
-      .register_count = 13,
-  };
-
-  FailStartDriver(kDeviceMetadata);
-
-  driver_test().RunInEnvironmentTypeContext([](auto& env) {
-    ASSERT_NO_FATAL_FAILURE(env.regs()[BrightnessStickyReg::Get().addr()].VerifyAndClear());
-    ASSERT_NO_FATAL_FAILURE(env.i2c().VerifyAndClear());
-  });
-}
-
 TEST_F(TiLp8556Test, OverwriteStickyRegister) {
   // constexpr uint8_t kInitialRegisterValues[] = {
   //     kBacklightBrightnessLsbReg,
@@ -379,14 +348,14 @@ TEST_F(TiLp8556Test, OverwriteStickyRegister) {
   //     kBacklightBrightnessMsbReg,
   //     0xcd,
   // };
-
-  TiLp8556Metadata kDeviceMetadata = {
-      .panel_id = 0,
-      .registers =
-          {// Registers
-           kBacklightBrightnessLsbReg, 0xab, kBacklightBrightnessMsbReg, 0xcd},
-      .register_count = 4,
-  };
+  static const fuchsia_hardware_ti_metadata::Lp8556Metadata kDeviceMetadata(
+      {.panel_id = 0,
+       .registers =
+           std::vector<fuchsia_hardware_ti_metadata::Register>{
+               {{.address = kBacklightBrightnessLsbReg, .value = 0xab}},
+               {{.address = kBacklightBrightnessMsbReg, .value = 0xcd}},
+           },
+       .backlight_max_brightness = 0});
 
   driver_test().RunInEnvironmentTypeContext([](auto& env) {
     env.i2c()
@@ -471,11 +440,8 @@ TEST_F(TiLp8556Test, Inspect) {
 }
 
 TEST_F(TiLp8556Test, GetBackLightPower) {
-  TiLp8556Metadata kDeviceMetadata = {
-      .panel_id = 2,
-      .registers = {},
-      .register_count = 0,
-  };
+  static const fuchsia_hardware_ti_metadata::Lp8556Metadata kDeviceMetadata(
+      {.panel_id = 2, .registers = {{}}, .backlight_max_brightness = 0});
 
   constexpr uint32_t kBootloaderPanelId = 2;  // kBoeFiti9364
   constexpr display::PanelType kPanelType = display::PanelType::kBoeTv070wsmFitipowerJd9364Nelson;
@@ -511,11 +477,8 @@ TEST_F(TiLp8556Test, GetBackLightPower) {
 }
 
 TEST_F(TiLp8556Test, GetPowerWatts) {
-  TiLp8556Metadata kDeviceMetadata = {
-      .panel_id = 2,
-      .registers = {},
-      .register_count = 0,
-  };
+  static const fuchsia_hardware_ti_metadata::Lp8556Metadata kDeviceMetadata(
+      {.panel_id = 2, .registers = {{}}, .backlight_max_brightness = 0});
 
   constexpr uint32_t kBootloaderPanelId = 2;  // kBoeFiti9364
   constexpr display::PanelType kPanelType = display::PanelType::kBoeTv070wsmFitipowerJd9364Nelson;

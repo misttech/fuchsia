@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
@@ -17,7 +18,6 @@
 #include <soc/aml-s905d2/s905d2-hw.h>
 
 #include "src/devices/board/drivers/astro/post-init/post-init.h"
-#include "src/ui/backlight/drivers/ti-lp8556/ti-lp8556Metadata.h"
 
 namespace astro {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -29,39 +29,47 @@ static const std::vector<fpbus::Mmio> backlight_mmios{
     }},
 };
 
-TiLp8556Metadata kDeviceMetadata = {
-    .panel_id = 0,
-    .allow_set_current_scale = false,
-    .registers =
-        {
-            // Registers
-            0x01,
-            0x85,  // Device Control
-                   // EPROM
-            0xa2,
-            0x30,  // CFG2
-            0xa3,
-            0x32,  // CFG3
-            0xa5,
-            0x54,  // CFG5
-            0xa7,
-            0xf4,  // CFG7
-            0xa9,
-            0x60,  // CFG9
-            0xae,
-            0x09,  // CFGE
-        },
-    .register_count = 14,
-    .backlight_max_brightness = 400.0,
-};
-
 zx::result<> PostInit::InitBacklight() {
+  static const fuchsia_hardware_ti_metadata::Lp8556Metadata kMetadata(
+      {.panel_id = 0,
+       .allow_set_current_scale = false,
+       .registers =
+           std::vector<fuchsia_hardware_ti_metadata::Register>{
+               // Device Control
+               // EPROM
+               {{.address = 0x01, .value = 0x85}},
+
+               // CFG2
+               {{.address = 0xa2, .value = 0x30}},
+
+               // CFG3
+               {{.address = 0xa3, .value = 0x32}},
+
+               // CFG5
+               {{.address = 0xa5, .value = 0x54}},
+
+               // CFG7
+               {{.address = 0xa7, .value = 0xf4}},
+
+               // CFG9
+               {{.address = 0xa9, .value = 0x60}},
+
+               // CFGE
+               {{.address = 0xae, .value = 0x09}},
+           },
+       .backlight_max_brightness = 400.0});
+
+  fit::result persisted_metadata = fidl::Persist(kMetadata);
+  if (!persisted_metadata.is_ok()) {
+    FDF_LOG(ERROR, "Failed to persist metadata: %s",
+            persisted_metadata.error_value().FormatDescription().c_str());
+    return zx::error(persisted_metadata.error_value().status());
+  }
+
   const std::vector<fpbus::Metadata> backlight_metadata{
       {{
-          .id = std::to_string(DEVICE_METADATA_PRIVATE),
-          .data = std::vector<uint8_t>(
-              reinterpret_cast<const uint8_t*>(&kDeviceMetadata),
-              reinterpret_cast<const uint8_t*>(&kDeviceMetadata) + sizeof(kDeviceMetadata)),
+          .id = fuchsia_hardware_ti_metadata::Lp8556Metadata::kSerializableName,
+          .data = std::move(persisted_metadata.value()),
       }},
       {{
           .id = std::to_string(DEVICE_METADATA_DISPLAY_PANEL_TYPE),

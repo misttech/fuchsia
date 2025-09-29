@@ -19,10 +19,6 @@ driver_bind_rules("ti-lp8556-bind") {
   ]
 }
 
-source_set("metadata") {
-  sources = [ "ti-lp8556Metadata.h" ]
-}
-
 source_set("common") {
   configs += [
     "//build/config:all_source",
@@ -34,8 +30,8 @@ source_set("common") {
   ]
   deps = [
     "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/platform-device/cpp",
-    "//src/lib/ddk",
     "//src/lib/ddk:ddk_metadata",
     "//zircon/system/ulib/ddk-platform-defs",
     "//zircon/system/ulib/fbl",
@@ -45,9 +41,9 @@ source_set("common") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
-    ":metadata",
     "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_cpp",
     "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_cpp",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//sdk/lib/driver/component/cpp",
     "//src/devices/i2c/lib/i2c-channel",
     "//src/devices/lib/driver:driver_runtime",

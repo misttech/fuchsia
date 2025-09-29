@@ -11,6 +11,7 @@
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <math.h>
 
@@ -20,8 +21,6 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <pretty/hexdump.h>
-
-#include "ti-lp8556Metadata.h"
 
 namespace ti {
 
@@ -161,10 +160,10 @@ zx::result<> TiLp8556::SetBacklightState(bool power, double brightness) {
     }
 
     if (power) {
-      for (size_t i = 0; i < metadata_.register_count; i += 2) {
-        auto write_data = std::span{metadata_.registers}.subspan(i, 2);
+      for (const fuchsia_hardware_ti_metadata::Register& reg : registers_) {
+        const std::array<uint8_t, 2> write_data = {reg.address(), reg.value()};
         if (zx::result result = i2c_.WriteSync(write_data); result.is_error()) {
-          fdf::error("Failed to set register {:#02x}: {}", metadata_.registers[i], result);
+          fdf::error("Failed to set register {:#02x}: {}", reg.address(), result);
           return result.take_error();
         }
       }
@@ -324,24 +323,33 @@ zx::result<> TiLp8556::Start() {
   }
   i2c_ = i2c::I2cChannel{std::move(i2c.value())};
 
-  zx::result metadata =
-      compat::GetMetadata<TiLp8556Metadata>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
+  zx::result pdev_client_end =
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  if (pdev_client_end.is_error()) {
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
+    return pdev_client_end.take_error();
+  }
+  fdf::PDev pdev(std::move(pdev_client_end.value()));
+
+  zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_ti_metadata::Lp8556Metadata>();
   // Supplying this metadata is optional.
   if (metadata.is_ok()) {
-    metadata_ = *metadata.value();
-
-    SetMaxAbsoluteBrightnessNits(metadata_.backlight_max_brightness);
-
-    if (metadata_.register_count % (2 * sizeof(uint8_t)) != 0) {
-      fdf::error("Register metadata is invalid. Register count ({}) is not a multiple of {}",
-                 metadata_.register_count, 2 * sizeof(uint8_t));
-      return zx::error(ZX_ERR_INVALID_ARGS);
+    if (!metadata->backlight_max_brightness().has_value()) {
+      fdf::error("Metadata missing `backlight_max_brightness` field");
+      return zx::error(ZX_ERR_INTERNAL);
     }
+    if (!metadata->registers().has_value()) {
+      fdf::error("Metadata missing `registers` field");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    registers_ = std::move(metadata->registers().value());
 
-    for (size_t i = 0; i < metadata_.register_count; i += 2) {
-      auto write_data = std::span{metadata_.registers}.subspan(i, 2);
+    SetMaxAbsoluteBrightnessNits(metadata->backlight_max_brightness().value());
+
+    for (const fuchsia_hardware_ti_metadata::Register& reg : registers_) {
+      const std::array<uint8_t, 2> write_data = {reg.address(), reg.value()};
       if (zx::result result = i2c_.WriteSync(write_data); result.is_error()) {
-        fdf::error("Failed to set register {:#02x}: {}", metadata_.registers[i], result);
+        fdf::error("Failed to set register {:#02x}: {}", reg.address(), result);
         return result.take_error();
       }
     }
@@ -353,14 +361,6 @@ zx::result<> TiLp8556::Start() {
     return panel_type_result.take_error();
   }
   panel_type_ = panel_type_result.value();
-
-  zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
-  if (pdev_client_end.is_error()) {
-    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
-    return pdev_client_end.take_error();
-  }
-  fdf::PDev pdev{std::move(pdev_client_end.value())};
 
   zx::result board_info = pdev.GetBoardInfo();
   if (board_info.is_ok()) {

@@ -36,6 +36,7 @@ fuchsia_cc_driver("post-init-driver") {
     "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//sdk/lib/inspect/component/cpp",
@@ -51,7 +52,6 @@ fuchsia_cc_driver("post-init-driver") {
     "//src/graphics/display/lib/device-protocol-display",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
-    "//src/ui/backlight/drivers/ti-lp8556:metadata",
     "//zircon/system/ulib/ddk-platform-defs",
   ]
 }

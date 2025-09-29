@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.backlight/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2c/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power.sensor/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/mmio/mmio.h>
@@ -17,7 +18,6 @@
 #include <hwreg/bitfields.h>
 
 #include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
-#include "ti-lp8556Metadata.h"
 
 namespace ti {
 
@@ -163,7 +163,7 @@ class TiLp8556 : public fdf::DriverBase,
   inspect::UintProperty board_pid_property_;
   inspect::UintProperty panel_id_property_;
   inspect::UintProperty panel_type_property_;
-  TiLp8556Metadata metadata_ = {.allow_set_current_scale = false};
+  std::vector<fuchsia_hardware_ti_metadata::Register> registers_;
 
   display::PanelType panel_type_ = display::PanelType::kUnknown;
   uint32_t board_pid_ = 0;
