@@ -10,8 +10,8 @@
 #include <lib/async/cpp/irq.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/time.h>

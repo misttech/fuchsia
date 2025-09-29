@@ -8,7 +8,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/trace/event.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
