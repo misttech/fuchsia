@@ -1049,13 +1049,6 @@ class AsyncMain:
             recorder.emit_instruction_message(
                 "E2E test selected, building updates package"
             )
-        elif tests.has_device_test():
-            # If any device test was updated, we at least need to rebuild the package lists
-            # so that publishing works correctly.
-            # See http://fxbug.dev/442839521 for details.
-            build_command_line.extend(
-                ["--default", "//build/images/updates:package_lists"]
-            )
 
         build_id = recorder.emit_build_start(targets=build_command_line)
         recorder.emit_instruction_message("Use --no-build to skip building")

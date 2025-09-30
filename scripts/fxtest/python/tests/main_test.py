@@ -829,51 +829,6 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             any(["example_e2e_test" in v[0] for v in call_prefixes])
         )
 
-    async def test_build_device_package_lists_only(self) -> None:
-        """Test that we build only package lists for device tests"""
-
-        command_mock = self._mock_run_command(0)
-        subprocess_mock = self._mock_subprocess_call(0)
-        self._mock_has_package_server_connected_to_device(True)
-        self._mock_has_tests_in_base([])
-
-        ret = await main.async_main_wrapper(
-            args.parse_args(["--simple", "--no-e2e", "--device"])
-        )
-        self.assertEqual(ret, 0)
-
-        call_prefixes = self._make_call_args_prefix_set(
-            command_mock.call_args_list
-        )
-        call_prefixes.update(
-            self._make_call_args_prefix_set(subprocess_mock.call_args_list)
-        )
-
-        # Make sure we built, published, and ran the device test.
-        self.assertIsSubset(
-            {
-                (
-                    "fx",
-                    "--dir",
-                    os.path.join(self.fuchsia_dir.name, "out/default"),
-                    "build",
-                    "--default",
-                    "//src/sys:foo_test_package",
-                    "--default",
-                    "//build/images/updates:package_lists",
-                ),
-                (
-                    "fx",
-                    "--dir",
-                    self.out_dir,
-                    "ffx",
-                    "repository",
-                    "publish",
-                ),
-            },
-            call_prefixes,
-        )
-
     async def test_no_build(self) -> None:
         """Test that we can run all tests and report success"""
 
