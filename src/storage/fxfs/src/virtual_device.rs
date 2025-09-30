@@ -5,8 +5,9 @@
 //! Implementation of a virtual storage devices backed by a [`ReadObjectHandle`]. Allows using
 //! files within an existing fxfs as a virtual storage device (e.g. to mount an inner filesystem).
 
+use crate::errors::FxfsError;
 use crate::object_handle::ReadObjectHandle;
-use anyhow::{Error, bail};
+use anyhow::{Context as _, Error, bail};
 use async_trait::async_trait;
 use std::ops::Range;
 use storage_device::buffer::MutableBufferRef;
@@ -51,7 +52,9 @@ impl<H: ReadObjectHandle> Device for ReadOnlyDevice<H> {
     ) -> Result<(), Error> {
         let len = buffer.len();
         let amount = self.handle.read(offset, buffer).await?;
-        assert_eq!(amount, len);
+        if amount != len {
+            return Err(FxfsError::OutOfRange).context("short read from underlying object");
+        }
         Ok(())
     }
 

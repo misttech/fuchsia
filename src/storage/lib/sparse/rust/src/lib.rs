@@ -76,7 +76,7 @@ pub fn is_sparse_image<R: Read + Seek>(reader: &mut R) -> bool {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-enum Chunk {
+pub enum Chunk {
     /// `Raw` represents a set of blocks to be written to disk as-is.
     /// `start` is the offset in the expanded image at which the Raw section starts.
     /// `start` and `size` are in bytes, but must be block-aligned.

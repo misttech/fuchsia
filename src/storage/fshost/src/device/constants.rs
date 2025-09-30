@@ -9,6 +9,7 @@ pub const LEGACY_DATA_PARTITION_LABEL: &str = "minfs";
 
 // -- Fxfs volume labels --
 pub const BLOB_VOLUME_LABEL: &str = "blob";
+pub const BLOB_IMAGE_VOLUME_LABEL: &str = "blob-image";
 pub const DATA_VOLUME_LABEL: &str = "data";
 pub const UNENCRYPTED_VOLUME_LABEL: &str = "unencrypted";
 

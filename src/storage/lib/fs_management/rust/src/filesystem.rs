@@ -718,6 +718,20 @@ impl ServingMultiVolumeFilesystem {
         self.component.take().expect("BUG: missing component").forget();
         self.exposed_dir.take().expect("BUG: exposed dir missing")
     }
+
+    /// Returns a list of volumes found in the filesystem.
+    pub async fn list_volumes(&self) -> Result<Vec<String>, Error> {
+        let volumes_dir = fuchsia_fs::directory::open_async::<fio::DirectoryMarker>(
+            self.exposed_dir(),
+            "volumes",
+            fio::PERM_READABLE,
+        )
+        .unwrap();
+        fuchsia_fs::directory::readdir(&volumes_dir)
+            .await
+            .map(|entries| entries.into_iter().map(|e| e.name).collect())
+            .map_err(|e| anyhow!("failed to read volumes dir: {}", e))
+    }
 }
 
 impl Drop for ServingMultiVolumeFilesystem {

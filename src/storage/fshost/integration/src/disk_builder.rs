@@ -19,9 +19,11 @@ use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstan
 use fuchsia_hash::Hash;
 use gpt_component::gpt::GptManager;
 use key_bag::Aes256Key;
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 use storage_isolated_driver_manager::fvm::format_for_fvm;
+use storage_isolated_driver_manager::{BlockDeviceMatcher, find_block_device};
 use uuid::Uuid;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
 use zerocopy::{Immutable, IntoBytes};
@@ -762,4 +764,49 @@ impl DiskBuilder {
 
         zbi_vmo
     }
+}
+
+/// Helper function to return a set of the volumes found within a given `disk`, which must have a
+/// valid GPT containing an fxfs partition in the first entry.
+pub async fn list_all_fxfs_volumes(disk: &Disk) -> HashSet<String> {
+    let Disk::Prebuilt(ref vmo, _) = disk else {
+        panic!("list_all_fxfs_volumes only supports prebuilt disks");
+    };
+    let server = Arc::new(VmoBackedServer::from_vmo(
+        TEST_DISK_BLOCK_SIZE,
+        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+    ));
+
+    let partitions_dir = vfs::directory::immutable::simple();
+    let manager = GptManager::new(server.connect(), partitions_dir.clone()).await.unwrap();
+    let dir =
+        vfs::directory::serve(partitions_dir.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE);
+
+    let partitions = fuchsia_fs::directory::readdir(&dir).await.unwrap().into_iter().map(|entry| {
+        let dir = fuchsia_fs::directory::clone(&dir).unwrap();
+        let name = entry.name;
+        DirBasedBlockConnector::new(dir, format!("{name}/volume"))
+    });
+    let connector = find_block_device(
+        &[
+            BlockDeviceMatcher::TypeGuid(&FVM_TYPE_GUID),
+            BlockDeviceMatcher::InstanceGuid(&FVM_PART_INSTANCE_GUID),
+        ],
+        partitions,
+    )
+    .await
+    .expect("failed to match partition")
+    .expect("did not match fxfs partition");
+
+    let fxfs = Filesystem::from_boxed_config(Box::new(connector), Box::new(Fxfs::default()));
+    let fs = fxfs.serve_multi_volume().await.expect("serve_multi_volume failed");
+    let volumes = fs.list_volumes().await.expect("list_volumes failed");
+    fs.shutdown().await.expect("shutdown failed");
+    manager.shutdown().await;
+    volumes.into_iter().collect()
+}
+
+/// Returns the set of volume names expected for an fxblob-based system.
+pub fn expected_fxblob_volumes() -> HashSet<String> {
+    ["blob", "data", "unencrypted"].into_iter().map(str::to_owned).collect()
 }

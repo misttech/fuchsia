@@ -74,6 +74,25 @@ closed protocol Recovery {
     strict MountSystemBlobVolume(resource struct {
         blob_exposed_dir server_end:<fuchsia.io.Directory>;
     }) -> () error zx.Status;
+
+    /// Writes `payload` to be installed as the blob volume in the system container. `payload` must
+    /// be a valid Android sparse image containing an fxfs partition image with a blob volume. This
+    /// method can be called multiple times to write multiple sparse images, usually targeting
+    /// different offsets, allowing very large images exceeding RAM to be written in chunks. The
+    /// existing blob volume will remain unmodified until `InstallSystemBlobVolume` is called.
+    // TODO(https://fxbug.dev/441562849): Ensure we document when the volume will be installed if we
+    // change fshost to automatically install volumes on system boot. For now, while we integrate
+    // this feature, volume installation must be done explicitly from a recovery environment.
+    strict WriteSystemBlobImage(resource struct {
+        payload zx.Handle:VMO;
+    }) -> () error zx.Status;
+
+    /// Installs the blob volume previously written via `WriteSystemBlobVolume`, replacing the
+    /// existing blob volume in the system container. On failure, the existing blob volume will
+    /// remain intact, and the written image will be deleted to free space. A new blob image can
+    /// then be written and the installation process restarted. If no blob volume has been written,
+    /// this will have no effect.
+    strict InstallSystemBlobImage() -> () error zx.Status;
 };
 
 /// Provides access to the volume which will be used by Starnix to store its data.

@@ -20,6 +20,8 @@ pub struct SparseReader<R> {
     // The second field is the offset into `reader` at which the payload of the chunk appears, for
     // Raw chunks.
     chunks: Vec<(Chunk, Option<u64>)>,
+    // The block size of each chunk.
+    block_size: u32,
 }
 
 impl<R: Read + Seek> SparseReader<R> {
@@ -48,7 +50,7 @@ impl<R: Read + Seek> SparseReader<R> {
         }
 
         reader.seek(SeekFrom::Start(0)).context("Failed to rewind reader")?;
-        Ok(Self { reader, offset: 0, size: offset, chunks })
+        Ok(Self { reader, offset: 0, size: offset, chunks, block_size: header.blk_sz })
     }
 
     /// Returns the index of the current chunk in `self.chunks`.
@@ -73,8 +75,16 @@ impl<R: Read + Seek> SparseReader<R> {
         Ok(res)
     }
 
-    pub(crate) fn chunks(&self) -> &Vec<(Chunk, Option<u64>)> {
+    pub fn chunks(&self) -> &Vec<(Chunk, Option<u64>)> {
         &self.chunks
+    }
+
+    pub fn unsparsed_size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn block_size(&self) -> u32 {
+        self.block_size
     }
 }
 
