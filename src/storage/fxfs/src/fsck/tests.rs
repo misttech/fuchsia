@@ -30,7 +30,7 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use futures::join;
-use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
+use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose, WrappingKeyId};
 use fxfs_insecure_crypto::InsecureCrypt;
 use mundane::hash::{Digest, Hasher, Sha256};
 use std::ops::Deref;
@@ -40,6 +40,7 @@ use storage_device::fake_device::FakeDevice;
 
 const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 const TEST_DEVICE_BLOCK_COUNT: u64 = 8192;
+const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 
 struct FsckTest {
     filesystem: Option<OpenFxFilesystem>,
@@ -2142,12 +2143,12 @@ async fn test_encrypted_symlink_has_missing_keys() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         handle
             .update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(u128::to_le_bytes(2)),
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
                     ..Default::default()
                 }),
                 0,
@@ -2233,12 +2234,12 @@ async fn test_encrypted_directory_has_unencrypted_child() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         handle
             .update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(u128::to_le_bytes(2)),
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
                     ..Default::default()
                 }),
                 0,
@@ -2401,9 +2402,10 @@ async fn test_unencrypted_directory_has_encrypted_child() {
 
 #[fuchsia::test]
 async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
+    const CHILD_WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(3);
     let mut test = FsckTest::new().await;
 
-    let (store_id, parent_oid, child_oid, parent_wrapping_key_id, child_wrapping_key_id) = {
+    let (store_id, parent_oid, child_oid) = {
         let fs = test.filesystem();
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let crypt = test.get_crypt();
@@ -2434,12 +2436,12 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         handle
             .update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(u128::to_le_bytes(2)),
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
                     ..Default::default()
                 }),
                 0,
@@ -2498,7 +2500,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             ..
         }) = &mut mutation
         {
-            *wrapping_key_id = Some(3);
+            *wrapping_key_id = Some(CHILD_WRAPPING_KEY_ID);
         } else {
             unreachable!();
         }
@@ -2506,7 +2508,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
 
         transaction.commit().await.expect("commit failed");
 
-        (store_id, handle.object_id(), subdir.object_id(), 2, 3)
+        (store_id, handle.object_id(), subdir.object_id())
     };
 
     test.remount().await.expect("Remount failed");
@@ -2515,7 +2517,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
         .expect_err("Fsck should fail");
 
     assert_matches!(&test.errors()[..], [ FsckIssue::Error(FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(sid, oid, oid_child, parent_id, child_id)) ]
-    if *sid == store_id && *oid == parent_oid && *oid_child == child_oid && *parent_id == parent_wrapping_key_id && *child_id == child_wrapping_key_id);
+    if *sid == store_id && *oid == parent_oid && *oid_child == child_oid && *parent_id == WRAPPING_KEY_ID && *child_id == CHILD_WRAPPING_KEY_ID);
 }
 
 #[fuchsia::test]
@@ -2553,12 +2555,12 @@ async fn test_encrypted_directory_no_wrapping_key() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         handle
             .update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(u128::to_le_bytes(2)),
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
                     ..Default::default()
                 }),
                 0,
@@ -2731,8 +2733,11 @@ async fn test_directory_missing_encryption_key_for_fscrypt() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(2, [1; 32].into());
-        handle.set_wrapping_key(&mut transaction, 2).await.expect("failed to set wrapping key");
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        handle
+            .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
+            .await
+            .expect("failed to set wrapping key");
 
         let txn_mutation = transaction
             .mutations()

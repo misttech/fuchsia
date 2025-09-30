@@ -8,9 +8,8 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_fxfs::{CryptMarker, CryptProxy, KeyPurpose as FidlKeyPurpose};
 use fxfs_crypto::{
     Crypt, EncryptionKey, FxfsKey, KeyPurpose, ObjectType, UnwrappedKey, WrappedKey,
-    WrappedKeyBytes,
+    WrappedKeyBytes, WrappingKeyId,
 };
-use zx;
 
 pub struct RemoteCrypt {
     client: CryptProxy,
@@ -50,7 +49,7 @@ impl Crypt for RemoteCrypt {
             .map_err(|e| zx::Status::from_raw(e))?;
         Ok((
             FxfsKey {
-                wrapping_key_id: u128::from_le_bytes(wrapping_key_id),
+                wrapping_key_id,
                 key: WrappedKeyBytes::try_from(key).map_err(map_to_status)?,
             },
             UnwrappedKey::new(unwrapped_key.try_into().map_err(|_| zx::Status::INTERNAL)?),
@@ -60,19 +59,19 @@ impl Crypt for RemoteCrypt {
     async fn create_key_with_id(
         &self,
         owner: u64,
-        wrapping_key_id: u128,
+        wrapping_key_id: WrappingKeyId,
         object_type: ObjectType,
     ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
         let (key, unwrapped_key) = self
             .client
-            .create_key_with_id(owner, &wrapping_key_id.to_le_bytes(), object_type)
+            .create_key_with_id(owner, &wrapping_key_id, object_type)
             .await
             .map_err(|e| map_to_status(e.into()))?
             .map_err(|e| zx::Status::from_raw(e))?;
         match key {
             WrappedKey::Fxfs(fidl_fuchsia_fxfs::FxfsKey { wrapping_key_id, wrapped_key }) => Ok((
                 EncryptionKey::Fxfs(FxfsKey {
-                    wrapping_key_id: u128::from_le_bytes(wrapping_key_id),
+                    wrapping_key_id,
                     key: WrappedKeyBytes::try_from(wrapped_key)
                         .map_err(|_| zx::Status::BAD_STATE)?,
                 }),

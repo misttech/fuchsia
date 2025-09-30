@@ -26,7 +26,7 @@ pub fn create_attr(
         blocks: 0,
         atime: SystemTime::UNIX_EPOCH.into(),
         mtime: to_fuse_time(modification_time),
-        ctime: to_fuse_time(creation_time.into()),
+        ctime: to_fuse_time(creation_time),
         kind: object_type,
         perm: fuse3::perm_from_mode_and_kind(object_type, DEFAULT_FILE_MODE),
         nlink,
@@ -69,10 +69,16 @@ pub fn create_symlink_attr(
 
 /// Convert from Fxfs timestamp to FUSE timestamp.
 pub fn to_fuse_time(time: Timestamp) -> fuse3::Timestamp {
-    fuse3::Timestamp::new(time.secs as i64, time.nanos)
+    fuse3::Timestamp::new(time.as_secs() as i64, time.subsec_nanos())
 }
 
 /// Convert from FUSE timestamp to Fxfs timestamp.
 pub fn to_fxfs_time(time: fuse3::Timestamp) -> Timestamp {
-    Timestamp { secs: time.sec as u64, nanos: time.nsec }
+    match time.sec.try_into() {
+        Ok(secs) => Timestamp::from_secs_and_nanos(secs, time.nsec),
+        Err(_) => {
+            // Fxfs doesn't support negative timestamps.
+            Timestamp::zero()
+        }
+    }
 }

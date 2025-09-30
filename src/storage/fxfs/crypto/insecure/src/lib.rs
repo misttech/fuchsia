@@ -9,7 +9,7 @@ use fscrypt::hkdf::{self, fscrypt_hkdf};
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{
     Crypt, EncryptionKey, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKey, KeyPurpose,
-    ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKey,
+    ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKey, WrappingKeyId,
 };
 use log::error;
 use rand::rngs::StdRng;
@@ -26,6 +26,8 @@ pub const METADATA_KEY: [u8; 32] = [
     0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0,
     0xef, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
 ];
+const DATA_WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(0);
+const METADATA_WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(1);
 
 /// This struct provides the `Crypt` trait without any strong security.
 ///
@@ -35,33 +37,39 @@ pub struct InsecureCrypt {
     /// FxfsKey is wrapped using AES256GCM-SIV.
     /// Unwrapping turns a 48-byte signed key into a 32-byte raw key.
     /// This maps from an opaque wrapping_key_id to a specific cipher instance that can unwrap keys.
-    gcmsiv_ciphers: Mutex<HashMap<u128, Aes256GcmSiv>>,
+    gcmsiv_ciphers: Mutex<HashMap<WrappingKeyId, Aes256GcmSiv>>,
 
     /// Legacy Fscrypt uses a 64-byte raw key identified using a 16-byte HKDF derivation of the key.
     /// "Unwrapping" a legacy fscrypt_key involves mixing the 64-byte key material with additional
     /// data based on the exact encryption scheme used (e.g. sometimes a 16-byte nonce) so we
     /// store these keys verbatim.
-    fscrypt_keys: Mutex<HashMap<[u8; 16], [u8; 64]>>,
+    fscrypt_keys: Mutex<HashMap<WrappingKeyId, [u8; 64]>>,
 
     /// Legacy fscrypt uses the filesystem UUID to salt encryption keys in some variants.
     /// We don't have direct access to the filesystem so we store the UUID here.
     filesystem_uuid: [u8; 16],
 
-    active_data_key: Option<u128>,
-    active_metadata_key: Option<u128>,
+    active_data_key: Option<WrappingKeyId>,
+    active_metadata_key: Option<WrappingKeyId>,
     shutdown: AtomicBool,
 }
 impl InsecureCrypt {
     pub fn new() -> Self {
         Self {
             gcmsiv_ciphers: Mutex::new(HashMap::from_iter([
-                (0, Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&DATA_KEY))),
-                (1, Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&METADATA_KEY))),
+                (
+                    DATA_WRAPPING_KEY_ID,
+                    Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&DATA_KEY)),
+                ),
+                (
+                    METADATA_WRAPPING_KEY_ID,
+                    Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&METADATA_KEY)),
+                ),
             ])),
             fscrypt_keys: Mutex::new(HashMap::default()),
             filesystem_uuid: [0; 16],
-            active_data_key: Some(0),
-            active_metadata_key: Some(1),
+            active_data_key: Some(DATA_WRAPPING_KEY_ID),
+            active_metadata_key: Some(METADATA_WRAPPING_KEY_ID),
             ..Default::default()
         }
     }
@@ -71,7 +79,7 @@ impl InsecureCrypt {
         self.shutdown.store(true, Ordering::Relaxed);
     }
 
-    pub fn add_wrapping_key(&self, id: u128, key: WrappingKey) {
+    pub fn add_wrapping_key(&self, id: WrappingKeyId, key: WrappingKey) {
         match key {
             WrappingKey::Aes256GcmSiv(key) => {
                 self.gcmsiv_ciphers
@@ -79,14 +87,14 @@ impl InsecureCrypt {
                     .insert(id, Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&key)));
             }
             WrappingKey::Fscrypt(main_key) => {
-                self.fscrypt_keys.lock().insert(id.to_le_bytes(), main_key);
+                self.fscrypt_keys.lock().insert(id, main_key);
             }
         }
     }
 
-    pub fn remove_wrapping_key(&self, id: u128) {
-        let _key = self.gcmsiv_ciphers.lock().remove(&id);
-        self.fscrypt_keys.lock().remove(&id.to_le_bytes());
+    pub fn remove_wrapping_key(&self, id: &WrappingKeyId) {
+        let _key = self.gcmsiv_ciphers.lock().remove(id);
+        self.fscrypt_keys.lock().remove(id);
     }
 
     /// Fscrypt in INO_LBLK32 and INO_LBLK64 modes mix the filesystem_uuid into key derivation
@@ -135,7 +143,7 @@ impl Crypt for InsecureCrypt {
     async fn create_key_with_id(
         &self,
         owner: u64,
-        wrapping_key_id: u128,
+        wrapping_key_id: WrappingKeyId,
         _object_type: ObjectType,
     ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
         if self.shutdown.load(Ordering::Relaxed) {
@@ -143,7 +151,7 @@ impl Crypt for InsecureCrypt {
             return Err(zx::Status::INTERNAL);
         }
         let ciphers = self.gcmsiv_ciphers.lock();
-        let cipher = ciphers.get(&(wrapping_key_id as u128)).ok_or(zx::Status::NOT_FOUND)?;
+        let cipher = ciphers.get(&wrapping_key_id).ok_or(zx::Status::NOT_FOUND)?;
         let mut nonce = Nonce::default();
         nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
 
@@ -156,10 +164,11 @@ impl Crypt for InsecureCrypt {
         })?;
         let wrapped = WrappedKeyBytes::try_from(wrapped).map_err(|_| zx::Status::BAD_STATE)?;
         Ok((
-            EncryptionKey::Fxfs(FxfsKey { wrapping_key_id: wrapping_key_id as u128, key: wrapped }),
+            EncryptionKey::Fxfs(FxfsKey { wrapping_key_id, key: wrapped }),
             UnwrappedKey::new(key.to_vec()),
         ))
     }
+
     async fn unwrap_key(
         &self,
         wrapped_key: &WrappedKey,
@@ -172,9 +181,7 @@ impl Crypt for InsecureCrypt {
         let ciphers = self.gcmsiv_ciphers.lock();
         Ok(match wrapped_key {
             WrappedKey::Fxfs(fxfs_key) => {
-                let cipher = ciphers
-                    .get(&u128::from_le_bytes(fxfs_key.wrapping_key_id))
-                    .ok_or(zx::Status::NOT_FOUND)?;
+                let cipher = ciphers.get(&fxfs_key.wrapping_key_id).ok_or(zx::Status::NOT_FOUND)?;
                 let mut nonce = Nonce::default();
                 nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
                 UnwrappedKey::new(

@@ -16,7 +16,7 @@ use fxfs::object_store::{
     Directory, HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore, SetExtendedAttributeMode,
     StoreObjectHandle, StoreOwner,
 };
-use fxfs_crypto::Crypt;
+use fxfs_crypto::{Crypt, WrappingKeyId};
 use std::io::Write;
 use std::ops::Deref;
 use std::path::Path;
@@ -41,8 +41,8 @@ pub async fn print_ls(dir: &Directory<ObjectStore>) -> Result<(), Error> {
                 let size = properties.data_attribute_size;
                 let mtime = Utc
                     .timestamp_opt(
-                        properties.modification_time.secs as i64,
-                        properties.modification_time.nanos,
+                        properties.modification_time.as_secs() as i64,
+                        properties.modification_time.subsec_nanos(),
                     )
                     .unwrap();
                 println!(
@@ -244,7 +244,7 @@ pub async fn enable_fscrypt(
     fs: &OpenFxFilesystem,
     vol: &Arc<ObjectStore>,
     dst: &Path,
-    wrapping_key_id: u128,
+    wrapping_key_id: WrappingKeyId,
 ) -> Result<(), Error> {
     let dir = walk_dir(vol, dst).await?;
     let mut transaction = (*fs)

@@ -179,7 +179,7 @@ impl From<EncryptionKey> for WrappedKey {
 pub struct FxfsKey {
     /// The identifier of the wrapping key.  The identifier has meaning to whatever is doing the
     /// unwrapping.
-    pub wrapping_key_id: u128,
+    pub wrapping_key_id: WrappingKeyId,
     /// AES 256 requires a 512 bit key, which is made of two 256 bit keys, one for the data and one
     /// for the tweak.  It is safe to use the same 256 bit key for both (see
     /// https://csrc.nist.gov/CSRC/media/Projects/Block-Cipher-Techniques/documents/BCM/Comments/XTS/follow-up_XTS_comments-Ball.pdf)
@@ -188,11 +188,13 @@ pub struct FxfsKey {
     pub key: WrappedKeyBytes,
 }
 
-impl Into<fidl_fuchsia_fxfs::FxfsKey> for FxfsKey {
-    fn into(self) -> fidl_fuchsia_fxfs::FxfsKey {
+pub type WrappingKeyId = [u8; 16];
+
+impl From<FxfsKey> for fidl_fuchsia_fxfs::FxfsKey {
+    fn from(value: FxfsKey) -> Self {
         fidl_fuchsia_fxfs::FxfsKey {
-            wrapping_key_id: self.wrapping_key_id.to_le_bytes(),
-            wrapped_key: self.key.0.into(),
+            wrapping_key_id: value.wrapping_key_id,
+            wrapped_key: value.key.0,
         }
     }
 }
@@ -286,7 +288,7 @@ pub trait Crypt: Send + Sync {
     async fn create_key_with_id(
         &self,
         owner: u64,
-        wrapping_key_id: u128,
+        wrapping_key_id: WrappingKeyId,
         object_type: ObjectType,
     ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status>;
 

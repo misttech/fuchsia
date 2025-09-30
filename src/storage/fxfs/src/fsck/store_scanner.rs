@@ -18,6 +18,7 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::round::round_up;
 use anyhow::{Error, bail};
+use fxfs_crypto::WrappingKeyId;
 use rustc_hash::FxHashSet as HashSet;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;
@@ -81,7 +82,7 @@ struct ScannedDir {
     // Used to detect directory cycles.
     visited: UnsafeCell<bool>,
     // If set, stores the wrapping_key_id that the directory was encrypted with.
-    wrapping_key_id: Option<u128>,
+    wrapping_key_id: Option<WrappingKeyId>,
     // Attributes for this directory.
     attributes: ScannedAttributes,
     // True if directory uses casefold

@@ -8,6 +8,7 @@ pub use legacy::*;
 
 // TODO(https://fxbug.dev/42178223): need validation after deserialization.
 use crate::checksum::Checksums;
+use crate::log::error;
 use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, LayerKey, MergeType, OrdLowerBound, OrdUpperBound, RangeKey,
     SortByU64, Value,
@@ -17,7 +18,7 @@ use crate::object_store::extent_record::{
 };
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use fprint::TypeFingerprint;
-use fxfs_crypto::WrappedKey;
+use fxfs_crypto::{WrappedKey, WrappingKeyId};
 use fxfs_unicode::CasefoldString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -383,7 +384,7 @@ impl FuzzyHash for ObjectKey {
 }
 
 /// UNIX epoch based timestamp in the UTC timezone.
-pub type Timestamp = TimestampV32;
+pub type Timestamp = TimestampV49;
 
 #[derive(
     Copy,
@@ -399,9 +400,8 @@ pub type Timestamp = TimestampV32;
     TypeFingerprint,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct TimestampV32 {
-    pub secs: u64,
-    pub nanos: u32,
+pub struct TimestampV49 {
+    nanos: u64,
 }
 
 impl Timestamp {
@@ -412,39 +412,60 @@ impl Timestamp {
     }
 
     pub const fn zero() -> Self {
-        Self { secs: 0, nanos: 0 }
+        Self { nanos: 0 }
     }
 
     pub const fn from_nanos(nanos: u64) -> Self {
-        let subsec_nanos = (nanos % Self::NSEC_PER_SEC) as u32;
-        Self { secs: nanos / Self::NSEC_PER_SEC, nanos: subsec_nanos }
+        Self { nanos }
     }
 
+    pub fn from_secs_and_nanos(secs: u64, nanos: u32) -> Self {
+        let Some(secs_in_nanos) = secs.checked_mul(Self::NSEC_PER_SEC) else {
+            error!("Fxfs doesn't support dates past 2554-07-21");
+            return Self { nanos: u64::MAX };
+        };
+        let Some(nanos) = secs_in_nanos.checked_add(nanos as u64) else {
+            error!("Fxfs doesn't support dates past 2554-07-21");
+            return Self { nanos: u64::MAX };
+        };
+        Self { nanos }
+    }
+
+    /// Returns the total number of nanoseconds represented by this `Timestamp` since the Unix
+    /// epoch.
     pub fn as_nanos(&self) -> u64 {
-        Self::NSEC_PER_SEC
-            .checked_mul(self.secs)
-            .and_then(|val| val.checked_add(self.nanos as u64))
-            .unwrap_or(0u64)
+        self.nanos
+    }
+
+    /// Returns the fractional nanoseconds represented by this `Timestamp`.
+    pub fn subsec_nanos(&self) -> u32 {
+        (self.nanos % Self::NSEC_PER_SEC) as u32
+    }
+
+    /// Returns the total number of whole seconds represented by this `Timestamp` since the Unix
+    /// epoch.
+    pub fn as_secs(&self) -> u64 {
+        self.nanos / Self::NSEC_PER_SEC
     }
 }
 
 impl From<std::time::Duration> for Timestamp {
-    fn from(duration: std::time::Duration) -> Timestamp {
-        Timestamp { secs: duration.as_secs(), nanos: duration.subsec_nanos() }
+    fn from(duration: std::time::Duration) -> Self {
+        Self::from_secs_and_nanos(duration.as_secs(), duration.subsec_nanos())
     }
 }
 
 impl From<Timestamp> for std::time::Duration {
     fn from(timestamp: Timestamp) -> std::time::Duration {
-        Duration::new(timestamp.secs, timestamp.nanos)
+        Duration::from_nanos(timestamp.nanos)
     }
 }
 
-pub type ObjectKind = ObjectKindV46;
+pub type ObjectKind = ObjectKindV49;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectKindV46 {
+pub enum ObjectKindV49 {
     File {
         /// The number of references to this file.
         refs: u64,
@@ -454,7 +475,7 @@ pub enum ObjectKindV46 {
         sub_dirs: u64,
         /// If set, contains the wrapping key id used to encrypt the file contents and filenames in
         /// this directory.
-        wrapping_key_id: Option<u128>,
+        wrapping_key_id: Option<WrappingKeyId>,
         /// If true, all files and sub-directories created in this directory will support case
         /// insensitive (but case-preserving) file naming.
         casefold: bool,
@@ -465,7 +486,7 @@ pub enum ObjectKindV46 {
         refs: u64,
         /// `link` is the target of the link and has no meaning within Fxfs; clients are free to
         /// interpret it however they like.
-        link: Vec<u8>,
+        link: Box<[u8]>,
     },
     EncryptedSymlink {
         /// The number of references to this symbolic link.
@@ -474,7 +495,7 @@ pub enum ObjectKindV46 {
         /// interpret it however they like.
         /// `link` is stored here in encrypted form, encrypted with the symlink's key using the
         /// same encryption scheme as the one used to encrypt filenames.
-        link: Vec<u8>,
+        link: Box<[u8]>,
     },
 }
 
@@ -498,15 +519,15 @@ pub struct PosixAttributesV32 {
 /// Object-level attributes.  Note that these are not the same as "attributes" in the
 /// ObjectValue::Attribute sense, which refers to an arbitrary data payload associated with an
 /// object.  This naming collision is unfortunate.
-pub type ObjectAttributes = ObjectAttributesV32;
+pub type ObjectAttributes = ObjectAttributesV49;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct ObjectAttributesV32 {
+pub struct ObjectAttributesV49 {
     /// The timestamp at which the object was created (i.e. crtime).
-    pub creation_time: TimestampV32,
+    pub creation_time: TimestampV49,
     /// The timestamp at which the object's data was last modified (i.e. mtime).
-    pub modification_time: TimestampV32,
+    pub modification_time: TimestampV49,
     /// The project id to associate this object's resource usage with. Zero means none.
     pub project_id: u64,
     /// Mode, uid, gid, and rdev
@@ -514,9 +535,9 @@ pub struct ObjectAttributesV32 {
     /// The number of bytes allocated to all extents across all attributes for this object.
     pub allocated_size: u64,
     /// The timestamp at which the object was last read (i.e. atime).
-    pub access_time: TimestampV32,
+    pub access_time: TimestampV49,
     /// The timestamp at which the object's status was last modified (i.e. ctime).
-    pub change_time: TimestampV32,
+    pub change_time: TimestampV49,
 }
 
 pub type ExtendedAttributeValue = ExtendedAttributeValueV32;
@@ -564,14 +585,14 @@ pub struct FsverityMetadataV33 {
     pub salt: Vec<u8>,
 }
 
-pub type EncryptionKey = EncryptionKeyV47;
-pub type EncryptionKeyV47 = fxfs_crypto::EncryptionKey;
+pub type EncryptionKey = EncryptionKeyV49;
+pub type EncryptionKeyV49 = fxfs_crypto::EncryptionKey;
 
-pub type EncryptionKeys = EncryptionKeysV47;
+pub type EncryptionKeys = EncryptionKeysV49;
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct EncryptionKeysV47(Vec<(u64, EncryptionKeyV47)>);
+pub struct EncryptionKeysV49(Vec<(u64, EncryptionKeyV49)>);
 
 impl EncryptionKeys {
     pub fn get(&self, id: u64) -> Option<&EncryptionKey> {
@@ -604,7 +625,7 @@ impl From<Vec<(u64, EncryptionKey)>> for EncryptionKeys {
 }
 
 impl std::ops::Deref for EncryptionKeys {
-    type Target = Vec<(u64, EncryptionKeyV47)>;
+    type Target = Vec<(u64, EncryptionKey)>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -613,14 +634,14 @@ impl std::ops::Deref for EncryptionKeys {
 /// ObjectValue is the value of an item in the object store.
 /// Note that the tree stores deltas on objects, so these values describe deltas. Unless specified
 /// otherwise, a value indicates an insert/replace mutation.
-pub type ObjectValue = ObjectValueV47;
+pub type ObjectValue = ObjectValueV49;
 impl Value for ObjectValue {
     const DELETED_MARKER: Self = Self::None;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectValueV47 {
+pub enum ObjectValueV49 {
     /// Some keys have no value (this often indicates a tombstone of some sort).  Records with this
     /// value are always filtered when a major compaction is performed, so the meaning must be the
     /// same as if the item was not present.
@@ -629,9 +650,9 @@ pub enum ObjectValueV47 {
     /// (None) i.e. their value is really a boolean: None => false, Some => true.
     Some,
     /// The value for an ObjectKey::Object record.
-    Object { kind: ObjectKindV46, attributes: ObjectAttributesV32 },
+    Object { kind: ObjectKindV49, attributes: ObjectAttributesV49 },
     /// Specifies encryption keys to use for an object.
-    Keys(EncryptionKeysV47),
+    Keys(EncryptionKeysV49),
     /// An attribute associated with a file object. |size| is the size of the attribute in bytes.
     Attribute { size: u64, has_overwrite_extents: bool },
     /// An extent associated with an object.
@@ -710,7 +731,7 @@ impl ObjectValue {
     }
     /// Creates an ObjectValue for an object symlink.
     pub fn symlink(
-        link: impl Into<Vec<u8>>,
+        link: impl Into<Box<[u8]>>,
         creation_time: Timestamp,
         modification_time: Timestamp,
         project_id: u64,
@@ -727,7 +748,7 @@ impl ObjectValue {
     }
     /// Creates an ObjectValue for an encrypted symlink object.
     pub fn encrypted_symlink(
-        link: impl Into<Vec<u8>>,
+        link: impl Into<Box<[u8]>>,
         creation_time: Timestamp,
         modification_time: Timestamp,
         project_id: u64,
@@ -750,8 +771,8 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV47;
-pub type ObjectItemV47 = Item<ObjectKeyV43, ObjectValueV47>;
+pub type ObjectItem = ObjectItemV49;
+pub type ObjectItemV49 = Item<ObjectKeyV43, ObjectValueV49>;
 
 impl ObjectItem {
     pub fn is_tombstone(&self) -> bool {
@@ -790,8 +811,8 @@ impl<'a> From<ItemRef<'a, ObjectKey, ObjectValue>>
     }
 }
 
-pub type FxfsKey = FxfsKeyV40;
-pub type FxfsKeyV40 = fxfs_crypto::FxfsKey;
+pub type FxfsKey = FxfsKeyV49;
+pub type FxfsKeyV49 = fxfs_crypto::FxfsKey;
 
 #[cfg(test)]
 mod tests {

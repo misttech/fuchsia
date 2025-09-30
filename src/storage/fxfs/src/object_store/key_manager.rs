@@ -499,7 +499,7 @@ mod tests {
     use futures::join;
     use fxfs_crypto::{
         Cipher, Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsCipher, FxfsKey, KeyPurpose,
-        ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes,
+        ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKeyId,
     };
     use std::future::pending;
     use std::sync::Arc;
@@ -533,7 +533,7 @@ mod tests {
         vec![(
             0,
             EncryptionKey::Fxfs(FxfsKey {
-                wrapping_key_id: 0x1234567812345678,
+                wrapping_key_id: 0x1234567812345678u128.to_le_bytes(),
                 key: WrappedKeyBytes::from([0xff; FXFS_WRAPPED_KEY_SIZE]),
             }),
         )]
@@ -571,7 +571,7 @@ mod tests {
         async fn create_key_with_id(
             &self,
             _owner: u64,
-            _wrapping_key_id: u128,
+            _wrapping_key_id: WrappingKeyId,
             _object_type: ObjectType,
         ) -> Result<(fxfs_crypto::EncryptionKey, UnwrappedKey), zx::Status> {
             unimplemented!("Not used in tests");

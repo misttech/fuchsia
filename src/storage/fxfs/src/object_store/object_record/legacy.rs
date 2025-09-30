@@ -5,6 +5,7 @@
 //! Contains all legacy data structures and migration code.
 
 use super::*;
+use fxfs_crypto::WrappedKeyBytes;
 
 impl From<ObjectKeyDataV40> for ObjectKeyDataV43 {
     fn from(item: ObjectKeyDataV40) -> Self {
@@ -52,6 +53,33 @@ pub struct ObjectKeyV40 {
     pub data: ObjectKeyDataV40,
 }
 
+impl From<ObjectKindV46> for ObjectKindV49 {
+    fn from(value: ObjectKindV46) -> Self {
+        match value {
+            ObjectKindV46::File { refs } => Self::File { refs },
+            ObjectKindV46::Directory { sub_dirs, wrapping_key_id, casefold } => Self::Directory {
+                sub_dirs,
+                wrapping_key_id: wrapping_key_id.map(u128::to_le_bytes),
+                casefold,
+            },
+            ObjectKindV46::Graveyard => Self::Graveyard,
+            ObjectKindV46::Symlink { refs, link } => Self::Symlink { refs, link: link.into() },
+            ObjectKindV46::EncryptedSymlink { refs, link } => {
+                Self::EncryptedSymlink { refs, link: link.into() }
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, TypeFingerprint)]
+pub enum ObjectKindV46 {
+    File { refs: u64 },
+    Directory { sub_dirs: u64, wrapping_key_id: Option<u128>, casefold: bool },
+    Graveyard,
+    Symlink { refs: u64, link: Vec<u8> },
+    EncryptedSymlink { refs: u64, link: Vec<u8> },
+}
+
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint)]
 #[migrate_to_version(ObjectKindV46)]
 pub enum ObjectKindV41 {
@@ -84,6 +112,35 @@ impl From<ObjectKindV40> for ObjectKindV41 {
 }
 
 #[derive(Serialize, Deserialize, TypeFingerprint)]
+pub struct FxfsKeyV40 {
+    pub wrapping_key_id: u128,
+    pub key: WrappedKeyBytes,
+}
+
+impl From<FxfsKeyV40> for FxfsKeyV49 {
+    fn from(value: FxfsKeyV40) -> Self {
+        Self { wrapping_key_id: value.wrapping_key_id.to_le_bytes(), key: value.key }
+    }
+}
+
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint)]
+#[migrate_to_version(EncryptionKeyV49)]
+pub enum EncryptionKeyV47 {
+    Fxfs(FxfsKeyV40),
+    FscryptInoLblk32File { key_identifier: [u8; 16] },
+    FscryptInoLblk32Dir { key_identifier: [u8; 16], nonce: [u8; 16] },
+}
+
+#[derive(Serialize, Deserialize, TypeFingerprint)]
+pub struct EncryptionKeysV47(Vec<(u64, EncryptionKeyV47)>);
+
+impl From<EncryptionKeysV47> for EncryptionKeysV49 {
+    fn from(value: EncryptionKeysV47) -> Self {
+        Self(value.0.into_iter().map(|(id, key)| (id, key.into())).collect())
+    }
+}
+
+#[derive(Serialize, Deserialize, TypeFingerprint)]
 pub enum EncryptionKeysV40 {
     AES256XTS(WrappedKeysV40),
 }
@@ -98,6 +155,22 @@ impl From<EncryptionKeysV40> for EncryptionKeysV47 {
 
 #[derive(Serialize, Deserialize, TypeFingerprint)]
 pub struct WrappedKeysV40(pub Vec<(u64, FxfsKeyV40)>);
+
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectValueV49)]
+pub enum ObjectValueV47 {
+    None,
+    Some,
+    Object { kind: ObjectKindV46, attributes: ObjectAttributesV32 },
+    Keys(EncryptionKeysV47),
+    Attribute { size: u64, has_overwrite_extents: bool },
+    Extent(ExtentValueV38),
+    Child(ChildValueV32),
+    Trim,
+    BytesAndNodes { bytes: i64, nodes: i64 },
+    ExtendedAttribute(ExtendedAttributeValueV32),
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
+}
 
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectValueV47)]
@@ -172,11 +245,41 @@ pub enum ObjectValueV40 {
     VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV33 },
 }
 
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint)]
+#[migrate_to_version(ObjectAttributesV49)]
+pub struct ObjectAttributesV32 {
+    pub creation_time: TimestampV32,
+    pub modification_time: TimestampV32,
+    pub project_id: u64,
+    pub posix_attributes: Option<PosixAttributesV32>,
+    pub allocated_size: u64,
+    pub access_time: TimestampV32,
+    pub change_time: TimestampV32,
+}
+
+impl From<TimestampV32> for TimestampV49 {
+    fn from(timestamp: TimestampV32) -> Self {
+        Self::from_secs_and_nanos(timestamp.secs, timestamp.nanos)
+    }
+}
+
+#[derive(Serialize, Deserialize, TypeFingerprint)]
+pub struct TimestampV32 {
+    pub secs: u64,
+    pub nanos: u32,
+}
+
+pub type ObjectItemV47 = Item<ObjectKeyV43, ObjectValueV47>;
 pub type ObjectItemV46 = Item<ObjectKeyV43, ObjectValueV46>;
 pub type ObjectItemV43 = Item<ObjectKeyV43, ObjectValueV41>;
 pub type ObjectItemV41 = Item<ObjectKeyV40, ObjectValueV41>;
 pub type ObjectItemV40 = Item<ObjectKeyV40, ObjectValueV40>;
 
+impl From<ObjectItemV47> for ObjectItemV49 {
+    fn from(item: ObjectItemV47) -> Self {
+        Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }
+    }
+}
 impl From<ObjectItemV46> for ObjectItemV47 {
     fn from(item: ObjectItemV46) -> Self {
         Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }
@@ -187,7 +290,6 @@ impl From<ObjectItemV43> for ObjectItemV46 {
         Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }
     }
 }
-
 impl From<ObjectItemV41> for ObjectItemV43 {
     fn from(item: ObjectItemV41) -> Self {
         Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }

@@ -22,7 +22,7 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fscrypt::proxy_filename::ProxyFilename;
 use fuchsia_sync::Mutex;
-use fxfs_crypto::{Cipher, ObjectType};
+use fxfs_crypto::{Cipher, ObjectType, WrappingKeyId};
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,7 +45,7 @@ pub struct Directory<S: HandleOwner> {
     is_deleted: AtomicBool,
     /// True if this directory uses case-insensitive names.
     casefold: AtomicBool,
-    wrapping_key_id: Mutex<Option<u128>>,
+    wrapping_key_id: Mutex<Option<WrappingKeyId>>,
 }
 
 #[derive(Clone, Default)]
@@ -100,7 +100,12 @@ fn proxy_filename_to_query_key(proxy: &ProxyFilename, object_id: u64) -> ObjectK
 
 #[fxfs_trace::trace]
 impl<S: HandleOwner> Directory<S> {
-    fn new(owner: Arc<S>, object_id: u64, wrapping_key_id: Option<u128>, casefold: bool) -> Self {
+    fn new(
+        owner: Arc<S>,
+        object_id: u64,
+        wrapping_key_id: Option<WrappingKeyId>,
+        casefold: bool,
+    ) -> Self {
         Directory {
             handle: StoreObjectHandle::new(
                 owner,
@@ -119,8 +124,8 @@ impl<S: HandleOwner> Directory<S> {
         self.handle.object_id()
     }
 
-    pub fn wrapping_key_id(&self) -> Option<u128> {
-        self.wrapping_key_id.lock().clone()
+    pub fn wrapping_key_id(&self) -> Option<WrappingKeyId> {
+        *self.wrapping_key_id.lock()
     }
 
     /// Retrieves keys from the key manager or unwraps the wrapped keys in the directory's key
@@ -192,7 +197,7 @@ impl<S: HandleOwner> Directory<S> {
     pub async fn create(
         transaction: &mut Transaction<'_>,
         owner: &Arc<S>,
-        wrapping_key_id: Option<u128>,
+        wrapping_key_id: Option<WrappingKeyId>,
     ) -> Result<Directory<S>, Error> {
         Self::create_with_options(transaction, owner, wrapping_key_id, false).await
     }
@@ -200,7 +205,7 @@ impl<S: HandleOwner> Directory<S> {
     pub async fn create_with_options(
         transaction: &mut Transaction<'_>,
         owner: &Arc<S>,
-        wrapping_key_id: Option<u128>,
+        wrapping_key_id: Option<WrappingKeyId>,
         casefold: bool,
     ) -> Result<Directory<S>, Error> {
         let store = owner.as_ref().as_ref();
@@ -264,7 +269,7 @@ impl<S: HandleOwner> Directory<S> {
     pub async fn set_wrapping_key(
         &self,
         transaction: &mut Transaction<'_>,
-        id: u128,
+        id: WrappingKeyId,
     ) -> Result<Arc<dyn Cipher>, Error> {
         let object_id = self.object_id();
         let store = self.store();
@@ -349,7 +354,7 @@ impl<S: HandleOwner> Directory<S> {
     pub fn open_unchecked(
         owner: Arc<S>,
         object_id: u64,
-        wrapping_key_id: Option<u128>,
+        wrapping_key_id: Option<WrappingKeyId>,
         casefold: bool,
     ) -> Self {
         Self::new(owner, object_id, wrapping_key_id, casefold)
@@ -1050,10 +1055,7 @@ impl<S: HandleOwner> Directory<S> {
             if let Some(fio::MutableNodeAttributes { wrapping_key_id: Some(id), .. }) =
                 node_attributes
             {
-                Some((
-                    u128::from_le_bytes(*id),
-                    self.set_wrapping_key(&mut transaction, u128::from_le_bytes(*id)).await?,
-                ))
+                Some((*id, self.set_wrapping_key(&mut transaction, *id).await?))
             } else {
                 None
             };
@@ -1647,7 +1649,7 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl_fuchsia_io as fio;
-    use fxfs_crypto::{Cipher, Crypt};
+    use fxfs_crypto::{Cipher, Crypt, WrappingKeyId};
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::collections::{BTreeMap, HashSet};
     use std::future::poll_fn;
@@ -1657,6 +1659,7 @@ mod tests {
     use storage_device::fake_device::FakeDevice;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
+    const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 
     /// The synthetic symlink we return when locked is not usable for anything but we still want
     /// it to match that returned by fscrypt so we will verify here that we get back the
@@ -1668,7 +1671,7 @@ mod tests {
         let symlink_object_id;
         {
             let crypt = Arc::new(InsecureCrypt::new());
-            crypt.add_wrapping_key(2, [1; 32].into());
+            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .new_volume("test", NO_OWNER, Some(crypt.clone() as Arc<dyn Crypt>))
@@ -1688,7 +1691,7 @@ mod tests {
             let root_dir = Directory::open(&store, store.root_directory_object_id())
                 .await
                 .expect("open failed");
-            let _ = root_dir.set_wrapping_key(&mut transaction, 2).await?;
+            let _ = root_dir.set_wrapping_key(&mut transaction, WRAPPING_KEY_ID).await?;
             transaction.commit().await.unwrap();
 
             let mut transaction = fs
@@ -1872,11 +1875,11 @@ mod tests {
             .await
             .expect("new transaction failed");
         directory
-            .set_wrapping_key(&mut transaction, 2)
+            .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
             .await
             .expect_err("wrapping key id 2 has not been added");
         transaction.commit().await.expect("commit failed");
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -1886,7 +1889,7 @@ mod tests {
             .await
             .expect("new transaction failed");
         directory
-            .set_wrapping_key(&mut transaction, 2)
+            .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
             .await
             .expect("wrapping key id 2 has been added");
         fs.close().await.expect("Close failed");
@@ -1933,7 +1936,10 @@ mod tests {
             )
             .await
             .expect("new transaction failed");
-        directory.set_wrapping_key(&mut transaction, 2).await.expect_err("directory is not empty");
+        directory
+            .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
+            .await
+            .expect_err("directory is not empty");
         transaction.commit().await.expect("commit failed");
         fs.close().await.expect("Close failed");
     }
@@ -1967,7 +1973,7 @@ mod tests {
             .await
             .expect("create_child_dir failed");
         transaction.commit().await.expect("commit failed");
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         let transaction = fs
             .clone()
             .new_transaction(
@@ -1980,7 +1986,7 @@ mod tests {
             .update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(u128::to_le_bytes(2)),
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
                     ..Default::default()
                 }),
                 0,
@@ -1988,7 +1994,7 @@ mod tests {
             )
             .await
             .expect("update attributes failed");
-        crypt.remove_wrapping_key(2);
+        crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -2041,7 +2047,7 @@ mod tests {
                 .await
                 .expect("create_child_dir failed");
             transaction.commit().await.expect("commit failed");
-            crypt.add_wrapping_key(2, [1; 32].into());
+            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
             let transaction = fs
                 .clone()
                 .new_transaction(
@@ -2054,7 +2060,7 @@ mod tests {
                 .update_attributes(
                     transaction,
                     Some(&fio::MutableNodeAttributes {
-                        wrapping_key_id: Some(u128::to_le_bytes(2)),
+                        wrapping_key_id: Some(WRAPPING_KEY_ID),
                         ..Default::default()
                     }),
                     0,
@@ -2079,7 +2085,7 @@ mod tests {
                 .await
                 .expect("create_child_dir failed");
             transaction.commit().await.expect("commit failed");
-            crypt.remove_wrapping_key(2);
+            crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
             (directory.object_id(), src_child.object_id(), dst_child.object_id())
         };
         fs.close().await.expect("Close failed");
@@ -2176,13 +2182,11 @@ mod tests {
             )
             .await
             .expect("new transaction failed");
-        let mut wrapping_key_id = [0; 16];
-        wrapping_key_id[0] = 2;
         file_handle
             .update_attributes(
                 &mut transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(wrapping_key_id),
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
                     ..Default::default()
                 }),
                 None,
@@ -3882,8 +3886,7 @@ mod tests {
             let store = root_volume.new_volume("vol", NO_OWNER, Some(crypt.clone())).await.unwrap();
 
             // Create a (very weak) key for our encrypted directory.
-            let wrapping_key_id = 2;
-            crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
 
             object_id = {
                 let mut transaction = fs
@@ -3897,7 +3900,7 @@ mod tests {
                     )
                     .await
                     .expect("new_transaction failed");
-                let dir = Directory::create(&mut transaction, &store, Some(wrapping_key_id))
+                let dir = Directory::create(&mut transaction, &store, Some(WRAPPING_KEY_ID))
                     .await
                     .expect("create failed");
 
@@ -4043,8 +4046,7 @@ mod tests {
             let store = root_volume.new_volume("vol", NO_OWNER, Some(crypt.clone())).await.unwrap();
 
             // Create a (very weak) key for our encrypted directory.
-            let wrapping_key_id = 2;
-            crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
 
             object_id = {
                 let mut transaction = fs
@@ -4058,7 +4060,7 @@ mod tests {
                     )
                     .await
                     .expect("new_transaction failed");
-                let dir = Directory::create(&mut transaction, &store, Some(wrapping_key_id))
+                let dir = Directory::create(&mut transaction, &store, Some(WRAPPING_KEY_ID))
                     .await
                     .expect("create failed");
 
@@ -4070,14 +4072,6 @@ mod tests {
             dir.set_casefold(true).await.expect("set casefold");
             assert!(dir.casefold());
 
-            let mut transaction = fs
-                .clone()
-                .new_transaction(
-                    lock_keys![LockKey::object(store.store_object_id(), dir.object_id()),],
-                    Options::default(),
-                )
-                .await
-                .expect("new_transaction failed");
             let key = dir.get_fscrypt_key().await.expect("key").unwrap();
 
             // Nb: We use a rather expensive brute force search to find two filenames that:
@@ -4102,13 +4096,21 @@ mod tests {
                 let encrypted_name =
                     encrypt_filename(&key, dir.object_id(), &filename).expect("encrypt_filename");
                 let proxy_filename = ProxyFilename::new(hash_code as u64, &encrypted_name);
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(store.store_object_id(), dir.object_id()),],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
                 let file = dir
                     .create_child_file(&mut transaction, &filename)
                     .await
                     .expect("create_child_file failed");
                 filenames.push((proxy_filename, file.object_id()));
+                transaction.commit().await.expect("commit failed");
             }
-            transaction.commit().await.expect("commit failed");
 
             fs.close().await.expect("Close failed");
         }
@@ -4272,7 +4274,7 @@ mod tests {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         // Create an fscrypt encrypted directory.
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -4288,7 +4290,10 @@ mod tests {
             .create_child_dir(&mut transaction, "foo")
             .await
             .expect("create_child_dir failed");
-        directory.set_wrapping_key(&mut transaction, 2).await.expect("set wrapping_key");
+        directory
+            .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
+            .await
+            .expect("set wrapping_key");
         transaction.commit().await.expect("commit failed");
 
         // Enable casefold.
@@ -4378,7 +4383,7 @@ mod tests {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         // Create an fscrypt encrypted directory.
-        crypt.add_wrapping_key(2, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -4394,7 +4399,10 @@ mod tests {
             .create_child_dir(&mut transaction, "foo")
             .await
             .expect("create_child_dir failed");
-        directory.set_wrapping_key(&mut transaction, 2).await.expect("set wrapping_key");
+        directory
+            .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
+            .await
+            .expect("set wrapping_key");
         transaction.commit().await.expect("commit failed");
 
         // Write some test entries.

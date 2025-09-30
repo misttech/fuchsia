@@ -45,7 +45,7 @@ use crate::lsm_tree::{LSMTree, Query};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::graveyard::Graveyard;
-use crate::object_store::journal::{JournalCheckpoint, JournaledTransaction};
+use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, JournaledTransaction};
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, ObjectStoreMutation, Operation, Options, Transaction,
@@ -60,7 +60,10 @@ use fidl_fuchsia_io as fio;
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
-use fxfs_crypto::{Cipher, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey};
+use fxfs_crypto::{
+    Cipher, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey, WrappingKeyId,
+};
+use fxfs_macros::{Migrate, migrate_to_version};
 use once_cell::sync::OnceCell;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
@@ -76,7 +79,7 @@ pub use extent_record::{
 };
 pub use object_record::{
     AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata, FxfsKey,
-    FxfsKeyV40, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
+    FxfsKeyV40, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
     ProjectProperty, RootDigest,
 };
 pub use transaction::Mutation;
@@ -117,10 +120,10 @@ pub trait HandleOwner: AsRef<ObjectStore> + Send + Sync + 'static {}
 
 /// StoreInfo stores information about the object store.  This is stored within the parent object
 /// store, and is used, for example, to get the persistent layer objects.
-pub type StoreInfo = StoreInfoV40;
+pub type StoreInfo = StoreInfoV49;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TypeFingerprint, Versioned)]
-pub struct StoreInfoV40 {
+pub struct StoreInfoV49 {
     /// The globally unique identifier for the associated object store. If unset, will be all zero.
     guid: [u8; 16],
 
@@ -146,7 +149,7 @@ pub struct StoreInfoV40 {
     object_count: u64,
 
     /// The (wrapped) key that encrypted mutations should use.
-    mutations_key: Option<FxfsKeyV40>,
+    mutations_key: Option<FxfsKeyV49>,
 
     /// Mutations for the store are encrypted using a stream cipher.  To decrypt the mutations, we
     /// need to know the offset in the cipher stream to start it.
@@ -160,10 +163,26 @@ pub struct StoreInfoV40 {
     /// reveal (such as the number of files in the system and the ordering of their creation in
     /// time).  Only the bottom 32 bits of the object ID are encrypted whilst the top 32 bits will
     /// increment after 2^32 object IDs have been used and this allows us to roll the key.
-    object_id_key: Option<FxfsKeyV40>,
+    object_id_key: Option<FxfsKeyV49>,
 
     /// A directory for storing internal files in a directory structure. Holds INVALID_OBJECT_ID
     /// when the directory doesn't yet exist.
+    internal_directory_object_id: u64,
+}
+
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(StoreInfoV49)]
+pub struct StoreInfoV40 {
+    guid: [u8; 16],
+    last_object_id: u64,
+    pub layers: Vec<u64>,
+    root_directory_object_id: u64,
+    graveyard_directory_object_id: u64,
+    object_count: u64,
+    mutations_key: Option<FxfsKeyV40>,
+    mutations_cipher_offset: u64,
+    pub encrypted_mutations_object_id: u64,
+    object_id_key: Option<FxfsKeyV40>,
     internal_directory_object_id: u64,
 }
 
@@ -234,23 +253,23 @@ impl Default for NewChildStoreOptions {
     }
 }
 
-pub type EncryptedMutations = EncryptedMutationsV40;
+pub type EncryptedMutations = EncryptedMutationsV49;
 
 #[derive(Clone, Default, Deserialize, Serialize, TypeFingerprint)]
-pub struct EncryptedMutationsV40 {
+pub struct EncryptedMutationsV49 {
     // Information about the mutations are held here, but the actual encrypted data is held within
     // data.  For each transaction, we record the checkpoint and the count of mutations within the
     // transaction.  The checkpoint is required for the log file offset (which we need to apply the
     // mutations), and the version so that we can correctly decode the mutation after it has been
     // decrypted. The count specifies the number of serialized mutations encoded in |data|.
-    transactions: Vec<(JournalCheckpoint, u64)>,
+    transactions: Vec<(JournalCheckpointV32, u64)>,
 
     // The encrypted mutations.
     data: Vec<u8>,
 
     // If the mutations key was rolled, this holds the offset in `data` where the new key should
     // apply.
-    mutations_key_roll: Vec<(usize, FxfsKeyV40)>,
+    mutations_key_roll: Vec<(usize, FxfsKeyV49)>,
 }
 
 impl std::fmt::Debug for EncryptedMutations {
@@ -267,6 +286,33 @@ impl std::fmt::Debug for EncryptedMutations {
 }
 
 impl Versioned for EncryptedMutations {
+    fn max_serialized_size() -> u64 {
+        MAX_ENCRYPTED_MUTATIONS_SIZE as u64
+    }
+}
+
+impl From<EncryptedMutationsV40> for EncryptedMutationsV49 {
+    fn from(value: EncryptedMutationsV40) -> Self {
+        EncryptedMutationsV49 {
+            transactions: value.transactions,
+            data: value.data,
+            mutations_key_roll: value
+                .mutations_key_roll
+                .into_iter()
+                .map(|(offset, key)| (offset, key.into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, TypeFingerprint)]
+pub struct EncryptedMutationsV40 {
+    transactions: Vec<(JournalCheckpointV32, u64)>,
+    data: Vec<u8>,
+    mutations_key_roll: Vec<(usize, FxfsKeyV40)>,
+}
+
+impl Versioned for EncryptedMutationsV40 {
     fn max_serialized_size() -> u64 {
         MAX_ENCRYPTED_MUTATIONS_SIZE as u64
     }
@@ -1039,7 +1085,7 @@ impl ObjectStore {
         owner: &Arc<S>,
         mut transaction: &mut Transaction<'_>,
         options: HandleOptions,
-        wrapping_key_id: Option<u128>,
+        wrapping_key_id: Option<WrappingKeyId>,
     ) -> Result<DataObjectHandle<S>, Error> {
         let store = owner.as_ref().as_ref();
         let object_id = store.get_next_object_id(transaction.txn_guard()).await?;
@@ -2111,11 +2157,11 @@ impl ObjectStore {
             Some(Item {
                 value: ObjectValue::Object { kind: ObjectKind::EncryptedSymlink { link, .. }, .. },
                 ..
-            }) => self.read_encrypted_symlink(object_id, link).await,
+            }) => self.read_encrypted_symlink(object_id, link.to_vec()).await,
             Some(Item {
                 value: ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. },
                 ..
-            }) => Ok(link),
+            }) => Ok(link.to_vec()),
             Some(item) => Err(anyhow!(FxfsError::Inconsistent)
                 .context(format!("Unexpected item in lookup: {item:?}"))),
         }
@@ -3350,13 +3396,13 @@ mod tests {
             graveyard_directory_object_id: 0x1234567812345678,
             object_count: 0x1234567812345678,
             mutations_key: Some(FxfsKey {
-                wrapping_key_id: 0x1234567812345678,
+                wrapping_key_id: 0x1234567812345678u128.to_le_bytes(),
                 key: WrappedKeyBytes::from([0xff; FXFS_WRAPPED_KEY_SIZE]),
             }),
             mutations_cipher_offset: 0x1234567812345678,
             encrypted_mutations_object_id: 0x1234567812345678,
             object_id_key: Some(FxfsKey {
-                wrapping_key_id: 0x1234567812345678,
+                wrapping_key_id: 0x1234567812345678u128.to_le_bytes(),
                 key: WrappedKeyBytes::from([0xff; FXFS_WRAPPED_KEY_SIZE]),
             }),
             internal_directory_object_id: INVALID_OBJECT_ID,

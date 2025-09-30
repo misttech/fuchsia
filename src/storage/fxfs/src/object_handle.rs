@@ -5,6 +5,7 @@
 use crate::object_store::{PosixAttributes, Timestamp};
 use anyhow::Error;
 use async_trait::async_trait;
+use fxfs_crypto::WrappingKeyId;
 use std::future::Future;
 use std::ops::Deref;
 use std::pin::Pin;
@@ -55,7 +56,7 @@ pub struct ObjectProperties {
     pub posix_attributes: Option<PosixAttributes>,
     /// True if this is a directory that has casefolding enabled.
     pub casefold: bool,
-    pub wrapping_key_id: Option<u128>,
+    pub wrapping_key_id: Option<WrappingKeyId>,
 }
 
 #[async_trait]

@@ -8,7 +8,7 @@ use chrono::Local;
 use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions, mkfs_with_volume};
 use fxfs::object_store::{NO_OWNER, ObjectStore};
 use fxfs::serialized_types::{LATEST_VERSION, Version};
-use fxfs_crypto::Crypt;
+use fxfs_crypto::{Crypt, WrappingKeyId};
 use fxfs_insecure_crypto::InsecureCrypt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,7 @@ const UNENCRYPTED_VOLUME: &str = "unencrypted";
 const CHECK_FILE_PATH: &str = "some/test_file.txt";
 const CHECK_FILE_CONTENT: &[u8; 6] = &[0, 1, 2, 3, 4, 5];
 const SECOND_VOLUME_VERSION: Version = Version { major: 38, minor: 0 };
+const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 
 /// Uses FUCHSIA_DIR environment variable to generate a path to the expected location of golden
 /// images. Note that we do this largely for ergonomics because this binary is typically invoked
@@ -103,7 +104,7 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
     // Exercise fscrypt and casefold with unicode filenames.
     if vol.crypt().is_some() {
         ops::mkdir(fs, vol, &Path::new("/fscrypt")).await?;
-        ops::enable_fscrypt(fs, vol, &Path::new("/fscrypt"), 2).await?;
+        ops::enable_fscrypt(fs, vol, &Path::new("/fscrypt"), WRAPPING_KEY_ID).await?;
         ops::enable_casefold(vol, &Path::new("/fscrypt")).await?;
         ops::put(fs, vol, &Path::new("/fscrypt/Straße.txt"), EXPECTED_FILE_CONTENT.to_vec())
             .await?;
@@ -117,7 +118,7 @@ pub async fn create_image() -> Result<(), Error> {
     let path = golden_image_dir()?.join(latest_image_filename());
 
     let insecure_crypt = InsecureCrypt::new();
-    insecure_crypt.add_wrapping_key(2, [1; 32].into());
+    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
     {
         let device = mkfs_with_volume(
@@ -212,7 +213,7 @@ async fn check_volume(
 /// Validates an image by looking for expected data and performing an fsck.
 async fn check_image(path: &Path) -> Result<(), Error> {
     let insecure_crypt = InsecureCrypt::new();
-    insecure_crypt.add_wrapping_key(2, [1; 32].into());
+    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
     let version = {
         let device = DeviceHolder::new(load_device(path)?);

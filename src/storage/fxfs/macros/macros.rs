@@ -11,7 +11,7 @@ use proc_macro::TokenStream;
 use quote::ToTokens;
 use std::collections::BTreeMap;
 use syn::parse::{Parse, ParseStream};
-use syn::{Data, Fields, Result, parse_macro_input};
+use syn::{Data, Fields, Index, Result, parse_macro_input};
 
 /// Holds an open-ended version range like `3..` meaning version 3 and up.
 #[derive(Clone)]
@@ -244,39 +244,65 @@ pub fn derive_migrate(input: TokenStream) -> TokenStream {
             }
         }
         Data::Struct(s) => {
-            let fields = s.fields.iter().map(|f| {
-                let name = &f.ident;
-                match f.ty.to_token_stream().into_iter().next() {
-                    Some(proc_macro2::TokenTree::Ident(ident)) if ident == "Option" => {
-                        quote! { #name: from.#name.map(|f| f.into()) }
-                    }
-                    _ => quote! { #name: from.#name.into() },
-                }
-            });
+            let body = match s.fields {
+                Fields::Named(fields) => {
+                    let fields = fields.named.iter().map(|f| {
+                        let name = &f.ident;
+                        match f.ty.to_token_stream().into_iter().next() {
+                            Some(proc_macro2::TokenTree::Ident(ident)) if ident == "Option" => {
+                                quote! { #name: from.#name.map(Into::into) }
+                            }
+                            _ => quote! { #name: from.#name.into() },
+                        }
+                    });
 
-            let default_string = if input
-                .attrs
-                .iter()
-                .filter(|a| {
-                    a.style == syn::AttrStyle::Outer && a.path().is_ident("migrate_nodefault")
-                })
-                .next()
-                .is_none()
-            {
-                quote! {
-                    ..Default::default()
+                    let default_string = if input
+                        .attrs
+                        .iter()
+                        .filter(|a| {
+                            a.style == syn::AttrStyle::Outer
+                                && a.path().is_ident("migrate_nodefault")
+                        })
+                        .next()
+                        .is_none()
+                    {
+                        quote! {
+                            ..Default::default()
+                        }
+                    } else {
+                        quote! {}
+                    };
+
+                    quote! {
+                        #target {
+                            #(#fields),*,
+                            #default_string
+                        }
+                    }
                 }
-            } else {
-                quote! {}
+                Fields::Unnamed(fields) => {
+                    let fields = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                        let i = Index::from(i);
+                        match f.ty.to_token_stream().into_iter().next() {
+                            Some(proc_macro2::TokenTree::Ident(ident)) if ident == "Option" => {
+                                quote! { from.#i.map(Into::into) }
+                            }
+                            _ => quote! { from.#i.into() },
+                        }
+                    });
+                    quote! {
+                        #target (
+                            #(#fields),*,
+                        )
+                    }
+                }
+                Fields::Unit => quote! {},
             };
 
             quote! {
                 impl From<#ident> for #target {
                     fn from(from: #ident) -> Self {
-                        #target {
-                            #(#fields),*,
-                            #default_string
-                        }
+                        #body
                     }
                 }
             }

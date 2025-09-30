@@ -15,7 +15,7 @@ use fxfs::object_store::{
     NO_OWNER, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue,
     PosixAttributes, Timestamp, VOLUME_DATA_KEY_ID,
 };
-use fxfs_crypto::{Crypt, EncryptionKey};
+use fxfs_crypto::{Crypt, EncryptionKey, WrappingKeyId};
 use fxfs_insecure_crypto::InsecureCrypt;
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -38,8 +38,11 @@ fn open_test_image(path: &str) -> FakeDevice {
 fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttributes {
     let mode = inode.header.mode;
     ObjectAttributes {
-        creation_time: Timestamp { secs: inode.header.ctime, nanos: inode.header.ctime_nanos },
-        modification_time: Timestamp { secs: inode.header.mtime, nanos: inode.header.mtime_nanos },
+        creation_time: Timestamp::from_secs_and_nanos(inode.header.ctime, inode.header.ctime_nanos),
+        modification_time: Timestamp::from_secs_and_nanos(
+            inode.header.mtime,
+            inode.header.mtime_nanos,
+        ),
         project_id: 0,
         posix_attributes: Some(PosixAttributes {
             mode: mode.bits() as u32,
@@ -48,8 +51,8 @@ fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttri
             rdev: 0,
         }),
         allocated_size,
-        access_time: Timestamp { secs: inode.header.atime, nanos: inode.header.atime_nanos },
-        change_time: Timestamp { secs: inode.header.ctime, nanos: inode.header.ctime_nanos },
+        access_time: Timestamp::from_secs_and_nanos(inode.header.atime, inode.header.atime_nanos),
+        change_time: Timestamp::from_secs_and_nanos(inode.header.ctime, inode.header.ctime_nanos),
     }
 }
 
@@ -110,11 +113,11 @@ async fn keys_from_context(
     owner: &Directory<ObjectStore>,
     parent_is_fscrypt: bool,
     is_file: bool,
-) -> Result<(Option<u128>, u64, Vec<(u64, EncryptionKey)>), Error> {
+) -> Result<(Option<WrappingKeyId>, u64, Vec<(u64, EncryptionKey)>), Error> {
     if let Some(context) = context {
         ensure!(context.flags & fscrypt::POLICY_FLAGS_PAD_16 != 0, "require 16 byte padding");
         Ok((
-            Some(0),        // Presence of wrapping_key_id implies fscrypt. Value irrelevant.
+            Some([0; 16]),  // Presence of wrapping_key_id implies fscrypt. Value irrelevant.
             FSCRYPT_KEY_ID, // fscrypt always uses key_id = 1
             if context.flags & fscrypt::POLICY_FLAGS_INO_LBLK_32 != 0 {
                 if is_file {
@@ -143,7 +146,7 @@ async fn keys_from_context(
         let (key, _unwrapped_key) =
             crypt.create_key(object_id, fxfs_crypto::KeyPurpose::Data).await.unwrap();
         Ok((
-            if parent_is_fscrypt { Some(0) } else { None },
+            if parent_is_fscrypt { Some([0; 16]) } else { None },
             VOLUME_DATA_KEY_ID,
             vec![(VOLUME_DATA_KEY_ID, EncryptionKey::Fxfs(key))],
         ))
@@ -508,7 +511,7 @@ async fn verify(
             // If f2fs inode has a context, we have an fscrypt file. In fxfs this is marked by the
             // presence of a wrapping_key_id.
             if inode.context.is_some() {
-                wrapping_key_id = Some(0);
+                wrapping_key_id = Some([0; 16]);
             }
 
             // TODO(https://fxbug.dev/393449584): Lookup and compare fxfs filename.
@@ -917,7 +920,7 @@ async fn test_fxfs_migration_no_keys() {
     let f2fs = F2fsReader::open_device(device.deref().clone()).await.expect("f2fs open ok");
     let original_superblock = f2fs.superblock;
     let mut insecure_crypt = InsecureCrypt::new();
-    insecure_crypt.add_wrapping_key(0, [0; 64].into());
+    insecure_crypt.add_wrapping_key([0; 16], [0; 64].into());
     insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
     let device = migrate_device(device, &crypt).await.unwrap();
@@ -975,11 +978,8 @@ async fn test_fxfs_read_lblk32_ino_file() {
 
     let mut insecure_crypt = InsecureCrypt::new();
     insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
-    insecure_crypt.add_wrapping_key(
-        u128::from_le_bytes(fscrypt::main_key_to_identifier(&[0; 64])),
-        [0; 64].into(),
-    );
-    insecure_crypt.add_wrapping_key(0, [0; 64].into());
+    insecure_crypt.add_wrapping_key(fscrypt::main_key_to_identifier(&[0; 64]), [0; 64].into());
+    insecure_crypt.add_wrapping_key([0; 16], [0; 64].into());
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
 
     let device = migrate_device(device, &crypt).await.unwrap();
@@ -1029,10 +1029,7 @@ async fn test_fxfs_verify_encrypted_data() {
 
     let mut insecure_crypt = InsecureCrypt::new();
     insecure_crypt.set_filesystem_uuid(&f2fs.superblock.uuid);
-    insecure_crypt.add_wrapping_key(
-        u128::from_le_bytes(fscrypt::main_key_to_identifier(&[0; 64])),
-        [0; 64].into(),
-    );
+    insecure_crypt.add_wrapping_key(fscrypt::main_key_to_identifier(&[0; 64]), [0; 64].into());
 
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
     let device = migrate_device(device, &crypt).await.unwrap();

@@ -1046,6 +1046,7 @@ mod tests {
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore};
+    use fxfs_crypto::WrappingKeyId;
     use fxfs_insecure_crypto::InsecureCrypt;
     use refaults_vmo::PageRefaultCounter;
     use std::sync::atomic::Ordering;
@@ -1058,6 +1059,8 @@ mod tests {
     use vfs::path::Path;
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+
+    const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
 
     #[fuchsia::test(threads = 10)]
     async fn test_rename_different_dirs() {
@@ -2610,11 +2613,10 @@ mod tests {
                 )
                 .await;
                 let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
-                let wrapping_key_id = 2;
-                crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+                crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
                 crypt_dir
                     .update_attributes(&fio::MutableNodeAttributes {
-                        wrapping_key_id: Some(wrapping_key_id.to_le_bytes()),
+                        wrapping_key_id: Some(WRAPPING_KEY_ID),
                         ..Default::default()
                     })
                     .await
@@ -2677,8 +2679,7 @@ mod tests {
 
             {
                 let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
-                let wrapping_key_id = 2;
-                crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+                crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
                 let crypt_file = open_file_checked(
                     fixture.root(),
                     "crypt_dir/crypt_file",

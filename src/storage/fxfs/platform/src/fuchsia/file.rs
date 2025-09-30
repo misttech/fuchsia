@@ -20,6 +20,7 @@ use fxfs::object_store::data_object_handle::OverwriteOptions;
 use fxfs::object_store::object_record::EncryptionKey;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{DataObjectHandle, FSCRYPT_KEY_ID, ObjectDescriptor};
+use fxfs_crypto::WrappingKeyId;
 use fxfs_macros::ToWeakNode;
 use std::fmt::{Debug, Formatter};
 use std::ops::Range;
@@ -256,7 +257,7 @@ impl FxFile {
         self.handle.uncached_handle().get_size()
     }
 
-    async fn fscrypt_wrapping_key_id(&self) -> Result<Option<[u8; 16]>, zx::Status> {
+    async fn fscrypt_wrapping_key_id(&self) -> Result<Option<WrappingKeyId>, zx::Status> {
         if self.handle.store().is_encrypted() {
             if let Some(key) = self
                 .handle
@@ -267,7 +268,7 @@ impl FxFile {
                 .get(FSCRYPT_KEY_ID)
             {
                 if let EncryptionKey::Fxfs(fxfs_key) = key {
-                    return Ok(Some(fxfs_key.wrapping_key_id.to_le_bytes()));
+                    return Ok(Some(fxfs_key.wrapping_key_id));
                 } else {
                     error!("Unexpected key type: {:?}", key);
                     return Ok(None);
@@ -553,9 +554,7 @@ impl vfs::node::Node for FxFile {
             .await
             .map_err(map_to_status)?;
 
-        dir.check_fscrypt_hard_link_conditions(
-            self.fscrypt_wrapping_key_id().await?.map(|x| u128::from_le_bytes(x)),
-        )?;
+        dir.check_fscrypt_hard_link_conditions(self.fscrypt_wrapping_key_id().await?)?;
 
         let state = self.load_state();
         let is_unnamed_temporary = state.is_unnamed_temporary();
@@ -791,6 +790,7 @@ mod tests {
     use fxfs::fsck::fsck;
     use fxfs::object_handle::INVALID_OBJECT_ID;
     use fxfs::object_store::Timestamp;
+    use fxfs_crypto::WrappingKeyId;
     use rand::{Rng, rng};
     use std::sync::Arc;
     use std::sync::atomic::{self, AtomicBool};
@@ -798,6 +798,8 @@ mod tests {
     use storage_device::fake_device::FakeDevice;
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+
+    const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
 
     #[fuchsia::test(threads = 10)]
     async fn test_empty_file() {
@@ -2534,11 +2536,10 @@ mod tests {
             fio::Options::default(),
         )
         .await;
-        let wrapping_key_id = 123;
-        crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         encrypted_directory
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(wrapping_key_id.to_le_bytes()),
+                wrapping_key_id: Some(WRAPPING_KEY_ID),
                 ..Default::default()
             })
             .await
@@ -2563,7 +2564,7 @@ mod tests {
             .expect("get_attributes wire call failed")
             .map_err(zx::Status::from_raw)
             .expect("get_attributes failed");
-        assert_eq!(mutable_attributes.wrapping_key_id, Some(wrapping_key_id.to_le_bytes()));
+        assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));
 
         // Similar to a regular file, linking a temporary unnamed file into the directory will only
         // work if they have the same wrapping key ID.
@@ -2624,11 +2625,10 @@ mod tests {
             fio::Options::default(),
         )
         .await;
-        let wrapping_key_id = 123;
-        crypt.add_wrapping_key(wrapping_key_id, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
         encrypted_directory
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(wrapping_key_id.to_le_bytes()),
+                wrapping_key_id: Some(WRAPPING_KEY_ID),
                 ..Default::default()
             })
             .await
@@ -2637,7 +2637,7 @@ mod tests {
             .expect("update_attributes failed");
 
         // This locks the directory
-        crypt.remove_wrapping_key(wrapping_key_id);
+        crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
 
         // Open unnamed temporary file in a locked directory and should return (key) NOT_FOUND.
         assert_eq!(

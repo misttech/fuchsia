@@ -6,6 +6,7 @@ use crate::log::*;
 use crate::lsm_tree::types::ItemRef;
 use crate::object_store::ObjectDescriptor;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
+use fxfs_crypto::WrappingKeyId;
 use std::ops::Range;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -256,7 +257,7 @@ pub enum FsckError {
     EncryptedChildDirectoryNoWrappingKey(u64, u64),
     EncryptedDirectoryHasUnencryptedChild(u64, u64, u64),
     UnencryptedDirectoryHasEncryptedChild(u64, u64, u64),
-    ChildEncryptedWithDifferentWrappingKeyThanParent(u64, u64, u64, u128, u128),
+    ChildEncryptedWithDifferentWrappingKeyThanParent(u64, u64, u64, WrappingKeyId, WrappingKeyId),
     DuplicateKey(u64, u64, u64),
     ZombieFile(u64, u64, Vec<u64>),
     ZombieDir(u64, u64, u64),
@@ -457,8 +458,9 @@ impl FsckError {
                 child_wrapping_key_id,
             ) => {
                 format!(
-                    "Parent directory {} in store {} encrypted with {}, child {} encrypted with {}",
-                    parent_id, store_id, parent_wrapping_key_id, child_id, child_wrapping_key_id
+                    "Parent directory {} in store {} encrypted with {:?}, child {} encrypted with \
+                    {:?}",
+                    parent_id, store_id, parent_wrapping_key_id, child_id, child_wrapping_key_id,
                 )
             }
             FsckError::DuplicateKey(store_id, object_id, key_id) => {
@@ -674,8 +676,8 @@ impl FsckError {
                     store_id,
                     parent_id,
                     child_id,
-                    parent_wrapping_key_id,
-                    child_wrapping_key_id;
+                    parent_wrapping_key_id:?,
+                    child_wrapping_key_id:?;
                     "Child directory encrypted with different wrapping key than parent"
                 );
             }
