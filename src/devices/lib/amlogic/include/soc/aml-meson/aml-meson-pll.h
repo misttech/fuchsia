@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_MESON_AML_MESON_PLL_H_
 #define SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_MESON_AML_MESON_PLL_H_
 
-#include <lib/mmio/mmio-view.h>
+#include <lib/driver/mmio/cpp/mmio-view.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/types.h>
 

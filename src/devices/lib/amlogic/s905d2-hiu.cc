@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio-view.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-view.h>
 #include <string.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>

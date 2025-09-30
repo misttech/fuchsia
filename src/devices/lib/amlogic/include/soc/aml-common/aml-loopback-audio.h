@@ -5,8 +5,8 @@
 #ifndef SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_COMMON_AML_LOOPBACK_AUDIO_H_
 #define SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_COMMON_AML_LOOPBACK_AUDIO_H_
 
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio-view.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-view.h>
 #include <zircon/assert.h>
 
 #include <soc/aml-common/aml-audio-regs.h>

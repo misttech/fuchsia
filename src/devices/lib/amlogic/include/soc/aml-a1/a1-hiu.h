@@ -5,8 +5,8 @@
 #ifndef SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_A1_A1_HIU_H_
 #define SRC_DEVICES_LIB_AMLOGIC_INCLUDE_SOC_AML_A1_A1_HIU_H_
 
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio-view.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-view.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
