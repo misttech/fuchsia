@@ -6,7 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_REQUEST_PROCESSOR_H_
 
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
 #include <ddktl/device.h>

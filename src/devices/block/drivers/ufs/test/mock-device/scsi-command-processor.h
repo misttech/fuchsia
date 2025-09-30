@@ -5,8 +5,8 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_MOCK_DEVICE_SCSI_COMMAND_PROCESSOR_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_MOCK_DEVICE_SCSI_COMMAND_PROCESSOR_H_
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 
 #include <functional>

@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_MOCK_DEVICE_UFS_MOCK_DEVICE_H_
 
 #include <endian.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/vmo.h>
@@ -20,7 +21,6 @@
 #include "register-mmio-processor.h"
 #include "scsi-command-processor.h"
 #include "src/devices/block/drivers/ufs/ufs.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "task-management-request-processor.h"
 #include "transfer-request-processor.h"
 #include "uiccmd-processor.h"

@@ -5,8 +5,8 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_MOCK_DEVICE_TASK_MANAGEMENT_REQUEST_PROCESSOR_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_MOCK_DEVICE_TASK_MANAGEMENT_REQUEST_PROCESSOR_H_
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio-buffer.h>
 
 #include <functional>
 #include <vector>
