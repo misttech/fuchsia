@@ -9,7 +9,7 @@ use crate::node::Node;
 use crate::types::{Celsius, Nanoseconds, Seconds};
 use crate::utils::get_temperature_driver_proxy;
 use crate::{log_if_err, ok_or_default_err};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
@@ -111,7 +111,7 @@ impl<'a> TemperatureHandlerBuilder<'a> {
             last_temperature: Celsius(std::f64::NAN),
             last_poll_time: fasync::MonotonicInstant::INFINITE_PAST,
             driver_proxy: self.driver_proxy,
-            debug_temperature_override: None,
+            temperature_override: None,
         };
 
         // Optionally use the default inspect root node
@@ -171,7 +171,7 @@ impl TemperatureHandler {
 
         self.init_done.wait().await;
 
-        if let Some(temperature) = self.mutable_inner.borrow().debug_temperature_override {
+        if let Some(temperature) = self.mutable_inner.borrow().temperature_override {
             return Ok(MessageReturn::ReadTemperature(temperature));
         }
 
@@ -212,6 +212,28 @@ impl TemperatureHandler {
                 Err(e.into())
             }
         }
+    }
+
+    async fn handle_set_temperature_override(
+        &self,
+        temperature: Celsius,
+    ) -> Result<MessageReturn, PowerManagerError> {
+        self.init_done.wait().await;
+
+        info!("Overriding temperature to {} C", temperature.0);
+        self.mutable_inner.borrow_mut().temperature_override = Some(temperature);
+        Ok(MessageReturn::SetTemperatureOverride)
+    }
+
+    async fn handle_clear_temperature_override(&self) -> Result<MessageReturn, PowerManagerError> {
+        self.init_done.wait().await;
+
+        info!("Clearing temperature override");
+        let mut inner = self.mutable_inner.borrow_mut();
+        inner.temperature_override = None;
+        // Invalidate the cache so that the latest temperature is read from the sensor.
+        inner.last_poll_time = fasync::MonotonicInstant::INFINITE_PAST;
+        Ok(MessageReturn::ClearTemperatureOverride)
     }
 
     async fn read_temperature(&self) -> Result<Celsius, Error> {
@@ -266,11 +288,11 @@ impl TemperatureHandler {
                         })?,
                 );
                 info!("Overriding temperature to {} C", temperature.0);
-                self.mutable_inner.borrow_mut().debug_temperature_override = Some(temperature);
+                self.mutable_inner.borrow_mut().temperature_override = Some(temperature);
             }
             "clear_temperature_override" => {
                 info!("Clearing temperature override");
-                self.mutable_inner.borrow_mut().debug_temperature_override = None;
+                self.mutable_inner.borrow_mut().temperature_override = None;
             }
             "help" => {
                 print_help();
@@ -299,7 +321,7 @@ struct MutableInner {
 
     /// Allow the debug service to set an override temperature. If set, `ReadTemperature` will
     /// always respond with this temperature.
-    debug_temperature_override: Option<Celsius>,
+    temperature_override: Option<Celsius>,
 }
 
 #[async_trait(?Send)]
@@ -330,6 +352,10 @@ impl Node for TemperatureHandler {
         match msg {
             Message::ReadTemperature => self.handle_read_temperature().await,
             Message::GetSensorName => self.handle_get_sensor_name(),
+            Message::SetTemperatureOverride(temperature) => {
+                self.handle_set_temperature_override(*temperature).await
+            }
+            Message::ClearTemperatureOverride => self.handle_clear_temperature_override().await,
             Message::Debug(command, args) => self.handle_debug_message(command, args),
             _ => Err(PowerManagerError::Unsupported),
         }
@@ -373,8 +399,8 @@ pub mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_utils::PollExt as _;
-    use diagnostics_assertions::{assert_data_tree, TreeAssertion};
-    use futures::{poll, TryStreamExt};
+    use diagnostics_assertions::{TreeAssertion, assert_data_tree};
+    use futures::{TryStreamExt, poll};
     use std::sync::Arc;
     use std::task::Poll;
 

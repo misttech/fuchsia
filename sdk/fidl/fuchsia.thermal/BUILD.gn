@@ -11,8 +11,11 @@ fidl("fuchsia.thermal") {
   sources = [
     "client_state.fidl",
     "overview.fidl",
+    "sensor_manager.fidl",
     "thermal.fidl",
   ]
+
+  public_deps = [ "//sdk/fidl/fuchsia.hardware.temperature" ]
 
   enable_hlcpp = true
 }

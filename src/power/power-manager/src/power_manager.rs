@@ -18,8 +18,8 @@ use {fuchsia_async as fasync, serde_json as json};
 use crate::{
     activity_handler, crash_report_handler, debug_service, input_settings_handler,
     platform_metrics, system_power_mode_handler, system_profile_handler, system_shutdown_handler,
-    temperature_handler, thermal_load_driver, thermal_policy, thermal_shutdown,
-    thermal_state_handler,
+    temperature_handler, thermal_load_driver, thermal_policy, thermal_sensor_manager,
+    thermal_shutdown, thermal_state_handler,
 };
 
 pub struct PowerManager {
@@ -198,6 +198,14 @@ impl PowerManager {
                 thermal_policy::ThermalPolicyBuilder::new_from_json(json_data, &self.nodes)
                     .build(node_futures)
                     .await?
+            }
+            "ThermalSensorManager" => {
+                thermal_sensor_manager::ThermalSensorManagerBuilder::new_from_json(
+                    json_data,
+                    &self.nodes,
+                    service_fs,
+                )
+                .build()?
             }
             "ThermalShutdown" => {
                 thermal_shutdown::ThermalShutdownBuilder::new_from_json(json_data, &self.nodes)

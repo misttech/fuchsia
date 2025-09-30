@@ -43,6 +43,13 @@ pub enum Message {
     /// Gets the sensor name of the driver associated with the target node
     GetSensorName,
 
+    /// Sets a temperature override for the node.
+    /// Arg: the new override temperature
+    SetTemperatureOverride(Celsius),
+
+    /// Clears a previously set temperature override.
+    ClearTemperatureOverride,
+
     /// Send a debug command.
     /// Arg0: node-specific command as a string
     /// Arg1: args required to execute the command
@@ -79,6 +86,12 @@ pub enum MessageReturn {
 
     /// Arg: the sensor name of the driver associated with the target node
     GetSensorName(String),
+
+    /// There is no arg in this MessageReturn type. It only serves as an ACK.
+    SetTemperatureOverride,
+
+    /// There is no arg in this MessageReturn type. It only serves as an ACK.
+    ClearTemperatureOverride,
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     Debug,

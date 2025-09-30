@@ -9,16 +9,16 @@ use crate::mocks::activity_service::MockActivityService;
 use crate::mocks::admin::MockStateControlAdminService;
 use crate::mocks::input_settings_service::MockInputSettingsService;
 use crate::mocks::kernel_service::MockKernelService;
-use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServiceMarker};
 use fidl::AsHandleRef as _;
+use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServiceMarker};
 use fuchsia_component::client::Service;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use log::*;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use {
     fidl_fuchsia_driver_test as fdt, fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl,
     fidl_fuchsia_hardware_power_statecontrol as fpower, fidl_fuchsia_io as fio,
@@ -282,9 +282,10 @@ impl TestEnvBuilder {
             .unwrap();
 
         let power_manager_to_parent_routes = Route::new()
+            .capability(Capability::protocol_by_name("fuchsia.power.clientlevel.Connector"))
             .capability(Capability::protocol_by_name("fuchsia.power.profile.Watcher"))
             .capability(Capability::protocol_by_name("fuchsia.thermal.ClientStateConnector"))
-            .capability(Capability::protocol_by_name("fuchsia.power.clientlevel.Connector"));
+            .capability(Capability::protocol_by_name("fuchsia.thermal.SensorManager"));
 
         realm_builder
             .add_route(power_manager_to_parent_routes.from(&power_manager).to(Ref::parent()))

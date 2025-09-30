@@ -31,6 +31,15 @@ resource("cpu-thermal-model-no-jitter-integration-test-resources") {
   outputs = [ "cpu_thermal_model_no_jitter_test/{{source_file_part}}" ]
 }
 
+resource("thermal-sensor-manager-integration-test-resources") {
+  sources = [
+    "config_files/thermal_sensor_manager_test/cpu_manager_node_config.json5",
+    "config_files/thermal_sensor_manager_test/power_manager_node_config.json5",
+    "config_files/thermal_sensor_manager_test/thermal_config.json5",
+  ]
+  outputs = [ "thermal_sensor_manager_test/{{source_file_part}}" ]
+}
+
 rustc_test("integration-test") {
   name = "power_manager_integration_test"
   testonly = true
@@ -65,6 +74,25 @@ rustc_test("integration-test") {
   sources += [ "//src/power/common/lib/types.rs" ]
 }
 
+rustc_test("thermal-sensor-manager-integration-test") {
+  name = "thermal_sensor_manager_integration_test"
+  testonly = true
+  edition = "2021"
+  source_root = "src/thermal_sensor_manager_test.rs"
+  deps = [
+    "../../testing/fuchsia.powermanager.driver.fidl:fuchsia.powermanager.driver.temperaturecontrol_rust",
+    "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/power/power-manager/integration/lib",
+    "//third_party/rust_crates:assert_matches",
+  ]
+
+  sources = [ "src/thermal_sensor_manager_test.rs" ]
+}
+
 # The integration test uses real time and accelerate it by 100 times. It only can be run on real
 # hardwares that can handle 100x acceleration without messing up the timestamps.
 fuchsia_unittest_package("power-manager-integration-test") {
@@ -95,7 +123,28 @@ fuchsia_unittest_package("power-manager-integration-test") {
   }
 }
 
+fuchsia_unittest_package("sensor-manager-integration-test") {
+  manifest = "meta/thermal-sensor-manager-integration-test.cml"
+  deps = [
+    ":thermal-sensor-manager-integration-test",
+    ":thermal-sensor-manager-integration-test-resources",
+    "//src/power/power-manager/testing/fake_driver:component",
+    "//src/power/power-manager/testing/fake_driver:fake-cpu-ctrl-component",
+    "//src/power/power-manager/testing/fake_root",
+  ]
+
+  test_specs = {
+    # CpuManager emits "Expected positive total_time_delta" error message
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
 group("test") {
   testonly = true
-  deps = [ ":power-manager-integration-test" ]
+  deps = [
+    ":power-manager-integration-test",
+    ":sensor-manager-integration-test",
+  ]
 }

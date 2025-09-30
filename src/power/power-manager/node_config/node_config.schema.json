@@ -379,6 +379,37 @@
             {
                 "properties": {
                     "type": {
+                        "pattern": "ThermalSensorManager"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "dependencies": {
+                        "type": "object",
+                        "properties": {
+                            "temperature_handler_nodes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "temperature_handler_nodes"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "type",
+                    "name",
+                    "dependencies"
+                ]
+            },
+            {
+                "properties": {
+                    "type": {
                         "pattern": "ThermalShutdown"
                     },
                     "name": {

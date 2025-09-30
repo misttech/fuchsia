@@ -7,6 +7,7 @@ mod error;
 mod message;
 mod node;
 mod power_manager;
+mod thermal_sensor_manager;
 mod timer;
 mod utils;
 
