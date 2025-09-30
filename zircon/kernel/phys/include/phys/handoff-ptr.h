@@ -100,6 +100,9 @@ class PhysHandoffPtr {
     return ptr_;
   }
 
+  // This is allowed for debugging purposes in physboot.
+  constexpr const T* force_get() const { return ptr_; }
+
   const T* release()
     requires(kCanDeref)
   {
@@ -165,8 +168,11 @@ class PhysHandoffSpan {
   constexpr std::span<value_type> get() const
     requires(Ptr::kCanDeref)
   {
-    return {ptr_.get(), size_};
+    return force_get();
   }
+
+  // This is allowed for debugging purposes in physboot.
+  constexpr std::span<value_type> force_get() const { return {ptr_.force_get(), size_}; }
 
   constexpr std::span<value_type> release()
     requires(Ptr::kCanDeref)

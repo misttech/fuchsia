@@ -153,9 +153,7 @@ fbl::RefPtr<VmObject> CreatePhysVmo(const PhysVmo& phys_vmo) {
   status = vmo->set_name(name.data(), name.size());
   DEBUG_ASSERT(status == ZX_OK);
 
-  dprintf(INFO, "handing off VMO from phys: %.*s @ [%#" PRIx64 ", %#" PRIx64 ")\n",
-          static_cast<int>(name.size()), name.data(), phys_vmo.addr,
-          phys_vmo.addr + phys_vmo.content_size);
+  phys_vmo.Log("VM");
 
   return vmo;
 }

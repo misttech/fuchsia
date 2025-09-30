@@ -92,28 +92,8 @@ constexpr uint ToArchMmuFlags(PhysMapping::Permissions perms, PhysMapping::Type 
   return flags;
 }
 
-constexpr ktl::array<char, 4> PermissionsName(PhysMapping::Permissions perms) {
-  ktl::array<char, 4> name{};
-  size_t idx = 0;
-  if (perms.readable()) {
-    name[idx++] = 'r';
-  }
-  if (perms.writable()) {
-    name[idx++] = 'w';
-  }
-  if (perms.executable()) {
-    name[idx++] = 'x';
-  }
-  return name;
-}
-
 void RegisterMappings(ktl::span<const PhysMapping> mappings, fbl::RefPtr<VmAddressRegion> vmar) {
   for (const PhysMapping& mapping : mappings) {
-    dprintf(ALWAYS,
-            "VM: * mapping: %s (%s): [%#" PRIxPTR ", %#" PRIxPTR ") -> [%#" PRIxPTR ", %#" PRIxPTR
-            ")\n",
-            mapping.name.data(), PermissionsName(mapping.perms).data(), mapping.paddr,
-            mapping.paddr_end(), mapping.vaddr, mapping.vaddr_end());
     zx_status_t status = vmar->ReserveSpace(mapping.name.data(), mapping.vaddr, mapping.size,
                                             ToArchMmuFlags(mapping.perms, mapping.type));
     ASSERT(status == ZX_OK);
@@ -129,8 +109,7 @@ void RegisterMappings(ktl::span<const PhysMapping> mappings, fbl::RefPtr<VmAddre
 fbl::RefPtr<VmAddressRegion> RegisterVmar(const PhysVmar& phys_vmar) {
   fbl::RefPtr<VmAddressRegion> root_vmar = VmAspace::kernel_aspace()->RootVmar();
 
-  dprintf(ALWAYS, "VM: handing off VMAR from phys: %s @ [%#" PRIxPTR ", %#" PRIxPTR ")\n",
-          phys_vmar.name.data(), phys_vmar.base, phys_vmar.end());
+  phys_vmar.Log("VM");
   fbl::RefPtr<VmAddressRegion> vmar;
   zx_status_t status =
       root_vmar->CreateSubVmar(phys_vmar.base - root_vmar->base(), phys_vmar.size, 0,

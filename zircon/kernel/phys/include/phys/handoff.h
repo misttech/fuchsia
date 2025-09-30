@@ -12,6 +12,7 @@
 // Note: we refrain from using the ktl namespace as <phys/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
+#include <inttypes.h>
 #include <lib/arch/ticks.h>
 #include <lib/crypto/entropy_pool.h>
 #include <lib/elfldltl/layout.h>
@@ -23,13 +24,13 @@
 #include <lib/zbi-format/reboot.h>
 #include <lib/zbi-format/zbi.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
 #include <array>
 #include <bitset>
 #include <concepts>
-#include <cstddef>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -105,6 +106,11 @@ struct PhysVmo : public PhysVmObject {
   // The full page-aligned size of the memory.
   constexpr size_t size_bytes() const { return (content_size + ZX_PAGE_SIZE - 1) & -ZX_PAGE_SIZE; }
 
+  void Log(const char* prefix) const {
+    printf("%s: | [0x%016" PRIx64 ", 0x%016" PRIx64 ") | VMO  | %-*s|\n",  //
+           prefix, addr, addr + content_size, static_cast<int>(name.size() - 3), name.data());
+  }
+
   // The physical address of the memory.
   uintptr_t addr = 0;
   size_t content_size = 0;
@@ -162,6 +168,16 @@ struct PhysMapping : public PhysVmObject {
       return *this;
     }
 
+    // This returns a NUL-terminated string, always 3 chars long before the NUL.
+    constexpr std::array<char, 4> desc() const {
+      return {
+          readable() ? 'r' : '-',
+          writable() ? 'w' : '-',
+          executable() ? 'x' : '-',
+          '\0',
+      };
+    }
+
    private:
     static constexpr size_t kReadable = 0;
     static constexpr size_t kWritable = 1;
@@ -189,6 +205,15 @@ struct PhysMapping : public PhysVmObject {
 
   constexpr uintptr_t vaddr_end() const { return vaddr + size; }
   constexpr uintptr_t paddr_end() const { return paddr + size; }
+
+  // Lines up with PhysVmar::Log, which calls it.
+  void Log(const char* prefix) const {
+    printf("%s: | [0x%016" PRIxPTR ", 0x%016" PRIxPTR
+           ") | %4s | %-*s| "
+           "[0x%016" PRIxPTR ", 0x%016" PRIxPTR ")\n",
+           prefix, paddr, paddr_end(), perms.desc().data(), static_cast<int>(name.size() - 3),
+           name.data(), vaddr, vaddr_end());
+  }
 
   Type type = Type::kNormal;
   uintptr_t vaddr = 0;
@@ -226,6 +251,15 @@ struct PhysVmar : public PhysVmObject {
     return perms;
   }
 #endif
+
+  void Log(const char* prefix) const {
+    // This lines up with PhysVmo::Log output.
+    printf("%s: | %40s | VMAR | %-*s| [0x%016" PRIx64 ", 0x%016" PRIx64 ")\n", prefix, "",
+           static_cast<int>(name.size() - 3), name.data(), base, base + size);
+    for (const PhysMapping& mapping : mappings.force_get()) {
+      mapping.Log(prefix);
+    }
+  }
 
   uintptr_t base = 0;
   size_t size = 0;
@@ -296,6 +330,22 @@ struct PhysHandoff {
   }
 
   constexpr bool Valid() const { return magic == kMagic; }
+
+  void LogVm(const char* prefix) const {
+    printf("%s: | %-40s | %4s | %-*s| %s\n",     //
+           prefix, "Physical memory range", "",  //
+           static_cast<int>(PhysVmObject::Name{}.size() - 3), "Name", "Virtual address range");
+    zbi.Log(prefix);
+    vdso.vmo.Log(prefix);
+    userboot.vmo.Log(prefix);
+    for (const PhysVmo& vmo : extra_vmos.force_get()) {
+      vmo.Log(prefix);
+    }
+    temporary_vmar.force_get()->Log(prefix);
+    for (const PhysVmar& vmar : vmars.force_get()) {
+      vmar.Log(prefix);
+    }
+  }
 
   static constexpr uint64_t kMagic = 0xfeedfaceb002da2a;
 

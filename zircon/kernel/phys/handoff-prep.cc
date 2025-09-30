@@ -201,6 +201,11 @@ void HandoffPrep::FinishVmObjects() {
 
   NewFromList(handoff()->vmars, ktl::move(vmars_));
   NewFromList(handoff()->extra_vmos, ktl::move(extra_vmos_));
+
+  if (gBootOptions->phys_verbose) {
+    printf("%s: Kernel VM handoff:\n", ProgramName());
+    handoff()->LogVm(ProgramName());
+  }
 }
 
 void HandoffPrep::SetMemory() {
