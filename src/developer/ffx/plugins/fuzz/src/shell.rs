@@ -6,6 +6,7 @@ use crate::fuzzer::Fuzzer;
 use crate::reader::{ParsedCommand, Reader};
 use anyhow::{Context as _, Error, Result, anyhow, bail};
 use errors::ffx_bail;
+use ffx_config::EnvironmentContext;
 use ffx_fuzz_args::*;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_fuzzctl::{
@@ -77,10 +78,10 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
     }
 
     /// Runs a blocking loop executing commands from the `reader`.
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self, context: &EnvironmentContext) -> Result<()> {
         loop {
             if let Some(command) = self.prompt().await {
-                let result = self.execute(command).await?;
+                let result = self.execute(context, command).await?;
                 match result {
                     NextAction::Prompt => {}
                     NextAction::Exit => break,
@@ -118,11 +119,15 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
 
     /// Executes a single command.
     /// Never returns `NextAction::Retry(_)`.
-    pub async fn execute(&self, args: FuzzShellCommand) -> Result<NextAction> {
+    pub async fn execute(
+        &self,
+        context: &EnvironmentContext,
+        args: FuzzShellCommand,
+    ) -> Result<NextAction> {
         // Dispatch based on current fuzzer state.
         let fuzzer = self.take_fuzzer();
         let next_action = match (self.get_state(), fuzzer.as_ref()) {
-            (FuzzerState::Detached, None) => self.execute_detached(args).await,
+            (FuzzerState::Detached, None) => self.execute_detached(context, args).await,
             (FuzzerState::Idle, Some(fuzzer)) => self.execute_idle(args, fuzzer).await,
             (FuzzerState::Running, Some(_)) => unreachable!(),
             (state, fuzzer) => {
@@ -202,7 +207,11 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
 
     /// Handles commands that can only be run when no fuzzer is attached.
     /// Never returns `NextAction::Retry(_)`.
-    async fn execute_detached(&self, args: FuzzShellCommand) -> Result<NextAction> {
+    async fn execute_detached(
+        &self,
+        context: &EnvironmentContext,
+        args: FuzzShellCommand,
+    ) -> Result<NextAction> {
         let args = match self.execute_any(args).await {
             Ok(NextAction::Retry(args)) => args,
             other => return other,
@@ -215,7 +224,7 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
                 no_stderr,
                 no_syslog,
             }) => self
-                .attach(&url, output, no_stdout, no_stderr, no_syslog)
+                .attach(context, &url, output, no_stdout, no_stderr, no_syslog)
                 .await
                 .context("failed to attach fuzzer"),
             FuzzShellSubcommand::Status(StatusShellSubcommand {}) => {
@@ -370,6 +379,7 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
     // Connects to a fuzzer given by the `url`.
     async fn attach(
         &self,
+        context: &EnvironmentContext,
         url: &str,
         output: Option<String>,
         no_stdout: bool,
@@ -377,7 +387,7 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
         no_syslog: bool,
     ) -> Result<NextAction> {
         let url = Url::parse(url).context("invalid fuzzer URL")?;
-        let output = match (output, ffx_config::get(DEFAULT_FUZZING_OUTPUT_VARIABLE)) {
+        let output = match (output, context.get(DEFAULT_FUZZING_OUTPUT_VARIABLE)) {
             (Some(output), _) | (None, Ok(output)) => output,
             _ => {
                 self.writer.error("output directory is not set.");
@@ -657,6 +667,7 @@ mod test_fixtures {
     use super::Shell;
     use crate::reader::test_fixtures::ScriptReader;
     use anyhow::{Context as _, Result, anyhow};
+    use ffx_config::EnvironmentContext;
     use ffx_fuzz_args::FuzzerState;
     use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd, create_proxy};
     use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
@@ -752,7 +763,7 @@ mod test_fixtures {
         }
 
         /// Processes the previously `add`ed commands using the underlying `Shell`.
-        pub async fn run(&mut self, test: &mut Test) -> Result<()> {
+        pub async fn run(&mut self, context: &EnvironmentContext, test: &mut Test) -> Result<()> {
             // Handle the case where a workflow expected to fail.
             if test.controller().get_result().is_err() && self.state == FuzzerState::Running {
                 self.state = FuzzerState::Detached;
@@ -772,7 +783,7 @@ mod test_fixtures {
             test.output_matches("Exiting...");
             self.detach_from_state(test, self.state);
 
-            self.shell.run().await
+            self.shell.run(context).await
         }
 
         /// Simulates the user pressing a key to interrupt output from a long-running workflow.
@@ -848,18 +859,20 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
         script.add(&mut test, "");
         script.add(&mut test, "   ");
         script.add(&mut test, "# a comment");
         script.add(&mut test, "   # another comment");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_invalid() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
         script.add(&mut test, "foobar");
@@ -867,12 +880,13 @@ mod tests {
         test.output_matches("Command is unrecognized or invalid for the current state.");
         test.output_matches("Try 'help' to list recognized.");
         test.output_matches("Try 'status' to check the current state.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_list() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -882,7 +896,7 @@ mod tests {
         script.add(&mut test, "list");
         test.output_matches("Empty list: did you include '-fuzz-with' in your 'fx set' command ?");
         test.output_matches("[]");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         let mut script = ShellScript::try_new(&mut test)?;
@@ -898,7 +912,7 @@ mod tests {
         test.output_matches(format!("\"{}\",", urls[1]));
         test.output_matches(format!("\"{}\"", urls[2]));
         test.output_matches("]");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'list' when idle. Include a pattern.
@@ -910,7 +924,7 @@ mod tests {
         test.output_matches(format!("\"{}\",", urls[1]));
         test.output_matches(format!("\"{}\"", urls[2]));
         test.output_matches("]");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'list' when running.
@@ -923,7 +937,7 @@ mod tests {
         test.output_matches(format!("\"{}\"", urls[2]));
         test.output_matches("]");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
@@ -942,7 +956,7 @@ mod tests {
         // Output directory must be provided or set in config.
         script.add(&mut test, format!("attach {}", TEST_URL));
         test.output_includes("output directory is not set");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Output directory from config is checked.
@@ -976,12 +990,13 @@ mod tests {
         let cmdline = format!("attach -o {} {}", output_dir.to_string_lossy(), TEST_URL);
         script.add(&mut test, cmdline);
         test.output_includes("invalid command: a fuzzer is already attached.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_get() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -993,7 +1008,7 @@ mod tests {
         let _fuzzer = script.attach(&mut test);
         script.add(&mut test, "get runs");
         test.output_matches("runs: 0");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'get' when running.
@@ -1002,12 +1017,13 @@ mod tests {
         test.output_matches("runs: 0");
         script.detach(&mut test).await;
 
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_set() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1020,7 +1036,7 @@ mod tests {
         script.add(&mut test, "set runs 10");
         test.output_matches("Configuring fuzzer...");
         test.output_matches("Option 'runs' set to 10");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Cannot 'set' when running.
@@ -1028,12 +1044,13 @@ mod tests {
         script.add(&mut test, "set runs 20");
         test.output_includes("invalid command: a long-running workflow is in progress.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_add() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
         let corpus_dir = test.corpus_dir(fuzz::Corpus::Live);
@@ -1051,7 +1068,7 @@ mod tests {
         script.add(&mut test, format!("add {}", corpus_dir.to_string_lossy()));
         test.output_matches("Adding inputs to fuzzer corpus...");
         test.output_matches("Added 2 inputs totaling 10 bytes to the live corpus.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'add' when running.
@@ -1060,12 +1077,13 @@ mod tests {
         test.output_matches("Adding inputs to fuzzer corpus...");
         test.output_matches("Added 2 inputs totaling 10 bytes to the live corpus.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_run() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1083,7 +1101,7 @@ mod tests {
         test.output_matches("An input to the fuzzer triggered a sanitizer violation.");
         let artifact = digest_path(test.artifact_dir(), Some(FuzzResult::Death), b"hello");
         test.output_matches(format!("Input saved to '{}'", artifact.to_string_lossy()));
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         let options = fuzzer.get_options();
         assert_eq!(options.runs, Some(20));
         verify_saved(&artifact, b"hello")?;
@@ -1097,7 +1115,7 @@ mod tests {
         test.output_matches("Running fuzzer...");
         fuzzer.set_result(Err(zx::Status::IO));
         test.output_includes("`fuchsia.fuzzer.Controller/Fuzz` returned: ZX_ERR_IO");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Cannot 'run' when running.
@@ -1105,12 +1123,13 @@ mod tests {
         script.add(&mut test, "run -t 20");
         test.output_includes("invalid command: a long-running workflow is in progress.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_try() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1124,7 +1143,7 @@ mod tests {
         test.output_matches("Trying an input of 4 bytes...");
         fuzzer.set_result(Ok(FuzzResult::Crash));
         test.output_matches("The input caused a process to crash.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Errors are propagated correctly.
@@ -1134,7 +1153,7 @@ mod tests {
         test.output_matches("Trying an input of 4 bytes...");
         fuzzer.set_result(Err(zx::Status::INTERNAL));
         test.output_includes("`fuchsia.fuzzer.Controller/TryOne` returned: ZX_ERR_INTERNAL");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Cannot 'try' when running.
@@ -1142,12 +1161,13 @@ mod tests {
         script.add(&mut test, "try feedface");
         test.output_includes("invalid command: a long-running workflow is in progress.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_cleanse() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1162,7 +1182,7 @@ mod tests {
         fuzzer.set_input_to_send(b"world");
         let artifact = digest_path(test.artifact_dir(), Some(FuzzResult::Cleansed), b"world");
         test.output_matches(format!("Cleansed input written to '{}'", artifact.to_string_lossy()));
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         verify_saved(&artifact, b"world")?;
         test.verify_output()?;
 
@@ -1171,12 +1191,13 @@ mod tests {
         script.add(&mut test, format!("cleanse {}", hex::encode("world")));
         test.output_includes("invalid command: a long-running workflow is in progress.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_minimize() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1192,7 +1213,7 @@ mod tests {
         fuzzer.set_input_to_send(b"world");
         let artifact = digest_path(test.artifact_dir(), Some(FuzzResult::Minimized), b"world");
         test.output_matches(format!("Minimized input written to '{}'", artifact.to_string_lossy()));
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         verify_saved(&artifact, b"world")?;
         test.verify_output()?;
 
@@ -1201,12 +1222,13 @@ mod tests {
         script.add(&mut test, format!("cleanse {}", hex::encode("world")));
         test.output_includes("invalid command: a long-running workflow is in progress.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_merge() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1222,7 +1244,7 @@ mod tests {
         test.output_matches("Merge complete.");
         test.output_matches("Retrieving fuzzer corpus...");
         test.output_matches("Retrieved 1 input totaling 3 bytes from the live corpus.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         let input = digest_path(test.corpus_dir(fuzz::Corpus::Live), None, b"foo");
         verify_saved(&input, b"foo")?;
         test.verify_output()?;
@@ -1232,12 +1254,13 @@ mod tests {
         script.add(&mut test, format!("merge"));
         test.output_includes("invalid command: a long-running workflow is in progress.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_resume() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1249,7 +1272,7 @@ mod tests {
         let _fuzzer = script.attach(&mut test);
         script.add(&mut test, "resume");
         test.output_includes("invalid command: no fuzzer running.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'resume' when running.
@@ -1259,12 +1282,13 @@ mod tests {
         test.output_matches("Press any key to pause fuzzer output.");
         script.interrupt(&mut test).await;
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_status() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1276,7 +1300,7 @@ mod tests {
         let _fuzzer = script.attach(&mut test);
         script.add(&mut test, "status");
         test.output_matches(format!("{} is idle.", TEST_URL));
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can get 'status' when running.
@@ -1299,12 +1323,13 @@ mod tests {
         test.output_matches("Coverage: 3 PCs, 4 features");
         test.output_matches("Corpus size: 5 inputs, 6 total bytes");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_fetch() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1318,7 +1343,7 @@ mod tests {
         fuzzer.set_input_to_send(b"bar");
         test.output_matches("Retrieving fuzzer corpus...");
         test.output_matches("Retrieved 1 input totaling 3 bytes from the seed corpus.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         let input = digest_path(test.corpus_dir(fuzz::Corpus::Seed), None, b"bar");
         verify_saved(&input, b"bar")?;
         test.verify_output()?;
@@ -1330,12 +1355,13 @@ mod tests {
         test.output_matches("Retrieving fuzzer corpus...");
         test.output_matches("Retrieved 1 input totaling 3 bytes from the seed corpus.");
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_detach() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1346,18 +1372,19 @@ mod tests {
         // Can 'detach' when idle.
         script.attach(&mut test);
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'detach' when running.
         let (mut script, _fuzzer) = ShellScript::create_running(&mut test).await?;
         script.detach(&mut test).await;
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_stop() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1382,7 +1409,7 @@ mod tests {
         script.add(&mut test, "stop");
         test.output_matches(format!("Stopping '{}'...", TEST_URL));
         test.output_matches("Stopped.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'stop' when running.
@@ -1390,12 +1417,13 @@ mod tests {
         script.add(&mut test, "stop");
         test.output_matches(format!("Stopping '{}'...", TEST_URL));
         test.output_matches("Stopped.");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_exit() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1403,7 +1431,7 @@ mod tests {
         // `script::run`.
         script.add(&mut test, "exit");
         script.add(&mut test, "not executed");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'exit' when idle.
@@ -1411,38 +1439,40 @@ mod tests {
         script.attach(&mut test);
         script.add(&mut test, "exit");
         script.add(&mut test, "not executed");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()?;
 
         // Can 'exit' when running.
         let (mut script, _fuzzer) = ShellScript::create_running(&mut test).await?;
         script.add(&mut test, "exit");
         script.add(&mut test, "not executed");
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_clear() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
         // Just make sure this doesn't crash.
         script.add(&mut test, "clear");
 
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_history() -> Result<()> {
+        let env = ffx_config::test_init().await?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
         // Just make sure this doesn't crash.
         script.add(&mut test, "history");
 
-        script.run(&mut test).await?;
+        script.run(&env.context, &mut test).await?;
         Ok(())
     }
 }

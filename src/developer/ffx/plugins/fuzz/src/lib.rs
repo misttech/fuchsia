@@ -5,6 +5,7 @@
 use crate::reader::{CommandReader, ShellReader};
 use crate::shell::Shell;
 use anyhow::Result;
+use ffx_config::EnvironmentContext;
 use ffx_fuzz_args::{FuzzCommand, Session};
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
@@ -34,6 +35,7 @@ pub struct FuzzTool {
     remote_control: RemoteControlProxyHolder,
     #[command]
     cmd: FuzzCommand,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(FuzzTool);
@@ -43,11 +45,15 @@ impl FfxMain for FuzzTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        fuzz(self.remote_control, self.cmd).await.map_err(Into::into)
+        fuzz(self.remote_control, self.cmd, &self.context).await.map_err(Into::into)
     }
 }
 
-async fn fuzz(rc_holder: RemoteControlProxyHolder, command: FuzzCommand) -> Result<()> {
+async fn fuzz(
+    rc_holder: RemoteControlProxyHolder,
+    command: FuzzCommand,
+    context: &EnvironmentContext,
+) -> Result<()> {
     let session = command.as_session();
     let (is_tty, muted, use_colors) = match session {
         Session::Interactive(_) => (true, false, true),
@@ -60,13 +66,13 @@ async fn fuzz(rc_holder: RemoteControlProxyHolder, command: FuzzCommand) -> Resu
     writer.use_colors(use_colors);
     match session {
         Session::Interactive(json_file) => {
-            Shell::new(json_file, rc, ShellReader::new(), &writer).run().await
+            Shell::new(json_file, rc, ShellReader::new(), &writer).run(context).await
         }
         Session::Quiet(commands) => {
-            Shell::new(None, rc, CommandReader::new(commands), &writer).run().await
+            Shell::new(None, rc, CommandReader::new(commands), &writer).run(context).await
         }
         Session::Verbose(commands) => {
-            Shell::new(None, rc, CommandReader::new(commands), &writer).run().await
+            Shell::new(None, rc, CommandReader::new(commands), &writer).run(context).await
         }
     }
 }
