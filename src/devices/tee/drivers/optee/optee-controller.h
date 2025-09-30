@@ -10,11 +10,11 @@
 #include <fidl/fuchsia.tee.manager/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/mmio/cpp/mmio-pinned-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio-pinned-buffer.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/resource.h>

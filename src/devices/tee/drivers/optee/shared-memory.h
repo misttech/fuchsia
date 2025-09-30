@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_TEE_DRIVERS_OPTEE_SHARED_MEMORY_H_
 #define SRC_DEVICES_TEE_DRIVERS_OPTEE_SHARED_MEMORY_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/bti.h>
 
 #include <climits>

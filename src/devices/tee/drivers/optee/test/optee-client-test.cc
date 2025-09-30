@@ -10,11 +10,11 @@
 #include <fidl/fuchsia.tee/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/fake-resource/resource.h>
 #include <lib/fidl/cpp/wire/client.h>
 #include <lib/fidl/cpp/wire/server.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/bti.h>
 #include <stdlib.h>

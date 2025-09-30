@@ -11,9 +11,9 @@
 #include <lib/ddk/io-buffer.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/mmio/cpp/mmio-pinned-buffer.h>
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio-pinned-buffer.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/thread.h>
