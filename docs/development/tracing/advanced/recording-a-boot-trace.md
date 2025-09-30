@@ -1,10 +1,52 @@
-# Recording a boot trace
+# Recording a trace at boot time
 
-The Zircon kernel's internal tracing system can be active on boot. This means that one can trace at
-least the kernel side of booting by setting a boot option. Then, once booting has finished, the data
-is already there, one just needs to collect it.
+The `ffx trace` tool can be used to configure the trace manager to start
+recording a performance trace when the system is booting. This allows for capturing
+perforemance events before the complete system is running.
 
-## Enable the Kernel Tracing Boot Parameter
+## Configuring the boot time trace
+
+The configuration of the boot time trace is done identically to any other trace
+captured by `ffx trace`. The only difference is when running `ffx trace start`
+add the `--on-boot` mode switch to indicate that the trace should started when
+booting.
+
+Note: It is important to use streaming or circular mode so the trace data will
+be buffered to disk instead of being dropped.
+
+Example:
+
+```posix-terminal
+ffx trace start --on-boot --buffer-size 32 --duration 120 --buffering-mode streaming
+```
+
+This will configure a trace to begin when the trace manager is initialized when
+booting. It will use a buffer size of 32MB which provides additional space over
+the 4MB default to capture events. The trace will stop automatically after 120
+seconds.
+
+
+## Checking the status of a boot trace session
+
+The status of a trace session started when the device is booting can be checked
+by using the command `ffx trace status`.
+
+## Downloading the trace data
+
+When the trace is completed and the system is running, the trace is downloaded using
+`ffx trace stop`.
+
+
+## Recording Zircon boot trace events
+
+The Zircon kernel's internal tracing system can be active on boot. This means performance
+events created by the kernel as the system is starting can be recorded and captured
+as part of a performance trace.
+
+Enabling the Zircon boot trace events is the main method of capturing trace events
+before component_manager has started.
+
+### Enable the Kernel Tracing Boot Parameter
 
 The size of the kernel's trace buffer can be changed at boot time
 with the `ktrace.bufsize=N` command line option, where `N` is the size
@@ -29,7 +71,7 @@ For more information on Zircon command line options see:
 - [kernel_cmdline](/docs/reference/kernel/kernel_cmdline.md)
 - [kernel_build](/docs/development/kernel/build.md)
 
-## Including kernel boot trace data in trace results
+### Including kernel boot trace data in trace results
 
 Once you enable the kernel tracing boot parameter, as long as the kernel's internal trace buffer is
 not rewound, after boot, the data is available to be included in the trace. This is achieved by
