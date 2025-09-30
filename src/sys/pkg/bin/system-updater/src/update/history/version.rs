@@ -154,29 +154,24 @@ impl Version {
                     "Current system has no system_image package, so there is no system_image \
                      package hash to associate with this update attempt."
                 );
-                "".to_string()
+                "".into()
             }
             Err(e) => {
                 error!("Failed to read system image hash: {:#}", anyhow!(e));
-                "".to_string()
+                "".into()
             }
         };
         let (vbmeta_hash, zbi_hash) =
-            get_vbmeta_and_zbi_hash_from_environment(data_sink, boot_manager).await.unwrap_or_else(
-                |e| {
-                    error!("Failed to read vbmeta and/or zbi hash: {:#}", anyhow!(e));
-                    ("".to_string(), "".to_string())
-                },
-            );
+            get_vbmeta_and_zbi_hash_from_environment(data_sink, boot_manager).await;
         let build_version = match build_info.version().await {
             Ok(Some(version)) => version,
             Ok(None) => {
                 error!("Build version not found");
-                "".to_string()
+                "".into()
             }
             Err(e) => {
                 error!("Failed to read build version: {:#}", anyhow!(e));
-                "".to_string()
+                "".into()
             }
         };
 
@@ -191,16 +186,16 @@ impl Version {
                 {
                     version.update_hash.clone()
                 } else {
-                    "".to_string()
+                    "".into()
                 }
             }
-            None => "".to_string(),
+            None => "".into(),
         };
         let epoch = match serde_json::from_str(source_epoch_raw) {
             Ok(EpochFile::Version1 { epoch }) => epoch.to_string(),
             Err(e) => {
                 error!("Failed to parse source epoch: {:#}", anyhow!(e));
-                "".to_string()
+                "".into()
             }
         };
 
@@ -235,23 +230,73 @@ async fn get_system_image_hash_from_update_package(
 async fn get_vbmeta_and_zbi_hash_from_environment(
     data_sink: &DataSinkProxy,
     boot_manager: &BootManagerProxy,
-) -> Result<(String, String), anyhow::Error> {
-    let current_configuration = paver::query_current_configuration(boot_manager).await?;
-    let configuration = current_configuration
-        .to_configuration()
-        .ok_or_else(|| anyhow!("device does not support ABR"))?;
-    let vbmeta_buffer = paver::read_image(
-        data_sink,
-        configuration,
-        super::super::ImageType::Asset(Asset::VerifiedBootMetadata),
-    )
-    .await?;
-    let vbmeta_hash = sha256_hash_ignore_trailing_zeros(vbmeta_buffer)?;
-    let zbi_buffer =
-        paver::read_image(data_sink, configuration, super::super::ImageType::Asset(Asset::Kernel))
-            .await?;
-    let zbi_hash = sha256_hash_ignore_trailing_zeros(zbi_buffer)?;
-    Ok((vbmeta_hash.to_string(), zbi_hash.to_string()))
+) -> (String, String) {
+    let configuration = match async {
+        paver::query_current_configuration(boot_manager)
+            .await?
+            .to_configuration()
+            .ok_or_else(|| anyhow!("device does not support ABR"))
+    }
+    .await
+    {
+        Ok(configuration) => configuration,
+        Err(e) => {
+            info!(
+                "Failed to determine current vbmeta and zbi hash. \
+                 This info is only used for diagnostic purposes, it is not necessary for OTA: {:#}",
+                anyhow!(e)
+            );
+            return ("".into(), "".into());
+        }
+    };
+
+    let vbmeta_hash = match async {
+        let vbmeta_buffer = paver::read_image(
+            data_sink,
+            configuration,
+            super::super::ImageType::Asset(Asset::VerifiedBootMetadata),
+        )
+        .await
+        .context("reading vbmeta")?;
+        sha256_hash_ignore_trailing_zeros(vbmeta_buffer).context("hashing vbmeta")
+    }
+    .await
+    {
+        Ok(vbmeta_hash) => vbmeta_hash.to_string(),
+        Err(e) => {
+            info!(
+                "Failed to determine current vbmeta hash. \
+                 This info is only used for diagnostic purposes, it is not necessary for OTA: {:#}",
+                anyhow!(e)
+            );
+            "".into()
+        }
+    };
+
+    let zbi_hash = match async {
+        let zbi_buffer = paver::read_image(
+            data_sink,
+            configuration,
+            super::super::ImageType::Asset(Asset::Kernel),
+        )
+        .await
+        .context("reading kernel")?;
+        sha256_hash_ignore_trailing_zeros(zbi_buffer).context("hashing kernel")
+    }
+    .await
+    {
+        Ok(zbi_hash) => zbi_hash.to_string(),
+        Err(e) => {
+            info!(
+                "Failed to determine current zbi hash. \
+                 This info is only used for diagnostic purposes, it is not necessary for OTA: {:#}",
+                anyhow!(e)
+            );
+            "".into()
+        }
+    };
+
+    (vbmeta_hash, zbi_hash)
 }
 
 // Compute the SHA256 hash of the buffer with the trailing zeros ignored.
