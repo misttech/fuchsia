@@ -14,14 +14,17 @@
 #include "src/developer/debug/zxdb/console/format_table.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/expr/number_parser.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {
 
 namespace {
 
+constexpr int kAddressLimitSwitch = 1;
+
 const char kAspaceShortHelp[] = "aspace / as: Show address space for a process.";
-const char kAspaceUsage[] = "aspace [ <address> ]";
+const char kAspaceUsage[] = "aspace [ --limit <address> ] [ <address> ]";
 const char kAspaceHelp[] = R"(
   Alias: "as"
 
@@ -36,6 +39,13 @@ const char kAspaceHelp[] = R"(
   committed pages in that region.
 
   Tip: To see more information about a VMO, use "handle -k <koid>".
+
+Arguments
+
+  --limit <address>
+      Only reports mappings at addresses below <address>. This can be useful
+      when a process has very many mappings that may not fit in a single
+      terminal buffer.
 
 Committed pages
 
@@ -53,6 +63,7 @@ Committed pages
 Examples
 
   aspace
+  aspace --limit 0x100000000
   aspace 0x530b010dc000
   process 2 aspace
 )";
@@ -91,7 +102,8 @@ std::string PrintRegionMmuFlags(const debug_ipc::AddressRegion& region, bool has
 }
 
 void OnAspaceComplete(fxl::RefPtr<CommandContext> cmd_context, const Err& err,
-                      std::vector<debug_ipc::AddressRegion> map, bool print_totals) {
+                      std::vector<debug_ipc::AddressRegion> map, bool print_totals,
+                      std::optional<uint64_t> addr_limit) {
   Console* console = Console::get();
   if (err.has_error()) {
     console->Output(err);
@@ -115,6 +127,8 @@ void OnAspaceComplete(fxl::RefPtr<CommandContext> cmd_context, const Err& err,
   std::vector<std::vector<std::string>> rows;
   for (const auto& region : map) {
     std::vector<std::string> row;
+
+    if (addr_limit && region.base > addr_limit) break;
 
     row.push_back(to_hex_string(region.base));
     row.push_back(to_hex_string(region.base + region.size));
@@ -198,22 +212,40 @@ void RunVerbAspace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
         Err(ErrType::kInput, "\"aspace\" takes zero or one parameter."));
   }
 
+  std::optional<uint64_t> addr_limit;
+  if (cmd.HasSwitch(kAddressLimitSwitch)) {
+    auto err_or = StringToNumber(ExprLanguage::kC, cmd.GetSwitchValue(kAddressLimitSwitch));
+    if (err_or.has_error()) {
+      return cmd_context->ReportError(err_or.err());
+    }
+
+    uint64_t limit = 0;
+    if (auto err = err_or.value().PromoteTo64(&limit); err.has_error()) {
+      return cmd_context->ReportError(err);
+    }
+
+    addr_limit = limit;
+    print_totals = false;
+  }
+
   if (Err err = AssertRunningTarget(cmd_context->GetConsoleContext(), "aspace", cmd.target());
       err.has_error())
     return cmd_context->ReportError(err);
 
   cmd.target()->GetProcess()->GetAspace(
-      address,
-      [cmd_context, print_totals](const Err& err, std::vector<debug_ipc::AddressRegion> map) {
-        OnAspaceComplete(cmd_context, err, map, print_totals);
+      address, [cmd_context, print_totals, addr_limit](const Err& err,
+                                                       std::vector<debug_ipc::AddressRegion> map) {
+        OnAspaceComplete(cmd_context, err, map, print_totals, addr_limit);
       });
 }
 
 }  // namespace
 
 VerbRecord GetAspaceVerbRecord() {
-  return VerbRecord(&RunVerbAspace, {"aspace", "as"}, kAspaceShortHelp, kAspaceUsage, kAspaceHelp,
-                    CommandGroup::kQuery);
+  auto record = VerbRecord(&RunVerbAspace, {"aspace", "as"}, kAspaceShortHelp, kAspaceUsage,
+                           kAspaceHelp, CommandGroup::kQuery);
+  record.switches.push_back(SwitchRecord(kAddressLimitSwitch, true, "limit", 'l'));
+  return record;
 }
 
 }  // namespace zxdb

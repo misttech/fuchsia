@@ -58,12 +58,19 @@ class MockRemoteAPI : public RemoteAPI {
   // Sets pause reply.
   void set_pause_reply(const debug_ipc::PauseReply& reply) { pause_reply_ = reply; }
 
+  // Sets AddressSpace reply.
+  void set_address_space_reply(const debug_ipc::AddressSpaceReply& reply) {
+    address_space_reply_ = reply;
+  }
+
   // RemoteAPI implementation.
   void Attach(const debug_ipc::AttachRequest& request,
               fit::callback<void(const Err&, debug_ipc::AttachReply)> cb) override;
   void AddOrChangeBreakpoint(
       const debug_ipc::AddOrChangeBreakpointRequest& request,
       fit::callback<void(const Err&, debug_ipc::AddOrChangeBreakpointReply)> cb) override;
+  void AddressSpace(const debug_ipc::AddressSpaceRequest& request,
+                    fit::callback<void(const Err&, debug_ipc::AddressSpaceReply)> cb) override;
   void RemoveBreakpoint(
       const debug_ipc::RemoveBreakpointRequest& request,
       fit::callback<void(const Err&, debug_ipc::RemoveBreakpointReply)> cb) override;
@@ -96,6 +103,7 @@ class MockRemoteAPI : public RemoteAPI {
  private:
   debug_ipc::ThreadStatusReply thread_status_reply_;
   debug_ipc::PauseReply pause_reply_;
+  debug_ipc::AddressSpaceReply address_space_reply_;
 
   std::map<debug::RegisterCategory, std::vector<debug::RegisterValue>> register_replies_;
 

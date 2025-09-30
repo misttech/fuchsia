@@ -4,6 +4,7 @@
 
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 
+#include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/common/err.h"
 
@@ -45,6 +46,14 @@ void MockRemoteAPI::AddOrChangeBreakpoint(
   debug::MessageLoop::Current()->PostTask(FROM_HERE, [cb = std::move(cb)]() mutable {
     cb(Err(), debug_ipc::AddOrChangeBreakpointReply());
   });
+}
+
+void MockRemoteAPI::AddressSpace(const debug_ipc::AddressSpaceRequest& request,
+                                 fit::callback<void(const Err&, debug_ipc::AddressSpaceReply)> cb) {
+  debug::MessageLoop::Current()->PostTask(
+      FROM_HERE, [reply = address_space_reply_, cb = std::move(cb)]() mutable {
+        cb(Err(), std::move(reply));
+      });
 }
 
 void MockRemoteAPI::RemoveBreakpoint(
