@@ -6,7 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_AHCI_PCI_BUS_H_
 
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/interrupt.h>
 #include <zircon/types.h>
