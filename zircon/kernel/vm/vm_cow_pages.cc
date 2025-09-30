@@ -5929,6 +5929,8 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     return status;
   }
 
+  DEBUG_ASSERT(!node_has_parent_content_markers());
+
   // If this VMO has a parent, we need to make sure we take ownership of all of the pages in the
   // input range.
   // TODO(https://fxbug.dev/42076904): This is suboptimal, as we take ownership of a page just to
@@ -5979,12 +5981,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     // The pager API does not allow the source VMO of supply pages to have a page source, so we can
     // assume that any empty pages are zeroes and insert explicit markers here. We need to insert
     // explicit markers to actually resolve the pager fault.
-    // If we are using parent content markers then we do not want to insert redundant markers
-    // into a node. This would only happen when performing transfer data where this is not
-    // actually pager backed and so we do not actually need to insert anything as there is no
-    // fault to resolve. We will have to make the slot read as zero though, which is handled later
-    // on by clearing the slot.
-    if (src_page.IsEmpty() && !node_has_parent_content_markers()) {
+    if (src_page.IsEmpty()) {
       src_page = VmPageOrMarker::Marker();
     }
 
@@ -5996,70 +5993,60 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
 
     VmPageOrMarker old_page;
     // Defer individual range updates so we can do them in blocks.
-    if (src_page.IsEmpty()) {
-      DEBUG_ASSERT(node_has_parent_content_markers());
-      DEBUG_ASSERT(overwrite_policy == CanOverwriteContent::NonZero);
-      // If the src page is empty this implies we want to the zero content, which can be achieved
-      // when using parent content markers by just clearing the slot.
-      old_page = page_list_.RemoveContent(offset);
-      // If we had a parent, and hence could have any parent content markers, then the
-      // RequireOwnedPage should have transformed them into actual pages and so we should never see
-      // a parent content marker at this point.
-      DEBUG_ASSERT(!old_page.IsParentContent());
-    } else {
-      auto page_transaction = BeginAddPageLocked(offset, overwrite_policy);
-      if (page_transaction.is_error()) {
-        // Unable to insert anything at this slot, cleanup any existing src_page and handle a
-        // completed run.
-        if (src_page.IsPageOrRef()) {
-          DEBUG_ASSERT(src_page.IsPage());
-          vm_page_t* page = src_page.ReleasePage();
-          DEBUG_ASSERT(!list_in_list(&page->queue_node));
-          list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
-        }
 
-        if (likely(page_transaction.status_value() == ZX_ERR_ALREADY_EXISTS)) {
-          // We hit the end of a run of absent pages, so notify the page source
-          // of any new pages that were added and reset the tracking variables.
-          if (new_pages_len) {
-            RangeChangeUpdateLocked(VmCowRange(new_pages_start, new_pages_len),
-                                    RangeChangeOp::Unmap, &deferred);
-            if (page_source_) {
-              page_source_->OnPagesSupplied(new_pages_start, new_pages_len);
-            }
-          }
-          new_pages_start = offset + PAGE_SIZE;
-          new_pages_len = 0;
-          offset += PAGE_SIZE;
-          continue;
-        } else {
-          // Only cause for this should be an out of memory from the kernel heap when attempting to
-          // allocate a page list node.
-          status = page_transaction.status_value();
-          ASSERT(status == ZX_ERR_NO_MEMORY);
-          break;
-        }
+    auto page_transaction = BeginAddPageLocked(offset, overwrite_policy);
+    if (page_transaction.is_error()) {
+      // Unable to insert anything at this slot, cleanup any existing src_page and handle a
+      // completed run.
+      if (src_page.IsPageOrRef()) {
+        DEBUG_ASSERT(src_page.IsPage());
+        vm_page_t* page = src_page.ReleasePage();
+        DEBUG_ASSERT(!list_in_list(&page->queue_node));
+        list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
       }
-      if (options == SupplyOptions::PhysicalPageProvider) {
-        // When being called from the physical page provider, we need to call InitializeVmPage(),
-        // which AddNewPageLocked() will do.
-        // We only want to populate offsets that have true absence of content, so do not overwrite
-        // anything in the page list.
-        old_page = CompleteAddNewPageLocked(*page_transaction, src_page.Page(),
-                                            /*zero=*/false, nullptr);
-        // The page was successfully added, but we still have a copy in the src_page, so we need to
-        // release it, however need to store the result in a temporary as we are required to use the
-        // result of ReleasePage.
-        [[maybe_unused]] vm_page_t* unused = src_page.ReleasePage();
+
+      if (likely(page_transaction.status_value() == ZX_ERR_ALREADY_EXISTS)) {
+        // We hit the end of a run of absent pages, so notify the page source
+        // of any new pages that were added and reset the tracking variables.
+        if (new_pages_len) {
+          RangeChangeUpdateLocked(VmCowRange(new_pages_start, new_pages_len), RangeChangeOp::Unmap,
+                                  &deferred);
+          if (page_source_) {
+            page_source_->OnPagesSupplied(new_pages_start, new_pages_len);
+          }
+        }
+        new_pages_start = offset + PAGE_SIZE;
+        new_pages_len = 0;
+        offset += PAGE_SIZE;
+        continue;
       } else {
-        // When not being called from the physical page provider, we don't need InitializeVmPage(),
-        // so we use AddPageLocked().
-        // We only want to populate offsets that have true absence of content, so do not overwrite
-        // anything in the page list.
-        old_page = CompleteAddPageLocked(*page_transaction, ktl::move(src_page),
-                                         ParentContent::Unknown, nullptr);
+        // Only cause for this should be an out of memory from the kernel heap when attempting to
+        // allocate a page list node.
+        status = page_transaction.status_value();
+        ASSERT(status == ZX_ERR_NO_MEMORY);
+        break;
       }
     }
+    if (options == SupplyOptions::PhysicalPageProvider) {
+      // When being called from the physical page provider, we need to call InitializeVmPage(),
+      // which AddNewPageLocked() will do.
+      // We only want to populate offsets that have true absence of content, so do not overwrite
+      // anything in the page list.
+      old_page = CompleteAddNewPageLocked(*page_transaction, src_page.Page(),
+                                          /*zero=*/false, nullptr);
+      // The page was successfully added, but we still have a copy in the src_page, so we need to
+      // release it, however need to store the result in a temporary as we are required to use the
+      // result of ReleasePage.
+      [[maybe_unused]] vm_page_t* unused = src_page.ReleasePage();
+    } else {
+      // When not being called from the physical page provider, we don't need InitializeVmPage(),
+      // so we use AddPageLocked().
+      // We only want to populate offsets that have true absence of content, so do not overwrite
+      // anything in the page list.
+      old_page = CompleteAddPageLocked(*page_transaction, ktl::move(src_page),
+                                       ParentContent::Unknown, nullptr);
+    }
+
     // If the content overwrite policy was None, the old page should be empty.
     DEBUG_ASSERT(overwrite_policy != CanOverwriteContent::None || old_page.IsEmpty());
     // Clean up the old_page if necessary. The action taken is different depending on the state of
