@@ -14,6 +14,7 @@ use crate::suite_definition::{
 use anyhow::{Context, Result, format_err};
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code};
+use ffx_config::EnvironmentContext;
 use ffx_test_args::{
     EarlyBootProfileCommand, ListCommand, RunCommand, TestCommand, TestSubCommand,
 };
@@ -59,6 +60,7 @@ pub struct TestTool {
     #[command]
     cmd: TestCommand,
     rcs: fho::Deferred<RemoteControlProxyHolder>,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(TestTool);
@@ -109,7 +111,8 @@ impl FfxMain for TestTool {
                 } else {
                     Box::new(stdout())
                 };
-                run_test(remote_control.deref().clone(), test_run_writer, run).await?;
+                run_test(&self.context, remote_control.deref().clone(), test_run_writer, run)
+                    .await?;
                 if writer.is_machine() {
                     writer.machine(&TestToolMessage::TestResults(output_string.contents()))?;
                 }
@@ -161,18 +164,21 @@ struct Experiments {
 }
 
 impl Experiments {
-    async fn get_experiment(experiment_name: &'static str) -> Experiment {
+    async fn get_experiment(
+        context: &EnvironmentContext,
+        experiment_name: &'static str,
+    ) -> Experiment {
         Experiment {
             name: experiment_name,
-            enabled: match ffx_config::get(experiment_name) {
+            enabled: match context.get(experiment_name) {
                 Ok(enabled) => enabled,
                 Err(_) => false,
             },
         }
     }
 
-    async fn from_env() -> Self {
-        Self { json_input: Self::get_experiment("test.experimental_json_input").await }
+    async fn from_env(context: &EnvironmentContext) -> Self {
+        Self { json_input: Self::get_experiment(context, "test.experimental_json_input").await }
     }
 }
 
@@ -218,11 +224,12 @@ async fn early_boot_profile(
 }
 
 async fn run_test<W: 'static + Write + Send + Sync>(
+    context: &EnvironmentContext,
     remote_control: fremotecontrol::RemoteControlProxy,
     writer: W,
     cmd: RunCommand,
 ) -> fho::Result<()> {
-    let experiments = Experiments::from_env().await;
+    let experiments = Experiments::from_env(context).await;
     let hermetic_test = cmd.realm.is_none();
 
     let no_cases_equals_success = cmd.no_cases_equals_success;
@@ -231,9 +238,9 @@ async fn run_test<W: 'static + Write + Send + Sync>(
     let called_by_test_pilot = cmd.pilot.is_some();
 
     let params = if called_by_test_pilot {
-        params_from_pilot(&remote_control, cmd).await?
+        params_from_pilot(context, &remote_control, cmd).await?
     } else {
-        params_from_args(&remote_control, cmd, experiments.json_input.enabled).await?
+        params_from_args(context, &remote_control, cmd, experiments.json_input.enabled).await?
     };
 
     let output_directory = match (disable_output_directory, &params.output_directory) {
@@ -350,6 +357,7 @@ capabilities, pass in correct realm. See https://fuchsia.dev/go/components/non-h
 /// |stdin_handle_fn| is a function that generates a handle to stdin and is a parameter to enable
 /// testing.
 async fn params_from_pilot(
+    context: &EnvironmentContext,
     remote_control: &fremotecontrol::RemoteControlProxy,
     cmd: RunCommand,
 ) -> fho::Result<CombinedParams> {
@@ -369,7 +377,8 @@ async fn params_from_pilot(
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 
     let timeout_key = "test.timeout_grace_seconds";
-    let timeout_grace_seconds = ffx_config::get::<u64, _>(timeout_key)
+    let timeout_grace_seconds = context
+        .get::<u64, _>(timeout_key)
         .user_message(format!("Could not load timeout from config at {timeout_key}"))?
         as u32;
 
@@ -386,6 +395,7 @@ async fn params_from_pilot(
 /// |stdin_handle_fn| is a function that generates a handle to stdin and is a parameter to enable
 /// testing.
 async fn params_from_args(
+    context: &EnvironmentContext,
     remote_control: &fremotecontrol::RemoteControlProxy,
     cmd: RunCommand,
     json_input_experiment_enabled: bool,
@@ -396,7 +406,8 @@ async fn params_from_args(
             false => run_test_suite_lib::TimeoutBehavior::TerminateRemaining,
             true => run_test_suite_lib::TimeoutBehavior::Continue,
         },
-        timeout_grace_seconds: ffx_config::get::<u64, _>(timeout_key)
+        timeout_grace_seconds: context
+            .get::<u64, _>(timeout_key)
             .user_message(format!("Could not load timeout from config at {timeout_key}"))?
             as u32,
         stop_after_failures: match cmd.stop_after_failures.map(std::num::NonZeroU32::new) {
@@ -930,12 +941,16 @@ mod test {
                 },
             ),
         ];
-        let _test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
+        let test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
         let fake_contoller = FakeRemoteControllerProvider::new();
         for (run_command, expected_test_params) in cases.into_iter() {
-            let result =
-                params_from_args(fake_contoller.remote_controller(), run_command.clone(), true)
-                    .await;
+            let result = params_from_args(
+                &test_env.context,
+                fake_contoller.remote_controller(),
+                run_command.clone(),
+                true,
+            )
+            .await;
             assert!(
                 result.is_ok(),
                 "Error getting params from {:?}: {:?}",
@@ -948,6 +963,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_params_from_args_invalid_args() {
+        let test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
         let dir = tempfile::tempdir().expect("Create temp dir");
         std::fs::write(dir.path().join(VALID_INPUT_FILENAME), &*VALID_FILE_INPUT)
             .expect("write file");
@@ -1039,9 +1055,13 @@ mod test {
         ];
         let fake_contoller = FakeRemoteControllerProvider::new();
         for (case_name, invalid_run_command) in cases.into_iter() {
-            let result =
-                params_from_args(fake_contoller.remote_controller(), invalid_run_command, true)
-                    .await;
+            let result = params_from_args(
+                &test_env.context,
+                fake_contoller.remote_controller(),
+                invalid_run_command,
+                true,
+            )
+            .await;
             assert!(
                 result.is_err(),
                 "Getting test params for case '{}' unexpectedly succeeded",
@@ -1201,7 +1221,7 @@ mod test {
                 },
             ),
         ];
-        let _test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
+        let test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
         let fake_contoller = FakeRemoteControllerProvider::new();
         let dir = tempfile::tempdir().expect("Create temp dir");
 
@@ -1215,8 +1235,12 @@ mod test {
                 pilot: Some(dir.path().join("pilot_params.json").to_str().unwrap().to_string()),
                 ..Default::default()
             };
-            let result =
-                params_from_pilot(fake_contoller.remote_controller(), run_command.clone()).await;
+            let result = params_from_pilot(
+                &test_env.context,
+                fake_contoller.remote_controller(),
+                run_command.clone(),
+            )
+            .await;
             assert!(
                 result.is_ok(),
                 "Error getting params from {:?}: {:?}",
