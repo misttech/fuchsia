@@ -42,22 +42,20 @@ impl MyCalculatorServer {
 impl<T: Transport + 'static> CalculatorServerHandler<T> for MyCalculatorServer {
     async fn add(
         &mut self,
-        sender: &ServerSender<Calculator, T>,
         request: Request<calculator::Add, T>,
-        responder: Responder<calculator::Add>,
+        responder: Responder<calculator::Add, T>,
     ) {
         let sum = request.a + request.b;
         self.last_result = Some(sum);
 
         let response = Flexible::Ok(CalculatorAddResponse { sum });
-        let _ = responder.respond(&sender, response).await;
+        let _ = responder.respond(response).await;
     }
 
     async fn divide(
         &mut self,
-        sender: &ServerSender<Calculator, T>,
         request: Request<calculator::Divide, T>,
-        responder: Responder<calculator::Divide>,
+        responder: Responder<calculator::Divide, T>,
     ) {
         let response = if request.divisor != 0 {
             let quotient = request.dividend / request.divisor;
@@ -71,7 +69,7 @@ impl<T: Transport + 'static> CalculatorServerHandler<T> for MyCalculatorServer {
             FlexibleResult::Err(DivisionError::DivideByZero)
         };
 
-        let _ = responder.respond(&sender, response).await;
+        let _ = responder.respond(response).await;
     }
 
     async fn clear(&mut self, _: &ServerSender<Calculator, T>) {

@@ -12,11 +12,9 @@ use fidl_next_codec::{Encode, EncodeError, EncoderExt};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
-
-use crate::{ProtocolError, Transport, decode_epitaph, decode_header, encode_header};
-
-use super::connection::{Connection, ORDINAL_EPITAPH, SendFuture};
-use super::lockers::{LockerError, Lockers};
+use crate::endpoints::connection::{Connection, ORDINAL_EPITAPH};
+use crate::endpoints::lockers::{LockerError, Lockers};
+use crate::{ProtocolError, SendFuture, Transport, decode_epitaph, decode_header, encode_header};
 
 struct ClientSenderInner<T: Transport> {
     connection: Connection<T>,
@@ -94,7 +92,7 @@ impl<T: Transport> ClientSender<T> {
     where
         M: Encode<T::SendBuffer>,
     {
-        self.inner.connection.send_with(|buffer| {
+        self.inner.connection.send_message(|buffer| {
             encode_header::<T>(buffer, txid, ordinal)?;
             buffer.encode_next(message)
         })

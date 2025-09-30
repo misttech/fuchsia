@@ -8,5 +8,5 @@ mod lockers;
 mod server;
 
 pub use self::client::*;
-pub use self::connection::{RecvFuture, SendFuture};
+pub use self::connection::SendFuture;
 pub use self::server::*;

@@ -1104,9 +1104,8 @@ pub trait AllowedServerHandler<
 {
     fn denied(
         &mut self,
-        sender: &::fidl_next::ServerSender<Allowed, ___T>,
 
-        responder: ::fidl_next::Responder<allowed::Denied>,
+        responder: ::fidl_next::Responder<allowed::Denied, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -1128,19 +1127,18 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
             3826178105137551123 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                handler.denied(sender, responder).await;
+                handler.denied(responder).await;
             }
 
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }
@@ -1241,13 +1239,12 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }
@@ -2493,13 +2490,12 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }
@@ -6366,56 +6362,50 @@ pub trait DenyEachBindingServerHandler<
 {
     fn only_deny_cpp(
         &mut self,
-        sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
 
         request: ::fidl_next::Request<deny_each_binding::OnlyDenyCpp, ___T>,
 
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyCpp>,
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyCpp, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn only_deny_dart(
         &mut self,
-        sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
 
         request: ::fidl_next::Request<deny_each_binding::OnlyDenyDart, ___T>,
 
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart>,
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn only_deny_go(
         &mut self,
-        sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
 
         request: ::fidl_next::Request<deny_each_binding::OnlyDenyGo, ___T>,
 
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo>,
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn only_deny_python(
         &mut self,
-        sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
 
         request: ::fidl_next::Request<deny_each_binding::OnlyDenyPython, ___T>,
 
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyPython>,
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyPython, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn only_deny_rust(
         &mut self,
-        sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
 
         request: ::fidl_next::Request<deny_each_binding::OnlyDenyRust, ___T>,
 
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyRust>,
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyRust, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn only_deny_syzkaller(
         &mut self,
-        sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
 
         request: ::fidl_next::Request<deny_each_binding::OnlyDenySyzkaller, ___T>,
 
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenySyzkaller>,
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenySyzkaller, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -6449,18 +6439,17 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
             2957648440141224850 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.only_deny_cpp(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.only_deny_cpp(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -6468,8 +6457,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.only_deny_dart(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.only_deny_dart(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -6477,8 +6466,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.only_deny_go(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.only_deny_go(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -6486,8 +6475,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.only_deny_python(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.only_deny_python(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -6495,8 +6484,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.only_deny_rust(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.only_deny_rust(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -6504,12 +6493,12 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.only_deny_syzkaller(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.only_deny_syzkaller(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }
@@ -6764,13 +6753,12 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }
@@ -7267,13 +7255,12 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }

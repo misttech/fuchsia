@@ -43,7 +43,6 @@ struct EchoServer {
 impl EchoServerHandler<fidl::Channel> for EchoServer {
     async fn echo_string(
         &mut self,
-        sender: &fidl_next::ServerSender<Echo, fidl::Channel>,
         request: fidl_next::Request<echo::EchoString, fidl::Channel>,
         responder: fidl_next::Responder<echo::EchoString>,
     ) {
@@ -51,10 +50,10 @@ impl EchoServerHandler<fidl::Channel> for EchoServer {
         if !self.quiet {
             log::info!("Received echo request for string {:?}", value);
         }
-        let sender = sender.clone();
+        let sender = responder.sender().clone();
         let response = EchoEchoStringResponse { response: format!("{}{value}", self.prefix) };
 
-        if responder.respond(&sender, response).await.is_err() {
+        if responder.respond(response).await.is_err() {
             sender.close()
         } else if !self.quiet {
             log::info!("echo response sent successfully");
@@ -77,7 +76,6 @@ struct EchoLauncherServer {
 impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
     async fn get_echo(
         &mut self,
-        sender: &fidl_next::ServerSender<EchoLauncher, fidl::Channel>,
         request: fidl_next::Request<echo_launcher::GetEcho, fidl::Channel>,
         responder: fidl_next::Responder<echo_launcher::GetEcho>,
     ) {
@@ -96,7 +94,9 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
             server.run(EchoServer { prefix, quiet }).await.unwrap();
         });
         let response = EchoLauncherGetEchoResponse { response: client };
-        if responder.respond(&sender, response).await.is_err() {
+
+        let sender = responder.sender().clone();
+        if responder.respond(response).await.is_err() {
             sender.close();
         } else if !quiet {
             log::info!("echo launcher response sent successfully");

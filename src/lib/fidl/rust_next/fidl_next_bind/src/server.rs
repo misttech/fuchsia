@@ -9,7 +9,7 @@ use core::ops::Deref;
 use fidl_next_codec::Encode;
 use fidl_next_protocol::{self as protocol, ProtocolError, ServerHandler, Transport};
 
-use crate::{Method, Protocol, SendFuture, ServerEnd};
+use crate::{Method, Protocol, RespondFuture, ServerEnd};
 
 /// A strongly typed server sender.
 #[repr(transparent)]
@@ -79,10 +79,9 @@ pub trait DispatchServerMessage<
     /// Handles a received server two-way message with the given handler.
     fn on_two_way(
         handler: &mut H,
-        sender: &ServerSender<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-        responder: protocol::Responder,
+        responder: protocol::Responder<T>,
     ) -> impl Future<Output = ()> + Send;
 }
 
@@ -117,18 +116,11 @@ where
 
     fn on_two_way(
         &mut self,
-        server: &protocol::ServerSender<T>,
         ordinal: u64,
         buffer: <T as Transport>::RecvBuffer,
-        responder: protocol::Responder,
+        responder: protocol::Responder<T>,
     ) -> impl Future<Output = ()> + Send {
-        P::on_two_way(
-            &mut self.handler,
-            ServerSender::wrap_untyped(server),
-            ordinal,
-            buffer,
-            responder,
-        )
+        P::on_two_way(&mut self.handler, ordinal, buffer, responder)
     }
 }
 
@@ -180,28 +172,35 @@ impl<P, T: Transport> Server<P, T> {
 
 /// A strongly typed `Responder`.
 #[must_use]
-pub struct Responder<M> {
-    responder: protocol::Responder,
+pub struct Responder<
+    M,
+    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
+    #[cfg(not(feature = "fuchsia"))] T: Transport,
+> {
+    responder: protocol::Responder<T>,
     _method: PhantomData<M>,
 }
 
-impl<M> Responder<M> {
+impl<M, T: Transport> Responder<M, T> {
     /// Creates a new responder.
-    pub fn from_untyped(responder: protocol::Responder) -> Self {
+    pub fn from_untyped(responder: protocol::Responder<T>) -> Self {
         Self { responder, _method: PhantomData }
     }
 
-    /// Responds to the client.
-    pub fn respond<'s, P, T, R>(
-        self,
-        sender: &'s ServerSender<P, T>,
-        response: R,
-    ) -> SendFuture<'s, T>
+    /// Returns the sender held by the responder.
+    pub fn sender(&self) -> &ServerSender<M::Protocol, T>
     where
-        T: Transport,
-        M: Method<Protocol = P>,
+        M: Method,
+    {
+        ServerSender::wrap_untyped(self.responder.sender())
+    }
+
+    /// Responds to the client.
+    pub fn respond<R>(self, response: R) -> RespondFuture<T>
+    where
+        M: Method,
         R: Encode<T::SendBuffer, Encoded = M::Response>,
     {
-        SendFuture::from_untyped(sender.sender.send_response(self.responder, M::ORDINAL, response))
+        RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, response))
     }
 }

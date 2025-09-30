@@ -5,7 +5,7 @@
 use fdf_component::{
     Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
 };
-use fidl_next::{Request, Responder, ServerEnd, ServerSender};
+use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_i2c as i2c;
 use fuchsia_async::{Scope, ScopeHandle};
 use fuchsia_component::server::ServiceFs;
@@ -32,31 +32,22 @@ struct DeviceServer;
 impl i2c::DeviceServerHandler for DeviceServer {
     async fn transfer(
         &mut self,
-        sender: &ServerSender<i2c::Device>,
         _: Request<i2c::device::Transfer>,
         responder: Responder<i2c::device::Transfer>,
     ) {
         responder
-            .respond(
-                sender,
-                Ok::<_, i32>(i2c::DeviceTransferResponse {
-                    read_data: vec![vec![0x1u8, 0x2, 0x3]],
-                }),
-            )
+            .respond(Ok::<_, i32>(i2c::DeviceTransferResponse {
+                read_data: vec![vec![0x1u8, 0x2, 0x3]],
+            }))
             .await
             .unwrap();
     }
 
-    async fn get_name(
-        &mut self,
-        sender: &ServerSender<i2c::Device>,
-        responder: Responder<i2c::device::GetName>,
-    ) {
+    async fn get_name(&mut self, responder: Responder<i2c::device::GetName>) {
         responder
-            .respond(
-                sender,
-                Ok::<_, i32>(i2c::DeviceGetNameResponse { name: "rust i2c server".to_string() }),
-            )
+            .respond(Ok::<_, i32>(i2c::DeviceGetNameResponse {
+                name: "rust i2c server".to_string(),
+            }))
             .await
             .unwrap();
     }

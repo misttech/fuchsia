@@ -21,14 +21,15 @@ struct EchoServer {
 impl EchoServerHandler<Channel> for EchoServer {
     async fn echo_string(
         &mut self,
-        sender: &fidl_next::ServerSender<Echo, Channel>,
         request: fidl_next::Request<echo::EchoString, Channel>,
-        responder: fidl_next::Responder<echo::EchoString>,
+        responder: fidl_next::Responder<echo::EchoString, Channel>,
     ) {
         let EchoEchoStringRequest { value } = request.take();
         let response = format!("{}: {}", self.prefix, value);
         let response = EchoEchoStringResponse { response };
-        if responder.respond(sender, response).await.is_err() {
+
+        let sender = responder.sender().clone();
+        if responder.respond(response).await.is_err() {
             sender.close();
         }
     }
@@ -64,9 +65,8 @@ impl EchoLauncherServer {
 impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
     async fn get_echo(
         &mut self,
-        sender: &fidl_next::ServerSender<EchoLauncher, Channel>,
         request: fidl_next::Request<echo_launcher::GetEcho, Channel>,
-        responder: fidl_next::Responder<echo_launcher::GetEcho>,
+        responder: fidl_next::Responder<echo_launcher::GetEcho, Channel>,
     ) {
         println!("Got non pipelined request");
         let EchoLauncherGetEchoRequest { echo_prefix } = request.take();
@@ -74,7 +74,9 @@ impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
         let client_end = fidl_next::ClientEnd::<Echo, _>::from_untyped(client_end);
         let server_end = fidl_next::ServerEnd::<Echo, _>::from_untyped(server_end);
         let response = EchoLauncherGetEchoResponse { response: client_end };
-        if responder.respond(sender, response).await.is_err() {
+
+        let sender = responder.sender().clone();
+        if responder.respond(response).await.is_err() {
             sender.close();
             return;
         }

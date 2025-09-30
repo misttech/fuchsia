@@ -88,6 +88,7 @@ if (is_host) {
     edition = "2021"
     source_root = "tests/loom.rs"
     sources = [ "tests/loom.rs" ]
+    features = [ "loom" ]
     deps = [
       ":fidl_next_protocol_loom",
       "//src/lib/fidl/rust_next/fidl_next_codec",

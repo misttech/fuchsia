@@ -15,7 +15,7 @@
 //! 5. Error handling
 
 use anyhow::Context;
-use fidl_next::{Request, Responder, ServerSender};
+use fidl_next::{Request, Responder};
 use fidl_next_fuchsia_examples_calculator::{
     Calculator, CalculatorAddResponse, CalculatorDivideResponse, CalculatorMultiplyResponse,
     CalculatorPowResponse, CalculatorServerHandler, CalculatorSubtractResponse, calculator,
@@ -31,63 +31,52 @@ pub struct CalculatorServer;
 impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServer {
     async fn add(
         &mut self,
-        sender: &ServerSender<Calculator>,
         request: Request<calculator::Add>,
         responder: Responder<calculator::Add>,
     ) {
-        responder
-            .respond(sender, CalculatorAddResponse { sum: *request.a + *request.b })
-            .await
-            .unwrap();
+        responder.respond(CalculatorAddResponse { sum: *request.a + *request.b }).await.unwrap();
     }
 
     async fn subtract(
         &mut self,
-        sender: &ServerSender<Calculator>,
         request: Request<calculator::Subtract>,
         responder: Responder<calculator::Subtract>,
     ) {
         responder
-            .respond(sender, CalculatorSubtractResponse { difference: *request.a - *request.b })
+            .respond(CalculatorSubtractResponse { difference: *request.a - *request.b })
             .await
             .unwrap();
     }
 
     async fn multiply(
         &mut self,
-        sender: &ServerSender<Calculator>,
         request: Request<calculator::Multiply>,
         responder: Responder<calculator::Multiply>,
     ) {
         responder
-            .respond(sender, CalculatorMultiplyResponse { product: *request.a * *request.b })
+            .respond(CalculatorMultiplyResponse { product: *request.a * *request.b })
             .await
             .unwrap();
     }
 
     async fn divide(
         &mut self,
-        sender: &ServerSender<Calculator>,
         request: Request<calculator::Divide>,
         responder: Responder<calculator::Divide>,
     ) {
         responder
-            .respond(
-                sender,
-                CalculatorDivideResponse { quotient: *request.dividend / *request.divisor },
-            )
+            .respond(CalculatorDivideResponse { quotient: *request.dividend / *request.divisor })
             .await
             .unwrap();
     }
 
     async fn pow(
         &mut self,
-        sender: &ServerSender<Calculator>,
         request: Request<calculator::Pow>,
         responder: Responder<calculator::Pow>,
     ) {
         responder
-            .respond(sender, CalculatorPowResponse { power: request.base.powf(*request.exponent) })
+            .respond(CalculatorPowResponse { power: request.base.powf(*request.exponent) })
             .await
             .unwrap();
     }

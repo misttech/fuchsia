@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![cfg(feature = "loom")]
+
 use fidl_next_codec::{DecoderExt as _, WireString};
 use fidl_next_protocol_loom::mpsc::Mpsc;
 use fidl_next_protocol_loom::{
@@ -27,17 +29,16 @@ fn close_on_drop() {
 
         async fn on_two_way(
             &mut self,
-            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
-            responder: Responder,
+            responder: Responder<T>,
         ) {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
             assert_eq!(&**message, "Ping");
 
-            sender
-                .send_response(responder, 42, "Pong")
+            responder
+                .respond(42, "Pong")
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -80,17 +81,16 @@ fn send_one_way() {
 
         async fn on_two_way(
             &mut self,
-            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
-            responder: Responder,
+            responder: Responder<T>,
         ) {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
             assert_eq!(&**message, "Ping");
 
-            sender
-                .send_response(responder, 42, "Pong")
+            responder
+                .respond(42, "Pong")
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -132,17 +132,16 @@ fn two_way() {
 
         async fn on_two_way(
             &mut self,
-            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
-            responder: Responder,
+            responder: Responder<T>,
         ) {
             assert_eq!(ordinal, 42);
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Ping");
 
-            sender
-                .send_response(responder, 42, "Pong")
+            responder
+                .respond(42, "Pong")
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -184,10 +183,9 @@ fn multiple_two_way() {
 
         async fn on_two_way(
             &mut self,
-            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
-            responder: Responder,
+            responder: Responder<T>,
         ) {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
 
@@ -200,8 +198,8 @@ fn multiple_two_way() {
 
             assert_eq!(&**message, response);
 
-            sender
-                .send_response(responder, ordinal, response)
+            responder
+                .respond(ordinal, response)
                 .expect("server failed to encode response")
                 .await
                 .expect("server failed to send response");
@@ -279,14 +277,7 @@ fn event() {
 
     impl<T: Transport> ServerHandler<T> for TestServer {
         async fn on_one_way(&mut self, _: &ServerSender<T>, _: u64, _: T::RecvBuffer) {}
-        async fn on_two_way(
-            &mut self,
-            _: &ServerSender<T>,
-            _: u64,
-            _: T::RecvBuffer,
-            _: Responder,
-        ) {
-        }
+        async fn on_two_way(&mut self, _: u64, _: T::RecvBuffer, _: Responder<T>) {}
     }
 
     loom().check(|| {
@@ -318,13 +309,7 @@ fn one_way_nonblocking() {
             assert_eq!(&**message, "Hello world");
         }
 
-        async fn on_two_way(
-            &mut self,
-            _: &ServerSender<T>,
-            _: u64,
-            _: T::RecvBuffer,
-            _: Responder,
-        ) {
+        async fn on_two_way(&mut self, _: u64, _: T::RecvBuffer, _: Responder<T>) {
             panic!("unexpected two-way message");
         }
     }

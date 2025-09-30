@@ -500,11 +500,10 @@ pub trait {{ server_handler_name }}<
                 {{ self.doc_string(method.attributes) -}}
                 fn {{ method_name }}(
                     &mut self,
-                    sender: &::fidl_next::ServerSender<{{ protocol_name }}, ___T>,
                     {% if let Some(request) = method.maybe_request_payload %}
                         request: ::fidl_next::Request<{{ module_name }}::{{ method_type_name }}, ___T>,
                     {% endif %}
-                    responder: ::fidl_next::Responder<{{ module_name }}::{{ method_type_name }}>,
+                    responder: ::fidl_next::Responder<{{ module_name }}::{{ method_type_name }}, ___T>,
                 ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
             {% when ProtocolMethodKind::Event %}
         {% endmatch %}
@@ -566,10 +565,9 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
             {% for method in protocol.methods %}
@@ -577,22 +575,24 @@ where
                 {% if method.kind == ProtocolMethodKind::TwoWay %}
                     {{ method.ordinal }} => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
-
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
-                                Ok(decoded) => handler.{{ method_name }}(sender, decoded, responder).await,
-                                Err(e) => sender.close(),
+                                Ok(decoded) => handler.{{ method_name }}(decoded, responder).await,
+                                Err(e) => drop(responder),
                             }
                         {% else %}
-                            handler.{{ method_name}}(sender, responder).await;
+                            handler.{{ method_name}}(responder).await;
                         {% endif %}
                     }
                 {% endif %}
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(sender, ordinal).await,
+                ordinal => {
+                    let sender = ::fidl_next::ServerSender::wrap_untyped(responder.sender());
+                    handler.on_unknown_interaction(sender, ordinal).await;
+                }
             {% else %}
-                ordinal => sender.close(),
+                ordinal => responder.sender().close(),
             {% endif %}
         }
     }

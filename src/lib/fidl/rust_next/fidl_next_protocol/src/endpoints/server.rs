@@ -5,22 +5,19 @@
 //! FIDL protocol servers.
 
 use core::future::Future;
+use core::mem::ManuallyDrop;
 use core::num::NonZeroU32;
+use core::pin::Pin;
+use core::ptr;
+use core::task::{Context, Poll};
 
 use fidl_next_codec::{Encode, EncodeError, EncoderExt as _};
+use pin_project::pin_project;
 
 use crate::concurrency::sync::Arc;
 use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
-
-use crate::{ProtocolError, Transport, decode_header, encode_header};
-
-use super::connection::{Connection, SendFuture};
-
-/// A responder for a two-way message.
-#[must_use]
-pub struct Responder {
-    txid: NonZeroU32,
-}
+use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
+use crate::{ProtocolError, SendFuture, Transport, decode_header, encode_header};
 
 struct ServerSenderInner<T: Transport> {
     connection: Connection<T>,
@@ -68,25 +65,9 @@ impl<T: Transport> ServerSender<T> {
     where
         M: Encode<T::SendBuffer>,
     {
-        self.inner.connection.send_with(|buffer| {
+        self.inner.connection.send_message(|buffer| {
             encode_header::<T>(buffer, 0, ordinal)?;
             buffer.encode_next(event)
-        })
-    }
-
-    /// Send a response to a two-way message.
-    pub fn send_response<M>(
-        &self,
-        responder: Responder,
-        ordinal: u64,
-        response: M,
-    ) -> Result<SendFuture<'_, T>, EncodeError>
-    where
-        M: Encode<T::SendBuffer>,
-    {
-        self.inner.connection.send_with(|buffer| {
-            encode_header::<T>(buffer, responder.txid.get(), ordinal)?;
-            buffer.encode_next(response)
         })
     }
 }
@@ -122,10 +103,9 @@ pub trait ServerHandler<T: Transport> {
     /// offload work to an async task.
     fn on_two_way(
         &mut self,
-        sender: &ServerSender<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-        responder: Responder,
+        responder: Responder<T>,
     ) -> impl Future<Output = ()> + Send;
 }
 
@@ -222,11 +202,69 @@ impl<T: Transport> Server<T> {
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
         if let Some(txid) = NonZeroU32::new(txid) {
-            handler.on_two_way(&self.sender, ordinal, buffer, Responder { txid }).await;
+            let responder = Responder { sender: self.sender.clone(), txid };
+            handler.on_two_way(ordinal, buffer, responder).await;
         } else {
             handler.on_one_way(&self.sender, ordinal, buffer).await;
         }
 
         Ok(())
+    }
+}
+
+/// A responder for a two-way message.
+#[must_use = "responders close the underlying FIDL connection when dropped"]
+pub struct Responder<T: Transport> {
+    sender: ServerSender<T>,
+    txid: NonZeroU32,
+}
+
+impl<T: Transport> Drop for Responder<T> {
+    fn drop(&mut self) {
+        self.sender.close();
+    }
+}
+
+impl<T: Transport> Responder<T> {
+    /// Returns the sender owned by the responder.
+    pub fn sender(&self) -> &ServerSender<T> {
+        &self.sender
+    }
+
+    /// Send a response to a two-way message.
+    pub fn respond<M>(self, ordinal: u64, response: M) -> Result<RespondFuture<T>, EncodeError>
+    where
+        M: Encode<T::SendBuffer>,
+    {
+        let state = self.sender.inner.connection.send_message_raw(|buffer| {
+            encode_header::<T>(buffer, self.txid.get(), ordinal)?;
+            buffer.encode_next(response)
+        })?;
+
+        let this = ManuallyDrop::new(self);
+        // SAFETY: `this` is a `ManuallyDrop` and so `sender` won't be dropped
+        // twice.
+        let sender = unsafe { ptr::read(&this.sender) };
+
+        Ok(RespondFuture { sender, state })
+    }
+}
+
+/// A future which responds to a request over a connection.
+#[must_use = "futures do nothing unless polled"]
+#[pin_project]
+pub struct RespondFuture<T: Transport> {
+    sender: ServerSender<T>,
+    #[pin]
+    state: SendFutureState<T>,
+}
+
+impl<T: Transport> Future for RespondFuture<T> {
+    type Output = SendFutureOutput<T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
+        this.state.poll_send(cx, &this.sender.inner.connection)
     }
 }

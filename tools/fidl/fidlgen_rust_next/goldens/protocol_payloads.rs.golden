@@ -3002,20 +3002,18 @@ pub trait MainProtocolServerHandler<
 
     fn two_way_composed(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayComposed, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayComposed>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn two_way_composed_with_error(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayComposedWithError, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayComposedWithError>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayComposedWithError, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn one_way_local(
@@ -3027,20 +3025,18 @@ pub trait MainProtocolServerHandler<
 
     fn two_way_local(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayLocal, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayLocal>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayLocal, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn two_way_local_with_error(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayLocalWithError, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayLocalWithError>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayLocalWithError, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn one_way_import(
@@ -3052,20 +3048,18 @@ pub trait MainProtocolServerHandler<
 
     fn two_way_import(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayImport, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayImport>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayImport, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn two_way_import_with_error(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayImportWithError, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayImportWithError>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayImportWithError, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn one_way_anon(
@@ -3077,20 +3071,18 @@ pub trait MainProtocolServerHandler<
 
     fn two_way_anon(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayAnon, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayAnon>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayAnon, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn two_way_anon_with_error(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::TwoWayAnonWithError, ___T>,
 
-        responder: ::fidl_next::Responder<main_protocol::TwoWayAnonWithError>,
+        responder: ::fidl_next::Responder<main_protocol::TwoWayAnonWithError, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -3156,18 +3148,17 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
             2542459230546612144 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_composed(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_composed(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3175,10 +3166,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler.two_way_composed_with_error(sender, decoded, responder).await
-                    }
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_composed_with_error(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3186,8 +3175,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_local(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_local(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3195,10 +3184,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler.two_way_local_with_error(sender, decoded, responder).await
-                    }
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_local_with_error(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3206,8 +3193,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_import(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_import(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3215,10 +3202,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler.two_way_import_with_error(sender, decoded, responder).await
-                    }
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_import_with_error(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3226,8 +3211,8 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_anon(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_anon(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -3235,14 +3220,12 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler.two_way_anon_with_error(sender, decoded, responder).await
-                    }
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.two_way_anon_with_error(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }

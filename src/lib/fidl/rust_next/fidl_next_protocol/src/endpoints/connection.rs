@@ -15,7 +15,6 @@ use crate::concurrency::future::AtomicWaker;
 use crate::concurrency::hint::unreachable_unchecked;
 use crate::concurrency::sync::Mutex;
 use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
-
 use crate::{NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header};
 
 pub const ORDINAL_EPITAPH: u64 = 0xffff_ffff_ffff_ffff;
@@ -218,27 +217,35 @@ impl<T: Transport> Connection<T> {
         }
     }
 
-    pub fn send_with(
+    /// Sends a message to the underlying transport.
+    ///
+    /// Returns a `SendFutureState` which can be polled to completion.
+    pub fn send_message_raw(
+        &self,
+        f: impl FnOnce(&mut T::SendBuffer) -> Result<(), EncodeError>,
+    ) -> Result<SendFutureState<T>, EncodeError> {
+        self.with_shared(
+            |shared| {
+                let mut buffer = T::acquire(shared);
+                f(&mut buffer)?;
+                Ok(SendFutureState::Running { future_state: T::begin_send(shared, buffer) })
+            },
+            |error| {
+                Ok(error
+                    // Some(Error) => Terminated
+                    .map(|error| SendFutureState::Terminated { error })
+                    // None => Stopping
+                    .unwrap_or(SendFutureState::Stopping))
+            },
+        )
+    }
+
+    /// Sends a message to the underlying transport.
+    pub fn send_message(
         &self,
         f: impl FnOnce(&mut T::SendBuffer) -> Result<(), EncodeError>,
     ) -> Result<SendFuture<'_, T>, EncodeError> {
-        Ok(SendFuture {
-            connection: self,
-            state: self.with_shared(
-                |shared| {
-                    let mut buffer = T::acquire(shared);
-                    f(&mut buffer)?;
-                    Ok(SendFutureState::Running { future_state: T::begin_send(shared, buffer) })
-                },
-                |error| {
-                    Ok(error
-                        // Some(Error) => Terminated
-                        .map(|error| SendFutureState::Terminated { error })
-                        // None => Stopping
-                        .unwrap_or(SendFutureState::Stopping))
-                },
-            )?,
-        })
+        Ok(SendFuture { connection: self, state: self.send_message_raw(f)? })
     }
 
     /// Sends an epitaph to the underlying transport.
@@ -277,8 +284,8 @@ impl<T: Transport> Connection<T> {
         // completed or canceled. As long as the connection is not terminated,
         // `shared` will not be dropped.
         let shared = unsafe { self.get_shared_unchecked() };
-
         let future_state = T::begin_recv(shared, exclusive);
+
         RecvFuture { connection: self, exclusive, future_state }
     }
 
@@ -286,8 +293,8 @@ impl<T: Transport> Connection<T> {
     ///
     /// This modifies the behavior of this connection's futures:
     ///
-    /// - Polled [`SendFuture`]s will return `Poll::Pending` without calling
-    ///   [`poll_send`].
+    /// - Polled [`SendFutureState`]s will return `Poll::Pending` without
+    ///   calling [`poll_send`].
     /// - Polled [`RecvFuture`]s will call [`poll_recv`], but will return
     ///   `Poll::Ready` with an error when they would normally return
     ///   `Poll::Pending`.
@@ -339,24 +346,10 @@ impl<T: Transport> Connection<T> {
     }
 }
 
-#[pin_project]
-pub struct SendEpitaphFuture<'a, T: Transport> {
-    shared: &'a T::Shared,
-    #[pin]
-    future_state: T::SendFutureState,
-}
-
-impl<T: Transport> Future for SendEpitaphFuture<'_, T> {
-    type Output = Result<(), Option<T::Error>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        T::poll_send(this.future_state, cx, this.shared)
-    }
-}
+pub type SendFutureOutput<T> = Result<(), ProtocolError<<T as Transport>::Error>>;
 
 #[pin_project(project = SendFutureStateProj, project_replace = SendFutureStateProjOwn)]
-enum SendFutureState<T: Transport> {
+pub enum SendFutureState<T: Transport> {
     Running {
         #[pin]
         future_state: T::SendFutureState,
@@ -377,7 +370,7 @@ impl<T: Transport> SendFutureState<T> {
         cx: &mut Context<'_>,
         connection: &Connection<T>,
         waker_index: Option<usize>,
-    ) -> Poll<Result<(), ProtocolError<T::Error>>> {
+    ) -> Poll<SendFutureOutput<T>> {
         let mut wakers = connection.termination_wakers.lock().unwrap();
 
         // Re-check the state now that we're holding the lock again. This
@@ -408,11 +401,11 @@ impl<T: Transport> SendFutureState<T> {
         }
     }
 
-    fn poll_with_connection(
+    pub fn poll_send(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         connection: &Connection<T>,
-    ) -> Poll<Result<(), ProtocolError<T::Error>>> {
+    ) -> Poll<SendFutureOutput<T>> {
         match self.as_mut().project() {
             SendFutureStateProj::Running { future_state } => {
                 let result = connection.with_shared(
@@ -459,7 +452,7 @@ impl<T: Transport> SendFutureState<T> {
         }
     }
 
-    fn send_immediately(self, connection: &Connection<T>) -> Result<(), ProtocolError<T::Error>>
+    pub fn send_immediately(self, connection: &Connection<T>) -> SendFutureOutput<T>
     where
         T: NonBlockingTransport,
     {
@@ -511,17 +504,33 @@ impl<T: NonBlockingTransport> SendFuture<'_, T> {
     /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
     /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
     /// correctness.
-    pub fn send_immediately(self) -> Result<(), ProtocolError<T::Error>> {
+    pub fn send_immediately(self) -> SendFutureOutput<T> {
         self.state.send_immediately(self.connection)
     }
 }
 
 impl<T: Transport> Future for SendFuture<'_, T> {
-    type Output = Result<(), ProtocolError<T::Error>>;
+    type Output = SendFutureOutput<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        this.state.poll_with_connection(cx, this.connection)
+        this.state.poll_send(cx, this.connection)
+    }
+}
+
+#[pin_project]
+pub struct SendEpitaphFuture<'a, T: Transport> {
+    shared: &'a T::Shared,
+    #[pin]
+    future_state: T::SendFutureState,
+}
+
+impl<T: Transport> Future for SendEpitaphFuture<'_, T> {
+    type Output = Result<(), Option<T::Error>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        T::poll_send(this.future_state, cx, this.shared)
     }
 }
 

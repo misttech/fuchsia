@@ -1665,20 +1665,18 @@ pub trait ProtocolServerHandler<
 {
     fn request_strict_response_flexible(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::RequestStrictResponseFlexible, ___T>,
 
-        responder: ::fidl_next::Responder<protocol::RequestStrictResponseFlexible>,
+        responder: ::fidl_next::Responder<protocol::RequestStrictResponseFlexible, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn request_flexible_response_strict(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::RequestFlexibleResponseStrict, ___T>,
 
-        responder: ::fidl_next::Responder<protocol::RequestFlexibleResponseStrict>,
+        responder: ::fidl_next::Responder<protocol::RequestFlexibleResponseStrict, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -1704,10 +1702,9 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
             700529454616207123 => {
@@ -1715,9 +1712,9 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.request_strict_response_flexible(sender, decoded, responder).await
+                        handler.request_strict_response_flexible(decoded, responder).await
                     }
-                    Err(e) => sender.close(),
+                    Err(e) => drop(responder),
                 }
             }
 
@@ -1726,13 +1723,13 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.request_flexible_response_strict(sender, decoded, responder).await
+                        handler.request_flexible_response_strict(decoded, responder).await
                     }
-                    Err(e) => sender.close(),
+                    Err(e) => drop(responder),
                 }
             }
 
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }

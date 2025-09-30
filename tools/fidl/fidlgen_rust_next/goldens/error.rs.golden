@@ -513,11 +513,10 @@ pub trait ExampleServerHandler<
 {
     fn foo(
         &mut self,
-        sender: &::fidl_next::ServerSender<Example, ___T>,
 
         request: ::fidl_next::Request<example::Foo, ___T>,
 
-        responder: ::fidl_next::Responder<example::Foo>,
+        responder: ::fidl_next::Responder<example::Foo, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -541,22 +540,21 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder,
+        responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
             1107623248440401476 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.foo(sender, decoded, responder).await,
-                    Err(e) => sender.close(),
+                    Ok(decoded) => handler.foo(decoded, responder).await,
+                    Err(e) => drop(responder),
                 }
             }
 
-            ordinal => sender.close(),
+            ordinal => responder.sender().close(),
         }
     }
 }

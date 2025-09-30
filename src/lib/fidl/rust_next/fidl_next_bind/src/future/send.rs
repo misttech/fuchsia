@@ -12,102 +12,127 @@ use pin_project::pin_project;
 
 use crate::Error;
 
-#[pin_project(project = SendFutureStateProj, project_replace = SendFutureStateOwn)]
-enum SendFutureState<'a, T: Transport> {
-    EncodeError(EncodeError),
-    SendRequest(#[pin] fidl_next_protocol::SendFuture<'a, T>),
-    Finished,
-}
+macro_rules! define_send_future {
+    (
+        $(#[$metas:meta])*
+        $name:ident<$($lifetime:lifetime,)? T: Transport>($future:ty) => $encoded:ident {
+            state = $state:ident,
+            proj = $proj:ident,
+            own = $own:ident,
+        }
+    ) => {
+        #[pin_project(project = $proj, project_replace = $own)]
+        enum $state<$($lifetime,)? T: Transport> {
+            EncodeError(EncodeError),
+            Sending(#[pin] $future),
+            Finished,
+        }
 
-impl<'a, T: Transport> SendFutureState<'a, T> {
-    fn poll_state(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Error<T::Error>>> {
-        match self.as_mut().project() {
-            SendFutureStateProj::EncodeError(_) => {
-                let state = self.project_replace(SendFutureState::Finished);
-                let SendFutureStateOwn::EncodeError(error) = state else {
-                    unreachable!();
-                };
-                Poll::Ready(Err(Error::Encode(error)))
+        impl<$($lifetime,)? T: Transport> $state<$($lifetime,)? T> {
+            fn poll_state(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<Result<(), Error<T::Error>>> {
+                match self.as_mut().project() {
+                    $proj::EncodeError(_) => {
+                        let state = self.project_replace(Self::Finished);
+                        let $own::EncodeError(error) = state else {
+                            unreachable!();
+                        };
+                        Poll::Ready(Err(Error::Encode(error)))
+                    }
+                    $proj::Sending(future) => match ready!(future.poll(cx)) {
+                        Ok(()) => Poll::Ready(Ok(())),
+                        Err(error) => Poll::Ready(Err(Error::Protocol(error))),
+                    },
+                    $proj::Finished => panic!("State polled after completing"),
+                }
             }
-            SendFutureStateProj::SendRequest(future) => match ready!(future.poll(cx)) {
-                Ok(()) => Poll::Ready(Ok(())),
-                Err(error) => Poll::Ready(Err(Error::Protocol(error))),
-            },
-            SendFutureStateProj::Finished => {
-                panic!("SendFutureState polled after completing");
+        }
+
+        $(#[$metas])*
+        #[must_use = "futures do nothing unless polled"]
+        #[pin_project]
+        pub struct $name<
+            $($lifetime,)?
+            #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
+            #[cfg(not(feature = "fuchsia"))] T: Transport,
+        > {
+            #[pin]
+            state: $state<$($lifetime,)? T>,
+        }
+
+        impl<$($lifetime,)? T: Transport> $name<$($lifetime,)? T> {
+            #[doc = concat!("Returns a `", stringify!($name), "` wrapping the given result.")]
+            pub fn from_untyped(result: Result<$future, EncodeError>) -> Self {
+                Self {
+                    state: match result {
+                        Err(error) => $state::EncodeError(error),
+                        Ok(future) => $state::Sending(future),
+                    },
+                }
+            }
+
+            /// Encodes the message.
+            ///
+            /// Returns a future which sends the message, or an error if it failed.
+            pub fn encode(self) -> Result<$encoded<$($lifetime,)? T>, Error<T::Error>> {
+                Ok($encoded {
+                    state: match self.state {
+                        $state::EncodeError(error) => return Err(Error::Encode(error)),
+                        state => state,
+                    },
+                })
+            }
+        }
+
+        impl<'a, T: Transport> Future for $name<$($lifetime,)? T> {
+            type Output = Result<(), Error<T::Error>>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                self.project().state.poll_state(cx)
+            }
+        }
+
+        #[doc = concat!("An encoded `", stringify!($name), "`.")]
+        ///
+        /// This future has already been successfully encoded. It still needs to be
+        /// sent.
+        #[must_use = "futures do nothing unless polled"]
+        #[pin_project]
+        pub struct $encoded<
+            $($lifetime,)?
+            #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
+            #[cfg(not(feature = "fuchsia"))] T: Transport,
+        > {
+            #[pin]
+            state: $state<$($lifetime,)? T>,
+        }
+
+        impl<$($lifetime,)? T: Transport> Future for $encoded<$($lifetime,)? T> {
+            type Output = Result<(), Error<T::Error>>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                self.project().state.poll_state(cx)
             }
         }
     }
 }
 
-/// A future which sends an encoded message to a connection.
-#[must_use = "futures do nothing unless polled"]
-#[pin_project]
-pub struct SendFuture<
-    'a,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
-    #[pin]
-    state: SendFutureState<'a, T>,
-}
-
-impl<'a, T: Transport> SendFuture<'a, T> {
-    /// Returns a `SendFuture` wrapping the given result.
-    pub fn from_untyped(
-        result: Result<fidl_next_protocol::SendFuture<'a, T>, EncodeError>,
-    ) -> Self {
-        Self {
-            state: match result {
-                Err(error) => SendFutureState::EncodeError(error),
-                Ok(future) => SendFutureState::SendRequest(future),
-            },
-        }
-    }
-
-    /// Encodes the message.
-    ///
-    /// Returns a future which sends the message, or an error if it failed.
-    pub fn encode(self) -> Result<EncodedSendFuture<'a, T>, Error<T::Error>> {
-        Ok(EncodedSendFuture {
-            state: match self.state {
-                SendFutureState::EncodeError(error) => return Err(Error::Encode(error)),
-                state => state,
-            },
-        })
+define_send_future! {
+    /// A future which sends an encoded message to a connection.
+    SendFuture<'a, T: Transport>(fidl_next_protocol::SendFuture<'a, T>) => EncodedSendFuture {
+        state = SendFutureState,
+        proj = SendFutureProj,
+        own = SendFutureOwn,
     }
 }
 
-impl<'a, T: Transport> Future for SendFuture<'a, T> {
-    type Output = Result<(), Error<T::Error>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().state.poll_state(cx)
-    }
-}
-
-/// A future which sends an encoded message to a connection.
-///
-/// This future has already been successfully encoded. It still needs to be
-/// sent.
-#[must_use = "futures do nothing unless polled"]
-#[pin_project]
-pub struct EncodedSendFuture<
-    'a,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
-    #[pin]
-    state: SendFutureState<'a, T>,
-}
-
-impl<'a, T: Transport> Future for EncodedSendFuture<'a, T> {
-    type Output = Result<(), Error<T::Error>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().state.poll_state(cx)
+define_send_future! {
+    /// A future which responds to a request with an encoded message.
+    RespondFuture<T: Transport>(fidl_next_protocol::RespondFuture<T>) => EncodedRespondFuture {
+        state = RespondFutureState,
+        proj = RespondFutureProj,
+        own = RespondFutureOwn,
     }
 }
