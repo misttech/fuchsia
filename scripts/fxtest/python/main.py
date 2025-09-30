@@ -37,6 +37,7 @@ import environment
 import event
 import execution
 import log
+import package_repository
 import selection
 import selection_types
 import test_list_file
@@ -1049,6 +1050,42 @@ class AsyncMain:
             recorder.emit_instruction_message(
                 "E2E test selected, building updates package"
             )
+        elif tests.has_device_test():
+            package_repo = package_repository.PackageRepository.from_env(
+                exec_env
+            )
+            device_test_names = [
+                package_name
+                for test in tests.selected
+                if (package_name := test.package_name()) is not None
+            ]
+
+            missing_packages = sorted(
+                set(
+                    filter(
+                        lambda name: name not in package_repo.name_to_merkle,
+                        device_test_names,
+                    )
+                )
+            )
+
+            if missing_packages:
+                recorder.emit_info_message(
+                    f"Missing {len(missing_packages)} from package lists. Regenerating test lists."
+                )
+                packages_string = "   - " + "\n   - ".join(
+                    missing_packages[:10]
+                )
+                if len(missing_packages) > 10:
+                    packages_string += (
+                        f"\n   (and {len(missing_packages) - 10} more)"
+                    )
+                recorder.emit_instruction_message(packages_string)
+                # We need to rebuild package lists to ensure the added tests are visible.
+                # See https://fxbug.dev/442839521 and https://fxbug.dev/448165046 for details.
+                build_command_line.extend(
+                    ["--default", "//build/images/updates:package_lists"]
+                )
 
         build_id = recorder.emit_build_start(targets=build_command_line)
         recorder.emit_instruction_message("Use --no-build to skip building")

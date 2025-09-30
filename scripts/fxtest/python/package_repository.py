@@ -5,6 +5,7 @@
 import functools
 import json
 import os
+import re
 import typing
 
 import environment
@@ -23,13 +24,12 @@ class PackageRepository:
         Args:
             name_to_merkle (dict[str, str]): Mapping of package name to merkle hash.
         """
-        self.name_to_merkle = name_to_merkle
+        self.name_to_merkle: dict[str, str] = name_to_merkle
 
     @classmethod
-    @functools.lru_cache()
     def from_env(
         cls, exec_env: environment.ExecutionEnvironment
-    ) -> typing.Self:
+    ) -> "PackageRepository":
         """Create a package repository wrapper from an environment.
 
         Args:
@@ -68,3 +68,39 @@ class PackageRepository:
             raise PackageRepositoryError(
                 f"Error loading package repository: {e}"
             )
+
+    @classmethod
+    @functools.lru_cache()
+    def from_env_cached(
+        cls, exec_env: environment.ExecutionEnvironment
+    ) -> "PackageRepository":
+        """Create a package repository wrapper from an environment, reusing previous results if present.
+
+        Args:
+            exec_env (environment.ExecutionEnvironment): Environment to load from.
+
+        Raises:
+            PackageRepositoryError: If there was an issue loading the package repository information.
+        """
+        return cls.from_env(exec_env)
+
+
+_PACKAGE_NAME_REGEX = re.compile(r"fuchsia-pkg://fuchsia\.com/([^/#]+)#")
+
+
+def extract_package_name_from_url(url: str) -> str | None:
+    """Given a fuchsia-pkg URL, extract and return the package name.
+
+    Example:
+      fuchsia-pkg://fuchsia.com/my-package#meta/my-component.cm -> my-package
+
+    Args:
+        url (str): A fuchsia-pkg:// URL.
+
+    Returns:
+        str | None: The package name from the URL, or None if parsing failed.
+    """
+    match = _PACKAGE_NAME_REGEX.match(url)
+    if match is None:
+        return None
+    return match.group(1)

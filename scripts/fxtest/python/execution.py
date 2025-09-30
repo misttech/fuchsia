@@ -4,7 +4,6 @@
 
 import asyncio
 import os
-import re
 import tempfile
 
 import async_utils.command as command
@@ -474,11 +473,15 @@ class TestExecution:
         component_url = execution.component_url
         if self._flags.use_package_hash:
             try:
-                package_repo = package_repository.PackageRepository.from_env(
-                    self._exec_env
+                package_repo = (
+                    package_repository.PackageRepository.from_env_cached(
+                        self._exec_env
+                    )
                 )
 
-                name = extract_package_name_from_url(component_url)
+                name = package_repository.extract_package_name_from_url(
+                    component_url
+                )
                 if name is None:
                     raise TestCouldNotRun(
                         "Failed to parse package name for Merkle root matching.\nTry running with --no-use-package-hash or run fx build."
@@ -510,27 +513,6 @@ class TestExecution:
             self._flags.use_test_pilot
             and self._test.build.test.new_path is not None
         )
-
-
-_PACKAGE_NAME_REGEX = re.compile(r"fuchsia-pkg://fuchsia\.com/([^/#]+)#")
-
-
-def extract_package_name_from_url(url: str) -> str | None:
-    """Given a fuchsia-pkg URL, extract and return the package name.
-
-    Example:
-      fuchsia-pkg://fuchsia.com/my-package#meta/my-component.cm -> my-package
-
-    Args:
-        url (str): A fuchsia-pkg:// URL.
-
-    Returns:
-        str | None: The package name from the URL, or None if parsing failed.
-    """
-    match = _PACKAGE_NAME_REGEX.match(url)
-    if match is None:
-        return None
-    return match.group(1)
 
 
 class DeviceConfigError(Exception):

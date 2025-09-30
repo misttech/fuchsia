@@ -139,6 +139,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 os.path.join(self.test_data_path, name),
                 os.path.join(self.out_dir, name),
             )
+        self.package_target_file_path = os.path.join(
+            self.out_dir, "package-targets.json"
+        )
 
         # disabled_tests.json must be in place for e2e tests to pass.
         disabled_tests_dest_path = os.path.join(
@@ -828,6 +831,103 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             any(["example_e2e_test" in v[0] for v in call_prefixes])
         )
+
+    async def test_build_device_package_lists_only_when_no_merkle(self) -> None:
+        """Test that we only build package lists for device tests that are missing a merkle hash"""
+
+        with open(self.package_target_file_path, "w") as f:
+            # Clear the target files so that this test does not have a merkle hash listed.
+            # This will trigger rebuilding package lists.
+            f.write('{"signed": {"targets": {}}}')
+
+        command_mock = self._mock_run_command(0)
+        subprocess_mock = self._mock_subprocess_call(0)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-e2e", "--device"])
+        )
+        self.assertEqual(ret, 0)
+
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+        call_prefixes.update(
+            self._make_call_args_prefix_set(subprocess_mock.call_args_list)
+        )
+
+        # Make sure we built, published, and ran the device test.
+        self.assertIsSubset(
+            {
+                (
+                    "fx",
+                    "--dir",
+                    os.path.join(self.fuchsia_dir.name, "out/default"),
+                    "build",
+                    "--default",
+                    "//src/sys:foo_test_package",
+                    "--default",
+                    "//build/images/updates:package_lists",
+                ),
+                (
+                    "fx",
+                    "--dir",
+                    self.out_dir,
+                    "ffx",
+                    "repository",
+                    "publish",
+                ),
+            },
+            call_prefixes,
+        )
+
+    async def test_no_build_package_lists_if_not_needed(self) -> None:
+        """Test that we do not build package lists if all packages are present in the repository"""
+
+        command_mock = self._mock_run_command(0)
+        subprocess_mock = self._mock_subprocess_call(0)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-e2e", "--device"])
+        )
+        self.assertEqual(ret, 0)
+
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+        call_prefixes.update(
+            self._make_call_args_prefix_set(subprocess_mock.call_args_list)
+        )
+
+        self.assertIsSubset(
+            {
+                (
+                    "fx",
+                    "--dir",
+                    os.path.join(self.fuchsia_dir.name, "out/default"),
+                    "build",
+                    "--default",
+                    "//src/sys:foo_test_package",
+                ),
+                (
+                    "fx",
+                    "--dir",
+                    self.out_dir,
+                    "ffx",
+                    "repository",
+                    "publish",
+                ),
+            },
+            call_prefixes,
+        )
+
+        for prefix_list in call_prefixes:
+            self.assertNotIn(
+                "//build/images/updates:package_lists", prefix_list
+            )
 
     async def test_no_build(self) -> None:
         """Test that we can run all tests and report success"""
