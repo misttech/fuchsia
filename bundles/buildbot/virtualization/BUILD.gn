@@ -2,10 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/product_bundle.gni")
 import("//build/assembly/product_bundle_test_group.gni")
+import("//build/assembly/test_product_bundle.gni")
 import("//build/testing/environments.gni")
 
 # WARNING: Known to infrastructure
@@ -40,28 +38,13 @@ group("virtualization") {
 # dependency allows us more control over the infrastructure environment, while also letting the
 # Starnix test runner and tests be buildable regardless of the virtualization stack inclusion.
 product_bundle_test_group("starnix_virtualized_tests") {
-  product_bundle_name = "starnix_linux_vm_bundle"
+  product_bundle = ":starnix_linux_vm_bundle"
   environments = [ emu_env ]
   target_tests = [ "//src/starnix/tests:linux_vm_tests" ]
 }
 
-product_bundle("starnix_linux_vm_bundle") {
-  testonly = true
-  name = "starnix_linux_vm_bundle"
-  system_a = "$target_out_dir/starnix_linux_vm_assembly"
-  deps = [ ":starnix_linux_vm_assembly" ]
-}
-
-assembled_system("starnix_linux_vm_assembly") {
-  testonly = true
-  image_name = "fuchsia"
-  namespace = "starnix_linux_vm_assembly"
-  board_config_label = "//boards/${target_cpu}"
-  product_assembly_config_label = ":starnix_linux_vm_assembly_config"
-}
-
-product_assembly_configuration("starnix_linux_vm_assembly_config") {
-  testonly = true
+test_product_bundle("starnix_linux_vm_bundle") {
+  board_config = "//boards/${target_cpu}"
   platform = {
     build_type = "eng"
     virtualization = {

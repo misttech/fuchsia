@@ -932,7 +932,7 @@ if (current_toolchain == default_toolchain) {
     visibility += [
       "//boards/*",
       "//build/*",
-      "//examples/drivers/*",
+      "//examples/*",
       "//products/*",
       "//sdk/lib/driver/*",
       "//src/*",

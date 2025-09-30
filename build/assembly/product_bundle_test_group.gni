@@ -34,8 +34,13 @@ import("//build/python/python_action.gni")
 #     [list] List of host targets to walk to find test specs.
 #     Either this or target_tests must be defined.
 #
+#   product_bundle (optional)
+#     [label] The product_bundle target to run the tests against.
+#     This is preferred over `product_bundle_name`.
+#
 #   product_bundle_name (optional; default = target_name)
 #     [str] The name of the product bundle to assign the tests to.
+#     DEPRECATED: Use `product_bundle` instead.
 #
 #   environments (optional; default = [])
 #     [list of scopes] The environments to run these tests on.
@@ -45,6 +50,9 @@ template("product_bundle_test_group") {
   assert(defined(invoker.tests) || defined(invoker.target_tests) ||
              defined(invoker.host_tests),
          "Either 'tests' or 'target_tests' or 'host_tests' must be defined")
+  assert(
+      !(defined(invoker.product_bundle) && defined(invoker.product_bundle_name)),
+      "Cannot define both 'product_bundle' and 'product_bundle_name) in ${target_name}")
 
   # The test_spec should always be generate in the default toolchain even if
   # these are e2e (host) tests, because we want to avoid accidentally creating
@@ -56,9 +64,16 @@ template("product_bundle_test_group") {
       public_deps = [ ":${target_name}($default_toolchain)" ]
     }
   } else {
-    _product_bundle_name = target_name
-    if (defined(invoker.product_bundle_name)) {
+    _product_bundle_deps = []
+    if (defined(invoker.product_bundle)) {
+      # The name of the product bundle is the name of the target.
+      _product_bundle_name = get_label_info(invoker.product_bundle, "name")
+      _product_bundle_deps += [ invoker.product_bundle ]
+    } else if (defined(invoker.product_bundle_name)) {
       _product_bundle_name = invoker.product_bundle_name
+    } else {
+      # The default product_bundle_name is the target_name.
+      _product_bundle_name = target_name
     }
 
     _environments = []
@@ -75,7 +90,7 @@ template("product_bundle_test_group") {
       outputs = [ _tests_json ]
       output_conversion = "json"
 
-      deps = []
+      deps = _product_bundle_deps
       if (defined(invoker.tests)) {
         deps += invoker.tests
       }

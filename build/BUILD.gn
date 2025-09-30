@@ -253,6 +253,7 @@ group("non_hermetic_deps") {
     "//build/bazel/host:*",
     "//build/bazel/tests/*",
     "//build/tools/json_validator:*",
+    "//examples/assembly/*",
     "//sdk/lib/driver/devicetree/*",
     "//src:*",
     "//src/devices/block/drivers/aml-sdmmc:*",
@@ -398,9 +399,9 @@ group("non_hermetic_deps") {
 
   # Starnix VM-backed tests, which use //boards.
   visibility += [
-    "//bundles/buildbot/virtualization:starnix_linux_vm_assembly.image_assembler",
-    "//bundles/buildbot/virtualization:starnix_linux_vm_assembly.product_assembler",
-    "//bundles/buildbot/virtualization:starnix_linux_vm_assembly_config",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_bundle.assembled_system.image_assembler",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_bundle.assembled_system.product_assembler",
+    "//bundles/buildbot/virtualization:starnix_linux_vm_bundle.product_configuration",
     "//bundles/buildbot/virtualization:starnix_linux_vm_bundle_product_bundle",
     "//bundles/buildbot/virtualization:starnix_linux_vm_bundle_transfer_manifest",
   ]

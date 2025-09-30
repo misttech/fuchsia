@@ -1,0 +1,85 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/assembly/assembled_system.gni")
+import("//build/assembly/product_assembly_configuration.gni")
+import("//build/assembly/product_bundle.gni")
+
+# Build a product bundle for testing specific functionality.
+#
+# This wraps existing templates and simplifies the implementation for tests.
+#
+# Parameters
+#
+#  board_config (required)
+#    The label to a board_configuration()
+#
+#  Variables forwarded to product_assembly_configuration()
+#    product
+#    platform
+#    base_packages
+#
+#  Variables forwarded to product_bundle()
+#    deps
+#    virtual_devices
+#
+template("test_product_bundle") {
+  assert(defined(invoker.board_config), "board_config is required")
+
+  targets = {
+    product_configuration = "${target_name}.product_configuration"
+    assembled_system = "${target_name}.assembled_system"
+    product_bundle = target_name
+  }
+  files = {
+    assembled_system = "${target_out_dir}/${target_name}.assembled_system"
+  }
+
+  product_assembly_configuration(targets.product_configuration) {
+    visibility = [ ":${targets.assembled_system}.product_assembler" ]
+    forward_variables_from(invoker,
+                           [
+                             "product",
+                             "platform",
+                             "base_packages",
+                           ])
+    testonly = true
+  }
+
+  assembled_system(targets.assembled_system) {
+    visibility = [
+      ":${targets.assembled_system}",
+      ":${targets.assembled_system}.image_assembler",
+      ":${targets.assembled_system}.image_assembler_all_inputs",
+      ":${targets.assembled_system}.image_assembler_inputs",
+      ":${targets.assembled_system}.image_assembly_inputs",
+      ":${targets.product_bundle}",
+      ":${targets.product_bundle}_hermetic_inputs",
+      ":${targets.product_bundle}_product_bundle",
+      ":${targets.product_bundle}_product_bundle_all_inputs",
+    ]
+    testonly = true
+    image_name = "fuchsia"
+    namespace = targets.assembled_system
+    board_config_label = invoker.board_config
+    product_assembly_config_label = ":${targets.product_configuration}"
+  }
+
+  product_bundle(targets.product_bundle) {
+    forward_variables_from(invoker,
+                           [
+                             "deps",
+                             "virtual_devices",
+                           ])
+    testonly = true
+
+    if (!defined(deps)) {
+      deps = []
+    }
+    deps += [ ":${targets.assembled_system}" ]
+
+    name = target_name
+    system_a = files.assembled_system
+  }
+}

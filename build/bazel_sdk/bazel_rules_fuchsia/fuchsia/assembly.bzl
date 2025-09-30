@@ -87,6 +87,10 @@ load(
     _fuchsia_product_bundle = "fuchsia_product_bundle",
 )
 load(
+    "//fuchsia/private/assembly:fuchsia_test_product_bundle.bzl",
+    _fuchsia_test_product_bundle = "fuchsia_test_product_bundle",
+)
+load(
     "//fuchsia/private/assembly:fuchsia_product_configuration.bzl",
     _BUILD_TYPES = "BUILD_TYPES",
     _INPUT_DEVICE_TYPE = "INPUT_DEVICE_TYPE",
@@ -164,6 +168,7 @@ fuchsia_product = _fuchsia_product
 fuchsia_partitions_configuration = _fuchsia_partitions_configuration
 fuchsia_prebuilt_partitions_configuration = _fuchsia_prebuilt_partitions_configuration
 fuchsia_product_bundle = _fuchsia_product_bundle
+fuchsia_test_product_bundle = _fuchsia_test_product_bundle
 fuchsia_product_size_check = _fuchsia_product_size_check
 fuchsia_post_processing_script = _fuchsia_post_processing_script
 fuchsia_package_size_check = _fuchsia_package_size_check

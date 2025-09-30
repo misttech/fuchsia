@@ -125,6 +125,7 @@ group("bazel_action_allowlist") {
 
   visibility += [
     "//boards/vim3:bazel_drivers",
+    "//examples/assembly/*",
     "//examples/drivers:bazel_test_packages.bazel_build",
     "//examples/drivers/simple/dfv2:bazel_package.bazel_build",
     "//examples/drivers/template:bazel_package.bazel_build",
