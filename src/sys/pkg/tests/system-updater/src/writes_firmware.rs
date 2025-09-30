@@ -1199,7 +1199,7 @@ async fn fails_on_firmware_write_error_packageless() {
 
     let mut attempt = env.start_packageless_update().await.unwrap();
     let info = UpdateInfo::builder().download_size(0).build();
-    let progress = Progress::builder().fraction_completed(0.5).bytes_downloaded(0).build();
+    let progress = Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build();
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),

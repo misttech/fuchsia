@@ -1126,12 +1126,15 @@ impl PackagelessAttempt<'_> {
             .await
             .map_err(|e| AttemptError::Prepare(PrepareError::OpenBlobfs(e)))?;
 
+        let total_blob_sizes = manifest.images.iter().map(|image| image.size).sum::<u64>()
+            + manifest.blobs.iter().map(|blob| blob.uncompressed_size).sum::<u64>();
+
         // Write images
         let mut state = state
             .enter_stage(
                 co,
                 fupdate_installer_ext::UpdateInfo::builder().download_size(0).build(),
-                (manifest.images.len() + manifest.blobs.len()) as u64,
+                total_blob_sizes,
             )
             .await;
         *phase = metrics::Phase::ImageWrite;
@@ -1304,7 +1307,7 @@ impl PackagelessAttempt<'_> {
                 if !self.config.should_write_recovery
                     && image.slot == update_package::manifest::Slot::R
                 {
-                    return Ok(());
+                    return Ok(image.size);
                 }
                 let target_config = if image.slot == update_package::manifest::Slot::R {
                     paver::TargetConfiguration::Single(fpaver::Configuration::Recovery)
@@ -1391,12 +1394,12 @@ impl PackagelessAttempt<'_> {
                         .await
                         .map_err(StageError::Write)?;
                 }
-                Ok(())
+                Ok(image.size)
             })
             .buffer_unordered(self.concurrent_blob_fetches);
 
-        while let Some(()) = stream.try_next().await? {
-            state.add_progress(co, 1).await;
+        while let Some(size) = stream.try_next().await? {
+            state.add_progress(co, size).await;
         }
 
         paver::paver_flush_data_sink(&self.env.data_sink).await.map_err(StageError::PaverFlush)?;
@@ -1440,7 +1443,7 @@ impl PackagelessAttempt<'_> {
         let mut stream = futures::stream::iter(manifest.blobs.iter())
             .map(async |blob| {
                 if existing_blobs.contains(&blob.fuchsia_merkle_root) {
-                    return Ok(());
+                    return Ok(blob.uncompressed_size);
                 }
                 let blob_id = fpkg_ext::BlobId::from(blob.fuchsia_merkle_root).into();
                 let () = self
@@ -1450,12 +1453,12 @@ impl PackagelessAttempt<'_> {
                     .await
                     .map_err(FetchError::Fidl)?
                     .map_err(|e| FetchError::FetchBlob(e.into()))?;
-                Ok(())
+                Ok(blob.uncompressed_size)
             })
             .buffer_unordered(self.concurrent_blob_fetches);
 
-        while let Some(()) = stream.try_next().await? {
-            state.add_progress(co, 1).await;
+        while let Some(size) = stream.try_next().await? {
+            state.add_progress(co, size).await;
         }
 
         let () = sync_package_cache(&self.env.pkg_cache).await.map_err(FetchError::Sync)?;

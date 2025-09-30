@@ -137,7 +137,7 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         State::Fetch(
             UpdateInfoAndProgress::builder()
                 .info(info)
-                .progress(Progress::builder().fraction_completed(0.25).bytes_downloaded(0).build())
+                .progress(Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build())
                 .build()
         )
     );
@@ -148,7 +148,12 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         State::Fetch(
             UpdateInfoAndProgress::builder()
                 .info(info)
-                .progress(Progress::builder().fraction_completed(0.5).bytes_downloaded(0).build())
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(100.0 / 3120.0)
+                        .bytes_downloaded(0)
+                        .build()
+                )
                 .build()
         )
     );
@@ -159,7 +164,12 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         State::Fetch(
             UpdateInfoAndProgress::builder()
                 .info(info)
-                .progress(Progress::builder().fraction_completed(0.75).bytes_downloaded(0).build())
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(120.0 / 3120.0)
+                        .bytes_downloaded(0)
+                        .build()
+                )
                 .build()
         )
     );

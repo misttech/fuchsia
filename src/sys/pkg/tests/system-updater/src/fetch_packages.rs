@@ -343,6 +343,7 @@ async fn test_stage_failure_reason_packageless(
 ) {
     let mut manifest = make_manifest([]);
     manifest.images[0].sha256 = [0; 32].into();
+    manifest.images[0].size = 1000;
     let env = TestEnv::builder().ota_manifest(manifest).build().await;
     env.ota_downloader_service.set_fetch_blob_response(Err(resolve_error));
 
@@ -439,7 +440,10 @@ async fn test_fetch_failure_reason(
     let mut attempt = env.start_update_with_options(update_url, default_options()).await.unwrap();
 
     let info = UpdateInfo::builder().download_size(0).build();
-    let progress = Progress::builder().fraction_completed(0.5).bytes_downloaded(0).build();
+    let progress = Progress::builder()
+        .fraction_completed(if update_url == UPDATE_PKG_URL { 0.5 } else { 0.0 })
+        .bytes_downloaded(0)
+        .build();
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),
