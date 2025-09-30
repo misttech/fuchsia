@@ -77,7 +77,6 @@
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                     "/core/trace_manager/cpuperf_provider/cpu-trace",
-                    "/core/testing/starnix-tests:**",
                 ],
             },
             {
@@ -222,6 +221,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/profiler",
+                    "/core/testing/starnix-tests:**",
                 ],
             },
             {

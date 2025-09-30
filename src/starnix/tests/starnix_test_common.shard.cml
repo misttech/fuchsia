@@ -83,8 +83,8 @@
         },
         {
             protocol: [
-                "fuchsia.kernel.DebugResource",
                 "fuchsia.kernel.RootJob",
+                "fuchsia.kernel.SamplingResource",
             ],
             from: "parent",
             to: [ "#profiler" ],
