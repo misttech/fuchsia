@@ -2,13 +2,5 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    actions: [
-        {
-            type: "skip",
-            matchers: [
-                // TODO(https://fxbug.dev/438263380): timerfd has issues on arch32
-                "TimerFD.*",
-            ],
-        },
-    ],
+    actions: [],
 }
