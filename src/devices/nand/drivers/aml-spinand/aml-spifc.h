@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_NAND_DRIVERS_AML_SPINAND_AML_SPIFC_H_
 #define SRC_DEVICES_NAND_DRIVERS_AML_SPINAND_AML_SPIFC_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/types.h>
 
 #include "spi-op.h"

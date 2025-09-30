@@ -29,9 +29,9 @@ group("tests") {
 common_deps = [
   ":intel_spi_flash_bind",
   "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+  "//sdk/lib/driver/mmio/cpp",
   "//src/devices/bind/fuchsia:fuchsia_cpp",
   "//src/devices/lib/driver",
-  "//src/devices/lib/mmio",
   "//src/devices/pci/lib/device-protocol-pci",
   "//src/devices/pci/lib/pci",
   "//src/lib/ddktl",

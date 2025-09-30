@@ -5,9 +5,9 @@
 #include "src/devices/nand/drivers/aml-rawnand/aml-rawnand.h"
 
 #include <lib/ddk/device.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/fit/function.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>

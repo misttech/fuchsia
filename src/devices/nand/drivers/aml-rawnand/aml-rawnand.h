@@ -10,7 +10,7 @@
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/io-buffer.h>
-#include <lib/mmio/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/time.h>
 #include <string.h>

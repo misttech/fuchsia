@@ -6,8 +6,8 @@
 
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/result.h>
 

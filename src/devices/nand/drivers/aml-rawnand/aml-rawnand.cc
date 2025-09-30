@@ -11,8 +11,8 @@
 #include <lib/ddk/driver.h>
 #include <lib/ddk/io-buffer.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/time.h>
 #include <strings.h>
