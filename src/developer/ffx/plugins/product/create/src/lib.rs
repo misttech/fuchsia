@@ -42,19 +42,22 @@ impl FfxMain for ProductBundleCreateTool {
                 })
             })
             .transpose()?;
-        product_bundle_create(self.cmd, build_dir, writer).await.map_err(flatten_error_sources)
+        product_bundle_create(&self.ctx, self.cmd, build_dir, writer)
+            .await
+            .map_err(flatten_error_sources)
     }
 }
 
 /// Create a fuchsia product bundle and return an anyhow result.
 /// This allows us to work with anyhow, and map to a fho result above.
 async fn product_bundle_create(
+    context: &EnvironmentContext,
     cmd: CreateCommand,
     build_dir: Option<Utf8PathBuf>,
     writer: SimpleWriter,
 ) -> Result<(), ArtifactError> {
     let sanitized_cmd = cmd.try_into()?;
-    Box::pin(sanitized_product_bundle_create(sanitized_cmd, build_dir, writer)).await
+    Box::pin(sanitized_product_bundle_create(context, sanitized_cmd, build_dir, writer)).await
 }
 
 /// Convert the anyhow error into a pretty/stacked fho error.
@@ -178,6 +181,7 @@ fn default_path_for_product_bundle_name(name: impl AsRef<str>) -> Result<Utf8Pat
 
 /// Construct a product bundle using sanitized inputs.
 async fn sanitized_product_bundle_create(
+    context: &EnvironmentContext,
     cmd: SanitizedCreateCommand,
     build_dir: Option<Utf8PathBuf>,
     mut writer: SimpleWriter,
@@ -224,7 +228,11 @@ async fn sanitized_product_bundle_create(
         .line(format!("Assembling into {} ...", &out))
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
     let tools = PlatformToolProvider::new(assembly.platform_path.clone());
-    let system = Box::pin(assembly.create_system(&tmp_path.join("system"))).await?;
+    let should_configure_example =
+        context.get::<bool, _>("assembly_example_enabled").unwrap_or_default();
+    let system =
+        Box::pin(assembly.create_system(should_configure_example, &tmp_path.join("system")))
+            .await?;
     let mut builder = ProductBundleBuilder::new(name, version)
         .system(system, Slot::A)
         .update_package(update_version_file, 1);

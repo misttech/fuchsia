@@ -63,9 +63,11 @@ impl Assembly {
         )
     }
 
-    pub async fn create_system(self, outdir: &Utf8PathBuf) -> Result<AssembledSystem> {
-        let should_configure_example =
-            ffx_config::get::<bool, _>("assembly_example_enabled").unwrap_or_default();
+    pub async fn create_system(
+        self,
+        should_configure_example: bool,
+        outdir: &Utf8PathBuf,
+    ) -> Result<AssembledSystem> {
         let gendir = tempfile::TempDir::new().unwrap();
         let gendir = Utf8PathBuf::from_path_buf(gendir.path().to_path_buf()).unwrap();
 
