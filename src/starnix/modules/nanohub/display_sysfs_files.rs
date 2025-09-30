@@ -32,8 +32,8 @@ fn format_display_select(response: &fnanohub::DisplayDeviceGetDisplaySelectRespo
 
 fn parse_display_select(value: &str) -> Result<fnanohub::DisplaySelect, SysfsError> {
     match value.trim() {
-        "0" => Ok(fnanohub::DisplaySelect::Low),
-        "1" => Ok(fnanohub::DisplaySelect::High),
+        "0" => Ok(fnanohub::DisplaySelect::Mcu),
+        "1" => Ok(fnanohub::DisplaySelect::Ap),
         _ => sysfs_error!(EINVAL),
     }
 }
@@ -151,13 +151,13 @@ mod tests {
     #[::fuchsia::test]
     fn test_format_display_select() {
         let response = DisplayDeviceGetDisplaySelectResponse {
-            display_select: Some(fnanohub::DisplaySelect::High),
+            display_select: Some(fnanohub::DisplaySelect::Ap),
             ..Default::default()
         };
         assert_eq!(format_display_select(&response), "1\n");
 
         let response = DisplayDeviceGetDisplaySelectResponse {
-            display_select: Some(fnanohub::DisplaySelect::Low),
+            display_select: Some(fnanohub::DisplaySelect::Mcu),
             ..Default::default()
         };
         assert_eq!(format_display_select(&response), "0\n");
@@ -165,10 +165,10 @@ mod tests {
 
     #[::fuchsia::test]
     fn test_parse_display_select_valid() {
-        assert_eq!(parse_display_select("0"), Ok(fnanohub::DisplaySelect::Low));
-        assert_eq!(parse_display_select("1"), Ok(fnanohub::DisplaySelect::High));
-        assert_eq!(parse_display_select(" 0 "), Ok(fnanohub::DisplaySelect::Low));
-        assert_eq!(parse_display_select(" 1 "), Ok(fnanohub::DisplaySelect::High));
+        assert_eq!(parse_display_select("0"), Ok(fnanohub::DisplaySelect::Mcu));
+        assert_eq!(parse_display_select("1"), Ok(fnanohub::DisplaySelect::Ap));
+        assert_eq!(parse_display_select(" 0 "), Ok(fnanohub::DisplaySelect::Mcu));
+        assert_eq!(parse_display_select(" 1 "), Ok(fnanohub::DisplaySelect::Ap));
     }
 
     #[::fuchsia::test]

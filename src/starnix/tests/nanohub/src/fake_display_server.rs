@@ -52,7 +52,7 @@ pub async fn mock_display_server(
                             DisplayDeviceRequest::GetDisplaySelect { responder } => {
                                 requests.lock().unwrap().push("GetDisplaySelect".into());
                                 let response = DisplayDeviceGetDisplaySelectResponse {
-                                    display_select: Some(DisplaySelect::Low),
+                                    display_select: Some(DisplaySelect::Mcu),
                                     ..Default::default()
                                 };
                                 responder.send(Ok(&response))?;

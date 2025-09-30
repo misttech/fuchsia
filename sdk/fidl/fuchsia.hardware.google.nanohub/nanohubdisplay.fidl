@@ -41,12 +41,10 @@ type DisplaySyncInfo = table {
 
 /// Selects which processor has ownership of the display.
 type DisplaySelect = flexible enum : int64 {
-    /// The MCU (Microcontroller Unit) has control of the display. This
-    /// corresponds to a low signal on the display select GPIO pin.
-    LOW = 0;
-    /// The AP (Application Processor) has control of the display. This
-    /// corresponds to a high signal on the display select GPIO pin.
-    HIGH = 1;
+    /// The MCU (Microcontroller Unit) has control of the display.
+    MCU = 0;
+    /// The AP (Application Processor) has control of the display.
+    AP = 1;
 };
 
 /// Protocol for interacting with the Google-specific display hardware.
