@@ -63,6 +63,7 @@ sdk_molecule("all_atoms") {
     "//sdk:host_tools_for_configured_host_cpus",
     "//sdk:version_history_sdk($default_toolchain)",
     "//src/developer/ffx/lib/symbol-index:symbol-index-sdk",
+    "//zircon/system/ulib/trace-reader:trace-reader_sdk",
   ]
 }
 
