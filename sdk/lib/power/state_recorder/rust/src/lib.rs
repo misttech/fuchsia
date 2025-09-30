@@ -240,10 +240,8 @@ impl<T: RecordableEnum> StateRecorder<T> {
         // Clear the trace state event to end the current slice, if one exists.
         self.trace_state_event.take();
 
-        // We retain this reference for the duration of the method, and it incurs a borrow of
-        // `self`. As a result, `self.trace_state_event` and `self.transition_history` are RefCells
-        // so we can mutate them without an overlapping mutable borrow of `self` that offends the
-        // borrow checker.
+        // Clone `inspect_name` so this borrow of `self` can end before the mutable borrows used
+        // to modify self.trace_state_event and self.transition_history below.
         let state_name = self.state_name(state_enum);
         let inspect_name = state_name.inspect_name.clone();
 
