@@ -3,6 +3,10 @@
 // found in the LICENSE file.
 
 use crate::error::{Error, Result};
+#[cfg(feature = "fdomain")]
+use fdomain_client::{Channel, Handle};
+#[cfg(not(feature = "fdomain"))]
+use fidl::{Channel, Handle};
 
 /// An empty type.
 #[derive(Debug)]
@@ -35,9 +39,9 @@ pub enum Value<OutOfLine = Forbid> {
     Enum(String, Box<Self>),
     Union(String, String, Box<Self>),
     List(Vec<Self>),
-    ServerEnd(fidl::Channel, String),
-    ClientEnd(fidl::Channel, String),
-    Handle(fidl::Handle, fidl::ObjectType),
+    ServerEnd(Channel, String),
+    ClientEnd(Channel, String),
+    Handle(Handle, fidl::ObjectType),
     OutOfLine(OutOfLine),
 }
 

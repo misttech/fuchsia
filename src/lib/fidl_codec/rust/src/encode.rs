@@ -2,10 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::AsHandleRef as _;
+#[cfg(feature = "fdomain")]
+use fdomain_client::{AsHandleRef as _, HandleOp};
+#[cfg(feature = "fdomain")]
+use fidl::encoding::HandleFor as _;
 use fidl::encoding::{
     ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, AtRestFlags, DynamicFlags, MAGIC_NUMBER_INITIAL,
 };
+#[cfg(not(feature = "fdomain"))]
+use fidl::{AsHandleRef as _, HandleOp};
+
+#[cfg(feature = "fdomain")]
+use HandleOp as HandleDisposition;
+#[cfg(not(feature = "fdomain"))]
+use fidl::HandleDisposition;
 
 use std::collections::HashMap;
 
@@ -38,7 +48,7 @@ enum HandleType<'s> {
 struct EncodeBuffer<'n> {
     ns: &'n library::Namespace,
     bytes: Vec<u8>,
-    handles: Vec<fidl::HandleDisposition<'static>>,
+    handles: Vec<HandleDisposition<'static>>,
 }
 
 impl<'n> EncodeBuffer<'n> {
@@ -55,7 +65,7 @@ impl<'n> EncodeBuffer<'n> {
         direction: Direction,
         method_name: &str,
         value: Value,
-    ) -> Result<(Vec<u8>, Vec<fidl::HandleDisposition<'static>>)> {
+    ) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
         let mut buf = EncodeBuffer { ns, bytes: Vec::new(), handles: Vec::new() };
 
         let protocol = match ns.lookup(protocol_name)? {
@@ -335,7 +345,7 @@ impl<'n> EncodeBuffer<'n> {
     where
         'n: 't,
     {
-        let handle_op = match (value, nullable, expect) {
+        let handle = match (value, nullable, expect) {
             (Value::Null, true, _) => Ok(None),
             (Value::Handle(h, _), true, _) if h.is_invalid() => Ok(None),
             (Value::ServerEnd(h, _), true, _) if h.as_handle_ref().is_invalid() => Ok(None),
@@ -358,7 +368,7 @@ impl<'n> EncodeBuffer<'n> {
                         "Expected object type {object_type:?} got {s:?}"
                     )))
                 } else {
-                    Ok(Some(fidl::HandleOp::Move(h)))
+                    Ok(Some(h))
                 }
             }
             (Value::ServerEnd(h, s), _, HandleType::ServerEnd(expect))
@@ -372,7 +382,7 @@ impl<'n> EncodeBuffer<'n> {
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
                 } else {
-                    Ok(Some(fidl::HandleOp::Move(h.into())))
+                    Ok(Some(h.into()))
                 }
             }
             (Value::ServerEnd(_, s), _, HandleType::ClientEnd(expect))
@@ -396,16 +406,26 @@ impl<'n> EncodeBuffer<'n> {
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
                 } else {
-                    Ok(Some(fidl::HandleOp::Move(h.into())))
+                    Ok(Some(h.into()))
                 }
             }
             _ => Err(Error::EncodeError("Expected a handle".to_owned())),
         }?;
 
-        if let Some(handle_op) = handle_op {
+        if let Some(handle) = handle {
+            #[cfg(feature = "fdomain")]
+            let handle_op = HandleOp::Move(handle, rights);
+            #[cfg(not(feature = "fdomain"))]
+            let handle_op = HandleOp::Move(handle);
             self.bytes.extend(&ALLOC_PRESENT_U32.to_le_bytes());
             Ok(Box::new(move |this, _| {
-                this.handles.push(fidl::HandleDisposition::new(
+                #[cfg(feature = "fdomain")]
+                {
+                    let _ = object_type;
+                    this.handles.push(handle_op);
+                }
+                #[cfg(not(feature = "fdomain"))]
+                this.handles.push(HandleDisposition::new(
                     handle_op,
                     object_type,
                     rights,
@@ -682,7 +702,7 @@ pub fn encode_request(
     protocol_name: &str,
     method_name: &str,
     value: Value,
-) -> Result<(Vec<u8>, Vec<fidl::HandleDisposition<'static>>)> {
+) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
     EncodeBuffer::encode_transaction(
         ns,
         txid,
@@ -700,7 +720,7 @@ pub fn encode_response(
     protocol_name: &str,
     method_name: &str,
     value: Value,
-) -> Result<(Vec<u8>, Vec<fidl::HandleDisposition<'static>>)> {
+) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
     EncodeBuffer::encode_transaction(
         ns,
         txid,
@@ -717,7 +737,7 @@ pub fn encode(
     type_name: &str,
     nullable: bool,
     value: Value,
-) -> Result<(Vec<u8>, Vec<fidl::HandleDisposition<'static>>)> {
+) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
     let mut buf = EncodeBuffer { ns, bytes: Vec::new(), handles: Vec::new() };
     let cb = buf.encode_identifier(type_name.to_owned(), nullable, value)?;
     buf.align_8();

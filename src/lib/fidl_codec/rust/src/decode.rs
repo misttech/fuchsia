@@ -16,6 +16,12 @@ use crate::value::Value;
 
 use std::str;
 
+#[cfg(feature = "fdomain")]
+use fdomain_client::{Handle, HandleInfo};
+
+#[cfg(not(feature = "fdomain"))]
+use fidl::{Handle, HandleInfo};
+
 type DResult<'a, R> = IResult<&'a [u8], R, Error>;
 
 /// This represents an action that will yield a Value when given further bytes to process and
@@ -31,7 +37,7 @@ enum Defer<'d> {
         Box<
             dyn for<'a> FnOnce(
                     &'a [u8],
-                    &mut Vec<fidl::HandleInfo>,
+                    &mut Vec<HandleInfo>,
                     RecursionCounter,
                 ) -> DResult<'a, Value>
                 + 'd,
@@ -44,7 +50,7 @@ impl<'d> Defer<'d> {
     fn complete<'a>(
         self,
         data: &'a [u8],
-        handles: &mut Vec<fidl::HandleInfo>,
+        handles: &mut Vec<HandleInfo>,
         counter: RecursionCounter,
     ) -> DResult<'a, Value> {
         match self {
@@ -175,7 +181,7 @@ fn decode_struct<'s>(
                 bytes,
                 Defer::Action(Box::new(
                     move |bytes: &[u8],
-                          handles: &mut Vec<fidl::HandleInfo>,
+                          handles: &mut Vec<HandleInfo>,
                           counter: RecursionCounter| {
                         let counter = counter.next()?;
                         let align = alignment_padding_for_size(st.size);
@@ -216,7 +222,7 @@ fn decode_struct_nonnull<'s>(
             bytes,
             Defer::Action(Box::new(
                 move |mut bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
+                      handles: &mut Vec<HandleInfo>,
                       counter: RecursionCounter| {
                     let mut complete_fields = Vec::new();
 
@@ -291,7 +297,7 @@ fn decode_type<'t>(
 /// Given a list of defers, complete them all and turn them into a list of complete values.
 fn complete_deferred_list<'a>(
     bytes: &'a [u8],
-    handles: &mut Vec<fidl::HandleInfo>,
+    handles: &mut Vec<HandleInfo>,
     defers: Vec<Defer<'_>>,
     counter: RecursionCounter,
 ) -> DResult<'a, Value> {
@@ -318,9 +324,7 @@ fn decode_array<'t>(
         Ok((
             bytes,
             Defer::Action(Box::new(
-                move |bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
-                      counter: RecursionCounter| {
+                move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                     complete_deferred_list(bytes, handles, defers, counter)
                 },
             )),
@@ -358,7 +362,7 @@ fn decode_vector<'t>(
                 bytes,
                 Defer::Action(Box::new(
                     move |bytes: &[u8],
-                          handles: &mut Vec<fidl::HandleInfo>,
+                          handles: &mut Vec<HandleInfo>,
                           counter: RecursionCounter| {
                         let counter = counter.next()?;
                         let (bytes, defers) =
@@ -400,9 +404,7 @@ fn decode_string(
             Ok((
                 bytes,
                 Defer::Action(Box::new(
-                    move |bytes: &[u8],
-                          _: &mut Vec<fidl::HandleInfo>,
-                          counter: RecursionCounter| {
+                    move |bytes: &[u8], _: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                         let _counter = counter.next()?;
                         let (bytes, data) =
                             terminated(take(size), take_padding(align)).parse(bytes)?;
@@ -454,10 +456,20 @@ fn decode_handle(
     decode_handle_with(handle_type, nullable, &Value::Handle, None, rights)
 }
 
+#[cfg(not(feature = "fdomain"))]
+fn object_type_from_info(info: &HandleInfo) -> fidl::ObjectType {
+    info.object_type
+}
+
+#[cfg(feature = "fdomain")]
+fn object_type_from_info(info: &HandleInfo) -> fidl::ObjectType {
+    info.handle.object_type()
+}
+
 fn decode_handle_with<T: Clone + 'static>(
     handle_type: T,
     nullable: bool,
-    value_builder: &'static (impl Fn(fidl::Handle, T) -> Value + 'static),
+    value_builder: &'static (impl Fn(Handle, T) -> Value + 'static),
     constrain_type: Option<fidl::ObjectType>,
     rights: fidl::Rights,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
@@ -477,11 +489,12 @@ fn decode_handle_with<T: Clone + 'static>(
             Ok((
                 bytes,
                 Defer::Action(Box::new(
-                    move |bytes: &[u8],
-                          handles: &mut Vec<fidl::HandleInfo>,
-                          _: RecursionCounter| {
+                    move |bytes: &[u8], handles: &mut Vec<HandleInfo>, _: RecursionCounter| {
                         if !handles.is_empty() {
-                            if constrain_type.map(|x| x == handles[0].object_type).unwrap_or(true) {
+                            if constrain_type
+                                .map(|x| x == object_type_from_info(&handles[0]))
+                                .unwrap_or(true)
+                            {
                                 let handle = handles.remove(0);
                                 if !handle.rights.contains(rights)
                                     && handle.rights != fidl::Rights::SAME_RIGHTS
@@ -492,7 +505,7 @@ fn decode_handle_with<T: Clone + 'static>(
                                     ))
                                     .into())
                                 } else {
-                                    Ok((bytes, value_builder(handle.handle, handle_type)))
+                                    Ok((bytes, value_builder(handle.handle.into(), handle_type)))
                                 }
                             } else {
                                 Err(Error::DecodeError("Wrong handle type".to_owned()).into())
@@ -516,9 +529,7 @@ fn decode_enum<'e>(
         Ok((
             bytes,
             Defer::Action(Box::new(
-                move |bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
-                      counter: RecursionCounter| {
+                move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                     let (bytes, value) = defer.complete(bytes, handles, counter)?;
 
                     for member in &en.members {
@@ -547,9 +558,7 @@ fn decode_bits<'b>(
         Ok((
             bytes,
             Defer::Action(Box::new(
-                move |bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
-                      counter: RecursionCounter| {
+                move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                     let (bytes, value) = defer.complete(bytes, handles, counter)?;
 
                     let data = value.bits().ok_or_else(|| {
@@ -583,7 +592,7 @@ impl Envelope {
         };
 
         Defer::Action(Box::new(
-            move |bytes: &[u8], handles: &mut Vec<fidl::HandleInfo>, counter: RecursionCounter| {
+            move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                 let _counter = counter.next()?;
                 if (envelope_bytes & 7u32) != 0 {
                     return Err(Error::DecodeError("Invalid envelope size".to_owned()).into());
@@ -617,9 +626,7 @@ impl Envelope {
             take_padding(padding.len()).parse(padding)?;
             let expect_handles = *handles as usize;
             Ok(Defer::Action(Box::new(
-                move |bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
-                      counter: RecursionCounter| {
+                move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                     let handle_count = handles.len();
                     let v = ret.complete(bytes, handles, counter)?;
 
@@ -639,9 +646,7 @@ impl Envelope {
             let expect_bytes = *bytes as usize;
             let expect_handles = *handles as usize;
             Ok(Defer::Action(Box::new(
-                move |bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
-                      counter: RecursionCounter| {
+                move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                     let counter = counter.next()?;
                     let bytes_start = bytes.len();
                     let align = alignment_padding_for_size(ty.inline_size(ns)?);
@@ -717,7 +722,7 @@ fn decode_union<'u>(
                 bytes,
                 Defer::Action(Box::new(
                     move |bytes: &[u8],
-                          handles: &mut Vec<fidl::HandleInfo>,
+                          handles: &mut Vec<HandleInfo>,
                           counter: RecursionCounter| {
                         let (bytes, inner) = envelope
                             .decode_type(ns, &member.ty)?
@@ -751,9 +756,7 @@ fn decode_table<'t>(
         Ok((
             bytes,
             Defer::Action(Box::new(
-                move |bytes: &[u8],
-                      handles: &mut Vec<fidl::HandleInfo>,
-                      counter: RecursionCounter| {
+                move |bytes: &[u8], handles: &mut Vec<HandleInfo>, counter: RecursionCounter| {
                     let counter = counter.next()?;
                     let (mut bytes, envelopes) =
                         count(Envelope::take(true), size as usize).parse(bytes)?;
@@ -810,7 +813,7 @@ fn decode_message<'a>(
     ns: &library::Namespace,
     direction: Direction,
     bytes: &'a [u8],
-    mut handles: Vec<fidl::HandleInfo>,
+    mut handles: Vec<HandleInfo>,
 ) -> Result<(TransactionHeader, Value)> {
     let (bytes, header) = transaction_header(bytes)?;
 
@@ -847,7 +850,7 @@ fn decode_message<'a>(
 pub fn decode_request(
     ns: &library::Namespace,
     bytes: &[u8],
-    handles: Vec<fidl::HandleInfo>,
+    handles: Vec<HandleInfo>,
 ) -> Result<(TransactionHeader, Value)> {
     decode_message(ns, Direction::Request, bytes, handles)
 }
@@ -856,7 +859,7 @@ pub fn decode_request(
 pub fn decode_response(
     ns: &library::Namespace,
     bytes: &[u8],
-    handles: Vec<fidl::HandleInfo>,
+    handles: Vec<HandleInfo>,
 ) -> Result<(TransactionHeader, Value)> {
     decode_message(ns, Direction::Response, bytes, handles)
 }
@@ -866,7 +869,7 @@ pub fn decode<'a>(
     ns: &library::Namespace,
     ty: &str,
     bytes: &'a [u8],
-    mut handles: Vec<fidl::HandleInfo>,
+    mut handles: Vec<HandleInfo>,
 ) -> Result<Value> {
     if bytes.len() % 8 != 0 {
         return Err(Error::DecodeError("Unaligned encoded object".to_owned()));

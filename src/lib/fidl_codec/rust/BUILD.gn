@@ -52,33 +52,49 @@ fuchsia_unittest_package("fidl_codec_rust_conformance_tests") {
   deps = [ ":fidl_codec_rust_conformance_tests_bin" ]
 }
 
-rustc_library("fidl_codec") {
-  with_unit_tests = true
-  edition = "2021"
+template("fidl_codec_lib") {
+  rustc_library(target_name) {
+    with_unit_tests = true
+    edition = "2021"
 
-  sources = [
-    "src/decode.rs",
-    "src/encode.rs",
-    "src/error.rs",
-    "src/lib.rs",
-    "src/library.rs",
-    "src/util.rs",
-    "src/value.rs",
-  ]
+    sources = [
+      "src/decode.rs",
+      "src/encode.rs",
+      "src/error.rs",
+      "src/lib.rs",
+      "src/library.rs",
+      "src/util.rs",
+      "src/value.rs",
+    ]
 
-  deps = [
-    "//src/lib/fidl/rust/fidl",
-    "//third_party/rust_crates:nom",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:serde_derive",
-    "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:thiserror",
-  ]
+    deps = [
+      "//src/lib/fidl/rust/fidl",
+      "//third_party/rust_crates:nom",
+      "//third_party/rust_crates:serde",
+      "//third_party/rust_crates:serde_derive",
+      "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:thiserror",
+    ]
+
+    if (invoker.fdomain) {
+      deps += [ "//src/lib/fdomain/client" ]
+      features = [ "fdomain" ]
+    }
+  }
+}
+
+fidl_codec_lib("fidl_codec") {
+  fdomain = false
+}
+
+fidl_codec_lib("fidl_codec_fdomain") {
+  fdomain = true
 }
 
 group("tests") {
   testonly = true
   deps = [
+    ":fidl_codec_fdomain_test",
     ":fidl_codec_rust_conformance_tests",
     ":fidl_codec_rust_conformance_tests_bin($host_toolchain)",
     ":fidl_codec_test",

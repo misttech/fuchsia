@@ -31,7 +31,7 @@ pub mod fidl_next;
 use responder::Responder;
 
 pub use channel::{
-    AnyHandle, Channel, ChannelMessageStream, ChannelWriter, HandleInfo, MessageBuf,
+    AnyHandle, Channel, ChannelMessageStream, ChannelWriter, HandleInfo, HandleOp, MessageBuf,
 };
 pub use event::Event;
 pub use event_pair::Eventpair as EventPair;
