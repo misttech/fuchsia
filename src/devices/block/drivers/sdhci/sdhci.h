@@ -12,7 +12,7 @@
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>

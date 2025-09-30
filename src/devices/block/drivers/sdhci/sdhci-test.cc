@@ -8,6 +8,7 @@
 #include <lib/async/default.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fit/function.h>
 #include <lib/mmio-ptr/fake.h>
@@ -21,7 +22,6 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/block/drivers/sdhci/sdhci_config.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/lib/testing/predicates/status.h"
 
 // Stub out vmo_op_range to allow tests to use fake VMOs.
