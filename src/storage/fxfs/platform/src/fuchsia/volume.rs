@@ -165,9 +165,6 @@ pub struct FxVolume {
     #[cfg(any(test, feature = "testing"))]
     poisoned: AtomicBool,
 
-    #[cfg(any(test, feature = "refault-tracking"))]
-    refault_tracker: RefaultTracker,
-
     blob_resupplied_count: Arc<PageRefaultCounter>,
 }
 
@@ -196,8 +193,6 @@ impl FxVolume {
             ),
             #[cfg(any(test, feature = "testing"))]
             poisoned: AtomicBool::new(false),
-            #[cfg(any(test, feature = "refault-tracking"))]
-            refault_tracker: RefaultTracker::default(),
             blob_resupplied_count,
         })
     }
@@ -523,9 +518,6 @@ impl FxVolume {
                     should_flush = true;
                     // Only purge layer file caches once we have elevated memory pressure.
                     should_purge_layer_files = !matches!(level, MemoryPressureLevel::Normal);
-
-                    #[cfg(feature = "refault-tracking")]
-                    self.refault_tracker.output_stats();
                 }
             };
             if should_terminate {
@@ -657,11 +649,6 @@ impl FxVolume {
                 None
             }
         }
-    }
-
-    #[cfg(any(test, feature = "refault-tracking"))]
-    pub fn refault_tracker(&self) -> &RefaultTracker {
-        &self.refault_tracker
     }
 
     pub async fn handle_file_backed_volume_provider_requests(
@@ -881,10 +868,10 @@ impl FxVolumeAndRoot {
         parent: Weak<VolumesDirectory>,
         store: Arc<ObjectStore>,
         unique_id: u64,
-        blob_ressuplied_count: Arc<PageRefaultCounter>,
+        blob_resupplied_count: Arc<PageRefaultCounter>,
     ) -> Result<Self, Error> {
         let volume =
-            Arc::new(FxVolume::new(parent, store, unique_id, blob_ressuplied_count.clone())?);
+            Arc::new(FxVolume::new(parent, store, unique_id, blob_resupplied_count.clone())?);
         let root_object_id = volume.store().root_directory_object_id();
         let root_dir = Directory::open(&volume, root_object_id).await?;
         let root = Arc::<T>::new(root_dir.into()) as Arc<dyn RootDir>;
@@ -963,63 +950,9 @@ pub fn info_to_filesystem_info(
     }
 }
 
-#[cfg(any(test, feature = "refault-tracking"))]
-#[derive(Default)]
-pub struct RefaultTracker(Mutex<RefaultTrackerInner>);
-
-#[cfg(any(test, feature = "refault-tracking"))]
-#[derive(Default)]
-pub struct RefaultTrackerInner {
-    count: u64,
-    bytes: u64,
-    histogram: [u64; 8],
-}
-
-#[cfg(any(test, feature = "refault-tracking"))]
-impl RefaultTracker {
-    pub fn record_refault(&self, bytes: u64, chunk_refault_count: u8) {
-        let mut this = self.0.lock();
-        this.count += 1;
-        this.bytes += bytes;
-        if chunk_refault_count == 1 {
-            this.histogram[0] = this.histogram[0].wrapping_add(1);
-        } else {
-            let old_bucket = (chunk_refault_count - 1).ilog2();
-            let new_bucket = (chunk_refault_count).ilog2();
-            if old_bucket != new_bucket {
-                this.histogram[old_bucket as usize] =
-                    this.histogram[old_bucket as usize].wrapping_sub(1);
-                this.histogram[new_bucket as usize] =
-                    this.histogram[new_bucket as usize].wrapping_add(1);
-            }
-        }
-    }
-
-    #[cfg(feature = "refault-tracking")]
-    fn output_stats(&self) {
-        let this = self.0.lock();
-        if this.count > 0 {
-            info!(
-                "blob refault stats: count={:?} bytes={:?} hist={:?}",
-                this.count, this.bytes, this.histogram,
-            );
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn count(&self) -> u64 {
-        self.0.lock().count
-    }
-
-    #[cfg(test)]
-    pub(crate) fn bytes(&self) -> u64 {
-        self.0.lock().bytes
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{DIRENT_CACHE_LIMIT, RefaultTracker};
+    use super::DIRENT_CACHE_LIMIT;
     use crate::fuchsia::file::FxFile;
     use crate::fuchsia::fxblob::BlobDirectory;
     use crate::fuchsia::fxblob::testing::{self as blob_testing, BlobFixture};
@@ -3056,38 +2989,5 @@ mod tests {
         assert!(config.mem_warning.read_ahead_size % BASE_READ_AHEAD_SIZE == 0);
 
         assert_eq!(config.mem_critical.read_ahead_size, BASE_READ_AHEAD_SIZE);
-    }
-
-    #[fuchsia::test]
-    fn test_refault_tracker() {
-        fn get_stats(tracker: &RefaultTracker) -> (u64, u64, [u64; 8]) {
-            let tracker = tracker.0.lock();
-            (tracker.count, tracker.bytes, tracker.histogram)
-        }
-
-        let refault_tracker = RefaultTracker::default();
-        refault_tracker.record_refault(10, 1);
-        assert_eq!(get_stats(&refault_tracker), (1, 10, [1, 0, 0, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 1);
-        assert_eq!(get_stats(&refault_tracker), (2, 20, [2, 0, 0, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 2);
-        assert_eq!(get_stats(&refault_tracker), (3, 30, [1, 1, 0, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 3);
-        assert_eq!(get_stats(&refault_tracker), (4, 40, [1, 1, 0, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 4);
-        assert_eq!(get_stats(&refault_tracker), (5, 50, [1, 0, 1, 0, 0, 0, 0, 0]));
-
-        let refault_tracker = RefaultTracker::default();
-        // The refault-tracker should see every chunk counter increase but it's possible they could
-        // arrive out of order. The operations wrap on overflow so it should eventually become
-        // consistent.
-        refault_tracker.record_refault(10, 2);
-        assert_eq!(get_stats(&refault_tracker), (1, 10, [u64::MAX, 1, 0, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 1);
-        assert_eq!(get_stats(&refault_tracker), (2, 20, [0, 1, 0, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 4);
-        assert_eq!(get_stats(&refault_tracker), (3, 30, [0, 0, 1, 0, 0, 0, 0, 0]));
-        refault_tracker.record_refault(10, 3);
-        assert_eq!(get_stats(&refault_tracker), (4, 40, [0, 0, 1, 0, 0, 0, 0, 0]));
     }
 }

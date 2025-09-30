@@ -35,9 +35,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use storage_device::buffer;
 use zx::{self as zx, AsHandleRef, HandleBased, Status};
 
-#[cfg(any(test, feature = "refault-tracking"))]
-use std::sync::atomic::AtomicU8;
-
 pub const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
 
 // When the top bit of the open count is set, it means the file has been deleted and when the count
@@ -56,10 +53,6 @@ pub struct FxBlob {
     compression_info: Option<CompressionInfo>,
     uncompressed_size: u64, // always set.
     pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<Self>>,
-
-    #[cfg(any(test, feature = "refault-tracking"))]
-    chunks_supply_count: Vec<AtomicU8>,
-
     chunks_supplied: AtomicBitVec,
 }
 
@@ -75,11 +68,6 @@ impl FxBlob {
         // The merkle leaves are intentionally copied to remove all of the spare capacity from the
         // Vec.
         let merkle_leaves = merkle_tree.as_ref()[0].clone().into_boxed_slice();
-
-        #[cfg(any(test, feature = "refault-tracking"))]
-        let chunks_supply_count: Vec<AtomicU8> = std::iter::repeat_with(AtomicU8::default)
-            .take(uncompressed_size.div_ceil(min_chunk_size(&compression_info)) as usize)
-            .collect();
 
         let chunks_supplied =
             AtomicBitVec::new(uncompressed_size.div_ceil(min_chunk_size(&compression_info)));
@@ -100,8 +88,6 @@ impl FxBlob {
                 compression_info,
                 uncompressed_size,
                 pager_packet_receiver_registration: Arc::new(pager_packet_receiver_registration),
-                #[cfg(any(test, feature = "refault-tracking"))]
-                chunks_supply_count,
                 chunks_supplied,
             }
         })
@@ -125,12 +111,6 @@ impl FxBlob {
             compression_info,
             uncompressed_size: self.uncompressed_size,
             pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
-            #[cfg(any(test, feature = "refault-tracking"))]
-            chunks_supply_count: self
-                .chunks_supply_count
-                .iter()
-                .map(|x| AtomicU8::new(x.load(Ordering::Relaxed)))
-                .collect(),
             chunks_supplied: self.chunks_supplied.clone(),
         });
 
@@ -152,40 +132,6 @@ impl FxBlob {
 
     pub fn root(&self) -> Hash {
         self.merkle_root
-    }
-
-    #[cfg(any(test, feature = "refault-tracking"))]
-    fn record_page_fault(&self, range: &Range<u64>) {
-        let chunk_size: u64 = min_chunk_size(&self.compression_info);
-
-        let first_chunk = range.start / chunk_size;
-        // The end of the range may not be chunk aligned if it's the last chunk.
-        let last_chunk = range.end.div_ceil(chunk_size);
-        let page_size = zx::system_get_page_size() as u64;
-
-        for chunk in first_chunk..last_chunk {
-            let count = self.chunks_supply_count[chunk as usize]
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    Some(current.saturating_add(1))
-                })
-                .unwrap()
-                .saturating_add(1);
-
-            fxfs_trace::instant!(
-                c"blob_supply",
-                fxfs_trace::Scope::Thread,
-                "blob" => self.object_id(),
-                "chunk" => chunk,
-                "count" => count as u32
-            );
-            if count != 1 {
-                let bytes = std::cmp::min(
-                    self.uncompressed_size.next_multiple_of(page_size),
-                    (chunk + 1) * chunk_size,
-                ) - chunk * chunk_size;
-                self.handle.owner().refault_tracker().record_refault(bytes, count);
-            }
-        }
     }
 
     fn record_page_fault_metric(&self, range: &Range<u64>) {
@@ -329,9 +275,6 @@ impl PagerBacked for FxBlob {
             static DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
                 std::cell::RefCell::new(zstd::bulk::Decompressor::new().unwrap());
         }
-
-        #[cfg(any(test, feature = "refault-tracking"))]
-        self.record_page_fault(&range);
 
         self.record_page_fault_metric(&range);
 
@@ -989,97 +932,6 @@ mod tests {
         assert_eq!(read_ahead_size_for_chunk_size(48 * 1024, 128 * 1024), 96 * 1024);
         assert_eq!(read_ahead_size_for_chunk_size(64 * 1024, 128 * 1024), 128 * 1024);
         assert_eq!(read_ahead_size_for_chunk_size(96 * 1024, 128 * 1024), 96 * 1024);
-    }
-
-    #[fasync::run(10, test)]
-    #[cfg(any(test, feature = "refault-tracking"))]
-    async fn test_refault_tracking() {
-        async fn wait(condition: impl Fn() -> bool, error_msg: &'static str) {
-            let mut wait_count = 0;
-            while !condition() {
-                fasync::Timer::new(Duration::from_millis(20)).await;
-                wait_count += 1;
-                if wait_count > 100 {
-                    panic!("{}", error_msg);
-                }
-            }
-        }
-
-        fn get_chunks(chunks: &Vec<AtomicU8>) -> Vec<u8> {
-            chunks.iter().map(|c| c.load(Ordering::Relaxed)).collect()
-        }
-
-        let fixture = new_blob_fixture().await;
-
-        {
-            let volume = fixture.volume().volume().clone();
-            volume.start_background_task(
-                MemoryPressureConfig::default(),
-                fixture.volumes_directory().memory_pressure_monitor(),
-            );
-
-            let data = vec![0xffu8; 252 * 1024];
-            let hash = fixture.write_blob(&data, CompressionMode::Never).await;
-
-            let blob = fixture.get_blob(hash).await.unwrap();
-            assert_eq!(blob.chunks_supply_count.len(), 8);
-            blob.vmo.read_to_vec::<u8>(32 * 1024, 4096).unwrap();
-
-            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 0, 0, 0]);
-
-            fixture
-                .memory_pressure_proxy()
-                .on_level_changed(MemoryPressureLevel::Critical)
-                .await
-                .expect("Failed to send memory pressure level change");
-
-            wait(
-                || volume.read_ahead_size() == BASE_READ_AHEAD_SIZE,
-                "read-ahead size didn't change with memory pressure change",
-            )
-            .await;
-
-            blob.vmo.read_to_vec::<u8>(164 * 1024, 4096).unwrap();
-            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 1, 1, 1, 0, 1, 0, 0]);
-
-            // We can't evict pages from the VMO so get the kernel to resupply them but we can call
-            // page_in directly and wait for the counters to change.
-            blob.clone().page_in(PageInRange::new(
-                32 * 1024..36 * 1024,
-                blob.clone(),
-                Epoch::global().guard(),
-            ));
-            wait(
-                || blob.chunks_supply_count[1].load(Ordering::Relaxed) == 2,
-                "chunk was never supplied",
-            )
-            .await;
-            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 2, 1, 1, 0, 1, 0, 0]);
-            assert_eq!(volume.refault_tracker().count(), 1);
-            assert_eq!(volume.refault_tracker().bytes(), 32 * 1024);
-
-            // Page in the last chunk and then do it again.
-            blob.vmo.read_to_vec::<u8>(224 * 1024, 4096).unwrap();
-            blob.clone().page_in(PageInRange::new(
-                224 * 1024..228 * 1024,
-                blob.clone(),
-                Epoch::global().guard(),
-            ));
-            wait(
-                || blob.chunks_supply_count[7].load(Ordering::Relaxed) == 2,
-                "chunk was never supplied",
-            )
-            .await;
-            assert_eq!(&get_chunks(&blob.chunks_supply_count), &[1, 2, 1, 1, 0, 1, 0, 2]);
-            // `chunks_supplied` is updated before the refault tracker and possibly on a separate
-            // thread which means that we also need to wait for the refault tracker to be updated.
-            wait(|| volume.refault_tracker().count() == 2, "The refault tracker was not updated")
-                .await;
-            // The last chunk is only 28KiB.
-            assert_eq!(volume.refault_tracker().bytes(), 60 * 1024);
-        }
-
-        fixture.close().await;
     }
 
     #[fasync::run(10, test)]
