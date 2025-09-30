@@ -179,8 +179,9 @@ auto ManagerBehavior(std::string_view binder_dir, test_helper::Poker ready) {
               break;
             }
             case kServiceSendFd:
-              // TODO: https://fxbug.dev/441447806 - does control flow pass through here on Starnix?
-              // And does control flow pass through here on Linux? If it does, ought it?
+              // NOTE(https://fxbug.dev/441447806): control flow passes through here when the
+              // client has permission to impersonate the provider and the impersonation transaction
+              // succeeds.
               break;
             default:
               FAIL() << "Unexpected transaction_data.code " << transaction_data.code << "!";
