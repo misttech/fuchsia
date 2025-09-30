@@ -13,6 +13,8 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/power/cpp/testing/fake_element_control.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
@@ -21,7 +23,6 @@
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/sdio/hw.h>
 #include <lib/sdmmc/hw.h>
 #include <threads.h>
@@ -34,7 +35,6 @@
 #include <zxtest/zxtest.h>
 
 #include "aml-sdmmc-regs.h"
-#include "src/devices/lib/mmio/test-helper.h"
 
 namespace aml_sdmmc {
 

@@ -16,10 +16,10 @@
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
 #include <lib/stdcompat/span.h>
 #include <lib/trace/event.h>
 #include <lib/zx/interrupt.h>

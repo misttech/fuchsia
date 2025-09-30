@@ -12,12 +12,12 @@
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>  // TODO(b/301003087): Needed for PDEV_DID_AMLOGIC_SDMMC_A, etc.
 #include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/pinned-vmo.h>
-#include <lib/mmio/mmio.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/sync/completion.h>
 #include <lib/trace/event.h>
