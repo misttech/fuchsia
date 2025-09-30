@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use errors::FfxError;
+use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_feedback::DataProviderProxy;
@@ -33,6 +34,7 @@ pub struct TriageTool {
     data_provider_proxy: Deferred<DataProviderProxy>,
     #[command]
     cmd: TriageCommand,
+    context: EnvironmentContext,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -40,19 +42,23 @@ impl FfxMain for TriageTool {
     type Writer = Writer;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        triage(self.data_provider_proxy.await.ok(), writer, self.cmd).await.map_err(Into::into)
+        triage(&self.context, self.data_provider_proxy.await.ok(), writer, self.cmd)
+            .await
+            .map_err(Into::into)
     }
 }
 
 pub async fn triage(
+    context: &EnvironmentContext,
     data_provider_proxy: Option<DataProviderProxy>,
     writer: Writer,
     cmd: TriageCommand,
 ) -> Result<()> {
-    triage_impl(data_provider_proxy, cmd, writer).await.map_err(flatten_error)
+    triage_impl(context, data_provider_proxy, cmd, writer).await.map_err(flatten_error)
 }
 
 async fn triage_impl(
+    context: &EnvironmentContext,
     data_provider_proxy: Option<DataProviderProxy>,
     cmd: TriageCommand,
     writer: Writer,
@@ -60,7 +66,7 @@ async fn triage_impl(
     let TriageCommand { config, data, tags, exclude_tags } = cmd;
 
     let current_dir = env::current_dir()?;
-    let config_files = config::get_or_default_config_files(config, current_dir).await?;
+    let config_files = config::get_or_default_config_files(context, config, current_dir).await?;
 
     let data_directory = match data {
         Some(d) => PathBuf::from(d),
@@ -223,10 +229,12 @@ mod tests {
         buffers: &mut TestBuffers,
         format: Option<Format>,
     ) {
+        let env = ffx_config::test_init().await.unwrap();
         let writer = Writer::new_test(format, &buffers);
         let data_provider_proxy = setup_fake_data_provider_server();
-        let result =
-            triage_impl(Some(data_provider_proxy), cmd, writer).await.map_err(flatten_error);
+        let result = triage_impl(&env.context, Some(data_provider_proxy), cmd, writer)
+            .await
+            .map_err(flatten_error);
 
         if let Err(e) = result {
             buffers

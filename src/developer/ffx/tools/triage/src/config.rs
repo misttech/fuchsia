@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use ffx_config::EnvironmentContext;
 use std::ffi::OsStr;
 use std::fs::read_dir;
 use std::path::PathBuf;
@@ -36,6 +37,7 @@ fn get_closed_enclosing_fuchsia_dir(current_dir: PathBuf) -> Result<Option<PathB
 /// Returns the config files passed via cmdline arguments.
 /// If 0 paths are given returns default paths.
 pub async fn get_or_default_config_files(
+    context: &EnvironmentContext,
     config: Vec<String>,
     current_dir: PathBuf,
 ) -> Result<Vec<PathBuf>> {
@@ -51,7 +53,7 @@ pub async fn get_or_default_config_files(
                 .collect()
         } else {
             // OOT default configs are expected to be set in triage.config_path variable.
-            ffx_config::get(DEFAULT_CONFIG_PATHS_VARIABLE).context(format!(
+            context.get(DEFAULT_CONFIG_PATHS_VARIABLE).context(format!(
                 "Please set the default config using `ffx config set {} \"{}\"`.",
                 DEFAULT_CONFIG_PATHS_VARIABLE, r#"[\"config1.triage\",\"default/config2.triage\"]"#
             ))?
@@ -100,6 +102,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn innermost_fuchsia_dir_default_config() {
+        let env = ffx_config::test_init().await.expect("Unable to initialize ffx_config.");
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");
         let root = tempdir.path();
 
@@ -122,9 +125,10 @@ mod tests {
         // $root/fake/fuchsia/.jiri_root
         // We invoke the plugin from $root/fake/fuchsia/subdir/
 
-        let config_files = get_or_default_config_files(vec![], canonical_inner_subdir)
-            .await
-            .expect("Unable to get config files.");
+        let config_files =
+            get_or_default_config_files(&env.context, vec![], canonical_inner_subdir)
+                .await
+                .expect("Unable to get config files.");
 
         // Get absolute path as $TMPDIR might contain symlinks.
         // Eg. on macOS /var@ -> /private/var
@@ -158,7 +162,7 @@ mod tests {
             .set(serde_json::json!(oot_test_default_configs))
             .expect("Unable to set oot default config variable.");
 
-        let config_files = get_or_default_config_files(vec![], root.to_path_buf())
+        let config_files = get_or_default_config_files(&env.context, vec![], root.to_path_buf())
             .await
             .expect("Unable to get config files.");
 
@@ -169,6 +173,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn directory_passed_to_config() {
+        let env = ffx_config::test_init().await.expect("Unable to initialize ffx_config.");
         let fake_cwd = tempdir().expect("Unable to create tempdir for testing.");
 
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");
@@ -181,6 +186,7 @@ mod tests {
             NamedTempFile::new().expect("Unable to create namedtempfile for testing.");
 
         let config_files = get_or_default_config_files(
+            &env.context,
             vec![root.to_string_lossy().into(), config_file2.path().to_string_lossy().into()],
             fake_cwd.path().to_path_buf(),
         )
