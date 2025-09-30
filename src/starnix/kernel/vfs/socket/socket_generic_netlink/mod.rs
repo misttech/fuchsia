@@ -485,7 +485,7 @@ pub struct GenericNetlink<S> {
     new_client_sender: mpsc::UnboundedSender<GenericNetlinkClient<S>>,
 }
 
-impl<S: Sender<GenericMessage> + 'static> GenericNetlink<S> {
+impl<S: Sender<GenericMessage>> GenericNetlink<S> {
     pub fn new() -> (Self, GenericNetlinkWorkerParams<S>) {
         let (new_client_sender, new_client_receiver) = mpsc::unbounded();
         let server = GenericNetlinkServer::new();
@@ -505,7 +505,9 @@ impl<S: Sender<GenericMessage> + 'static> GenericNetlink<S> {
         state.client_senders.insert(client_id, sender.clone());
         let handle = GenericNetlinkClientHandle { client_id, server: self.server.clone() };
         let new_client = GenericNetlinkClient { client_id, sender, receiver };
-        self.new_client_sender.unbounded_send(new_client)?;
+        self.new_client_sender
+            .unbounded_send(new_client)
+            .map_err(|_| anyhow::anyhow!("Failed to connect a new generic netlink client"))?;
         Ok(handle)
     }
 }
