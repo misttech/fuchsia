@@ -79,7 +79,7 @@ rust_library(
     }),
     version = "0.7.2",
     deps = [
-        "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
         "//third_party/rust_crates/vendor/generator-0.8.7:generator",
         "//third_party/rust_crates/vendor/pin-utils-0.1.0:pin_utils",
         "//third_party/rust_crates/vendor/scoped-tls-1.0.1:scoped_tls",

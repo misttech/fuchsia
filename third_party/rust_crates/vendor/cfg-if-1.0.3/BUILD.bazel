@@ -21,8 +21,8 @@ package(
 package_info(
     name = "package_info",
     package_name = "cfg-if",
-    package_url = "https://github.com/alexcrichton/cfg-if",
-    package_version = "1.0.0",
+    package_url = "https://github.com/rust-lang/cfg-if",
+    package_version = "1.0.3",
 )
 
 license(
@@ -72,5 +72,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.0",
+    version = "1.0.3",
 )

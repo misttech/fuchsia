@@ -74,7 +74,7 @@ rust_library(
     }),
     version = "0.6.0",
     deps = [
-        "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
         "//third_party/rust_crates/vendor/opaque-debug-0.3.0:opaque_debug",
         "//third_party/rust_crates/vendor/universal-hash-0.5.1:universal_hash",
     ] + select({

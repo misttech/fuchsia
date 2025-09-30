@@ -182,7 +182,7 @@ group("cbc") {
 }
 
 group("cfg-if") {
-  public_deps = [ ":cfg-if-v1_0_0" ]
+  public_deps = [ ":cfg-if-v1_0_3" ]
 }
 
 group("chacha20") {
@@ -1388,7 +1388,7 @@ rustc_library("aes-v0_8_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":cipher-v0_4_4" ]
   if (current_cpu == "arm64" || current_cpu == "x64" || false) {
     deps += [ ":cpufeatures-v0_2_1" ]
@@ -1513,7 +1513,7 @@ rustc_library("ahash-v0_8_11") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":getrandom-v0_2_10" ]
   deps += [ ":zerocopy-v0_7_35" ]
   if (!(false && false)) {
@@ -3741,18 +3741,18 @@ rustc_library("cfg-if-v0_1_10") {
   applicable_licenses = [ ":cfg-if-v0_1_10.license" ]
 }
 
-license("cfg-if-v1_0_0.license") {
+license("cfg-if-v1_0_3.license") {
   public_package_name = "cfg_if"
   license_files = [
-    "//third_party/rust_crates/vendor/cfg-if-1.0.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cfg-if-1.0.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/cfg-if-1.0.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cfg-if-1.0.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("cfg-if-v1_0_0") {
+rustc_library("cfg-if-v1_0_3") {
   crate_name = "cfg_if"
-  source_root = "//third_party/rust_crates/vendor/cfg-if-1.0.0/src/lib.rs"
-  output_name = "cfg_if-5f200286e6ae9b7a"
+  source_root = "//third_party/rust_crates/vendor/cfg-if-1.0.3/src/lib.rs"
+  output_name = "cfg_if-7fe79524826936b0"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -3764,13 +3764,13 @@ rustc_library("cfg-if-v1_0_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5f200286e6ae9b7a",
-    "-Cextra-filename=-5f200286e6ae9b7a",
+    "-Cmetadata=7fe79524826936b0",
+    "-Cextra-filename=-7fe79524826936b0",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cfg-if-v1_0_0.license" ]
+  applicable_licenses = [ ":cfg-if-v1_0_3.license" ]
 }
 
 license("chacha20-v0_9_1.license") {
@@ -3791,7 +3791,7 @@ rustc_library("chacha20-v0_9_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":cipher-v0_4_4" ]
   if (current_cpu == "x64" || false) {
     deps += [ ":cpufeatures-v0_2_1" ]
@@ -6576,7 +6576,7 @@ rustc_library("filetime-v0_2_14") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   if (false) {
     deps += [ ":redox_syscall-v0_2_13" ]
   }
@@ -7577,7 +7577,7 @@ rustc_library("generator-v0_8_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":log-v0_4_27" ]
   if (true) {
     deps += [ ":libc-v0_2_174" ]
@@ -7691,7 +7691,7 @@ rustc_library("getrandom-v0_2_10") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   if (false) {
     deps += [ ":wasi-v0_11_0+wasi-snapshot-preview1" ]
   }
@@ -7735,7 +7735,7 @@ rustc_library("getrandom-v0_3_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   if ((current_os == "linux" || false) &&
       !((current_os == "linux" && false) || false || false || false || false)) {
     deps += [ ":libc-v0_2_174" ]
@@ -7937,7 +7937,7 @@ rustc_library("half-v2_6_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   if (false) {
     deps += [ ":crunchy-v0_2_3" ]
   }
@@ -9043,7 +9043,7 @@ rustc_library("instant-v0_1_13") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
 
   rustenv = []
 
@@ -9675,7 +9675,7 @@ rustc_library("loom-v0_7_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":generator-v0_8_7" ]
   deps += [ ":pin-utils-v0_1_0" ]
   deps += [ ":scoped-tls-v1_0_1" ]
@@ -9948,7 +9948,7 @@ rustc_library("md-5-v0_10_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":digest-v0_10_7" ]
 
   rustenv = []
@@ -10294,7 +10294,7 @@ rustc_library("mockall-v0_9_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":downcast-v0_10_0" ]
   deps += [ ":fragile-v1_0_0" ]
   deps += [ ":lazy_static-v1_5_0" ]
@@ -10334,7 +10334,7 @@ rustc_macro("mockall_derive-v0_9_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_40" ]
   deps += [ ":syn-v1_0_98" ]
@@ -10463,7 +10463,7 @@ rustc_library("nix-v0_29_0") {
 
   deps = []
   deps += [ ":bitflags-v2_9_1" ]
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":memoffset-v0_9_1" ]
 
@@ -10529,7 +10529,7 @@ rustc_library("nix-v0_26_2") {
 
   deps = []
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":pin-utils-v0_1_0" ]
   deps += [ ":static_assertions-v1_1_0" ]
@@ -10601,7 +10601,7 @@ rustc_library("nix-v0_27_1") {
 
   deps = []
   deps += [ ":bitflags-v2_9_1" ]
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":memoffset-v0_9_1" ]
 
@@ -11488,7 +11488,7 @@ rustc_library("openssl-v0_10_71") {
 
   deps = []
   deps += [ ":bitflags-v2_9_1" ]
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":foreign-types-v0_3_2" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":once_cell-v1_21_3" ]
@@ -11847,7 +11847,7 @@ rustc_library("parking_lot_core-v0_8_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":instant-v0_1_13" ]
   deps += [ ":smallvec-v1_15_1" ]
   if (false) {
@@ -11895,7 +11895,7 @@ rustc_library("parking_lot_core-v0_9_11") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":smallvec-v1_15_1" ]
   if (false) {
     deps += [ ":redox_syscall-v0_5_17" ]
@@ -12765,7 +12765,7 @@ rustc_library("polyval-v0_6_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":opaque-debug-v0_3_0" ]
   deps += [ ":universal-hash-v0_5_1" ]
   if (current_cpu == "arm64" || current_cpu == "x64" || false) {
@@ -14832,7 +14832,7 @@ rustc_library("ring-v0_17_8") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":getrandom-v0_2_10" ]
   deps += [ ":untrusted-v0_9_0" ]
   if ((false || current_os == "linux") && (current_cpu == "arm64" || false)) {
@@ -15728,7 +15728,7 @@ rustc_library("rutabaga_gfx-v0_1_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":log-v0_4_27" ]
   deps += [ ":remain-v0_2_15($host_toolchain)" ]
@@ -16691,7 +16691,7 @@ rustc_library("sha1-v0_10_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":digest-v0_10_7" ]
   if (current_cpu == "arm64" || false || current_cpu == "x64") {
     deps += [ ":cpufeatures-v0_2_1" ]
@@ -16730,7 +16730,7 @@ rustc_library("sha2-v0_10_8") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":digest-v0_10_7" ]
   if (current_cpu == "arm64" || current_cpu == "x64" || false) {
     deps += [ ":cpufeatures-v0_2_1" ]
@@ -17996,7 +17996,7 @@ rustc_library("tempfile-v3_2_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":rand-v0_8_4" ]
   deps += [ ":remove_dir_all-v0_5_3" ]
   if (false) {
@@ -18274,7 +18274,7 @@ rustc_library("test-case-core-v3_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_40" ]
   deps += [ ":syn-v2_0_103" ]
@@ -18544,7 +18544,7 @@ rustc_library("thread_local-v1_1_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":once_cell-v1_21_3" ]
 
   rustenv = []
@@ -19351,7 +19351,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
 
   deps = []
   deps += [ ":async-trait-v0_1_88($host_toolchain)" ]
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":data-encoding-v2_9_0" ]
   deps += [ ":enum-as-inner-v0_5_1($host_toolchain)" ]
   deps += [ ":futures-channel-v0_3_31" ]
@@ -19400,7 +19400,7 @@ rustc_library("trust-dns-resolver-v0_22_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v1_0_0" ]
+  deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":futures-util-v0_3_31" ]
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":lru-cache-v0_1_2" ]

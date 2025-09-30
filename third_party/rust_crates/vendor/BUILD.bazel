@@ -523,14 +523,14 @@ alias(
 )
 
 alias(
-    name = "cfg-if-1.0.0",
-    actual = "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
+    name = "cfg-if-1.0.3",
+    actual = "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
     tags = ["manual"],
 )
 
 alias(
     name = "cfg-if",
-    actual = "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
+    actual = "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
     tags = ["manual"],
 )
 

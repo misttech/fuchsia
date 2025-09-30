@@ -71,6 +71,6 @@ rust_library(
     }),
     version = "0.1.13",
     deps = [
-        "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
     ],
 )

@@ -330,7 +330,7 @@ _NORMAL_DEPENDENCIES = {
             "bytes": Label("//third_party/rust_crates/vendor/bytes-1.10.1:bytes"),
             "camino": Label("//third_party/rust_crates/vendor/camino-1.1.9:camino"),
             "cbc": Label("//third_party/rust_crates/vendor/cbc-0.1.2:cbc"),
-            "cfg-if": Label("//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if"),
+            "cfg-if": Label("//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if"),
             "chacha20": Label("//third_party/rust_crates/vendor/chacha20-0.9.1:chacha20"),
             "chrono": Label("//third_party/rust_crates/vendor/chrono-0.4.41:chrono"),
             "chrono-english": Label("//third_party/rust_crates/vendor/chrono-english-0.1.7:chrono_english"),
