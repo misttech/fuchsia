@@ -32,6 +32,11 @@ impl MessageBuf {
         MessageBuf { bytes: Vec::new(), handles: Vec::new() }
     }
 
+    /// Get the components of this buffer separately.
+    pub fn split(self) -> (Vec<u8>, Vec<HandleInfo>) {
+        (self.bytes, self.handles)
+    }
+
     /// Make sure this buffer has room for a certain number of bytes.
     pub fn ensure_capacity_bytes(&mut self, bytes: usize) {
         self.bytes.reserve(bytes);
@@ -143,6 +148,17 @@ impl Channel {
                 x.expect("Got stream termination indication from non-streaming read!")
                     .map(|x| MessageBuf::from_proto(&client, x))
             })
+        })
+    }
+
+    /// Poll to try and read a channel message.
+    pub fn poll_read(&self, cx: &mut Context<'_>) -> Poll<Result<MessageBuf, Error>> {
+        let client = self.0.client();
+        let handle = self.0.proto();
+
+        client.poll_channel(handle, cx, false).map(|x| {
+            x.expect("Got stream termination indication from non-streaming read!")
+                .map(|x| MessageBuf::from_proto(&client, x))
         })
     }
 

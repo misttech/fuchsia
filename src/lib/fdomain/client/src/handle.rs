@@ -25,7 +25,7 @@ impl Handle {
     }
 
     /// Get an invalid handle.
-    pub(crate) fn invalid() -> Self {
+    pub fn invalid() -> Self {
         Handle { id: 0, client: Weak::new() }
     }
 }
@@ -111,6 +111,10 @@ impl HandleRef<'_> {
 pub trait AsHandleRef {
     fn as_handle_ref(&self) -> HandleRef<'_>;
     fn object_type() -> fidl::ObjectType;
+
+    fn u32_id(&self) -> u32 {
+        self.as_handle_ref().0.id
+    }
 
     fn signal_handle(
         &self,

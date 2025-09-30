@@ -4,7 +4,7 @@
 
 use crate::{
     AnyHandle, AsHandleRef, Channel, ChannelMessageStream, ChannelWriter, Error, Handle,
-    HandleInfo, MessageBuf,
+    HandleBased, HandleInfo, MessageBuf,
 };
 use fidl::epitaph::ChannelEpitaphExt;
 use fidl_fuchsia_fdomain as proto;
@@ -502,6 +502,39 @@ impl<T: ProtocolMarker> AsHandleRef for ClientEnd<T> {
     }
 }
 
+impl<T: ProtocolMarker> HandleBased for ClientEnd<T> {
+    fn close(self) -> impl Future<Output = Result<(), Error>> {
+        let h = <Self as Into<Handle>>::into(self);
+        Handle::close(h)
+    }
+
+    fn duplicate_handle(&self, rights: fidl::Rights) -> impl Future<Output = Result<Self, Error>> {
+        let fut = self.as_handle_ref().duplicate(rights);
+        async move { fut.await.map(|handle| Self::from(handle)) }
+    }
+
+    fn replace_handle(self, rights: fidl::Rights) -> impl Future<Output = Result<Self, Error>> {
+        let h = <Self as Into<Handle>>::into(self);
+        async move { h.replace(rights).await.map(|handle| Self::from(handle)) }
+    }
+
+    fn into_handle(self) -> Handle {
+        self.into()
+    }
+
+    fn from_handle(handle: Handle) -> Self {
+        Self::from(handle)
+    }
+
+    fn into_handle_based<H: HandleBased>(self) -> H {
+        H::from_handle(self.into_handle())
+    }
+
+    fn from_handle_based<H: HandleBased>(h: H) -> Self {
+        Self::from_handle(h.into_handle())
+    }
+}
+
 /// The `Server` end of a FIDL connection.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ServerEnd<T: ProtocolMarker> {
@@ -577,5 +610,38 @@ impl<T: ProtocolMarker> AsHandleRef for ServerEnd<T> {
 
     fn object_type() -> fidl::ObjectType {
         <Channel as AsHandleRef>::object_type()
+    }
+}
+
+impl<T: ProtocolMarker> HandleBased for ServerEnd<T> {
+    fn close(self) -> impl Future<Output = Result<(), Error>> {
+        let h = <Self as Into<Handle>>::into(self);
+        Handle::close(h)
+    }
+
+    fn duplicate_handle(&self, rights: fidl::Rights) -> impl Future<Output = Result<Self, Error>> {
+        let fut = self.as_handle_ref().duplicate(rights);
+        async move { fut.await.map(|handle| Self::from(handle)) }
+    }
+
+    fn replace_handle(self, rights: fidl::Rights) -> impl Future<Output = Result<Self, Error>> {
+        let h = <Self as Into<Handle>>::into(self);
+        async move { h.replace(rights).await.map(|handle| Self::from(handle)) }
+    }
+
+    fn into_handle(self) -> Handle {
+        self.into()
+    }
+
+    fn from_handle(handle: Handle) -> Self {
+        Self::from(handle)
+    }
+
+    fn into_handle_based<H: HandleBased>(self) -> H {
+        H::from_handle(self.into_handle())
+    }
+
+    fn from_handle_based<H: HandleBased>(h: H) -> Self {
+        Self::from_handle(h.into_handle())
     }
 }
