@@ -53,6 +53,8 @@
         {
             type: "skip",
             matchers: [
+                "memfd",
+
                 // TODO: https://fxbug.dev/319480589 - Starnix does not support dynamic kernel module loading.
                 "module_load",
             ],
