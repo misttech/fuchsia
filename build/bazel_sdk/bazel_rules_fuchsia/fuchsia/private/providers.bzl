@@ -62,7 +62,7 @@ def _fuchsia_unstripped_binary_info_init(*, unstripped_file, dest, stripped_file
         "dest": dest,
         "unstripped_file": unstripped_file,
         "stripped_file": stripped_file,
-        "source_search_root": "BAZEL_WORKSPACE_DIR" if source_search_root == None else source_search_root,
+        "source_search_root": "BUILD_WORKSPACE_DIRECTORY" if source_search_root == None else source_search_root,
         "never_forward": True,
     }
 
@@ -114,7 +114,7 @@ FuchsiaDebugSymbolInfo = provider(
 
             If 'source_search_root' is a string, it is interpreted as an environment variable
             name, which must be defined by Bazel when the action that registers debug symbols
-            is run, such as BAZEL_WORKSPACE_DIRECTORY (see Bazel user manual).
+            is run, such as BUILD_WORKSPACE_DIRECTORY (see Bazel user manual).
 
             If 'source_search_root' is a File pointing to a directory, the latter is used
             directly as a possible source search directory.
