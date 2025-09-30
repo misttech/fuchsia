@@ -38,6 +38,14 @@ struct BootConstants {
   // ZBI_TYPE_HW_REBOOT_REASON payload (or as initialized if no ZBI item).
   zbi_hw_reboot_reason_t hw_reboot_reason = ZBI_HW_REBOOT_REASON_UNDEFINED;
 
+  // This indicates the kernel.bypass-debuglog option or its compile-time
+  // override in kZirconAbiSpec.always_bypass_debuglog.  In the kernel proper,
+  // only this is consulted, not BootOptions::bypass_debuglog.  bypass_debuglog
+  // will cause the kernel proper's printfs to write directly to the console.
+  // It also has the side effect of disabling uart Tx interrupts, which causes
+  // all of the serial writes to be polling.
+  bool bypass_debuglog = false;
+
   // ZBI container of items to be propagated in mexec.
   PhysHandoffPermanentSpan<const std::byte> mexec_data;
 };

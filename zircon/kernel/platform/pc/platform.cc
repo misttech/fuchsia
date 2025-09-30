@@ -188,9 +188,6 @@ void platform_early_init(void) {
   /* this includes debug uart config, etc. */
   platform_save_bootloader_data();
 
-  /* is the cmdline option to bypass dlog set ? */
-  dlog_bypass_init();
-
 #if WITH_LEGACY_PC_CONSOLE
   /* get the text console working */
   platform_init_console();

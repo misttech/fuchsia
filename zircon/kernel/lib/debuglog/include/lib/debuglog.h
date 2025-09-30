@@ -19,6 +19,7 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/type_traits.h>
+#include <phys/boot-constants.h>
 
 class DLog;
 typedef struct dlog_header dlog_header_t;
@@ -122,8 +123,6 @@ void dlog_serial_write(ktl::string_view str);
 // backend as dlog_serial_write.
 extern FILE gDlogSerialFile;
 
-extern bool dlog_bypass_;
-
 // Tell the debuglog that the system has started to panic so that subsequent
 // writes won't wake any debuglog threads.  This function should be called
 // *very* early in the process of panicking.  In particular, it should be called
@@ -153,12 +152,8 @@ void dlog_init_early();
 // Returns ZX_OK on success.
 zx_status_t dlog_shutdown(zx_instant_mono_t deadline);
 
-// Called as soon as command line parsing is available to check for any kernel
-// command line options that may affect the debug log.
-void dlog_bypass_init();
-
 // Accessor to quickly determine if the debuglog bypass is enabled.
-static inline bool dlog_bypass() { return dlog_bypass_; }
+inline bool dlog_bypass() { return kBootConstants.bypass_debuglog; }
 
 // Renders as many of the recent debug log entries as will fit into the memory
 // region specified by |target|.  Returns the number of bytes of target which

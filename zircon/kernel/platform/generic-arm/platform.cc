@@ -405,9 +405,6 @@ void platform_early_init(void) {
     allocate_persistent_ram(gPhysHandoff->nvram);
   }
 
-  // is the cmdline option to bypass dlog set ?
-  dlog_bypass_init();
-
   // Initialize the PmmChecker now that the cmdline has been parsed.
   pmm_checker_init_from_cmdline();
 

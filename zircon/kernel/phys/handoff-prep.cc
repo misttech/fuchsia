@@ -127,8 +127,12 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
 
   // Translate the relocated virtual address from the spec back into the image
   // to initialize the kernel's kBootContents.
-  BootConstants constants =  // Move-only.
-      {.kernel_physical_load_address = kernel_.physical_load_address()};
+  BootConstants constants = {
+      .kernel_physical_load_address = kernel_.physical_load_address(),
+
+      // The flag compiled into the kernel proper can override the boot option.
+      .bypass_debuglog = abi_spec_->always_bypass_debuglog || gBootOptions->bypass_debuglog,
+  };
 
   // Other methods will fill in more values via boot_constants_, which points
   // to the writable physical address, not the kernel's RODATA virtual address.

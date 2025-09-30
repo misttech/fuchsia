@@ -8,6 +8,7 @@ import("//build/cpp/library_headers.gni")
 
 library_headers("headers") {
   headers = [ "lib/debuglog.h" ]
+  public_deps = [ "//zircon/kernel/phys:boot-constants" ]
 }
 
 source_set("debuglog") {
@@ -23,6 +24,7 @@ source_set("debuglog") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/lib/version",
+    "//zircon/kernel/phys:boot-constants",
     "//zircon/system/ulib/lazy_init",
   ]
 }

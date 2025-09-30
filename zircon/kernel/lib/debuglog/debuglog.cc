@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/boot-options/boot-options.h>
 #include <lib/crashlog.h>
 #include <lib/debuglog.h>
 #include <lib/fit/defer.h>
@@ -15,6 +14,7 @@
 #include <lib/version.h>
 #include <platform.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string-file.h>
 #include <string.h>
 #include <zircon/errors.h>
@@ -27,6 +27,7 @@
 #include <ktl/atomic.h>
 #include <ktl/limits.h>
 #include <lk/init.h>
+#include <phys/boot-constants.h>
 #include <vm/vm.h>
 
 #include "debuglog_internal.h"
@@ -44,20 +45,6 @@ FILE gDlogSerialFile{[](void*, ktl::string_view str) {
                        return static_cast<int>(str.size());
                      },
                      nullptr};
-
-// dlog_bypass_ will cause printfs to directly write to console. It also has the
-// side effect of disabling uart Tx interrupts, which causes all of the serial
-// writes to be polling.
-//
-// We need to preserve the compile time switch (ENABLE_KERNEL_LL_DEBUG), even
-// though we add a kernel cmdline (kernel.bypass-debuglog), to bypass the debuglog.
-// This is to allow very early prints in the kernel to go to the serial console.
-bool dlog_bypass_ =
-#if ENABLE_KERNEL_LL_DEBUG
-    true;
-#else
-    false;
-#endif
 
 // The debuglog maintains a circular buffer of debuglog records,
 // consisting of a common header (dlog_header_t) followed by up
@@ -576,14 +563,6 @@ void dlog_init_early() {
   persistent_dlog_init_early();
 }
 
-// Called after kernel cmdline options are parsed (in platform_early_init()).
-// The compile switch (if enabled) overrides the kernel cmdline switch.
-void dlog_bypass_init() {
-  if (dlog_bypass_ == false) {
-    dlog_bypass_ = gBootOptions->bypass_debuglog;
-  }
-}
-
 zx_status_t dlog_write(uint32_t severity, uint32_t flags, ktl::string_view str) {
   return DLOG->Write(severity, flags, str);
 }
@@ -597,7 +576,7 @@ DECLARE_SINGLETON_MUTEX(DlogSerialWriteLock);
 }  // namespace
 
 void dlog_serial_write(ktl::string_view str) {
-  if (dlog_bypass_) {
+  if (dlog_bypass()) {
     // If LL DEBUG is enabled we take this path which uses a spinlock
     // and prevents the direct writes from the kernel from interleaving
     // with our output.

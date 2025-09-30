@@ -109,6 +109,20 @@ struct ZirconAbiSpec {
   // This tells physboot the (relocated) address of the .text section, which is
   // what GDB's `add-symbol-file` needs to be fed.
   PhysHandoffKernelImagePtr<const ktl::byte> text_start;
+
+  // If set, this overrides the kernel.bypass-debuglog boot option to always on
+  // even if omitted or specified in the negative on the kernel command line.
+  // We need to preserve the compile time switch (ENABLE_KERNEL_LL_DEBUG), even
+  // though we add a kernel cmdline (kernel.bypass-debuglog), to bypass the
+  // debuglog.  This is to allow very early prints in the kernel to go to the
+  // serial console immediately.
+  bool always_bypass_debuglog =
+#if ENABLE_KERNEL_LL_DEBUG
+      true
+#else
+      false
+#endif
+      ;
 };
 static_assert(ktl::is_trivially_destructible_v<ZirconAbiSpec>);
 
