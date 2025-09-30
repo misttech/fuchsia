@@ -21,15 +21,15 @@
 #include "src/devices/usb/drivers/xhci/xhci-enumeration.h"
 
 #include <fuchsia/hardware/usb/descriptor/c/banjo.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/promise.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <zircon/syscalls.h>
 
 #include <fake-dma-buffer/fake-dma-buffer.h>
 
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/devices/usb/drivers/xhci/tests/test-env.h"
 #include "src/devices/usb/drivers/xhci/xhci-event-ring.h"
 

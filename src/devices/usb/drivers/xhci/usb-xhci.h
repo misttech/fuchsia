@@ -16,12 +16,12 @@
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/promise.h>
 #include <lib/fpromise/single_threaded_executor.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zx/profile.h>
 #include <unistd.h>
 

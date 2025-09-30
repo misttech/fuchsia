@@ -16,12 +16,11 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio.h>
-#include <lib/sync/cpp/completion.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -337,7 +336,7 @@ class Dwc3 : public fdf::DriverBase,
 
   fidl::WireClient<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;
 
-  std::optional<ddk::MmioBuffer> mmio_;
+  std::optional<fdf::MmioBuffer> mmio_;
 
   zx::bti bti_;
   bool has_pinned_memory_{false};

@@ -9,8 +9,8 @@
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio-buffer.h>
 
 #include <mutex>
 namespace aml_usb_phy {

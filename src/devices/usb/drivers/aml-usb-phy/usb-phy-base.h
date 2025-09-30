@@ -6,7 +6,7 @@
 #define SRC_DEVICES_USB_DRIVERS_AML_USB_PHY_USB_PHY_BASE_H_
 
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 namespace aml_usb_phy {
 

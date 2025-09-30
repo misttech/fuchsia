@@ -62,10 +62,10 @@ cc_library(
         "@fuchsia_sdk//fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
+        "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/driver_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
         "@fuchsia_sdk//pkg/hwreg",
-        "@fuchsia_sdk//pkg/mmio",
         "@fuchsia_sdk//pkg/zx",
     ],
 )

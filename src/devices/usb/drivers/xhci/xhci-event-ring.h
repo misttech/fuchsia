@@ -6,8 +6,8 @@
 #define SRC_DEVICES_USB_DRIVERS_XHCI_XHCI_EVENT_RING_H_
 
 #include <lib/dma-buffer/buffer.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fpromise/promise.h>
-#include <lib/mmio/mmio.h>
 #include <lib/synchronous-executor/executor.h>
 #include <lib/trace/event.h>
 #include <lib/zx/bti.h>

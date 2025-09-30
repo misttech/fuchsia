@@ -34,7 +34,7 @@ test("xhci-unittest-bin") {
   ]
   deps = [
     ":test-libs",
-    "//src/devices/lib/mmio:test_helper",
+    "//sdk/lib/driver/mmio/testing/cpp",
     "//zircon/system/ulib/mmio-ptr",
   ]
 }

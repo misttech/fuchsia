@@ -74,12 +74,12 @@ cc_library(
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_logging_cpp",
         "@fuchsia_sdk//pkg/driver_metadata_cpp",
+        "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/driver_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_power_cpp",
         "@fuchsia_sdk//pkg/fit",
         "@fuchsia_sdk//pkg/hwreg",
         "@fuchsia_sdk//pkg/inspect",
-        "@fuchsia_sdk//pkg/mmio",
         "@fuchsia_sdk//pkg/sync_cpp",
     ],
 )

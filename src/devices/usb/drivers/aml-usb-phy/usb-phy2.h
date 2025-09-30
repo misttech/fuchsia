@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_AML_USB_PHY_USB_PHY2_H_
 #define SRC_DEVICES_USB_DRIVERS_AML_USB_PHY_USB_PHY2_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy-base.h"
 

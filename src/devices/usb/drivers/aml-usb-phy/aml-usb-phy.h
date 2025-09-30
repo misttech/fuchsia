@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
 
 #include <fbl/macros.h>
