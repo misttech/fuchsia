@@ -19,10 +19,11 @@ use lowpan_driver_common::{AsyncCondition, ZxStatus};
 use regex::Regex;
 use std::collections::HashMap;
 
-lazy_static::lazy_static! {
-    static ref DEVICE_NAME_REGEX: Regex = Regex::new("^[a-z_][-_.+0-9a-z]{1,31}$")
-        .expect("Device name regex failed to compile");
-}
+use std::sync::LazyLock;
+
+static DEVICE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new("^[a-z_][-_.+0-9a-z]{1,31}$").expect("Device name regex failed to compile")
+});
 
 pub struct LowpanService<S> {
     pub devices: Arc<Mutex<HashMap<String, DriverProxy>>>,

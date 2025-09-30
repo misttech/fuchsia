@@ -5,33 +5,32 @@
 use super::*;
 
 use futures::prelude::*;
+use lowpan_driver_common::Driver as _;
 use lowpan_driver_common::lowpan_fidl::{
-    ConnectivityState, Credential, Identity, ProvisioningParams, NET_TYPE_THREAD_1_X,
+    ConnectivityState, Credential, Identity, NET_TYPE_THREAD_1_X, ProvisioningParams,
 };
 use lowpan_driver_common::net::*;
 use lowpan_driver_common::spinel::mock::*;
 use lowpan_driver_common::spinel::*;
-use lowpan_driver_common::Driver as _;
 use openthread::ot::Trel;
 use openthread_fuchsia::Platform;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-lazy_static::lazy_static! {
-    static ref TEST_HARNESS_SINGLETON_LOCK: Mutex<()> = Mutex::new(());
+static TEST_HARNESS_SINGLETON_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-    static ref TEST_IDENTITY: Identity = Identity {
-            raw_name: Some("MyNetwork".as_bytes().to_vec()),
-            xpanid: Some([0, 1, 2, 3, 4, 5, 6, 7]),
-            net_type: Some(NET_TYPE_THREAD_1_X.to_string()),
-            channel: Some(13),
-            panid: Some(0x1234),
-            ..Default::default()
-        };
+static TEST_IDENTITY: LazyLock<Identity> = LazyLock::new(|| Identity {
+    raw_name: Some("MyNetwork".as_bytes().to_vec()),
+    xpanid: Some([0, 1, 2, 3, 4, 5, 6, 7]),
+    net_type: Some(NET_TYPE_THREAD_1_X.to_string()),
+    channel: Some(13),
+    panid: Some(0x1234),
+    ..Default::default()
+});
 
-    static ref TEST_CREDENTIAL: Credential =
-            Credential::NetworkKey(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-}
+static TEST_CREDENTIAL: LazyLock<Credential> = LazyLock::new(|| {
+    Credential::NetworkKey(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+});
 
 const DEFAULT_TEST_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(45);
 

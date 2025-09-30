@@ -518,19 +518,18 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy};
     use fuchsia_async::TestExecutor;
-    use lazy_static::lazy_static;
+
     use std::task::Poll;
     use {fidl_fuchsia_net_mdns as fidl_mdns, regex};
 
     const TEST_PORT: u16 = 1234;
     const TEST_SERVICE: &str = "test test test";
 
-    lazy_static! {
-        static ref TEST_TEXT: Vec<(String, Vec<u8>)> = vec![
-            (String::from("abcd"), vec![1, 2, 3, 4]),
-            (String::from("wxyz"), vec![5, 6, 7, 8]),
-        ];
-    }
+    use std::sync::LazyLock;
+
+    static TEST_TEXT: LazyLock<Vec<(String, Vec<u8>)>> = LazyLock::new(|| {
+        vec![(String::from("abcd"), vec![1, 2, 3, 4]), (String::from("wxyz"), vec![5, 6, 7, 8])]
+    });
 
     struct TestValues {
         publisher: ServiceInstancePublisherProxy,
