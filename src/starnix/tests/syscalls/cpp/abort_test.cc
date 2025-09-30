@@ -38,3 +38,52 @@ TEST(AbortTest, AbortFromChildThread) {
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }
+
+namespace {
+
+void SigQuitHandler(int signum) { abort(); }
+
+}  // namespace
+
+TEST(AbortTest, AbortFromSighandler) {
+  test_helper::ForkHelper helper;
+  helper.ExpectSignal(SIGABRT);
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    struct sigaction sa{};
+    sa.sa_handler = SigQuitHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    SAFE_SYSCALL(sigaction(SIGQUIT, &sa, nullptr));
+    raise(SIGQUIT);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+namespace {
+
+void SigUsr2Handler(int signum) { abort(); }
+
+void SigUsr1Handler(int signum) { raise(SIGUSR2); }
+
+}  // namespace
+
+TEST(AbortTest, AbortFromNestedSighandler) {
+  test_helper::ForkHelper helper;
+  helper.ExpectSignal(SIGABRT);
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    struct sigaction sa{};
+    sa.sa_handler = SigUsr1Handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    sa.sa_handler = SigUsr2Handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    SAFE_SYSCALL(sigaction(SIGUSR2, &sa, nullptr));
+    raise(SIGUSR1);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}

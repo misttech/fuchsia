@@ -257,6 +257,7 @@ source_set("test_utils") {
   public_deps = [
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
+    "//zircon/system/ulib/fbl",
   ]
   deps = [ "//src/lib/fxl" ]
   configs += [ "//build/config:rtti" ]
@@ -316,6 +317,7 @@ test("crash") {
   exclude_toolchain_tags = [ "asan" ]
   sources = [ "crash.cc" ]
   deps = [
+    ":test_utils",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
