@@ -9,11 +9,15 @@
 namespace debug {
 
 bool StringStartsWith(std::string_view str, std::string_view begins_with) {
-  return cpp20::starts_with(str, begins_with);
+  return str.starts_with(begins_with);
 }
 
 bool StringEndsWith(std::string_view str, std::string_view ends_with) {
-  return cpp20::ends_with(str, ends_with);
+  return str.ends_with(ends_with);
+}
+
+bool StringContains(std::string_view haystack, std::string_view needle) {
+  return cpp23::contains(haystack, needle);
 }
 
 }  // namespace debug

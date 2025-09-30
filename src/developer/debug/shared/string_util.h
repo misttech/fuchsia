@@ -13,6 +13,8 @@ bool StringStartsWith(std::string_view str, std::string_view begins_with);
 
 // Returns true if the first argument ends in exactly the second.
 bool StringEndsWith(std::string_view str, std::string_view ends_with);
+
+bool StringContains(std::string_view haystack, std::string_view needle);
 }  // namespace debug
 
 #endif  // SRC_DEVELOPER_DEBUG_SHARED_STRING_UTIL_H_
