@@ -15,16 +15,6 @@
 
 namespace mock_spmi {
 
-namespace {
-
-// To use switch like logic for std::visitor on std::variat.
-template <class... Ts>
-struct overloaded : Ts... {
-  using Ts::operator()...;
-};
-
-}  // namespace
-
 class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
  public:
   void ExpectGetProperties(uint16_t sid, std::string name) {
@@ -70,7 +60,8 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     if (expected_watches_.empty() ||
         std::holds_alternative<std::vector<fuchsia_hardware_spmi::Register8>>(
             expected_watches_.front())) {
-      expected_watches_.emplace(std::vector<fuchsia_hardware_spmi::Register8>{{address, data}});
+      expected_watches_.emplace_back(
+          std::vector<fuchsia_hardware_spmi::Register8>{{address, data}});
       return SyncWatchControllerWriteCommands();
     }
 
@@ -82,7 +73,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
         zx::ok(fuchsia_hardware_spmi::DeviceWatchControllerWriteCommandsResponse{
             std::vector<fuchsia_hardware_spmi::Register8>{{address, data}},
             request.wake_lease_requested ? std::move(e0) : zx::eventpair{}}));
-    expected_watches_.pop();
+    expected_watches_.pop_front();
     return SyncWatchControllerWriteCommands();
   }
 
@@ -178,7 +169,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
 
     if (expected_watches_.empty() ||
         std::holds_alternative<WatchControllerRequest>(expected_watches_.front())) {
-      expected_watches_.emplace(
+      expected_watches_.emplace_back(
           WatchControllerRequest{.address = request.address(),
                                  .completer = completer.ToAsync(),
                                  .wake_lease_requested = request.setup_wake_lease().is_valid()});
@@ -193,7 +184,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     EXPECT_EQ(zx::eventpair::create(0, &e0, &e1), ZX_OK);
     completer.Reply(zx::ok(fuchsia_hardware_spmi::DeviceWatchControllerWriteCommandsResponse{
         std::move(data), request.setup_wake_lease().is_valid() ? std::move(e0) : zx::eventpair{}}));
-    expected_watches_.pop();
+    expected_watches_.pop_front();
   }
 
   void CancelWatchControllerWriteCommands(
@@ -201,18 +192,26 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
       CancelWatchControllerWriteCommandsCompleter::Sync& completer) override {
     EXPECT_EQ(request.size(), 1);
 
-    if (expected_watches_.empty()) {
+    if (expected_watches_.empty() ||
+        std::holds_alternative<std::vector<fuchsia_hardware_spmi::Register8>>(
+            expected_watches_.front())) {
       ZX_ASSERT(false);
       return;
     }
 
-    std::visit(overloaded{[&](WatchControllerRequest& req) {
-                            EXPECT_EQ(req.address, request.address());
-                            req.completer.Reply(zx::error(ZX_ERR_CANCELED));
-                            expected_watches_.pop();
-                          },
-                          [](std::vector<fuchsia_hardware_spmi::Register8>&) { ZX_ASSERT(false); }},
-               expected_watches_.front());
+    auto it = std::find_if(
+        expected_watches_.begin(), expected_watches_.end(),
+        [&request](std::variant<WatchControllerRequest,
+                                std::vector<fuchsia_hardware_spmi::Register8>>& watch) {
+          return std::get<WatchControllerRequest>(watch).address == request.address();
+        });
+    if (it == expected_watches_.end()) {
+      ZX_ASSERT(false);
+      return;
+    }
+    std::get<WatchControllerRequest>(*it).completer.Reply(zx::error(ZX_ERR_CANCELED));
+    expected_watches_.erase(it);
+
     completer.Reply(zx::ok());
   }
 
@@ -231,7 +230,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     WatchControllerWriteCommandsCompleter::Async completer;
     bool wake_lease_requested;
   };
-  std::queue<std::variant<WatchControllerRequest, std::vector<fuchsia_hardware_spmi::Register8>>>
+  std::deque<std::variant<WatchControllerRequest, std::vector<fuchsia_hardware_spmi::Register8>>>
       expected_watches_;
   std::queue<zx::eventpair> sync_watch_;
 };
