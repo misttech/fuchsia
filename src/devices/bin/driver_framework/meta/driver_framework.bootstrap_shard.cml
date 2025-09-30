@@ -271,6 +271,15 @@
             ],
         },
 
+        // This is not a real service, and only serves to ensure the critical-services component
+        // which hosts crashsvc, never gets stopped early during system shutdown. Otherwise we can
+        // miss crashes that happen in late shutdown.
+        {
+            service: [ "bootstrap.critical-services" ],
+            from: "#critical-services",
+            to: "#driver_manager",
+        },
+
         // These protocols are not actually used but exist to increase the lifetime
         // of components. The capabilities are named after their place in the topology.
         // We cannot use a single service due to the lack of service merging.

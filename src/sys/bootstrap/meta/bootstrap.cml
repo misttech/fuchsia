@@ -101,6 +101,7 @@
             as: "input",
             to: "#critical-services",
             subdir: "input",
+            dependency: "weak",
         },
         {
             protocol: "fuchsia.diagnostics.host.ArchiveAccessor",
