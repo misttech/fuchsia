@@ -257,6 +257,7 @@ struct PhysElfImage {
 template <std::common_with<std::byte> Byte>
 struct MappedRange : public std::span<Byte> {
   constexpr MappedRange() = default;
+
   constexpr MappedRange(std::span<Byte> mapped, uintptr_t paddr)
       : std::span<Byte>::span(mapped), paddr(paddr) {}
 
@@ -364,9 +365,9 @@ struct PhysHandoff {
   // ZBI_TYPE_CRASHLOG payload.
   PhysHandoffTemporaryString crashlog;
 
-  // A mapped ZBI_TYPE_NVRAM payload.
+  // A mapped ZBI_TYPE_NVRAM payload, if not empty().
   // A physical memory region that will persist across warm boots.
-  std::optional<MappedRange<std::byte>> nvram;
+  MappedMemoryRange nvram;
 
   // ZBI_TYPE_PLATFORM_ID payload.
   std::optional<zbi_platform_id_t> platform_id;

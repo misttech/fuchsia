@@ -42,6 +42,7 @@ struct BootConstants {
   PhysHandoffPermanentSpan<const std::byte> mexec_data;
 };
 static_assert(ktl::is_trivially_destructible_v<BootConstants>);
+static_assert(ktl::is_standard_layout_v<BootConstants>);
 
 // The compiler just knows this will be provided at link time, so there is no
 // way to optimize out (first) actual reads from the memory physboot wrote.

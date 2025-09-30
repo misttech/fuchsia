@@ -401,8 +401,8 @@ static void allocate_persistent_ram(const MappedMemoryRange& range) {
 }
 
 void platform_early_init(void) {
-  if (gPhysHandoff->nvram) {
-    allocate_persistent_ram(gPhysHandoff->nvram.value());
+  if (!gPhysHandoff->nvram.empty()) {
+    allocate_persistent_ram(gPhysHandoff->nvram);
   }
 
   // is the cmdline option to bypass dlog set ?
