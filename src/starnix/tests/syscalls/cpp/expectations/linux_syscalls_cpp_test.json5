@@ -53,6 +53,9 @@
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "RobustFutexTest.*",
 
+                // TODO(https://fxbug.dev/448196787): This is flakey.
+                "SocketMarkSockOpt/SocketMarkSockOpt.RawCapability/*",
+
                 // TODO(https://fxbug.dev/436916785): Fails with a timeout (> 180s) while running.
                 "SysfsPowerTest.*",
 
@@ -79,6 +82,9 @@
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
 
+                // TODO(https://fxbug.dev/448145721)
+                "FuseServerPermissionCheck/FuseServerPermissionCheck.PermissionCheck/9",
+
                 // TODO(https://fxbug.dev/437164575): Test needs to be reworked.
                 "InputTest.DevicePropertiesMatchKeyboardProperties",
                 "InputTest.DevicePropertiesMatchTouchProperties",
@@ -86,6 +92,9 @@
                 "InputTest.DevicePropertiesMatchMouseWheelProperties",
                 "MemfdTest.CreateExecutableThenSealThenMap",
                 "MemfdTest.MapNonExecutableWithNOEXEC",
+
+                // TODO(https://fxbug.dev/448187395)
+                "IpTables.IpTablesAdminCap",
 
                 // TODO(https://fxbug.dev/436908596)
                 "Mmap.FixedAddressTooLow",
@@ -123,13 +132,27 @@
                 "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
 
                 // TODO(https://fxbug.dev/437191224)
-                "PerfEventOpenTest.SettingIoctlEnabledCallWorks",
-                "PerfEventOpenTest.SettingIoctlDisabledCallWorks",
+                "PerfEventOpenTest.CountingCPUClockSucceeds",
+                "PerfEventOpenTest.GroupLeaderCleanup",
+                "PerfEventOpenTest.InvalidPidAndCpuFails",
+                "PerfEventOpenTest.MultipleDisablesDoesNotChangeTime",
                 "PerfEventOpenTest.ReadEventWithBufferTooSmallFails",
-                "PerfEventOpenTest.WhenEnabledEventCountShouldBeOne",
-                "PerfEventOpenTest.WhenResetAndDisabledEventCountShouldBeZero",
+                "PerfEventOpenTest.ReadEventWithPerfFormatIdSucceeds",
+                "PerfEventOpenTest.ReadEventWithTimeEnabledAndRunningSucceeds",
+                "PerfEventOpenTest.ReadEventWithTimeEnabledSucceeds",
+                "PerfEventOpenTest.ReadEventWithTimeRunningSucceeds",
+                "PerfEventOpenTest.ReadingFirstEightBytesCanReturnCountAsALong",
+                "PerfEventOpenTest.SampleIdIsValid",
+                "PerfEventOpenTest.SettingIoctlDisabledCallWorks",
+                "PerfEventOpenTest.SettingIoctlEnabledCallWorks",
                 "PerfEventOpenTest.ValidInputsSucceed",
                 "PerfEventOpenTest.WhenDisabledEventCountShouldBeZero",
+                "PerfEventOpenTest.WhenDisabledTimeRunningAndTimeEnabledAreCorrect",
+                "PerfEventOpenTest.WhenDisabledTotalTimeRunningAndEnabledAreZero",
+                "PerfEventOpenTest.WhenEnabledEventCountShouldBeOne",
+                "PerfEventOpenTest.WhenEnabledTimeEnabledIsCorrect",
+                "PerfEventOpenTest.WhenEnabledTimeRunningIsCorrect",
+                "PerfEventOpenTest.WhenResetAndDisabledEventCountShouldBeZero",
 
                 // TODO(https://fxbug.dev/436921256): I believe the test is wrong.
                 "ProcMountsTest.MountAdded",
