@@ -11,3 +11,13 @@ scripts ot locations.
   Used by: `//tools/devshell/lib/bazel_utils.sh`
   Used by: `//build/bazel/scripts/parse-workspace-event-log.py`
   Used by: `//build/bazel/scripts/workspace_utils.py`
+
+- `logging.gni`:
+
+  GNI file declaring a GN build variable that impacts Bazel invocations.
+
+- `no_downloads_allowed.config`:
+
+  A Bazel --experimental_downloader_config file referenced from the
+  top-level .bazelrc file to disable all downloads when running repository
+  rules.
