@@ -20,9 +20,14 @@ import("//build/assembly/product_bundle.gni")
 #    platform
 #    base_packages
 #
+#  Variables forwarded to assembled_system()
+#    enable_example_aib
+#
 #  Variables forwarded to product_bundle()
 #    deps
 #    virtual_devices
+#    update
+#    name
 #
 template("test_product_bundle") {
   assert(defined(invoker.board_config), "board_config is required")
@@ -59,6 +64,7 @@ template("test_product_bundle") {
       ":${targets.product_bundle}_product_bundle",
       ":${targets.product_bundle}_product_bundle_all_inputs",
     ]
+    forward_variables_from(invoker, [ "enable_example_aib" ])
     testonly = true
     image_name = "fuchsia"
     namespace = targets.assembled_system
@@ -71,6 +77,8 @@ template("test_product_bundle") {
                            [
                              "deps",
                              "virtual_devices",
+                             "update",
+                             "name",
                            ])
     testonly = true
 
@@ -79,7 +87,9 @@ template("test_product_bundle") {
     }
     deps += [ ":${targets.assembled_system}" ]
 
-    name = target_name
+    if (!defined(name)) {
+      name = target_name
+    }
     system_a = files.assembled_system
   }
 }

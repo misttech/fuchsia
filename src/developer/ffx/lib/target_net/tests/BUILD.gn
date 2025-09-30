@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/product_bundle.gni")
+import("//build/assembly/test_product_bundle.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/symbols_dir_test_data.gni")
@@ -41,36 +39,14 @@ if (is_host) {
 } else if (current_toolchain == default_toolchain) {
   # Don't let the assembly templates expand except on the default toolchain.
   # Weirndess ensues if they're expanded on variant toolchains like for asan.
-  files = {
-    outdir = target_out_dir + "/fuchsia"
-  }
-
-  product_bundle("product_bundle") {
-    testonly = true
+  test_product_bundle("product_bundle") {
     name = "ffx-target-net-test"
 
-    system_a = files.outdir
-
-    deps = [ ":assembly" ]
-  }
-
-  assembled_system("assembly") {
-    testonly = true
-    image_name = "fuchsia"
-
     # Use generic/emu board for the target arch.
-    board_config_label = "//boards/${target_cpu}"
-    generate_fxfs = true
-    generate_vbmeta = true
-    product_assembly_config_label = ":product_assembly_config"
-  }
-
-  product_assembly_configuration("product_assembly_config") {
-    testonly = true
+    board_config = "//boards/${target_cpu}"
     platform = {
       build_type = "eng"
       feature_set_level = "standard"
     }
-    version = build_info_version
   }
 }

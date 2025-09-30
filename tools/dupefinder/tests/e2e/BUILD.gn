@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/product_bundle.gni")
+import("//build/assembly/test_product_bundle.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/config.gni")
@@ -73,32 +71,16 @@ if (is_fuchsia) {
 # Don't let the assembly templates expand except on the default toolchain. Weirndess ensues if
 # they're expanded on variant toolchains like for asan.
 if (current_toolchain == default_toolchain) {
-  _outdir = target_out_dir + "/fuchsia"
-
-  product_bundle("product_bundle") {
-    testonly = true
+  if (target_cpu == "arm64") {
+    _board_config_label = "//boards/arm64"
+  } else if (target_cpu == "x64") {
+    _board_config_label = "//boards/x64"
+  } else {
+    assert(false, "unsupported arch $target_cpu")
+  }
+  test_product_bundle("product_bundle") {
     name = "verify_dupefinder_e2e"
-    system_a = _outdir
-    deps = [ ":assembly" ]
-  }
-
-  assembled_system("assembly") {
-    testonly = true
-    image_name = "fuchsia"
-
-    if (target_cpu == "arm64") {
-      board_config_label = "//boards/arm64"
-    } else if (target_cpu == "x64") {
-      board_config_label = "//boards/x64"
-    } else {
-      assert(false, "unsupported arch $target_cpu")
-    }
-    generate_fxfs = true
-    product_assembly_config_label = ":product_assembly_config"
-  }
-
-  product_assembly_configuration("product_assembly_config") {
-    testonly = true
+    board_config = _board_config_label
     platform = {
       build_type = "eng"
     }
@@ -107,6 +89,5 @@ if (current_toolchain == default_toolchain) {
         package_target = ":duplicate_allocations"
       },
     ]
-    version = build_info_version
   }
 }

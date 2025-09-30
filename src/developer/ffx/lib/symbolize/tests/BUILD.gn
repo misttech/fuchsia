@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/product_assembly_configuration.gni")
-import("//build/assembly/product_bundle.gni")
+import("//build/assembly/test_product_bundle.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/symbols_dir_test_data.gni")
@@ -71,35 +69,14 @@ if (is_host) {
   # Don't let the assembly templates expand except on the default toolchain. Weirndess ensures if
   # they're expanded on variant toolchains like for asan.
   if (current_toolchain == default_toolchain) {
-    files = {
-      outdir = target_out_dir + "/fuchsia"
+    if (target_cpu == "arm64") {
+      _board_config_label = "//boards/arm64"
+    } else if (target_cpu == "x64") {
+      _board_config_label = "//boards/x64"
     }
-
-    product_bundle("product_bundle") {
-      testonly = true
+    test_product_bundle("product_bundle") {
       name = "ffx-symbolize-test"
-
-      system_a = files.outdir
-
-      deps = [ ":assembly" ]
-    }
-
-    assembled_system("assembly") {
-      testonly = true
-      image_name = "fuchsia"
-
-      if (target_cpu == "arm64") {
-        board_config_label = "//boards/arm64"
-      } else if (target_cpu == "x64") {
-        board_config_label = "//boards/x64"
-      }
-      generate_fxfs = true
-      generate_vbmeta = true
-      product_assembly_config_label = ":product_assembly_config"
-    }
-
-    product_assembly_configuration("product_assembly_config") {
-      testonly = true
+      board_config = _board_config_label
       platform = {
         build_type = "eng"
       }
@@ -108,7 +85,6 @@ if (is_host) {
           package_target = ":package"
         },
       ]
-      version = build_info_version
     }
   }
 }
