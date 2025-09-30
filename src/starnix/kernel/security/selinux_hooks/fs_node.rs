@@ -13,7 +13,6 @@ use super::{
 };
 
 use crate::TODO_DENY;
-use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
 use crate::task::CurrentTask;
 use crate::vfs::{
     Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
@@ -964,28 +963,6 @@ pub(in crate::security) fn fs_node_permission(
     let current_sid = current_task_state(current_task).lock().current_sid;
     let fs_node_class = fs_node.security_state.lock().class;
     let audit_context = [current_task.into(), audit_context];
-
-    if permission_flags.contains(PermissionFlags::ACCESS) {
-        let dont_audit = has_dontaudit_access(security_server, current_task, fs_node);
-        if dont_audit {
-            return has_fs_node_permissions_dontaudit(
-                &security_server.as_permission_check(),
-                current_task,
-                current_sid,
-                fs_node,
-                &permissions_from_flags(permission_flags, fs_node_class),
-            );
-        }
-        return has_fs_node_permissions(
-            &security_server.as_permission_check(),
-            current_task,
-            current_sid,
-            fs_node,
-            &permissions_from_flags(permission_flags, fs_node_class),
-            (&audit_context).into(),
-        );
-    }
-
     todo_has_fs_node_permissions(
         TODO_DENY!("https://fxbug.dev/380855359", "Enforce fs_node_permission checks."),
         &security_server.as_permission_check(),

@@ -212,31 +212,6 @@ fn check_ioctl_permission(
     result.permit.then_some(Ok(())).unwrap_or_else(|| error!(EACCES))
 }
 
-/// Checks that `current_task` has the specified `permissions` to the `node`, without auditing.
-fn has_fs_node_permissions_dontaudit(
-    permission_check: &PermissionCheck<'_>,
-    _current_task: &CurrentTask,
-    subject_sid: SecurityId,
-    fs_node: &FsNode,
-    permissions: &[impl ForClass<FsNodeClass>],
-) -> Result<(), Errno> {
-    if Anon::is_private(fs_node) {
-        return Ok(());
-    }
-
-    let target = fs_node_effective_sid_and_class(fs_node);
-    for permission in permissions {
-        if !permission_check
-            .has_permission(subject_sid, target.sid, permission.for_class(target.class))
-            .permit
-        {
-            return error!(EACCES);
-        }
-    }
-
-    Ok(())
-}
-
 /// Checks that `current_task` has the specified `permissions` to the `node`.
 fn has_fs_node_permissions(
     permission_check: &PermissionCheck<'_>,

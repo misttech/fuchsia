@@ -61,10 +61,6 @@ bitflags::bitflags! {
         const WRITE = 2 as u32;
         const READ = 4 as u32;
         const APPEND = 8 as u32;
-
-        // Internal flag used to indicate that the check is being made on behalf of userspace e.g.
-        // via the `access()` syscall.
-        const ACCESS = 16 as u32;
     }
 }
 
