@@ -1,15 +1,13 @@
-# Copyright 2024 The Fuchsia Authors
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/export_fuchsia_package_to_bazel.gni")
-import("//src/tee/ta/ta.gni")
-
-# This is a Trusted App that does nothing.
-fuchsia_ta_package("ta-noop") {
-  sources = [ "noop.cc" ]
+# Do not use this target directly, instead depend on //src/microfuchsia/tee/ta/noop:ta-noop.
+group("ta-noop") {
+  public_deps = [ "//src/microfuchsia/tee/ta/noop:ta-noop" ]
 }
 
-export_fuchsia_package_to_bazel("ta-noop_for_bazel") {
-  package = ":ta-noop"
+# Do not use this target directly, instead depend on //src/microfuchsia/tee/ta/noop:ta-noop_for_bazel.
+group("ta-noop_for_bazel") {
+  public_deps = [ "//src/microfuchsia/tee/ta/noop:ta-noop_for_bazel" ]
 }

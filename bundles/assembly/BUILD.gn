@@ -568,11 +568,11 @@ assembly_input_bundle("vulkan_loader") {
 # Trusted execution environment.
 assembly_input_bundle("trusted_execution_environment") {
   bootfs_packages = [
-    "//src/tee/manager:ta-manager",
-    "//src/tee/binder-proxy",
-    "//src/tee",
+    "//src/microfuchsia/tee/manager:ta-manager",
+    "//src/microfuchsia/tee/binder-proxy",
+    "//src/microfuchsia/tee",
   ]
-  bootstrap_shards = [ "//src/tee/meta/tee.bootstrap_shard.cml" ]
+  bootstrap_shards = [ "//src/microfuchsia/tee/meta/tee.bootstrap_shard.cml" ]
 }
 
 # The most minimal AIB that is included in eng assembled systems that are meant

@@ -47,7 +47,6 @@ group("tests_no_e2e") {
     "starnix:tests",
     "storage:tests",
     "sys:tests",
-    "tee:tests",
     "testing:tests",
     "ui:tests",
     "virtualization:tests",

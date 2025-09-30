@@ -1012,7 +1012,7 @@ alias(
 
         # Because {bazel_package}/BUILD.bazel contains label references
         #
-        # such as "_files/obj/src/tee/ta/noop/ta-noop.far", create
+        # such as "_files/obj/src/microfuchsia/tee/ta/noop/ta-noop.far", create
         # {bazel_package}/_files as a symlink to the top-level _files directory.
         #
         # A relative path target is required, as the final output directory path is

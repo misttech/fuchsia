@@ -103,7 +103,7 @@ fuchsia_product(
 
 fuchsia_product_configuration(
     name = "assembly_config_eng",
-    base_packages = ["//src/tee/ta/noop:ta-noop"],
+    base_packages = ["//src/microfuchsia/tee/ta/noop:ta-noop"],
     product_config_json = {
         "platform": {
             "build_type": BUILD_TYPES.ENG,
