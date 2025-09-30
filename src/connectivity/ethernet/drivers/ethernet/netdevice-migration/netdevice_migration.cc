@@ -574,11 +574,22 @@ void NetdeviceMigration::SetMacParam(uint32_t param, int32_t value,
     memcpy(&macs[i * MAC_SIZE], data_buffer[i].octets, MAC_SIZE);
   }
 
-  if (zx_status_t status =
-          ethernet_.SetParam(param, value, data_buffer ? macs : nullptr, data_size * MAC_SIZE);
-      status != ZX_OK) {
-    zxlogf(WARNING, "failed to set ethernet parameter %du to value %d: %s", param, value,
-           zx_status_get_string(status));
+  zx_status_t status =
+      ethernet_.SetParam(param, value, data_buffer ? macs : nullptr, data_size * MAC_SIZE);
+  switch (status) {
+    case ZX_OK:
+      break;
+    // Most drivers that use netdevice migration don't support all parameters so
+    // this ends up generating quite a bit of noise in logs, log this case to
+    // debug instead.
+    case ZX_ERR_NOT_SUPPORTED:
+      zxlogf(DEBUG, "failed to set ethernet parameter %du to value %d: %s", param, value,
+             zx_status_get_string(status));
+      break;
+    default:
+      zxlogf(WARNING, "failed to set ethernet parameter %du to value %d: %s", param, value,
+             zx_status_get_string(status));
+      break;
   }
 }
 
