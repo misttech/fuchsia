@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow};
-use ffx_config::ConfigLevel;
+use ffx_config::{ConfigLevel, EnvironmentContext};
 const CONFIG_KEY_DEFAULT_REPOSITORY: &str = "repository.default";
 const CONFIG_KEY_SERVER_LISTEN: &str = "repository.server.listen";
 
@@ -16,7 +16,9 @@ pub const DEFAULT_REPO_NAME: &str = "devhost";
 // LINT.ThenChange(/src/developer/ffx/plugins/repository/add-from-pm/src/args.rs)
 
 // Try to figure out why the server is not running.
-pub async fn determine_why_repository_server_is_not_running() -> anyhow::Error {
+pub async fn determine_why_repository_server_is_not_running(
+    context: &EnvironmentContext,
+) -> anyhow::Error {
     macro_rules! check {
         ($e:expr) => {
             match $e {
@@ -28,7 +30,7 @@ pub async fn determine_why_repository_server_is_not_running() -> anyhow::Error {
         };
     }
 
-    match check!(repository_listen_addr().await) {
+    match check!(repository_listen_addr(context).await) {
         Some(addr) => {
             return anyhow!(
                 "ffx config detects repository.server.listen to be {addr} \
@@ -52,8 +54,10 @@ pub async fn determine_why_repository_server_is_not_running() -> anyhow::Error {
 }
 
 /// Return the repository server address from ffx config.
-pub async fn repository_listen_addr() -> Result<Option<std::net::SocketAddr>> {
-    if let Some(address) = ffx_config::get::<Option<String>, _>(CONFIG_KEY_SERVER_LISTEN)? {
+pub async fn repository_listen_addr(
+    context: &EnvironmentContext,
+) -> Result<Option<std::net::SocketAddr>> {
+    if let Some(address) = context.get::<Option<String>, _>(CONFIG_KEY_SERVER_LISTEN)? {
         if address.is_empty() {
             Ok(None)
         } else {
