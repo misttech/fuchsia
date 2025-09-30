@@ -40,9 +40,9 @@ void AddThreadRegs(const GeneralRegisters& source, debug_ipc::StackFrame* dest) 
 
 }  // namespace
 
-zx_status_t UnwindStack(const ProcessHandle& process, const ModuleList& modules,
-                        const ThreadHandle& thread, const GeneralRegisters& regs, size_t max_depth,
-                        std::vector<debug_ipc::StackFrame>* stack) {
+unwinder::Error UnwindStack(const ProcessHandle& process, const ModuleList& modules,
+                            const ThreadHandle& thread, const GeneralRegisters& regs,
+                            size_t max_depth, std::vector<debug_ipc::StackFrame>* stack) {
   // Prepare arguments for unwinder::Unwind.
 #if defined(__Fuchsia__)
   unwinder::FuchsiaMemory memory(process.GetNativeHandle().get());
@@ -70,7 +70,8 @@ zx_status_t UnwindStack(const ProcessHandle& process, const ModuleList& modules,
   for (auto& frame : *stack) {
     AddThreadRegs(regs, &frame);
   }
-  return ZX_OK;
+
+  return frames.back().fatal_error ? frames.back().error : unwinder::Success();
 }
 
 }  // namespace debug_agent

@@ -9,6 +9,10 @@
 
 #include "src/developer/debug/ipc/records.h"
 
+namespace unwinder {
+class Error;
+}
+
 namespace debug_agent {
 
 class GeneralRegisters;
@@ -16,9 +20,13 @@ class ModuleList;
 class ProcessHandle;
 class ThreadHandle;
 
-zx_status_t UnwindStack(const ProcessHandle& process, const ModuleList& modules,
-                        const ThreadHandle& thread, const GeneralRegisters& regs, size_t max_depth,
-                        std::vector<debug_ipc::StackFrame>* stack);
+// Returns the cumulative unwinder error value if the unwinding was fatally aborted - meaning that
+// no unwinding strategies could unwind past the final frame in |stack| - the error message should
+// include failure reasons for all attempted unwinders. Returns unwinder::Error::Success on
+// successfully identified final stack frame.
+unwinder::Error UnwindStack(const ProcessHandle& process, const ModuleList& modules,
+                            const ThreadHandle& thread, const GeneralRegisters& regs,
+                            size_t max_depth, std::vector<debug_ipc::StackFrame>* stack);
 
 }  // namespace debug_agent
 

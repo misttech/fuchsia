@@ -32,6 +32,7 @@
 #include "src/developer/debug/shared/stream_buffer.h"
 #include "src/developer/debug/shared/zx_status.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/lib/unwinder/error.h"
 
 namespace debug_agent {
 
@@ -462,8 +463,11 @@ debug_ipc::ThreadRecord DebuggedThread::GetThreadRecord(
       uint32_t max_stack_depth =
           stack_amount == debug_ipc::ThreadRecord::StackAmount::kMinimal ? 2 : 256;
 
-      UnwindStack(process_->process_handle(), process_->module_list(), thread_handle(), *regs,
-                  max_stack_depth, &record.frames);
+      auto err = UnwindStack(process_->process_handle(), process_->module_list(), thread_handle(),
+                             *regs, max_stack_depth, &record.frames);
+      if (err.has_err()) {
+        DEBUG_LOG(Thread) << ThreadPreamble(this) << "Unwinder aborted: " << err.msg();
+      }
     }
   } else {
     // Didn't bother querying the stack.

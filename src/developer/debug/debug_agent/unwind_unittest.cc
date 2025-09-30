@@ -15,6 +15,7 @@
 #include "src/developer/debug/debug_agent/module_list.h"
 #include "src/developer/debug/debug_agent/zircon_process_handle.h"
 #include "src/developer/debug/debug_agent/zircon_thread_handle.h"
+#include "src/lib/unwinder/error.h"
 
 namespace debug_agent {
 
@@ -127,8 +128,7 @@ void DoUnwindTest() {
     modules.Update(process);
 
     // Do the unwinding.
-    zx_status_t status = UnwindStack(process, modules, *data.thread, *regs, 16, &stack);
-    ASSERT_EQ(ZX_OK, status);
+    EXPECT_TRUE(UnwindStack(process, modules, *data.thread, *regs, 16, &stack).ok());
 
     data.backtrace_done = true;
   }
