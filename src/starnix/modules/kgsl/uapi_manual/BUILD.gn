@@ -1,0 +1,52 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/compiled_action.gni")
+import("//build/rust/rustc_binary.gni")
+
+group("uapi_manual") {
+  public_deps = [ ":check_golden" ]
+}
+
+compiled_action("do_codegen") {
+  tool = ":kgsl_codegen"
+  input_path = "//src/starnix/lib/linux_uapi/src/arm64.rs"
+  output_path = "$target_gen_dir/arm_manual_kgsl.rs"
+  args = [
+    rebase_path(input_path, root_build_dir),
+    rebase_path(output_path, root_build_dir),
+  ]
+  inputs = [ input_path ]
+  outputs = [ output_path ]
+}
+
+rustc_binary("kgsl_codegen") {
+  visibility = [ ":*" ]
+  edition = "2021"
+  version = "0.1.0"
+  source_root = "main.rs"
+
+  sources = [ "main.rs" ]
+
+  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+
+  deps = [
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:syn",
+  ]
+}
+
+action("check_golden") {
+  script = "check_golden.sh"
+  deps = [ ":do_codegen" ]
+  current_file = "//src/starnix/lib/linux_uapi/src/arm_manual_kgsl.rs"
+  diff_output = "$target_gen_dir/arm_manual_kgsl.rs.diff"
+  inputs = [ current_file ] + get_target_outputs(":do_codegen")
+  assert(len(inputs) == 2, "codegen should only produce one output")
+  outputs = [ diff_output ]
+  args = [ rebase_path(diff_output, root_build_dir) ]
+  foreach(input, inputs) {
+    args += [ rebase_path(input, root_build_dir) ]
+  }
+}

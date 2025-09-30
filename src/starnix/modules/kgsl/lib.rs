@@ -4,6 +4,7 @@
 
 mod file;
 mod init;
+mod util;
 
 pub use file::KgslFile;
 pub use init::kgsl_device_init;

@@ -25,6 +25,7 @@ rustc_library("kgsl") {
     "file.rs",
     "init.rs",
     "lib.rs",
+    "util.rs",
   ]
 
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
@@ -40,5 +41,6 @@ rustc_library("kgsl") {
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/kgsl/libmagma",
     "//src/starnix/modules/kgsl/strings",
+    "//src/starnix/modules/kgsl/uapi_manual",
   ]
 }

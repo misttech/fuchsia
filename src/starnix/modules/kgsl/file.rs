@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::util::maur;
 use fdio::service_connect;
 use kgsl_libmagma::{Device, initialize_logging};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
@@ -16,11 +17,7 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::{UserAddress, UserRef};
-use starnix_uapi::{
-    IOCTL_KGSL_DEVICE_GETPROPERTY, KGSL_PROP_DEVICE_INFO, errno, error, kgsl_device_getproperty,
-    kgsl_devinfo,
-};
+use starnix_uapi::{errno, error, uapi};
 use std::sync::Once;
 
 pub struct KgslFile {
@@ -75,16 +72,19 @@ impl KgslFile {
         current_task: &CurrentTask,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        let params = current_task.read_object(UserRef::<kgsl_device_getproperty>::from(arg))?;
-        let result = UserRef::from(UserAddress::from(params.value));
+        let params_ref = maur::kgsl_device_getproperty::new(current_task, arg);
+        let params = current_task.read_multi_arch_object(params_ref)?;
 
         match params.type_ {
-            KGSL_PROP_DEVICE_INFO => {
+            uapi::KGSL_PROP_DEVICE_INFO => {
                 let device_id =
                     self.device.query_value(MAGMA_QUERY_DEVICE_ID).map_err(|_| errno!(ENOTTY))?;
-                let devinfo =
-                    kgsl_devinfo { device_id: device_id.try_into().unwrap(), ..Default::default() };
-                current_task.write_object(result, &devinfo)?;
+                let devinfo = uapi::kgsl_devinfo {
+                    device_id: device_id.try_into().unwrap(),
+                    ..Default::default()
+                };
+                let result_ref = maur::kgsl_devinfo::new(current_task, params.value);
+                current_task.write_multi_arch_object(result_ref, devinfo)?;
                 Ok(SUCCESS)
             }
             _ => {
@@ -122,8 +122,8 @@ impl FileOps for KgslFile {
             }
             return Ok(SUCCESS);
         }
-        match request {
-            IOCTL_KGSL_DEVICE_GETPROPERTY => self.kgsl_device_getproperty(current_task, arg),
+        match crate::util::canonicalize_ioctl_request(current_task, request) {
+            uapi::IOCTL_KGSL_DEVICE_GETPROPERTY => self.kgsl_device_getproperty(current_task, arg),
             _ => {
                 log_error!("kgsl: unimplemented ioctl {}", ioctl_kgsl(request));
                 error!(ENOTSUP)

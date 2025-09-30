@@ -22,6 +22,7 @@ rustc_library("linux_uapi") {
       sources += [
         "src/arm.rs",
         "src/arm_manual.rs",
+        "src/arm_manual_kgsl.rs",
       ]
     }
   } else if (current_cpu == "riscv64") {

@@ -36,6 +36,8 @@ pub use riscv64::*;
 mod arm;
 #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
 mod arm_manual;
+#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+mod arm_manual_kgsl;
 
 #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
 pub mod arch32 {

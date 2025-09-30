@@ -30,7 +30,7 @@ def license() -> str:
 
 # Defines necessary imports.
 def imports() -> str:
-    return "use starnix_uapi::*;\n"
+    return "use starnix_uapi::uapi;\n"
 
 
 # Gets a list of strings that match the provided symbol prefix.
@@ -48,7 +48,7 @@ def make_string_func(lines: list[str], prefix: str) -> str:
         f"    match value {{\n"
     )
     for symbol in get_strings(lines, prefix):
-        func += f'        {symbol} => "{symbol}".to_string(),\n'
+        func += f'        uapi::{symbol} | uapi::arch32::{symbol} => "{symbol}".to_string(),\n'
     func += (
         f'        _ => format!("Unknown {prefix} ({{value:#08x}})"),\n'
         f"    }}\n"

@@ -50,6 +50,10 @@ group("tests") {
       ":starnix_kgsl_tests",
       ":starnix_magma_tests",
     ]
+
+    if (target_cpu == "arm64") {
+      deps += [ ":starnix_kgsl_tests_32" ]
+    }
   }
 }
 
@@ -103,6 +107,30 @@ if (host_os == "linux" && host_cpu == "x64") {
 
     subpackages = starnix_test_subpackages +
                   [ "//src/starnix/containers/debian:debian_package" ]
+  }
+}
+
+starnix_linux_test_component("kgsl_unit_tests_32") {
+  test_label = "//src/graphics/magma/tests_linux/unit_tests:kgsl_unit_tests"
+  test_type = "starnix"
+  test_toolchain = target_linux_arch32_toolchain
+  test_binary = "kgsl_unit_tests"
+  manifest = "meta/kgsl_unit_tests.cml"
+}
+
+fuchsia_test_package("starnix_kgsl_tests_32") {
+  test_components = [ ":kgsl_unit_tests_32" ]
+
+  subpackages = starnix_test_subpackages + [
+                  "//src/starnix/containers/debian:debian_package",
+                  "//src/ui/testing/test_ui_stack:test-ui-stack",
+                ]
+
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+    environments = [ sorrel_env ]
   }
 }
 
