@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use fancy_regex::Regex;
-use fidl::HandleBased as _;
-use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
-use fidl_codec::{Value as FidlValue, library as lib};
-use fidl_fuchsia_io as fio;
+use fdomain_client::HandleBased as _;
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use fdomain_fuchsia_io as fio;
+use fidl_codec_fdomain::{Value as FidlValue, library as lib};
 use futures::channel::mpsc::{UnboundedSender, unbounded as unbounded_channel};
 use futures::channel::oneshot::{Sender as OneshotSender, channel as oneshot_channel};
 use futures::future::BoxFuture;
@@ -96,7 +96,7 @@ pub enum FSError {
     #[error("Imported path at {0} is not a file")]
     ImportNotFile(String),
     #[error("Error reading file: {0}")]
-    FileReadError(Arc<fuchsia_fs::file::ReadError>),
+    FileReadError(Arc<fuchsia_fs_fdomain::file::ReadError>),
     #[error("Could not get target for symlink at {0}: {1}")]
     SymlinkDescribeFailed(String, fidl::Error),
 }
@@ -105,13 +105,13 @@ pub enum FSError {
 #[derive(Error, Debug, Clone)]
 pub enum IOError {
     #[error("Socket read failed: {0}")]
-    SocketRead(fidl::Status),
+    SocketRead(fdomain_client::Error),
     #[error("Socket write failed: {0}")]
-    SocketWrite(fidl::Status),
+    SocketWrite(fdomain_client::Error),
     #[error("Channel read failed: {0}")]
-    ChannelRead(fidl::Status),
+    ChannelRead(fdomain_client::Error),
     #[error("Channel write failed: {0}")]
-    ChannelWrite(fidl::Status),
+    ChannelWrite(fdomain_client::Error),
 }
 
 /// Errors occurring when trying to send a FIDL message.
@@ -130,13 +130,13 @@ pub enum MessageError {
     #[error("Bad FIDL transaction header: {0}")]
     BadFidlTransactionHeader(fidl::Error),
     #[error("Could not encode FIDL request for method {0}/{1}: {2}")]
-    EncodeRequestFailed(String, String, Arc<fidl_codec::Error>),
+    EncodeRequestFailed(String, String, Arc<fidl_codec_fdomain::Error>),
     #[error("Could not decode FIDL reply for method {0}/{1}: {2}")]
-    DecodeReplyFailed(String, String, Arc<fidl_codec::Error>),
+    DecodeReplyFailed(String, String, Arc<fidl_codec_fdomain::Error>),
     #[error("Could not encode FIDL reply for method {0}/{1}: {2}")]
-    EncodeReplyFailed(String, String, Arc<fidl_codec::Error>),
+    EncodeReplyFailed(String, String, Arc<fidl_codec_fdomain::Error>),
     #[error("Could not decode incoming FIDL request: {0}")]
-    DecodeRequestFailed(Arc<fidl_codec::Error>),
+    DecodeRequestFailed(Arc<fidl_codec_fdomain::Error>),
 }
 
 /// Information about a path in the interpreter's namespace.
@@ -172,12 +172,12 @@ pub(crate) const SYMLINK_RECURSION_LIMIT: usize = 40;
 struct ChannelServerState {
     /// Hashmap of FIDL transaction IDs => Senders to which replies with those
     /// transaction IDs should be forwarded.
-    senders: HashMap<u32, OneshotSender<Result<fidl::MessageBufEtc>>>,
+    senders: HashMap<u32, OneshotSender<Result<fdomain_client::MessageBuf>>>,
     /// If we get a message out of a channel and don't recognize the transaction
     /// ID, the transaction ID and message are recorded here. Most likely it's
     /// just a timing issue, and the task which is expecting that message will
     /// be along shortly to pick it up.
-    orphan_messages: HashMap<u32, Result<fidl::MessageBufEtc>>,
+    orphan_messages: HashMap<u32, Result<fdomain_client::MessageBuf>>,
     /// Whether we are currently running a task which reads the channel and
     /// responds to server messages.
     server_running: bool,
@@ -236,7 +236,7 @@ impl InterpreterInner {
         self: Arc<Self>,
         handle: InUseHandle,
         tx_id: u32,
-        responder: OneshotSender<Result<fidl::MessageBufEtc>>,
+        responder: OneshotSender<Result<fdomain_client::MessageBuf>>,
     ) {
         let handle_id = match handle.id() {
             Ok(x) => x,
@@ -270,16 +270,16 @@ impl InterpreterInner {
                 }
 
                 let error = loop {
-                    let mut buf = fidl::MessageBufEtc::default();
-                    match handle.read_channel_etc(&mut buf).await {
-                        Ok(()) => {
+                    match handle.read_channel_etc().await {
+                        Ok(mut buf) => {
                             let tx_id = match fidl::encoding::decode_transaction_header(buf.bytes())
                             {
                                 Ok((fidl::encoding::TransactionHeader { tx_id, .. }, _)) => tx_id,
                                 Err(e) => break FailureMode::TransactionHeader(e),
                             };
 
-                            let buf = std::mem::replace(&mut buf, fidl::MessageBufEtc::default());
+                            let buf =
+                                std::mem::replace(&mut buf, fdomain_client::MessageBuf::new());
 
                             let Some(this) = weak_self.upgrade() else {
                                 return;
@@ -386,7 +386,7 @@ impl InterpreterInner {
         let tx_id =
             if method.has_response && method.response.is_some() { self.alloc_tx_id() } else { 0 };
 
-        let (bytes, mut handles) = fidl_codec::encode_request(
+        let (bytes, handles) = fidl_codec_fdomain::encode_request(
             self.lib_namespace(),
             tx_id,
             &protocol_name,
@@ -400,7 +400,7 @@ impl InterpreterInner {
                 Arc::new(e),
             )
         })?;
-        in_use_handle.write_channel_etc(&bytes, &mut handles)?;
+        in_use_handle.write_channel_etc(&bytes, handles).await?;
 
         if tx_id != 0 {
             let (sender, receiver) = oneshot_channel();
@@ -410,7 +410,7 @@ impl InterpreterInner {
             let (bytes, handles) =
                 receiver.await.map_err(|_| RuntimeError::InterpreterDied)??.split();
 
-            let value = fidl_codec::decode_response(self.lib_namespace(), &bytes, handles)
+            let value = fidl_codec_fdomain::decode_response(self.lib_namespace(), &bytes, handles)
                 .map_err(|e| {
                     MessageError::DecodeReplyFailed(
                         protocol_name.clone(),
@@ -428,14 +428,14 @@ impl InterpreterInner {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
     /// Helper for [`InterpreterInner::open`] that sends a request given a value
     /// of $fs_root and a path.
-    fn send_open_request(
+    async fn send_open_request(
         &self,
         fs_root: &InUseHandle,
         path: &String,
         flags: fio::Flags,
         attributes_requested: Option<fio::NodeAttributesQuery>,
     ) -> Result<fio::NodeProxy> {
-        let (node, server) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
+        let (node, server) = fs_root.fdomain()?.create_proxy::<fio::NodeMarker>();
 
         let options = if let Some(attributes) = attributes_requested {
             vec![("attributes".to_owned(), FidlValue::U64(attributes.bits()))]
@@ -454,12 +454,17 @@ impl InterpreterInner {
         ]);
 
         let library_name = fio::DirectoryMarker::library_name();
-        let (bytes, mut handles) =
-            fidl_codec::encode_request(self.lib_namespace(), 0, &library_name, "Open", request)
-                .map_err(|e| {
-                    MessageError::EncodeRequestFailed(library_name, "Open".to_owned(), Arc::new(e))
-                })?;
-        fs_root.write_channel_etc(&bytes, &mut handles)?;
+        let (bytes, handles) = fidl_codec_fdomain::encode_request(
+            self.lib_namespace(),
+            0,
+            &library_name,
+            "Open",
+            request,
+        )
+        .map_err(|e| {
+            MessageError::EncodeRequestFailed(library_name, "Open".to_owned(), Arc::new(e))
+        })?;
+        fs_root.write_channel_etc(&bytes, handles).await?;
         Ok(node)
     }
 
@@ -507,12 +512,14 @@ impl InterpreterInner {
         }
 
         for _ in 0..SYMLINK_RECURSION_LIMIT {
-            let node = self.send_open_request(
-                &fs_root,
-                &path,
-                fio::Flags::PROTOCOL_NODE | fio::Flags::FLAG_SEND_REPRESENTATION,
-                Some(query),
-            )?;
+            let node = self
+                .send_open_request(
+                    &fs_root,
+                    &path,
+                    fio::Flags::PROTOCOL_NODE | fio::Flags::FLAG_SEND_REPRESENTATION,
+                    Some(query),
+                )
+                .await?;
             let event = node
                 .take_event_stream()
                 .next()
@@ -526,12 +533,12 @@ impl InterpreterInner {
                 }
                 fio::NodeEvent::OnRepresentation { payload } => match payload {
                     #[cfg(fuchsia_api_level_at_least = "27")]
-                    fidl_fuchsia_io::Representation::Node(info) => info.attributes,
+                    fdomain_fuchsia_io::Representation::Node(info) => info.attributes,
                     #[cfg(not(fuchsia_api_level_at_least = "27"))]
-                    fidl_fuchsia_io::Representation::Connector(info) => info.attributes,
-                    fidl_fuchsia_io::Representation::Directory(info) => info.attributes,
-                    fidl_fuchsia_io::Representation::File(info) => info.attributes,
-                    fidl_fuchsia_io::Representation::Symlink(info) => info.attributes,
+                    fdomain_fuchsia_io::Representation::Connector(info) => info.attributes,
+                    fdomain_fuchsia_io::Representation::Directory(info) => info.attributes,
+                    fdomain_fuchsia_io::Representation::File(info) => info.attributes,
+                    fdomain_fuchsia_io::Representation::Symlink(info) => info.attributes,
                     _ => None,
                 },
                 fio::NodeEvent::_UnknownEvent { ordinal, .. } => {
@@ -555,12 +562,14 @@ impl InterpreterInner {
                 .contains(fio::NodeProtocolKinds::SYMLINK);
 
             if symlink_policy.follow() && is_symlink {
-                let symlink = self.send_open_request(
-                    &fs_root,
-                    &path,
-                    fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
-                    None,
-                )?;
+                let symlink = self
+                    .send_open_request(
+                        &fs_root,
+                        &path,
+                        fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
+                        None,
+                    )
+                    .await?;
                 let symlink =
                     fio::SymlinkProxy::from_channel(symlink.into_channel().expect(
                         "Proxy couldn't be converted to channel immediately after creation!",
@@ -607,12 +616,16 @@ impl InterpreterInner {
             return Err(FSError::FSRootNotHandle.into());
         };
 
-        let node = self.send_open_request(
-            &fs_root,
-            &path,
-            fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE,
-            None,
-        )?;
+        let node = self
+            .send_open_request(
+                &fs_root,
+                &path,
+                fio::Flags::PROTOCOL_DIRECTORY
+                    | fio::PERM_READABLE
+                    | fio::Flags::PERM_INHERIT_WRITE,
+                None,
+            )
+            .await?;
         Ok(fio::DirectoryProxy::from_channel(
             node.into_channel().expect("Could not tear down proxy"),
         ))
@@ -652,7 +665,8 @@ impl InterpreterInner {
                         | fio::PERM_READABLE
                         | fio::Flags::PERM_INHERIT_WRITE,
                     None,
-                )?,
+                )
+                .await?,
             )
         } else if protocols.contains(fio::NodeProtocolKinds::FILE) {
             (
@@ -662,7 +676,8 @@ impl InterpreterInner {
                     &path,
                     fio::Flags::PROTOCOL_FILE | fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE,
                     None,
-                )?,
+                )
+                .await?,
             )
         } else if protocols.contains(fio::NodeProtocolKinds::SYMLINK) {
             unreachable!("path_info was supposed to traverse symlinks but didn't!");
@@ -672,25 +687,24 @@ impl InterpreterInner {
             if name.starts_with("fuchsia.") {
                 (
                     protocol_to_library_name(name),
-                    self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_SERVICE, None)?,
+                    self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_SERVICE, None)
+                        .await?,
                 )
             } else {
                 (
                     fio::NodeMarker::library_name(),
-                    self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_NODE, None)?,
+                    self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_NODE, None)
+                        .await?,
                 )
             }
         } else {
             (
                 fio::NodeMarker::library_name(),
-                self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_NODE, None)?,
+                self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_NODE, None).await?,
             )
         };
 
-        Ok(Value::ClientEnd(
-            node.into_channel().expect("Could not tear down proxy").into_zx_channel(),
-            proto,
-        ))
+        Ok(Value::ClientEnd(node.into_channel().expect("Could not tear down proxy"), proto))
     }
 }
 
@@ -707,7 +721,7 @@ impl Interpreter {
     /// running, and thus the interpreter functioning correctly.
     pub async fn new(
         lib_namespace: lib::Namespace,
-        fs_root: fidl::endpoints::ClientEnd<fidl_fuchsia_io::DirectoryMarker>,
+        fs_root: fdomain_client::fidl::ClientEnd<fdomain_fuchsia_io::DirectoryMarker>,
     ) -> (Self, impl Future<Output = ()>) {
         let (task_sender, task_receiver) = unbounded_channel();
 
@@ -764,10 +778,8 @@ impl Interpreter {
             let file = file
                 .try_client_channel(self.inner.lib_namespace(), &fio::FileMarker::library_name())
                 .map_err(|_| FSError::ImportNotFile(path.clone()))?;
-            let file = fidl_fuchsia_io::FileProxy::from_channel(
-                fuchsia_async::Channel::from_channel(file),
-            );
-            let file = fuchsia_fs::file::read_to_string(&file)
+            let file = fdomain_fuchsia_io::FileProxy::from_channel(file);
+            let file = fuchsia_fs_fdomain::file::read_to_string(&file)
                 .await
                 .map_err(|e| FSError::FileReadError(Arc::new(e)))?;
             self.run(file.as_str()).await?;
@@ -1059,15 +1071,13 @@ impl Interpreter {
                     );
 
                     if let Ok(dir) = dir {
-                        let dir = fio::DirectoryProxy::from_channel(
-                            fuchsia_async::Channel::from_channel(dir),
-                        );
-                        let Ok(entries) = fuchsia_fs::directory::readdir(&dir).await else {
+                        let dir = fio::DirectoryProxy::from_channel(dir);
+                        let Ok(entries) = fuchsia_fs_fdomain::directory::readdir(&dir).await else {
                             continue;
                         };
 
                         for entry in entries.into_iter().filter(|x| x.name.starts_with(filter)) {
-                            let is_dir = if let Ok(node) = fuchsia_fs::directory::open_node(
+                            let is_dir = if let Ok(node) = fuchsia_fs_fdomain::directory::open_node(
                                 &dir,
                                 &entry.name,
                                 fio::Flags::empty(),

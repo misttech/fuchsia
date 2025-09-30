@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{ClientEnd, Proxy};
-use fidl_codec::library as lib;
-use fidl_fuchsia_io as fio;
+use fdomain_client::fidl::ClientEnd;
+use fdomain_fuchsia_io as fio;
+use fidl_codec_fdomain::library as lib;
 use std::future::Future;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;
@@ -26,7 +26,7 @@ async fn test_interpreter(
         ns.load(test_fidl::FUCHSIA_IO_FIDL).unwrap();
         ns.load(test_fidl::FUCHSIA_UNKNOWN_FIDL).unwrap();
     }
-    let fs_root = with_dirs.unwrap_or_else(|| fidl::endpoints::create_endpoints().0);
+    let fs_root = with_dirs.unwrap_or_else(|| fdomain_client::Handle::invalid().into());
     let (interpreter, fut) = Interpreter::new(ns, fs_root).await;
     if with_test_cmds {
         interpreter
@@ -51,7 +51,7 @@ async fn test_interpreter(
 struct TestSymlink(String);
 
 impl vfs::symlink::Symlink for TestSymlink {
-    fn read_target(&self) -> impl Future<Output = Result<Vec<u8>, fidl::Status>> + Send {
+    fn read_target(&self) -> impl Future<Output = Result<Vec<u8>, zx_status::Status>> + Send {
         let got = self.0.as_bytes().to_vec();
         async move { Ok(got) }
     }
@@ -61,7 +61,7 @@ impl vfs::node::Node for TestSymlink {
     async fn get_attributes(
         &self,
         requested_attributes: fio::NodeAttributesQuery,
-    ) -> Result<fio::NodeAttributes2, fidl::Status> {
+    ) -> Result<fio::NodeAttributes2, zx_status::Status> {
         Ok(immutable_attributes!(
             requested_attributes,
             Immutable {
@@ -111,7 +111,7 @@ impl vfs::directory::entry::DirectoryEntry for TestSymlink {
     fn open_entry(
         self: Arc<Self>,
         request: vfs::directory::entry::OpenRequest<'_>,
-    ) -> Result<(), fidl::Status> {
+    ) -> Result<(), zx_status::Status> {
         request.open_symlink(self)
     }
 }
@@ -126,15 +126,17 @@ impl vfs::directory::entry::GetEntryInfo for TestSymlink {
 /// value.
 pub struct Test<T> {
     test: T,
+    fdomain_client: Arc<fdomain_client::Client>,
     with_fidl: bool,
     with_test_cmds: bool,
-    with_dirs: Option<fidl::endpoints::ClientEnd<fio::DirectoryMarker>>,
+    with_dirs: Option<fdomain_client::fidl::ClientEnd<fio::DirectoryMarker>>,
 }
 
 impl<T: AsRef<str>> Test<T> {
     /// Create a new test which will run the given Playground code.
     pub fn test(test: T) -> Self {
-        Test { test, with_fidl: false, with_test_cmds: false, with_dirs: None }
+        let fdomain_client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        Test { test, fdomain_client, with_fidl: false, with_test_cmds: false, with_dirs: None }
     }
 
     /// Load the FIDL test data into the interpreter before this test runs.
@@ -150,9 +152,10 @@ impl<T: AsRef<str>> Test<T> {
     }
 
     /// Set `$fs_root` with a set of standard test directories.
-    pub fn with_standard_test_dirs(mut self) -> Self {
+    pub async fn with_standard_test_dirs(mut self) -> Self {
+        use fidl::endpoints::Proxy;
+
         let simple = vfs::directory::immutable::simple();
-        let proxy = vfs::directory::serve_read_only(Arc::clone(&simple));
         let test_subdir = vfs::directory::immutable::simple();
         let foo_subdir = vfs::directory::immutable::simple();
         let import_subdir = vfs::directory::immutable::simple();
@@ -173,8 +176,14 @@ impl<T: AsRef<str>> Test<T> {
         import_subdir.add_entry("test_script_c", test_script_c).unwrap();
         simple.add_entry("test", test_subdir).unwrap();
         simple.add_entry("imports", import_subdir).unwrap();
+
+        let new_client = fdomain_local::local_client(move || {
+            Ok(vfs::directory::serve_read_only(Arc::clone(&simple)).into_client_end().unwrap())
+        });
+        let client_end = new_client.namespace().await.unwrap();
+        self.fdomain_client = new_client;
         assert!(
-            self.with_dirs.replace(proxy.into_client_end().unwrap()).is_none(),
+            self.with_dirs.replace(fdomain_client::fidl::ClientEnd::new(client_end)).is_none(),
             "Set directory root twice!"
         );
         self
@@ -210,6 +219,23 @@ impl<T: AsRef<str>> Test<T> {
                 .run(self.test.as_ref())
                 .await
                 .unwrap(),
+        )
+        .await
+    }
+
+    /// Run this test, check the output with the given closure, which may be a future.
+    pub async fn check_async_with_fdomain<F: std::future::Future<Output = ()>>(
+        self,
+        eval: impl Fn(Value, Arc<fdomain_client::Client>) -> F,
+    ) {
+        let fdomain_client = Arc::clone(&self.fdomain_client);
+        eval(
+            test_interpreter(self.with_fidl, self.with_dirs, self.with_test_cmds)
+                .await
+                .run(self.test.as_ref())
+                .await
+                .unwrap(),
+            fdomain_client,
         )
         .await
     }
@@ -970,6 +996,7 @@ async fn import_as() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();
@@ -995,6 +1022,7 @@ async fn import_as_hermeticity() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();
@@ -1022,6 +1050,7 @@ async fn import_as_nesting() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();
@@ -1042,6 +1071,7 @@ async fn import() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();
@@ -1067,6 +1097,7 @@ async fn import_hermeticity() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();
@@ -1092,6 +1123,7 @@ async fn import_hermeticity_global_imports() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();
@@ -1117,6 +1149,7 @@ async fn import_nesting() {
     )
     .with_fidl()
     .with_standard_test_dirs()
+    .await
     .check(|value| {
         let Value::String(value) = value else {
             panic!();

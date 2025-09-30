@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use fidl::MessageBufEtc;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_io as fio;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_io as fio;
 use futures::FutureExt;
 use futures::future::{Either, poll_fn};
 use std::collections::{BTreeMap, VecDeque};
@@ -62,9 +61,16 @@ impl Interpreter {
             .await;
 
             let inner_weak = Arc::downgrade(&self.inner);
+            let fs_root_getter = fs_root_getter_clone.clone();
             self.add_command("req", move |mut args, under| {
                 let inner_weak = inner_weak.clone();
+                let fs_root_getter = fs_root_getter.clone();
                 async move {
+                    let fs_root = fs_root_getter().await?;
+                    let Some(fs_root) = fs_root.to_in_use_handle() else {
+                        return Err(anyhow!("$fs_root wasn't a handle"));
+                    };
+                    let fdomain = fs_root.fdomain()?;
                     let Some(inner) = inner_weak.upgrade() else {
                         return Err(anyhow!("Interpreter died"));
                     };
@@ -75,7 +81,7 @@ impl Interpreter {
 
                     let closure = args.pop().unwrap();
 
-                    let (server, client) = InUseHandle::new_endpoints();
+                    let (server, client) = InUseHandle::new_endpoints(fdomain);
                     let server = Value::OutOfLine(PlaygroundValue::InUseHandle(server));
                     let client = Value::OutOfLine(PlaygroundValue::InUseHandle(client));
                     let _ = inner.invoke_value(closure, vec![server], under).await?;
@@ -103,9 +109,7 @@ impl Interpreter {
                     if let Ok(client) = value
                         .try_client_channel(inner.lib_namespace(), &fio::FileMarker::library_name())
                     {
-                        let proxy = fio::FileProxy::from_channel(
-                            fuchsia_async::Channel::from_channel(client),
-                        );
+                        let proxy = fio::FileProxy::from_channel(client);
                         Ok(Value::OutOfLine(PlaygroundValue::Iterator(ReplayableIterator::from(
                             FileCursor(
                                 Arc::new(FileCursorInner {
@@ -223,7 +227,7 @@ impl Interpreter {
                     return if protocols.contains(fio::NodeProtocolKinds::DIRECTORY) {
                         let dir = inner.open_directory(info.hard_path, fs_root).await?;
                         Ok(Value::List(
-                            fuchsia_fs::directory::readdir(&dir)
+                            fuchsia_fs_fdomain::directory::readdir(&dir)
                                 .await?
                                 .into_iter()
                                 .map(|x| {
@@ -273,7 +277,7 @@ impl Interpreter {
 
                     Ok(Value::OutOfLine(PlaygroundValue::Iterator(
                         ServeCursor(Mutex::new(ServeCursorInner::Unpolled(
-                            Arc::new(fuchsia_async::Channel::from_channel(ch)),
+                            Arc::new(ch),
                             inner_weak.clone(),
                         )))
                         .into(),
@@ -296,7 +300,7 @@ impl Interpreter {
 struct ServeCursor(Mutex<ServeCursorInner>);
 
 enum ServeCursorInner {
-    Unpolled(Arc<fuchsia_async::Channel>, Weak<InterpreterInner>),
+    Unpolled(Arc<fdomain_client::Channel>, Weak<InterpreterInner>),
     Waiting(Vec<Waker>, Arc<ServeCursor>),
     Stored(Result<Option<Value>>, Arc<ServeCursor>),
 }
@@ -361,19 +365,22 @@ impl ReplayableIteratorCursor for ServeCursor {
         };
 
         let fetch_value = async move {
-            let mut buf = MessageBufEtc::new();
-            if let Err(e) = channel.recv_etc_msg(&mut buf).await {
-                return if e == fidl::Status::PEER_CLOSED {
-                    Ok(None)
-                } else {
-                    Err(IOError::ChannelRead(e).into())
-                };
-            }
+            let buf = match channel.recv_msg().await {
+                Ok(buf) => buf,
+                Err(fdomain_client::Error::FDomain(fdomain_client::FDomainError::TargetError(
+                    e,
+                ))) if e == zx_status::Status::PEER_CLOSED.into_raw() => {
+                    return Ok(None);
+                }
+                Err(e) => {
+                    return Err(IOError::ChannelRead(e).into());
+                }
+            };
             let interpreter = weak_inner.upgrade().ok_or_else(|| RuntimeError::InterpreterDied)?;
             let (bytes, handles) = buf.split();
 
             let (header, value) =
-                fidl_codec::decode_request(interpreter.lib_namespace(), &bytes, handles)
+                fidl_codec_fdomain::decode_request(interpreter.lib_namespace(), &bytes, handles)
                     .map_err(|e| MessageError::DecodeRequestFailed(Arc::new(e)))?;
 
             let mut value = value.upcast();
@@ -421,7 +428,7 @@ impl ReplayableIteratorCursor for ServeCursor {
                                 let response =
                                     response.to_fidl_value(interpreter.lib_namespace(), &ty)?;
 
-                                let (bytes, mut handles) = fidl_codec::encode_response(
+                                let (bytes, handles) = fidl_codec_fdomain::encode_response(
                                     interpreter.lib_namespace(),
                                     txid,
                                     &protocol_name,
@@ -436,7 +443,8 @@ impl ReplayableIteratorCursor for ServeCursor {
                                     )
                                 })?;
                                 channel
-                                    .write_etc(&bytes, &mut handles)
+                                    .fdomain_write_etc(&bytes, handles)
+                                    .await
                                     .map_err(IOError::ChannelWrite)?;
                                 Ok(Value::Null)
                             }
@@ -521,7 +529,7 @@ impl FileCursorInner {
                     return Ok(Some(Value::U8(byte)));
                 }
             }
-            bytes = fuchsia_fs::file::read_num_bytes(&self.proxy, Self::READ_BLOCK_SIZE)
+            bytes = fuchsia_fs_fdomain::file::read_num_bytes(&self.proxy, Self::READ_BLOCK_SIZE)
                 .await
                 .map_err(|e| FSError::FileReadError(Arc::new(e)))?;
             if bytes.is_empty() {
@@ -585,21 +593,22 @@ mod test {
     use super::*;
     use crate::test::*;
     use std::collections::HashMap;
-    use {fidl_fuchsia_io as fio, fidl_test_fidlcodec_examples as fctest};
+    use {fdomain_fuchsia_io as fio, fdomain_test_fidlcodec_examples as fctest};
 
     #[fuchsia::test]
     async fn open() {
         Test::test("open /test")
             .with_fidl()
             .with_standard_test_dirs()
+            .await
             .check_async(|value| async move {
                 assert!(value.is_client(&fio::DirectoryMarker::library_name()));
                 let Value::ClientEnd(endpoint, _) = value else {
                     panic!();
                 };
-                let proxy =
-                    fidl::endpoints::ClientEnd::<fio::DirectoryMarker>::from(endpoint).into_proxy();
-                let mut dirs = fuchsia_fs::directory::readdir(&proxy).await.unwrap();
+                let proxy = fdomain_client::fidl::ClientEnd::<fio::DirectoryMarker>::from(endpoint)
+                    .into_proxy();
+                let mut dirs = fuchsia_fs_fdomain::directory::readdir(&proxy).await.unwrap();
                 dirs.sort_by(|x, y| x.name.cmp(&y.name));
                 let [foo, neils_philosophy] = dirs.try_into().unwrap();
                 assert_eq!("foo", foo.name);
@@ -613,13 +622,14 @@ mod test {
         Test::test(format!("open /test | req \\i _ @Clone {{ request: $i }}",))
             .with_fidl()
             .with_standard_test_dirs()
+            .await
             .check_async(|value| async move {
                 let Value::OutOfLine(PlaygroundValue::InUseHandle(i)) = value else {
                     panic!();
                 };
                 let endpoint = i.take_client(Some("fuchsia.unknown/Cloneable")).unwrap();
-                let proxy =
-                    fidl::endpoints::ClientEnd::<fio::DirectoryMarker>::from(endpoint).into_proxy();
+                let proxy = fdomain_client::fidl::ClientEnd::<fio::DirectoryMarker>::from(endpoint)
+                    .into_proxy();
                 let (_, attrs) = proxy
                     .get_attributes(fio::NodeAttributesQuery::PROTOCOLS)
                     .await
@@ -636,6 +646,7 @@ mod test {
             Test::test(path)
                 .with_fidl()
                 .with_standard_test_dirs()
+                .await
                 .check_async(|value| async move {
                     let Value::OutOfLine(PlaygroundValue::Iterator(mut i)) = value else {
                         panic!();
@@ -659,6 +670,7 @@ mod test {
         Test::test("read {open /test/neils_philosophy}")
             .with_fidl()
             .with_standard_test_dirs()
+            .await
             .check_async(|value| async move {
                 let Value::OutOfLine(PlaygroundValue::Iterator(mut i)) = value else {
                     panic!();
@@ -679,6 +691,7 @@ mod test {
         Test::test("cd /test; let a = $pwd; cd foo; let b = $pwd; cd \"../..\"; let c = $pwd; [$a, $b, $c]")
             .with_fidl()
             .with_standard_test_dirs()
+                .await
             .check(|value| {
                 let Value::List(value) = value else {
                     panic!();
@@ -698,6 +711,7 @@ mod test {
         Test::test("cd /this_folder_doesnt_exist")
             .with_fidl()
             .with_standard_test_dirs()
+            .await
             .check_fails(|e| {
                 let e = format!("{e}");
                 assert!(e.contains("Cannot access /this_folder_doesnt_exist"));
@@ -712,6 +726,7 @@ mod test {
             Test::test(path)
                 .with_fidl()
                 .with_standard_test_dirs()
+                .await
                 .check(|value| {
                     let Value::List(value) = value else {
                         panic!();
@@ -773,6 +788,7 @@ mod test {
         Test::test("ls /test/neils_philosophy")
             .with_fidl()
             .with_standard_test_dirs()
+            .await
             .check(|value| {
                 let Value::Object(value) = value else {
                     panic!();
@@ -802,11 +818,11 @@ mod test {
     async fn serve() {
         Test::test("\\x srv $x")
             .with_fidl()
-            .check_async(|value| async move {
+            .check_async_with_fdomain(|value, fdomain_client| async move {
                 let Value::OutOfLine(PlaygroundValue::Invocable(value)) = value else {
                     panic!();
                 };
-                let (echo, server) = fidl::endpoints::create_proxy::<fctest::EchoMarker>();
+                let (echo, server) = fdomain_client.create_proxy::<fctest::EchoMarker>();
                 let server = Value::ServerEnd(
                     server.into_channel(),
                     "test.fidlcodec.examples/Echo".to_owned(),
@@ -924,6 +940,7 @@ mod test {
             Test::test(path)
                 .with_fidl()
                 .with_standard_test_dirs()
+                .await
                 .check_async(|value| async move {
                     let Value::OutOfLine(PlaygroundValue::Iterator(mut i)) = value else {
                         panic!();

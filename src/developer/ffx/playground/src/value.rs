@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_codec::{Value as FidlValue, library as lib};
+use fidl_codec_fdomain::{Value as FidlValue, library as lib};
 use futures::future::BoxFuture;
 use num::BigInt;
 use num::rational::BigRational;
@@ -60,7 +60,7 @@ pub enum ValueError {
     #[error("Cannot convert iterator to {0:?}")]
     IteratorConversionFailed(lib::Type),
     #[error("Could not resolve FIDL identifier '{0}': {1}")]
-    FIDLLookupFailed(String, Arc<fidl_codec::Error>),
+    FIDLLookupFailed(String, Arc<fidl_codec_fdomain::Error>),
     #[error("Cannot convert to FIDL type")]
     MiscConversionFailed,
     #[error("Handle is not a channel")]
@@ -251,10 +251,10 @@ pub trait ValueExt: Sized {
         self,
         ns: &lib::Namespace,
         expected_protocol: &str,
-    ) -> Result<fidl::Channel, Self>;
+    ) -> Result<fdomain_client::Channel, Self>;
 
     /// If this object is a server, return the raw channel and protocol name.
-    fn try_server_channel(self) -> Result<fidl::Channel, Self>;
+    fn try_server_channel(self) -> Result<fdomain_client::Channel, Self>;
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
     /// Convert a playground value to one that is ready for transfer via FIDL by
@@ -395,7 +395,7 @@ impl ValueExt for Value {
         self,
         ns: &lib::Namespace,
         expected_protocol: &str,
-    ) -> Result<fidl::Channel, Self> {
+    ) -> Result<fdomain_client::Channel, Self> {
         match self {
             Value::ClientEnd(c, proto) if ns.inherits(&proto, expected_protocol) => Ok(c),
             Value::OutOfLine(PlaygroundValue::InUseHandle(ref i)) => {
@@ -405,7 +405,7 @@ impl ValueExt for Value {
         }
     }
 
-    fn try_server_channel(self) -> Result<fidl::Channel, Self> {
+    fn try_server_channel(self) -> Result<fdomain_client::Channel, Self> {
         match self {
             Value::ServerEnd(c, _) => Ok(c),
             Value::OutOfLine(PlaygroundValue::InUseHandle(ref i)) => {
@@ -926,8 +926,8 @@ impl std::fmt::Display for PlaygroundValue {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::HandleBased;
-    use futures::{AsyncReadExt, AsyncWriteExt, FutureExt};
+    use fdomain_client::HandleBased;
+    use futures::{AsyncReadExt, FutureExt};
 
     #[test]
     fn compare() {
@@ -1313,11 +1313,12 @@ mod test {
         assert_eq!(5, b);
     }
 
-    #[test]
-    fn promote_handles() {
+    #[fuchsia::test]
+    async fn promote_handles() {
         let mut ns = lib::Namespace::new();
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         ns.load(test_fidl::TEST_FIDL).unwrap();
-        let (a, b) = fidl::Channel::create();
+        let (a, b) = client.create_channel();
 
         let mut client =
             Value::ClientEnd(a, "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned());
@@ -1367,7 +1368,8 @@ mod test {
     #[fuchsia::test]
     async fn promote_to_socket() {
         let ns = lib::Namespace::new();
-        let (a, b) = InUseHandle::new_endpoints();
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
         let a = Value::OutOfLine(PlaygroundValue::InUseHandle(a));
 
         let a = a
@@ -1381,10 +1383,8 @@ mod test {
             )
             .unwrap();
         let FidlValue::Handle(a, fidl::ObjectType::SOCKET) = a else { panic!() };
-        let a = fidl::Socket::from(a);
-        let b = b.unwrap_socket();
-        let mut a = fuchsia_async::Socket::from_socket(a);
-        let mut b = fuchsia_async::Socket::from_socket(b);
+        let mut a = fdomain_client::Socket::from(a);
+        let mut b = b.unwrap_socket();
         static CALL: &[u8] = b"What if we shared some extremely basic opinions?";
         static RESPONSE: &[u8] = b"I think pickles are alright.";
         futures::future::join(
@@ -1406,9 +1406,10 @@ mod test {
         .await;
     }
 
-    #[test]
-    fn duplicate_raw_handle() {
-        let (socket, _b) = fidl::Socket::create_stream();
+    #[fuchsia::test]
+    async fn duplicate_raw_handle() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let (socket, _b) = client.create_stream_socket();
         let socket = socket.into_handle();
         let mut socket = Value::Handle(socket, fidl::ObjectType::SOCKET);
         let socket_dup = socket.duplicate();

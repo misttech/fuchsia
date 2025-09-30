@@ -347,8 +347,8 @@ mod test {
     #[fuchsia::test]
     async fn table() {
         let mut got = Vec::<u8>::new();
-        let ns = fidl_codec::library::Namespace::new();
-        let (fs_root, _server) = fidl::endpoints::create_endpoints();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
         let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
         fuchsia_async::Task::spawn(task).detach();
 
@@ -383,8 +383,8 @@ mod test {
     #[fuchsia::test]
     async fn short_list() {
         let mut got = Vec::<u8>::new();
-        let ns = fidl_codec::library::Namespace::new();
-        let (fs_root, _server) = fidl::endpoints::create_endpoints();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
         let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
         fuchsia_async::Task::spawn(task).detach();
 
@@ -397,8 +397,8 @@ mod test {
     #[fuchsia::test]
     async fn short_data() {
         let mut got = Vec::<u8>::new();
-        let ns = fidl_codec::library::Namespace::new();
-        let (fs_root, _server) = fidl::endpoints::create_endpoints();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
         let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
         fuchsia_async::Task::spawn(task).detach();
 
@@ -430,8 +430,8 @@ mod test {
     #[fuchsia::test]
     async fn nested_object() {
         let mut got = Vec::<u8>::new();
-        let ns = fidl_codec::library::Namespace::new();
-        let (fs_root, _server) = fidl::endpoints::create_endpoints();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
         let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
         fuchsia_async::Task::spawn(task).detach();
 
@@ -473,8 +473,8 @@ mod test {
     #[fuchsia::test]
     async fn object_with_lists() {
         let mut got = Vec::<u8>::new();
-        let ns = fidl_codec::library::Namespace::new();
-        let (fs_root, _server) = fidl::endpoints::create_endpoints();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
         let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
         fuchsia_async::Task::spawn(task).detach();
 
@@ -509,8 +509,8 @@ mod test {
     #[fuchsia::test]
     async fn list_of_lists_of_object() {
         let mut got = Vec::<u8>::new();
-        let ns = fidl_codec::library::Namespace::new();
-        let (fs_root, _server) = fidl::endpoints::create_endpoints();
+        let ns = fidl_codec_fdomain::library::Namespace::new();
+        let fs_root = fdomain_client::Channel::from(fdomain_client::Handle::invalid()).into();
         let (interpreter, task) = playground::interpreter::Interpreter::new(ns, fs_root).await;
         fuchsia_async::Task::spawn(task).detach();
 

@@ -10,7 +10,7 @@ use errors::ffx_bail;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::Proxy;
-use fidl_codec::library as lib;
+use fidl_codec_fdomain::library as lib;
 use futures::AsyncReadExt;
 use futures::channel::oneshot::channel as oneshot;
 use futures::future::{Either, FutureExt, select};
@@ -125,14 +125,18 @@ pub async fn exec_playground(
     let toolbox = toolbox_directory(&*remote_proxy, &query).await?;
     let cf_root = cf_fs::CFDirectory::new_root(query);
     let fs_root_simple = vfs::directory::immutable::simple();
-    let root_dir_client = vfs::directory::serve_read_only(Arc::clone(&fs_root_simple));
     fs_root_simple.add_entry("host", host_fs::HostDirectory::new("/"))?;
     fs_root_simple.add_entry("toolbox", toolbox)?;
     fs_root_simple.add_entry("cf", cf_root)?;
-    let Ok(root_dir_client) = root_dir_client.into_channel() else {
-        ffx_bail!("Could not turn proxy back into channel");
-    };
-    let root_dir_client = root_dir_client.into_zx_channel();
+
+    // TODO(448274640): When VFS is ported to FDomain, use the connection
+    // FDomain instead of this nonsense.
+    let fdomain = fdomain_local::local_client(move || {
+        Ok(vfs::directory::serve_read_only(Arc::clone(&fs_root_simple)).into_client_end().unwrap())
+    });
+
+    let root_dir_client = fdomain.namespace().await?;
+
     let (interpreter, runner) = Interpreter::new(lib_namespace, root_dir_client.into()).await;
     fasync::Task::spawn(runner).detach();
 

@@ -246,13 +246,22 @@ mod test {
     #[test]
     fn io_error_thru_anyhow() {
         fn test() -> anyhow::Result<()> {
-            Err(IOError::ChannelRead(fidl::Status::ACCESS_DENIED))?
+            Err(IOError::ChannelRead(fdomain_client::Error::FDomain(
+                fdomain_client::FDomainError::TargetError(
+                    zx_status::Status::ACCESS_DENIED.into_raw(),
+                ),
+            )))?
         }
 
         let Error { stack, source } = test().map_err(Error::user_from_anyhow).unwrap_err();
         assert!(stack.is_empty());
-        let RuntimeError::IOError(IOError::ChannelRead(status)) = source else { panic!() };
-        assert_eq!(fidl::Status::ACCESS_DENIED, status);
+        let RuntimeError::IOError(IOError::ChannelRead(fdomain_client::Error::FDomain(
+            fdomain_client::FDomainError::TargetError(status),
+        ))) = source
+        else {
+            panic!()
+        };
+        assert_eq!(zx_status::Status::ACCESS_DENIED, zx_status::Status::from_raw(status));
     }
 
     #[test]

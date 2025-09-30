@@ -34,8 +34,9 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/playground",
     "//src/lib/analytics/rust:lib",
+    "//src/lib/fdomain/local",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fidl_codec/rust:fidl_codec",
+    "//src/lib/fidl_codec/rust:fidl_codec_fdomain",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",
     "//src/storage/lib/vfs/rust:vfs",
@@ -52,6 +53,7 @@ rustc_library("lib") {
   ]
 
   test_deps = [
+    "//src/lib/fdomain/client",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:tempfile",
   ]

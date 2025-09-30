@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use super::ValueError;
-use fidl::AsHandleRef;
-use fidl_codec::Value as FidlValue;
-use fuchsia_async as fasync;
+use fdomain_client::AsHandleRef;
+use fidl_codec_fdomain::Value as FidlValue;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
@@ -13,12 +12,20 @@ use crate::error::Result;
 use crate::interpreter::IOError;
 
 pub enum Endpoint {
-    Client(fasync::Channel, String),
-    Server(fasync::Channel, String),
-    Socket(fidl::Socket),
+    Client(fdomain_client::Channel, String),
+    Server(fdomain_client::Channel, String),
+    Socket(fdomain_client::Socket),
 }
 
 impl Endpoint {
+    fn fdomain(&self) -> Arc<fdomain_client::Client> {
+        match self {
+            Endpoint::Client(h, _) => h.domain(),
+            Endpoint::Server(h, _) => h.domain(),
+            Endpoint::Socket(h) => h.domain(),
+        }
+    }
+
     fn object_type(&self) -> fidl::ObjectType {
         match self {
             Endpoint::Client(_, _) | Endpoint::Server(_, _) => fidl::ObjectType::CHANNEL,
@@ -58,7 +65,7 @@ impl EndpointType {
         }
     }
 
-    fn construct(&self, channel: fasync::Channel, protocol: String) -> Endpoint {
+    fn construct(&self, channel: fdomain_client::Channel, protocol: String) -> Endpoint {
         match self {
             EndpointType::Client => Endpoint::Client(channel, protocol),
             EndpointType::Server => Endpoint::Server(channel, protocol),
@@ -66,15 +73,38 @@ impl EndpointType {
     }
 }
 
+/// As it says, either an `Endpoint` or an FDomain client. The `BadValue`
+/// variant is there to make exchanging the value easier; it should never exist
+/// for long and it is acceptable to panic if it is observed where not expected.
+enum EndpointOrFDomain {
+    Endpoint(Endpoint),
+    FDomainClient(Arc<fdomain_client::Client>),
+    BadValue,
+}
+
 /// Stores an actual handle along with state information about the type of handle it is.
 enum HandleObject {
-    Handle(fidl::Handle, fidl::ObjectType),
+    Handle(fdomain_client::Handle, fidl::ObjectType),
     Endpoint(Endpoint),
-    Undetermined(Arc<Mutex<Option<Endpoint>>>),
+    Undetermined(Arc<Mutex<EndpointOrFDomain>>),
     Defunct,
 }
 
 impl HandleObject {
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
+    fn fdomain(&self) -> Result<Arc<fdomain_client::Client>> {
+        match self {
+            HandleObject::Handle(h, _) => Ok(h.domain()),
+            HandleObject::Endpoint(endpoint) => Ok(endpoint.fdomain()),
+            HandleObject::Undetermined(endpoint) => match &*endpoint.lock().unwrap() {
+                EndpointOrFDomain::Endpoint(endpoint) => Ok(endpoint.fdomain()),
+                EndpointOrFDomain::FDomainClient(c) => Ok(Arc::clone(c)),
+                EndpointOrFDomain::BadValue => unreachable!(),
+            },
+            HandleObject::Defunct => Err(ValueError::HandleClosed.into()),
+        }
+    }
+
     fn is_client_end(&mut self) -> bool {
         self.determine();
         matches!(self, HandleObject::Endpoint(Endpoint::Client(_, _)))
@@ -82,9 +112,16 @@ impl HandleObject {
 
     fn determine(&mut self) {
         if let HandleObject::Undetermined(this) = self {
-            let got = this.lock().unwrap().take();
-            if let Some(got) = got {
-                *self = HandleObject::Endpoint(got);
+            let mut got = this.lock().unwrap();
+            if matches!(*got, EndpointOrFDomain::Endpoint(_)) {
+                let EndpointOrFDomain::Endpoint(e) =
+                    std::mem::replace(&mut *got, EndpointOrFDomain::BadValue)
+                else {
+                    unreachable!()
+                };
+                std::mem::drop(got);
+
+                *self = HandleObject::Endpoint(e);
             }
         }
     }
@@ -101,9 +138,14 @@ pub struct InUseHandle {
 }
 
 impl InUseHandle {
+    /// Get the FDomain associated with this handle.
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
+    pub fn fdomain(&self) -> Result<Arc<fdomain_client::Client>> {
+        self.handle.lock().unwrap().fdomain()
+    }
+
     /// Create a new [`InUseHandle`] for a client end channel.
-    pub fn client_end(channel: fidl::Channel, identifier: String) -> Self {
-        let channel = fasync::Channel::from_channel(channel);
+    pub fn client_end(channel: fdomain_client::Channel, identifier: String) -> Self {
         InUseHandle {
             handle: Arc::new(Mutex::new(HandleObject::Endpoint(Endpoint::Client(
                 channel, identifier,
@@ -118,7 +160,11 @@ impl InUseHandle {
         match &*self.handle.lock().unwrap() {
             HandleObject::Handle(_, ty) => Some(*ty),
             HandleObject::Endpoint(e) => Some(e.object_type()),
-            HandleObject::Undetermined(s) => s.lock().unwrap().as_ref().map(|s| s.object_type()),
+            HandleObject::Undetermined(s) => {
+                let s = s.lock().unwrap();
+
+                if let EndpointOrFDomain::Endpoint(s) = &*s { Some(s.object_type()) } else { None }
+            }
             HandleObject::Defunct => None,
         }
     }
@@ -129,8 +175,7 @@ impl InUseHandle {
     }
 
     /// Create a new [`InUseHandle`] for a server end channel.
-    pub fn server_end(channel: fidl::Channel, identifier: String) -> Self {
-        let channel = fasync::Channel::from_channel(channel);
+    pub fn server_end(channel: fdomain_client::Channel, identifier: String) -> Self {
         InUseHandle {
             handle: Arc::new(Mutex::new(HandleObject::Endpoint(Endpoint::Server(
                 channel, identifier,
@@ -139,14 +184,14 @@ impl InUseHandle {
     }
 
     /// Create a new [`InUseHandle`] for an arbitrary handle.
-    pub fn handle(handle: fidl::Handle, ty: fidl::ObjectType) -> Self {
+    pub fn handle(handle: fdomain_client::Handle, ty: fidl::ObjectType) -> Self {
         InUseHandle { handle: Arc::new(Mutex::new(HandleObject::Handle(handle, ty))) }
     }
 
     /// Create new paired handle set. The handles could become channels or
     /// sockets depending on how they are used.
-    pub fn new_endpoints() -> (Self, Self) {
-        let endpoint = Arc::new(Mutex::new(None));
+    pub fn new_endpoints(client: Arc<fdomain_client::Client>) -> (Self, Self) {
+        let endpoint = Arc::new(Mutex::new(EndpointOrFDomain::FDomainClient(client)));
         (
             InUseHandle {
                 handle: Arc::new(Mutex::new(HandleObject::Undetermined(Arc::clone(&endpoint)))),
@@ -158,21 +203,25 @@ impl InUseHandle {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
     /// If this handle is a client end channel with the given protocol, steal it
     /// and return a raw FIDL value wrapping it.
-    pub fn take_client(&self, expect_proto: Option<&str>) -> Result<fidl::Channel> {
+    pub fn take_client(&self, expect_proto: Option<&str>) -> Result<fdomain_client::Channel> {
         self.take_endpoint(EndpointType::Client, expect_proto)
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
     /// If this handle is a server end channel with the given protocol, steal it
     /// and return a raw FIDL value wrapping it.
-    pub fn take_server(&self, expect_proto: Option<&str>) -> Result<fidl::Channel> {
+    pub fn take_server(&self, expect_proto: Option<&str>) -> Result<fdomain_client::Channel> {
         self.take_endpoint(EndpointType::Server, expect_proto)
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
     /// If this handle is a channel with the given protocol and endpoint type, steal it
     /// and return a raw FIDL value wrapping it.
-    fn take_endpoint(&self, ty: EndpointType, expect_proto: Option<&str>) -> Result<fidl::Channel> {
+    fn take_endpoint(
+        &self,
+        ty: EndpointType,
+        expect_proto: Option<&str>,
+    ) -> Result<fdomain_client::Channel> {
         let mut this = self.handle.lock().unwrap();
         this.determine();
 
@@ -221,10 +270,11 @@ impl InUseHandle {
                     return Err(ValueError::UndeterminedProtocol.into());
                 };
                 let mut e = e.lock().unwrap();
-                assert!(e.is_none());
-                let (a, b) = fidl::Channel::create();
-                let a = fasync::Channel::from_channel(a);
-                *e = Some(ty.opposite().construct(a, expect_proto.to_owned()));
+                let EndpointOrFDomain::FDomainClient(c) = &mut *e else { unreachable!() };
+                let (a, b) = c.create_channel();
+                *e = EndpointOrFDomain::Endpoint(
+                    ty.opposite().construct(a, expect_proto.to_owned()),
+                );
                 drop(e);
                 Ok(b)
             }
@@ -258,9 +308,9 @@ impl InUseHandle {
             }
             HandleObject::Undetermined(e) => {
                 let mut e = e.lock().unwrap();
-                assert!(e.is_none());
-                let (a, b) = fidl::Socket::create_stream();
-                *e = Some(Endpoint::Socket(a));
+                let EndpointOrFDomain::FDomainClient(c) = &mut *e else { unreachable!() };
+                let (a, b) = c.create_stream_socket();
+                *e = EndpointOrFDomain::Endpoint(Endpoint::Socket(a));
                 drop(e);
                 Ok(FidlValue::Handle(b.into(), fidl::ObjectType::SOCKET))
             }
@@ -271,7 +321,7 @@ impl InUseHandle {
 
     /// Test method that verifies that this contains a socket and returns it as a socket.
     #[cfg(test)]
-    pub fn unwrap_socket(self) -> fidl::Socket {
+    pub fn unwrap_socket(self) -> fdomain_client::Socket {
         let mut h = std::mem::replace(&mut *self.handle.lock().unwrap(), HandleObject::Defunct);
         h.determine();
         let HandleObject::Endpoint(Endpoint::Socket(h)) = h else { panic!() };
@@ -280,12 +330,10 @@ impl InUseHandle {
 
     /// If this is a channel, perform a `read_etc` operation on it
     /// asynchronously. Returns an error if it is not a channel.
-    pub fn poll_read_channel_etc(
+    fn poll_read_channel_etc(
         &self,
         ctx: &mut Context<'_>,
-        bytes: &mut Vec<u8>,
-        handles: &mut Vec<fidl::HandleInfo>,
-    ) -> Poll<Result<()>> {
+    ) -> Poll<Result<fdomain_client::MessageBuf>> {
         let mut this = self.handle.lock().unwrap();
         this.determine();
         let hdl = match &*this {
@@ -300,37 +348,41 @@ impl InUseHandle {
             HandleObject::Defunct => return Poll::Ready(Err(ValueError::ChannelClosed.into())),
         };
 
-        hdl.read_etc(ctx, bytes, handles).map_err(|e| IOError::ChannelRead(e).into())
+        hdl.poll_read(ctx).map_err(|e| IOError::ChannelRead(e).into())
     }
 
     /// If this is a channel, perform a `read_etc` operation on it within a
     /// future.
-    pub async fn read_channel_etc(&self, buf: &mut fidl::MessageBufEtc) -> Result<()> {
-        let (bytes, handles) = buf.split_mut();
-        futures::future::poll_fn(|ctx| self.poll_read_channel_etc(ctx, bytes, handles)).await
+    pub async fn read_channel_etc(&self) -> Result<fdomain_client::MessageBuf> {
+        futures::future::poll_fn(|ctx| self.poll_read_channel_etc(ctx)).await
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
     /// If this is a channel, perform a `write_etc` operation on it. Returns an
     /// error if it is not a channel.
-    pub fn write_channel_etc(
+    pub async fn write_channel_etc(
         &self,
         bytes: &[u8],
-        handles: &mut [fidl::HandleDisposition<'_>],
+        handles: Vec<fdomain_client::HandleOp<'_>>,
     ) -> Result<()> {
-        let mut this = self.handle.lock().unwrap();
-        this.determine();
-        let hdl = match &*this {
-            HandleObject::Endpoint(Endpoint::Client(ch, _) | Endpoint::Server(ch, _)) => ch,
-            HandleObject::Handle(_, _) => {
-                return Err(ValueError::RawChannelUnimplemented("writes").into());
-            }
-            HandleObject::Endpoint(_) => return Err(ValueError::NotChannel.into()),
-            HandleObject::Undetermined(_) => return Err(ValueError::ChannelTypeUndetermined.into()),
-            HandleObject::Defunct => return Err(ValueError::ChannelClosed.into()),
-        };
+        let fut = {
+            let mut this = self.handle.lock().unwrap();
+            this.determine();
+            let hdl = match &*this {
+                HandleObject::Endpoint(Endpoint::Client(ch, _) | Endpoint::Server(ch, _)) => ch,
+                HandleObject::Handle(_, _) => {
+                    return Err(ValueError::RawChannelUnimplemented("writes").into());
+                }
+                HandleObject::Endpoint(_) => return Err(ValueError::NotChannel.into()),
+                HandleObject::Undetermined(_) => {
+                    return Err(ValueError::ChannelTypeUndetermined.into());
+                }
+                HandleObject::Defunct => return Err(ValueError::ChannelClosed.into()),
+            };
 
-        hdl.write_etc(bytes, handles).map_err(|e| IOError::ChannelWrite(e).into())
+            hdl.fdomain_write_etc(bytes, handles)
+        };
+        fut.await.map_err(|e| IOError::ChannelWrite(e).into())
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255249)
@@ -341,11 +393,11 @@ impl InUseHandle {
         this.determine();
         match &*this {
             HandleObject::Endpoint(Endpoint::Client(ch, _) | Endpoint::Server(ch, _)) => {
-                Ok(ch.raw_handle())
+                Ok(ch.u32_id())
             }
-            HandleObject::Endpoint(Endpoint::Socket(s)) => Ok(s.raw_handle()),
+            HandleObject::Endpoint(Endpoint::Socket(s)) => Ok(s.u32_id()),
             HandleObject::Undetermined(_) => Err(ValueError::NoHandleID.into()),
-            HandleObject::Handle(h, _) => Ok(h.raw_handle()),
+            HandleObject::Handle(h, _) => Ok(h.u32_id()),
             HandleObject::Defunct => Err(ValueError::HandleClosed.into()),
         }
     }
@@ -387,34 +439,35 @@ impl std::fmt::Display for InUseHandle {
 
 #[cfg(test)]
 mod test {
-    use futures::{AsyncReadExt, AsyncWriteExt};
+    use fuchsia_async as fasync;
+    use futures::AsyncReadExt;
 
     use super::*;
 
     #[fuchsia::test]
     async fn coerce() {
-        let (a, b) = InUseHandle::new_endpoints();
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
         let a = a.take_server(Some("test_proto")).unwrap();
         assert_eq!("test_proto", &b.get_client_protocol().unwrap());
         let test_str =
             b"Alas that we are themepark animatronics, and our existence is inherently whimsical";
-        let a = fasync::Channel::from_channel(a);
-        a.write_etc(test_str, &mut []).unwrap();
-        let mut test_buf = fidl::MessageBufEtc::new();
-        b.read_channel_etc(&mut test_buf).await.unwrap();
+        a.fdomain_write_etc(test_str, vec![]).await.unwrap();
+        let test_buf = b.read_channel_etc().await.unwrap();
         assert_eq!(test_str, test_buf.bytes());
-        assert!(test_buf.n_handle_infos() == 0);
+        assert!(test_buf.handles.is_empty());
     }
 
     #[fuchsia::test]
     async fn coerce_socket() {
-        let (a, b) = InUseHandle::new_endpoints();
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
         let FidlValue::Handle(a, a_ty) = a.take_socket().unwrap() else {
             panic!();
         };
         assert_eq!(fidl::ObjectType::SOCKET, a_ty);
         const TEST_STR: &[u8] = b"Why were we programmed to get bored anyway?";
-        let mut a = fasync::Socket::from_socket(a.into());
+        let a = fdomain_client::Socket::from(a);
         fasync::Task::spawn(async move {
             a.write_all(TEST_STR).await.unwrap();
         })
@@ -423,8 +476,8 @@ mod test {
         let FidlValue::Handle(b, b_ty) = b.take_socket().unwrap() else {
             panic!();
         };
+        let mut b = fdomain_client::Socket::from(b);
         assert_eq!(fidl::ObjectType::SOCKET, b_ty);
-        let mut b = fasync::Socket::from_socket(b.into());
         let mut buf = Vec::with_capacity(TEST_STR.len());
         let got = b.read_to_end(&mut buf).await.unwrap();
         assert_eq!(TEST_STR.len(), got);

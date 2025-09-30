@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_codec::Value as FidlValue;
+use fidl_codec_fdomain::Value as FidlValue;
 use futures::FutureExt;
 use futures::channel::oneshot::channel as oneshot_channel;
 use futures::future::{BoxFuture, ready};
