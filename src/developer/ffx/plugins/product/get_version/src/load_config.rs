@@ -7,14 +7,16 @@ use crate::unique_release_info::{
     from_platform_release_info, from_product_release_info,
 };
 
-use assembly_config_schema::{BoardConfig, BoardInputBundleSet, ProductConfig};
+use anyhow::{Context, Result};
 use assembly_partitions_config::Slot;
-use assembly_platform_artifacts::PlatformArtifacts;
-use assembly_release_info::SystemReleaseInfo;
+use assembly_release_info::{BoardReleaseInfo, ProductReleaseInfo, ReleaseInfo, SystemReleaseInfo};
+use camino::Utf8Path;
 use product_bundle::ProductBundleV2;
-use product_input_bundle::ProductInputBundle;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs::File;
+use std::io::BufReader;
 
 /// VersionInfo holds the final content that will be printed out.
 #[derive(Debug, PartialEq, Clone, Eq, serde::Serialize, serde::Deserialize, Default)]
@@ -64,47 +66,77 @@ impl Ord for VersionInfo {
     }
 }
 
-/// Load a Platform artifact and return the version information.
-pub fn load_platform(platform: &PlatformArtifacts) -> VersionInfo {
-    VersionInfo {
-        human: platform.release_info.version.clone(),
-        machine: vec![from_platform_release_info(&platform.release_info.clone(), &None)],
+/// A helper function to read a JSON file, parse it into a `serde_json::Value`,
+/// and extract a specific field from it.
+fn get_value_from_json_file(path: &Utf8Path, field_path: &[&str]) -> Result<Value> {
+    let file = File::open(path).with_context(|| format!("Failed to open file: {}", path))?;
+    let reader = BufReader::new(file);
+    let json: Value = serde_json::from_reader(reader)
+        .with_context(|| format!("Failed to parse JSON from file: {}", path))?;
+
+    let mut current_value = &json;
+    for field in field_path {
+        current_value = current_value
+            .get(field)
+            .with_context(|| format!("Field '{}' not found in {}", field, path))?;
     }
+    Ok(current_value.clone())
+}
+
+/// Load a Platform artifact and return the version information.
+pub fn load_platform(path: &Utf8Path) -> Result<VersionInfo> {
+    let release_info: ReleaseInfo = serde_json::from_value(get_value_from_json_file(
+        &path.join("platform_artifacts.json"),
+        &["release_info"],
+    )?)?;
+    Ok(VersionInfo {
+        human: release_info.version.clone(),
+        machine: vec![from_platform_release_info(&release_info, &None)],
+    })
 }
 
 /// Load a Product artifact and return the version information.
-pub fn load_product(assembly_config: &ProductConfig) -> VersionInfo {
-    VersionInfo {
-        human: assembly_config.product.release_info.info.version.clone(),
-        machine: vec![from_product_release_info(
-            &assembly_config.product.release_info.clone(),
-            &None,
-        )],
-    }
+pub fn load_product(path: &Utf8Path) -> Result<VersionInfo> {
+    let release_info: ProductReleaseInfo = serde_json::from_value(get_value_from_json_file(
+        &path.join("product_configuration.json"),
+        &["product", "release_info"],
+    )?)?;
+    Ok(VersionInfo {
+        human: release_info.info.version.clone(),
+        machine: vec![from_product_release_info(&release_info, &None)],
+    })
 }
 
 /// Load a Product Input Bundle artifact and return the version information.
-pub fn load_pibs(pibs: &ProductInputBundle) -> VersionInfo {
-    VersionInfo {
-        human: pibs.release_info.version.clone(),
-        machine: vec![from_pib_release_info(&pibs.release_info.clone(), &None)],
-    }
+pub fn load_pibs(path: &Utf8Path) -> Result<VersionInfo> {
+    let release_info: ReleaseInfo = serde_json::from_value(get_value_from_json_file(
+        &path.join("product_input_bundle.json"),
+        &["release_info"],
+    )?)?;
+    Ok(VersionInfo {
+        human: release_info.version.clone(),
+        machine: vec![from_pib_release_info(&release_info, &None)],
+    })
 }
 
 /// Load a Board Config artifact and return the version information.
-pub fn load_board(board: &BoardConfig) -> VersionInfoWithDependencies {
+pub fn load_board(path: &Utf8Path) -> Result<VersionInfoWithDependencies> {
+    let release_info: BoardReleaseInfo = serde_json::from_value(get_value_from_json_file(
+        &path.join("board_configuration.json"),
+        &["release_info"],
+    )?)?;
     let mut info = VersionInfoWithDependencies {
         version: VersionInfo {
-            human: board.release_info.info.version.clone(),
-            machine: vec![from_board_release_info(&board.release_info.clone(), &None)],
+            human: release_info.info.version.clone(),
+            machine: vec![from_board_release_info(&release_info, &None)],
         },
         version_with_deps: VersionInfo {
-            human: board.release_info.info.version.clone(),
-            machine: vec![from_board_release_info(&board.release_info.clone(), &None)],
+            human: release_info.info.version.clone(),
+            machine: vec![from_board_release_info(&release_info, &None)],
         },
     };
 
-    board.release_info.bib_sets.iter().for_each(|bib_set| {
+    release_info.bib_sets.iter().for_each(|bib_set| {
         info.version_with_deps.human.push_str(&format!(
             "\n{}: {}",
             bib_set.name.clone(),
@@ -115,15 +147,19 @@ pub fn load_board(board: &BoardConfig) -> VersionInfoWithDependencies {
         info.version_with_deps.machine.push(bib_set_info);
     });
 
-    info
+    Ok(info)
 }
 
 /// Load a Board Input Bundle Set artifact and return the version information.
-pub fn load_bib_set(bib_set: &BoardInputBundleSet) -> VersionInfo {
-    VersionInfo {
-        human: bib_set.release_info.version.clone(),
-        machine: vec![from_bib_set_release_info(&bib_set.release_info.clone(), &None)],
-    }
+pub fn load_bib_set(path: &Utf8Path) -> Result<VersionInfo> {
+    let release_info: ReleaseInfo = serde_json::from_value(get_value_from_json_file(
+        &path.join("board_input_bundle_set.json"),
+        &["release_info"],
+    )?)?;
+    Ok(VersionInfo {
+        human: release_info.version.clone(),
+        machine: vec![from_bib_set_release_info(&release_info, &None)],
+    })
 }
 
 /// Load a Product Bundle artifact and return the version information.

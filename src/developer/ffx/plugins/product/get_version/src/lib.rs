@@ -10,20 +10,17 @@ mod load_config;
 mod unique_release_info;
 
 use crate::load_config::{
-    load_bib_set, load_board, load_pibs, load_platform, load_product, load_product_bundle_v2,
+    VersionInfoWithDependencies, load_bib_set, load_board, load_pibs, load_platform, load_product,
+    load_product_bundle_v2,
 };
 use crate::unique_release_info::UniqueReleaseInfoVector;
 
 use anyhow::{Result, anyhow};
-use assembly_config_schema::{BoardConfig, BoardInputBundleSet, ProductConfig};
-use assembly_container::AssemblyContainer;
-use assembly_platform_artifacts::PlatformArtifacts;
 use async_trait::async_trait;
 use ffx_product_get_version_args::GetVersionCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool};
 use product_bundle::ProductBundle;
-use product_input_bundle::ProductInputBundle;
 
 /// This plugin will get the the product version of a Product Bundle.
 #[derive(FfxTool)]
@@ -39,23 +36,24 @@ impl FfxMain for PbGetVersionTool {
     type Writer = MachineWriter<UniqueReleaseInfoVector>;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let artifact_path = &self.cmd.artifact;
-        let info = if let Ok(product_bundle) = ProductBundle::try_load_from(artifact_path) {
-            match product_bundle {
-                ProductBundle::V2(pb) => load_product_bundle_v2(&pb),
-            }
-        } else if let Ok(platform) = PlatformArtifacts::from_dir(artifact_path) {
-            load_platform(&platform).into_version_with_deps()
-        } else if let Ok(product) = ProductConfig::from_dir(artifact_path) {
-            load_product(&product).into_version_with_deps()
-        } else if let Ok(pibs) = ProductInputBundle::from_dir(artifact_path) {
-            load_pibs(&pibs).into_version_with_deps()
-        } else if let Ok(board_info) = BoardConfig::from_dir(artifact_path) {
-            load_board(&board_info)
-        } else if let Ok(bib_set) = BoardInputBundleSet::from_dir(artifact_path) {
-            load_bib_set(&bib_set).into_version_with_deps()
-        } else {
-            return Err(fho::Error::User(anyhow!("error parsing the artifact type")));
-        };
+        let info: VersionInfoWithDependencies =
+            if let Ok(product_bundle) = ProductBundle::try_load_from(artifact_path) {
+                match product_bundle {
+                    ProductBundle::V2(pb) => load_product_bundle_v2(&pb),
+                }
+            } else if artifact_path.join("platform_artifacts.json").exists() {
+                load_platform(artifact_path)?.into_version_with_deps()
+            } else if artifact_path.join("product_configuration.json").exists() {
+                load_product(artifact_path)?.into_version_with_deps()
+            } else if artifact_path.join("product_input_bundle.json").exists() {
+                load_pibs(artifact_path)?.into_version_with_deps()
+            } else if artifact_path.join("board_configuration.json").exists() {
+                load_board(artifact_path)?
+            } else if artifact_path.join("board_input_bundle_set.json").exists() {
+                load_bib_set(artifact_path)?.into_version_with_deps()
+            } else {
+                return Err(fho::Error::User(anyhow!("error parsing the artifact type")));
+            };
 
         if self.cmd.include_dependencies {
             writer.machine(&UniqueReleaseInfoVector(info.version_with_deps.machine)).bug()?;
@@ -75,21 +73,15 @@ mod tests {
 
     use crate::load_config::VersionInfo;
 
-    use assembly_config_schema::product_settings::ProductSettings;
-    use assembly_config_schema::{BoardConfig, BoardInputBundleSet, ProductConfig};
     use assembly_partitions_config::{PartitionsConfig, Slot};
-    use assembly_platform_artifacts::PlatformArtifacts;
     use assembly_release_info::{
         BoardReleaseInfo, ProductBundleReleaseInfo, ProductReleaseInfo, ReleaseInfo,
         SystemReleaseInfo,
     };
-    use camino::Utf8PathBuf;
+    use camino::Utf8Path;
     use ffx_writer::{Format, MachineWriter, TestBuffers};
     use product_bundle::ProductBundleV2;
-    use product_input_bundle::ProductInputBundle;
     use unique_release_info::UniqueReleaseInfo;
-
-    use std::collections::BTreeMap;
 
     fn generate_test_product_bundle() -> ProductBundleV2 {
         ProductBundleV2 {
@@ -309,15 +301,27 @@ mod tests {
 
     #[test]
     fn test_load_platform() {
-        let platform = PlatformArtifacts {
-            platform_input_bundle_dir: Utf8PathBuf::new(),
-            release_info: ReleaseInfo {
-                name: "fake_platform".to_string(),
-                repository: "fake_repository_for_platform".to_string(),
-                version: "fake_version_for_platform".to_string(),
-            },
-        };
-        let info = load_platform(&platform);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(tmp.path()).unwrap();
+        let platform_artifacts_path = path.join("platform_artifacts.json");
+        let mut file = std::fs::File::create(platform_artifacts_path).unwrap();
+        serde_json::to_writer(
+            &mut file,
+            &serde_json::json!(
+                {
+                    // This verifies it can handle config changes.
+                    "new_field": "some_value",
+                    "release_info": {
+                        "name": "fake_platform",
+                        "repository": "fake_repository_for_platform",
+                        "version": "fake_version_for_platform"
+                    }
+                }
+            ),
+        )
+        .unwrap();
+
+        let info = load_platform(&path).unwrap();
         assert_eq!(info.human, "fake_version_for_platform");
         assert_eq!(
             info.machine[0],
@@ -333,32 +337,43 @@ mod tests {
 
     #[test]
     fn test_load_product() {
-        let assembly_config = ProductConfig {
-            product: ProductSettings {
-                release_info: ProductReleaseInfo {
-                    info: ReleaseInfo {
-                        name: "fake_product".to_string(),
-                        repository: "fake_repository_for_product".to_string(),
-                        version: "fake_version_for_product".to_string(),
-                    },
-                    pibs: vec![
-                        ReleaseInfo {
-                            name: "fake_example_pib_1".to_string(),
-                            repository: "fake_repository_for_product".to_string(),
-                            version: "fake_version_for_product".to_string(),
-                        },
-                        ReleaseInfo {
-                            name: "fake_example_pib_2".to_string(),
-                            repository: "fake_repository_for_product".to_string(),
-                            version: "fake_version_for_product".to_string(),
-                        },
-                    ],
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let info = load_product(&assembly_config);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(tmp.path()).unwrap();
+        let product_configuration_path = path.join("product_configuration.json");
+        let mut file = std::fs::File::create(product_configuration_path).unwrap();
+        serde_json::to_writer(
+            &mut file,
+            &serde_json::json!(
+                {
+                    // This verifies it can handle config changes.
+                    "new_field": "some_value",
+                    "product": {
+                        "release_info": {
+                            "info": {
+                                "name": "fake_product",
+                                "repository": "fake_repository_for_product",
+                                "version": "fake_version_for_product"
+                            },
+                            "pibs": [
+                                {
+                                    "name": "fake_example_pib_1",
+                                    "repository": "fake_repository_for_product",
+                                    "version": "fake_version_for_product"
+                                },
+                                {
+                                    "name": "fake_example_pib_2",
+                                    "repository": "fake_repository_for_product",
+                                    "version": "fake_version_for_product"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ),
+        )
+        .unwrap();
+
+        let info = load_product(&path).unwrap();
         assert_eq!(info.human, "fake_version_for_product");
         assert_eq!(
             info.machine[0],
@@ -374,15 +389,27 @@ mod tests {
 
     #[test]
     fn test_load_pibs() {
-        let pibs = ProductInputBundle {
-            release_info: ReleaseInfo {
-                name: "fake_pib".to_string(),
-                repository: "fake_repository_for_pib".to_string(),
-                version: "fake_version_for_pib".to_string(),
-            },
-            ..Default::default()
-        };
-        let info = load_pibs(&pibs);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(tmp.path()).unwrap();
+        let product_input_bundle_path = path.join("product_input_bundle.json");
+        let mut file = std::fs::File::create(product_input_bundle_path).unwrap();
+        serde_json::to_writer(
+            &mut file,
+            &serde_json::json!(
+                {
+                    // This verifies it can handle config changes.
+                    "new_field": "some_value",
+                    "release_info": {
+                        "name": "fake_pib",
+                        "repository": "fake_repository_for_pib",
+                        "version": "fake_version_for_pib"
+                    }
+                }
+            ),
+        )
+        .unwrap();
+
+        let info = load_pibs(&path).unwrap();
         assert_eq!(info.human, "fake_version_for_pib");
         assert_eq!(
             info.machine[0],
@@ -398,29 +425,41 @@ mod tests {
 
     #[test]
     fn test_load_board() {
-        let board = BoardConfig {
-            release_info: BoardReleaseInfo {
-                info: ReleaseInfo {
-                    name: "fake_board".to_string(),
-                    repository: "fake_repository_for_board".to_string(),
-                    version: "fake_version_for_board".to_string(),
-                },
-                bib_sets: vec![
-                    ReleaseInfo {
-                        name: "fake_example_bib_set_1".to_string(),
-                        repository: "fake_repository_for_board".to_string(),
-                        version: "fake_version_for_board".to_string(),
-                    },
-                    ReleaseInfo {
-                        name: "fake_example_bib_set_2".to_string(),
-                        repository: "fake_repository_for_board".to_string(),
-                        version: "fake_version_for_board".to_string(),
-                    },
-                ],
-            },
-            ..Default::default()
-        };
-        let info = load_board(&board);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(tmp.path()).unwrap();
+        let board_configuration_path = path.join("board_configuration.json");
+        let mut file = std::fs::File::create(board_configuration_path).unwrap();
+        serde_json::to_writer(
+            &mut file,
+            &serde_json::json!(
+                {
+                    // This verifies it can handle config changes.
+                    "new_field": "some_value",
+                    "release_info": {
+                        "info": {
+                            "name": "fake_board",
+                            "repository": "fake_repository_for_board",
+                            "version": "fake_version_for_board"
+                        },
+                        "bib_sets": [
+                            {
+                                "name": "fake_example_bib_set_1",
+                                "repository": "fake_repository_for_board",
+                                "version": "fake_version_for_board"
+                            },
+                            {
+                                "name": "fake_example_bib_set_2",
+                                "repository": "fake_repository_for_board",
+                                "version": "fake_version_for_board"
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
+        .unwrap();
+
+        let info = load_board(&path).unwrap();
         assert_eq!(info.version.human, "fake_version_for_board");
         assert_eq!(
             info.version.machine[0],
@@ -436,16 +475,27 @@ mod tests {
 
     #[test]
     fn test_load_bib_set() {
-        let bib_set = BoardInputBundleSet {
-            name: "fake_bib_set".to_string(),
-            board_input_bundles: BTreeMap::new(),
-            release_info: ReleaseInfo {
-                name: "fake_bib_set".to_string(),
-                repository: "fake_repository_for_bib_set".to_string(),
-                version: "fake_version_for_bib_set".to_string(),
-            },
-        };
-        let info = load_bib_set(&bib_set);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(tmp.path()).unwrap();
+        let board_input_bundle_path = path.join("board_input_bundle_set.json");
+        let mut file = std::fs::File::create(board_input_bundle_path).unwrap();
+        serde_json::to_writer(
+            &mut file,
+            &serde_json::json!(
+                {
+                    // This verifies it can handle config changes.
+                    "new_field": "some_value",
+                    "release_info": {
+                        "name": "fake_bib_set",
+                        "repository": "fake_repository_for_bib_set",
+                        "version": "fake_version_for_bib_set"
+                    }
+                }
+            ),
+        )
+        .unwrap();
+
+        let info = load_bib_set(&path).unwrap();
         assert_eq!(info.human, "fake_version_for_bib_set");
         assert_eq!(
             info.machine[0],
