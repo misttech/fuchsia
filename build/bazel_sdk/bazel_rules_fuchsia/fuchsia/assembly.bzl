@@ -121,6 +121,7 @@ load(
 )
 load(
     "//fuchsia/private/assembly:fuchsia_scrutiny_config.bzl",
+    _SCRUTINY_VERIFIERS = "SCRUTINY_VERIFIERS",
     _fuchsia_scrutiny_config = "fuchsia_scrutiny_config",
 )
 load(
@@ -191,6 +192,7 @@ SLOT = _SLOT
 ARCH = _ARCH
 INPUT_DEVICE_TYPE = _INPUT_DEVICE_TYPE
 DELIVERY_BLOB_TYPE = _DELIVERY_BLOB_TYPE
+SCRUTINY_VERIFIERS = _SCRUTINY_VERIFIERS
 
 # Helper functions
 ota_realm = _ota_realm

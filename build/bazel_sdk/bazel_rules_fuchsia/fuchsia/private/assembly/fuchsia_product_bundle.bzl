@@ -29,6 +29,10 @@ load(
     "FuchsiaSizeCheckerInfo",
     "FuchsiaVirtualDeviceInfo",
 )
+load(
+    ":fuchsia_scrutiny_config.bzl",
+    "SCRUTINY_VERIFIERS",
+)
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 DELIVERY_BLOB_TYPE = struct(
@@ -142,71 +146,80 @@ def _scrutiny_validation(
     if is_recovery:
         ffx_invocation.append("--recovery")
     label_name = ctx.label.name + ("_recovery" if is_recovery else "")
-    deps.append(_verify_bootfs_filelist(
-        ctx,
-        label_name,
-        ffx_invocation,
-        ffx_scrutiny_inputs,
-        pb_out_dir,
-        scrutiny_config.bootfs_files + platform_scrutiny_config.bootfs_files,
-        scrutiny_config.bootfs_packages + platform_scrutiny_config.bootfs_packages,
-    ))
-    deps.append(_verify_kernel_cmdline(
-        ctx,
-        label_name,
-        ffx_invocation,
-        ffx_scrutiny_inputs,
-        pb_out_dir,
-        scrutiny_config.kernel_cmdline + platform_scrutiny_config.kernel_cmdline,
-    ))
-    deps += _verify_base_packages(
-        ctx,
-        label_name,
-        ffx_invocation,
-        ffx_scrutiny_inputs,
-        pb_out_dir,
-        scrutiny_config.static_packages + platform_scrutiny_config.static_packages,
-    )
-    deps.append(_verify_pre_signing(
-        ctx,
-        label_name,
-        ffx_invocation,
-        ffx_scrutiny_inputs,
-        pb_out_dir,
-        platform_scrutiny_config.pre_signing_policy,
-        platform_scrutiny_config.pre_signing_goldens_dir,
-        platform_scrutiny_config.pre_signing_goldens,
-    ))
+    if SCRUTINY_VERIFIERS.BOOTFS not in scrutiny_config.excluded_verifiers:
+        deps.append(_verify_bootfs_filelist(
+            ctx,
+            label_name,
+            ffx_invocation,
+            ffx_scrutiny_inputs,
+            pb_out_dir,
+            scrutiny_config.bootfs_files + platform_scrutiny_config.bootfs_files,
+            scrutiny_config.bootfs_packages + platform_scrutiny_config.bootfs_packages,
+        ))
+    if SCRUTINY_VERIFIERS.KERNEL_CMDLINE not in scrutiny_config.excluded_verifiers:
+        deps.append(_verify_kernel_cmdline(
+            ctx,
+            label_name,
+            ffx_invocation,
+            ffx_scrutiny_inputs,
+            pb_out_dir,
+            scrutiny_config.kernel_cmdline + platform_scrutiny_config.kernel_cmdline,
+        ))
+    if SCRUTINY_VERIFIERS.STATIC_PKGS not in scrutiny_config.excluded_verifiers:
+        deps += _verify_base_packages(
+            ctx,
+            label_name,
+            ffx_invocation,
+            ffx_scrutiny_inputs,
+            pb_out_dir,
+            scrutiny_config.static_packages + platform_scrutiny_config.static_packages,
+        )
+    if SCRUTINY_VERIFIERS.PRE_SIGNING not in scrutiny_config.excluded_verifiers:
+        deps.append(_verify_pre_signing(
+            ctx,
+            label_name,
+            ffx_invocation,
+            ffx_scrutiny_inputs,
+            pb_out_dir,
+            platform_scrutiny_config.pre_signing_policy,
+            platform_scrutiny_config.pre_signing_goldens_dir,
+            platform_scrutiny_config.pre_signing_goldens,
+        ))
     if not is_recovery:
-        deps += _verify_route_sources(
-            ctx,
-            ffx_invocation,
-            ffx_scrutiny_inputs,
-            pb_out_dir,
-            platform_scrutiny_config.routes_config_golden,
-        )
-        deps += _verify_component_resolver_allowlist(
-            ctx,
-            ffx_invocation,
-            ffx_scrutiny_inputs,
-            pb_out_dir,
-            platform_scrutiny_config.component_resolver_allowlist,
-        )
-        deps += _verify_routes(
-            ctx,
-            ffx_invocation,
-            ffx_scrutiny_inputs,
-            pb_out_dir,
-            platform_scrutiny_config.component_route_exceptions,
-            scrutiny_config.component_tree_config,
-        )
-        deps += _verify_structured_config(
-            ctx,
-            ffx_invocation,
-            ffx_scrutiny_inputs,
-            pb_out_dir,
-            platform_scrutiny_config.structured_config_policy,
-        )
+        if SCRUTINY_VERIFIERS.ROUTE_SOURCES not in scrutiny_config.excluded_verifiers:
+            deps += _verify_route_sources(
+                ctx,
+                ffx_invocation,
+                ffx_scrutiny_inputs,
+                pb_out_dir,
+                platform_scrutiny_config.routes_config_golden,
+            )
+        if SCRUTINY_VERIFIERS.COMPONENT_RESOLVERS not in scrutiny_config.excluded_verifiers:
+            deps += _verify_component_resolver_allowlist(
+                ctx,
+                ffx_invocation,
+                ffx_scrutiny_inputs,
+                pb_out_dir,
+                platform_scrutiny_config.component_resolver_allowlist,
+            )
+        if SCRUTINY_VERIFIERS.ROUTES not in scrutiny_config.excluded_verifiers:
+            deps += _verify_routes(
+                ctx,
+                ffx_invocation,
+                ffx_scrutiny_inputs,
+                pb_out_dir,
+                platform_scrutiny_config.component_route_exceptions,
+                scrutiny_config.component_tree_config,
+            )
+        if SCRUTINY_VERIFIERS.STRUCTURED_CONFIG not in scrutiny_config.excluded_verifiers:
+            deps += _verify_structured_config(
+                ctx,
+                ffx_invocation,
+                ffx_scrutiny_inputs,
+                pb_out_dir,
+                platform_scrutiny_config.structured_config_policy,
+            )
+
         deps += _extract_structured_config(
             ctx,
             get_ffx_scrutiny_args(fuchsia_toolchain) + ["--isolate-dir $FFX_ISOLATE_DIR"],
