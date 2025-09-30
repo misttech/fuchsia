@@ -21,9 +21,6 @@
                 "heap_tagging_level.tagging_level_transitions",
                 "heap_tagging_level.tagging_level_transition_sync_none",
 
-                // Depends on /sys/class/net
-                "ifaddrs.getifaddrs_interfaces",
-
                 // Our test runner doesn't understand DISABLED
                 "android_mallopt.DISABLED_multiple_enable_gwp_asan",
                 "malloc.DISABLED_alloc_after_fork",
@@ -31,10 +28,11 @@
 
                 // Requires MTE support
                 "malloc.disable_mte",
+                "malloc.allocation_slack",
+                "malloc.mallopt_scudo_only_options",
+                "malloc.zero_init",
 
                 // TODO(https://fxbug.dev/42054960): Implement membarrier
-                "membarrier.global_barrier",
-                "membarrier.global_expedited",
                 "membarrier.private_expedited",
                 "membarrier.private_expedited_sync_core",
 
@@ -94,11 +92,9 @@
                 "time.clock_settime",
                 "unistd.fdatasync",
                 "unistd.fsync",
-                "unistd.lockf_partial_with_child",
                 "unistd.sysconf_SC_ARG_MAX",
                 "unistd_nofortify.fdatasync",
                 "unistd_nofortify.fsync",
-                "unistd_nofortify.lockf_partial_with_child",
                 "unistd_nofortify.sysconf_SC_ARG_MAX",
             ],
         },
@@ -149,6 +145,8 @@
                 // TODO(https://fxbug.dev/42080036): Flaky on the bots - need to be investigated.
                 "pthread.pthread_getcpuclockid__clock_gettime",
                 "unistd*.sleep",
+                "unistd.lockf_partial_with_child",
+                "unistd_nofortify.lockf_partial_with_child",
 
                 // TODO(https://fxbug.dev/42081444): Flaky on the bots - needs to be investigated.
                 "android_mallopt.multiple_enable_gwp_asan",
