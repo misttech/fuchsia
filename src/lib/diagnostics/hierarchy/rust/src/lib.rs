@@ -977,18 +977,29 @@ impl HierarchyMatcher {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum SelectResult<'a, Key> {
-    Properties(Vec<&'a Property<Key>>),
-    Nodes(Vec<&'a DiagnosticsHierarchy<Key>>),
+pub enum SelectResult<'a, Key: Clone> {
+    Properties(Vec<Cow<'a, Property<Key>>>),
+    Nodes(Vec<Cow<'a, DiagnosticsHierarchy<Key>>>),
 }
 
-impl<'a, Key> SelectResult<'a, Key> {
+impl<'a, Key: Clone> SelectResult<'a, Key> {
+    pub fn into_owned(self) -> SelectResult<'static, Key> {
+        match self {
+            Self::Properties(v) => SelectResult::Properties(
+                v.into_iter().map(|v| Cow::Owned(v.into_owned())).collect(),
+            ),
+            Self::Nodes(v) => {
+                SelectResult::Nodes(v.into_iter().map(|v| Cow::Owned(v.into_owned())).collect())
+            }
+        }
+    }
+
     /// Returns Err(()) if `self` is `Self::Nodes`. Otherwise, adds to property list.
     fn add_property(&mut self, prop: &'a Property<Key>) {
         let Self::Properties(v) = self else {
             panic!("must be Self::Properties to call add_property");
         };
-        v.push(prop);
+        v.push(Cow::Borrowed(prop));
     }
 
     /// Returns Err(()) if `self` is `Self::Properties`. Otherwise, adds to property list.
@@ -996,7 +1007,7 @@ impl<'a, Key> SelectResult<'a, Key> {
         let Self::Nodes(v) = self else {
             panic!("must be Self::Nodes to call add_node");
         };
-        v.push(node);
+        v.push(Cow::Borrowed(node));
     }
 }
 
@@ -1005,7 +1016,7 @@ pub fn select_from_hierarchy<'a, 'b, Key>(
     selector: &'b Selector,
 ) -> Result<SelectResult<'a, Key>, Error>
 where
-    Key: AsRef<str>,
+    Key: AsRef<str> + Clone,
     'a: 'b,
 {
     selector.validate()?;
@@ -1075,15 +1086,15 @@ where
 }
 
 /// Filters a hierarchy given a tree selector.
-pub fn filter_tree<Key>(
+pub fn filter_tree<'a, Key, I: IntoIterator<Item = &'a TreeSelector>>(
     root_node: DiagnosticsHierarchy<Key>,
-    selectors: &[TreeSelector],
+    selectors: I,
 ) -> Option<DiagnosticsHierarchy<Key>>
 where
     Key: AsRef<str>,
 {
     let mut matcher = HierarchyMatcher::default();
-    for selector in selectors {
+    for selector in selectors.into_iter() {
         match selector {
             TreeSelector::SubtreeSelector(subtree_selector) => {
                 matcher.insert_subtree(subtree_selector.clone());
@@ -2095,7 +2106,7 @@ mod tests {
         };
 
         property_entry_vec.sort_by(|p1, p2| p1.name().cmp(p2.name()));
-        let mut expected = expected.iter().map(Borrow::borrow).collect::<Vec<_>>();
+        let mut expected = expected.iter().map(Cow::Borrowed).collect::<Vec<_>>();
         expected.sort_by(|p1, p2| p1.name().cmp(p2.name()));
 
         assert_eq!(property_entry_vec, expected);
@@ -2119,7 +2130,7 @@ mod tests {
             panic!("must be nodes");
         };
 
-        let expected = expected.iter().map(Borrow::borrow).collect::<Vec<_>>();
+        let expected = expected.iter().map(Cow::Borrowed).collect::<Vec<_>>();
 
         assert_eq!(node_vec, expected);
     }

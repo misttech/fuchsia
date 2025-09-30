@@ -658,7 +658,7 @@ impl ProjectSampler {
                             metric.borrow(),
                             self.metric_cache.borrow_mut(),
                             metric_cache_key,
-                            p[0],
+                            p[0].as_ref(),
                         )? {
                             events_to_log.push((project_id, event));
                         }

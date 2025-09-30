@@ -408,7 +408,7 @@ impl InspectFetcher {
         for r in intermediate_results {
             match r {
                 SelectResult::Properties(p) => {
-                    result.extend(p.into_iter().cloned().map(MetricValue::from))
+                    result.extend(p.into_iter().map(|p| MetricValue::from(p.into_owned())))
                 }
                 SelectResult::Nodes(n) => {
                     for node in n {
