@@ -472,7 +472,7 @@ impl vfs::node::Node for FxFile {
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
         let mut props = self.handle.get_properties().await.map_err(map_to_status)?;
-        let descriptor = self.handle.uncached_handle().get_descriptor().map_err(map_to_status)?;
+
         // In most cases, the reference count of objects can be used as the link count. There are
         // two cases where this is not the case - for unnamed temporary files and unlink files with
         // no more open references to it. For these two cases, the link count should be zero (the
@@ -488,6 +488,14 @@ impl vfs::node::Node for FxFile {
                 .await
                 .map_err(map_to_status)?;
         }
+
+        let (verification_options, root_hash) = if requested_attributes.intersects(
+            fio::NodeAttributesQuery::OPTIONS.union(fio::NodeAttributesQuery::ROOT_HASH),
+        ) {
+            self.handle.uncached_handle().get_descriptor().map_err(map_to_status)?.unzip()
+        } else {
+            (None, None)
+        };
 
         Ok(attributes!(
             requested_attributes,
@@ -518,8 +526,8 @@ impl vfs::node::Node for FxFile {
                 link_count: link_count,
                 id: self.handle.object_id(),
                 change_time: props.change_time.as_nanos(),
-                options: descriptor.clone().map(|a| a.0),
-                root_hash: descriptor.clone().map(|a| a.1),
+                options: verification_options,
+                root_hash: root_hash,
                 verity_enabled: self.is_verified_file(),
             }
         ))
