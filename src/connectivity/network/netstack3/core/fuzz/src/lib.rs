@@ -32,15 +32,10 @@ use packet_formats::udp::UdpPacketBuilder;
 mod print_on_panic {
     use core::fmt::Display;
     use core::sync::atomic::{self, AtomicBool};
-    use std::sync::Mutex;
-
-    use lazy_static::lazy_static;
     use log::LevelFilter;
+    use std::sync::{LazyLock, Mutex};
 
-    lazy_static! {
-        pub static ref PRINT_ON_PANIC: PrintOnPanicLog = PrintOnPanicLog::new();
-        static ref PRINT_ON_PANIC_LOGGER: PrintOnPanicLogger = PrintOnPanicLogger;
-    }
+    pub static PRINT_ON_PANIC: LazyLock<PrintOnPanicLog> = LazyLock::new(PrintOnPanicLog::new);
 
     /// LogLevel to output at configured at build time. Defaults to `LevelFilter::OFF`.
     const MAX_LOG_LEVEL: LevelFilter = if cfg!(feature = "log_trace") {
