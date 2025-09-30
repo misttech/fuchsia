@@ -9,6 +9,7 @@
     capabilities: [
         { protocol: "fuchsia.hardware.power.statecontrol.Admin" },
         { protocol: "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister" },
+        { protocol: "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister" },
         { protocol: "fuchsia.power.CollaborativeRebootInitiator" },
         { protocol: "fuchsia.power.internal.CollaborativeRebootScheduler" },
         { protocol: "fuchsia.system.state.SystemStateTransition" },
@@ -38,6 +39,7 @@
             protocol: [
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.power.CollaborativeRebootInitiator",
                 "fuchsia.power.internal.CollaborativeRebootScheduler",
                 "fuchsia.system.state.SystemStateTransition",

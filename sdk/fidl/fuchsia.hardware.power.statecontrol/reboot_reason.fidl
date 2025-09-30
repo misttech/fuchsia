@@ -39,7 +39,7 @@ type RebootReason = strict enum {
 
 /// Why the system reboots.
 // Contact OWNERS before adding a new value.
-@available(added=26)
+@available(added=26, deprecated=NEXT, note="use ShutdownReason")
 // TODO(https://fxbug.dev/385742868): Rename this to `RebootReason` once the
 // original `RebootReason` is removed.
 type RebootReason2 = flexible enum {

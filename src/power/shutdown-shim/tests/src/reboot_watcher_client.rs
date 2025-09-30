@@ -93,3 +93,47 @@ impl RebootWatcherClient {
         self.reboot_options_receiver.next().await.expect("Failed to wait for reboot reason")
     }
 }
+
+/// Convenience type for interacting with the Power Manager's ShutdownWatcher service.
+pub struct ShutdownWatcherClient {
+    _watcher_task: fasync::Task<()>,
+    shutdown_options_receiver: mpsc::Receiver<fpower::ShutdownOptions>,
+}
+
+impl ShutdownWatcherClient {
+    pub async fn new(realm: &RealmInstance) -> Self {
+        let (mut shutdown_options_sender, shutdown_options_receiver) = mpsc::channel(1);
+
+        // Create a new watcher proxy/stream and register the proxy end with shutdown-shim.
+        let watcher_register_proxy: fpower::ShutdownWatcherRegisterProxy = realm
+            .root
+            .connect_to_protocol_at_exposed_dir()
+            .expect("Should be able to connect the proxy correctly");
+        let (watcher_client, mut watcher_request_stream) =
+            fidl::endpoints::create_request_stream::<fpower::ShutdownWatcherMarker>();
+        watcher_register_proxy
+            .register_watcher(watcher_client)
+            .await
+            .expect("Failed to register shutdown watcher");
+
+        let _watcher_task = fasync::Task::local(async move {
+            while let Some(fpower::ShutdownWatcherRequest::OnShutdown { options, responder }) =
+                watcher_request_stream.try_next().await.unwrap()
+            {
+                info!("Received shutdown options: {:?}", options);
+                let _ = responder.send();
+                shutdown_options_sender
+                    .try_send(options)
+                    .expect("Failed to notify shutdown reason");
+            }
+        });
+
+        Self { _watcher_task, shutdown_options_receiver }
+    }
+
+    /// Returns the next shutdown options that the shutdown watcher has received, or hangs until one
+    /// is received.
+    pub async fn get_shutdown_options(&mut self) -> fpower::ShutdownOptions {
+        self.shutdown_options_receiver.next().await.expect("Failed to wait for shutdown options")
+    }
+}

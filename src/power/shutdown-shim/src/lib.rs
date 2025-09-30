@@ -12,7 +12,7 @@ use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMexecRequest, AdminRequest, AdminRequestStream, AdminShutdownResponder,
     RebootMethodsWatcherRegisterRequestStream, RebootReason, ShutdownAction, ShutdownOptions,
-    ShutdownReason,
+    ShutdownReason, ShutdownWatcherRegisterRequestStream,
 };
 use fidl_fuchsia_power::CollaborativeRebootInitiatorRequestStream;
 use fidl_fuchsia_power_internal::{
@@ -48,6 +48,7 @@ enum IncomingRequest {
     CollaborativeRebootInitiator(CollaborativeRebootInitiatorRequestStream),
     CollaborativeRebootScheduler(CollaborativeRebootSchedulerRequestStream),
     RebootMethodsWatcherRegister(RebootMethodsWatcherRegisterRequestStream),
+    ShutdownWatcherRegister(ShutdownWatcherRegisterRequestStream),
 }
 
 pub async fn main(
@@ -88,6 +89,7 @@ pub async fn main(
     let mut service_fs = ServiceFs::new();
     service_fs.dir("svc").add_fidl_service(IncomingRequest::Admin);
     service_fs.dir("svc").add_fidl_service(IncomingRequest::RebootMethodsWatcherRegister);
+    service_fs.dir("svc").add_fidl_service(IncomingRequest::ShutdownWatcherRegister);
     service_fs.dir("svc").add_fidl_service(IncomingRequest::SystemStateTransition);
     service_fs.dir("svc").add_fidl_service(IncomingRequest::CollaborativeRebootInitiator);
     service_fs.dir("svc").add_fidl_service(IncomingRequest::CollaborativeRebootScheduler);
@@ -111,6 +113,9 @@ pub async fn main(
                 IncomingRequest::Admin(stream) => ctx.handle_admin_request(stream).await,
                 IncomingRequest::RebootMethodsWatcherRegister(stream) => {
                     shutdown_watcher.clone().handle_reboot_register_request(stream).await;
+                }
+                IncomingRequest::ShutdownWatcherRegister(stream) => {
+                    shutdown_watcher.clone().handle_shutdown_register_request(stream).await
                 }
                 IncomingRequest::SystemStateTransition(stream) => {
                     ctx.handle_system_state_transition(stream).await
@@ -270,15 +275,15 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                 let _ = responder.send(res.map_err(|s| s.into_raw()));
             }
             ShutdownAction::RebootToBootloader => {
-                let res = self.shutdown(SystemPowerState::RebootBootloader, None).await;
+                let res = self.shutdown(SystemPowerState::RebootBootloader, Some(options)).await;
                 let _ = responder.send(res.map_err(|s| s.into_raw()));
             }
             ShutdownAction::RebootToRecovery => {
-                let res = self.shutdown(SystemPowerState::RebootRecovery, None).await;
+                let res = self.shutdown(SystemPowerState::RebootRecovery, Some(options)).await;
                 let _ = responder.send(res.map_err(|s| s.into_raw()));
             }
             ShutdownAction::Poweroff => {
-                let res = self.shutdown(SystemPowerState::Poweroff, None).await;
+                let res = self.shutdown(SystemPowerState::Poweroff, Some(options)).await;
                 let _ = responder.send(res.map_err(|s| s.into_raw()));
             }
             ShutdownAction::__SourceBreaking { unknown_ordinal } => {
@@ -315,6 +320,8 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
         }
     }
 
+    // TODO(https://fxbug.dev/414413282): make `options` non-optional once deprecated shutdown
+    // methods are removed.
     async fn shutdown(
         &self,
         target_state: SystemPowerState,

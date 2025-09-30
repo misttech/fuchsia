@@ -18,7 +18,9 @@ use {
     fidl_fuchsia_system_state as fdevicemanager, fuchsia_async as fasync,
 };
 
-use crate::reboot_watcher_client::{DeprecatedRebootWatcherClient, RebootWatcherClient};
+use crate::reboot_watcher_client::{
+    DeprecatedRebootWatcherClient, RebootWatcherClient, ShutdownWatcherClient,
+};
 
 mod reboot_watcher_client;
 mod shutdown_mocks;
@@ -130,6 +132,15 @@ async fn new_realm(
                 .capability(
                     Capability::protocol::<fstatecontrol::RebootMethodsWatcherRegisterMarker>(),
                 )
+                .from(&shutdown_shim)
+                .to(Ref::parent()),
+        )
+        .await?;
+    // Expose the shim's statecontrol.ShutdownWatcherRegister so test cases can access it
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fstatecontrol::ShutdownWatcherRegisterMarker>())
                 .from(&shutdown_shim)
                 .to(Ref::parent()),
         )
@@ -292,17 +303,17 @@ async fn test_reboot(
         .await
 }
 
-// TODO(https://fxbug.dev/414413282): move each shutdown action to
-// test_shutdown_request_with_reasons once reasons are supported for that action.
 #[test_matrix(
     [true, false],
-    [ShutdownAction::RebootToBootloader, ShutdownAction::RebootToRecovery, ShutdownAction::Poweroff])]
+    [ShutdownAction::Reboot, ShutdownAction::RebootToBootloader, ShutdownAction::RebootToRecovery, ShutdownAction::Poweroff])]
 #[fuchsia::test]
-async fn test_shutdown_request(
+async fn test_shutdown_request_shutdown_watchers(
     is_power_framework_available: bool,
     action: ShutdownAction,
 ) -> Result<(), Error> {
     let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
+
+    let mut shutdown_watcher = ShutdownWatcherClient::new(&realm_instance).await;
 
     let shim_statecontrol: fstatecontrol::AdminProxy =
         realm_instance.root.connect_to_protocol_at_exposed_dir()?;
@@ -319,6 +330,11 @@ async fn test_shutdown_request(
         );
     })
     .detach();
+
+    // Verify shutdown-shim forwards the shutdown reason to the watcher client.
+    let options = shutdown_watcher.get_shutdown_options().await;
+    assert_eq!(options.action.unwrap(), action);
+    assert_eq!(&options.reasons.unwrap()[..], [fstatecontrol::ShutdownReason::SystemUpdate]);
 
     verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
         .await
@@ -350,14 +366,13 @@ async fn shutdown_request_action_required(is_power_framework_available: bool) {
 #[test_case(true; "with_power_framework")]
 #[test_case(false; "without_power_framework")]
 #[fuchsia::test]
-async fn test_shutdown_request_with_reasons(
+async fn test_shutdown_request_reboot_watchers(
     is_power_framework_available: bool,
 ) -> Result<(), Error> {
     let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
 
     // Only ShutdownAction::Reboot will forward shutdown reasons to reboot watchers.
     // Verify both the "current" and "deprecated" watcher APIs.
-    // TODO(https://fxbug.dev/414413282): verify for ShutdownWatcher protocol.
     let mut reboot_watcher = RebootWatcherClient::new(&realm_instance).await;
     let mut deprecated_reboot_watcher = DeprecatedRebootWatcherClient::new(&realm_instance).await;
 
