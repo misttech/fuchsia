@@ -12,6 +12,8 @@
 
 #include <ktl/type_traits.h>
 
+#include "handoff-ptr.h"
+
 // This file provides what are constants as far as the kernel is concerned.
 // But physboot fills them in as variables as boot time.  These constants are
 // found directly in RODATA by kernel code without indirection and without
@@ -35,6 +37,9 @@ struct BootConstants {
 
   // ZBI_TYPE_HW_REBOOT_REASON payload (or as initialized if no ZBI item).
   zbi_hw_reboot_reason_t hw_reboot_reason = ZBI_HW_REBOOT_REASON_UNDEFINED;
+
+  // ZBI container of items to be propagated in mexec.
+  PhysHandoffPermanentSpan<const std::byte> mexec_data;
 };
 static_assert(ktl::is_trivially_destructible_v<BootConstants>);
 

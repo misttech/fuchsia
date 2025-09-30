@@ -349,9 +349,6 @@ struct PhysHandoff {
   // Entropy gleaned from ZBI Items such as 'ZBI_TYPE_SECURE_ENTROPY' and/or command line.
   std::optional<crypto::EntropyPool> entropy_pool;
 
-  // ZBI container of items to be propagated in mexec.
-  PhysHandoffPermanentSpan<const std::byte> mexec_data;
-
   // Architecture-specific content.
   ArchPhysHandoff arch_handoff;
   static_assert(std::is_default_constructible_v<ArchPhysHandoff>);

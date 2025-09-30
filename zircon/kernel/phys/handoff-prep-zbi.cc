@@ -180,7 +180,7 @@ void HandoffPrep::SummarizeMiscZbiItems(ktl::span<ktl::byte> zbi) {
   // formatted.
   ZX_ASSERT(view.take_error().is_ok());
 
-  ktl::span handoff_mexec = New(handoff_->mexec_data, ac, mexec_image_.size_bytes());
+  ktl::span handoff_mexec = New(boot_constants_->mexec_data, ac, mexec_image_.size_bytes());
   ZX_ASSERT(ac.check());
   memcpy(handoff_mexec.data(), mexec_image_.storage().get(), handoff_mexec.size_bytes());
 }

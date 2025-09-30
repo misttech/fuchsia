@@ -127,10 +127,12 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
 
   // Translate the relocated virtual address from the spec back into the image
   // to initialize the kernel's kBootContents.
-  const BootConstants constants = {
-      .kernel_physical_load_address = kernel_.physical_load_address(),
-  };
-  boot_constants_ = NewInKernelImage(abi_spec_->boot_constants, constants);
+  BootConstants constants =  // Move-only.
+      {.kernel_physical_load_address = kernel_.physical_load_address()};
+
+  // Other methods will fill in more values via boot_constants_, which points
+  // to the writable physical address, not the kernel's RODATA virtual address.
+  boot_constants_ = NewInKernelImage(abi_spec_->boot_constants, ktl::move(constants));
 }
 
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,

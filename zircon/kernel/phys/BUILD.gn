@@ -785,24 +785,33 @@ group("physboot") {
 
 source_set("zircon-abi-spec") {
   public = [ "include/phys/zircon-abi-spec.h" ]
-  public_deps = [ ":handoff" ]
+  public_deps = [ ":handoff-ptr" ]
   public_configs = [ ":includes" ]
 }
 
 source_set("boot-constants") {
   public = [ "include/phys/boot-constants.h" ]
-  public_deps = [ "//sdk/lib/zbi-format" ]
+  public_deps = [
+    ":handoff-ptr",
+    "//sdk/lib/zbi-format",
+  ]
   public_configs = [ ":includes" ]
+}
+
+source_set("handoff-ptr") {
+  public = [ "include/phys/handoff-ptr.h" ]
 }
 
 source_set("handoff") {
   public = [
     "//zircon/kernel/arch/${zircon_cpu}/phys/include/phys/arch/arch-handoff.h",
-    "include/phys/handoff-ptr.h",
     "include/phys/handoff.h",
   ]
 
   public_deps = [
+    # handoff.h has #include "handoff-ptr.h".
+    ":handoff-ptr",
+
     # arch-handoff.h has #include <lib/zbi-format/driver-config.h>
     "//sdk/lib/zbi-format",
 

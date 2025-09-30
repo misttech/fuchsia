@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/boot-options/boot-options.h>
 #include <lib/crashlog.h>
 #include <lib/zbitl/error-stdio.h>
 #include <lib/zbitl/image.h>
@@ -12,18 +11,12 @@
 #include <lib/zx/result.h>
 #include <mexec.h>
 #include <stdio.h>
-#include <zircon/assert.h>
-#include <zircon/limits.h>
 
-#include <fbl/alloc_checker.h>
-#include <fbl/array.h>
 #include <fbl/ref_ptr.h>
 #include <ktl/byte.h>
 #include <ktl/span.h>
 #include <ktl/type_traits.h>
-#include <ktl/variant.h>
-#include <lk/init.h>
-#include <phys/handoff.h>
+#include <phys/boot-constants.h>
 #include <vm/vm_object.h>
 
 #include <ktl/enforce.h>
@@ -31,13 +24,9 @@
 namespace {
 
 // Mexec data as gleaned from the physboot hand-off.
-zbitl::View<ktl::span<const ktl::byte>> gImageAtHandoff;
-
-void SetMexecDataZbi(uint level) { gImageAtHandoff = zbitl::View(gPhysHandoff->mexec_data.get()); }
+auto MexecDataZbi() { return zbitl::View{kBootConstants.mexec_data.get()}; }
 
 }  // namespace
-
-LK_INIT_HOOK(set_mexec_data_zbi, SetMexecDataZbi, LK_INIT_LEVEL_EARLIEST)
 
 zx::result<size_t> WriteMexecData(ktl::span<ktl::byte> buffer) {
   // Storage or write errors resulting from a span-backed Image imply buffer
@@ -55,13 +44,13 @@ zx::result<size_t> WriteMexecData(ktl::span<ktl::byte> buffer) {
     return error(result.error_value());
   }
 
-  if (auto result = image.Extend(gImageAtHandoff.begin(), gImageAtHandoff.end());
-      result.is_error()) {
+  zbitl::View zbi = MexecDataZbi();
+  if (auto result = image.Extend(zbi.begin(), zbi.end()); result.is_error()) {
     zbitl::PrintViewCopyError(result.error_value());
     return extend_error(result.error_value());
   }
 
-  if (auto result = gImageAtHandoff.take_error(); result.is_error()) {
+  if (auto result = zbi.take_error(); result.is_error()) {
     zbitl::PrintViewError(result.error_value());
     return zx::error{ZX_ERR_INTERNAL};
   }
@@ -72,17 +61,17 @@ zx::result<size_t> WriteMexecData(ktl::span<ktl::byte> buffer) {
         .type = ZBI_TYPE_CRASHLOG,
         .length = static_cast<uint32_t>(crashlog->size()),
     };
-    if (auto result = image.Append(header); result.is_error()) {
+    auto result = image.Append(header);
+    if (result.is_error()) {
       printf("mexec: could not append crashlog: ");
       zbitl::PrintViewError(result.error_value());
       return error(result.error_value());
-    } else {
-      auto it = ktl::move(result).value();
-      ktl::span<ktl::byte> payload = it->payload;
-      zx_status_t status = crashlog->Read(payload.data(), 0, payload.size());
-      if (status != ZX_OK) {
-        return zx::error{status};
-      }
+    }
+    auto it = ktl::move(result).value();
+    ktl::span<ktl::byte> payload = it->payload;
+    zx_status_t status = crashlog->Read(payload.data(), 0, payload.size());
+    if (status != ZX_OK) {
+      return zx::error{status};
     }
   }
 
