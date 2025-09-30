@@ -4,6 +4,7 @@
 
 #include "src/devices/block/drivers/nvme/queue-pair.h"
 
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/mmio-ptr/fake.h>
@@ -14,7 +15,6 @@
 
 #include "src/devices/block/drivers/nvme/commands.h"
 #include "src/devices/block/drivers/nvme/registers.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace nvme {

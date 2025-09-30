@@ -6,8 +6,8 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_NVME_QUEUE_PAIR_H_
 
 #include <lib/dma-buffer/buffer.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fpromise/bridge.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/stdcompat/span.h>
 #include <zircon/status.h>
 

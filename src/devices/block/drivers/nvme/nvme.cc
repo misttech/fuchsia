@@ -4,9 +4,9 @@
 
 #include "src/devices/block/drivers/nvme/nvme.h"
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmo-mapper.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/sync/completion.h>
 #include <stdio.h>
 #include <stdlib.h>

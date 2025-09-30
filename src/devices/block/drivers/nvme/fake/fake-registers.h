@@ -5,8 +5,9 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_NVME_FAKE_FAKE_REGISTERS_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_NVME_FAKE_FAKE_REGISTERS_H_
 
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
 #include <functional>
@@ -14,7 +15,6 @@
 #include <vector>
 
 #include "src/devices/block/drivers/nvme/registers.h"
-#include "src/devices/lib/mmio/test-helper.h"
 
 namespace fake_nvme {
 

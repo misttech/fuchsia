@@ -8,9 +8,9 @@
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <threads.h>
