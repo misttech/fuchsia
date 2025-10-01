@@ -55,16 +55,6 @@ impl SymbolizedRecord {
     }
 }
 
-pub fn symbolize(
-    input: &PathBuf,
-    output: &PathBuf,
-    pprof_conversion: bool,
-) -> Result<SymbolizedRecords, SymbolizeError> {
-    let context =
-        ffx_config::global_env_context().ok_or(SymbolizeError::NoFfxEnvironmentContext)?;
-    symbolize_with_context(input, output, pprof_conversion, &context)
-}
-
 pub fn symbolize_with_context(
     input: &PathBuf,
     output: &PathBuf,

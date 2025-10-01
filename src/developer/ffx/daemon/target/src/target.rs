@@ -1248,7 +1248,10 @@ impl Target {
             return;
         };
 
-        let host_pipe_child_builder = HostPipeChildDefaultBuilder { ssh_path: String::from("ssh") };
+        let host_pipe_child_builder = HostPipeChildDefaultBuilder {
+            context: self.context.clone(),
+            ssh_path: String::from("ssh"),
+        };
         let target = Rc::clone(self);
         fuchsia_async::Task::local(async move {
             match host_pipe_child_builder.get_host_addr(addr).await {
@@ -1270,7 +1273,10 @@ impl Target {
         overnet_node: &Arc<overnet_core::Router>,
         roid_sender: Option<channel::oneshot::Sender<Option<u64>>>,
     ) {
-        let host_pipe_child_builder = HostPipeChildDefaultBuilder { ssh_path: String::from("ssh") };
+        let host_pipe_child_builder = HostPipeChildDefaultBuilder {
+            context: self.context.clone(),
+            ssh_path: String::from("ssh"),
+        };
         self.run_host_pipe_with(overnet_node, roid_sender, host_pipe_child_builder)
     }
 

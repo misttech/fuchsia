@@ -5,6 +5,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::ffx_error;
+use ffx_config::EnvironmentContext;
 use ffx_profile_heapdump_common::{check_snapshot_error, connect_to_collector, export_to_pprof};
 use ffx_profile_heapdump_download_args::DownloadCommand;
 use ffx_writer::SimpleWriter;
@@ -19,6 +20,7 @@ pub struct DownloadTool {
     #[command]
     cmd: DownloadCommand,
     remote_control: RemoteControlProxyHolder,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(DownloadTool);
@@ -28,12 +30,16 @@ impl FfxMain for DownloadTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        download(self.remote_control, self.cmd).await?;
+        download(&self.context, self.remote_control, self.cmd).await?;
         Ok(())
     }
 }
 
-async fn download(remote_control: RemoteControlProxyHolder, cmd: DownloadCommand) -> Result<()> {
+async fn download(
+    context: &EnvironmentContext,
+    remote_control: RemoteControlProxyHolder,
+    cmd: DownloadCommand,
+) -> Result<()> {
     let (receiver_client, receiver_stream) = create_request_stream();
     let request = fheapdump_client::CollectorDownloadStoredSnapshotRequest {
         snapshot_id: Some(cmd.snapshot_id),
@@ -47,6 +53,7 @@ async fn download(remote_control: RemoteControlProxyHolder, cmd: DownloadCommand
         check_snapshot_error(heapdump_snapshot::Snapshot::receive_from(receiver_stream).await)?;
 
     export_to_pprof(
+        context,
         &snapshot,
         &mut std::fs::File::create(&cmd.output_file).map_err(|err| {
             ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err)

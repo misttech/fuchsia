@@ -70,7 +70,7 @@ impl EmuStopTool {
         }
         let mut errors: Vec<Error> = vec![];
         for mut some_name in names {
-            let builder = EngineBuilder::new(emu_instances.clone());
+            let builder = EngineBuilder::new(&self.context, emu_instances.clone());
             let engine = builder.get_engine_by_name(&mut some_name);
             if engine.is_err() && some_name.is_none() {
                 // This happens when the program doesn't know which instance to use. The

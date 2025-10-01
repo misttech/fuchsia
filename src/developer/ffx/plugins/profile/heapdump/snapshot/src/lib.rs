@@ -5,6 +5,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
+use ffx_config::EnvironmentContext;
 use ffx_profile_heapdump_common::{
     build_process_selector, check_snapshot_error, connect_to_collector, export_to_pprof,
 };
@@ -22,6 +23,7 @@ pub struct SnapshotTool {
     #[command]
     cmd: SnapshotCommand,
     remote_control: RemoteControlProxyHolder,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(SnapshotTool);
@@ -31,12 +33,16 @@ impl FfxMain for SnapshotTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        snapshot(self.remote_control, self.cmd).await?;
+        snapshot(&self.context, self.remote_control, self.cmd).await?;
         Ok(())
     }
 }
 
-async fn snapshot(remote_control: RemoteControlProxyHolder, cmd: SnapshotCommand) -> Result<()> {
+async fn snapshot(
+    context: &EnvironmentContext,
+    remote_control: RemoteControlProxyHolder,
+    cmd: SnapshotCommand,
+) -> Result<()> {
     let process_selector = build_process_selector(cmd.by_name, cmd.by_koid)?;
     let contents_dir = cmd.output_contents_dir.as_ref().map(std::path::Path::new);
 
@@ -89,6 +95,7 @@ async fn snapshot(remote_control: RemoteControlProxyHolder, cmd: SnapshotCommand
     // index for the generated files.
     let with_tags = cmd.with_tags || contents_dir.is_some();
     export_to_pprof(
+        context,
         &snapshot,
         &mut std::fs::File::create(&cmd.output_file).map_err(|err| {
             ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err)

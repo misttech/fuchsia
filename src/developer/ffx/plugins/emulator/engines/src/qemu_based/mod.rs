@@ -39,10 +39,8 @@ use std::{env, str};
 use tempfile::NamedTempFile;
 use vbmeta::{HashDescriptor, Key, Salt, VBMeta};
 
-pub(crate) fn get_host_tool(name: &str) -> Result<PathBuf> {
-    let sdk = ffx_config::global_env_context()
-        .ok_or_else(|| bug!("loading global environment context"))?
-        .get_sdk()?;
+pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<PathBuf> {
+    let sdk = context.get_sdk()?;
 
     // Attempts to get a host tool from the SDK manifest. If it fails, falls
     // back to attempting to derive the path to the host tool binary by simply checking
@@ -114,14 +112,12 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
     /// Returns an updated GuestConfig instance with the file paths set to
     /// the instance paths.
     async fn stage_image_files(
+        env: &EnvironmentContext,
         instance_name: &str,
         emu_config: &EmulatorConfiguration,
         reuse: bool,
     ) -> Result<GuestConfig> {
         let mut updated_guest = emu_config.guest.clone();
-
-        // TODO(https://fxbug.dev/380466925): The function should get the context from an argument
-        let env = ffx_config::global_env_context().expect("getting environment context");
 
         // Create the data directory if needed.
         let mut instance_root: PathBuf = env
@@ -269,7 +265,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     DiskImage::Fvm(_) => {
                         fs::copy(src_path, &dest_path)
                             .map_err(|e| bug!("cannot stage disk image file: {e}"))?;
-                        Self::fvm_extend(&dest_path, target_size)?;
+                        Self::fvm_extend(env, &dest_path, target_size)?;
                     }
                     DiskImage::Fxfs(_) => {
                         let mut tmp =
@@ -365,7 +361,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     .arch(emu_config.device.cpu.architecture)
                     .cmdline(&zedboot_cmdline_path)
                     .output_path(&gpt_image_path)
-                    .mkfs_msdosfs_path(&get_host_tool("mkfs-msdosfs")?)
+                    .mkfs_msdosfs_path(&get_host_tool(env, "mkfs-msdosfs")?)
                     .product_bundle(product_path)
                     .resize(gpt::DEFAULT_IMAGE_SIZE)
                     .use_fxfs(true)
@@ -384,8 +380,8 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         Ok(updated_guest)
     }
 
-    fn fvm_extend(dest_path: &Path, target_size: u64) -> Result<()> {
-        let fvm_tool = get_host_tool(config::FVM_HOST_TOOL)
+    fn fvm_extend(env: &EnvironmentContext, dest_path: &Path, target_size: u64) -> Result<()> {
+        let fvm_tool = get_host_tool(env, config::FVM_HOST_TOOL)
             .map_err(|e| bug!("cannot locate fvm tool: {e}"))?;
         let mut resize_command = Command::new(fvm_tool);
 
@@ -418,8 +414,8 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         dest: &PathBuf,
         cmdline: Option<String>,
     ) -> Result<()> {
-        let zbi_tool =
-            get_host_tool(config::ZBI_HOST_TOOL).map_err(|e| bug!("ZBI tool is missing: {e}"))?;
+        let zbi_tool = get_host_tool(ctx, config::ZBI_HOST_TOOL)
+            .map_err(|e| bug!("ZBI tool is missing: {e}"))?;
         let ssh_keys = SshKeyFiles::load(Some(ctx))
             .await
             .map_err(|e| bug!("Error finding ssh authorized_keys file: {e}"))?;
@@ -556,12 +552,12 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         Ok(())
     }
 
-    async fn stage(&mut self) -> Result<()> {
+    async fn stage(&mut self, context: &EnvironmentContext) -> Result<()> {
         let emu_config = self.emu_config_mut();
         let reuse = emu_config.runtime.reuse;
         let name = &emu_config.runtime.name;
 
-        emu_config.guest = Self::stage_image_files(&name, emu_config, reuse).await?;
+        emu_config.guest = Self::stage_image_files(context, &name, emu_config, reuse).await?;
 
         // This is done to avoid running emu in the same directory as the kernel or other files
         // that are used by qemu. If the multiboot.bin file is in the current directory, it does
@@ -1305,9 +1301,13 @@ mod tests {
         fs::write(&root.join(instance_name).join("zbi"), ORIGINAL)
             .map_err(|e| bug!("cannot write fake zbi file: {e}"))?;
 
-        let updated =
-            <TestEngine as QemuBasedEngine>::stage_image_files(instance_name, &emu_config, false)
-                .await;
+        let updated = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await;
 
         // Staging of GPT images is only expected work when mkfs-msdosfs is guaranteed to be found.
         // TODO(https://fxbug.dev/377317738): When make-fuchsia-vol is guaranteed to create the
@@ -1362,9 +1362,13 @@ mod tests {
         write_to(emu_config.guest.disk_image.as_ref().unwrap(), UPDATED)
             .map_err(|e| bug!("cannot write updated value to disk image file: {e}"))?;
 
-        let updated =
-            <TestEngine as QemuBasedEngine>::stage_image_files(instance_name, &emu_config, false)
-                .await;
+        let updated = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await;
 
         assert!(updated.is_ok(), "expected OK got {:?}", updated.unwrap_err());
 
@@ -1480,9 +1484,13 @@ mod tests {
         fs::write(&root.join(instance_name).join("zbi"), ORIGINAL)
             .map_err(|e| bug!("cannot write fake zbi file: {e}"))?;
 
-        let updated: Result<GuestConfig> =
-            <TestEngine as QemuBasedEngine>::stage_image_files(instance_name, &emu_config, true)
-                .await;
+        let updated: Result<GuestConfig> = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            true,
+        )
+        .await;
 
         // Staging of GPT images is only expected work when mkfs-msdosfs is guaranteed to be found.
         // TODO(https://fxbug.dev/377317738): When make-fuchsia-vol is guaranteed to create the
@@ -1538,9 +1546,13 @@ mod tests {
         write_to(emu_config.guest.disk_image.as_ref().unwrap(), UPDATED)
             .expect("cannot write updated value to disk image file");
 
-        let updated =
-            <TestEngine as QemuBasedEngine>::stage_image_files(instance_name, &emu_config, true)
-                .await;
+        let updated = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            true,
+        )
+        .await;
 
         assert!(updated.is_ok(), "expected OK got {:?}", updated.unwrap_err());
 
@@ -1656,10 +1668,14 @@ mod tests {
 
         emu_config.device.storage = DataAmount { units: DataUnits::Kilobytes, quantity: 4 };
 
-        let config =
-            <TestEngine as QemuBasedEngine>::stage_image_files(instance_name, &emu_config, false)
-                .await
-                .expect("Failed to get guest config");
+        let config = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await
+        .expect("Failed to get guest config");
 
         let expected = GuestConfig {
             kernel_image: Some(root.join(instance_name).join("kernel")),
@@ -1872,7 +1888,7 @@ mod tests {
 
         // use the current pid for the emulator instance
 
-        let mut engine = crate::FemuEngine::new(data, emu_instances);
+        let mut engine = crate::FemuEngine::new(&env.context, data, emu_instances);
         engine.set_pid(std::process::id());
         engine.set_engine_state(EngineState::Running);
 

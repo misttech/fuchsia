@@ -17,6 +17,7 @@ use emulator_instance::{
     RuntimeConfig, read_from_disk,
 };
 use errors::ffx_bail;
+use ffx_config::EnvironmentContext;
 use ffx_emulator_config::EmulatorEngine;
 use fho::{Result, bug, return_bug, return_user_error};
 use port_picker::{is_free_tcp_port, pick_unused_port};
@@ -54,6 +55,7 @@ use qemu_based::qemu::QemuEngine;
 ///     (*engine).start().await
 ///
 pub struct EngineBuilder {
+    context: EnvironmentContext,
     emulator_configuration: EmulatorConfiguration,
     engine_type: EngineType,
     emu_instances: EmulatorInstances,
@@ -61,8 +63,9 @@ pub struct EngineBuilder {
 
 impl EngineBuilder {
     /// Create a new EngineBuilder, populated with default values for all configuration.
-    pub fn new(emu_instances: EmulatorInstances) -> Self {
+    pub fn new(context: &EnvironmentContext, emu_instances: EmulatorInstances) -> Self {
         Self {
+            context: context.clone(),
             emulator_configuration: EmulatorConfiguration::default(),
             engine_type: EngineType::default(),
             emu_instances,
@@ -110,9 +113,15 @@ impl EngineBuilder {
     /// |build| for those steps to be performed.
     pub fn from_data(&self, data: EmulatorInstanceData) -> Box<dyn EmulatorEngine> {
         match data.get_engine_type() {
-            EngineType::Femu => Box::new(FemuEngine::new(data, self.emu_instances.clone())),
-            EngineType::Qemu => Box::new(QemuEngine::new(data, self.emu_instances.clone())),
-            EngineType::Crosvm => Box::new(CrosvmEngine::new(data, self.emu_instances.clone())),
+            EngineType::Femu => {
+                Box::new(FemuEngine::new(&self.context, data, self.emu_instances.clone()))
+            }
+            EngineType::Qemu => {
+                Box::new(QemuEngine::new(&self.context, data, self.emu_instances.clone()))
+            }
+            EngineType::Crosvm => {
+                Box::new(CrosvmEngine::new(&self.context, data, self.emu_instances.clone()))
+            }
         }
     }
 

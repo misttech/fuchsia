@@ -559,6 +559,7 @@ impl FidlProtocol for TargetCollectionProtocol {
         let mdns = self.open_mdns_proxy(cx).await?;
         let fastboot = self.open_fastboot_target_stream_proxy(cx).await?;
         let tc = cx.get_target_collection().await?;
+        let env = cx.environment();
         let tc_clone = tc.clone();
         let node_clone = Arc::clone(&node);
         self.tasks.spawn(async move {
@@ -568,11 +569,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     | ffx::MdnsEventType::TargetRediscovered(t) => {
                         // For backwards compatibility.
                         // Immediately mark the target as used then run the host pipe.
-                        let autoconnect = if let Some(ctx) = ffx_config::global_env_context() {
-                            !ffx_config::is_mdns_autoconnect_disabled(&ctx)
-                        } else {
-                            true
-                        };
+                        let autoconnect = !ffx_config::is_mdns_autoconnect_disabled(&env);
                         handle_discovered_target(&tc_clone, t, &node_clone, autoconnect);
                     }
                     _ => {}

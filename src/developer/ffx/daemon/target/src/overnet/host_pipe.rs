@@ -88,6 +88,7 @@ pub(crate) trait HostPipeChildBuilder {
 #[derive(Clone)]
 pub(crate) struct HostPipeChildDefaultBuilder {
     pub(crate) ssh_path: String,
+    pub(crate) context: EnvironmentContext,
 }
 
 #[async_trait(?Send)]
@@ -102,7 +103,6 @@ impl HostPipeChildBuilder for HostPipeChildDefaultBuilder {
         ssh_timeout: u16,
         node: Arc<overnet_core::Router>,
     ) -> Result<(Option<HostAddr>, HostPipeChild), PipeError> {
-        let ctx = ffx_config::global_env_context().expect("Global env context uninitialized");
         HostPipeChild::new_inner(
             self.ssh_path(),
             addr,
@@ -112,20 +112,19 @@ impl HostPipeChildBuilder for HostPipeChildDefaultBuilder {
             watchdogs,
             ssh_timeout,
             node,
-            ctx,
+            self.context.clone(),
         )
         .await
     }
 
     async fn get_host_addr(&self, addr: SocketAddr) -> Result<String, PipeError> {
-        let ctx = ffx_config::global_env_context().expect("Global env context uninitialized");
         let args = vec!["echo", "$SSH_CONNECTION"];
         let mut ssh = tokio::process::Command::from(
             build_ssh_command_with_env(
                 &self.ssh_path,
                 netext::ScopedSocketAddr::from_socket_addr(addr)
                     .map_err(PipeError::AddressError)?,
-                &ctx,
+                &self.context,
                 args,
             )
             .map_err(|e| PipeError::Error(e.to_string()))?,
@@ -656,10 +655,11 @@ mod test {
         WithOvernetId,
     }
 
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Clone, Debug)]
     struct FakeHostPipeChildBuilder<'a> {
         operation_type: ChildOperationType,
         ssh_path: &'a str,
+        context: EnvironmentContext,
     }
 
     #[async_trait(?Send)]
@@ -685,8 +685,10 @@ mod test {
                     start_child_ssh_failure(addr, id, stderr_buf, event_queue).await
                 }
                 ChildOperationType::DefaultBuilder => {
-                    let builder =
-                        HostPipeChildDefaultBuilder { ssh_path: String::from(self.ssh_path) };
+                    let builder = HostPipeChildDefaultBuilder {
+                        context: self.context.clone(),
+                        ssh_path: String::from(self.ssh_path),
+                    };
                     builder
                         .new(
                             addr,
@@ -801,6 +803,7 @@ mod test {
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::Normal,
                 ssh_path: "ssh",
+                context: env.context.clone(),
             },
             30,
             Duration::default(),
@@ -827,6 +830,7 @@ mod test {
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::InternalFailure,
                 ssh_path: "ssh",
+                context: env.context.clone(),
             },
             30,
             Duration::default(),
@@ -864,6 +868,7 @@ mod test {
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::SshFailure,
                 ssh_path: "ssh",
+                context: env.context.clone(),
             },
             30,
             Duration::default(),
@@ -938,6 +943,7 @@ mod test {
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::DefaultBuilder,
                 ssh_path: "echo",
+                context: env.context.clone(),
             },
             30,
             Duration::default(),
@@ -972,6 +978,7 @@ mod test {
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::DefaultBuilder,
                 ssh_path: &ssh_path_str,
+                context: env.context.clone(),
             },
             30,
             Duration::default(),
@@ -1022,6 +1029,7 @@ mod test {
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::WithOvernetId,
                 ssh_path: "ssh",
+                context: env.context.clone(),
             },
             30,
             Duration::default(),

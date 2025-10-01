@@ -78,7 +78,7 @@ impl EngineOperations for EngineOperationsData {
         &self,
         name: &mut Option<String>,
     ) -> Result<Option<Box<dyn EmulatorEngine>>> {
-        let builder = EngineBuilder::new(self.emu_instances.clone());
+        let builder = EngineBuilder::new(&self.context, self.emu_instances.clone());
         builder.get_engine_by_name(name).map_err(|e| e.into())
     }
     fn edit_configuration(&self, emu_config: &mut EmulatorConfiguration) -> Result<()> {
@@ -90,7 +90,7 @@ impl EngineOperations for EngineOperationsData {
         emulator_configuration: &EmulatorConfiguration,
         engine_type: EngineType,
     ) -> Result<Box<dyn EmulatorEngine>> {
-        EngineBuilder::new(self.emu_instances.clone())
+        EngineBuilder::new(&self.context, self.emu_instances.clone())
             .config(emulator_configuration.clone())
             .engine_type(engine_type)
             .build()

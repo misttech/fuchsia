@@ -4,15 +4,17 @@
 
 use crate::EngineBuilder;
 use emulator_instance::{EmulatorInstances, EngineOption, read_from_disk};
+use ffx_config::EnvironmentContext;
 use ffx_emulator_config::EmulatorEngine;
 use fho::{Result, return_bug, return_user_error};
 
 pub async fn read_engine_from_disk(
+    context: &EnvironmentContext,
     emu_instances: &EmulatorInstances,
     name: &str,
 ) -> Result<Box<dyn EmulatorEngine>> {
     let instance_dir = emu_instances.get_instance_dir(name, false)?;
-    let builder = EngineBuilder::new(emu_instances.clone());
+    let builder = EngineBuilder::new(context, emu_instances.clone());
     match read_from_disk(&instance_dir) {
         Ok(EngineOption::DoesExist(data)) => Ok(builder.from_data(data)),
         Ok(EngineOption::DoesNotExist(_)) => return_user_error!("{name} instance does not exist"),
@@ -34,7 +36,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_write_then_read() -> Result<()> {
         let temp_dir = tempdir().expect("Couldn't get a temporary directory for testing.");
-
+        let env = ffx_config::test_env().build()?;
         // Create a test directory in TempFile::tempdir.
         let qemu_name = "qemu_test_write_then_read";
         let femu_name = "femu_test_write_then_read";
@@ -46,16 +48,16 @@ mod tests {
         let mut qemu_instance_data =
             EmulatorInstanceData::new_with_state(qemu_name, EngineState::New);
         qemu_instance_data.set_engine_type(EngineType::Qemu);
-        let q_engine = QemuEngine::new(qemu_instance_data, emu_instances.clone());
+        let q_engine = QemuEngine::new(&env.context, qemu_instance_data, emu_instances.clone());
         let mut femu_instance_data =
             EmulatorInstanceData::new_with_state(femu_name, EngineState::New);
         femu_instance_data.set_engine_type(EngineType::Qemu);
-        let f_engine = FemuEngine::new(femu_instance_data, emu_instances.clone());
+        let f_engine = FemuEngine::new(&env.context, femu_instance_data, emu_instances.clone());
 
         // Serialize the QEMU engine to disk.
         q_engine.save_to_disk().await.expect("Problem serializing QEMU engine to disk.");
 
-        let qemu_copy = read_engine_from_disk(&emu_instances, qemu_name)
+        let qemu_copy = read_engine_from_disk(&env.context, &emu_instances, qemu_name)
             .await
             .expect("Problem reading QEMU engine from disk.");
 
@@ -63,7 +65,7 @@ mod tests {
 
         // Serialize the FEMU engine to disk.
         f_engine.save_to_disk().await.expect("Problem serializing FEMU engine to disk.");
-        let box_engine = read_engine_from_disk(&emu_instances, femu_name).await;
+        let box_engine = read_engine_from_disk(&env.context, &emu_instances, femu_name).await;
         assert!(box_engine.is_ok(), "Read from disk failed for FEMU: {:?}", box_engine.err());
 
         Ok(())

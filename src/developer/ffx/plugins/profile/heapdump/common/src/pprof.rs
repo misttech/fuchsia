@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use ffx_config::EnvironmentContext;
 use heapdump_snapshot::{ExecutableRegion, Snapshot};
 use itertools::Itertools;
 use prost::Message;
@@ -16,9 +17,10 @@ use std::io::Write;
 // does not have the necessary information. This can happen with old heapdump collector builds
 // from before the `name` and `vaddr` fields were added to the FIDL table.
 fn instantiate_symbolizer(
+    context: &EnvironmentContext,
     executable_regions: &HashMap<u64, ExecutableRegion>,
 ) -> Result<ffx_symbolize::Symbolizer> {
-    let mut symbolizer = ffx_symbolize::Symbolizer::new()?;
+    let mut symbolizer = ffx_symbolize::Symbolizer::with_context(context)?;
     let mut symbolizer_module_ids = HashMap::new();
     for (address, info) in executable_regions {
         let module_id = symbolizer_module_ids
@@ -37,7 +39,12 @@ fn instantiate_symbolizer(
     Ok(symbolizer)
 }
 
-fn build_profile(snapshot: &Snapshot, with_tags: bool, symbolize: bool) -> Result<pprof::Profile> {
+fn build_profile(
+    context: &EnvironmentContext,
+    snapshot: &Snapshot,
+    with_tags: bool,
+    symbolize: bool,
+) -> Result<pprof::Profile> {
     let mut st = pprof::StringTableBuilder::default();
 
     let mut pprof = pprof::Profile {
@@ -70,7 +77,7 @@ fn build_profile(snapshot: &Snapshot, with_tags: bool, symbolize: bool) -> Resul
 
     // If symbolization was requested, populate its own view of the mappings too.
     let symbolizer = if symbolize {
-        if let Ok(symbolizer) = instantiate_symbolizer(&snapshot.executable_regions) {
+        if let Ok(symbolizer) = instantiate_symbolizer(context, &snapshot.executable_regions) {
             Some(symbolizer)
         } else {
             eprintln!(
@@ -266,12 +273,13 @@ fn build_profile(snapshot: &Snapshot, with_tags: bool, symbolize: bool) -> Resul
 }
 
 pub fn export_to_pprof(
+    context: &EnvironmentContext,
     snapshot: &Snapshot,
     dest: &mut std::fs::File,
     with_tags: bool,
     symbolize: bool,
 ) -> Result<()> {
-    let buf = build_profile(snapshot, with_tags, symbolize)?.encode_to_vec();
+    let buf = build_profile(context, snapshot, with_tags, symbolize)?.encode_to_vec();
     dest.write_all(&buf)?;
     Ok(())
 }
@@ -570,8 +578,9 @@ mod tests {
     #[test_case(true ; "with tags")]
     #[test_case(false ; "aggregated")]
     fn test_build_profile(with_tags: bool) {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let snapshot = generate_fake_snapshot();
-        let profile = build_profile(&snapshot, with_tags, false).unwrap();
+        let profile = build_profile(&env.context, &snapshot, with_tags, false).unwrap();
         assert_profile_matches_fake_snapshot(&profile, with_tags);
     }
 
@@ -579,12 +588,13 @@ mod tests {
     #[test_case(true ; "with tags")]
     #[test_case(false ; "aggregated")]
     fn test_export_to_pprof(with_tags: bool) {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         // Create a temporary file.
         let mut tempfile = tempfile::tempfile().unwrap();
 
         // Write a snapshot to it.
         let snapshot = generate_fake_snapshot();
-        export_to_pprof(&snapshot, &mut tempfile, with_tags, false).unwrap();
+        export_to_pprof(&env.context, &snapshot, &mut tempfile, with_tags, false).unwrap();
 
         // Read it back.
         let mut buf = Vec::new();
@@ -755,8 +765,9 @@ mod tests {
     #[test_case(true ; "with tags")]
     #[test_case(false ; "aggregated")]
     fn test_build_profile_from_aggregated_snapshot(with_tags: bool) {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let snapshot = generate_fake_aggregated_snapshot();
-        let profile = build_profile(&snapshot, with_tags, false).unwrap();
+        let profile = build_profile(&env.context, &snapshot, with_tags, false).unwrap();
         assert_profile_matches_fake_aggregated_snapshot(&profile, with_tags);
     }
 }

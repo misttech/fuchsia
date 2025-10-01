@@ -25,11 +25,16 @@ use std::process::{Command, Output};
 pub struct CrosvmEngine {
     data: EmulatorInstanceData,
     emu_instances: EmulatorInstances,
+    context: EnvironmentContext,
 }
 
 impl CrosvmEngine {
-    pub(crate) fn new(data: EmulatorInstanceData, emu_instances: EmulatorInstances) -> Self {
-        Self { data, emu_instances }
+    pub(crate) fn new(
+        context: &EnvironmentContext,
+        data: EmulatorInstanceData,
+        emu_instances: EmulatorInstances,
+    ) -> Self {
+        Self { context: context.clone(), data, emu_instances }
     }
 
     fn validate_configuration(&self) -> Result<()> {
@@ -64,8 +69,10 @@ impl EmulatorEngine for CrosvmEngine {
     }
 
     async fn stage(&mut self) -> Result<()> {
-        if let Err(e) =
-            <Self as QemuBasedEngine>::stage(&mut self).await.and_then(|()| self.validate_staging())
+        let ctx_clone = self.context.clone();
+        if let Err(e) = <Self as QemuBasedEngine>::stage(&mut self, &ctx_clone)
+            .await
+            .and_then(|()| self.validate_staging())
         {
             self.data.set_engine_state(EngineState::Error);
             return self.save_to_disk().await.and(Err(e));
@@ -229,7 +236,7 @@ impl EmulatorEngine for CrosvmEngine {
 
     /// Loads the path to the crosvm binary to execute. This is based on the guest OS architecture.
     fn load_emulator_binary(&mut self) -> Result<()> {
-        let emulator_binary = match get_host_tool(CROSVM_TOOL) {
+        let emulator_binary = match get_host_tool(&self.context, CROSVM_TOOL) {
             Ok(crosvm_path) => crosvm_path.canonicalize().map_err(|e| {
                 bug!("Failed to canonicalize the path to the emulator binary: {crosvm_path:?}: {e}")
             })?,
@@ -294,6 +301,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_build_emulator_cmd() {
+        let env = ffx_config::test_env().build().expect("test env");
         let program_name = "/test_crosvm_bin";
         let mut cfg = EmulatorConfiguration::default();
         cfg.host.networking = NetworkingMode::None;
@@ -301,7 +309,8 @@ mod tests {
 
         let mut emu_data = EmulatorInstanceData::new(cfg, EngineType::Crosvm, EngineState::New);
         emu_data.set_emulator_binary(program_name.into());
-        let test_engine = CrosvmEngine::new(emu_data, EmulatorInstances::new(PathBuf::new()));
+        let test_engine =
+            CrosvmEngine::new(&env.context, emu_data, EmulatorInstances::new(PathBuf::new()));
         let cmd = test_engine.build_emulator_cmd();
         assert_eq!(cmd.get_program(), program_name);
         assert_eq!(cmd.get_envs().collect::<Vec<_>>(), []);
@@ -310,6 +319,7 @@ mod tests {
     #[fuchsia::test]
     fn test_build_emulator_cmd_existing_env() {
         env::set_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value");
+        let env = ffx_config::test_env().build().expect("test env");
         let program_name = "/test_crosvm_bin";
         let mut cfg = EmulatorConfiguration::default();
         cfg.host.networking = NetworkingMode::None;
@@ -318,7 +328,7 @@ mod tests {
         let mut emu_data = EmulatorInstanceData::new(cfg, EngineType::Crosvm, EngineState::New);
         emu_data.set_emulator_binary(program_name.into());
         let test_engine: CrosvmEngine =
-            CrosvmEngine::new(emu_data, EmulatorInstances::new(PathBuf::new()));
+            CrosvmEngine::new(&env.context, emu_data, EmulatorInstances::new(PathBuf::new()));
         let cmd = test_engine.build_emulator_cmd();
         assert_eq!(cmd.get_program(), program_name);
         assert_eq!(cmd.get_envs().collect::<Vec<_>>(), []);
@@ -352,7 +362,7 @@ mod tests {
         .expect("custom template contents");
         cfg.runtime.template = Some(template_file);
         cfg.runtime.config_override = true;
-        let engine = EngineBuilder::new(emu_instances.clone())
+        let engine = EngineBuilder::new(&env.context, emu_instances.clone())
             .config(cfg.clone())
             .engine_type(EngineType::Crosvm)
             .build()

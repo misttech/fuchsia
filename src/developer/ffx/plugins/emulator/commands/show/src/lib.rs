@@ -73,7 +73,7 @@ impl EmuShowTool {
         mut writer: <Self as FfxMain>::Writer,
     ) -> Result<()> {
         let mut instance_name = self.cmd.name.clone();
-        let builder = EngineBuilder::new(emu_instances.clone());
+        let builder = EngineBuilder::new(&self.context, emu_instances.clone());
         match builder.get_engine_by_name(&mut instance_name) {
             Ok(Some(engine)) => {
                 let info = engine.show(which_details(&self.cmd));

@@ -30,13 +30,6 @@ pub struct Symbolizer {
 static SYMBOLIZER_LOCK: Mutex<()> = Mutex::new(());
 
 impl Symbolizer {
-    /// Create a new symbolizer instance.
-    pub fn new() -> Result<Self, CreateSymbolizerError> {
-        let context = ffx_config::global_env_context()
-            .ok_or(CreateSymbolizerError::NoFfxEnvironmentContext)?;
-        Self::with_context(&context)
-    }
-
     /// Create a new symbolizer instance with a specific ffx context. Normally only needed in tests.
     pub fn with_context(context: &EnvironmentContext) -> Result<Self, CreateSymbolizerError> {
         symbol_index::ensure_symbol_index_registered(&context)

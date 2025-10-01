@@ -204,7 +204,7 @@ async fn get_emu_host_adb_port(context: &EnvironmentContext, name: &str) -> Resu
     let instance_dir: PathBuf =
         context.get(EMU_INSTANCE_ROOT_DIR).bug_context("getting emulator instance dir")?;
     let emu_instances = emulator_instance::EmulatorInstances::new(instance_dir);
-    let builder = EngineBuilder::new(emu_instances);
+    let builder = EngineBuilder::new(context, emu_instances);
     let mut instance_name = Some(name.to_string());
     let engine = builder
         .get_engine_by_name(&mut instance_name)

@@ -8,6 +8,7 @@ use args::{ProfilerCommand, ProfilerSubCommand};
 use async_fs::File;
 use core::fmt;
 use errors::{ffx_bail, ffx_error};
+use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool, deferred};
 use log::info;
@@ -62,6 +63,7 @@ pub struct ProfilerTool {
     controller: fho::Deferred<profiler::SessionProxy>,
     #[command]
     cmd: ProfilerCommand,
+    context: EnvironmentContext,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -70,7 +72,7 @@ impl FfxMain for ProfilerTool {
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         info!(cmd:? = self.cmd; "Running profiler... ");
-        Ok(profiler(self.controller, writer, self.cmd).await?)
+        Ok(profiler(&self.context, self.controller, writer, self.cmd).await?)
     }
 }
 
@@ -129,6 +131,7 @@ struct SessionOpts {
 }
 
 async fn run_session(
+    context: &EnvironmentContext,
     controller: fho::Deferred<profiler::SessionProxy>,
     mut writer: Writer,
     config: profiler::Config,
@@ -220,10 +223,11 @@ async fn run_session(
     if !opts.symbolize {
         return Ok(());
     }
-    if let Ok(symbolized_record) = ffx_profiler::symbolize::symbolize(
+    if let Ok(symbolized_record) = ffx_profiler::symbolize::symbolize_with_context(
         &unsymbolized_path,
         &opts.output.clone().into(),
         opts.pprof_conversion,
+        context,
     ) {
         return ffx_profiler::pprof::samples_to_pprof(symbolized_record, opts.output.into());
     } else {
@@ -232,6 +236,7 @@ async fn run_session(
 }
 
 pub async fn profiler(
+    context: &EnvironmentContext,
     controller: fho::Deferred<profiler::SessionProxy>,
     writer: Writer,
     cmd: ProfilerCommand,
@@ -310,10 +315,11 @@ pub async fn profiler(
             (target, config, session_opts)
         }
         ProfilerSubCommand::Symbolize(opts) => {
-            if let Ok(symbolized_record) = ffx_profiler::symbolize::symbolize(
+            if let Ok(symbolized_record) = ffx_profiler::symbolize::symbolize_with_context(
                 &opts.input,
                 &opts.output.clone().into(),
                 opts.pprof_conversion,
+                context,
             ) {
                 return ffx_profiler::pprof::samples_to_pprof(
                     symbolized_record,
@@ -329,7 +335,7 @@ pub async fn profiler(
         target: Some(targets),
         ..Default::default()
     };
-    run_session(controller, writer, config, session_opts).await
+    run_session(context, controller, writer, config, session_opts).await
 }
 
 #[cfg(test)]
