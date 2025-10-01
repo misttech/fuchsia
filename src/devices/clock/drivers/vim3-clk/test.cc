@@ -6,8 +6,9 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/driver_test.h>
-#include <lib/mmio/mmio-buffer.h>
 #include <lib/zx/vmo.h>
 
 #include <cstdint>
@@ -17,7 +18,6 @@
 #include <soc/aml-meson/g12b-clk.h>
 #include <soc/aml-s905d2/s905d2-hiu-regs.h>
 
-#include "src/devices/lib/mmio/test-helper.h"
 #include "vim3_clk.h"
 
 namespace vim3_clock {

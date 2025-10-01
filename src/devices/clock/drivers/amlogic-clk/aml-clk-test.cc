@@ -6,9 +6,10 @@
 
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio-buffer.h>
 
 #include <soc/aml-a311d/a311d-hw.h>
 #include <soc/aml-meson/aml-clk-common.h>
@@ -23,7 +24,6 @@
 #include "aml-g12a-blocks.h"
 #include "aml-g12b-blocks.h"
 #include "aml-sm1-blocks.h"
-#include "src/devices/lib/mmio/test-helper.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace amlogic_clock::test {

@@ -65,10 +65,10 @@ source_set("amlogic-clk-driver-source") {
     "//zircon/system/ulib/zircon-internal",
   ]
   deps = [
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/devices/lib/mmio",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
   ]
@@ -101,9 +101,9 @@ test("amlogic-clk-test-bin") {
   deps = [
     ":amlogic-clk-driver-source",
     "//sdk/lib/driver/fake-platform-device/cpp",
+    "//sdk/lib/driver/mmio/cpp",
+    "//sdk/lib/driver/mmio/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
-    "//src/devices/lib/mmio",
-    "//src/devices/lib/mmio:test_helper",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//zircon/system/ulib/mmio-ptr",

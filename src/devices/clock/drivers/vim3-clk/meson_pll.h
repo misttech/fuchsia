@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_CLOCK_DRIVERS_VIM3_CLK_MESON_PLL_H_
 #define SRC_DEVICES_CLOCK_DRIVERS_VIM3_CLK_MESON_PLL_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include <soc/aml-meson/aml-pll.h>
 #include <soc/aml-s905d2/s905d2-hiu.h>

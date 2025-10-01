@@ -13,8 +13,8 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/mmio/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <zircon/syscalls/smc.h>
 

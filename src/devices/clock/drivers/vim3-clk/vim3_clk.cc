@@ -7,10 +7,10 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/mmio/cpp/mmio-view.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/mmio/mmio-buffer.h>
-#include <lib/mmio/mmio-view.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>

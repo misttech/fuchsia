@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_CLOCK_DRIVERS_VIM3_CLK_MESON_GATE_H_
 #define SRC_DEVICES_CLOCK_DRIVERS_VIM3_CLK_MESON_GATE_H_
 
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
