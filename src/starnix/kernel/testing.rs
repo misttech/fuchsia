@@ -23,7 +23,6 @@ use crate::vfs::{
     FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
-use fidl_fuchsia_io as fio;
 use selinux::SecurityServer;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
@@ -41,6 +40,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::{Arc, mpsc};
 use zerocopy::{Immutable, IntoBytes};
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Create a FileSystemHandle for use in testing.
 ///
@@ -135,23 +135,26 @@ where
     let kernel = create_test_kernel(locked, security_server);
     let fs = create_test_fs_context(locked, &kernel, fs_factory);
     let init_task = create_test_init_task(locked, &kernel, fs);
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let error = execute_task_with_prerun_result(
-        locked,
-        init_task,
-        move |locked, current_task| -> Result<(), Errno> {
-            let result = callback(locked, current_task);
-            current_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
-            sender.send(result).map_err(|e| errno!(EIO, e))?;
-            error!(EHWPOISON)
-        },
-        |_| {},
-        None,
-    )
-    .unwrap_err();
-    // EHWPOISON is expected from the pre_run task, any other error is returned.
-    assert_eq!(error, errno!(EHWPOISON));
-    receiver.recv().expect("recv")
+    fasync::unblock(move || {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let error = execute_task_with_prerun_result(
+            locked,
+            init_task,
+            move |locked, current_task| -> Result<(), Errno> {
+                let result = callback(locked, current_task);
+                current_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+                sender.send(result).map_err(|e| errno!(EIO, e))?;
+                error!(EHWPOISON)
+            },
+            |_| {},
+            None,
+        )
+        .unwrap_err();
+        // EHWPOISON is expected from the pre_run task, any other error is returned.
+        assert_eq!(error, errno!(EHWPOISON));
+        receiver.recv().expect("recv")
+    })
+    .await
 }
 
 #[deprecated = "Do not add new callers, use spawn_kernel_and_run() instead."]
