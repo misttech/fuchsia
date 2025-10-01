@@ -11,6 +11,10 @@ use super::{at_cmd, at_ok, CommandFromHf, Procedure, ProcedureInput, ProcedureOu
 
 use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
 
+/// HFP v1.8 §4.11.2
+///
+/// The first phase of audio connection setup, followed by Codec Connection Setup and SCO
+/// connection setup. This phase is only run if the HF is initiating the connection.
 #[derive(Debug, PartialEq)]
 pub enum AudioConnectionSetupProcedure {
     Started,
@@ -18,15 +22,13 @@ pub enum AudioConnectionSetupProcedure {
     Terminated,
 }
 
-/// HFP v1.8 §4.11.2
-///
-/// The first phase of audio connection setup, followed by Codec Connection Setup and SCO
-/// connection setup. This phase is only run if the HF is initating the connection.
-impl Procedure<ProcedureInput, ProcedureOutput> for AudioConnectionSetupProcedure {
-    fn new() -> Self {
+impl AudioConnectionSetupProcedure {
+    pub fn new() -> Self {
         Self::Started
     }
+}
 
+impl Procedure<ProcedureInput, ProcedureOutput> for AudioConnectionSetupProcedure {
     fn name(&self) -> &str {
         "Audio Connection Setup Procedure"
     }

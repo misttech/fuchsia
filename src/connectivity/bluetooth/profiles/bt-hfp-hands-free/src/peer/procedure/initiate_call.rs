@@ -9,6 +9,10 @@ use super::{at_cmd, at_ok, CommandFromHf, Procedure, ProcedureInput, ProcedureOu
 
 use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
 
+/// HFP v1.8 §§ 4.18, 4.19, 4.20
+///
+/// This procedure only handles sending the AT Commands to start call setup.  The rest of these
+/// procedures come in as unsolicited +CIEVs and SCO setup, which are handled separately.
 #[derive(Debug, PartialEq)]
 pub enum InitiateCallProcedure {
     Started,
@@ -16,15 +20,13 @@ pub enum InitiateCallProcedure {
     Terminated,
 }
 
-/// HFP v1.8 §§ 4.18, 4.19, 4.20
-///
-/// This procedure only handles sending the AT Commands to start call setup.  The rest of these
-/// procedures come in as unsolicited +CIEVs and SCO setup, which are handled separately.
-impl Procedure<ProcedureInput, ProcedureOutput> for InitiateCallProcedure {
-    fn new() -> Self {
+impl InitiateCallProcedure {
+    pub fn new() -> Self {
         Self::Started
     }
+}
 
+impl Procedure<ProcedureInput, ProcedureOutput> for InitiateCallProcedure {
     fn name(&self) -> &str {
         "Initiate Call Procedure"
     }

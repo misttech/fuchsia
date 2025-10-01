@@ -23,12 +23,14 @@ pub enum QueryCallsProcedure {
 
 /// HFP v1.8 §4.32.1
 ///
-/// This procedure only handles sending the AT Commands to query calls.
-impl Procedure<ProcedureInput, ProcedureOutput> for QueryCallsProcedure {
-    fn new() -> Self {
+/// This procedure handles sending the AT Commands to query calls.
+impl QueryCallsProcedure {
+    pub fn new() -> Self {
         Self::Started
     }
+}
 
+impl Procedure<ProcedureInput, ProcedureOutput> for QueryCallsProcedure {
     fn name(&self) -> &str {
         "Query List of Current Calls"
     }

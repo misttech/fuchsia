@@ -73,11 +73,13 @@ macro_rules! test_procedure {
                 Terminated,
             }
 
-            impl Procedure<ProcedureInput, ProcedureOutput> for [< Procedure $name >] {
-                fn new() -> [< Procedure $name >] {
+            impl [< Procedure $name >] {
+                pub fn new() -> [< Procedure $name >] {
                     Self::New
                 }
+            }
 
+            impl Procedure<ProcedureInput, ProcedureOutput> for [< Procedure $name >] {
                 fn name(&self) -> &str {
                     std::any::type_name::<Self>()
                 }

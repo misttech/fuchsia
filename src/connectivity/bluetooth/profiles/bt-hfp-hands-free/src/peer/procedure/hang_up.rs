@@ -9,6 +9,10 @@ use super::{at_cmd, at_ok, CommandFromHf, Procedure, ProcedureInput, ProcedureOu
 
 use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
 
+/// HFP v1.8 §4.15.1
+///
+/// This procedure only handles sending the AT Commands to start hangup.  This will be followed by
+/// an unsolicited +CIEV.
 #[derive(Debug, PartialEq)]
 pub enum HangUpProcedure {
     Started,
@@ -16,15 +20,13 @@ pub enum HangUpProcedure {
     Terminated,
 }
 
-/// HFP v1.8 §4.15.1
-///
-/// This procedure only handles sending the AT Commands to start hangup.  This will be followed by
-/// an unsolicited +CIEV.
-impl Procedure<ProcedureInput, ProcedureOutput> for HangUpProcedure {
-    fn new() -> Self {
+impl HangUpProcedure {
+    pub fn new() -> Self {
         Self::Started
     }
+}
 
+impl Procedure<ProcedureInput, ProcedureOutput> for HangUpProcedure {
     fn name(&self) -> &str {
         "Hang Up Procedure"
     }

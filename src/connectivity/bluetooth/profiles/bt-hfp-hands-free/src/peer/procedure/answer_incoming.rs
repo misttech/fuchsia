@@ -9,6 +9,10 @@ use super::{at_cmd, at_ok, CommandFromHf, Procedure, ProcedureInput, ProcedureOu
 
 use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
 
+/// HFP v1.8 §4.13
+///
+/// This procedure only handles sending the AT Commands to answer a call, ATA.  The rest of the
+/// process of answering a call is handled by unsolicited responses such as RING, +CIEV and +CLIP.
 #[derive(Debug, PartialEq)]
 pub enum AnswerIncomingProcedure {
     Started,
@@ -16,15 +20,13 @@ pub enum AnswerIncomingProcedure {
     Terminated,
 }
 
-/// HFP v1.8 §4.13
-///
-/// This procedure only handles sending the AT Commands to answer a call, ATA.  The rest of the
-/// process of answering a call is handled by unsolicited responses such as RING, +CIEV and +CLIP.
-impl Procedure<ProcedureInput, ProcedureOutput> for AnswerIncomingProcedure {
-    fn new() -> Self {
+impl AnswerIncomingProcedure {
+    pub fn new() -> Self {
         Self::Started
     }
+}
 
+impl Procedure<ProcedureInput, ProcedureOutput> for AnswerIncomingProcedure {
     fn name(&self) -> &str {
         "Answer Incoming Procedure"
     }

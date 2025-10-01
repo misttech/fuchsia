@@ -18,21 +18,23 @@ enum State {
     Terminated,
 }
 
+/// HFP v1.8 §4.11.3
+///
+/// The second phase of audio connection setup, following Audio Connection Setup and followed by
+/// SCO connection setup. This phase  may be skipped if the codec has already been selected.
 #[derive(Debug, PartialEq)]
 pub struct CodecConnectionSetupProcedure {
     // Whether the procedure has sent the phone status to the HF.
     state: State,
 }
 
-/// HFP v1.8 §4.11.3
-///
-/// The second phase of audio connection setup, following Audio Connection Setup and followed by
-/// SCO connection setup. This phase  may be skipped if the codec has already been selected.
-impl Procedure<ProcedureInput, ProcedureOutput> for CodecConnectionSetupProcedure {
-    fn new() -> Self {
+impl CodecConnectionSetupProcedure {
+    pub fn new() -> Self {
         Self { state: State::WaitingForBcs }
     }
+}
 
+impl Procedure<ProcedureInput, ProcedureOutput> for CodecConnectionSetupProcedure {
     fn name(&self) -> &str {
         "Codec Connection Setup"
     }

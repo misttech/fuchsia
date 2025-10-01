@@ -42,6 +42,10 @@ pub struct SlcInitProcedure {
 }
 
 impl SlcInitProcedure {
+    pub fn new() -> Self {
+        Self { state: State::Starting }
+    }
+
     #[cfg(test)]
     pub fn start_at_state(state: State) -> Self {
         Self { state, ..SlcInitProcedure::new() }
@@ -176,10 +180,6 @@ impl SlcInitProcedure {
 }
 
 impl Procedure<ProcedureInput, ProcedureOutput> for SlcInitProcedure {
-    fn new() -> Self {
-        Self { state: State::Starting }
-    }
-
     fn name(&self) -> &str {
         "SLC Initialization"
     }

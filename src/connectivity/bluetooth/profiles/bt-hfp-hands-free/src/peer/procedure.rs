@@ -194,11 +194,6 @@ pub trait ProcedureOutputT: Clone + Debug + PartialEq + Unpin {}
 impl ProcedureOutputT for ProcedureOutput {}
 
 pub trait Procedure<I: ProcedureInputT<O>, O: ProcedureOutputT>: fmt::Debug {
-    /// Create a new instance of the procedure.
-    fn new() -> Self
-    where
-        Self: Sized;
-
     /// Returns the name of this procedure for logging.
     fn name(&self) -> &str;
 
