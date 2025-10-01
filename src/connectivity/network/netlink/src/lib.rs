@@ -44,7 +44,8 @@ use {
 use crate::client::{AsyncWorkItem, ClientIdGenerator, ClientTable, InternalClient};
 use crate::eventloop::EventLoop;
 use crate::logging::log_debug;
-use crate::messaging::{Receiver, Sender, SenderReceiverProvider};
+use crate::messaging::NetlinkContext;
+pub use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::route::{NetlinkRoute, NetlinkRouteClient, NetlinkRouteRequestHandler};
 use crate::protocol_family::{NetlinkFamilyRequestHandler as _, ProtocolFamily};
 
@@ -66,17 +67,11 @@ pub enum SysctlInterfaceSelector {
 }
 
 /// The implementation of the Netlink protocol suite.
-pub struct Netlink<P: SenderReceiverProvider> {
+pub struct Netlink<C: NetlinkContext> {
     /// Generator of new Client IDs.
     id_generator: ClientIdGenerator,
     /// Sender to attach new `NETLINK_ROUTE` clients to the Netlink worker.
-    route_client_sender: UnboundedSender<
-        ClientWithReceiver<
-            NetlinkRoute,
-            P::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-            P::Receiver<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-        >,
-    >,
+    route_client_sender: UnboundedSender<ClientWithReceiver<C, NetlinkRoute>>,
     /// Sender to send other async work items to the Netlink worker.
     async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
 }
@@ -91,14 +86,14 @@ pub struct FeatureFlags {
     pub copy_routes_to_main_table: bool,
 }
 
-impl<P: SenderReceiverProvider> Netlink<P> {
+impl<C: NetlinkContext> Netlink<C> {
     /// Returns a newly instantiated [`Netlink`] and parameters used to start the
     /// asynchronous worker.
     ///
     /// Caller is expected to run the worker by calling `run_netlink_worker()`.
     pub fn new<H: interfaces::InterfacesHandler>(
         interfaces_handler: H,
-    ) -> (Self, NetlinkWorkerParams<H, P>) {
+    ) -> (Self, NetlinkWorkerParams<H, C>) {
         let (route_client_sender, route_client_receiver) = mpsc::unbounded();
         let (async_work_sink, async_work_receiver) = mpsc::unbounded();
         (
@@ -148,8 +143,8 @@ impl<P: SenderReceiverProvider> Netlink<P> {
     /// Closing the `receiver` will close this client, disconnecting `sender`.
     pub fn new_route_client(
         &self,
-        sender: P::Sender<RouteNetlinkMessage>,
-        receiver: P::Receiver<RouteNetlinkMessage>,
+        sender: C::Sender<RouteNetlinkMessage>,
+        receiver: C::Receiver<RouteNetlinkMessage>,
     ) -> Result<NetlinkRouteClient, NewClientError> {
         let Netlink { id_generator, route_client_sender, async_work_sink } = self;
         let (external_client, internal_client) = client::new_client_pair::<NetlinkRoute, _>(
@@ -169,13 +164,9 @@ impl<P: SenderReceiverProvider> Netlink<P> {
 }
 
 /// A wrapper to hold an [`InternalClient`], and its [`Receiver`] of requests.
-struct ClientWithReceiver<
-    F: ProtocolFamily,
-    S: Sender<F::InnerMessage>,
-    R: Receiver<F::InnerMessage>,
-> {
-    client: InternalClient<F, S>,
-    receiver: R,
+struct ClientWithReceiver<C: NetlinkContext, F: ProtocolFamily> {
+    client: InternalClient<F, C::Sender<F::InnerMessage>>,
+    receiver: C::Receiver<F::InnerMessage>,
 }
 
 /// The possible error types when instantiating a new client.
@@ -198,16 +189,10 @@ pub enum SysctlError {
 }
 
 /// Parameters used to start the Netlink asynchronous worker.
-pub struct NetlinkWorkerParams<H, P: SenderReceiverProvider> {
+pub struct NetlinkWorkerParams<H, C: NetlinkContext> {
     interfaces_handler: H,
     /// Receiver of newly created `NETLINK_ROUTE` clients.
-    route_client_receiver: UnboundedReceiver<
-        ClientWithReceiver<
-            NetlinkRoute,
-            P::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-            P::Receiver<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-        >,
-    >,
+    route_client_receiver: UnboundedReceiver<ClientWithReceiver<C, NetlinkRoute>>,
     async_work_receiver:
         futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
 }
@@ -295,15 +280,17 @@ impl NetlinkWorkerDiscoverableProtocols {
 ///
 /// Panics if a non-recoverable error is encountered by the worker. For example,
 /// a FIDL error on one of the FIDL connections with the netstack.
-pub async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderReceiverProvider>(
-    params: NetlinkWorkerParams<H, P>,
+pub async fn run_netlink_worker<H: interfaces::InterfacesHandler, C: NetlinkContext>(
+    params: NetlinkWorkerParams<H, C>,
     feature_flags: FeatureFlags,
+    access_control: C::AccessControl<'_>,
 ) {
     run_netlink_worker_with_protocols(
         params,
         NetlinkWorkerDiscoverableProtocols::from_environment(),
         None,
         feature_flags,
+        access_control,
     )
     .await;
 }
@@ -312,12 +299,13 @@ pub async fn run_netlink_worker<H: interfaces::InterfacesHandler, P: SenderRecei
 /// `NetlinkWorkerDiscoverableProtocols`.
 pub async fn run_netlink_worker_with_protocols<
     H: interfaces::InterfacesHandler,
-    P: SenderReceiverProvider,
+    C: NetlinkContext,
 >(
-    params: NetlinkWorkerParams<H, P>,
+    params: NetlinkWorkerParams<H, C>,
     protocols: NetlinkWorkerDiscoverableProtocols,
     on_initialized: Option<oneshot::Sender<()>>,
     feature_flags: FeatureFlags,
+    access_control: C::AccessControl<'_>,
 ) {
     let NetlinkWorkerParams { interfaces_handler, route_client_receiver, async_work_receiver } =
         params;
@@ -341,7 +329,7 @@ pub async fn run_netlink_worker_with_protocols<
                 v6_rule_table,
                 ndp_option_watcher_provider,
             } = protocols;
-            let event_loop: EventLoop<H, P::Sender<_>> = EventLoop {
+            let event_loop: EventLoop<H, C::Sender<_>> = EventLoop {
                 interfaces_proxy: root_interfaces,
                 interfaces_state_proxy: interfaces_state,
                 v4_routes_state,
@@ -365,10 +353,11 @@ pub async fn run_netlink_worker_with_protocols<
 
     let route_client_receiver_loop = async move {
         // Accept new NETLINK_ROUTE clients.
-        connect_new_clients::<NetlinkRoute, _, _>(
+        connect_new_clients::<C, NetlinkRoute>(
             route_clients,
             route_client_receiver,
             NetlinkRouteRequestHandler { unified_request_sink },
+            access_control,
         )
         .await;
         panic!("route_client_receiver stream unexpectedly finished");
@@ -381,23 +370,21 @@ pub async fn run_netlink_worker_with_protocols<
 ///
 /// A "Request Handler" Task will be spawned for each received client. The given
 /// `request_handler_impl` defines how the requests will be handled.
-async fn connect_new_clients<
-    F: ProtocolFamily,
-    S: Sender<F::InnerMessage>,
-    R: Receiver<F::InnerMessage>,
->(
-    client_table: ClientTable<F, S>,
-    client_receiver: UnboundedReceiver<ClientWithReceiver<F, S, R>>,
-    request_handler_impl: F::RequestHandler<S>,
+async fn connect_new_clients<C: NetlinkContext, F: ProtocolFamily>(
+    client_table: ClientTable<F, C::Sender<F::InnerMessage>>,
+    client_receiver: UnboundedReceiver<ClientWithReceiver<C, F>>,
+    request_handler_impl: F::RequestHandler<C::Sender<F::InnerMessage>>,
+    access_control: C::AccessControl<'_>,
 ) {
     client_receiver
         // Drive each client concurrently with `for_each_concurrent`.
         .for_each_concurrent(None, async |ClientWithReceiver { client, receiver }| {
             client_table.add_client(client.clone());
-            let client = run_client_request_handler::<F, S, R>(
+            let client = run_client_request_handler::<C, F>(
                 client,
                 receiver,
                 request_handler_impl.clone(),
+                access_control.clone(),
             )
             .await;
             client_table.remove_client(client);
@@ -409,32 +396,36 @@ async fn connect_new_clients<
 ///
 /// The task terminates when the underlying `Receiver` closes, yielding the
 /// original client.
-async fn run_client_request_handler<
-    F: ProtocolFamily,
-    S: Sender<F::InnerMessage>,
-    R: Receiver<F::InnerMessage>,
->(
-    client: InternalClient<F, S>,
-    receiver: R,
-    handler: F::RequestHandler<S>,
-) -> InternalClient<F, S> {
+async fn run_client_request_handler<C: NetlinkContext, F: ProtocolFamily>(
+    client: InternalClient<F, C::Sender<F::InnerMessage>>,
+    receiver: C::Receiver<F::InnerMessage>,
+    handler: F::RequestHandler<C::Sender<F::InnerMessage>>,
+    access_control: C::AccessControl<'_>,
+) -> InternalClient<F, C::Sender<F::InnerMessage>> {
     // State needed to handle an individual request, that is cycled through the
     // `fold` combinator below.
-    struct FoldState<C, H> {
+    struct FoldState<C, H, P> {
         client: C,
         handler: H,
+        access_control: P,
     }
 
     // Use `fold` for two reasons. First, it processes requests serially,
     // ensuring requests are handled in order. Second, it allows us to
     // "hand-off" the client/handler from one request to the other, avoiding
     // copies for each request.
-    let FoldState { client, handler: _ } = receiver
-        .fold(FoldState { client, handler }, |FoldState { mut client, mut handler }, req| async {
-            log_debug!("{} Received request: {:?}", client, req);
-            handler.handle_request(req, &mut client).await;
-            FoldState { client, handler }
-        })
+    let FoldState { client, handler: _, access_control: _ } = receiver
+        .fold(
+            FoldState { client, handler, access_control },
+            |FoldState { mut client, mut handler, access_control }, req| async {
+                log_debug!("{} Received request: {:?}", client, req);
+                match req.validate_creds_and_get_message(&access_control) {
+                    Ok(req) => handler.handle_request(req, &mut client).await,
+                    Err(response) => client.send_unicast(response),
+                }
+                FoldState { client, handler, access_control }
+            },
+        )
         .await;
 
     client
@@ -447,11 +438,15 @@ mod tests {
     use futures::FutureExt as _;
 
     use assert_matches::assert_matches;
+    use netlink_packet_core::{ErrorMessage, NetlinkPayload};
+    use std::num::NonZeroI32;
     use std::pin::pin;
 
-    use crate::messaging::testutil::SentMessage;
+    use crate::messaging::NetlinkMessageWithCreds;
+    use crate::messaging::testutil::{FakeCreds, SentMessage, TestNetlinkContext};
     use crate::protocol_family::testutil::{
         FakeNetlinkRequestHandler, FakeProtocolFamily, new_fake_netlink_message,
+        new_fake_netlink_message_with_creds,
     };
 
     #[fasync::run_singlethreaded(test)]
@@ -466,10 +461,11 @@ mod tests {
 
         {
             let mut client_task = pin!(
-                run_client_request_handler::<FakeProtocolFamily, _, _>(
+                run_client_request_handler::<TestNetlinkContext, FakeProtocolFamily>(
                     client,
                     req_receiver,
                     FakeNetlinkRequestHandler,
+                    Default::default()
                 )
                 .fuse()
             );
@@ -480,7 +476,9 @@ mod tests {
             // Send a message and expect to see the response on the `client_sink`.
             // NB: Use the sender's channel size as a synchronization method; If a
             // second message could be sent, the first *must* have been handled.
-            req_sender.try_send(new_fake_netlink_message()).expect("should send without error");
+            req_sender
+                .try_send(new_fake_netlink_message_with_creds())
+                .expect("should send without error");
             let mut could_send_fut =
                 pin!(futures::future::poll_fn(|ctx| req_sender.poll_ready(ctx)).fuse());
             futures::select!(
@@ -506,10 +504,11 @@ mod tests {
         let scope = fasync::Scope::new();
         let (client_sender, client_receiver) = futures::channel::mpsc::unbounded();
         let mut client_acceptor_fut = Box::pin(
-            connect_new_clients::<FakeProtocolFamily, _, _>(
+            connect_new_clients::<TestNetlinkContext, FakeProtocolFamily>(
                 client_table.clone(),
                 client_receiver,
                 FakeNetlinkRequestHandler,
+                Default::default(),
             )
             .fuse(),
         );
@@ -544,7 +543,9 @@ mod tests {
         // being open (e.g. concurrent handling of requests across clients).
         // NB: Use the sender's channel size as a synchronization method; If a
         // second message could be sent, the first *must* have been handled.
-        req_sender2.try_send(new_fake_netlink_message()).expect("should send without error");
+        req_sender2
+            .try_send(new_fake_netlink_message_with_creds())
+            .expect("should send without error");
         let mut could_send_fut =
             pin!(futures::future::poll_fn(|ctx| req_sender2.poll_ready(ctx)).fuse());
         futures::select!(
@@ -574,5 +575,51 @@ mod tests {
 
         drop(client_table);
         scope.join().await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_permissions() {
+        let client_table = ClientTable::default();
+        let scope = fasync::Scope::new();
+        let (client_sender, client_receiver) = futures::channel::mpsc::unbounded();
+        let mut client_acceptor_fut = Box::pin(
+            connect_new_clients::<TestNetlinkContext, FakeProtocolFamily>(
+                client_table.clone(),
+                client_receiver,
+                FakeNetlinkRequestHandler,
+                Default::default(),
+            )
+            .fuse(),
+        );
+        assert_eq!((&mut client_acceptor_fut).now_or_never(), None);
+
+        let (mut client_sink, client, async_work_drain_task) =
+            crate::client::testutil::new_fake_client::<FakeProtocolFamily>(
+                crate::client::testutil::CLIENT_ID_1,
+                std::iter::empty(),
+            );
+        let _join_handle = scope.spawn(async_work_drain_task);
+        let (mut req_sender, req_receiver) = mpsc::channel(0);
+        client_sender
+            .unbounded_send(ClientWithReceiver { client, receiver: req_receiver })
+            .expect("should send without error");
+
+        let message = NetlinkMessageWithCreds::new(
+            new_fake_netlink_message(),
+            FakeCreds::with_error(Errno::new(-libc::EPERM).unwrap()),
+        );
+        req_sender.try_send(message).expect("should send without error");
+
+        let response = futures::select!(
+            res = client_sink.next_message().fuse() => res,
+            () = client_acceptor_fut => panic!("client acceptor unexpectedly finished"),
+        );
+
+        assert_matches!(
+            response.message.payload,
+            NetlinkPayload::Error(ErrorMessage { code: Some(error_code), .. }) => {
+              assert_eq!(error_code , NonZeroI32::new(-libc::EPERM).unwrap());
+            }
+        );
     }
 }

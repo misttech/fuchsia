@@ -8,7 +8,10 @@ use futures::channel::mpsc::{
     UnboundedReceiver, UnboundedSender, {self},
 };
 use linux_uapi::{AUDIT_GET, audit_status};
-use netlink::messaging::{Sender, SenderReceiverProvider};
+use netlink::messaging::{
+    AccessControl, MessageWithPermission, NetlinkContext, NetlinkMessageWithCreds, Permission,
+    Sender,
+};
 use netlink::multicast_groups::{
     InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
     NoMappingFromModernToLegacyGroupError, SingleLegacyGroup,
@@ -29,7 +32,9 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use crate::device::kobject::{Device, UEventAction, UEventContext};
 use crate::device::{DeviceListener, DeviceListenerKey};
-use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
+use crate::task::{
+    CurrentTask, EventHandler, FullCredentials, Kernel, WaitCanceler, WaitQueue, Waiter,
+};
 use crate::vfs::buffers::{
     AncillaryData, InputBuffer, Message, MessageQueue, MessageReadInfo, OutputBuffer,
     UnixControlData, VecInputBuffer,
@@ -864,12 +869,52 @@ impl<M: Clone + NetlinkSerializable + Send> Sender<M> for NetlinkToClientSender<
     }
 }
 
-/// Provide Starnix implementations of `Sender` and `Receiver to [`Netlink`].
-pub struct NetlinkSenderReceiverProvider;
+#[derive(Clone)]
+pub struct NetlinkAccessControl<'a> {
+    current_task: &'a CurrentTask,
+}
 
-impl SenderReceiverProvider for NetlinkSenderReceiverProvider {
+impl<'a> NetlinkAccessControl<'a> {
+    pub fn new(current_task: &'a CurrentTask) -> Self {
+        Self { current_task }
+    }
+}
+
+impl<'a> AccessControl<FullCredentials> for NetlinkAccessControl<'a> {
+    fn grant_assess(
+        &self,
+        creds: &FullCredentials,
+        permission: Permission,
+    ) -> Result<(), netlink::Errno> {
+        let need_cap_net_admin = match permission {
+            Permission::NetlinkRouteRead => false,
+            Permission::NetlinkRouteWrite => true,
+        };
+        if !need_cap_net_admin {
+            return Ok(());
+        }
+
+        self.current_task.override_creds(
+            |overridden_creds| {
+                *overridden_creds = creds.clone();
+            },
+            || {
+                security::check_task_capable(self.current_task, CAP_NET_ADMIN).map_err(|error| {
+                    netlink::Errno::new(-(error.code.error_code() as i32))
+                        .expect("Errno::error_code() is expected to be in range [1..max_i32]")
+                })
+            },
+        )
+    }
+}
+pub struct NetlinkContextImpl;
+
+impl NetlinkContext for NetlinkContextImpl {
+    type Creds = FullCredentials;
     type Sender<M: Clone + NetlinkSerializable + Send> = NetlinkToClientSender<M>;
-    type Receiver<M: Send> = UnboundedReceiver<NetlinkMessage<M>>;
+    type Receiver<M: Send + MessageWithPermission> =
+        UnboundedReceiver<NetlinkMessageWithCreds<M, Self::Creds>>;
+    type AccessControl<'a> = NetlinkAccessControl<'a>;
 }
 
 /// Socket implementation for the NETLINK_ROUTE family of netlink sockets.
@@ -881,7 +926,7 @@ struct RouteNetlinkSocket {
     /// The sender of messages from this socket to Netlink.
     // TODO(https://issuetracker.google.com/285880057): Bound the capacity of
     // the "send buffer".
-    message_sender: UnboundedSender<NetlinkMessage<RouteNetlinkMessage>>,
+    message_sender: UnboundedSender<NetlinkMessageWithCreds<RouteNetlinkMessage, FullCredentials>>,
 }
 
 impl RouteNetlinkSocket {
@@ -992,38 +1037,33 @@ impl SocketOps for RouteNetlinkSocket {
     ) -> Result<usize, Errno> {
         let RouteNetlinkSocket { inner: _, client: _, message_sender } = self;
         let bytes = data.peek_all()?;
-        match NetlinkMessage::<RouteNetlinkMessage>::deserialize(&bytes) {
-            Err(e) => {
-                log_warn!(
-                    tag = NETLINK_LOG_TAG;
-                    "Failed to process write; data could not be deserialized: {:?}",
-                    e
-                );
-                if matches!(e, DecodeError::FailedToParseMessageWithType { .. }) {
-                    // Unsupported type.
-                    error!(EOPNOTSUPP)
-                } else {
-                    error!(EINVAL)
-                }
+        let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(&bytes).map_err(|e| {
+            log_warn!(
+                tag = NETLINK_LOG_TAG;
+                "Failed to process write; data could not be deserialized: {:?}",
+                e
+            );
+            match e {
+                // Unsupported type.
+                DecodeError::FailedToParseMessageWithType { .. } => errno!(EOPNOTSUPP),
+                _ => errno!(EINVAL),
             }
-            Ok(msg) => {
-                security::check_netlink_send_access(current_task, socket, msg.header.message_type)?;
-                match message_sender.unbounded_send(msg) {
-                    Ok(()) => {
-                        data.drain();
-                        Ok(bytes.len())
-                    }
-                    Err(e) => {
-                        log_warn!(
-                            tag = NETLINK_LOG_TAG;
-                            "Netlink receiver unexpectedly disconnected for socket: {:?}",
-                            e
-                        );
-                        error!(EPIPE)
-                    }
-                }
-            }
-        }
+        })?;
+
+        security::check_netlink_send_access(current_task, socket, msg.header.message_type)?;
+
+        let msg = NetlinkMessageWithCreds::new(msg, current_task.full_current_creds());
+        message_sender.unbounded_send(msg).map_err(|e| {
+            log_warn!(
+                tag = NETLINK_LOG_TAG;
+                "Netlink receiver unexpectedly disconnected for socket: {:?}",
+                e
+            );
+            errno!(EPIPE)
+        })?;
+
+        data.drain();
+        Ok(bytes.len())
     }
 
     fn wait_async(

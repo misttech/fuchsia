@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <linux/taskstats.h>
 
 #define SAFE_SYSCALL(X)                                                             \
@@ -257,6 +258,7 @@ class NetlinkEncoder {
 
   // Starts a new netlink message
   void StartMessage(__u16 type, __u16 flags) {
+    Clear();
     nlmsghdr header = {};
     header.nlmsg_type = type;
     // Length is encoded when the message is finalized
@@ -295,6 +297,15 @@ class NetlinkEncoder {
     Write(attr, nla_start);
   }
 
+  template <typename T>
+  void AddRtAttr(uint16_t type, T &attr) {
+    Write(rtattr{
+        .rta_len = static_cast<uint16_t>(RTA_LENGTH(sizeof(T))),
+        .rta_type = type,
+    });
+    Write(attr);
+  }
+
   // Finalizes the message, allowing it to be sent using sendmsg.
   void Finalize(iovec &out) {
     nlmsghdr hdr;
@@ -312,7 +323,10 @@ class NetlinkEncoder {
 
  private:
   void Write(const void *data, size_t len) {
-    data_.resize(data_.size() + len);
+    size_t min_size = offset_ + len;
+    if (min_size > data_.size()) {
+      data_.resize(min_size);
+    }
     memcpy(data_.data() + offset_, data, len);
     offset_ += len;
   }

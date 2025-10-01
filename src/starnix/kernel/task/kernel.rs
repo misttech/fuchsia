@@ -24,8 +24,8 @@ use crate::task::{
 use crate::vdso::vdso_loader::Vdso;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::socket::{
-    GenericMessage, GenericNetlink, NetlinkSenderReceiverProvider, NetlinkToClientSender,
-    SocketAddress,
+    GenericMessage, GenericNetlink, NetlinkAccessControl, NetlinkContextImpl,
+    NetlinkToClientSender, SocketAddress,
 };
 use crate::vfs::{FileHandle, FileOps, FsString, Mounts, NamespaceNode};
 use bstr::{BString, ByteSlice};
@@ -217,7 +217,7 @@ pub struct Kernel {
     generic_netlink: OnceLock<GenericNetlink<NetlinkToClientSender<GenericMessage>>>,
 
     /// The implementation of networking-related Netlink protocol families.
-    network_netlink: OnceLock<Netlink<NetlinkSenderReceiverProvider>>,
+    network_netlink: OnceLock<Netlink<NetlinkContextImpl>>,
 
     /// Inspect instrumentation for this kernel instance.
     pub inspect_node: fuchsia_inspect::Node,
@@ -673,7 +673,7 @@ impl Kernel {
     ///
     /// This function follows the lazy initialization pattern, where the first
     /// call will instantiate the Netlink implementation.
-    pub fn network_netlink(&self) -> &Netlink<NetlinkSenderReceiverProvider> {
+    pub fn network_netlink(&self) -> &Netlink<NetlinkContextImpl> {
         self.network_netlink.get_or_init(|| {
             let (network_netlink, worker_params) =
                 Netlink::new(InterfacesHandlerImpl(self.weak_self.clone()));
@@ -685,8 +685,13 @@ impl Kernel {
             let feature_flags =
                 netlink::FeatureFlags { copy_routes_to_main_table: !self.features.netstack_mark };
 
-            self.kthreads.spawn_async(async move |_: LockedAndTask<'_>| {
-                netlink::run_netlink_worker(worker_params, feature_flags).await;
+            self.kthreads.spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
+                netlink::run_netlink_worker(
+                    worker_params,
+                    feature_flags,
+                    NetlinkAccessControl::new(locked_and_task.current_task()),
+                )
+                .await;
                 log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
             });
             network_netlink

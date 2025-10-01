@@ -18,7 +18,6 @@
                 "bounds",
                 "bpf",
                 "capable_file",
-                "capable_net",
                 "cgroupfs_label",
                 "checkreqprot",
                 "extended_socket_class",

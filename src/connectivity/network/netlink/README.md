@@ -24,7 +24,7 @@ Netlink clients (aka sockets). Instantiating a new `netlink::Netlink` provides
 the type, alongside a Future that *drives the backing Netlink implementation*.
 
 The `netlink::Netlink` type has a generic parameter `P` bound by
-`messaging::SenderReceiverProvider`. This provider specifies the type of
+`messaging::NetlinkContext`. This provider specifies the type of
 `messaging::Sender` and `messaging::Receiver` that will be provided for each
 client connecting to a protocol family. A `messaging::Sender` provides a
 synchronous API for Netlink to send messages to the client (e.g. the client's

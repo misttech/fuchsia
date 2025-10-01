@@ -16,7 +16,7 @@ use async_trait::async_trait;
 
 use crate::client::{ExternalClient, InternalClient};
 use crate::logging::{log_debug, log_warn};
-use crate::messaging::Sender;
+use crate::messaging::{MessageWithPermission, Sender};
 use crate::multicast_groups::{
     InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
     MulticastCapableNetlinkFamily,
@@ -26,7 +26,8 @@ use crate::route_tables::{NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex}
 /// A type representing a Netlink Protocol Family.
 pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
     /// The message type associated with the protocol family.
-    type InnerMessage: Clone + Debug + NetlinkSerializable + Send;
+    type InnerMessage: Clone + Debug + NetlinkSerializable + MessageWithPermission + Send;
+
     /// The implementation for handling requests from this protocol family.
     type RequestHandler<S: Sender<Self::InnerMessage>>: NetlinkFamilyRequestHandler<Self, S>;
 
@@ -98,6 +99,7 @@ pub mod route {
 
     use crate::client::AsyncWorkCompletionWaiter;
     use crate::eventloop::UnifiedRequest;
+    use crate::messaging::{MessageWithPermission, Permission};
     use crate::netlink_packet::errno::Errno;
     use crate::netlink_packet::{self};
     use crate::rules::{RuleRequest, RuleRequestArgs};
@@ -154,6 +156,52 @@ pub mod route {
         Nduseropt,
     }
 
+    impl MessageWithPermission for RouteNetlinkMessage {
+        fn permission(&self) -> Permission {
+            match self {
+                Self::GetLink(_)
+                | Self::GetAddress(_)
+                | Self::GetNeighbour(_)
+                | Self::GetNeighbourTable(_)
+                | Self::GetRoute(_)
+                | Self::GetQueueDiscipline(_)
+                | Self::GetTrafficClass(_)
+                | Self::GetTrafficFilter(_)
+                | Self::GetTrafficChain(_)
+                | Self::GetNsId(_)
+                | Self::GetRule(_) => Permission::NetlinkRouteRead,
+
+                Self::NewLink(_)
+                | Self::DelLink(_)
+                | Self::SetLink(_)
+                | Self::NewLinkProp(_)
+                | Self::DelLinkProp(_)
+                | Self::NewAddress(_)
+                | Self::DelAddress(_)
+                | Self::NewNeighbour(_)
+                | Self::DelNeighbour(_)
+                | Self::NewNeighbourTable(_)
+                | Self::SetNeighbourTable(_)
+                | Self::NewNeighbourDiscoveryUserOption(_)
+                | Self::NewRoute(_)
+                | Self::DelRoute(_)
+                | Self::NewPrefix(_)
+                | Self::NewQueueDiscipline(_)
+                | Self::DelQueueDiscipline(_)
+                | Self::NewTrafficClass(_)
+                | Self::DelTrafficClass(_)
+                | Self::NewTrafficFilter(_)
+                | Self::DelTrafficFilter(_)
+                | Self::NewTrafficChain(_)
+                | Self::DelTrafficChain(_)
+                | Self::NewNsId(_)
+                | Self::DelNsId(_)
+                | Self::NewRule(_)
+                | Self::DelRule(_) => Permission::NetlinkRouteWrite,
+            }
+        }
+    }
+
     impl ProtocolFamily for NetlinkRoute {
         type InnerMessage = RouteNetlinkMessage;
         type RequestHandler<S: Sender<Self::InnerMessage>> = NetlinkRouteRequestHandler<S>;
@@ -169,9 +217,7 @@ pub mod route {
     }
 
     #[derive(Clone)]
-    pub(crate) struct NetlinkRouteRequestHandler<
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-    > {
+    pub(crate) struct NetlinkRouteRequestHandler<S: Sender<RouteNetlinkMessage>> {
         pub(crate) unified_request_sink: mpsc::Sender<UnifiedRequest<S>>,
     }
 
@@ -611,8 +657,8 @@ pub mod route {
     }
 
     #[async_trait]
-    impl<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>>
-        NetlinkFamilyRequestHandler<NetlinkRoute, S> for NetlinkRouteRequestHandler<S>
+    impl<S: Sender<RouteNetlinkMessage>> NetlinkFamilyRequestHandler<NetlinkRoute, S>
+        for NetlinkRouteRequestHandler<S>
     {
         async fn handle_request(
             &mut self,
@@ -1224,10 +1270,7 @@ pub mod route {
     }
 
     // Dispatch a route request to the given v4 or v6 Routes sink.
-    async fn process_routes_worker_request<
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-        I: Ip,
-    >(
+    async fn process_routes_worker_request<S: Sender<RouteNetlinkMessage>, I: Ip>(
         sink: &mut mpsc::Sender<UnifiedRequest<S>>,
         client: &mut InternalClient<NetlinkRoute, S>,
         req_header: NetlinkHeader,
@@ -1289,6 +1332,8 @@ pub mod route {
 pub(crate) mod testutil {
     use super::*;
 
+    use crate::messaging::testutil::FakeCreds;
+    use crate::messaging::{NetlinkMessageWithCreds, Permission};
     use netlink_packet_core::NetlinkHeader;
 
     pub(crate) const LEGACY_GROUP1: u32 = 0x00000001;
@@ -1322,8 +1367,19 @@ pub(crate) mod testutil {
         )
     }
 
+    pub(crate) fn new_fake_netlink_message_with_creds()
+    -> NetlinkMessageWithCreds<FakeNetlinkInnerMessage, FakeCreds> {
+        NetlinkMessageWithCreds::new(new_fake_netlink_message(), FakeCreds::default())
+    }
+
     #[derive(Clone, Debug, Default, PartialEq)]
     pub(crate) struct FakeNetlinkInnerMessage;
+
+    impl MessageWithPermission for FakeNetlinkInnerMessage {
+        fn permission(&self) -> Permission {
+            Permission::NetlinkRouteWrite
+        }
+    }
 
     impl NetlinkSerializable for FakeNetlinkInnerMessage {
         fn message_type(&self) -> u16 {
@@ -3014,7 +3070,7 @@ mod test {
             }
         }
 
-        fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>, I: Ip>(
+        fn handle_request<S: Sender<RouteNetlinkMessage>, I: Ip>(
             &mut self,
             actual_request: RuleRequest<S, I>,
         ) -> Result<(), Errno> {

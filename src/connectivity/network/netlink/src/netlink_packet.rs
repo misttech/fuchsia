@@ -71,7 +71,7 @@ pub(crate) mod errno {
     /// This type enforces that the contained code is NonZero & Negative.
     #[derive(Copy, Clone, Debug, PartialEq, GenericOverIp)]
     #[generic_over_ip()]
-    pub(crate) struct Errno(i32);
+    pub struct Errno(i32);
 
     impl Errno {
         pub(crate) const EADDRNOTAVAIL: Errno = Errno::new(-libc::EADDRNOTAVAIL).unwrap();
@@ -88,7 +88,7 @@ pub(crate) mod errno {
         /// Construct a new [`Errno`] from the given negative integer.
         ///
         /// Returns `None` when the code is non-negative (which includes 0).
-        const fn new(code: i32) -> Option<Self> {
+        pub const fn new(code: i32) -> Option<Self> {
             if code.is_negative() { Some(Errno(code)) } else { None }
         }
     }

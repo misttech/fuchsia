@@ -22,6 +22,9 @@ use linux_uapi::{
 use net_declare::{fidl_mac, net_ip_v6, std_ip};
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use netemul::{RealmUdpSocket as _, TestRealm};
+use netlink::messaging::{
+    AccessControl, MessageWithPermission, NetlinkMessageWithCreds, Permission,
+};
 use netlink::multicast_groups::ModernGroup;
 use netlink_packet_core::{
     ErrorMessage, NLM_F_ACK, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
@@ -148,11 +151,34 @@ impl<M: Clone + Send> netlink::messaging::Sender<M> for Sender<SentNetlinkMessag
 
 type Receiver<M> = mpsc::UnboundedReceiver<M>;
 
-enum SenderReceiverProvider {}
+#[derive(Default, Debug, Clone)]
+pub(crate) struct FakeCreds;
 
-impl netlink::messaging::SenderReceiverProvider for SenderReceiverProvider {
+impl FakeCreds {
+    fn attach<M: MessageWithPermission + NetlinkSerializable>(
+        msg: NetlinkMessage<M>,
+    ) -> NetlinkMessageWithCreds<M, Self> {
+        NetlinkMessageWithCreds::new(msg, Self::default())
+    }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct FakeAccessControl {}
+
+impl AccessControl<FakeCreds> for FakeAccessControl {
+    fn grant_assess(&self, _creds: &FakeCreds, _perm: Permission) -> Result<(), netlink::Errno> {
+        Ok(())
+    }
+}
+
+enum NetlinkContext {}
+
+impl netlink::messaging::NetlinkContext for NetlinkContext {
+    type Creds = FakeCreds;
     type Sender<M: Clone + NetlinkSerializable + Send> = Sender<SentNetlinkMessage<M>>;
-    type Receiver<M: Send> = Receiver<NetlinkMessage<M>>;
+    type Receiver<M: Send + MessageWithPermission> =
+        Receiver<NetlinkMessageWithCreds<M, FakeCreds>>;
+    type AccessControl<'a> = FakeAccessControl;
 }
 
 struct NetlinkClient {
@@ -161,11 +187,11 @@ struct NetlinkClient {
     // `sender` and `receiver` do not contain the same types because the netlink worker's `Sender`
     // trait wants to be able to specify which group it's sending to, but its `Receiver` trait
     // just wants to receive messages with no group specification.
-    sender: Sender<NetlinkMessage<RouteNetlinkMessage>>,
+    sender: Sender<NetlinkMessageWithCreds<RouteNetlinkMessage, FakeCreds>>,
     receiver: Receiver<SentNetlinkMessage<RouteNetlinkMessage>>,
 }
 
-fn add_route_client(netlink: &netlink::Netlink<SenderReceiverProvider>) -> NetlinkClient {
+fn add_route_client(netlink: &netlink::Netlink<NetlinkContext>) -> NetlinkClient {
     let (server_sender, client_receiver) = Sender::new_pair();
     let (client_sender, server_receiver) = Sender::new_pair();
     let client = netlink
@@ -338,7 +364,7 @@ async fn add_route_in_table_and_await_installed<I: Ip>(
     ));
     let mut message: NetlinkMessage<RouteNetlinkMessage> = new_route_message.into();
     message.finalize();
-    client.sender.0.unbounded_send(message).expect("should not be disconnected");
+    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
 
     let receiver = &mut client.receiver;
     // We then receive notification of the route being added to the table we actually requested.
@@ -397,16 +423,16 @@ async fn add_route_and_await_installed<I: Ip>(
 
 async fn start_test_netlink(
     realm: &TestRealm<'_>,
-) -> (netlink::Netlink<SenderReceiverProvider>, fasync::Task<()>) {
+) -> (netlink::Netlink<NetlinkContext>, fasync::Task<()>) {
     let protocols = connect_to_netlink_protocols_in_realm(&realm);
     let (on_initialized, initialized) = oneshot::channel();
-    let (netlink, worker_params) =
-        netlink::Netlink::<SenderReceiverProvider>::new(NoopInterfacesHandler);
+    let (netlink, worker_params) = netlink::Netlink::<NetlinkContext>::new(NoopInterfacesHandler);
     let worker = netlink::run_netlink_worker_with_protocols(
         worker_params,
         protocols,
         Some(on_initialized),
         test_feature_flags(),
+        Default::default(),
     );
     let join_handle = fasync::Task::spawn(worker);
     initialized.await.expect("should not be dropped");
@@ -480,7 +506,11 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
         let mut message: NetlinkMessage<RouteNetlinkMessage> = new_rule_message.into();
         message.header.flags |= NLM_F_ACK;
         message.finalize();
-        client.sender.0.unbounded_send(message).expect("should not be disconnected");
+        client
+            .sender
+            .0
+            .unbounded_send(FakeCreds::attach(message))
+            .expect("should not be disconnected");
 
         // Wait for the ACK.
         let SentNetlinkMessage { message: received_msg, group: _ } =
@@ -686,7 +716,11 @@ async fn successfully_installs_rule_referencing_main_table<
     let mut new_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::NewRule(create_rule_to_main_table()).into();
     new_rule_message.finalize();
-    client.sender.0.unbounded_send(new_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(new_rule_message))
+        .expect("should not be disconnected");
 
     // Await the rule's installation.
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
@@ -799,7 +833,11 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
     let mut new_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::NewRule(create_rule_to_table(PRIORITIES[0])).into();
     new_rule_message.finalize();
-    client.sender.0.unbounded_send(new_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(new_rule_message))
+        .expect("should not be disconnected");
 
     // Await the rule's installation.
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
@@ -826,7 +864,11 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
     let mut new_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::NewRule(create_rule_to_table(PRIORITIES[1])).into();
     new_rule_message.finalize();
-    client.sender.0.unbounded_send(new_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(new_rule_message))
+        .expect("should not be disconnected");
 
     // Await the rule's installation.
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
@@ -870,7 +912,11 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
     let mut del_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::DelRule(create_rule_to_table(PRIORITIES[0])).into();
     del_rule_message.finalize();
-    client.sender.0.unbounded_send(del_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(del_rule_message))
+        .expect("should not be disconnected");
 
     // Await the rule's removal.
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
@@ -907,7 +953,11 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
     let mut del_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::DelRule(create_rule_to_table(PRIORITIES[1])).into();
     del_rule_message.finalize();
-    client.sender.0.unbounded_send(del_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(del_rule_message))
+        .expect("should not be disconnected");
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
         .next()
         .await
@@ -1035,7 +1085,11 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
             RouteNetlinkMessage::NewRoute(create_route_in_table(TABLE)).into();
         netlink_route_message.finalize();
 
-        client.sender.0.unbounded_send(netlink_route_message).expect("should not be disconnected");
+        client
+            .sender
+            .0
+            .unbounded_send(FakeCreds::attach(netlink_route_message))
+            .expect("should not be disconnected");
         async move {
             // We then receive notification of the route being added to the table we actually
             // requested.
@@ -1061,7 +1115,11 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
         netlink_route_message.finalize();
         let netlink_route_message = netlink_route_message;
 
-        client.sender.0.unbounded_send(netlink_route_message).expect("should not be disconnected");
+        client
+            .sender
+            .0
+            .unbounded_send(FakeCreds::attach(netlink_route_message))
+            .expect("should not be disconnected");
         async move {
             // We then receive notification of the route being added to the table we actually
             // requested.
@@ -1116,7 +1174,11 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     let mut new_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::NewRule(create_rule_to_table()).into();
     new_rule_message.finalize();
-    client.sender.0.unbounded_send(new_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(new_rule_message))
+        .expect("should not be disconnected");
 
     // Await the rule's installation.
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
@@ -1193,7 +1255,11 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     let mut del_rule_message: NetlinkMessage<_> =
         RouteNetlinkMessage::DelRule(create_rule_to_table()).into();
     del_rule_message.finalize();
-    client.sender.0.unbounded_send(del_rule_message).expect("should not be disconnected");
+    client
+        .sender
+        .0
+        .unbounded_send(FakeCreds::attach(del_rule_message))
+        .expect("should not be disconnected");
 
     // Await the rule's removal.
     let rule_event: fnet_routes_ext::rules::RuleEvent<I> = rules_event_stream
@@ -1430,7 +1496,7 @@ async fn netlink_uses_local_route_table() {
     let mut message: NetlinkMessage<RouteNetlinkMessage> = dump_routes.into();
     message.header.flags = NLM_F_DUMP as u16;
     message.finalize();
-    client.sender.0.unbounded_send(message).expect("should not be disconnected");
+    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
 
     while !expected_routes.is_empty() {
         let next_msg = client.receiver.next().await.expect("should not be disconnected");
