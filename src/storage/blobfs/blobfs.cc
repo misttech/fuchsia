@@ -6,9 +6,9 @@
 
 #include <fidl/fuchsia.fs/cpp/common_types.h>
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/wire_types.h>
 #include <lib/async/dispatcher.h>
-#include <lib/fdio/vfs.h>
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/result.h>
@@ -517,6 +517,7 @@ zx_status_t Blobfs::FreeInode(uint32_t node_index, BlobTransaction& transaction)
     if (extent_iter.is_error()) {
       return extent_iter.status_value();
     }
+    GetMetrics()->DecrementBlobLayoutCount(GetBlobLayoutFormat(Info(), *mapped_inode.value()));
 
     if (zx_status_t status = FreeNode(node_index, transaction); status != ZX_OK) {
       return status;
@@ -958,6 +959,7 @@ zx_status_t Blobfs::InitializeVnodes() {
       FX_LOGS(ERROR) << "failed to validate node @ index " << node_index;
       return ZX_ERR_IO_DATA_INTEGRITY;
     }
+    GetMetrics()->IncrementBlobLayoutCount(GetBlobLayoutFormat(Info(), *inode.value()));
 
     fbl::RefPtr<Blob> vnode = fbl::MakeRefCounted<Blob>(*this, node_index, *inode.value());
 

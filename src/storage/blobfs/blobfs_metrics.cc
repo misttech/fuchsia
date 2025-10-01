@@ -19,6 +19,7 @@
 #include <fbl/algorithm.h>
 #include <fbl/string.h>
 
+#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/lib/vfs/cpp/ticker.h"
 
@@ -97,6 +98,28 @@ void BlobfsMetrics::IncrementPageIn(const fbl::String& merkle_hash, uint64_t off
     } else {
       blob_frequencies.offset_map[cur].Add(1);
     }
+  }
+}
+
+void BlobfsMetrics::IncrementBlobLayoutCount(BlobLayoutFormat layout) {
+  switch (layout) {
+    case BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart:
+      padded_layout_blobs_.Add(1);
+      break;
+    case BlobLayoutFormat::kCompactMerkleTreeAtEnd:
+      compact_layout_blobs_.Add(1);
+      break;
+  }
+}
+
+void BlobfsMetrics::DecrementBlobLayoutCount(BlobLayoutFormat layout) {
+  switch (layout) {
+    case BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart:
+      padded_layout_blobs_.Subtract(1);
+      break;
+    case BlobLayoutFormat::kCompactMerkleTreeAtEnd:
+      compact_layout_blobs_.Subtract(1);
+      break;
   }
 }
 
