@@ -6,16 +6,16 @@
 ///
 /// # Safety
 ///
-/// The associated `ClientSender` and `ServerSender` types must be `#[repr(transparent)]` wrappers
-/// around `ClientSender<T>` and `ServerSender<T>` respectively.
+/// The associated `Client` and `Server` types must be `#[repr(transparent)]`
+/// wrappers around `Client<T>` and `Server<T>` respectively.
 pub unsafe trait Protocol<T> {
-    /// The client sender for the protocol. It must be a `#[repr(transparent)]` wrapper around
-    /// `ClientSender<T>`.
-    type ClientSender;
+    /// The client for the protocol. It must be a `#[repr(transparent)]` wrapper
+    /// around `Client<T>`.
+    type Client;
 
-    /// The server sender for the protocol. It must be a `#[repr(transparent)]` wrapper around
-    /// `ServerSender<T>`.
-    type ServerSender;
+    /// The server for the protocol. It must be a `#[repr(transparent)]` wrapper
+    /// around `Server<T>`.
+    type Server;
 }
 
 /// A discoverable protocol.
@@ -39,5 +39,6 @@ pub trait Method {
     type Response;
 }
 
-/// The request or response type of a method which does not have a request or response.
+/// The request or response type of a method which does not have a request or
+/// response.
 pub enum Never {}

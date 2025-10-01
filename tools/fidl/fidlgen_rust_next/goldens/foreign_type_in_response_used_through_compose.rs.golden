@@ -31,35 +31,35 @@ pub mod top {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = TopClientSender<___T>;
-            type ServerSender = TopServerSender<___T>;
+            type Client = TopClient<___T>;
+            type Server = TopServer<___T>;
         }
 
-        /// The client sender for the `Top` protocol.
+        /// The client for the `Top` protocol.
         #[repr(transparent)]
-        pub struct TopClientSender<___T: ::fidl_next::Transport> {
+        pub struct TopClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> TopClientSender<___T>
+        impl<___T> TopClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
             pub fn get_foo(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetFoo, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(4619180266423108403, ()),
+                    self.client.send_two_way(4619180266423108403, ()),
                 )
             }
         }
 
-        /// The server sender for the `Top` protocol.
+        /// The server for the `Top` protocol.
         #[repr(transparent)]
-        pub struct TopServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct TopServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> TopServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> TopServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -82,12 +82,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -114,12 +114,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -136,7 +136,7 @@ where
                 handler.get_foo(responder).await;
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -145,9 +145,9 @@ where
 pub mod compat {
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `Top`
+    /// An alias for a client over `zx::Channel` for the `Top`
     /// protocol.
-    pub type TopProxy = ::fidl_next::ClientSender<crate::Top>;
+    pub type TopProxy = ::fidl_next::Client<crate::Top>;
 
     impl ::fidl_next::CompatFrom<crate::Top>
         for ::fidl_test_foreigntypeinresponseusedthroughcompose::TopMarker
@@ -173,10 +173,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_foreigntypeinresponseusedthroughcompose::TopProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

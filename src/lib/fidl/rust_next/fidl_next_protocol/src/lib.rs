@@ -40,17 +40,17 @@
 //!
 //! ## Clients and servers
 //!
-//! [`Client`]s and [`Server`]s are constructed from a transport, and can be
-//! `run` with a corresponding [`ClientHandler`] or [`ServerHandler`]. The
-//! client or server will then run its event loop to receive data through the
-//! transport. Clients use the handler to handle incoming events, and
-//! coordinate with any [`ClientSender`]s to route two-way method responses to
-//! waiting futures. Servers use the handler to handle incoming one-way and
-//! two-way method requests, but do not generally coordinate with their
-//! associated [`ServerSender`]s.
+//! [`ClientDispatcher`]s and [`ServerDispatcher`]s are constructed from a
+//! transport, and can be `run` with a corresponding [`ClientHandler`] or
+//! [`ServerHandler`]. The dispatcher will then run its event loop to receive
+//! data through the transport. Client dispatchers use their handlers to handle
+//! incoming events, and coordinate with any [`Client`]s to route two-way method
+//! responses to waiting futures. Server dispatchers use their handlers to
+//! handle incoming one-way and two-way method requests, but do not generally
+//! coordinate with their associated [`Server`]s.
 //!
-//! [`ClientSender`]s and [`ServerSender`]s implement `Clone`, and should be
-//! cloned to send from multiple locations.
+//! [`Client`]s and [`Server`]s implement `Clone`, and should be cloned to
+//! interact with the connection from multiple locations.
 
 #![deny(
     future_incompatible,

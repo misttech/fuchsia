@@ -460,18 +460,18 @@ pub mod two_way {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = TwoWayClientSender<___T>;
-            type ServerSender = TwoWayServerSender<___T>;
+            type Client = TwoWayClient<___T>;
+            type Server = TwoWayServer<___T>;
         }
 
-        /// The client sender for the `TwoWay` protocol.
+        /// The client for the `TwoWay` protocol.
         #[repr(transparent)]
-        pub struct TwoWayClientSender<___T: ::fidl_next::Transport> {
+        pub struct TwoWayClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> TwoWayClientSender<___T>
+        impl<___T> TwoWayClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -506,18 +506,18 @@ pub mod two_way {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(989730524426044687, request),
+                    self.client.send_two_way(989730524426044687, request),
                 )
             }
         }
 
-        /// The server sender for the `TwoWay` protocol.
+        /// The server for the `TwoWay` protocol.
         #[repr(transparent)]
-        pub struct TwoWayServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct TwoWayServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> TwoWayServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> TwoWayServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -540,12 +540,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -576,12 +576,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -601,7 +601,7 @@ where
                 }
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -658,9 +658,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `TwoWay`
+    /// An alias for a client over `zx::Channel` for the `TwoWay`
     /// protocol.
-    pub type TwoWayProxy = ::fidl_next::ClientSender<crate::TwoWay>;
+    pub type TwoWayProxy = ::fidl_next::Client<crate::TwoWay>;
 
     #[cfg(feature = "driver")]
     impl ::fidl_next::CompatFrom<crate::TwoWay> for ::fidl_test_drivertwoway::TwoWayMarker {

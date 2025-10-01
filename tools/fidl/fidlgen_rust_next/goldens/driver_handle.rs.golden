@@ -158,26 +158,26 @@ pub mod driver_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = DriverProtocolClientSender<___T>;
-            type ServerSender = DriverProtocolServerSender<___T>;
+            type Client = DriverProtocolClient<___T>;
+            type Server = DriverProtocolServer<___T>;
         }
 
-        /// The client sender for the `DriverProtocol` protocol.
+        /// The client for the `DriverProtocol` protocol.
         #[repr(transparent)]
-        pub struct DriverProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct DriverProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> DriverProtocolClientSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> DriverProtocolClient<___T> where ___T: ::fidl_next::Transport {}
 
-        /// The server sender for the `DriverProtocol` protocol.
+        /// The server for the `DriverProtocol` protocol.
         #[repr(transparent)]
-        pub struct DriverProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct DriverProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> DriverProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> DriverProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -198,12 +198,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -225,12 +225,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -241,7 +241,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -652,18 +652,18 @@ pub mod handles_in_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = HandlesInProtocolClientSender<___T>;
-            type ServerSender = HandlesInProtocolServerSender<___T>;
+            type Client = HandlesInProtocolClient<___T>;
+            type Server = HandlesInProtocolServer<___T>;
         }
 
-        /// The client sender for the `HandlesInProtocol` protocol.
+        /// The client for the `HandlesInProtocol` protocol.
         #[repr(transparent)]
-        pub struct HandlesInProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct HandlesInProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> HandlesInProtocolClientSender<___T>
+        impl<___T> HandlesInProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -695,18 +695,18 @@ pub mod handles_in_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(8904504160365833729, request),
+                    self.client.send_one_way(8904504160365833729, request),
                 )
             }
         }
 
-        /// The server sender for the `HandlesInProtocol` protocol.
+        /// The server for the `HandlesInProtocol` protocol.
         #[repr(transparent)]
-        pub struct HandlesInProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct HandlesInProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> HandlesInProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> HandlesInProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -727,12 +727,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -747,7 +747,7 @@ pub trait HandlesInProtocolServerHandler<
 {
     fn send_handles(
         &mut self,
-        sender: &::fidl_next::ServerSender<HandlesInProtocol, ___T>,
+        server: &::fidl_next::Server<HandlesInProtocol, ___T>,
 
         request: ::fidl_next::Request<handles_in_protocol::SendHandles, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -762,17 +762,17 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             8904504160365833729 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.send_handles(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.send_handles(server, decoded).await,
+                Err(e) => server.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -783,7 +783,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -930,9 +930,9 @@ where
 pub mod compat {
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `DriverProtocol`
+    /// An alias for a client over `zx::Channel` for the `DriverProtocol`
     /// protocol.
-    pub type DriverProtocolProxy = ::fidl_next::ClientSender<crate::DriverProtocol>;
+    pub type DriverProtocolProxy = ::fidl_next::Client<crate::DriverProtocol>;
 
     #[cfg(feature = "driver")]
     impl ::fidl_next::CompatFrom<crate::DriverProtocol>

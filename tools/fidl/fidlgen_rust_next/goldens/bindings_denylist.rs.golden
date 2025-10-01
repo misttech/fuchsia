@@ -1033,35 +1033,35 @@ pub mod allowed {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = AllowedClientSender<___T>;
-            type ServerSender = AllowedServerSender<___T>;
+            type Client = AllowedClient<___T>;
+            type Server = AllowedServer<___T>;
         }
 
-        /// The client sender for the `Allowed` protocol.
+        /// The client for the `Allowed` protocol.
         #[repr(transparent)]
-        pub struct AllowedClientSender<___T: ::fidl_next::Transport> {
+        pub struct AllowedClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> AllowedClientSender<___T>
+        impl<___T> AllowedClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
             pub fn denied(&self) -> ::fidl_next::TwoWayFuture<'_, super::Denied, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(3826178105137551123, ()),
+                    self.client.send_two_way(3826178105137551123, ()),
                 )
             }
         }
 
-        /// The server sender for the `Allowed` protocol.
+        /// The server for the `Allowed` protocol.
         #[repr(transparent)]
-        pub struct AllowedServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct AllowedServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> AllowedServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> AllowedServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -1084,12 +1084,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -1116,12 +1116,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -1138,7 +1138,7 @@ where
                 handler.denied(responder).await;
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -1161,26 +1161,26 @@ pub mod contains_allowed {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ContainsAllowedClientSender<___T>;
-            type ServerSender = ContainsAllowedServerSender<___T>;
+            type Client = ContainsAllowedClient<___T>;
+            type Server = ContainsAllowedServer<___T>;
         }
 
-        /// The client sender for the `ContainsAllowed` protocol.
+        /// The client for the `ContainsAllowed` protocol.
         #[repr(transparent)]
-        pub struct ContainsAllowedClientSender<___T: ::fidl_next::Transport> {
+        pub struct ContainsAllowedClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ContainsAllowedClientSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ContainsAllowedClient<___T> where ___T: ::fidl_next::Transport {}
 
-        /// The server sender for the `ContainsAllowed` protocol.
+        /// The server for the `ContainsAllowed` protocol.
         #[repr(transparent)]
-        pub struct ContainsAllowedServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ContainsAllowedServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ContainsAllowedServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ContainsAllowedServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -1201,12 +1201,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -1228,12 +1228,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -1244,7 +1244,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -2349,18 +2349,18 @@ pub mod denied {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = DeniedClientSender<___T>;
-            type ServerSender = DeniedServerSender<___T>;
+            type Client = DeniedClient<___T>;
+            type Server = DeniedServer<___T>;
         }
 
-        /// The client sender for the `Denied` protocol.
+        /// The client for the `Denied` protocol.
         #[repr(transparent)]
-        pub struct DeniedClientSender<___T: ::fidl_next::Transport> {
+        pub struct DeniedClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> DeniedClientSender<___T>
+        impl<___T> DeniedClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -2407,18 +2407,18 @@ pub mod denied {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(5338181991150205725, request),
+                    self.client.send_one_way(5338181991150205725, request),
                 )
             }
         }
 
-        /// The server sender for the `Denied` protocol.
+        /// The server for the `Denied` protocol.
         #[repr(transparent)]
-        pub struct DeniedServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct DeniedServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> DeniedServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> DeniedServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -2439,12 +2439,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -2459,7 +2459,7 @@ pub trait DeniedServerHandler<
 {
     fn should_never_appear_in_any_binding(
         &mut self,
-        sender: &::fidl_next::ServerSender<Denied, ___T>,
+        server: &::fidl_next::Server<Denied, ___T>,
 
         request: ::fidl_next::Request<denied::ShouldNeverAppearInAnyBinding, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -2474,17 +2474,17 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             5338181991150205725 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.should_never_appear_in_any_binding(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.should_never_appear_in_any_binding(server, decoded).await,
+                Err(e) => server.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -2495,7 +2495,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -6107,18 +6107,18 @@ pub mod deny_each_binding {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = DenyEachBindingClientSender<___T>;
-            type ServerSender = DenyEachBindingServerSender<___T>;
+            type Client = DenyEachBindingClient<___T>;
+            type Server = DenyEachBindingServer<___T>;
         }
 
-        /// The client sender for the `DenyEachBinding` protocol.
+        /// The client for the `DenyEachBinding` protocol.
         #[repr(transparent)]
-        pub struct DenyEachBindingClientSender<___T: ::fidl_next::Transport> {
+        pub struct DenyEachBindingClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> DenyEachBindingClientSender<___T>
+        impl<___T> DenyEachBindingClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -6148,7 +6148,7 @@ pub mod deny_each_binding {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2957648440141224850, request),
+                    self.client.send_two_way(2957648440141224850, request),
                 )
             }
 
@@ -6178,7 +6178,7 @@ pub mod deny_each_binding {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(8446571910689294295, request),
+                    self.client.send_two_way(8446571910689294295, request),
                 )
             }
 
@@ -6208,7 +6208,7 @@ pub mod deny_each_binding {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(7311125300308839833, request),
+                    self.client.send_two_way(7311125300308839833, request),
                 )
             }
 
@@ -6238,7 +6238,7 @@ pub mod deny_each_binding {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(3010747198252652930, request),
+                    self.client.send_two_way(3010747198252652930, request),
                 )
             }
 
@@ -6268,7 +6268,7 @@ pub mod deny_each_binding {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(3719805222870932662, request),
+                    self.client.send_two_way(3719805222870932662, request),
                 )
             }
 
@@ -6298,18 +6298,18 @@ pub mod deny_each_binding {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2319043834522757514, request),
+                    self.client.send_two_way(2319043834522757514, request),
                 )
             }
         }
 
-        /// The server sender for the `DenyEachBinding` protocol.
+        /// The server for the `DenyEachBinding` protocol.
         #[repr(transparent)]
-        pub struct DenyEachBindingServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct DenyEachBindingServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> DenyEachBindingServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> DenyEachBindingServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -6342,12 +6342,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -6428,12 +6428,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -6498,7 +6498,7 @@ where
                 }
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -6599,18 +6599,18 @@ pub mod imports_same_name_context {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ImportsSameNameContextClientSender<___T>;
-            type ServerSender = ImportsSameNameContextServerSender<___T>;
+            type Client = ImportsSameNameContextClient<___T>;
+            type Server = ImportsSameNameContextServer<___T>;
         }
 
-        /// The client sender for the `ImportsSameNameContext` protocol.
+        /// The client for the `ImportsSameNameContext` protocol.
         #[repr(transparent)]
-        pub struct ImportsSameNameContextClientSender<___T: ::fidl_next::Transport> {
+        pub struct ImportsSameNameContextClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ImportsSameNameContextClientSender<___T>
+        impl<___T> ImportsSameNameContextClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -6640,30 +6640,30 @@ pub mod imports_same_name_context {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(6808317417318106526, request),
+                    self.client.send_one_way(6808317417318106526, request),
                 )
             }
 
             pub fn unattributed(&self) -> ::fidl_next::SendFuture<'_, ___T> {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(475191379775102607, ()),
+                    self.client.send_one_way(475191379775102607, ()),
                 )
             }
 
             pub fn always_appears_in_importing_library(&self) -> ::fidl_next::SendFuture<'_, ___T> {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(2914965219653596920, ()),
+                    self.client.send_one_way(2914965219653596920, ()),
                 )
             }
         }
 
-        /// The server sender for the `ImportsSameNameContext` protocol.
+        /// The server for the `ImportsSameNameContext` protocol.
         #[repr(transparent)]
-        pub struct ImportsSameNameContextServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ImportsSameNameContextServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ImportsSameNameContextServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ImportsSameNameContextServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -6684,12 +6684,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -6704,19 +6704,19 @@ pub trait ImportsSameNameContextServerHandler<
 {
     fn always_denied(
         &mut self,
-        sender: &::fidl_next::ServerSender<ImportsSameNameContext, ___T>,
+        server: &::fidl_next::Server<ImportsSameNameContext, ___T>,
 
         request: ::fidl_next::Request<imports_same_name_context::AlwaysDenied, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn unattributed(
         &mut self,
-        sender: &::fidl_next::ServerSender<ImportsSameNameContext, ___T>,
+        server: &::fidl_next::Server<ImportsSameNameContext, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn always_appears_in_importing_library(
         &mut self,
-        sender: &::fidl_next::ServerSender<ImportsSameNameContext, ___T>,
+        server: &::fidl_next::Server<ImportsSameNameContext, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -6729,25 +6729,25 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             6808317417318106526 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.always_denied(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.always_denied(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             475191379775102607 => {
-                handler.unattributed(sender).await;
+                handler.unattributed(server).await;
             }
 
             2914965219653596920 => {
-                handler.always_appears_in_importing_library(sender).await;
+                handler.always_appears_in_importing_library(server).await;
             }
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -6758,7 +6758,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -7177,26 +7177,26 @@ pub mod only_cpp_and_deps {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = OnlyCppAndDepsClientSender<___T>;
-            type ServerSender = OnlyCppAndDepsServerSender<___T>;
+            type Client = OnlyCppAndDepsClient<___T>;
+            type Server = OnlyCppAndDepsServer<___T>;
         }
 
-        /// The client sender for the `OnlyCppAndDeps` protocol.
+        /// The client for the `OnlyCppAndDeps` protocol.
         #[repr(transparent)]
-        pub struct OnlyCppAndDepsClientSender<___T: ::fidl_next::Transport> {
+        pub struct OnlyCppAndDepsClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> OnlyCppAndDepsClientSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> OnlyCppAndDepsClient<___T> where ___T: ::fidl_next::Transport {}
 
-        /// The server sender for the `OnlyCppAndDeps` protocol.
+        /// The server for the `OnlyCppAndDeps` protocol.
         #[repr(transparent)]
-        pub struct OnlyCppAndDepsServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct OnlyCppAndDepsServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> OnlyCppAndDepsServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> OnlyCppAndDepsServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -7217,12 +7217,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -7244,12 +7244,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -7260,7 +7260,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -8361,9 +8361,9 @@ impl ::core::convert::From<OnlySyzkaller> for WireOnlySyzkaller {
 pub mod compat {
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `Allowed`
+    /// An alias for a client over `zx::Channel` for the `Allowed`
     /// protocol.
-    pub type AllowedProxy = ::fidl_next::ClientSender<crate::Allowed>;
+    pub type AllowedProxy = ::fidl_next::Client<crate::Allowed>;
 
     impl ::fidl_next::CompatFrom<crate::Allowed> for ::fidl_test_bindingsdenylist::AllowedMarker {
         fn compat_from(_: crate::Allowed) -> Self {
@@ -8382,10 +8382,10 @@ pub mod compat {
     impl ::fidl_next::ClientCompatFrom<::fidl_test_bindingsdenylist::AllowedProxy> for crate::Allowed {
         fn client_compat_from(
             proxy: ::fidl_test_bindingsdenylist::AllowedProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 
@@ -8595,9 +8595,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `DenyEachBinding`
+    /// An alias for a client over `zx::Channel` for the `DenyEachBinding`
     /// protocol.
-    pub type DenyEachBindingProxy = ::fidl_next::ClientSender<crate::DenyEachBinding>;
+    pub type DenyEachBindingProxy = ::fidl_next::Client<crate::DenyEachBinding>;
 
     impl ::fidl_next::CompatFrom<crate::DenyEachBinding>
         for ::fidl_test_bindingsdenylist::DenyEachBindingMarker
@@ -8622,17 +8622,17 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_bindingsdenylist::DenyEachBindingProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `ImportsSameNameContext`
+    /// An alias for a client over `zx::Channel` for the `ImportsSameNameContext`
     /// protocol.
-    pub type ImportsSameNameContextProxy = ::fidl_next::ClientSender<crate::ImportsSameNameContext>;
+    pub type ImportsSameNameContextProxy = ::fidl_next::Client<crate::ImportsSameNameContext>;
 
     impl ::fidl_next::CompatFrom<crate::ImportsSameNameContext>
         for ::fidl_test_bindingsdenylist::ImportsSameNameContextMarker
@@ -8657,10 +8657,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_bindingsdenylist::ImportsSameNameContextProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 

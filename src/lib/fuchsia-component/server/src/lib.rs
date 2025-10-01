@@ -441,7 +441,7 @@ macro_rules! add_functions {
                             let server_end = ::fidl_next::ServerEnd::<P, zx::Channel>::from_untyped(
                                 channel.into_zx_channel(),
                             );
-                            ::fidl_next::Server::new(server_end)
+                            ::fidl_next::ServerDispatcher::new(server_end)
                                 .run(handler)
                                 .await
                                 .expect("Protocol service was terminated ");

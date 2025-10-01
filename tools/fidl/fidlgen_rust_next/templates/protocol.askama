@@ -179,18 +179,18 @@ pub mod {{ module_name }} {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = {{ client_sender_name }}<___T>;
-            type ServerSender = {{ server_sender_name }}<___T>;
+            type Client = {{ client_name }}<___T>;
+            type Server = {{ server_name }}<___T>;
         }
 
-        /// The client sender for the `{{ non_canonical_name }}` protocol.
+        /// The client for the `{{ non_canonical_name }}` protocol.
         #[repr(transparent)]
-        pub struct {{ client_sender_name }}<___T: ::fidl_next::Transport> {
+        pub struct {{ client_name }}<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> {{ client_sender_name }}<___T>
+        impl<___T> {{ client_name }}<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -243,7 +243,7 @@ pub mod {{ module_name }} {
                                 >,
                             {
                                 ::fidl_next::SendFuture::from_untyped(
-                                    self.sender.send_one_way({{ method.ordinal }}, request)
+                                    self.client.send_one_way({{ method.ordinal }}, request)
                                 )
                             }
                         {% else %}
@@ -251,7 +251,7 @@ pub mod {{ module_name }} {
                                 &self,
                             ) -> ::fidl_next::SendFuture<'_, ___T> {
                                 ::fidl_next::SendFuture::from_untyped(
-                                    self.sender.send_one_way({{ method.ordinal }}, ())
+                                    self.client.send_one_way({{ method.ordinal }}, ())
                                 )
                             }
                         {% endif %}
@@ -299,7 +299,7 @@ pub mod {{ module_name }} {
                                 >,
                             {
                                 ::fidl_next::TwoWayFuture::from_untyped(
-                                    self.sender.send_two_way({{ method.ordinal }}, request)
+                                    self.client.send_two_way({{ method.ordinal }}, request)
                                 )
                             }
                         {% else %}
@@ -307,7 +307,7 @@ pub mod {{ module_name }} {
                                 &self,
                             ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T> {
                                 ::fidl_next::TwoWayFuture::from_untyped(
-                                    self.sender.send_two_way({{ method.ordinal }}, ())
+                                    self.client.send_two_way({{ method.ordinal }}, ())
                                 )
                             }
                         {% endif %}
@@ -316,13 +316,13 @@ pub mod {{ module_name }} {
             {% endfor %}
         }
 
-        /// The server sender for the `{{ non_canonical_name }}` protocol.
+        /// The server for the `{{ non_canonical_name }}` protocol.
         #[repr(transparent)]
-        pub struct {{ server_sender_name }}<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct {{ server_name }}<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> {{ server_sender_name }}<___T>
+        impl<___T> {{ server_name }}<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -375,7 +375,7 @@ pub mod {{ module_name }} {
                             >,
                         {
                             ::fidl_next::SendFuture::from_untyped(
-                                self.sender.send_event({{ method.ordinal }}, request)
+                                self.server.send_event({{ method.ordinal }}, request)
                             )
                         }
                     {% else %}
@@ -383,7 +383,7 @@ pub mod {{ module_name }} {
                             &self,
                         ) -> ::fidl_next::SendFuture<'_, ___T> {
                             ::fidl_next::SendFuture::from_untyped(
-                                self.sender.send_event({{ method.ordinal }}, ())
+                                self.server.send_event({{ method.ordinal }}, ())
                             )
                         }
                     {% endif %}
@@ -410,7 +410,7 @@ pub trait {{ client_handler_name }}<
             {{ self.doc_string(method.attributes) -}}
             fn {{ method_name }}(
                 &mut self,
-                sender: &::fidl_next::ClientSender<{{ protocol_name }}, ___T>,
+                client: &::fidl_next::Client<{{ protocol_name }}, ___T>,
                 {% if method.maybe_response_payload.is_some() %}
                     event: ::fidl_next::Response<{{ module_name }}::{{ method_type_name }}, ___T>,
                 {% endif %}
@@ -421,10 +421,10 @@ pub trait {{ client_handler_name }}<
     {% if protocol.openness != ProtocolOpenness::Closed %}
         fn on_unknown_interaction(
             &mut self,
-            sender: &::fidl_next::ClientSender<{{ protocol_name }}, ___T>,
+            client: &::fidl_next::Client<{{ protocol_name }}, ___T>,
             ordinal: u64,
         ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-            sender.close();
+            client.close();
             ::core::future::ready(())
         }
     {% endif %}
@@ -444,7 +444,7 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
@@ -455,19 +455,19 @@ where
                     {{ method.ordinal }} => {
                         {% if method.maybe_response_payload.is_some() %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
-                                Ok(decoded) => handler.{{ method_name }}(sender, decoded).await,
-                                Err(e) => sender.close(),
+                                Ok(decoded) => handler.{{ method_name }}(client, decoded).await,
+                                Err(e) => client.close(),
                             }
                         {% else %}
-                            handler.{{ method_name}}(sender).await;
+                            handler.{{ method_name}}(client).await;
                         {% endif %}
                     }
                 {% endif %}
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(sender, ordinal).await,
+                ordinal => handler.on_unknown_interaction(client, ordinal).await,
             {% else %}
-                ordinal => sender.close(),
+                ordinal => client.close(),
             {% endif %}
         }
     }
@@ -491,7 +491,7 @@ pub trait {{ server_handler_name }}<
                 {{ self.doc_string(method.attributes) -}}
                 fn {{ method_name }}(
                     &mut self,
-                    sender: &::fidl_next::ServerSender<{{ protocol_name }}, ___T>,
+                    server: &::fidl_next::Server<{{ protocol_name }}, ___T>,
                     {% if let Some(request) = method.maybe_request_payload %}
                         request: ::fidl_next::Request<{{ module_name }}::{{ method_type_name }}, ___T>,
                     {% endif %}
@@ -512,10 +512,10 @@ pub trait {{ server_handler_name }}<
     {% if protocol.openness != ProtocolOpenness::Closed %}
         fn on_unknown_interaction(
             &mut self,
-            sender: &::fidl_next::ServerSender<{{ protocol_name }}, ___T>,
+            server: &::fidl_next::Server<{{ protocol_name }}, ___T>,
             ordinal: u64,
         ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-            sender.close();
+            server.close();
             ::core::future::ready(())
         }
     {% endif %}
@@ -535,7 +535,7 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
@@ -546,19 +546,19 @@ where
                     {{ method.ordinal }} => {
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
-                                Ok(decoded) => handler.{{ method_name }}(sender, decoded).await,
-                                Err(e) => sender.close(),
+                                Ok(decoded) => handler.{{ method_name }}(server, decoded).await,
+                                Err(e) => server.close(),
                             }
                         {% else %}
-                            handler.{{ method_name}}(sender).await;
+                            handler.{{ method_name}}(server).await;
                         {% endif %}
                     }
                 {% endif %}
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(sender, ordinal).await,
+                ordinal => handler.on_unknown_interaction(server, ordinal).await,
             {% else %}
-                ordinal => sender.close(),
+                ordinal => server.close(),
             {% endif %}
         }
     }
@@ -588,11 +588,11 @@ where
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
                 ordinal => {
-                    let sender = ::fidl_next::ServerSender::wrap_untyped(responder.sender());
-                    handler.on_unknown_interaction(sender, ordinal).await;
+                    let server = ::fidl_next::Server::wrap_untyped(responder.server());
+                    handler.on_unknown_interaction(server, ordinal).await;
                 }
             {% else %}
-                ordinal => responder.sender().close(),
+                ordinal => responder.server().close(),
             {% endif %}
         }
     }

@@ -10,48 +10,49 @@ use fidl_next_protocol::{self as protocol, ClientHandler, IgnoreEvents, Protocol
 
 use crate::{ClientEnd, Protocol};
 
-/// A strongly typed client sender.
+/// A strongly typed client.
 #[repr(transparent)]
-pub struct ClientSender<
+pub struct Client<
     P,
     #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
     #[cfg(not(feature = "fuchsia"))] T: Transport,
 > {
-    sender: protocol::ClientSender<T>,
+    client: protocol::Client<T>,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, T> Send for ClientSender<P, T>
+unsafe impl<P, T> Send for Client<P, T>
 where
     T: Transport,
-    protocol::ClientSender<T>: Send,
+    protocol::Client<T>: Send,
 {
 }
 
-impl<P, T: Transport> ClientSender<P, T> {
-    /// Wraps an untyped sender reference, returning a typed sender reference.
-    pub fn wrap_untyped(client: &protocol::ClientSender<T>) -> &Self {
-        unsafe { &*(client as *const protocol::ClientSender<T>).cast() }
+impl<P, T: Transport> Client<P, T> {
+    /// Wraps an untyped client reference, returning a typed client reference.
+    pub fn wrap_untyped(client: &protocol::Client<T>) -> &Self {
+        unsafe { &*(client as *const protocol::Client<T>).cast() }
     }
 
     /// Closes the channel from the client end.
     pub fn close(&self) {
-        self.sender.close();
+        self.client.close();
     }
 }
 
-impl<P, T: Transport> Clone for ClientSender<P, T> {
+impl<P, T: Transport> Clone for Client<P, T> {
     fn clone(&self) -> Self {
-        Self { sender: self.sender.clone(), _protocol: PhantomData }
+        Self { client: self.client.clone(), _protocol: PhantomData }
     }
 }
 
-impl<P: Protocol<T>, T: Transport> Deref for ClientSender<P, T> {
-    type Target = P::ClientSender;
+impl<P: Protocol<T>, T: Transport> Deref for Client<P, T> {
+    type Target = P::Client;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: `P::ClientSender` is a `#[repr(transparent)]` wrapper around `ClientSender<T>`.
-        unsafe { &*(self as *const Self).cast::<P::ClientSender>() }
+        // SAFETY: `P::Client` is a `#[repr(transparent)]` wrapper around
+        // `Client<T>`.
+        unsafe { &*(self as *const Self).cast::<P::Client>() }
     }
 }
 
@@ -65,7 +66,7 @@ pub trait DispatchClientMessage<
     /// Handles a received client event with the given handler.
     fn on_event(
         handler: &mut H,
-        sender: &ClientSender<Self, T>,
+        client: &Client<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send;
@@ -93,45 +94,48 @@ where
 {
     fn on_event(
         &mut self,
-        sender: &protocol::ClientSender<T>,
+        client: &protocol::Client<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send {
-        P::on_event(&mut self.handler, ClientSender::wrap_untyped(sender), ordinal, buffer)
+        P::on_event(&mut self.handler, Client::wrap_untyped(client), ordinal, buffer)
     }
 }
 
-/// A strongly typed client.
-pub struct Client<
+/// A strongly typed client dispatcher.
+pub struct ClientDispatcher<
     P,
     #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
     #[cfg(not(feature = "fuchsia"))] T: Transport,
 > {
-    client: protocol::Client<T>,
+    dispatcher: protocol::ClientDispatcher<T>,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, T> Send for Client<P, T>
+unsafe impl<P, T> Send for ClientDispatcher<P, T>
 where
     T: Transport,
     protocol::Client<T>: Send,
 {
 }
 
-impl<P, T: Transport> Client<P, T> {
+impl<P, T: Transport> ClientDispatcher<P, T> {
     /// Creates a new client from a client end.
     pub fn new(client_end: ClientEnd<P, T>) -> Self {
-        Self { client: protocol::Client::new(client_end.into_untyped()), _protocol: PhantomData }
+        Self {
+            dispatcher: protocol::ClientDispatcher::new(client_end.into_untyped()),
+            _protocol: PhantomData,
+        }
     }
 
-    /// Returns the sender for the client.
-    pub fn sender(&self) -> &ClientSender<P, T> {
-        ClientSender::wrap_untyped(self.client.sender())
+    /// Returns the dispatcher's client.
+    pub fn client(&self) -> &Client<P, T> {
+        Client::wrap_untyped(self.dispatcher.client())
     }
 
     /// Creates a new client from an untyped client.
-    pub fn from_untyped(client: protocol::Client<T>) -> Self {
-        Self { client, _protocol: PhantomData }
+    pub fn from_untyped(dispatcher: protocol::ClientDispatcher<T>) -> Self {
+        Self { dispatcher, _protocol: PhantomData }
     }
 
     /// Runs the client with the provided handler.
@@ -139,14 +143,14 @@ impl<P, T: Transport> Client<P, T> {
     where
         P: DispatchClientMessage<H, T>,
     {
-        self.client
+        self.dispatcher
             .run(ClientHandlerAdapter { handler, _protocol: PhantomData::<P> })
             .await
             .map(|adapter| adapter.handler)
     }
 
     /// Runs the client, ignoring any incoming events.
-    pub async fn run_sender(self) -> Result<(), ProtocolError<T::Error>> {
-        self.client.run(IgnoreEvents).await.map(|_| ())
+    pub async fn run_client(self) -> Result<(), ProtocolError<T::Error>> {
+        self.dispatcher.run(IgnoreEvents).await.map(|_| ())
     }
 }

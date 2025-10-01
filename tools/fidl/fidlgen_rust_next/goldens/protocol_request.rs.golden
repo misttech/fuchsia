@@ -17,26 +17,26 @@ pub mod child {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ChildClientSender<___T>;
-            type ServerSender = ChildServerSender<___T>;
+            type Client = ChildClient<___T>;
+            type Server = ChildServer<___T>;
         }
 
-        /// The client sender for the `Child` protocol.
+        /// The client for the `Child` protocol.
         #[repr(transparent)]
-        pub struct ChildClientSender<___T: ::fidl_next::Transport> {
+        pub struct ChildClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ChildClientSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ChildClient<___T> where ___T: ::fidl_next::Transport {}
 
-        /// The server sender for the `Child` protocol.
+        /// The server for the `Child` protocol.
         #[repr(transparent)]
-        pub struct ChildServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ChildServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ChildServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ChildServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -57,12 +57,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -84,12 +84,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -100,7 +100,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -834,24 +834,24 @@ pub mod parent {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ParentClientSender<___T>;
-            type ServerSender = ParentServerSender<___T>;
+            type Client = ParentClient<___T>;
+            type Server = ParentServer<___T>;
         }
 
-        /// The client sender for the `Parent` protocol.
+        /// The client for the `Parent` protocol.
         #[repr(transparent)]
-        pub struct ParentClientSender<___T: ::fidl_next::Transport> {
+        pub struct ParentClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ParentClientSender<___T>
+        impl<___T> ParentClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
             pub fn get_child(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetChild, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(881818649151440699, ()),
+                    self.client.send_two_way(881818649151440699, ()),
                 )
             }
 
@@ -859,7 +859,7 @@ pub mod parent {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::GetChildRequest, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(1096855814967598201, ()),
+                    self.client.send_two_way(1096855814967598201, ()),
                 )
             }
 
@@ -890,7 +890,7 @@ pub mod parent {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(4470101341872267920, request),
+                    self.client.send_one_way(4470101341872267920, request),
                 )
             }
 
@@ -924,18 +924,18 @@ pub mod parent {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(2333981071306416007, request),
+                    self.client.send_one_way(2333981071306416007, request),
                 )
             }
         }
 
-        /// The server sender for the `Parent` protocol.
+        /// The server for the `Parent` protocol.
         #[repr(transparent)]
-        pub struct ParentServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ParentServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ParentServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ParentServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -960,12 +960,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -992,14 +992,14 @@ pub trait ParentServerHandler<
 
     fn take_child(
         &mut self,
-        sender: &::fidl_next::ServerSender<Parent, ___T>,
+        server: &::fidl_next::Server<Parent, ___T>,
 
         request: ::fidl_next::Request<parent::TakeChild, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn take_child_request(
         &mut self,
-        sender: &::fidl_next::ServerSender<Parent, ___T>,
+        server: &::fidl_next::Server<Parent, ___T>,
 
         request: ::fidl_next::Request<parent::TakeChildRequest, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -1016,22 +1016,22 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             4470101341872267920 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.take_child(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.take_child(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             2333981071306416007 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.take_child_request(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.take_child_request(server, decoded).await,
+                Err(e) => server.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -1054,7 +1054,7 @@ where
                 handler.get_child_request(responder).await;
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -1063,9 +1063,9 @@ where
 pub mod compat {
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `Child`
+    /// An alias for a client over `zx::Channel` for the `Child`
     /// protocol.
-    pub type ChildProxy = ::fidl_next::ClientSender<crate::Child>;
+    pub type ChildProxy = ::fidl_next::Client<crate::Child>;
 
     impl ::fidl_next::CompatFrom<crate::Child> for ::fidl_test_protocolrequest::ChildMarker {
         fn compat_from(_: crate::Child) -> Self {
@@ -1084,10 +1084,10 @@ pub mod compat {
     impl ::fidl_next::ClientCompatFrom<::fidl_test_protocolrequest::ChildProxy> for crate::Child {
         fn client_compat_from(
             proxy: ::fidl_test_protocolrequest::ChildProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 
@@ -1164,9 +1164,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `Parent`
+    /// An alias for a client over `zx::Channel` for the `Parent`
     /// protocol.
-    pub type ParentProxy = ::fidl_next::ClientSender<crate::Parent>;
+    pub type ParentProxy = ::fidl_next::Client<crate::Parent>;
 
     impl ::fidl_next::CompatFrom<crate::Parent> for ::fidl_test_protocolrequest::ParentMarker {
         fn compat_from(_: crate::Parent) -> Self {
@@ -1185,10 +1185,10 @@ pub mod compat {
     impl ::fidl_next::ClientCompatFrom<::fidl_test_protocolrequest::ParentProxy> for crate::Parent {
         fn client_compat_from(
             proxy: ::fidl_test_protocolrequest::ParentProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

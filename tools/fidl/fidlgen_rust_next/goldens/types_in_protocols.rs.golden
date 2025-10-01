@@ -8928,18 +8928,18 @@ pub mod protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ProtocolClientSender<___T>;
-            type ServerSender = ProtocolServerSender<___T>;
+            type Client = ProtocolClient<___T>;
+            type Server = ProtocolServer<___T>;
         }
 
-        /// The client sender for the `Protocol` protocol.
+        /// The client for the `Protocol` protocol.
         #[repr(transparent)]
-        pub struct ProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct ProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ProtocolClientSender<___T>
+        impl<___T> ProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -9049,7 +9049,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(8948968077914418681, request),
+                    self.client.send_one_way(8948968077914418681, request),
                 )
             }
 
@@ -9159,13 +9159,13 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2331618702752598159, request),
+                    self.client.send_two_way(2331618702752598159, request),
                 )
             }
 
             pub fn error_basic(&self) -> ::fidl_next::TwoWayFuture<'_, super::ErrorBasic, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(5016634351643393939, ()),
+                    self.client.send_two_way(5016634351643393939, ()),
                 )
             }
 
@@ -9240,7 +9240,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(3153289648860022476, request),
+                    self.client.send_one_way(3153289648860022476, request),
                 )
             }
 
@@ -9315,7 +9315,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(8787219719097524529, request),
+                    self.client.send_two_way(8787219719097524529, request),
                 )
             }
 
@@ -9323,7 +9323,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorCompound, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2990809657626249085, ()),
+                    self.client.send_two_way(2990809657626249085, ()),
                 )
             }
 
@@ -9433,7 +9433,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(7125516817014311449, request),
+                    self.client.send_one_way(7125516817014311449, request),
                 )
             }
 
@@ -9543,7 +9543,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(5309034178175279380, request),
+                    self.client.send_two_way(5309034178175279380, request),
                 )
             }
 
@@ -9551,7 +9551,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayBasic, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(1084731895342694265, ()),
+                    self.client.send_two_way(1084731895342694265, ()),
                 )
             }
 
@@ -9626,7 +9626,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(5064659223443251357, request),
+                    self.client.send_one_way(5064659223443251357, request),
                 )
             }
 
@@ -9701,7 +9701,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(849744466051983995, request),
+                    self.client.send_two_way(849744466051983995, request),
                 )
             }
 
@@ -9709,7 +9709,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayCompound, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(5919277476782807556, ()),
+                    self.client.send_two_way(5919277476782807556, ()),
                 )
             }
 
@@ -9822,7 +9822,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(5733220720079947351, request),
+                    self.client.send_one_way(5733220720079947351, request),
                 )
             }
 
@@ -9935,7 +9935,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(8674156353091415668, request),
+                    self.client.send_two_way(8674156353091415668, request),
                 )
             }
 
@@ -9943,7 +9943,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorBasic, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(875941614196965234, ()),
+                    self.client.send_two_way(875941614196965234, ()),
                 )
             }
 
@@ -10021,7 +10021,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(1853985797298830992, request),
+                    self.client.send_one_way(1853985797298830992, request),
                 )
             }
 
@@ -10099,7 +10099,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(3968024057912959924, request),
+                    self.client.send_two_way(3968024057912959924, request),
                 )
             }
 
@@ -10107,7 +10107,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorCompound, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(8506780203315865989, ()),
+                    self.client.send_two_way(8506780203315865989, ()),
                 )
             }
 
@@ -10167,7 +10167,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(1530215841195476271, request),
+                    self.client.send_one_way(1530215841195476271, request),
                 )
             }
 
@@ -10227,7 +10227,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(1030024737742222323, request),
+                    self.client.send_two_way(1030024737742222323, request),
                 )
             }
 
@@ -10235,7 +10235,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorOptional, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(6406191217027936606, ()),
+                    self.client.send_two_way(6406191217027936606, ()),
                 )
             }
 
@@ -10292,7 +10292,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(5912603762133524183, request),
+                    self.client.send_one_way(5912603762133524183, request),
                 )
             }
 
@@ -10349,7 +10349,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(5351275678438791132, request),
+                    self.client.send_two_way(5351275678438791132, request),
                 )
             }
 
@@ -10357,7 +10357,7 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayVectorNested, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(9085604921605802151, ()),
+                    self.client.send_two_way(9085604921605802151, ()),
                 )
             }
 
@@ -10597,7 +10597,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(6553996787849601058, request),
+                    self.client.send_one_way(6553996787849601058, request),
                 )
             }
 
@@ -10837,7 +10837,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(1802709005492464987, request),
+                    self.client.send_two_way(1802709005492464987, request),
                 )
             }
 
@@ -10845,18 +10845,18 @@ pub mod protocol {
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorResource, ___T> {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(6568609240497354166, ()),
+                    self.client.send_two_way(6568609240497354166, ()),
                 )
             }
         }
 
-        /// The server sender for the `Protocol` protocol.
+        /// The server for the `Protocol` protocol.
         #[repr(transparent)]
-        pub struct ProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ProtocolServerSender<___T>
+        impl<___T> ProtocolServer<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -10963,7 +10963,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(5892309624949902400, request),
+                    self.server.send_event(5892309624949902400, request),
                 )
             }
 
@@ -11038,7 +11038,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(7024581948727571669, request),
+                    self.server.send_event(7024581948727571669, request),
                 )
             }
 
@@ -11148,7 +11148,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(5888282827283820590, request),
+                    self.server.send_event(5888282827283820590, request),
                 )
             }
 
@@ -11223,7 +11223,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(2189769767733851157, request),
+                    self.server.send_event(2189769767733851157, request),
                 )
             }
 
@@ -11336,7 +11336,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(4583890770109526006, request),
+                    self.server.send_event(4583890770109526006, request),
                 )
             }
 
@@ -11414,7 +11414,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(6026375226599919603, request),
+                    self.server.send_event(6026375226599919603, request),
                 )
             }
 
@@ -11474,7 +11474,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(1684763340073130077, request),
+                    self.server.send_event(1684763340073130077, request),
                 )
             }
 
@@ -11531,7 +11531,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(1228201560727880574, request),
+                    self.server.send_event(1228201560727880574, request),
                 )
             }
 
@@ -11771,7 +11771,7 @@ pub mod protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(5745997765922613643, request),
+                    self.server.send_event(5745997765922613643, request),
                 )
             }
         }
@@ -11788,63 +11788,63 @@ pub trait ProtocolClientHandler<
 {
     fn event_basic(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_compound(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_basic(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventArrayBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_compound(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventArrayCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_basic(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventVectorBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_compound(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventVectorCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_vector_optional(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventVectorOptional, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_array_vector_nested(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventArrayVectorNested, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn event_resource(
         &mut self,
-        sender: &::fidl_next::ClientSender<Protocol, ___T>,
+        client: &::fidl_next::Client<Protocol, ___T>,
 
         event: ::fidl_next::Response<protocol::EventResource, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -11911,57 +11911,57 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             5892309624949902400 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_basic(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_basic(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             7024581948727571669 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_compound(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_compound(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             5888282827283820590 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_array_basic(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_array_basic(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             2189769767733851157 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_array_compound(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_array_compound(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             4583890770109526006 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_vector_basic(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_vector_basic(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             6026375226599919603 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_vector_compound(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_vector_compound(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             1684763340073130077 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_vector_optional(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_vector_optional(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             1228201560727880574 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_array_vector_nested(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_array_vector_nested(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             5745997765922613643 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.event_resource(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.event_resource(client, decoded).await,
+                Err(e) => client.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -11976,7 +11976,7 @@ pub trait ProtocolServerHandler<
 {
     fn one_way_basic(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -11997,7 +11997,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_compound(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12018,7 +12018,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_array_basic(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayArrayBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12039,7 +12039,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_array_compound(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayArrayCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12060,7 +12060,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_vector_basic(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayVectorBasic, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12081,7 +12081,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_vector_compound(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayVectorCompound, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12102,7 +12102,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_vector_optional(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayVectorOptional, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12123,7 +12123,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_array_vector_nested(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayArrayVectorNested, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12144,7 +12144,7 @@ pub trait ProtocolServerHandler<
 
     fn one_way_resource(
         &mut self,
-        sender: &::fidl_next::ServerSender<Protocol, ___T>,
+        server: &::fidl_next::Server<Protocol, ___T>,
 
         request: ::fidl_next::Request<protocol::OneWayResource, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -12207,57 +12207,57 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             8948968077914418681 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_basic(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_basic(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             3153289648860022476 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_compound(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_compound(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             7125516817014311449 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_array_basic(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_array_basic(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             5064659223443251357 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_array_compound(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_array_compound(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             5733220720079947351 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_vector_basic(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_vector_basic(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             1853985797298830992 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_vector_compound(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_vector_compound(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             1530215841195476271 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_vector_optional(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_vector_optional(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             5912603762133524183 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_array_vector_nested(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_array_vector_nested(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             6553996787849601058 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_resource(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_resource(server, decoded).await,
+                Err(e) => server.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -12403,7 +12403,7 @@ where
                 handler.error_resource(responder).await;
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -13072,9 +13072,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `Protocol`
+    /// An alias for a client over `zx::Channel` for the `Protocol`
     /// protocol.
-    pub type ProtocolProxy = ::fidl_next::ClientSender<crate::Protocol>;
+    pub type ProtocolProxy = ::fidl_next::Client<crate::Protocol>;
 
     impl ::fidl_next::CompatFrom<crate::Protocol> for ::fidl_test_typesinprotocols::ProtocolMarker {
         fn compat_from(_: crate::Protocol) -> Self {
@@ -13095,10 +13095,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_typesinprotocols::ProtocolProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

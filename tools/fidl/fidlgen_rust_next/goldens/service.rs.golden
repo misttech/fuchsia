@@ -67,35 +67,35 @@ pub mod first_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = FirstProtocolClientSender<___T>;
-            type ServerSender = FirstProtocolServerSender<___T>;
+            type Client = FirstProtocolClient<___T>;
+            type Server = FirstProtocolServer<___T>;
         }
 
-        /// The client sender for the `FirstProtocol` protocol.
+        /// The client for the `FirstProtocol` protocol.
         #[repr(transparent)]
-        pub struct FirstProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct FirstProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> FirstProtocolClientSender<___T>
+        impl<___T> FirstProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
             pub fn method_on_first(&self) -> ::fidl_next::SendFuture<'_, ___T> {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(6352548393671797041, ()),
+                    self.client.send_one_way(6352548393671797041, ()),
                 )
             }
         }
 
-        /// The server sender for the `FirstProtocol` protocol.
+        /// The server for the `FirstProtocol` protocol.
         #[repr(transparent)]
-        pub struct FirstProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct FirstProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> FirstProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> FirstProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -116,12 +116,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -136,7 +136,7 @@ pub trait FirstProtocolServerHandler<
 {
     fn method_on_first(
         &mut self,
-        sender: &::fidl_next::ServerSender<FirstProtocol, ___T>,
+        server: &::fidl_next::Server<FirstProtocol, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -147,16 +147,16 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             6352548393671797041 => {
-                handler.method_on_first(sender).await;
+                handler.method_on_first(server).await;
             }
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -167,7 +167,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -389,35 +389,35 @@ pub mod second_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = SecondProtocolClientSender<___T>;
-            type ServerSender = SecondProtocolServerSender<___T>;
+            type Client = SecondProtocolClient<___T>;
+            type Server = SecondProtocolServer<___T>;
         }
 
-        /// The client sender for the `SecondProtocol` protocol.
+        /// The client for the `SecondProtocol` protocol.
         #[repr(transparent)]
-        pub struct SecondProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct SecondProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> SecondProtocolClientSender<___T>
+        impl<___T> SecondProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
             pub fn method_on_second(&self) -> ::fidl_next::SendFuture<'_, ___T> {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(8121179205110225988, ()),
+                    self.client.send_one_way(8121179205110225988, ()),
                 )
             }
         }
 
-        /// The server sender for the `SecondProtocol` protocol.
+        /// The server for the `SecondProtocol` protocol.
         #[repr(transparent)]
-        pub struct SecondProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct SecondProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> SecondProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> SecondProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -438,12 +438,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -458,7 +458,7 @@ pub trait SecondProtocolServerHandler<
 {
     fn method_on_second(
         &mut self,
-        sender: &::fidl_next::ServerSender<SecondProtocol, ___T>,
+        server: &::fidl_next::Server<SecondProtocol, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
@@ -469,16 +469,16 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             8121179205110225988 => {
-                handler.method_on_second(sender).await;
+                handler.method_on_second(server).await;
             }
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -489,7 +489,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -564,9 +564,9 @@ where
 pub mod compat {
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `FirstProtocol`
+    /// An alias for a client over `zx::Channel` for the `FirstProtocol`
     /// protocol.
-    pub type FirstProtocolProxy = ::fidl_next::ClientSender<crate::FirstProtocol>;
+    pub type FirstProtocolProxy = ::fidl_next::Client<crate::FirstProtocol>;
 
     impl ::fidl_next::CompatFrom<crate::FirstProtocol> for ::fidl_test_service::FirstProtocolMarker {
         fn compat_from(_: crate::FirstProtocol) -> Self {
@@ -587,17 +587,17 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_service::FirstProtocolProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `SecondProtocol`
+    /// An alias for a client over `zx::Channel` for the `SecondProtocol`
     /// protocol.
-    pub type SecondProtocolProxy = ::fidl_next::ClientSender<crate::SecondProtocol>;
+    pub type SecondProtocolProxy = ::fidl_next::Client<crate::SecondProtocol>;
 
     impl ::fidl_next::CompatFrom<crate::SecondProtocol> for ::fidl_test_service::SecondProtocolMarker {
         fn compat_from(_: crate::SecondProtocol) -> Self {
@@ -618,10 +618,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_service::SecondProtocolProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

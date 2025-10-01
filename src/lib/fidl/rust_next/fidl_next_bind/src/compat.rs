@@ -6,7 +6,7 @@
 use fidl_next_codec::CompatFrom;
 
 #[cfg(feature = "fuchsia")]
-use crate::Client;
+use crate::ClientDispatcher;
 use crate::{ClientEnd, ServerEnd};
 
 macro_rules! impl_compat_from_for_endpoints {
@@ -39,11 +39,11 @@ impl_compat_from_for_endpoints!(ClientEnd, ServerEnd);
 /// Conversions between old and new Rust protocol bindings.
 pub trait ClientCompatFrom<T>: Sized {
     /// Converts `proxy` into a `Client` for this protocol.
-    fn client_compat_from(proxy: T) -> Client<Self, zx::Channel>;
+    fn client_compat_from(proxy: T) -> ClientDispatcher<Self, zx::Channel>;
 }
 
 #[cfg(feature = "fuchsia")]
-impl<T, P> CompatFrom<T> for Client<P, zx::Channel>
+impl<T, P> CompatFrom<T> for ClientDispatcher<P, zx::Channel>
 where
     P: ClientCompatFrom<T>,
 {

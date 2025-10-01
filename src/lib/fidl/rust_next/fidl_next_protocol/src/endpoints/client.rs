@@ -16,33 +16,33 @@ use crate::endpoints::connection::{Connection, ORDINAL_EPITAPH};
 use crate::endpoints::lockers::{LockerError, Lockers};
 use crate::{ProtocolError, SendFuture, Transport, decode_epitaph, decode_header, encode_header};
 
-struct ClientSenderInner<T: Transport> {
+struct ClientInner<T: Transport> {
     connection: Connection<T>,
     responses: Mutex<Lockers<T::RecvBuffer>>,
 }
 
-impl<T: Transport> ClientSenderInner<T> {
+impl<T: Transport> ClientInner<T> {
     fn new(shared: T::Shared) -> Self {
         Self { connection: Connection::new(shared), responses: Mutex::new(Lockers::new()) }
     }
 }
 
-/// A sender for a client endpoint.
-pub struct ClientSender<T: Transport> {
-    inner: Arc<ClientSenderInner<T>>,
+/// A client endpoint.
+pub struct Client<T: Transport> {
+    inner: Arc<ClientInner<T>>,
 }
 
-impl<T: Transport> Drop for ClientSender<T> {
+impl<T: Transport> Drop for Client<T> {
     fn drop(&mut self) {
         if Arc::strong_count(&self.inner) == 2 {
-            // This was the last client sender other than the one in the client
+            // This was the last client other than the one in the dispatcher
             // itself. Stop the connection.
             self.close();
         }
     }
 }
 
-impl<T: Transport> ClientSender<T> {
+impl<T: Transport> Client<T> {
     /// Closes the channel from the client end.
     pub fn close(&self) {
         self.inner.connection.stop();
@@ -99,7 +99,7 @@ impl<T: Transport> ClientSender<T> {
     }
 }
 
-impl<T: Transport> Clone for ClientSender<T> {
+impl<T: Transport> Clone for Client<T> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
@@ -107,7 +107,7 @@ impl<T: Transport> Clone for ClientSender<T> {
 
 /// A future for a pending response to a two-way message.
 pub struct TwoWayResponseFuture<'a, T: Transport> {
-    inner: &'a ClientSenderInner<T>,
+    inner: &'a ClientInner<T>,
     index: Option<u32>,
 }
 
@@ -150,7 +150,7 @@ impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
 /// A future for a sending a two-way FIDL message.
 #[pin_project(PinnedDrop)]
 pub struct TwoWayRequestFuture<'a, T: Transport> {
-    inner: &'a ClientSenderInner<T>,
+    inner: &'a ClientInner<T>,
     index: Option<u32>,
     #[pin]
     send_future: SendFuture<'a, T>,
@@ -199,22 +199,27 @@ pub trait ClientHandler<T: Transport> {
     /// handle requests in parallel, it should spawn a new async task and return.
     fn on_event(
         &mut self,
-        sender: &ClientSender<T>,
+        client: &Client<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send;
 }
 
-/// A client for an endpoint.
+/// A dispatcher for a client endpoint.
 ///
-/// It must be actively polled to receive events and two-way message responses.
-pub struct Client<T: Transport> {
-    sender: ClientSender<T>,
+/// A client dispatcher receives all of the incoming messages and dispatches them to the client
+/// handler and two-way futures. It acts as the message pump for the client.
+///
+/// The dispatcher must be actively polled to receive events and two-way message responses. If the
+/// dispatcher is not [`run`](ClientDispatcher::run) concurrently, then events will not be received
+/// and two-way message futures will not receive their responses.
+pub struct ClientDispatcher<T: Transport> {
+    client: Client<T>,
     exclusive: T::Exclusive,
     is_terminated: bool,
 }
 
-impl<T: Transport> Drop for Client<T> {
+impl<T: Transport> Drop for ClientDispatcher<T> {
     fn drop(&mut self) {
         if !self.is_terminated {
             // SAFETY: We checked that the connection has not been terminated.
@@ -225,12 +230,12 @@ impl<T: Transport> Drop for Client<T> {
     }
 }
 
-impl<T: Transport> Client<T> {
+impl<T: Transport> ClientDispatcher<T> {
     /// Creates a new client from a transport.
     pub fn new(transport: T) -> Self {
         let (shared, exclusive) = transport.split();
-        let inner = Arc::new(ClientSenderInner::new(shared));
-        Self { sender: ClientSender { inner }, exclusive, is_terminated: false }
+        let inner = Arc::new(ClientInner::new(shared));
+        Self { client: Client { inner }, exclusive, is_terminated: false }
     }
 
     /// # Safety
@@ -239,14 +244,14 @@ impl<T: Transport> Client<T> {
     unsafe fn terminate(&mut self, error: ProtocolError<T::Error>) {
         // SAFETY: We checked that the connection has not been terminated.
         unsafe {
-            self.sender.inner.connection.terminate(error);
+            self.client.inner.connection.terminate(error);
         }
-        self.sender.inner.responses.lock().unwrap().wake_all();
+        self.client.inner.responses.lock().unwrap().wake_all();
     }
 
-    /// Returns the sender for the client.
-    pub fn sender(&self) -> &ClientSender<T> {
-        &self.sender
+    /// Returns the dispatcher's client.
+    pub fn client(&self) -> &Client<T> {
+        &self.client
     }
 
     /// Runs the client with the provided handler.
@@ -291,7 +296,7 @@ impl<T: Transport> Client<T> {
         H: ClientHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
-        let mut buffer = unsafe { self.sender.inner.connection.recv(&mut self.exclusive).await? };
+        let mut buffer = unsafe { self.client.inner.connection.recv(&mut self.exclusive).await? };
 
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
@@ -301,9 +306,9 @@ impl<T: Transport> Client<T> {
                 decode_epitaph::<T>(&mut buffer).map_err(ProtocolError::InvalidEpitaphBody)?;
             return Err(ProtocolError::PeerClosedWithEpitaph(epitaph));
         } else if txid == 0 {
-            handler.on_event(&self.sender, ordinal, buffer).await;
+            handler.on_event(&self.client, ordinal, buffer).await;
         } else {
-            let mut responses = self.sender.inner.responses.lock().unwrap();
+            let mut responses = self.client.inner.responses.lock().unwrap();
             let locker = responses
                 .get(txid - 1)
                 .ok_or_else(|| ProtocolError::UnrequestedResponse { txid })?;
@@ -326,7 +331,7 @@ impl<T: Transport> Client<T> {
     }
 
     /// Runs the client with the [`IgnoreEvents`] handler.
-    pub async fn run_sender(self) -> Result<(), ProtocolError<T::Error>> {
+    pub async fn run_client(self) -> Result<(), ProtocolError<T::Error>> {
         self.run(IgnoreEvents).await.map(|_| ())
     }
 }
@@ -335,5 +340,5 @@ impl<T: Transport> Client<T> {
 pub struct IgnoreEvents;
 
 impl<T: Transport> ClientHandler<T> for IgnoreEvents {
-    async fn on_event(&mut self, _: &ClientSender<T>, _: u64, _: T::RecvBuffer) {}
+    async fn on_event(&mut self, _: &Client<T>, _: u64, _: T::RecvBuffer) {}
 }

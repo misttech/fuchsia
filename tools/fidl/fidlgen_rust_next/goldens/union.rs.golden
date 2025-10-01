@@ -8278,18 +8278,18 @@ pub mod test_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = TestProtocolClientSender<___T>;
-            type ServerSender = TestProtocolServerSender<___T>;
+            type Client = TestProtocolClient<___T>;
+            type Server = TestProtocolServer<___T>;
         }
 
-        /// The client sender for the `TestProtocol` protocol.
+        /// The client for the `TestProtocol` protocol.
         #[repr(transparent)]
-        pub struct TestProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct TestProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> TestProtocolClientSender<___T>
+        impl<___T> TestProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -8301,7 +8301,7 @@ pub mod test_protocol {
                 ___T,
             > {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(6628358876445129155, ()),
+                    self.client.send_two_way(6628358876445129155, ()),
                 )
             }
 
@@ -8313,18 +8313,18 @@ pub mod test_protocol {
                 ___T,
             > {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(7588545459451501794, ()),
+                    self.client.send_two_way(7588545459451501794, ()),
                 )
             }
         }
 
-        /// The server sender for the `TestProtocol` protocol.
+        /// The server for the `TestProtocol` protocol.
         #[repr(transparent)]
-        pub struct TestProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct TestProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> TestProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> TestProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -8349,12 +8349,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -8393,12 +8393,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -8421,7 +8421,7 @@ where
                 handler.flexible_union_hence_response_must_be_heap_allocated(responder).await;
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -10490,9 +10490,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `TestProtocol`
+    /// An alias for a client over `zx::Channel` for the `TestProtocol`
     /// protocol.
-    pub type TestProtocolProxy = ::fidl_next::ClientSender<crate::TestProtocol>;
+    pub type TestProtocolProxy = ::fidl_next::Client<crate::TestProtocol>;
 
     impl ::fidl_next::CompatFrom<crate::TestProtocol> for ::fidl_test_union::TestProtocolMarker {
         fn compat_from(_: crate::TestProtocol) -> Self {
@@ -10511,10 +10511,10 @@ pub mod compat {
     impl ::fidl_next::ClientCompatFrom<::fidl_test_union::TestProtocolProxy> for crate::TestProtocol {
         fn client_compat_from(
             proxy: ::fidl_test_union::TestProtocolProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 

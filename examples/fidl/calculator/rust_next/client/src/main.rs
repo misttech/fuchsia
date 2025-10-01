@@ -4,7 +4,7 @@
 
 mod parse;
 
-use fidl_next::ClientSender;
+use fidl_next::Client;
 use fidl_next_fuchsia_examples_calculator::Calculator;
 use fuchsia_component::client::fidl_next::connect_to_protocol;
 use std::fs;
@@ -42,7 +42,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 async fn calculator_line(
     line: &str,
-    calculator: &ClientSender<Calculator>,
+    calculator: &Client<Calculator>,
 ) -> Result<f64, fidl_next::Error> {
     let parse::Expression::Leaf(left, op, right) = parse::parse(line);
     Ok(match op {

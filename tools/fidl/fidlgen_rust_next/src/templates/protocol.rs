@@ -25,10 +25,10 @@ pub struct ProtocolTemplate<'a> {
     protocol_name: String,
     module_name: String,
 
-    client_sender_name: String,
+    client_name: String,
     client_handler_name: String,
 
-    server_sender_name: String,
+    server_name: String,
     server_handler_name: String,
 }
 
@@ -44,10 +44,10 @@ impl<'a> ProtocolTemplate<'a> {
             protocol_name: escape(protocol.name.decl_name().camel()),
             module_name: escape(protocol.name.decl_name().snake()),
 
-            client_sender_name: escape(format!("{base_name}ClientSender")),
+            client_name: escape(format!("{base_name}Client")),
             client_handler_name: escape(format!("{base_name}ClientHandler")),
 
-            server_sender_name: escape(format!("{base_name}ServerSender")),
+            server_name: escape(format!("{base_name}Server")),
             server_handler_name: escape(format!("{base_name}ServerHandler")),
         }
     }

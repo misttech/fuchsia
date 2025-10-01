@@ -212,7 +212,7 @@ mod tests {
     use zx::Status;
 
     use fdf::Channel;
-    use fidl_next::{Client, ClientEnd};
+    use fidl_next::{ClientDispatcher, ClientEnd};
 
     #[derive(Default)]
     struct TestDriver {
@@ -251,12 +251,12 @@ mod tests {
         spawn_in_driver("driver registration", async move {
             let client_end: ClientEnd<fidl_next_fuchsia_driver_framework::Driver, _> =
                 ClientEnd::from_untyped(fdf_fidl::DriverChannel::new(client_chan));
-            let client = Client::new(client_end);
-            let client_sender = client.sender().clone();
+            let dispatcher = ClientDispatcher::new(client_end);
+            let client = dispatcher.client().clone();
 
             CurrentDispatcher
                 .spawn_task(async move {
-                    client.run(DriverClient).await.unwrap_err();
+                    dispatcher.run(DriverClient).await.unwrap_err();
                     client_exit_tx.send(()).unwrap();
                 })
                 .unwrap();
@@ -265,13 +265,13 @@ mod tests {
             let driver_server = unsafe { initialize_func(channel_handle) } as usize;
             assert_ne!(driver_server, 0);
 
-            client_sender
+            client
                 .start(fidl_next_fuchsia_driver_framework::DriverStartArgs::default())
                 .await
                 .unwrap()
                 .unwrap();
 
-            client_sender.stop().await.unwrap();
+            client.stop().await.unwrap();
             client_exit_rx.await.unwrap();
 
             unsafe {

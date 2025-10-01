@@ -425,18 +425,18 @@ pub mod one_way {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = OneWayClientSender<___T>;
-            type ServerSender = OneWayServerSender<___T>;
+            type Client = OneWayClient<___T>;
+            type Server = OneWayServer<___T>;
         }
 
-        /// The client sender for the `OneWay` protocol.
+        /// The client for the `OneWay` protocol.
         #[repr(transparent)]
-        pub struct OneWayClientSender<___T: ::fidl_next::Transport> {
+        pub struct OneWayClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> OneWayClientSender<___T>
+        impl<___T> OneWayClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -463,18 +463,18 @@ pub mod one_way {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(7942965975761529343, request),
+                    self.client.send_one_way(7942965975761529343, request),
                 )
             }
         }
 
-        /// The server sender for the `OneWay` protocol.
+        /// The server for the `OneWay` protocol.
         #[repr(transparent)]
-        pub struct OneWayServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct OneWayServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> OneWayServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> OneWayServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -495,12 +495,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -515,7 +515,7 @@ pub trait OneWayServerHandler<
 {
     fn send(
         &mut self,
-        sender: &::fidl_next::ServerSender<OneWay, ___T>,
+        server: &::fidl_next::Server<OneWay, ___T>,
 
         request: ::fidl_next::Request<one_way::Send, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -530,17 +530,17 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             7942965975761529343 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.send(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.send(server, decoded).await,
+                Err(e) => server.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -551,7 +551,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -594,9 +594,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `OneWay`
+    /// An alias for a client over `zx::Channel` for the `OneWay`
     /// protocol.
-    pub type OneWayProxy = ::fidl_next::ClientSender<crate::OneWay>;
+    pub type OneWayProxy = ::fidl_next::Client<crate::OneWay>;
 
     #[cfg(feature = "driver")]
     impl ::fidl_next::CompatFrom<crate::OneWay> for ::fidl_test_driveroneway::OneWayMarker {

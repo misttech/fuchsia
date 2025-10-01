@@ -11,53 +11,54 @@ use fidl_next_protocol::{self as protocol, ProtocolError, ServerHandler, Transpo
 
 use crate::{Method, Protocol, RespondFuture, ServerEnd};
 
-/// A strongly typed server sender.
+/// A strongly typed server.
 #[repr(transparent)]
-pub struct ServerSender<
+pub struct Server<
     P,
     #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
     #[cfg(not(feature = "fuchsia"))] T: Transport,
 > {
-    sender: protocol::ServerSender<T>,
+    server: protocol::Server<T>,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, T> Send for ServerSender<P, T>
+unsafe impl<P, T> Send for Server<P, T>
 where
-    protocol::ServerSender<T>: Send,
+    protocol::Server<T>: Send,
     T: Transport,
 {
 }
 
-impl<P, T: Transport> ServerSender<P, T> {
-    /// Wraps an untyped sender reference, returning a typed sender reference.
-    pub fn wrap_untyped(client: &protocol::ServerSender<T>) -> &Self {
-        unsafe { &*(client as *const protocol::ServerSender<T>).cast() }
+impl<P, T: Transport> Server<P, T> {
+    /// Wraps an untyped server reference, returning a typed server reference.
+    pub fn wrap_untyped(client: &protocol::Server<T>) -> &Self {
+        unsafe { &*(client as *const protocol::Server<T>).cast() }
     }
 
     /// Closes the channel from the server end.
     pub fn close(&self) {
-        self.sender.close();
+        self.server.close();
     }
 
     /// Closes the channel from the server end without sending an epitaph.
     pub fn close_with_epitaph(&self, epitaph: i32) {
-        self.sender.close_with_epitaph(epitaph);
+        self.server.close_with_epitaph(epitaph);
     }
 }
 
-impl<P, T: Transport> Clone for ServerSender<P, T> {
+impl<P, T: Transport> Clone for Server<P, T> {
     fn clone(&self) -> Self {
-        Self { sender: self.sender.clone(), _protocol: PhantomData }
+        Self { server: self.server.clone(), _protocol: PhantomData }
     }
 }
 
-impl<P: Protocol<T>, T: Transport> Deref for ServerSender<P, T> {
-    type Target = P::ServerSender;
+impl<P: Protocol<T>, T: Transport> Deref for Server<P, T> {
+    type Target = P::Server;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: `P::ServerSender` is a `#[repr(transparent)]` wrapper around `ServerSender<T>`.
-        unsafe { &*(self as *const Self).cast::<P::ServerSender>() }
+        // SAFETY: `P::Server` is a `#[repr(transparent)]` wrapper around
+        // `Server<T>`.
+        unsafe { &*(self as *const Self).cast::<P::Server>() }
     }
 }
 
@@ -71,7 +72,7 @@ pub trait DispatchServerMessage<
     /// Handles a received server one-way message with the given handler.
     fn on_one_way(
         handler: &mut H,
-        sender: &ServerSender<Self, T>,
+        server: &Server<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send;
@@ -107,11 +108,11 @@ where
 {
     fn on_one_way(
         &mut self,
-        server: &protocol::ServerSender<T>,
+        server: &protocol::Server<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send {
-        P::on_one_way(&mut self.handler, ServerSender::wrap_untyped(server), ordinal, buffer)
+        P::on_one_way(&mut self.handler, Server::wrap_untyped(server), ordinal, buffer)
     }
 
     fn on_two_way(
@@ -125,36 +126,39 @@ where
 }
 
 /// A strongly typed server.
-pub struct Server<
+pub struct ServerDispatcher<
     P,
     #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
     #[cfg(not(feature = "fuchsia"))] T: Transport,
 > {
-    server: protocol::Server<T>,
+    dispatcher: protocol::ServerDispatcher<T>,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, T> Send for Server<P, T>
+unsafe impl<P, T> Send for ServerDispatcher<P, T>
 where
     protocol::Server<T>: Send,
     T: Transport,
 {
 }
 
-impl<P, T: Transport> Server<P, T> {
-    /// Creates a new server from a server end.
+impl<P, T: Transport> ServerDispatcher<P, T> {
+    /// Creates a new server dispatcher from a server end.
     pub fn new(server_end: ServerEnd<P, T>) -> Self {
-        Self { server: protocol::Server::new(server_end.into_untyped()), _protocol: PhantomData }
+        Self {
+            dispatcher: protocol::ServerDispatcher::new(server_end.into_untyped()),
+            _protocol: PhantomData,
+        }
     }
 
-    /// Returns the sender for the server.
-    pub fn sender(&self) -> &ServerSender<P, T> {
-        ServerSender::wrap_untyped(self.server.sender())
+    /// Returns the dispatcher's server.
+    pub fn server(&self) -> &Server<P, T> {
+        Server::wrap_untyped(self.dispatcher.server())
     }
 
-    /// Creates a new server from an untyped server.
-    pub fn from_untyped(server: protocol::Server<T>) -> Self {
-        Self { server, _protocol: PhantomData }
+    /// Creates a new server dispatcher from an untyped server dispatcher.
+    pub fn from_untyped(server: protocol::ServerDispatcher<T>) -> Self {
+        Self { dispatcher: server, _protocol: PhantomData }
     }
 
     /// Runs the server with the provided handler.
@@ -163,7 +167,7 @@ impl<P, T: Transport> Server<P, T> {
         P: DispatchServerMessage<H, T>,
         H: Send,
     {
-        self.server
+        self.dispatcher
             .run(ServerHandlerAdapter { handler, _protocol: PhantomData::<P> })
             .await
             .map(|adapter| adapter.handler)
@@ -187,12 +191,12 @@ impl<M, T: Transport> Responder<M, T> {
         Self { responder, _method: PhantomData }
     }
 
-    /// Returns the sender held by the responder.
-    pub fn sender(&self) -> &ServerSender<M::Protocol, T>
+    /// Returns the server held by the responder.
+    pub fn server(&self) -> &Server<M::Protocol, T>
     where
         M: Method,
     {
-        ServerSender::wrap_untyped(self.responder.sender())
+        Server::wrap_untyped(self.responder.server())
     }
 
     /// Responds to the client.

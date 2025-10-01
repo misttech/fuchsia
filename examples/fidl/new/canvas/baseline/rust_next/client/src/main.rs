@@ -17,7 +17,7 @@ struct CanvasClient {
 impl InstanceClientHandler for CanvasClient {
     async fn on_drawn(
         &mut self,
-        _sender: &fidl_next::ClientSender<Instance, fidl::Channel>,
+        _client: &fidl_next::Client<Instance, fidl::Channel>,
         event: fidl_next::Response<OnDrawn, fidl::Channel>,
     ) {
         let bounding_box = event.take();

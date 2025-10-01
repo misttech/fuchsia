@@ -512,18 +512,18 @@ pub mod example_use_of_error_syntax {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ExampleUseOfErrorSyntaxClientSender<___T>;
-            type ServerSender = ExampleUseOfErrorSyntaxServerSender<___T>;
+            type Client = ExampleUseOfErrorSyntaxClient<___T>;
+            type Server = ExampleUseOfErrorSyntaxServer<___T>;
         }
 
-        /// The client sender for the `ExampleUseOfErrorSyntax` protocol.
+        /// The client for the `ExampleUseOfErrorSyntax` protocol.
         #[repr(transparent)]
-        pub struct ExampleUseOfErrorSyntaxClientSender<___T: ::fidl_next::Transport> {
+        pub struct ExampleUseOfErrorSyntaxClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ExampleUseOfErrorSyntaxClientSender<___T>
+        impl<___T> ExampleUseOfErrorSyntaxClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -556,7 +556,7 @@ pub mod example_use_of_error_syntax {
                                 >,
                             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(3565108794310607393, request),
+                    self.client.send_two_way(3565108794310607393, request),
                 )
             }
 
@@ -589,18 +589,18 @@ pub mod example_use_of_error_syntax {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(3757408930698888354, request),
+                    self.client.send_two_way(3757408930698888354, request),
                 )
             }
         }
 
-        /// The server sender for the `ExampleUseOfErrorSyntax` protocol.
+        /// The server for the `ExampleUseOfErrorSyntax` protocol.
         #[repr(transparent)]
-        pub struct ExampleUseOfErrorSyntaxServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ExampleUseOfErrorSyntaxServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ExampleUseOfErrorSyntaxServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ExampleUseOfErrorSyntaxServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -625,12 +625,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -674,12 +674,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -708,7 +708,7 @@ where
                 }
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -761,10 +761,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `ExampleUseOfErrorSyntax`
+    /// An alias for a client over `zx::Channel` for the `ExampleUseOfErrorSyntax`
     /// protocol.
-    pub type ExampleUseOfErrorSyntaxProxy =
-        ::fidl_next::ClientSender<crate::ExampleUseOfErrorSyntax>;
+    pub type ExampleUseOfErrorSyntaxProxy = ::fidl_next::Client<crate::ExampleUseOfErrorSyntax>;
 
     impl ::fidl_next::CompatFrom<crate::ExampleUseOfErrorSyntax>
         for ::fidl_test_errorsyntax::ExampleUseOfErrorSyntaxMarker
@@ -789,10 +788,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_errorsyntax::ExampleUseOfErrorSyntaxProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

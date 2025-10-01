@@ -19,12 +19,12 @@ use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
 use crate::{ProtocolError, SendFuture, Transport, decode_header, encode_header};
 
-struct ServerSenderInner<T: Transport> {
+struct ServerInner<T: Transport> {
     connection: Connection<T>,
     epitaph: AtomicI64,
 }
 
-impl<T: Transport> ServerSenderInner<T> {
+impl<T: Transport> ServerInner<T> {
     const EPITAPH_NONE: i64 = i64::MAX;
 
     fn new(shared: T::Shared) -> Self {
@@ -44,12 +44,12 @@ impl<T: Transport> ServerSenderInner<T> {
     }
 }
 
-/// A sender for a server endpoint.
-pub struct ServerSender<T: Transport> {
-    inner: Arc<ServerSenderInner<T>>,
+/// A server endpoint.
+pub struct Server<T: Transport> {
+    inner: Arc<ServerInner<T>>,
 }
 
-impl<T: Transport> ServerSender<T> {
+impl<T: Transport> Server<T> {
     /// Closes the channel from the server end.
     pub fn close(&self) {
         self.inner.close_with_epitaph(None);
@@ -72,7 +72,7 @@ impl<T: Transport> ServerSender<T> {
     }
 }
 
-impl<T: Transport> Clone for ServerSender<T> {
+impl<T: Transport> Clone for Server<T> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
@@ -91,7 +91,7 @@ pub trait ServerHandler<T: Transport> {
     /// offload work to an async task.
     fn on_one_way(
         &mut self,
-        sender: &ServerSender<T>,
+        server: &Server<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send;
@@ -109,38 +109,44 @@ pub trait ServerHandler<T: Transport> {
     ) -> impl Future<Output = ()> + Send;
 }
 
-/// A server for an endpoint.
-pub struct Server<T: Transport> {
-    sender: ServerSender<T>,
+/// A dispatcher for a server endpoint.
+///
+/// A server dispatcher receives all of the incoming requests and dispatches them to the server
+/// handler. It acts as the message pump for the server.
+///
+/// The dispatcher must be actively polled to receive requests. If the dispatcher is not
+/// [`run`](ServerDispatcher::run), then requests will not be received.
+pub struct ServerDispatcher<T: Transport> {
+    server: Server<T>,
     exclusive: T::Exclusive,
     is_terminated: bool,
 }
 
-impl<T: Transport> Drop for Server<T> {
+impl<T: Transport> Drop for ServerDispatcher<T> {
     fn drop(&mut self) {
         if !self.is_terminated {
             // SAFETY: We checked that the connection has not been terminated.
             unsafe {
-                self.sender.inner.connection.terminate(ProtocolError::Stopped);
+                self.server.inner.connection.terminate(ProtocolError::Stopped);
             }
         }
     }
 }
 
-impl<T: Transport> Server<T> {
+impl<T: Transport> ServerDispatcher<T> {
     /// Creates a new server from a transport.
     pub fn new(transport: T) -> Self {
         let (shared, exclusive) = transport.split();
         Self {
-            sender: ServerSender { inner: Arc::new(ServerSenderInner::new(shared)) },
+            server: Server { inner: Arc::new(ServerInner::new(shared)) },
             exclusive,
             is_terminated: false,
         }
     }
 
-    /// Returns the sender for the server.
-    pub fn sender(&self) -> &ServerSender<T> {
-        &self.sender
+    /// Returns the dispatcher's server.
+    pub fn server(&self) -> &Server<T> {
+        &self.server
     }
 
     /// Runs the server with the provided handler.
@@ -164,18 +170,18 @@ impl<T: Transport> Server<T> {
         // If we closed locally, we may have an epitaph to send before
         // terminating the connection.
         if matches!(error, ProtocolError::Stopped) {
-            if let Some(epitaph) = self.sender.inner.epitaph() {
+            if let Some(epitaph) = self.server.inner.epitaph() {
                 // Note that we don't care whether sending the epitaph succeeds
                 // or fails; it's best-effort.
 
                 // SAFETY: The connection has not been terminated.
-                let _ = unsafe { self.sender.inner.connection.send_epitaph(epitaph).await };
+                let _ = unsafe { self.server.inner.connection.send_epitaph(epitaph).await };
             }
         }
 
         // SAFETY: The connection has not been terminated.
         unsafe {
-            self.sender.inner.connection.terminate(error.clone());
+            self.server.inner.connection.terminate(error.clone());
         }
         self.is_terminated = true;
 
@@ -197,15 +203,15 @@ impl<T: Transport> Server<T> {
         H: ServerHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
-        let mut buffer = unsafe { self.sender.inner.connection.recv(&mut self.exclusive).await? };
+        let mut buffer = unsafe { self.server.inner.connection.recv(&mut self.exclusive).await? };
 
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
         if let Some(txid) = NonZeroU32::new(txid) {
-            let responder = Responder { sender: self.sender.clone(), txid };
+            let responder = Responder { server: self.server.clone(), txid };
             handler.on_two_way(ordinal, buffer, responder).await;
         } else {
-            handler.on_one_way(&self.sender, ordinal, buffer).await;
+            handler.on_one_way(&self.server, ordinal, buffer).await;
         }
 
         Ok(())
@@ -215,20 +221,20 @@ impl<T: Transport> Server<T> {
 /// A responder for a two-way message.
 #[must_use = "responders close the underlying FIDL connection when dropped"]
 pub struct Responder<T: Transport> {
-    sender: ServerSender<T>,
+    server: Server<T>,
     txid: NonZeroU32,
 }
 
 impl<T: Transport> Drop for Responder<T> {
     fn drop(&mut self) {
-        self.sender.close();
+        self.server.close();
     }
 }
 
 impl<T: Transport> Responder<T> {
-    /// Returns the sender owned by the responder.
-    pub fn sender(&self) -> &ServerSender<T> {
-        &self.sender
+    /// Returns the responder's server.
+    pub fn server(&self) -> &Server<T> {
+        &self.server
     }
 
     /// Send a response to a two-way message.
@@ -236,17 +242,17 @@ impl<T: Transport> Responder<T> {
     where
         M: Encode<T::SendBuffer>,
     {
-        let state = self.sender.inner.connection.send_message_raw(|buffer| {
+        let state = self.server.inner.connection.send_message_raw(|buffer| {
             encode_header::<T>(buffer, self.txid.get(), ordinal)?;
             buffer.encode_next(response)
         })?;
 
         let this = ManuallyDrop::new(self);
-        // SAFETY: `this` is a `ManuallyDrop` and so `sender` won't be dropped
+        // SAFETY: `this` is a `ManuallyDrop` and so `server` won't be dropped
         // twice.
-        let sender = unsafe { ptr::read(&this.sender) };
+        let server = unsafe { ptr::read(&this.server) };
 
-        Ok(RespondFuture { sender, state })
+        Ok(RespondFuture { server, state })
     }
 }
 
@@ -254,7 +260,7 @@ impl<T: Transport> Responder<T> {
 #[must_use = "futures do nothing unless polled"]
 #[pin_project]
 pub struct RespondFuture<T: Transport> {
-    sender: ServerSender<T>,
+    server: Server<T>,
     #[pin]
     state: SendFutureState<T>,
 }
@@ -265,6 +271,6 @@ impl<T: Transport> Future for RespondFuture<T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
 
-        this.state.poll_send(cx, &this.sender.inner.connection)
+        this.state.poll_send(cx, &this.server.inner.connection)
     }
 }

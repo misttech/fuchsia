@@ -417,18 +417,18 @@ pub mod example {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = ExampleClientSender<___T>;
-            type ServerSender = ExampleServerSender<___T>;
+            type Client = ExampleClient<___T>;
+            type Server = ExampleServer<___T>;
         }
 
-        /// The client sender for the `Example` protocol.
+        /// The client for the `Example` protocol.
         #[repr(transparent)]
-        pub struct ExampleClientSender<___T: ::fidl_next::Transport> {
+        pub struct ExampleClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> ExampleClientSender<___T>
+        impl<___T> ExampleClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -459,18 +459,18 @@ pub mod example {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(1107623248440401476, request),
+                    self.client.send_two_way(1107623248440401476, request),
                 )
             }
         }
 
-        /// The server sender for the `Example` protocol.
+        /// The server for the `Example` protocol.
         #[repr(transparent)]
-        pub struct ExampleServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct ExampleServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> ExampleServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> ExampleServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -493,12 +493,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -529,12 +529,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -554,7 +554,7 @@ where
                 }
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -591,9 +591,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `Example`
+    /// An alias for a client over `zx::Channel` for the `Example`
     /// protocol.
-    pub type ExampleProxy = ::fidl_next::ClientSender<crate::Example>;
+    pub type ExampleProxy = ::fidl_next::Client<crate::Example>;
 
     impl ::fidl_next::CompatFrom<crate::Example> for ::fidl_test_error::ExampleMarker {
         fn compat_from(_: crate::Example) -> Self {
@@ -612,10 +612,10 @@ pub mod compat {
     impl ::fidl_next::ClientCompatFrom<::fidl_test_error::ExampleProxy> for crate::Example {
         fn client_compat_from(
             proxy: ::fidl_test_error::ExampleProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

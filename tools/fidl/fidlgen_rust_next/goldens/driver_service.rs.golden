@@ -82,26 +82,26 @@ pub mod some_driver_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = SomeDriverProtocolClientSender<___T>;
-            type ServerSender = SomeDriverProtocolServerSender<___T>;
+            type Client = SomeDriverProtocolClient<___T>;
+            type Server = SomeDriverProtocolServer<___T>;
         }
 
-        /// The client sender for the `SomeDriverProtocol` protocol.
+        /// The client for the `SomeDriverProtocol` protocol.
         #[repr(transparent)]
-        pub struct SomeDriverProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct SomeDriverProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> SomeDriverProtocolClientSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> SomeDriverProtocolClient<___T> where ___T: ::fidl_next::Transport {}
 
-        /// The server sender for the `SomeDriverProtocol` protocol.
+        /// The server for the `SomeDriverProtocol` protocol.
         #[repr(transparent)]
-        pub struct SomeDriverProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct SomeDriverProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> SomeDriverProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> SomeDriverProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -122,12 +122,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -149,12 +149,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -165,7 +165,7 @@ where
         responder: ::fidl_next::protocol::Responder<___T>,
     ) {
         match ordinal {
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -174,9 +174,9 @@ where
 pub mod compat {
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `SomeDriverProtocol`
+    /// An alias for a client over `zx::Channel` for the `SomeDriverProtocol`
     /// protocol.
-    pub type SomeDriverProtocolProxy = ::fidl_next::ClientSender<crate::SomeDriverProtocol>;
+    pub type SomeDriverProtocolProxy = ::fidl_next::Client<crate::SomeDriverProtocol>;
 
     #[cfg(feature = "driver")]
     impl ::fidl_next::CompatFrom<crate::SomeDriverProtocol>

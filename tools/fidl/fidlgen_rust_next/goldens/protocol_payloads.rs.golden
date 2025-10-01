@@ -2338,18 +2338,18 @@ pub mod main_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = MainProtocolClientSender<___T>;
-            type ServerSender = MainProtocolServerSender<___T>;
+            type Client = MainProtocolClient<___T>;
+            type Server = MainProtocolServer<___T>;
         }
 
-        /// The client sender for the `MainProtocol` protocol.
+        /// The client for the `MainProtocol` protocol.
         #[repr(transparent)]
-        pub struct MainProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct MainProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> MainProtocolClientSender<___T>
+        impl<___T> MainProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -2381,7 +2381,7 @@ pub mod main_protocol {
                                 >,
                             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(2602591870026304272, request),
+                    self.client.send_one_way(2602591870026304272, request),
                 )
             }
 
@@ -2413,7 +2413,7 @@ pub mod main_protocol {
                                 >,
                             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2542459230546612144, request),
+                    self.client.send_two_way(2542459230546612144, request),
                 )
             }
 
@@ -2445,7 +2445,7 @@ pub mod main_protocol {
                                 >,
                             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(7681984876526769495, request),
+                    self.client.send_two_way(7681984876526769495, request),
                 )
             }
 
@@ -2480,7 +2480,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(7755175439334311701, request),
+                    self.client.send_one_way(7755175439334311701, request),
                 )
             }
 
@@ -2515,7 +2515,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(8374292137648566031, request),
+                    self.client.send_two_way(8374292137648566031, request),
                 )
             }
 
@@ -2550,7 +2550,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2898559119954589948, request),
+                    self.client.send_two_way(2898559119954589948, request),
                 )
             }
 
@@ -2582,7 +2582,7 @@ pub mod main_protocol {
                                 >,
                             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(3344777159365288972, request),
+                    self.client.send_one_way(3344777159365288972, request),
                 )
             }
 
@@ -2614,7 +2614,7 @@ pub mod main_protocol {
                                 >,
                             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(2374708679656510579, request),
+                    self.client.send_two_way(2374708679656510579, request),
                 )
             }
 
@@ -2646,7 +2646,7 @@ pub mod main_protocol {
                                 >,
                             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(4286143084949642173, request),
+                    self.client.send_two_way(4286143084949642173, request),
                 )
             }
 
@@ -2681,7 +2681,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_one_way(811587311021806764, request),
+                    self.client.send_one_way(811587311021806764, request),
                 )
             }
 
@@ -2716,7 +2716,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(629880979996923737, request),
+                    self.client.send_two_way(629880979996923737, request),
                 )
             }
 
@@ -2751,18 +2751,18 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(6368863385719175734, request),
+                    self.client.send_two_way(6368863385719175734, request),
                 )
             }
         }
 
-        /// The server sender for the `MainProtocol` protocol.
+        /// The server for the `MainProtocol` protocol.
         #[repr(transparent)]
-        pub struct MainProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct MainProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> MainProtocolServerSender<___T>
+        impl<___T> MainProtocolServer<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -2789,7 +2789,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(1872339328378152762, request),
+                    self.server.send_event(1872339328378152762, request),
                 )
             }
 
@@ -2821,7 +2821,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(5135782819583756313, request),
+                    self.server.send_event(5135782819583756313, request),
                 )
             }
 
@@ -2848,7 +2848,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(1996489653379631369, request),
+                    self.server.send_event(1996489653379631369, request),
                 )
             }
 
@@ -2880,7 +2880,7 @@ pub mod main_protocol {
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(
-                    self.sender.send_event(4815229650203439104, request),
+                    self.server.send_event(4815229650203439104, request),
                 )
             }
         }
@@ -2897,28 +2897,28 @@ pub trait MainProtocolClientHandler<
 {
     fn on_composed(
         &mut self,
-        sender: &::fidl_next::ClientSender<MainProtocol, ___T>,
+        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_local(
         &mut self,
-        sender: &::fidl_next::ClientSender<MainProtocol, ___T>,
+        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnLocal, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_import(
         &mut self,
-        sender: &::fidl_next::ClientSender<MainProtocol, ___T>,
+        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnImport, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_anon(
         &mut self,
-        sender: &::fidl_next::ClientSender<MainProtocol, ___T>,
+        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnAnon, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -2955,32 +2955,32 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             1872339328378152762 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_composed(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.on_composed(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             5135782819583756313 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_local(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.on_local(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             1996489653379631369 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_import(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.on_import(client, decoded).await,
+                Err(e) => client.close(),
             },
 
             4815229650203439104 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_anon(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.on_anon(client, decoded).await,
+                Err(e) => client.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -2995,7 +2995,7 @@ pub trait MainProtocolServerHandler<
 {
     fn one_way_composed(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
+        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3018,7 +3018,7 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_local(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
+        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayLocal, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3041,7 +3041,7 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_import(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
+        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayImport, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3064,7 +3064,7 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_anon(
         &mut self,
-        sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
+        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayAnon, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3117,32 +3117,32 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
             2602591870026304272 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_composed(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_composed(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             7755175439334311701 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_local(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_local(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             3344777159365288972 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_import(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_import(server, decoded).await,
+                Err(e) => server.close(),
             },
 
             811587311021806764 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_anon(sender, decoded).await,
-                Err(e) => sender.close(),
+                Ok(decoded) => handler.one_way_anon(server, decoded).await,
+                Err(e) => server.close(),
             },
 
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -3225,7 +3225,7 @@ where
                 }
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -3426,9 +3426,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `MainProtocol`
+    /// An alias for a client over `zx::Channel` for the `MainProtocol`
     /// protocol.
-    pub type MainProtocolProxy = ::fidl_next::ClientSender<crate::MainProtocol>;
+    pub type MainProtocolProxy = ::fidl_next::Client<crate::MainProtocol>;
 
     impl ::fidl_next::CompatFrom<crate::MainProtocol>
         for ::fidl_test_protocolpayloads::MainProtocolMarker
@@ -3453,10 +3453,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_protocolpayloads::MainProtocolProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 }

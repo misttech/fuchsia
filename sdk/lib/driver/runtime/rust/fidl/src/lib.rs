@@ -448,7 +448,7 @@ impl<D> fidl_next::HasExecutor for DriverChannel<D> {
 
 #[cfg(test)]
 mod test {
-    use fidl_next::{Client, ClientEnd, Responder, Server, ServerEnd};
+    use fidl_next::{ClientDispatcher, ClientEnd, Responder, ServerDispatcher, ServerEnd};
     use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
     use fidl_next_fuchsia_examples_gizmo::{
         Device, DeviceClientHandler, DeviceGetEventResponse, DeviceGetHardwareIdResponse,
@@ -489,31 +489,31 @@ mod test {
                 ClientEnd::<Device, _>::from_untyped(DriverChannel::new(client_chan));
             let server_end: ServerEnd<Device, _> =
                 ServerEnd::from_untyped(DriverChannel::new(server_chan));
-            let client = Client::new(client_end);
-            let server = Server::new(server_end);
-            let client_sender = client.sender().clone();
+            let client_dispatcher = ClientDispatcher::new(client_end);
+            let server_dispatcher = ServerDispatcher::new(server_end);
+            let client = client_dispatcher.client().clone();
 
             CurrentDispatcher
                 .spawn_task(async {
-                    server.run(DeviceServer).await.unwrap();
+                    server_dispatcher.run(DeviceServer).await.unwrap();
                     println!("server task finished");
                 })
                 .unwrap();
             CurrentDispatcher
                 .spawn_task(async {
-                    client.run(DeviceClient).await.unwrap();
+                    client_dispatcher.run(DeviceClient).await.unwrap();
                     println!("client task finished");
                 })
                 .unwrap();
 
             {
-                let res = client_sender.get_hardware_id().await.unwrap();
+                let res = client.get_hardware_id().await.unwrap();
                 let hardware_id = res.unwrap();
                 assert_eq!(hardware_id.response, 4004);
             }
 
             {
-                let res = client_sender.get_event().await.unwrap().take();
+                let res = client.get_event().await.unwrap().take();
 
                 // wait for the event on a fuchsia_async executor
                 let mut executor = fuchsia_async::LocalExecutor::new();

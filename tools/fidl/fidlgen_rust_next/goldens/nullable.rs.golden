@@ -642,18 +642,18 @@ pub mod simple_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            type ClientSender = SimpleProtocolClientSender<___T>;
-            type ServerSender = SimpleProtocolServerSender<___T>;
+            type Client = SimpleProtocolClient<___T>;
+            type Server = SimpleProtocolServer<___T>;
         }
 
-        /// The client sender for the `SimpleProtocol` protocol.
+        /// The client for the `SimpleProtocol` protocol.
         #[repr(transparent)]
-        pub struct SimpleProtocolClientSender<___T: ::fidl_next::Transport> {
+        pub struct SimpleProtocolClient<___T: ::fidl_next::Transport> {
             #[allow(dead_code)]
-            sender: ::fidl_next::protocol::ClientSender<___T>,
+            client: ::fidl_next::protocol::Client<___T>,
         }
 
-        impl<___T> SimpleProtocolClientSender<___T>
+        impl<___T> SimpleProtocolClient<___T>
         where
             ___T: ::fidl_next::Transport,
         {
@@ -688,18 +688,18 @@ pub mod simple_protocol {
                     >,
             {
                 ::fidl_next::TwoWayFuture::from_untyped(
-                    self.sender.send_two_way(9142761280038437494, request),
+                    self.client.send_two_way(9142761280038437494, request),
                 )
             }
         }
 
-        /// The server sender for the `SimpleProtocol` protocol.
+        /// The server for the `SimpleProtocol` protocol.
         #[repr(transparent)]
-        pub struct SimpleProtocolServerSender<___T: ::fidl_next::Transport> {
-            sender: ::fidl_next::protocol::ServerSender<___T>,
+        pub struct SimpleProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
         }
 
-        impl<___T> SimpleProtocolServerSender<___T> where ___T: ::fidl_next::Transport {}
+        impl<___T> SimpleProtocolServer<___T> where ___T: ::fidl_next::Transport {}
     }
 }
 
@@ -722,12 +722,12 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        sender: &::fidl_next::ClientSender<Self, ___T>,
+        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => client.close(),
         }
     }
 }
@@ -758,12 +758,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        sender: &::fidl_next::ServerSender<Self, ___T>,
+        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => sender.close(),
+            ordinal => server.close(),
         }
     }
 
@@ -783,7 +783,7 @@ where
                 }
             }
 
-            ordinal => responder.sender().close(),
+            ordinal => responder.server().close(),
         }
     }
 }
@@ -2359,9 +2359,9 @@ pub mod compat {
     }
 
     #[cfg(target_os = "fuchsia")]
-    /// An alias for a client sender over `zx::Channel` for the `SimpleProtocol`
+    /// An alias for a client over `zx::Channel` for the `SimpleProtocol`
     /// protocol.
-    pub type SimpleProtocolProxy = ::fidl_next::ClientSender<crate::SimpleProtocol>;
+    pub type SimpleProtocolProxy = ::fidl_next::Client<crate::SimpleProtocol>;
 
     impl ::fidl_next::CompatFrom<crate::SimpleProtocol> for ::fidl_test_nullable::SimpleProtocolMarker {
         fn compat_from(_: crate::SimpleProtocol) -> Self {
@@ -2382,10 +2382,10 @@ pub mod compat {
     {
         fn client_compat_from(
             proxy: ::fidl_test_nullable::SimpleProtocolProxy,
-        ) -> ::fidl_next::Client<Self, ::fidl_next::fuchsia::zx::Channel> {
+        ) -> ::fidl_next::ClientDispatcher<Self, ::fidl_next::fuchsia::zx::Channel> {
             let channel = ::fidl::endpoints::Proxy::into_channel(proxy).unwrap().into_zx_channel();
             let client_end = ::fidl_next::ClientEnd::from_untyped(channel);
-            ::fidl_next::Client::new(client_end)
+            ::fidl_next::ClientDispatcher::new(client_end)
         }
     }
 
