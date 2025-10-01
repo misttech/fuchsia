@@ -6,9 +6,11 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/platform_message_loop.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 
 namespace zxdb {
 
@@ -81,6 +83,40 @@ TEST_F(FilterTest, SetFilters) {
   // There should be a filter request.
   ASSERT_EQ(sink().filter_requests_.size(), 2u);
   EXPECT_TRUE(sink().filter_requests_[1].filters.empty());
+}
+
+TEST_F(FilterTest, SetTypeSetting) {
+  Filter* filter = session().system().CreateNewFilter();
+
+  filter->settings().SetString(ClientSettings::Filter::kType, "component moniker prefix");
+  filter->settings().SetString(ClientSettings::Filter::kPattern, "/my/pattern");
+
+  // Because Filter's setting implementation guarantees synchronization with the backend.
+  MessageLoop::Current()->RunUntilNoTasks();
+
+  // There should be a filter request.
+  ASSERT_EQ(sink().filter_requests_.size(), 1u);
+  ASSERT_EQ(sink().filter_requests_[0].filters.size(), 1u);
+  ASSERT_EQ(sink().filter_requests_[0].filters[0].pattern, "/my/pattern");
+  ASSERT_EQ(sink().filter_requests_[0].filters[0].type,
+            debug_ipc::Filter::Type::kComponentMonikerPrefix);
+
+  filter->settings().SetString(ClientSettings::Filter::kType, "component moniker suffix");
+  MessageLoop::Current()->RunUntilNoTasks();
+
+  // Now it should be updated to the suffix version.
+  ASSERT_EQ(sink().filter_requests_.size(), 2u);
+  ASSERT_EQ(sink().filter_requests_.back().filters.size(), 1u);
+  EXPECT_EQ(sink().filter_requests_.back().filters[0].type,
+            debug_ipc::Filter::Type::kComponentMonikerSuffix);
+
+  filter->settings().SetString(ClientSettings::Filter::kType, "component url");
+  MessageLoop::Current()->RunUntilNoTasks();
+
+  // And finally it should be updated to a URL type.
+  ASSERT_EQ(sink().filter_requests_.size(), 3u);
+  ASSERT_EQ(sink().filter_requests_.back().filters.size(), 1u);
+  EXPECT_EQ(sink().filter_requests_.back().filters[0].type, debug_ipc::Filter::Type::kComponentUrl);
 }
 
 }  // namespace zxdb

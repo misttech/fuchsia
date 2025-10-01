@@ -63,12 +63,15 @@ fxl::RefPtr<SettingSchema> CreateSchema() {
   schema->AddString(
       ClientSettings::Filter::kType, ClientSettings::Filter::kTypeDescription,
       debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kUnset),
-      {debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kProcessNameSubstr),
-       debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kProcessName),
-       debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentName),
-       debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentUrl),
-       debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentMoniker),
-       debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentMonikerSuffix)});
+      {
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kProcessNameSubstr),
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kProcessName),
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentName),
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentUrl),
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentMoniker),
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentMonikerSuffix),
+          debug_ipc::Filter::TypeToString(debug_ipc::Filter::Type::kComponentMonikerPrefix),
+      });
   schema->AddString(ClientSettings::Filter::kPattern, ClientSettings::Filter::kPatternDescription);
   schema->AddInt(ClientSettings::Filter::kJob, ClientSettings::Filter::kJobDescription);
   schema->AddBool(ClientSettings::Filter::kWeak, ClientSettings::Filter::kWeakDescription);
