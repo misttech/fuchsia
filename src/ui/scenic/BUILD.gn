@@ -26,6 +26,7 @@ group("tests") {
     ":flatland_engine_unittests",
     ":flatland_renderer_display_unittests",
     ":flatland_renderer_unittests",
+    ":flatland_renderer_unittests_vulkanrenderercolortest",
     ":flatland_renderer_unittests_vulkanrenderertest",
     ":flatland_unittests",
     ":focus_unittests",
@@ -167,7 +168,8 @@ fuchsia_unittest_package("flatland_engine_unittests") {
 }
 
 # Runs remaining tests that weren't sharded out into
-# flatland_renderer_unittests_vulkanrenderertest.
+# flatland_renderer_unittests_vulkanrenderertest or
+# flatland_renderer_unittests_vulkanrenderercolortest.
 fuchsia_unittest_package("flatland_renderer_unittests") {
   manifest = "meta/flatland_renderer_unittests.cml"
   deps = [ "lib/flatland/renderer/tests:unittests" ] + scenic_test_deps
@@ -189,6 +191,20 @@ fuchsia_unittest_package("flatland_renderer_unittests_vulkanrenderertest") {
       max_severity = "ERROR"
     }
     environments = vulkan_envs
+  }
+  test_type = "vulkan"
+}
+
+# To avoid test timeouts, shard out some of the Flatland renderer unit tests.
+fuchsia_unittest_package(
+    "flatland_renderer_unittests_vulkanrenderercolortest") {
+  manifest = "meta/flatland_renderer_unittests_vulkanrenderercolortest.cml"
+  deps = [ "lib/flatland/renderer/tests:unittests" ] + scenic_test_deps
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+    environments = basic_envs + magma_libvulkan_hardware_envs
   }
   test_type = "vulkan"
 }

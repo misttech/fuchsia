@@ -1600,10 +1600,12 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
                  });
 }
 
+class VulkanRendererColorTest : public VulkanRendererTest {};
+
 // Tests if the VK renderer can handle rendering an image without a provided image
 // and only a multiply color (which means that we do not allocate an image for the
 // renderable in this test, only the render target).
-VK_TEST_F(VulkanRendererTest, SolidColorTest) {
+VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
 
@@ -1665,7 +1667,7 @@ VK_TEST_F(VulkanRendererTest, SolidColorTest) {
 }
 
 // Test that colors change properly when we apply a color correction matrix.
-VK_TEST_F(VulkanRendererTest, ColorCorrectionTest) {
+VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
 
@@ -1755,7 +1757,7 @@ VK_TEST_F(VulkanRendererTest, ColorCorrectionTest) {
 // Tests if the VK renderer can handle rendering 2 solid color images. Since solid
 // color images make use of a shared default 1x1 white texture within the vk renderer,
 // this tests to make sure that there aren't any problems that arise from this sharing.
-VK_TEST_F(VulkanRendererTest, MultipleSolidColorTest) {
+VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
 
@@ -1829,7 +1831,7 @@ VK_TEST_F(VulkanRendererTest, MultipleSolidColorTest) {
 // Tests if the VK renderer can handle rendering a solid color rectangle as well as
 // an image-backed rectangle. Make sure that the two rectangles, if given the same
 // dimensions, occupy the exact same number of pixels.
-VK_TEST_F(VulkanRendererTest, MixSolidColorAndImageTest) {
+VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
 
@@ -1937,7 +1939,7 @@ VK_TEST_F(VulkanRendererTest, MixSolidColorAndImageTest) {
 // ----------------
 // ----------------
 // ----------------
-VK_TEST_F(VulkanRendererTest, TransparencyTest) {
+VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
 
