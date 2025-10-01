@@ -528,9 +528,6 @@ magma::Status MsdVsiDevice::ProcessInterrupt(registers::IrqAck irq_status) {
   if (do_dump) {
     std::vector<std::string> dump;
     DumpToString(&dump, mmu_exception /* fault_present */);
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
-    MAGMA_LOG(WARNING, "Power state %u", static_cast<unsigned int>(power_state_));
-#endif
     for (auto& str : dump) {
       MAGMA_LOG(WARNING, "%s", str.c_str());
     }

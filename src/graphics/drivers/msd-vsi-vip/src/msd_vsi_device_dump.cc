@@ -164,6 +164,10 @@ void MsdVsiDevice::FormatDump(DumpState* dump_state, std::vector<std::string>* d
   OutputFormattedString(dump_out, fmt, build);
   fmt = "Device id: 0x%x Revision: 0x%x";
   OutputFormattedString(dump_out, fmt, device_id());
+#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
+  fmt = "Power state %u";
+  OutputFormattedString(dump_out, fmt, static_cast<unsigned int>(power_state_));
+#endif
   fmt = "last_completed_sequence_number: %lu";
   OutputFormattedString(dump_out, fmt, dump_state->last_completed_sequence_number);
   fmt = "last_submitted_sequence_number: %lu";

@@ -39,7 +39,11 @@ TEST_F(TestExec, ResetAfterSubmit) {
     };
     ASSERT_FALSE(default_context()->killed());
     ASSERT_TRUE(device_->IsIdle());
-    ASSERT_NO_FATAL_FAILURE(CreateAndSubmitBufferWaitCompletion(default_context(), buffer_desc));
+    CreateAndSubmitBufferWaitCompletion(default_context(), buffer_desc);
+    if (HasFailure()) {
+      device_->ProcessDumpStatusToLog();
+    }
+    ASSERT_NO_FATAL_FAILURE();
     ASSERT_FALSE(default_context()->killed());
 
     EXPECT_TRUE(device_->HardwareReset());
