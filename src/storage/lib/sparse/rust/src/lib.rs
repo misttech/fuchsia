@@ -109,18 +109,15 @@ impl Chunk {
             deserialize_from(reader).context("Failed to read chunk header")?;
         ensure!(header.valid(), "Invalid chunk header");
 
-        let size = header
-            .chunk_sz
-            .checked_mul(block_size)
-            .context("Chunk size * block size can not be larger than 2^32")?;
+        let size = header.chunk_sz as u64 * block_size as u64;
         match header.chunk_type {
-            format::CHUNK_TYPE_RAW => Ok(Self::Raw { start: offset, size: size.into() }),
+            format::CHUNK_TYPE_RAW => Ok(Self::Raw { start: offset, size }),
             format::CHUNK_TYPE_FILL => {
                 let value: u32 =
                     deserialize_from(reader).context("Failed to deserialize fill value")?;
-                Ok(Self::Fill { start: offset, size: size.into(), value })
+                Ok(Self::Fill { start: offset, size, value })
             }
-            format::CHUNK_TYPE_DONT_CARE => Ok(Self::DontCare { start: offset, size: size.into() }),
+            format::CHUNK_TYPE_DONT_CARE => Ok(Self::DontCare { start: offset, size }),
             format::CHUNK_TYPE_CRC32 => {
                 let checksum: u32 =
                     deserialize_from(reader).context("Failed to deserialize checksum")?;

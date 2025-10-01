@@ -784,20 +784,17 @@ pub fn fshost_recovery(
                                 .await
                             {
                                 Ok(()) => Ok(()),
-                                Err(e) => {
-                                    debug_log(&format!("write_blob_image failed: {:?}", e));
-                                    Err(if let Ok(status) = e.downcast::<zx::Status>() {
+                                Err(error) => {
+                                    log::error!(error:?; "failed to write blob image");
+                                    Err(if let Ok(status) = error.downcast::<zx::Status>() {
                                         status
                                     } else {
                                         zx::Status::INTERNAL
                                     })
                                 }
                             };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|e| {
-                            log::error!(
-                                "failed to send WriteSystemBlobImage response. error: {:?}",
-                                e
-                            );
+                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send WriteSystemBlobImage response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::InstallSystemBlobImage { responder }) => {
@@ -805,20 +802,17 @@ pub fn fshost_recovery(
                         let res =
                             match install_blob_image(&system_partition_lock, &env, &config).await {
                                 Ok(()) => Ok(()),
-                                Err(e) => {
-                                    debug_log(&format!("install_blob_image failed: {:?}", e));
-                                    Err(if let Ok(status) = e.downcast::<zx::Status>() {
+                                Err(error) => {
+                                    log::error!(error:?; "failed to install blob image");
+                                    Err(if let Ok(status) = error.downcast::<zx::Status>() {
                                         status
                                     } else {
                                         zx::Status::INTERNAL
                                     })
                                 }
                             };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|e| {
-                            log::error!(
-                                "failed to send InstallSystemBlobImage response. error: {:?}",
-                                e
-                            );
+                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send InstallSystemBlobImage response");
                         });
                     }
                     Err(e) => {

@@ -5,6 +5,7 @@
 #ifndef SRC_FIRMWARE_LIB_FASTBOOT_INCLUDE_LIB_FASTBOOT_FASTBOOT_H_
 #define SRC_FIRMWARE_LIB_FASTBOOT_INCLUDE_LIB_FASTBOOT_FASTBOOT_H_
 
+#include <fidl/fuchsia.fshost/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.paver/cpp/wire.h>
@@ -41,6 +42,7 @@ class __EXPORT Fastboot : public FastbootBase {
   fzl::OwnedVmoMapper download_vmo_mapper_;
   // Channel to svc.
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
+  fidl::WireSyncClient<fuchsia_fshost::Recovery> recovery_svc_;
 
   zx::result<> ProcessCommand(std::string_view cmd, Transport *transport) override;
   zx::result<void *> GetDownloadBuffer(size_t total_download_size) override;
@@ -62,12 +64,14 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<> OemInitPartitionTables(const std::string &command, Transport *transport);
   zx::result<> OemInstallFromUsb(const std::string &command, Transport *transport);
   zx::result<> OemWipePartitionTables(const std::string &command, Transport *transport);
+  zx::result<> OemInstallBlobImage(const std::string &command, Transport *transport);
 
   zx::result<fidl::WireSyncClient<fuchsia_paver::Paver>> ConnectToPaver();
   zx::result<fidl::WireSyncClient<fuchsia_paver::DynamicDataSink>> ConnectToDynamicDataSink(
       Transport *);
   zx::result<fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin>>
   ConnectToPowerStateControl();
+  zx::result<> ConnectToRecoveryService();
   zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> FindBootManager();
   zx::result<> WriteFirmware(fuchsia_paver::wire::Configuration config,
                              std::string_view firmware_type, Transport *transport,

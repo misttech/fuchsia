@@ -78,6 +78,8 @@ bool IsAndroidSparseImage(const void* img, size_t size) {
 const std::vector<Fastboot::CommandEntry>& Fastboot::GetCommandTable() {
   // Using a static pointer and allocate with `new` so that the static instance
   // never gets deleted.
+
+  // TODO(https://fxbug.dev/397515768): We need to support the `erase` command for fxblob products.
   static const std::vector<CommandEntry>* kCommandTable = new std::vector<CommandEntry>({
       {
           .name = "getvar",
@@ -118,6 +120,10 @@ const std::vector<Fastboot::CommandEntry>& Fastboot::GetCommandTable() {
       {
           .name = "oem wipe-partition-tables",
           .cmd = &Fastboot::OemWipePartitionTables,
+      },
+      {
+          .name = "oem install-blob-image",
+          .cmd = &Fastboot::OemInstallBlobImage,
       },
   });
   return *kCommandTable;
@@ -361,6 +367,33 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
   FlashPartitionInfo info = GetPartitionInfo(args[1]);
   const bool is_sparse =
       IsAndroidSparseImage(download_vmo_mapper_.start(), download_vmo_mapper_.size());
+
+  // TODO(https://fxbug.dev/397515768): We should do this when we get a request to flash super
+  // without the -w flag. To avoid any issues with rollout, for now we use a different name to allow
+  // for testing the new volume installation feature without affecting existing flashing workflows.
+  // We only support this on fxblob-based products, so we will also need to figure out how to
+  // fallback to the legacy paver protocol for non-fxblob products.
+  if (info.partition == "blob") {
+    if (!is_sparse) {
+      return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
+                          transport);
+    }
+    auto connect_result = ConnectToRecoveryService();
+    if (connect_result.is_error()) {
+      return SendResponse(ResponseType::kFail, "Failed to connect to recovery", transport,
+                          zx::error(connect_result.status_value()));
+    }
+    auto response = recovery_svc_->WriteSystemBlobImage(GetWireBufferFromDownload().vmo);
+    if (response.status() != ZX_OK) {
+      return SendResponse(ResponseType::kFail, "Recovery.WriteSystemBlobImage Failed", transport,
+                          zx::error(response.status()));
+    }
+    if (response.value().is_error()) {
+      return SendResponse(ResponseType::kFail, "Failed to write blob image", transport,
+                          zx::error(response.value().error_value()));
+    }
+    return SendResponse(ResponseType::kOkay, "", transport);
+  }
 
   if (info.partition == "super") {
     if (!is_sparse) {
@@ -649,22 +682,15 @@ zx::result<> Fastboot::OemAddStagedBootloaderFile(const std::string& command,
                         transport);
   }
 
-  auto svc_root = GetSvcRoot();
-  if (svc_root.is_error()) {
-    return zx::error(svc_root.status_value());
-  }
-
-  auto connect_result = component::ConnectAt<fuchsia_fshost::Recovery>(*svc_root);
+  auto connect_result = ConnectToRecoveryService();
   if (connect_result.is_error()) {
-    return SendResponse(ResponseType::kFail, "Failed to connect to fshost", transport,
-                        zx::error(connect_result.status_value()));
+    return SendResponse(ResponseType::kFail, "Failed to connect to fuchsia.fshost/Recovery",
+                        transport, zx::error(connect_result.status_value()));
   }
 
-  fidl::WireSyncClient fshost_recovery{std::move(connect_result.value())};
-  auto resp = fshost_recovery->WriteDataFile(
+  auto resp = recovery_svc_->WriteDataFile(
       fidl::StringView::FromExternal(sshd_host::kAuthorizedKeyPathInData),
       download_vmo_mapper_.Release());
-
   zx_status_t status = ZX_OK;
   if (resp.status() != ZX_OK) {
     status = resp.status();
@@ -767,6 +793,40 @@ zx::result<> Fastboot::OemWipePartitionTables(const std::string& command, Transp
                         zx::error(status));
   }
 
+  return SendResponse(ResponseType::kOkay, "", transport);
+}
+
+zx::result<> Fastboot::ConnectToRecoveryService() {
+  if (recovery_svc_) {
+    return zx::ok();
+  }
+  auto svc_root = GetSvcRoot();
+  if (svc_root.is_error()) {
+    return zx::error(svc_root.status_value());
+  }
+  auto connect_result = component::ConnectAt<fuchsia_fshost::Recovery>(*svc_root);
+  if (connect_result.is_error()) {
+    return zx::error(connect_result.status_value());
+  }
+  recovery_svc_ = fidl::WireSyncClient(std::move(connect_result.value()));
+  return zx::ok();
+}
+
+zx::result<> Fastboot::OemInstallBlobImage(const std::string& command, Transport* transport) {
+  auto connect_result = ConnectToRecoveryService();
+  if (connect_result.is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to connect to recovery", transport,
+                        zx::error(connect_result.status_value()));
+  }
+  auto response = recovery_svc_->InstallSystemBlobImage();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Recovery.InstallSystemBlobImage Failed", transport,
+                        zx::error(response.status()));
+  }
+  if (response.value().is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to install blob image", transport,
+                        zx::error(response.value().error_value()));
+  }
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
