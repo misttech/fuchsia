@@ -458,7 +458,7 @@ pub async fn serve_impl(
             .map_err(|e| bug!("{e}"))?;
         let repo_spec = repo_client.read().await.spec();
         if let Err(e) = write_instance_info(
-            Some(context.clone()),
+            &context.clone(),
             mode.clone(),
             &name,
             &server_addr,

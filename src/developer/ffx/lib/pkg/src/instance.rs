@@ -316,7 +316,7 @@ impl PkgServerInstanceInfo for PkgServerInstances {
 }
 
 pub async fn write_instance_info(
-    env_context: Option<EnvironmentContext>,
+    env_context: &EnvironmentContext,
     server_mode: ServerMode,
     name: &str,
     address: &SocketAddr,
@@ -325,11 +325,7 @@ pub async fn write_instance_info(
     conflict_mode: RepositoryRegistrationAliasConflictMode,
     repo_config: RepositoryConfig,
 ) -> Result<()> {
-    let instance_root = if let Some(context) = env_context {
-        context.get("repository.process_dir")?
-    } else {
-        ffx_config::get("repository.process_dir")?
-    };
+    let instance_root = env_context.get("repository.process_dir")?;
     let mgr = PkgServerInstances::new(instance_root);
 
     let info = PkgServerInfo {
@@ -367,46 +363,6 @@ mod tests {
     use std::process;
 
     #[fuchsia::test]
-    async fn test_write_instance_info_with_global_context() {
-        let env = ffx_config::test_init().await.expect("test env");
-        env.context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .set(env.isolate_root.path().join("repo_servers").to_string_lossy().into())
-            .expect("setting isolated process dir");
-        let addr = SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 8000);
-        let instance_name = "some-instance";
-        let repo_config =
-            RepositoryConfigBuilder::new(format!("fuchsia-pkg://{instance_name}").parse().unwrap())
-                .build();
-
-        write_instance_info(
-            None,
-            ServerMode::Foreground,
-            instance_name.into(),
-            &addr,
-            RepositorySpec::Http {
-                metadata_repo_url: "http://metadata".into(),
-                blob_repo_url: "http://blobs".into(),
-                aliases: BTreeSet::new(),
-            },
-            RepositoryStorageType::Ephemeral,
-            RepositoryRegistrationAliasConflictMode::ErrorOut,
-            repo_config,
-        )
-        .await
-        .expect("write_instance_info");
-
-        let mgr = PkgServerInstances::new(
-            env.context
-                .get::<PathBuf, &str>("repository.process_dir")
-                .expect("expected repo.process_dir"),
-        );
-
-        let instances = mgr.list_instances().expect("list_instances");
-        assert_eq!(instances.len(), 1);
-    }
-    #[fuchsia::test]
     async fn test_write_instance_info_with_context() {
         let env = ffx_config::test_init().await.expect("test env");
         env.context
@@ -418,7 +374,7 @@ mod tests {
         let repo_config =
             RepositoryConfigBuilder::new("fuchsia-pkg://somename".parse().unwrap()).build();
         write_instance_info(
-            Some(env.context.clone()),
+            &env.context.clone(),
             ServerMode::Foreground,
             "somename",
             &addr,
