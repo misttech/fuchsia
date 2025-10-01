@@ -1298,42 +1298,183 @@ Scheduler::DequeueResult Scheduler::EvaluateNextThread(
 #endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
 // Latches a potential candidate placement for the thread and essential values
-// for making comparisons with other candidates. These values are exposed as
-// relaxed atomics to avoid queue lock contention, since these values are
-// subject to change as soon as the queue lock is dropped, and the comparisons
-// only require approximate consistency. Latching the values ensures that each
-// comparison of a particular candidate with other candidates uses the same
-// values.
+// for making comparisons with other candidates. Dynamic values are exposed by
+// each Scheduler instance as relaxed atomics to avoid queue lock contention,
+// since these values are subject to change as soon as the queue lock is
+// dropped, and the comparisons only require approximate consistency. Latching
+// the values ensures that each comparison of a particular candidate with other
+// candidates uses the same values.
 class Scheduler::CandidatePlacement {
  public:
   CandidatePlacement() = default;
 
-  // Latches key values using relaxed atomic reads.
-  explicit CandidatePlacement(const Scheduler* scheduler)
-      : scheduler_{scheduler},
-        queue_time_ns_{scheduler->exported_queue_time_ns()},
-        processing_rate_{scheduler->exported_processing_rate()},
-        deadline_utilization_{scheduler->exported_deadline_utilization()} {}
+  // Latches key values from the given CPU, thread, and power domain set.
+  static CandidatePlacement Evaluate(cpu_num_t cpu_num, const Thread* thread,
+                                     const PowerDomainSet& power_domain_set)
+      TA_REQ_SHARED(thread->get_lock()) {
+    const Scheduler* scheduler = Scheduler::Get(cpu_num);
+    const SchedDuration cpu_queue_time_ns = scheduler->exported_queue_time_ns();
+    const SchedProcessingRate cpu_processing_rate = scheduler->exported_processing_rate();
+    const SchedUtilization cpu_deadline_utilization = scheduler->exported_deadline_utilization();
+
+    // TODO(https://fxbug.dev/448195120): Factor in estimated utilization for
+    // variable/fair bandwidth workloads, modulated by the variable/fair
+    // bandwidth limit, if any. For now, just use constant/deadline bandwidth as
+    // the primary input for the requirement.
+    const SchedProcessingRate current_required_processing_rate{cpu_deadline_utilization};
+
+    // Start with the basic requirements common to all threads.
+    SchedProcessingRate new_required_processing_rate = current_required_processing_rate;
+    uint64_t estimated_power_delta_nw = 0;
+
+    // Add requirements for deadline threads.
+    if (IsDeadlineThread(thread)) {
+      const SchedUtilization thread_deadline_utilization =
+          thread->scheduler_state().effective_profile().deadline().utilization;
+      new_required_processing_rate += thread_deadline_utilization;
+    }
+
+    // Estimated energy cost comparisons are only necessary in heterogeneous /
+    // multi-domain systems. In strict SMP systems, where all CPUs have the same
+    // power / performance characteristics and operating point changes affect
+    // all CPUs simultaneously, only demand and processing rate requirements
+    // need to be considered for task placement and admission control.
+    if (power_domain_set.count() > 1u) {
+      // Compute the power delta if there is a change in the required processing
+      // rate. The addition of deadline / constant bandwidth demand will always
+      // increase the required processing rate, but fair / variable bandwidth
+      // demand may or may not increase the required processing rate.
+      const SchedProcessingRate required_processing_rate_delta =
+          new_required_processing_rate - current_required_processing_rate;
+      if (required_processing_rate_delta != 0) {
+        // The current power cost for each individual processor in the power
+        // domain, including this candidate placement.
+        const uint64_t current_power_cost_nw_per_rate =
+            power_domain_set.LookupPowerCost(cpu_num, cpu_processing_rate);
+
+        // If the task fits on the candidate without changing the processing rate,
+        // estimate the power delta based only on the new demand. Otherwise, if the
+        // candidate will become oversubscribed at the current rate, a higher
+        // compatible rate must be selected, if one exists, and the estimated power
+        // delta must include the effect on the entire domain.
+        if (new_required_processing_rate <= cpu_processing_rate) {
+          estimated_power_delta_nw =
+              Round<uint64_t>(required_processing_rate_delta * current_power_cost_nw_per_rate);
+        } else {
+          const SchedUtilization domain_utilization =
+              power_domain_set.LookupTotalNormalizedUtilization(cpu_num);
+          const uint64_t new_power_cost_nw_per_rate =
+              power_domain_set.LookupPowerCost(cpu_num, new_required_processing_rate);
+
+          estimated_power_delta_nw = Round<uint64_t>(
+              (domain_utilization + required_processing_rate_delta) * new_power_cost_nw_per_rate -
+              domain_utilization * current_power_cost_nw_per_rate);
+        }
+      }
+    }
+
+    LOCAL_KTRACE_INSTANT(
+        COMMON, "evaluate", ("cpu", cpu_num), ("queue time", cpu_queue_time_ns),
+        ("actual rate", Round<int64_t>(cpu_processing_rate * 1000)),
+        ("current required rate", Round<int64_t>(current_required_processing_rate * 1000)),
+        ("new required rate", Round<int64_t>(new_required_processing_rate * 1000)),
+        ("estimated power delta nw", estimated_power_delta_nw));
+
+    return CandidatePlacement(IsFairThread(thread), scheduler->cluster(), cpu_queue_time_ns,
+                              cpu_processing_rate, new_required_processing_rate,
+                              cpu_deadline_utilization, estimated_power_delta_nw);
+  }
 
   CandidatePlacement(const CandidatePlacement&) = default;
   CandidatePlacement& operator=(const CandidatePlacement&) = default;
 
-  explicit operator bool() const { return scheduler_ != nullptr; }
+  constexpr explicit operator bool() const { return is_valid_; }
 
-  const Scheduler* scheduler() const { return scheduler_; }
-  SchedDuration queue_time_ns() const { return queue_time_ns_; }
-  SchedProcessingRate processing_rate() const { return processing_rate_; }
-  SchedUtilization deadline_utilization() const { return deadline_utilization_; }
+  // Returns true if the load balancing objectives and constraints are
+  // sufficiently met that candidate selection can stop on this candidate.
+  constexpr bool IsSufficient() const {
+    // If the estimated power is non-zero (i.e. there is an active energy model),
+    // don't stop searching early, even if the other criteria are met. This
+    // results in the search converging on the lowest power candidate that also
+    // meets the admission control criteria.
+    // TODO(https://fxbug.dev/448196664): Consider adding a configurable
+    // threshold to terminate the search if the estimated power cost is
+    // acceptably low.
+    return estimated_power_delta_nw() == 0 && queue_time_ns() <= kIntraClusterThreshold &&
+           is_admissible();
+  }
+
+  // Returns true if this candidate is a better alternative than the current target.
+  constexpr bool IsBetterThan(const CandidatePlacement& current_target) const {
+    LOCAL_KTRACE_INSTANT(
+        COMMON, "compare", ("Current queue time", current_target.queue_time_ns()),
+        ("Current cluster", current_target.cluster()),
+        ("Current deadline utilization",
+         Round<int64_t>(current_target.deadline_utilization() * 1000)),
+        ("Candidate queue time", queue_time_ns()), ("Candidate cluster", cluster()),
+        ("Candidate deadline utilization", Round<int64_t>(deadline_utilization() * 1000)));
+
+    if (is_fair_) {
+      // CPUs in the same logical cluster are considered equivalent in terms of
+      // cache affinity. Choose the least loaded among the members of a cluster.
+      if (cluster() == current_target.cluster()) {
+        return ktl::tuple{queue_time_ns(), deadline_utilization()} <
+               ktl::tuple{current_target.queue_time_ns(), current_target.deadline_utilization()};
+      }
+
+      // Only consider crossing cluster boundaries if the current candidate is
+      // above the threshold.
+      return current_target.queue_time_ns() > kInterClusterThreshold &&
+             queue_time_ns() < current_target.queue_time_ns();
+    }
+
+    ktl::tuple candidate_criteria{is_admissible_order_key(), estimated_power_delta_nw(),
+                                  deadline_utilization(), queue_time_ns()};
+    ktl::tuple current_criteria{
+        current_target.is_admissible_order_key(), current_target.estimated_power_delta_nw(),
+        current_target.deadline_utilization(), current_target.queue_time_ns()};
+
+    return candidate_criteria < current_criteria;
+  }
+
+  constexpr size_t cluster() const { return cluster_; }
+  constexpr SchedDuration queue_time_ns() const { return queue_time_ns_; }
+  constexpr SchedProcessingRate processing_rate() const { return processing_rate_; }
+  constexpr SchedProcessingRate required_processing_rate() const {
+    return required_processing_rate_;
+  }
+  constexpr SchedUtilization deadline_utilization() const { return deadline_utilization_; }
+  constexpr uint64_t estimated_power_delta_nw() const { return estimated_power_delta_nw_; }
+  constexpr bool is_admissible() const { return required_processing_rate() <= processing_rate(); }
+  constexpr int is_admissible_order_key() const { return is_admissible() ? 0 : 1; }
 
  private:
-  const Scheduler* scheduler_{nullptr};
+  constexpr CandidatePlacement(bool is_fair, size_t cluster, SchedDuration queue_time_ns,
+                               SchedProcessingRate processing_rate,
+                               SchedProcessingRate required_processing_rate,
+                               SchedUtilization deadline_utilization,
+                               uint64_t estimated_power_delta_nw)
+      : is_valid_{true},
+        is_fair_{is_fair},
+        cluster_{cluster},
+        queue_time_ns_{queue_time_ns},
+        processing_rate_{processing_rate},
+        required_processing_rate_{required_processing_rate},
+        deadline_utilization_{deadline_utilization},
+        estimated_power_delta_nw_{estimated_power_delta_nw} {}
+
+  bool is_valid_{false};
+  bool is_fair_{false};
+  size_t cluster_{0};
   SchedDuration queue_time_ns_{0};
   SchedProcessingRate processing_rate_{0};
+  SchedProcessingRate required_processing_rate_{0};
   SchedUtilization deadline_utilization_{0};
+  uint64_t estimated_power_delta_nw_{0};
 };
 
 cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "find_target");
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "find_target");
 
   // Determine the set of CPUs the thread is allowed to run on.
   const cpu_num_t current_cpu = arch_curr_cpu_num();
@@ -1343,99 +1484,50 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
   DEBUG_ASSERT_MSG(available_mask != 0,
                    "thread=%s affinity=%#x soft_affinity=%#x active=%#x "
                    "idle=%#x arch_ints_disabled=%d",
-                   thread->name(), thread_state.hard_affinity_, thread_state.soft_affinity_,
+                   thread->name(), thread_state.hard_affinity(), thread_state.soft_affinity(),
                    active_mask, PeekIdleMask(), arch_ints_disabled());
 
-  LOCAL_KTRACE(DETAILED, "target_mask", ("online", mp_get_online_mask()), ("active", active_mask));
+  LOCAL_KTRACE_INSTANT(DETAILED, "target_mask", ("online", mp_get_online_mask()),
+                       ("active", active_mask));
 
-  // Find the best target CPU starting at the last CPU the task ran on, if any.
-  // Alternatives are considered in order of best to worst potential cache
+  // Find a suitable target CPU, starting at the last CPU the task ran on, if
+  // any. Candidates are considered in order of best to worst potential cache
   // affinity.
   const cpu_num_t last_cpu = thread_state.last_cpu_;
   const cpu_num_t starting_cpu = last_cpu != INVALID_CPU ? last_cpu : current_cpu;
   const CpuSearchSet& search_set = percpu::Get(starting_cpu).search_set;
 
-  // TODO(https://fxbug.dev/42180608): Working on isolating a low-frequency panic due to
-  // apparent memory corruption of percpu intersecting CpuSearchSet, resulting
-  // in an invalid entry pointer and/or entry count. Adding an assert to help
-  // catch the corruption and include additional context. This assert is enabled
-  // in non-eng builds, however, the small impact is acceptable for production.
-  ASSERT_MSG(search_set.cpu_count() <= SMP_MAX_CPUS,
-             "current_cpu=%u starting_cpu=%u active_mask=%x thread=%p search_set=%p cpu_count=%zu "
-             "entries=%p",
-             current_cpu, starting_cpu, active_mask, &thread, &search_set, search_set.cpu_count(),
-             search_set.const_iterator().data());
-
-  const bool is_fair = IsFairThread(thread);
-  const SchedUtilization thread_deadline_utilization =
-      is_fair ? SchedUtilization{0} : thread_state.effective_profile().deadline().utilization;
-
-  // Compares candidates and returns true if alternate_target is a better
-  // alternative than current_target for placing the thread.
-  const auto compare = [is_fair](const CandidatePlacement& alternate_target,
-                                 const CandidatePlacement& current_target) {
-    ktrace::Scope trace_compare = LOCAL_KTRACE_BEGIN_SCOPE(
-        DETAILED, "compare", ("Alternate target queue time", alternate_target.queue_time_ns()),
-        ("Current target queue time", current_target.queue_time_ns()));
-
-    if (is_fair) {
-      // CPUs in the same logical cluster are considered equivalent in terms of
-      // cache affinity. Choose the least loaded among the members of a cluster.
-      if (alternate_target.scheduler()->cluster() == current_target.scheduler()->cluster()) {
-        ktl::tuple alternate_criteria{alternate_target.queue_time_ns(),
-                                      alternate_target.deadline_utilization()};
-        ktl::tuple current_criteria{current_target.queue_time_ns(),
-                                    current_target.deadline_utilization()};
-        return alternate_criteria < current_criteria;
-      }
-
-      // Only consider crossing cluster boundaries if the current candidate is
-      // above the threshold.
-      return current_target.queue_time_ns() > kInterClusterThreshold &&
-             alternate_target.queue_time_ns() < current_target.queue_time_ns();
-    }
-
-    ktl::tuple alternate_criteria{alternate_target.deadline_utilization(),
-                                  alternate_target.queue_time_ns()};
-    ktl::tuple current_criteria{current_target.deadline_utilization(),
-                                current_target.queue_time_ns()};
-    return alternate_criteria < current_criteria;
-  };
-
-  // Determines whether the current target is sufficiently good to terminate the
-  // selection loop.
-  const auto is_sufficient =
-      [is_fair, thread_deadline_utilization](const CandidatePlacement& current_target) {
-        ktrace::Scope trace_is_sufficient = LOCAL_KTRACE_BEGIN_SCOPE(
-            DETAILED, "is_sufficient", ("intra cluster threshold", kIntraClusterThreshold),
-            ("candidate queue time", current_target.queue_time_ns()));
-
-        if (is_fair) {
-          return current_target.queue_time_ns() <= kIntraClusterThreshold;
-        }
-
-        return current_target.queue_time_ns() <= kIntraClusterThreshold &&
-               current_target.deadline_utilization() + thread_deadline_utilization <=
-                   current_target.processing_rate();
-      };
-
   // Loop over the search set for CPU the task last ran on to find a suitable
   // target.
   cpu_num_t target_cpu = INVALID_CPU;
-  CandidatePlacement target_queue{};
+  CandidatePlacement target_queue;
 
-  for (const auto& entry : search_set.const_iterator()) {
-    const cpu_num_t candidate_cpu = entry.cpu;
-    const bool candidate_available = available_mask & cpu_num_to_mask(candidate_cpu);
-    const CandidatePlacement candidate_queue{Get(candidate_cpu)};
+  {
+    // Acquire the queue lock of the current CPU to ensure that the power domain
+    // set for the current CPU doesn't change until the search is complete.
+    // TODO(https://fxbug.dev/448191466): Move the energy model into the ZBI and
+    // allocate power domain data structures only during early init, removing
+    // the need for locking or snapshotting.
+    Guard<MonitoredSpinLock, NoIrqSave> guard{&Get()->queue_lock_, SOURCE_TAG};
+    const PowerDomainSet& power_domain_set = Get()->power_level_control_.power_domain_set();
 
-    if (candidate_available && (!target_queue || compare(candidate_queue, target_queue))) {
-      target_cpu = candidate_cpu;
-      target_queue = candidate_queue;
+    for (const auto& entry : search_set.const_iterator()) {
+      const cpu_num_t candidate_cpu = entry.cpu;
+      const bool candidate_available = available_mask & cpu_num_to_mask(candidate_cpu);
 
-      // Stop searching at the first sufficiently unloaded CPU.
-      if (is_sufficient(target_queue)) {
-        break;
+      if (candidate_available) {
+        const CandidatePlacement candidate_queue =
+            CandidatePlacement::Evaluate(candidate_cpu, thread, power_domain_set);
+
+        if (!target_queue || candidate_queue.IsBetterThan(target_queue)) {
+          target_cpu = candidate_cpu;
+          target_queue = candidate_queue;
+
+          // Stop searching when the load balancing criteria have been sufficiently met.
+          if (target_queue.IsSufficient()) {
+            break;
+          }
+        }
       }
     }
   }
@@ -3633,4 +3725,7 @@ void Scheduler::PowerLevelControl::DpcHandler(Dpc* dpc) {
     const zx::result result = domain->controller()->Post(*request);
     ASSERT(result.status_value() != ZX_ERR_SHOULD_WAIT);
   }
+
+  // If the power domain for this CPU changed, the last ref to the old power
+  // domain may be dropped here.
 }
