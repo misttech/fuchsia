@@ -5,60 +5,22 @@
 
 import fnmatch
 import json
-from typing import Any, Mapping, MutableMapping, MutableSequence, cast
+from typing import Any, Mapping, cast
 
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
-from trace_processing import trace_metrics, trace_model
+from reporting import metrics
+from trace_processing import trace_metrics
 from trace_processing.trace_metrics import JSON
 
-
-class _MemoryProfileMetrics(trace_metrics.MetricsProcessor):
-    """Captures kernel and user space memory metrics using `ffx profile memory`.
-    See documentation at
-    https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/explore-memory-usage
-
-    process_metrics() returns a list of metrics to be exported to catapult:
-    - "Memory/Process/{starnix_kernel,binder}.PrivatePopulated": total populated
-    bytes for VMOs. This is private uncompressed memory.
-
-    process_freeform_metrics() returns a whole-device memory digest, as
-    retrieved by `ffx profile memory`.
-    """
-
-    DESCRIPTION_BASE = (
-        "Total populated bytes for private uncompressed memory VMOs"
-    )
-
-    def __init__(
-        self,
-        structured: MutableSequence[trace_metrics.TestCaseResult],
-        freeform: MutableMapping[str, trace_metrics.JSON],
-    ):
-        self.structured = structured
-        self.freeform = freeform
-        if len(self.freeform) != 1:
-            raise ValueError
-
-    @property
-    def event_patterns(self) -> set[str]:
-        """This processor doesn't use the imported trace model, so it requires no events."""
-        return set()
-
-    def process_metrics(
-        self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
-        return self.structured
-
-    def process_freeform_metrics(
-        self, model: trace_model.Model
-    ) -> tuple[str, JSON]:
-        return next(iter(self.freeform.items()))
+_DESCRIPTION_BASE = "Total populated bytes for private uncompressed memory VMOs"
 
 
 def capture(
     dut: FuchsiaDevice, principal_groups: Mapping[str, str] | None = None
-) -> _MemoryProfileMetrics:
+) -> metrics.Report:
     """Captures kernel and user space memory metrics using `ffx profile memory`.
+    See documentation at
+    https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/explore-memory-usage
 
     Args:
       dut: A FuchsiaDevice instance connected to the device to profile.
@@ -68,11 +30,11 @@ def capture(
         item.
 
     Returns:
-      MemoryProfileMetrics instance containing two sets of memory
-        measurements:
-        - Total populated bytes for VMOs assigned to the specified process
-            groups. This is private uncompressed memory.
-        - A whole-device memory digest.
+      metrics.Report containing two sets of memory measurements:
+        - "Memory/Process/{starnix_kernel,binder}.PrivatePopulated": total populated
+            bytes for VMOs. This is private uncompressed memory.
+        - A whole-device memory digest, as retrieved by `ffx profile memory`.
+
     """
     principal_groups = principal_groups or {}
 
@@ -88,12 +50,21 @@ def capture(
             ],
         )
     )
-
-    return _MemoryProfileMetrics(
-        process_component_profile(principal_groups, component_profile),
+    structured = process_component_profile(principal_groups, component_profile)
+    description = metrics.describe_callable(capture)
+    return metrics.Report(
+        structured,
         {
             "memory_profile": _simplify_digest(component_profile),
         },
+        [
+            trace_metrics.MetricsProcessorDescription(
+                doc=description["doc"],
+                code_path=description["code_path"],
+                line_no=description["line_no"],
+                metrics=[tcr.describe() for tcr in structured],
+            )
+        ],
     )
 
 
@@ -113,7 +84,7 @@ def process_component_profile(
                 label=f"Memory/Principal/{group_name}/PrivatePopulated",
                 unit=trace_metrics.Unit.bytes,
                 values=[private_populated],
-                doc=f"{_MemoryProfileMetrics.DESCRIPTION_BASE}: {group_name}",
+                doc=f"{_DESCRIPTION_BASE}: {group_name}",
             )
         )
     return metrics
