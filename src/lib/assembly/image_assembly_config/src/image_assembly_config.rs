@@ -222,6 +222,8 @@ mod tests {
               system: ["package0"],
               base: ["package1", "package2"],
               cache: ["package3", "package4"],
+              on_demand: ["package5", "package6"],
+              anchored_automatic: ["package7", "package8"],
               kernel: {
                 path: "path/to/kernel",
                 args: ["arg1", "arg2"],
