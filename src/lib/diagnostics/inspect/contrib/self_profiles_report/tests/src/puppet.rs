@@ -64,12 +64,11 @@ async fn main() {
 
 fn burn_a_little_cpu() {
     profile_duration!("LeafDuration");
-    let mut s = String::new();
-    for _ in 0..100_000 {
-        s.push('a');
-    }
-
     // Make sure LLVM doesn't get too clever and prevent us from accumulating CPU time by
     // optimizing out the string creation.
+    let mut s = String::new();
+    for _ in 0..std::hint::black_box(100_000) {
+        s.push(std::hint::black_box('a'));
+    }
     std::hint::black_box(s);
 }
