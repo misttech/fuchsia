@@ -989,14 +989,10 @@ class IdkGenerator(object):
         # which the prebuild data was generated.
         #
         # LINT.IfChange(fidl_category_checks)
-        # For IDK collections that depend on "//sdk/fidl", which depends on
-        # the allowed list of libraries for most categories, this includes
-        # the majority of FIDL libraries. See the comment block at the top of
-        # //sdk/fidl/BUILD.gn. The exception are libraries in the "compat_test"
-        # category because of the limitation on `testonly` dependencies in the
-        # IDK.
-        # TODO(https://fxbug.dev/419105478): Determine how to validate all such
-        # atoms.
+        # The //sdk/fidl:fidl_category_check_collection target depends on
+        # all FIDL libraries in an SDK category, ensuring this validation is
+        # performed on all of them. See the comment block at the top of
+        # //sdk/fidl/BUILD.gn.
         self._prebuild_map.verify_dependency_relationships()
         # LINT.ThenChange(//sdk/fidl/BUILD.gn:prebuild_info_category_compatibility_checks)
 
