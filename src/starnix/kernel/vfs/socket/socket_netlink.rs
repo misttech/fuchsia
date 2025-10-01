@@ -900,7 +900,7 @@ impl<'a> AccessControl<FullCredentials> for NetlinkAccessControl<'a> {
             },
             || {
                 security::check_task_capable(self.current_task, CAP_NET_ADMIN).map_err(|error| {
-                    netlink::Errno::new(-(error.code.error_code() as i32))
+                    netlink::Errno::new(error.code.error_code() as i32)
                         .expect("Errno::error_code() is expected to be in range [1..max_i32]")
                 })
             },

@@ -65,31 +65,30 @@ pub(crate) mod errno {
 
     use super::*;
 
-    /// Represents a Netlink Error code.
+    /// Represents a Error number, aka `errno`.
     ///
-    /// Netlink errors are expected to be negative Errnos, with 0 used for ACKs.
-    /// This type enforces that the contained code is NonZero & Negative.
+    /// These values are negated when sent in Netlink error messages.
     #[derive(Copy, Clone, Debug, PartialEq, GenericOverIp)]
     #[generic_over_ip()]
     pub struct Errno(i32);
 
     impl Errno {
-        pub(crate) const EADDRNOTAVAIL: Errno = Errno::new(-libc::EADDRNOTAVAIL).unwrap();
-        pub(crate) const EAFNOSUPPORT: Errno = Errno::new(-libc::EAFNOSUPPORT).unwrap();
-        pub(crate) const EBUSY: Errno = Errno::new(-libc::EBUSY).unwrap();
-        pub(crate) const EEXIST: Errno = Errno::new(-libc::EEXIST).unwrap();
-        pub(crate) const EINVAL: Errno = Errno::new(-libc::EINVAL).unwrap();
-        pub(crate) const ENODEV: Errno = Errno::new(-libc::ENODEV).unwrap();
-        pub(crate) const ENOENT: Errno = Errno::new(-libc::ENOENT).unwrap();
-        pub(crate) const ENOTSUP: Errno = Errno::new(-libc::ENOTSUP).unwrap();
-        pub(crate) const ESRCH: Errno = Errno::new(-libc::ESRCH).unwrap();
-        pub(crate) const ETOOMANYREFS: Errno = Errno::new(-libc::ETOOMANYREFS).unwrap();
+        pub(crate) const EADDRNOTAVAIL: Errno = Errno::new(libc::EADDRNOTAVAIL).unwrap();
+        pub(crate) const EAFNOSUPPORT: Errno = Errno::new(libc::EAFNOSUPPORT).unwrap();
+        pub(crate) const EBUSY: Errno = Errno::new(libc::EBUSY).unwrap();
+        pub(crate) const EEXIST: Errno = Errno::new(libc::EEXIST).unwrap();
+        pub(crate) const EINVAL: Errno = Errno::new(libc::EINVAL).unwrap();
+        pub(crate) const ENODEV: Errno = Errno::new(libc::ENODEV).unwrap();
+        pub(crate) const ENOENT: Errno = Errno::new(libc::ENOENT).unwrap();
+        pub(crate) const ENOTSUP: Errno = Errno::new(libc::ENOTSUP).unwrap();
+        pub(crate) const ESRCH: Errno = Errno::new(libc::ESRCH).unwrap();
+        pub(crate) const ETOOMANYREFS: Errno = Errno::new(libc::ETOOMANYREFS).unwrap();
 
-        /// Construct a new [`Errno`] from the given negative integer.
+        /// Construct a new [`Errno`] from the given positive integer.
         ///
-        /// Returns `None` when the code is non-negative (which includes 0).
+        /// Returns `None` when the code is non-positive (which includes 0).
         pub const fn new(code: i32) -> Option<Self> {
-            if code.is_negative() { Some(Errno(code)) } else { None }
+            if code.is_positive() { Some(Errno(code)) } else { None }
         }
     }
 
@@ -110,11 +109,11 @@ pub(crate) mod errno {
         use super::*;
         use test_case::test_case;
 
-        #[test_case(i32::MIN, Some(i32::MIN); "min")]
-        #[test_case(-10, Some(-10); "negative")]
+        #[test_case(i32::MIN, None; "min")]
+        #[test_case(-10, None; "negative")]
         #[test_case(0, None; "zero")]
-        #[test_case(10, None; "positive")]
-        #[test_case(i32::MAX, None; "max")]
+        #[test_case(10, Some(10); "positive")]
+        #[test_case(i32::MAX, Some(i32::MAX); "max")]
         fn test_new_errno(raw_code: i32, expected_code: Option<i32>) {
             assert_eq!(Errno::new(raw_code).map(Into::<i32>::into), expected_code)
         }
@@ -135,7 +134,9 @@ pub(crate) fn new_error<T: NetlinkSerializable>(
 
         let code = match error {
             Ok(()) => None,
-            Err(e) => Some(e.into()),
+
+            // Netlink error codes are negative errno's.
+            Err(e) => Some(-NonZeroI32::from(e)),
         };
 
         let mut error = ErrorMessage::default();
@@ -192,7 +193,7 @@ mod tests {
             NetlinkPayload::Error(ErrorMessage{ code, header, .. }) => {
                 let expected_code = match expected_error {
                     Ok(()) => None,
-                    Err(e) => Some(e.into()),
+                    Err(e) => Some(-NonZeroI32::from(e)),
                 };
                 assert_eq!(code, expected_code);
                 assert_eq!(

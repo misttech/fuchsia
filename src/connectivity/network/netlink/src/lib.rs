@@ -606,7 +606,7 @@ mod tests {
 
         let message = NetlinkMessageWithCreds::new(
             new_fake_netlink_message(),
-            FakeCreds::with_error(Errno::new(-libc::EPERM).unwrap()),
+            FakeCreds::with_error(Errno::new(libc::EPERM).unwrap()),
         );
         req_sender.try_send(message).expect("should send without error");
 
