@@ -159,6 +159,9 @@ impl Closed<Initial> {
                     mss: Some(device_mss),
                     window_scale: Some(rcv_wnd_scale),
                     sack_permitted: SACK_PERMITTED,
+                    // TODO(https://fxbug.dev/436529062): Use the timestamp
+                    // option.
+                    timestamp: None,
                 },
             ),
         )
@@ -299,6 +302,9 @@ impl Listen {
                         //   Scale option in the <SYN,ACK> segment.
                         window_scale: options.window_scale().map(|_| rcv_wnd_scale),
                         sack_permitted: SACK_PERMITTED,
+                        // TODO(https://fxbug.dev/436529062): Use the timestamp
+                        // option.
+                        timestamp: None,
                     },
                 ),
                 SynRcvd {
@@ -542,6 +548,9 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                         mss: Some(*smss.mss()),
                                         window_scale: options.window_scale().map(|_| rcv_wnd_scale),
                                         sack_permitted: SACK_PERMITTED,
+                                        // TODO(https://fxbug.dev/436529062):
+                                        // Use the timestamp option.
+                                        timestamp: None,
                                     },
                                 ),
                                 SynRcvd {
@@ -1091,7 +1100,8 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
                 snd_max,
                 self.nxt(),
                 calculated_window_size >> self.wnd_scale,
-                SegmentOptions { sack_blocks: self.sack_blocks() },
+                // TODO(https://fxbug.dev/436529062): Use the timestamp option.
+                SegmentOptions { sack_blocks: self.sack_blocks(), timestamp: None },
             ))
         } else {
             None
@@ -1257,7 +1267,8 @@ trait RecvSegmentArgumentsProvider: Sized {
     /// state.
     fn make_ack<P: Payload>(self, seq: SeqNum) -> Segment<P> {
         let (ack, wnd, sack_blocks) = self.take_rcv_segment_args();
-        Segment::ack_with_options(seq, ack, wnd, SegmentOptions { sack_blocks })
+        // TODO(https://fxbug.dev/436529062): Use the timestamp option.
+        Segment::ack_with_options(seq, ack, wnd, SegmentOptions { sack_blocks, timestamp: None })
     }
 }
 
@@ -1546,7 +1557,8 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             }
 
             let seg = rcv.make_segment(|ack, wnd, sack_blocks| {
-                let options = SegmentOptions { sack_blocks };
+                // TODO(https://fxbug.dev/436529062): Use the timestamp option.
+                let options = SegmentOptions { sack_blocks, timestamp: None };
                 // We may have to trim bytes_to_send to account for options.
                 let bytes_to_send = bytes_to_send.min(u32::from(mss.payload_size(&options).get()));
 
@@ -3105,6 +3117,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         mss: Some(*device_mss),
                         window_scale: Some(*rcv_wnd_scale),
                         sack_permitted: SACK_PERMITTED,
+                        // TODO(https://fxbug.dev/436529062): Use the timestamp
+                        // option.
+                        timestamp: None,
                     },
                 )
             }),
@@ -3131,6 +3146,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         mss: Some(*smss.mss()),
                         window_scale: snd_wnd_scale.map(|_| *rcv_wnd_scale),
                         sack_permitted: SACK_PERMITTED,
+                        // TODO(https://fxbug.dev/436529062): Use the timestamp
+                        // option.
+                        timestamp: None,
                     },
                 )
             }),
@@ -4576,6 +4594,7 @@ mod test {
                     window_scale: Some(WindowScale::default()),
                     // Matches the stack-wide constant.
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -4634,6 +4653,7 @@ mod test {
                     window_scale: Some(WindowScale::default()),
                     // Matches the stack-wide constant.
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -4760,6 +4780,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -4772,6 +4793,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -4807,6 +4829,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -4820,6 +4843,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -5014,7 +5038,8 @@ mod test {
                             .collect()
                         } else {
                             SackBlocks::default()
-                        }
+                        },
+                        timestamp: None,
                     },
                 )),
                 None
@@ -6786,7 +6811,8 @@ mod test {
                             .collect()
                         } else {
                             SackBlocks::default()
-                        }
+                        },
+                        timestamp: None,
                     },
                 )),
                 None,
@@ -7006,6 +7032,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(syn_window_scale),
                     sack_permitted: SACK_PERMITTED,
+                    timestamp: None,
                 },
             )
         );
@@ -7021,6 +7048,7 @@ mod test {
                         mss: Some(Mss::DEFAULT_IPV4),
                         window_scale: syn_ack_window_scale,
                         sack_permitted: SACK_PERMITTED,
+                        timestamp: None,
                     },
                 ),
                 clock.now(),
@@ -7814,7 +7842,7 @@ mod test {
                         TEST_ISS + 1,
                         TEST_IRS + 1 + TEST_BYTES.len(),
                         UnscaledWindowSize::from(BUFFER_SIZE as u16),
-                        SegmentOptions { sack_blocks: expected_sack_blocks },
+                        SegmentOptions { sack_blocks: expected_sack_blocks, timestamp: None },
                     ))
                 );
                 assert_eq!(
@@ -8332,6 +8360,7 @@ mod test {
                 .unwrap()]
                 .into_iter()
                 .collect(),
+                timestamp: None,
             },
         );
         let (seg, passive_open, data_acked, newly_closed) = state
@@ -8502,7 +8531,7 @@ mod test {
                         TEST_IRS + 1,
                         ack,
                         snd_wnd >> wnd_scale,
-                        SegmentOptions { sack_blocks },
+                        SegmentOptions { sack_blocks, timestamp: None },
                     );
                     let (seg, passive_open, data_acked, newly_closed) = state
                         .on_segment::<_, ClientlessBufferProvider>(
@@ -8697,7 +8726,7 @@ mod test {
             TEST_IRS + 1,
             start,
             snd_wnd >> wnd_scale,
-            SegmentOptions { sack_blocks: [sack_block].into_iter().collect() },
+            SegmentOptions { sack_blocks: [sack_block].into_iter().collect(), timestamp: None },
         );
         assert_eq!(
             state.on_segment::<_, ClientlessBufferProvider>(

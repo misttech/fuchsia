@@ -432,7 +432,7 @@ mod test {
     use proptest_support::failed_seeds_no_std;
     use test_case::test_case;
 
-    use crate::{SackBlock, SackBlocks, SeqNum};
+    use crate::{SackBlock, SackBlocks, SeqNum, Timestamp, TimestampOption};
 
     const EXAMPLE_DATA: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     #[test_case(FragmentedPayload::new([&EXAMPLE_DATA[..]]); "contiguous")]
@@ -573,15 +573,34 @@ mod test {
         }
     }
 
-    // TODO(https://fxbug.dev/360401604): Add tests for timestamp.
-    #[test_case(SegmentOptions {sack_blocks: SackBlocks::EMPTY}; "empty")]
-    #[test_case(SegmentOptions { sack_blocks: SackBlocks::from_iter([
-                    SackBlock::try_new(SeqNum::new(1), SeqNum::new(2)).unwrap(),
-                    SackBlock::try_new(SeqNum::new(4), SeqNum::new(6)).unwrap(),
-                ])}; "sack_blocks")]
+    #[test_case(SegmentOptions {sack_blocks: SackBlocks::EMPTY, timestamp: None}; "empty")]
+    #[test_case(SegmentOptions {
+        sack_blocks: SackBlocks::from_iter([
+            SackBlock::try_new(SeqNum::new(1), SeqNum::new(2)).unwrap(),
+            SackBlock::try_new(SeqNum::new(4), SeqNum::new(6)).unwrap(),
+        ]),
+        timestamp: None
+    }; "sack_blocks")]
+    #[test_case(SegmentOptions {
+        sack_blocks: SackBlocks::EMPTY,
+        timestamp: Some(TimestampOption {
+            ts_val: Timestamp::new(12345), ts_echo_reply: Timestamp::new(54321)
+        }),
+    }; "timestamp")]
+    #[test_case(SegmentOptions {
+        sack_blocks: SackBlocks::from_iter([
+            SackBlock::try_new(SeqNum::new(1), SeqNum::new(2)).unwrap(),
+            SackBlock::try_new(SeqNum::new(4), SeqNum::new(6)).unwrap(),
+        ]),
+        timestamp: Some(TimestampOption {
+            ts_val: Timestamp::new(12345), ts_echo_reply: Timestamp::new(54321)
+        }),
+    }; "sack_blocks_and_timestamp")]
+
     fn effective_mss_accounts_for_variable_size_tcp_options(options: SegmentOptions) {
         const SIZE: u16 = 1000;
-        let mss = EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), false);
+        let timestamp = options.timestamp.is_some();
+        let mss = EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), timestamp);
         let options_len =
             u16::try_from(packet_formats::tcp::aligned_options_length(options.iter())).unwrap();
         assert_eq!(mss.payload_size(&options).get(), SIZE - options_len);

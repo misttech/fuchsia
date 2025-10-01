@@ -93,6 +93,9 @@ pub use tcp::segment::{
     SegmentHeader, SegmentOptions, VerifiedTcpSegment,
 };
 pub use tcp::seqnum::{SeqNum, UnscaledWindowSize, WindowScale, WindowSize};
+pub use tcp::timestamp::{
+    Milliseconds, RxTimestampOption, Timestamp, TimestampOption, TxTimestampOption, Unitless,
+};
 pub use test_only::TestOnlyPartialEq;
 pub use time::local_timer_heap::LocalTimerHeap;
 pub use time::{

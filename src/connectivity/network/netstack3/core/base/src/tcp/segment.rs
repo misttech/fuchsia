@@ -23,6 +23,7 @@ use thiserror::Error;
 
 use super::base::{Control, Mss};
 use super::seqnum::{SeqNum, UnscaledWindowSize, WindowScale, WindowSize};
+use super::timestamp::{Timestamp, TimestampOption};
 
 /// A TCP segment.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -175,8 +176,18 @@ impl Options {
                         seg.sack_blocks = SackBlocks::from_option(sack);
                     }
                 }
-                // TODO(https://fxbug.dev/42072902): We don't support these yet.
-                TcpOption::Timestamp { ts_val: _, ts_echo_reply: _ } => {}
+                TcpOption::Timestamp { ts_val, ts_echo_reply } => {
+                    let timestamp = TimestampOption {
+                        ts_val: Timestamp::new(ts_val),
+                        ts_echo_reply: Timestamp::new(ts_echo_reply),
+                    };
+                    // NB: The timestamp option applies to all segment types.
+                    match options {
+                        Options::Handshake(ref mut h) => h.timestamp = Some(timestamp),
+                        Options::Segment(ref mut s) => s.timestamp = Some(timestamp),
+                        Options::Reset(ref mut r) => r.timestamp = Some(timestamp),
+                    }
+                }
             }
         }
         options
@@ -216,6 +227,15 @@ impl Options {
         const EMPTY_REF: &'static SackBlocks = &SackBlocks::EMPTY;
         self.as_segment().map(|s| &s.sack_blocks).unwrap_or(EMPTY_REF)
     }
+
+    /// Returns the segment's TCP timestamp option, if there is one.
+    pub fn timestamp(&self) -> &Option<TimestampOption> {
+        match self {
+            Options::Handshake(h) => &h.timestamp,
+            Options::Segment(s) => &s.timestamp,
+            Options::Reset(r) => &r.timestamp,
+        }
+    }
 }
 
 /// Segment options available on handshake segments.
@@ -229,16 +249,20 @@ pub struct HandshakeOptions {
 
     /// The SACK permitted option.
     pub sack_permitted: bool,
+
+    /// The timestamp option.
+    pub timestamp: Option<TimestampOption>,
 }
 
 impl HandshakeOptions {
     /// Returns an iterator over the contained options.
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
-        let Self { mss, window_scale, sack_permitted } = self;
+        let Self { mss, window_scale, sack_permitted, timestamp } = self;
         mss.map(|mss| TcpOption::Mss(mss.get()))
             .into_iter()
             .chain(window_scale.map(|ws| TcpOption::WindowScale(ws.get())))
             .chain((*sack_permitted).then_some(TcpOption::SackPermitted))
+            .chain(timestamp.map(Into::into))
     }
 }
 
@@ -247,32 +271,37 @@ impl HandshakeOptions {
 pub struct SegmentOptions {
     /// The SACK option.
     pub sack_blocks: SackBlocks,
+
+    /// The timestamp option.
+    pub timestamp: Option<TimestampOption>,
 }
 
 impl SegmentOptions {
     /// Returns an iterator over the contained options.
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
-        let Self { sack_blocks } = self;
-        sack_blocks.as_option().into_iter()
+        let Self { sack_blocks, timestamp } = self;
+        sack_blocks.as_option().into_iter().chain(timestamp.map(Into::into))
     }
 
     /// Returns true if there are no options present.
     pub fn is_empty(&self) -> bool {
-        let Self { sack_blocks } = self;
-        sack_blocks.is_empty()
+        let Self { sack_blocks, timestamp } = self;
+        sack_blocks.is_empty() && timestamp.is_none()
     }
 }
 
 /// Segment options available on reset segments.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct ResetOptions {
-    // TODO(https://fxbug.dev/360401604): Add the timestamp option.
+    /// The timestamp option.
+    pub timestamp: Option<TimestampOption>,
 }
 
 impl ResetOptions {
     /// Returns an iterator over the contained options.
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
-        core::iter::empty()
+        let Self { timestamp } = self;
+        timestamp.map(Into::into).into_iter()
     }
 }
 
@@ -1488,7 +1517,12 @@ mod test {
 
         let builder = TcpSegmentBuilderWithOptions::new(
             builder,
-            [TcpOption::Mss(1024), TcpOption::WindowScale(10), TcpOption::SackPermitted],
+            [
+                TcpOption::Mss(1024),
+                TcpOption::WindowScale(10),
+                TcpOption::SackPermitted,
+                TcpOption::Timestamp { ts_val: 1, ts_echo_reply: 0 },
+            ],
         )
         .expect("failed to create tcp segment builder");
 
@@ -1505,6 +1539,10 @@ mod test {
                 mss: Some(Mss::new(1024).unwrap()),
                 window_scale: Some(WindowScale::new(10).unwrap()),
                 sack_permitted: true,
+                timestamp: Some(TimestampOption {
+                    ts_val: Timestamp::new(1),
+                    ts_echo_reply: Timestamp::new(0),
+                }),
             }
             .into(),
         };
@@ -1539,6 +1577,7 @@ mod test {
                 mss: Some(Mss::MIN),
                 window_scale: None,
                 sack_permitted: false,
+                timestamp: None,
             }
             .into(),
         };
@@ -1553,9 +1592,14 @@ mod test {
         builder.psh(true);
 
         let sack_blocks = [TcpSackBlock::new(1, 2), TcpSackBlock::new(4, 6)];
-        let builder =
-            TcpSegmentBuilderWithOptions::new(builder, [TcpOption::Sack(&sack_blocks[..])])
-                .expect("failed to create tcp segment builder");
+        let builder = TcpSegmentBuilderWithOptions::new(
+            builder,
+            [
+                TcpOption::Sack(&sack_blocks[..]),
+                TcpOption::Timestamp { ts_val: 1234, ts_echo_reply: 4321 },
+            ],
+        )
+        .expect("failed to create tcp segment builder");
 
         let converted_header =
             SegmentHeader::try_from(&builder).expect("failed to convert serializer");
@@ -1571,6 +1615,10 @@ mod test {
                     SackBlock::try_new(SeqNum::new(1), SeqNum::new(2)).unwrap(),
                     SackBlock::try_new(SeqNum::new(4), SeqNum::new(6)).unwrap(),
                 ]),
+                timestamp: Some(TimestampOption {
+                    ts_val: Timestamp::new(1234),
+                    ts_echo_reply: Timestamp::new(4321),
+                }),
             }
             .into(),
         };
@@ -1595,6 +1643,39 @@ mod test {
             SegmentHeader::try_from(&builder),
             Err(MalformedFlags { syn: true, fin: true, rst: false })
         );
+    }
+
+    #[ip_test(I)]
+    fn from_segment_builder_with_options_reset<I: TestIpExt>() {
+        let mut builder =
+            TcpSegmentBuilder::new(I::SRC_IP, I::DST_IP, SRC_PORT, DST_PORT, 1, Some(2), 3);
+        builder.rst(true);
+
+        let builder = TcpSegmentBuilderWithOptions::new(
+            builder,
+            [TcpOption::Timestamp { ts_val: 1234, ts_echo_reply: 4321 }],
+        )
+        .expect("failed to create tcp segment builder");
+
+        let converted_header =
+            SegmentHeader::try_from(&builder).expect("failed to convert serializer");
+
+        let expected_header = SegmentHeader {
+            seq: SeqNum::new(1),
+            ack: Some(SeqNum::new(2)),
+            wnd: UnscaledWindowSize::from(3u16),
+            control: Some(Control::RST),
+            push: false,
+            options: ResetOptions {
+                timestamp: Some(TimestampOption {
+                    ts_val: Timestamp::new(1234),
+                    ts_echo_reply: Timestamp::new(4321),
+                }),
+            }
+            .into(),
+        };
+
+        assert_eq!(converted_header, expected_header);
     }
 
     #[test_case(Flags {

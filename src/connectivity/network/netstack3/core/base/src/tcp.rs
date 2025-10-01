@@ -7,3 +7,4 @@
 pub mod base;
 pub mod segment;
 pub mod seqnum;
+pub mod timestamp;
