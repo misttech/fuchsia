@@ -2698,17 +2698,12 @@ template("variant_target") {
 
   # IMPORTANT: The computations below are duplicated in several other
   # files. Please keep them in sync, see:
-  #   //build/dist/packaged_shared_library.gni
-  #   //build/fuzzing/v1/fuzzer_package.gni
-  #   //sdk/lib/c/libc_toolchain.gni
+  # LINT.IfChange(variant_selection)
+
   target_variant = false
   excluded_toolchain = false
   if (select_variant_canonical != []) {
     # See if there is a selector that matches this target.
-    # IMPORTANT: The selection logic below is replicated in
-    # //sdk/lib/c/libc_toolchain.gni due to specific
-    # sysroot-related requirements. See comments in this file for
-    # more details. ALWAYS KEEP THEM IN SYNC!
     selected = false
     foreach(selector, select_variant_canonical) {
       # The first match wins.
@@ -2882,6 +2877,8 @@ template("variant_target") {
   if (invoker.variant_shared_redirection) {
     builder_toolchain += "-shared"
   }
+
+  # LINT.ThenChange(//build/dist/packaged_shared_library.gni:variant_selection, //build/fuzzing/fuchsia_fuzzer_package.gni:variant_selection, //sdk/lib/c/libc_toolchain.gni:variant_selection)
 
   if (current_toolchain == builder_toolchain) {
     # This is the toolchain selected to actually build this target.
