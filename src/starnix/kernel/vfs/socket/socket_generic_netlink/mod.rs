@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use futures::FutureExt;
 use futures::channel::mpsc;
 use futures::future::join;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -95,6 +96,8 @@ struct GenericNetlinkServerState<S> {
     /// Servers for specific generic netlink families. Servers are stored in this
     /// list by order of ID, such that protocol N is in servers[N - MIN_FAMILY_ID].
     families: Vec<Arc<dyn GenericNetlinkFamily<S>>>,
+    /// Sink for new families to setup multicast group handling.
+    new_family_sender: mpsc::UnboundedSender<Arc<dyn GenericNetlinkFamily<S>>>,
     /// Multicast groups, identified by (family name, group name). Multicast
     /// group IDs are assigned uniquely across all generic families.
     multicast_groups: HashMap<(String, String), ModernGroup>,
@@ -109,10 +112,11 @@ struct GenericNetlinkServerState<S> {
 }
 
 impl<S: Sender<GenericMessage>> GenericNetlinkServerState<S> {
-    fn new() -> Self {
+    fn new(new_family_sender: mpsc::UnboundedSender<Arc<dyn GenericNetlinkFamily<S>>>) -> Self {
         Self {
             family_ids: HashMap::new(),
             families: vec![],
+            new_family_sender,
             multicast_groups: HashMap::new(),
             multicast_group_id_counter: ModernGroup(0),
             client_id_counter: ClientId(0),
@@ -125,6 +129,15 @@ impl<S: Sender<GenericMessage>> GenericNetlinkServerState<S> {
         match (self.families.len() as u16).checked_add(MIN_FAMILY_ID) {
             Some(new_family_id) => {
                 self.family_ids.insert(family.name(), new_family_id);
+                if let Err(e) = self.new_family_sender.unbounded_send(Arc::clone(&family)) {
+                    log_error!(
+                        tag = NETLINK_LOG_TAG;
+                        "Failed to setup multicast group handling for new generic \
+                         netlink family {}: {}",
+                        family.name(),
+                        e
+                    );
+                }
                 self.families.push(family);
             }
             None => {
@@ -307,8 +320,8 @@ struct GenericNetlinkServer<S> {
 }
 
 impl<S: Sender<GenericMessage>> GenericNetlinkServer<S> {
-    fn new() -> Self {
-        Self { state: Arc::new(Mutex::new(GenericNetlinkServerState::new())) }
+    fn new(new_family_sender: mpsc::UnboundedSender<Arc<dyn GenericNetlinkFamily<S>>>) -> Self {
+        Self { state: Arc::new(Mutex::new(GenericNetlinkServerState::new(new_family_sender))) }
     }
 
     async fn handle_generic_message(
@@ -398,28 +411,18 @@ impl<S: Sender<GenericMessage>> GenericNetlinkServer<S> {
         fut.await;
     }
 
-    async fn pipe_multicast_traffic(self) {
-        // Clone the list of families to avoid holding a lock across an await.
-        // We need to revisit this if we want to add dynamic family support.
-        let mut families = self.state.lock().families.clone();
-
+    async fn pipe_multicast_traffic_for_family(self, family: Arc<dyn GenericNetlinkFamily<S>>) {
         let unordered = FuturesUnordered::new();
-        for family in &mut families {
-            let family_name = family.name().to_string();
-            let family_id =
-                *self.state.lock().family_ids.get(&family_name).expect("Failed to get family id");
-            for mcast_group in family.multicast_groups() {
-                let mcast_group_id = self
-                    .state
-                    .lock()
-                    .get_multicast_group_id(family_name.clone(), mcast_group.clone());
-                let (sink, receiver) = mpsc::unbounded();
-                unordered.push(family.stream_multicast_messages(mcast_group, family_id, sink));
-                unordered
-                    .push(Box::pin(self.pipe_single_multicast_group(mcast_group_id, receiver)));
-            }
+        let family_name = family.name().to_string();
+        let family_id =
+            *self.state.lock().family_ids.get(&family_name).expect("Failed to get family id");
+        for mcast_group in family.multicast_groups() {
+            let mcast_group_id =
+                self.state.lock().get_multicast_group_id(family_name.clone(), mcast_group.clone());
+            let (sink, receiver) = mpsc::unbounded();
+            unordered.push(family.stream_multicast_messages(mcast_group, family_id, sink));
+            unordered.push(Box::pin(self.pipe_single_multicast_group(mcast_group_id, receiver)));
         }
-
         unordered.collect::<Vec<()>>().await;
     }
 }
@@ -433,6 +436,7 @@ pub(crate) struct GenericNetlinkClient<S> {
 pub struct GenericNetlinkWorkerParams<S: Sender<GenericMessage>> {
     server: GenericNetlinkServer<S>,
     new_client_receiver: mpsc::UnboundedReceiver<GenericNetlinkClient<S>>,
+    new_family_receiver: mpsc::UnboundedReceiver<Arc<dyn GenericNetlinkFamily<S>>>,
 }
 
 pub async fn run_generic_netlink_worker<S: Sender<GenericMessage>>(
@@ -469,15 +473,19 @@ pub async fn run_generic_netlink_worker<S: Sender<GenericMessage>>(
     run_generic_netlink_worker_internal(params).await
 }
 
-async fn run_generic_netlink_worker_internal<S: Sender<GenericMessage>>(
+fn run_generic_netlink_worker_internal<S: Sender<GenericMessage>>(
     params: GenericNetlinkWorkerParams<S>,
-) {
-    let GenericNetlinkWorkerParams { server, new_client_receiver } = params;
-    let multicast_fut = server.clone().pipe_multicast_traffic();
-    let new_client_fut = new_client_receiver
-        .for_each_concurrent(None, |client| server.clone().run_generic_netlink_client(client));
+) -> impl std::future::Future<Output = ()> + Send {
+    let GenericNetlinkWorkerParams { server, new_client_receiver, new_family_receiver } = params;
 
-    join(new_client_fut, multicast_fut).await;
+    let server_clone = server.clone();
+    let multicast_fut = new_family_receiver.for_each_concurrent(None, move |family| {
+        server_clone.clone().pipe_multicast_traffic_for_family(family)
+    });
+    let new_client_fut = new_client_receiver
+        .for_each_concurrent(None, move |client| server.clone().run_generic_netlink_client(client));
+
+    join(new_client_fut, multicast_fut).map(|_| ())
 }
 
 pub struct GenericNetlink<S> {
@@ -488,9 +496,11 @@ pub struct GenericNetlink<S> {
 impl<S: Sender<GenericMessage>> GenericNetlink<S> {
     pub fn new() -> (Self, GenericNetlinkWorkerParams<S>) {
         let (new_client_sender, new_client_receiver) = mpsc::unbounded();
-        let server = GenericNetlinkServer::new();
+        let (new_family_sender, new_family_receiver) = mpsc::unbounded();
+        let server = GenericNetlinkServer::new(new_family_sender);
         let generic_netlink = Self { server: server.clone(), new_client_sender };
-        let worker_params = GenericNetlinkWorkerParams { server, new_client_receiver };
+        let worker_params =
+            GenericNetlinkWorkerParams { server, new_client_receiver, new_family_receiver };
         (generic_netlink, worker_params)
     }
 
