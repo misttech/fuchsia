@@ -26,7 +26,18 @@ closed protocol InputReportsReader {
     /// report available.
     /// If there is already one outstanding Hanging-Get, calling this
     /// again will return ZX_ERR_ALREADY_BOUND.
+    @available(replaced=NEXT)
     strict ReadInputReports() -> (struct {
+        reports vector<InputReport>:MAX_DEVICE_REPORT_COUNT;
+    }) error zx.Status;
+
+    /// This is a Hanging-Get function to read the reports in the
+    /// InputReport FIFO. This will not reply until there is at least one
+    /// report available.
+    /// If there is already one outstanding Hanging-Get, calling this
+    /// again will return ZX_ERR_ALREADY_BOUND.
+    @available(added=NEXT)
+    strict ReadInputReports() -> (resource struct {
         reports vector<InputReport>:MAX_DEVICE_REPORT_COUNT;
     }) error zx.Status;
 };
@@ -72,9 +83,22 @@ open protocol InputDevice {
     /// method can be used to request a report from the device type indicated.
     /// Does not block, and returns ZX_ERR_NOT_SUPPORTED if `GetInputReport` or
     /// `device_type` are not supported.
+    @available(replaced=NEXT)
     strict GetInputReport(struct {
         device_type DeviceType;
     }) -> (struct {
+        report InputReport;
+    }) error zx.Status;
+
+    /// For general cases, InputReportReader is the preferred way of getting
+    /// InputReports. For devices that don't send InputReports naturally, this
+    /// method can be used to request a report from the device type indicated.
+    /// Does not block, and returns ZX_ERR_NOT_SUPPORTED if `GetInputReport` or
+    /// `device_type` are not supported.
+    @available(added=NEXT)
+    strict GetInputReport(struct {
+        device_type DeviceType;
+    }) -> (resource struct {
         report InputReport;
     }) error zx.Status;
 };

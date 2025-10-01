@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_input_report::{
     InputReport, InputReportsReaderRequest, InputReportsReaderRequestStream,
 };
@@ -57,7 +57,7 @@ impl InputReportsReader {
                 match request_and_reports {
                     (InputReportsReaderRequest::ReadInputReports { responder }, reports) => {
                         responder
-                            .send(Ok(&reports))
+                            .send(Ok(reports))
                             .map_err(anyhow::Error::from)
                             .context("while sending reports")
                     }
@@ -209,8 +209,8 @@ mod tests {
         }
 
         #[fasync::run_until_stalled(test)]
-        async fn resolves_to_err_when_request_stream_is_terminated_before_reports_are_written(
-        ) -> Result<(), Error> {
+        async fn resolves_to_err_when_request_stream_is_terminated_before_reports_are_written()
+        -> Result<(), Error> {
             let (proxy, request_stream) =
                 endpoints::create_proxy_and_stream::<InputReportsReaderMarker>();
             let (report_sender, report_receiver) =
