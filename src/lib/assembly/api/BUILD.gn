@@ -13,6 +13,7 @@ rustc_library("api") {
   version = "0.1.0"
   with_unit_tests = true
   deps = [
+    "//src/developer/ffx/config:lib",
     "//src/lib/assembly/cli_args",
     "//src/lib/assembly/tool",
     "//third_party/rust_crates:anyhow",

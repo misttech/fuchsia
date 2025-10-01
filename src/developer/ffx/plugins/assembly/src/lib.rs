@@ -38,7 +38,7 @@ impl FfxMain for AssemblyTool {
                     .context("Create Update Package")
             }
             OperationClass::Product(args) => {
-                product_assembly(args.into()).context("Product Assembly").map(|_| ())
+                product_assembly(&self.context, args.into()).context("Product Assembly").map(|_| ())
             }
             OperationClass::SizeCheck(args) => match args.op_class {
                 SizeCheckOperationClass::Package(args) => {

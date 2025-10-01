@@ -230,9 +230,12 @@ async fn sanitized_product_bundle_create(
     let tools = PlatformToolProvider::new(assembly.platform_path.clone());
     let should_configure_example =
         context.get::<bool, _>("assembly_example_enabled").unwrap_or_default();
-    let system =
-        Box::pin(assembly.create_system(should_configure_example, &tmp_path.join("system")))
-            .await?;
+    let system = Box::pin(assembly.create_system(
+        context,
+        should_configure_example,
+        &tmp_path.join("system"),
+    ))
+    .await?;
     let mut builder = ProductBundleBuilder::new(name, version)
         .system(system, Slot::A)
         .update_package(update_version_file, 1);

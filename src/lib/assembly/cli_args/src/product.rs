@@ -4,6 +4,7 @@
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
+use ffx_config::EnvironmentContext;
 use serde::Serialize;
 use std::fmt;
 use std::str::FromStr;
@@ -66,7 +67,7 @@ pub struct ProductArgs {
 
 impl ProductArgs {
     /// convert args struct to string vector
-    pub fn to_vec(&self) -> Vec<String> {
+    pub fn to_vec(&self, context: &EnvironmentContext) -> Vec<String> {
         let mut args = vec![
             "product".to_string(),
             "--product".to_string(),
@@ -101,7 +102,7 @@ impl ProductArgs {
             args.push(path.to_string());
         }
 
-        if ffx_config::get::<bool, _>("assembly_example_enabled").unwrap_or_default() {
+        if context.get::<bool, _>("assembly_example_enabled").unwrap_or_default() {
             args.push("--include-example-aib-for-tests".to_string());
             args.push(true.to_string());
         }

@@ -8,11 +8,15 @@ use assembly_cli_args::{
 };
 use assembly_tool::{PlatformToolProvider, ToolProvider};
 use camino::Utf8PathBuf;
+use ffx_config::EnvironmentContext;
 
-pub fn product_assembly(args: ProductArgs) -> Result<ProductAssemblyOutputs> {
+pub fn product_assembly(
+    context: &EnvironmentContext,
+    args: ProductArgs,
+) -> Result<ProductAssemblyOutputs> {
     let tools = PlatformToolProvider::new(args.input_bundles_dir.clone());
     let assembly_tool = tools.get_tool("assembly")?;
-    assembly_tool.run(&args.to_vec())?;
+    assembly_tool.run(&args.to_vec(context))?;
 
     let outputs = ProductAssemblyOutputs::from(args);
     Ok(outputs)
@@ -27,7 +31,7 @@ pub fn create_system(args: CreateSystemArgs) -> Result<CreateSystemOutputs> {
     Ok(outputs)
 }
 
-pub fn assemble(args: ProductArgs) -> Result<CreateSystemOutputs> {
+pub fn assemble(context: &EnvironmentContext, args: ProductArgs) -> Result<CreateSystemOutputs> {
     // Create a temporary directory for the product assembly outputs.
     // We cannot use the directories in `args`, because those are reserved for
     // the system.
@@ -36,7 +40,7 @@ pub fn assemble(args: ProductArgs) -> Result<CreateSystemOutputs> {
     let product_out = product_tmp.join("out");
     let product_gen = product_tmp.join("gen");
     let product_args = ProductArgs { outdir: product_out, gendir: product_gen, ..args };
-    let product_outputs = product_assembly(product_args)?;
+    let product_outputs = product_assembly(context, product_args)?;
 
     // The system is written to the outdir/gendir passed in with `args`.
     let create_system_args =
@@ -54,6 +58,7 @@ mod tests {
 
     #[test]
     fn product_assembly() {
+        let env = ffx_config::test_env().build().unwrap();
         let tools = FakeToolProvider::default();
         let assembly_tool = tools.get_tool("assembly").unwrap();
 
@@ -77,7 +82,7 @@ mod tests {
             include_example_aib_for_tests: Some(false),
             mode: Default::default(),
         };
-        assembly_tool.run(&args.to_vec()).unwrap();
+        assembly_tool.run(&args.to_vec(&env.context)).unwrap();
 
         let _outputs = ProductAssemblyOutputs::from(args);
 

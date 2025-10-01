@@ -10,6 +10,7 @@ use assembly_config_schema::{BoardConfig, ProductConfig};
 use assembly_container::AssemblyContainer;
 use assembly_platform_artifacts::PlatformArtifacts;
 use camino::Utf8PathBuf;
+use ffx_config::EnvironmentContext;
 
 pub struct Assembly {
     pub platform_path: Utf8PathBuf,
@@ -65,6 +66,7 @@ impl Assembly {
 
     pub async fn create_system(
         self,
+        context: &EnvironmentContext,
         should_configure_example: bool,
         outdir: &Utf8PathBuf,
     ) -> Result<AssembledSystem> {
@@ -85,7 +87,7 @@ impl Assembly {
             include_example_aib_for_tests: Some(should_configure_example),
             mode: Default::default(),
         };
-        let create_system_outputs = assembly_api::assemble(args)?;
+        let create_system_outputs = assembly_api::assemble(context, args)?;
         AssembledSystem::from_dir(create_system_outputs.outdir)
     }
 }
