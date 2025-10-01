@@ -415,10 +415,6 @@ static int join_tester_server(void* arg) {
 bool join_test() {
   BEGIN_TEST;
 
-  // TODO(https://fxbug.dev/439836795): re-enable when it passes
-  printf("this test is disabled: https://fxbug.dev/439836795\n");
-  END_TEST;
-
   int ret;
   Thread* t;
 

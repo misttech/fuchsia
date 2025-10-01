@@ -838,9 +838,15 @@ zx_status_t Thread::Join(int* out_retcode, zx_instant_mono_t deadline) {
 
 zx_status_t Thread::Detach() {
   canary_.Assert();
+
+  enum class JoinThread : bool {
+    No,
+    Yes,
+  };
+
   const auto do_transaction =
       [&]() TA_REQ(chainlock_transaction_token,
-                   preempt_disabled_token) -> ChainLockTransaction::Result<zx_status_t> {
+                   preempt_disabled_token) -> ChainLockTransaction::Result<JoinThread> {
     // Lock the target thread's state before proceeding.
     ChainLockGuard guard{get_lock()};
 
@@ -855,17 +861,27 @@ zx_status_t Thread::Detach() {
     // If the target thread is not yet dead, flag it as detached and get out.
     if (state() != THREAD_DEATH) {
       flags_ |= THREAD_FLAG_DETACHED;
-      return ZX_OK;
+      return JoinThread::No;
     }
 
     // Looks like the thread has already died.  Make sure the DETACHED flag has
-    // been cleared (so that Join continues), then drop our lock and Join to
-    // finish the cleanup.
+    // been cleared (so that Join continues).
     flags_ &= ~THREAD_FLAG_DETACHED;  // makes sure Join continues
-    return Join(nullptr, 0);
+    // Drop our lock and Join to finish the cleanup.
+    return JoinThread::Yes;
   };
-  return ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption, CLT_TAG("Thread::Detach"),
-                                         do_transaction);
+
+  JoinThread result = ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption,
+                                                      CLT_TAG("Thread::Detach"), do_transaction);
+
+  if (result == JoinThread::Yes) {
+    // The thread was already dead, meaning we are the only ones positioned to do the cleanup.
+    //
+    // This Thread::Join cannot be moved inside do_transaction, as it creates its own
+    // ChainLockTransaction, and nested transactions are not allowed.
+    return Join(nullptr, 0);
+  }
+  return ZX_OK;
 }
 
 // called back in the DPC worker thread to free the stack and/or the thread structure
