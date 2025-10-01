@@ -323,6 +323,13 @@ impl Call {
             );
         }
         self.number = number;
+
+        // This is a hack.  If +CLCC doesn't contain the number for this call,
+        // we probably won't get it and so set it to the empty string so as to
+        // be able to respond to WatchNextCall.
+        if self.number.is_none() {
+            self.number = Some(Number::from(""));
+        }
     }
 
     // The watch_state_hanging_get_matcher stream should be drained affer calling this method, as
