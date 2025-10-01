@@ -10,6 +10,7 @@ import("//build/test.gni")
 
 library_headers("headers") {
   headers = [
+    "lib/power-management/bandwidth-reservation-cache.h",
     "lib/power-management/energy-model.h",
     "lib/power-management/power-state.h",
     "lib/power-management/power-level-controller.h",
@@ -70,6 +71,7 @@ if (is_kernel) {
 
 test("power-management-unittests") {
   sources = [
+    "bandwidth-reservation-cache-test.cc",
     "energy-model-test.cc",
     "power-state-test.cc",
     "test-helper.cc",
