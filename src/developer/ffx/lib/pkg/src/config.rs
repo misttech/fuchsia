@@ -73,8 +73,8 @@ pub async fn repository_listen_addr(
 }
 
 /// Return the default repository from the configuration if set.
-pub async fn get_default_repository() -> Result<Option<String>> {
-    ffx_config::get(CONFIG_KEY_DEFAULT_REPOSITORY).map_err(Into::into)
+pub async fn get_default_repository(context: &EnvironmentContext) -> Result<Option<String>> {
+    context.get(CONFIG_KEY_DEFAULT_REPOSITORY).map_err(Into::into)
 }
 
 /// Sets the default repository from the config.
@@ -104,7 +104,7 @@ mod tests {
         env.context.query(CONFIG_KEY_ROOT).level(Some(ConfigLevel::User)).set(json!({})).unwrap();
 
         // Initially there's no default.
-        assert_eq!(get_default_repository().await.unwrap(), None);
+        assert_eq!(get_default_repository(&env.context).await.unwrap(), None);
 
         // Setting the default should write to the config.
         set_default_repository("foo").await.unwrap();
@@ -112,7 +112,7 @@ mod tests {
             env.context.get::<Value, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
             json!("foo"),
         );
-        assert_eq!(get_default_repository().await.unwrap(), Some("foo".into()));
+        assert_eq!(get_default_repository(&env.context).await.unwrap(), Some("foo".into()));
 
         // We don't care if the repository has `.` in it.
         set_default_repository("foo.bar").await.unwrap();
@@ -120,7 +120,7 @@ mod tests {
             env.context.get::<Value, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
             json!("foo.bar"),
         );
-        assert_eq!(get_default_repository().await.unwrap(), Some("foo.bar".into()));
+        assert_eq!(get_default_repository(&env.context).await.unwrap(), Some("foo.bar".into()));
 
         // Unset removes the default repository from the config.
         unset_default_repository().await.unwrap();
@@ -128,7 +128,7 @@ mod tests {
             env.context.get::<Option<Value>, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
             None,
         );
-        assert_eq!(get_default_repository().await.unwrap(), None);
+        assert_eq!(get_default_repository(&env.context).await.unwrap(), None);
 
         // Unsetting the repo again returns an error.
         assert!(unset_default_repository().await.is_err());

@@ -42,7 +42,7 @@ impl FfxMain for DeregisterTool {
         let repo_name = if let Some(name) = &self.cmd.repository {
             Some(name.to_string())
         } else {
-            pkg::config::get_default_repository().await?
+            pkg::config::get_default_repository(&self.context).await?
         }
         .ok_or_else(|| {
             user_error!(

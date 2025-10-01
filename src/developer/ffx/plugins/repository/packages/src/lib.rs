@@ -343,7 +343,7 @@ async fn connect_to_repo(
             }
         }
         RepoIdArgs::Default => {
-            if let Some(repo_name) = pkg::config::get_default_repository().await? {
+            if let Some(repo_name) = pkg::config::get_default_repository(&context).await? {
                 // Otherwise, check if the default repository exists. Don't error out if
                 // it doesn't.
                 if let Some(spec) = repo_spec_from_running_server(&context, repo_name, None)? {
