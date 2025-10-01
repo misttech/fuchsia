@@ -77,7 +77,6 @@ rustc_library("lib") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//src/lib/network/fidl_fuchsia_net_routes_ext",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:test-case",
   ]

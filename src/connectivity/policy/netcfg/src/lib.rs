@@ -3886,9 +3886,8 @@ mod tests {
         }
     }
 
-    lazy_static::lazy_static! {
-        static ref DEFAULT_ALLOWED_UPSTREAM_DEVICE_CLASSES: HashSet<DeviceClass> = HashSet::new();
-    }
+    static DEFAULT_ALLOWED_UPSTREAM_DEVICE_CLASSES: std::sync::LazyLock<HashSet<DeviceClass>> =
+        std::sync::LazyLock::new(HashSet::new);
 
     struct NetcfgTestArgs {
         with_dhcpv4_client_provider: bool,
