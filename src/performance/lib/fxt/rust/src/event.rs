@@ -6,12 +6,12 @@ use crate::args::{Arg, RawArg, RawArgValue};
 use crate::fxt_builder::{FxtBuilder, SerializeError};
 use crate::init::Ticks;
 use crate::session::ResolveCtx;
-use crate::string::{StringRef, STRING_REF_INLINE_BIT};
+use crate::string::{STRING_REF_INLINE_BIT, StringRef};
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRef};
-use crate::{trace_header, ParseResult, Provider, EVENT_RECORD_TYPE};
+use crate::{EVENT_RECORD_TYPE, ParseResult, Provider, trace_header};
 use flyweights::FlyStr;
-use nom::number::complete::le_u64;
 use nom::Parser;
+use nom::number::complete::le_u64;
 
 pub(crate) const INSTANT_EVENT_TYPE: u8 = 0;
 pub(crate) const COUNTER_EVENT_TYPE: u8 = 1;
@@ -86,14 +86,14 @@ impl EventRecord {
 
 #[derive(Debug, PartialEq)]
 pub struct RawEventRecord<'a> {
-    event_type: u8,
-    ticks: Ticks,
-    process: ProcessRef,
-    thread: ThreadRef,
-    category: StringRef<'a>,
+    pub(crate) event_type: u8,
+    pub(crate) ticks: Ticks,
+    pub(crate) process: ProcessRef,
+    pub(crate) thread: ThreadRef,
+    pub(crate) category: StringRef<'a>,
     pub name: StringRef<'a>,
     pub args: Vec<RawArg<'a>>,
-    payload: EventPayload<Ticks>,
+    pub(crate) payload: EventPayload<Ticks>,
 }
 
 impl<'a> RawEventRecord<'a> {
@@ -273,7 +273,7 @@ impl EventPayload<Ticks> {
 mod tests {
     use super::*;
     use crate::RawTraceRecord;
-    use std::num::{NonZeroU16, NonZeroU8};
+    use std::num::{NonZeroU8, NonZeroU16};
 
     #[test]
     fn event_no_args() {

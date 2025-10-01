@@ -14,7 +14,7 @@ use crate::{ParseError, ParsedWithOriginalBytes, RawTraceRecord, TraceRecord};
 use flyweights::FlyStr;
 use futures::{AsyncRead, AsyncReadExt, SinkExt, Stream};
 use std::collections::BTreeMap;
-use std::num::{NonZeroU16, NonZeroU8};
+use std::num::{NonZeroU8, NonZeroU16};
 use std::sync::Mutex;
 
 pub fn parse_full_session<'a>(
@@ -217,7 +217,7 @@ pub(crate) struct ResolveCtx {
     ticks_per_second: u64,
     current_provider: Option<Provider>,
     providers: BTreeMap<u32, FlyStr>,
-    strings: BTreeMap<NonZeroU16, FlyStr>,
+    strings: BTreeMap<u32, BTreeMap<NonZeroU16, FlyStr>>,
     threads: BTreeMap<NonZeroU8, (ProcessKoid, ThreadKoid)>,
     warnings: Mutex<Vec<ParseWarning>>,
 }
@@ -294,8 +294,12 @@ impl ResolveCtx {
     }
 
     pub fn on_string_record(&mut self, s: StringRecord<'_>) {
+        let Some(ref current_provider) = self.current_provider else {
+            self.add_warning(ParseWarning::MissingProviderId);
+            return;
+        };
         if let Some(idx) = NonZeroU16::new(s.index) {
-            self.strings.insert(idx, s.value.into());
+            self.strings.entry(current_provider.id).or_default().insert(idx, s.value.into());
         } else {
             self.add_warning(ParseWarning::RecordForZeroStringId);
         }
@@ -310,7 +314,15 @@ impl ResolveCtx {
             StringRef::Empty => FlyStr::default(),
             StringRef::Inline(inline) => FlyStr::from(inline),
             StringRef::Index(id) => {
-                if let Some(s) = self.strings.get(&id).cloned() {
+                let Some(ref current_provider) = self.current_provider else {
+                    self.add_warning(ParseWarning::MissingProviderId);
+                    return "<unknown>".into();
+                };
+                let Some(ref string_table) = self.strings.get(&current_provider.id) else {
+                    self.add_warning(ParseWarning::UnknownStringId(id));
+                    return "<unknown>".into();
+                };
+                if let Some(s) = string_table.get(&id).cloned() {
                     s
                 } else {
                     self.add_warning(ParseWarning::UnknownStringId(id));
@@ -355,10 +367,13 @@ impl ResolveCtx {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
+
     use super::*;
     use crate::event::{EventPayload, EventRecord};
     use crate::fxt_builder::FxtBuilder;
     use crate::scheduling::{LegacyContextSwitchEvent, SchedulingRecord, ThreadState};
+    use crate::{RawEventRecord, RawTraceRecord};
     use futures::{StreamExt, TryStreamExt};
 
     static SIMPLE_TRACE_FXT: &[u8] =
@@ -664,5 +679,96 @@ mod tests {
             // There should be no warnings produced from these tests.
             vec![],
         )
+    }
+
+    #[fuchsia::test]
+    fn per_provider_strings() {
+        let raw_records = vec![
+            RawTraceRecord::Metadata(MetadataRecord::ProviderSection(
+                ProviderSectionMetadataRecord { provider_id: 1 },
+            )),
+            // Ensure that if we define the same string index multiple times, it's
+            // disambiguated per provider
+            RawTraceRecord::String(StringRecord { index: 1, value: "cat_1_1" }),
+            RawTraceRecord::String(StringRecord { index: 2, value: "name_1_2" }),
+            RawTraceRecord::Event(RawEventRecord {
+                event_type: 0, // Instant
+                ticks: Ticks(1),
+                process: ProcessRef::Inline(ProcessKoid(1)),
+                thread: ThreadRef::Inline(ThreadKoid(2)),
+                category: StringRef::Index(NonZero::new(1).unwrap()),
+                name: StringRef::Index(NonZero::new(2).unwrap()),
+                args: vec![],
+                payload: EventPayload::Instant,
+            }),
+            RawTraceRecord::Metadata(MetadataRecord::ProviderSection(
+                ProviderSectionMetadataRecord { provider_id: 2 },
+            )),
+            RawTraceRecord::String(StringRecord { index: 1, value: "cat_2_1" }),
+            RawTraceRecord::String(StringRecord { index: 2, value: "name_2_2" }),
+            RawTraceRecord::Event(RawEventRecord {
+                event_type: 0, // Instant
+                ticks: Ticks(2),
+                process: ProcessRef::Inline(ProcessKoid(3)),
+                thread: ThreadRef::Inline(ThreadKoid(4)),
+                category: StringRef::Index(NonZero::new(1).unwrap()),
+                name: StringRef::Index(NonZero::new(2).unwrap()),
+                args: vec![],
+                payload: EventPayload::Instant,
+            }),
+            // Back to the first provider
+            RawTraceRecord::Metadata(MetadataRecord::ProviderSection(
+                ProviderSectionMetadataRecord { provider_id: 1 },
+            )),
+            RawTraceRecord::Event(RawEventRecord {
+                event_type: 0, // Instant
+                ticks: Ticks(3),
+                process: ProcessRef::Inline(ProcessKoid(1)),
+                thread: ThreadRef::Inline(ThreadKoid(2)),
+                category: StringRef::Index(NonZero::new(1).unwrap()),
+                name: StringRef::Index(NonZero::new(2).unwrap()),
+                args: vec![],
+                payload: EventPayload::Instant,
+            }),
+        ];
+        let mut resolve_ctx = ResolveCtx::new();
+        let resolved: Vec<_> =
+            raw_records.into_iter().map(|r| TraceRecord::resolve(&mut resolve_ctx, r)).collect();
+        let event1 = resolved[3]
+            .as_ref()
+            .expect("Failed to parse")
+            .as_ref()
+            .expect("Expected ResolvedRecord");
+        let event2 = resolved[7]
+            .as_ref()
+            .expect("Failed to parse")
+            .as_ref()
+            .expect("Expected ResolvedRecord");
+        let event3 = resolved[9]
+            .as_ref()
+            .expect("Failed to parse")
+            .as_ref()
+            .expect("Expected ResolvedRecord");
+        match event1 {
+            TraceRecord::Event(event_record) => {
+                assert_eq!(event_record.category, "cat_1_1");
+                assert_eq!(event_record.name, "name_1_2");
+            }
+            _ => assert!(false),
+        };
+        match event2 {
+            TraceRecord::Event(event_record) => {
+                assert_eq!(event_record.category, "cat_2_1");
+                assert_eq!(event_record.name, "name_2_2");
+            }
+            _ => assert!(false),
+        };
+        match event3 {
+            TraceRecord::Event(event_record) => {
+                assert_eq!(event_record.category, "cat_1_1");
+                assert_eq!(event_record.name, "name_1_2");
+            }
+            _ => assert!(false),
+        };
     }
 }

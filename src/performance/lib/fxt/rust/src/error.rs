@@ -100,4 +100,7 @@ pub enum ParseWarning {
 
     #[error("encountered unknown profiler record type {_0}")]
     UnknownProfilerRecordType(u8),
+
+    #[error("encountered a record without a provider set")]
+    MissingProviderId,
 }
