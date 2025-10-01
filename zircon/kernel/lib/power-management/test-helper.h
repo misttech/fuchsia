@@ -42,8 +42,29 @@ inline bool IsSameCpuSet(const zx_cpu_set_t& a, const zx_cpu_set_t& b) {
   return memcmp(&a, &b, sizeof(zx_cpu_set_t)) == 0;
 }
 
+struct FakePowerLevelController : public power_management::PowerLevelController {
+  FakePowerLevelController()
+      : PowerLevelController(power_management::ControlInterface::kCpuDriver) {}
+
+  zx::result<uint32_t> Post(const power_management::PowerLevelUpdateRequest& pending) final {
+    return zx::ok(0);
+  }
+
+  zx::result<uint64_t> GetCurrentPowerLevel(uint32_t domain_id) const {
+    if (current_power_level.has_value()) {
+      return zx::ok(current_power_level.value());
+    }
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  uint64_t id() const final { return 0; }
+
+  std::optional<uint64_t> current_power_level;
+};
+
 inline auto MakePowerDomain(uint32_t id, power_management::EnergyModel& model, zx_cpu_set_t cpus) {
-  return fbl::MakeRefCounted<power_management::PowerDomain>(id, cpus, std::move(model));
+  return fbl::MakeRefCounted<power_management::PowerDomain>(
+      id, cpus, std::move(model), fbl::MakeRefCounted<FakePowerLevelController>());
 }
 
 template <typename... Cpus>

@@ -78,12 +78,16 @@ TEST(PowerStateTest, UpdateDomainKeepsPowerLevelWhenSameModelId) {
 
   EXPECT_TRUE(registry.Register(domain).is_ok());
   ASSERT_EQ(state.domain(), domain.get());
-  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
+  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel + 1).status_value());
+
+  static_cast<FakePowerLevelController*>(domain2->controller().get())->current_power_level =
+      kMinActivePowerLevel;
 
   EXPECT_TRUE(registry.Register(domain2).is_ok());
+  EXPECT_EQ(registry.power_domain_set().count(), 1u);
   EXPECT_EQ(state.domain(), domain2.get());
   EXPECT_EQ(state.active_power_level(), kMinActivePowerLevel);
-  EXPECT_FALSE(state.desired_active_power_level());
+  EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel);
 }
 
 TEST(PowerStateTest, UpdateDomainClearsPowerLevelWhenDifferentModelId) {
@@ -97,12 +101,16 @@ TEST(PowerStateTest, UpdateDomainClearsPowerLevelWhenDifferentModelId) {
 
   EXPECT_TRUE(registry.Register(domain).is_ok());
   ASSERT_EQ(state.domain(), domain.get());
-  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
+  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel + 1).status_value());
+
+  static_cast<FakePowerLevelController*>(domain2->controller().get())->current_power_level =
+      kMinActivePowerLevel;
 
   EXPECT_TRUE(registry.Register(domain2).is_ok());
+  EXPECT_EQ(registry.power_domain_set().count(), 1u);
   EXPECT_EQ(state.domain(), domain2.get());
-  EXPECT_FALSE(state.active_power_level());
-  EXPECT_FALSE(state.desired_active_power_level());
+  EXPECT_EQ(state.active_power_level(), kMinActivePowerLevel);
+  EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel);
 }
 
 TEST(PowerStateTest, UpdateDomainNullptrClearsState) {

@@ -13,6 +13,7 @@ library_headers("headers") {
     "lib/power-management/energy-model.h",
     "lib/power-management/power-state.h",
     "lib/power-management/power-level-controller.h",
+    "lib/power-management/types.h",
   ]
 
   public_deps = [
@@ -23,6 +24,7 @@ library_headers("headers") {
 
   if (is_kernel) {
     headers += [
+      "lib/power-management/pdev-power-level-controller.h",
       "lib/power-management/port-power-level-controller.h",
       "lib/power-management/kernel-registry.h",
     ]
@@ -40,9 +42,13 @@ source_set("power-management") {
   if (is_kernel) {
     sources += [
       "kernel-registry.cc",
+      "pdev-power-level-controller.cc",
       "port-power-level-controller.cc",
     ]
-    deps += [ "//zircon/kernel/lib/ktl" ]
+    deps += [
+      "//zircon/kernel/dev/pdev/power",
+      "//zircon/kernel/lib/ktl",
+    ]
   }
 }
 

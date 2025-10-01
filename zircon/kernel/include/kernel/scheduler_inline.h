@@ -14,6 +14,7 @@
 
 #include <lib/kconcurrent/chainlock_transaction.h>
 
+#include <arch/interrupt.h>
 #include <arch/mp.h>
 #include <ffl/fixed_format.h>
 #include <kernel/scheduler.h>
@@ -159,6 +160,15 @@ inline void Scheduler::RescheduleMask(cpu_mask_t cpus_to_reschedule_mask) {
     // Nope, can't do it now.  Make a note for later.
     preemption_state.preempts_pending_add(local_cpu);
   }
+}
+
+inline void Scheduler::RescheduleCpus(cpu_mask_t cpu_mask) {
+  InterruptDisableGuard interrupt_disable;
+  // TODO(eieio): See if IPIs to idle CPUs can be elided. This may require
+  // refactoring some code that updates scheduler bookkeeping and trace
+  // counters, such that the modifying CPU does all of the work so the target
+  // CPU can remain idle.
+  RescheduleMask(cpu_mask);
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_INLINE_H_

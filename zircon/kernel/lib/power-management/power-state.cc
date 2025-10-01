@@ -11,6 +11,7 @@
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 
+#include <algorithm>
 #include <optional>
 
 #include <fbl/ref_ptr.h>
@@ -25,19 +26,25 @@ PowerDomainSet PowerState::UpdatePowerDomainSet(PowerDomainSet power_domain_set,
                                                      std::memory_order_relaxed);
   }
 
-  if (!domain || (domain_ && domain->id() != domain_->id())) {
-    active_power_level_ = std::nullopt;
-    desired_active_power_level_ = std::nullopt;
-  }
-
+  active_power_level_ = desired_active_power_level_ = std::nullopt;
   if (domain) {
+    const zx::result<uint64_t> control_argument_result =
+        domain->controller()->GetCurrentPowerLevel(domain->id());
+    if (control_argument_result.is_ok()) {
+      active_power_level_ = desired_active_power_level_ = domain->model().FindPowerLevel(
+          domain->controller()->control_interface(), control_argument_result.value());
+    }
+
     domain->total_normalized_utilization_.fetch_add(normalized_utilization_.raw_value(),
                                                     std::memory_order_relaxed);
   }
 
   using std::swap;
   swap(power_domain_set, power_domain_set_);
+
   domain_ = domain;
+  fast_path_controller_ =
+      domain && domain->controller()->is_fast_path() ? domain->controller().get() : nullptr;
 
   return power_domain_set;
 }
@@ -60,7 +67,7 @@ std::optional<PowerLevelUpdateRequest> PowerState::RequestTransition(uint32_t cp
     return std::nullopt;
   }
 
-  const auto& level = domain_->model().levels()[active_power_level];
+  const PowerLevel& level = domain_->model().levels()[active_power_level];
 
   PowerLevelUpdateRequest transition = {
       .domain_id = domain_->id(),

@@ -11,6 +11,7 @@
 #include <lib/zircon-internal/thread_annotations.h>
 
 #include <fbl/ref_ptr.h>
+#include <kernel/cpu.h>
 #include <kernel/mutex.h>
 
 namespace power_management {
@@ -18,30 +19,32 @@ namespace power_management {
 // Manages a singleton instance of PowerDomainRegistry and the plumbing
 // necessary for the kernel environment.
 class KernelPowerDomainRegistry {
-  DECLARE_SINGLETON_MUTEX(Lock);
+  DECLARE_SINGLETON_SPINLOCK(Lock);
 
  public:
   // Registers the given power domain, replacing the power domain with the same
   // domain id if necessary.
-  static zx::result<> Register(const fbl::RefPtr<PowerDomain>& domain) TA_EXCL(Lock::Get()) {
-    Guard<Mutex> guard(Lock::Get());
+  static zx::result<fbl::RefPtr<PowerDomain>> Register(const fbl::RefPtr<PowerDomain>& domain)
+      TA_EXCL(Lock::Get()) {
+    Guard<SpinLock, IrqSave> guard(Lock::Get());
     return registry_.Register(domain);
   }
 
   // Unregisters the power domain with the given domain id.
-  static zx::result<> Unregister(uint32_t domain_id) TA_EXCL(Lock::Get()) {
-    Guard<Mutex> guard(Lock::Get());
+  static zx::result<fbl::RefPtr<PowerDomain>> Unregister(uint32_t domain_id) TA_EXCL(Lock::Get()) {
+    Guard<SpinLock, IrqSave> guard(Lock::Get());
     return registry_.Unregister(domain_id);
   }
 
-  // Updates the power level for the given domain.
-  static zx::result<> UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
-                                       power_management::ControlInterface interface, uint64_t arg)
-      TA_EXCL(Lock::Get());
+  // Updates the power level for the given domain. Returns the mask of CPUs that
+  // should be rescheduled immediately after the update.
+  static zx::result<cpu_mask_t> UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
+                                                 power_management::ControlInterface interface,
+                                                 uint64_t arg) TA_EXCL(Lock::Get());
 
   template <typename V>
   static void Visit(V&& v) {
-    Guard<Mutex> guard(Lock::Get());
+    Guard<SpinLock, IrqSave> guard(Lock::Get());
     registry_.Visit(ktl::forward<V>(v));
   }
 

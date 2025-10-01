@@ -365,7 +365,7 @@ class SetPowerStateTest : public zxtest::Test {
  public:
   void SetUp() final {
     NEEDS_NEXT_SKIP(zx_system_set_processor_power_domain);
-    ASSERT_OK(zx::port::create(0, &p_));
+    ASSERT_OK(zx::port::create(0, &port_));
     auto rsrc = standalone::GetSystemResource();
     ASSERT_TRUE(rsrc->is_valid());
     auto [levels, transitions] = GetModel();
@@ -373,7 +373,11 @@ class SetPowerStateTest : public zxtest::Test {
     transitions_ = std::move(transitions);
     domain_info_ = GetDomainWithDefaultCpus(123);
 
-    ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), 0, &domain_info_, p_.get(),
+    // Override in-kernel CPU driver control to enable testing the userspace
+    // control path.
+    const uint64_t options = ZX_SYSTEM_SET_PROCESSOR_POWER_DOMAIN_OPTION_FORCE_USER_DRIVER;
+
+    ASSERT_OK(zx_system_set_processor_power_domain(rsrc->get(), options, &domain_info_, port_.get(),
                                                    levels_.data(), levels_.size(),
                                                    transitions_.data(), transitions_.size()));
     cleanup_ = true;
@@ -385,7 +389,7 @@ class SetPowerStateTest : public zxtest::Test {
   }
 
  protected:
-  zx::port p_;
+  zx::port port_;
   std::vector<zx_processor_power_level_t> levels_;
   std::vector<zx_processor_power_level_transition_t> transitions_;
   zx_processor_power_domain_t domain_info_;
@@ -402,7 +406,7 @@ TEST_F(SetPowerStateTest, UpdateActivePowerLevel) {
       .control_argument = levels_[1].control_argument,
   };
 
-  ASSERT_OK(zx_system_set_processor_power_state(p_.get(), &pstate));
+  ASSERT_OK(zx_system_set_processor_power_state(port_.get(), &pstate));
 }
 
 TEST_F(SetPowerStateTest, UpdateIdlePowerLevel) {
@@ -413,7 +417,7 @@ TEST_F(SetPowerStateTest, UpdateIdlePowerLevel) {
       .control_argument = levels_[0].control_argument,
   };
 
-  ASSERT_STATUS(zx_system_set_processor_power_state(p_.get(), &pstate), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(zx_system_set_processor_power_state(port_.get(), &pstate), ZX_ERR_OUT_OF_RANGE);
 }
 
 TEST_F(SetPowerStateTest, UpdatePowerLevelWithWrongPort) {
@@ -441,7 +445,7 @@ TEST_F(SetPowerStateTest, UpdatePowerLevelUnknownDomain) {
       .control_argument = levels_[1].control_argument,
   };
 
-  ASSERT_STATUS(zx_system_set_processor_power_state(p_.get(), &pstate), ZX_ERR_NOT_FOUND);
+  ASSERT_STATUS(zx_system_set_processor_power_state(port_.get(), &pstate), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(SetPowerStateTest, UpdatePowerLevelUnknownControlArgument) {
@@ -454,7 +458,7 @@ TEST_F(SetPowerStateTest, UpdatePowerLevelUnknownControlArgument) {
       .control_argument = levels_[1].control_argument + 0xDEAD,
   };
 
-  ASSERT_STATUS(zx_system_set_processor_power_state(p_.get(), &pstate), ZX_ERR_NOT_FOUND);
+  ASSERT_STATUS(zx_system_set_processor_power_state(port_.get(), &pstate), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(SetPowerStateTest, UpdatePowerLevelUnknownControlInterface) {
@@ -467,7 +471,7 @@ TEST_F(SetPowerStateTest, UpdatePowerLevelUnknownControlInterface) {
       .control_argument = levels_[1].control_argument,
   };
 
-  ASSERT_STATUS(zx_system_set_processor_power_state(p_.get(), &pstate), ZX_ERR_NOT_FOUND);
+  ASSERT_STATUS(zx_system_set_processor_power_state(port_.get(), &pstate), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(SetPowerStateTest, UpdatePowerLevelBadBuffer) {
@@ -475,7 +479,7 @@ TEST_F(SetPowerStateTest, UpdatePowerLevelBadBuffer) {
   NEEDS_NEXT_SKIP(zx_system_set_processor_power_state);
 
   ASSERT_STATUS(zx_system_set_processor_power_state(
-                    p_.get(), reinterpret_cast<zx_processor_power_state_t*>(0x01)),
+                    port_.get(), reinterpret_cast<zx_processor_power_state_t*>(0x01)),
                 ZX_ERR_INVALID_ARGS);
 }
 
@@ -490,7 +494,7 @@ TEST_F(SetPowerStateTest, UpdatePowerLevelWithPortWithoutRead) {
   };
 
   zx::port p2;
-  ASSERT_OK(p_.duplicate(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_READ, &p2));
+  ASSERT_OK(port_.duplicate(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_READ, &p2));
   ASSERT_STATUS(zx_system_set_processor_power_state(p2.get(), &pstate), ZX_ERR_ACCESS_DENIED);
 }
 

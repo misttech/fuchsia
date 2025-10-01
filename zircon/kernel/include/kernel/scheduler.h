@@ -432,6 +432,10 @@ class Scheduler {
   static cpu_mask_t PeekIdleMask() { return idle_schedulers_.load(ktl::memory_order_relaxed); }
   static bool PeekIsIdle(cpu_num_t cpu) { return (PeekIdleMask() & cpu_num_to_mask(cpu)) != 0; }
 
+  // Reschedules the given CPU mask, applying any updated bookkeeping that may
+  // affect the currently running threads on those CPUs.
+  inline static void RescheduleCpus(cpu_mask_t cpu_mask) TA_EXCL(queue_lock_);
+
   using PowerDomain = power_management::PowerDomain;
   using PowerDomainSet = power_management::PowerDomainSet;
 

@@ -13,6 +13,7 @@
 #include <lib/instrumentation/asan.h>
 #include <lib/power-management/energy-model.h>
 #include <lib/power-management/kernel-registry.h>
+#include <lib/power-management/pdev-power-level-controller.h>
 #include <lib/power-management/port-power-level-controller.h>
 #include <lib/relaxed_atomic.h>
 #include <lib/syscalls/forward.h>
@@ -55,6 +56,7 @@
 #include <kernel/percpu.h>
 #include <kernel/range_check.h>
 #include <kernel/scheduler.h>
+#include <kernel/scheduler_inline.h>
 #include <kernel/thread.h>
 #include <ktl/byte.h>
 #include <ktl/span.h>
@@ -811,8 +813,11 @@ zx_status_t sys_system_set_processor_power_domain(
     all_zero = all_zero && (c == 0);
   }
 
-  // No need to validate any of the other parameters, when we are unregistering a power domain.
+  // No need to validate any of the other parameters, when we are unregistering
+  // a power domain.
   if (all_zero) {
+    // If a power domain was just unregistered it will be deallocated here as
+    // the ref ptr in the zx::result is dropped.
     return power_management::KernelPowerDomainRegistry::Unregister(domain_info.domain_id)
         .status_value();
   }
@@ -881,8 +886,16 @@ zx_status_t sys_system_set_processor_power_domain(
     return model.error_value();
   }
 
-  auto controller = fbl::MakeRefCountedChecked<power_management::PortPowerLevelController>(
-      &ac, ktl::move(port_dispatcher));
+  const bool force_user_control =
+      options & ZX_SYSTEM_SET_PROCESSOR_POWER_DOMAIN_OPTION_FORCE_USER_DRIVER;
+
+  fbl::RefPtr<power_management::PowerLevelController> controller;
+  if (power_management::PDevPowerLevelController::IsSupported() && !force_user_control) {
+    controller = fbl::MakeRefCountedChecked<power_management::PDevPowerLevelController>(&ac);
+  } else {
+    controller = fbl::MakeRefCountedChecked<power_management::PortPowerLevelController>(
+        &ac, ktl::move(port_dispatcher));
+  }
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -894,34 +907,40 @@ zx_status_t sys_system_set_processor_power_domain(
     return ZX_ERR_NO_MEMORY;
   }
 
-  // Register power domain with the registry and update schedulers.
-  return power_management::KernelPowerDomainRegistry::Register(ktl::move(power_domain))
-      .status_value();
+  // Register power domain with the registry and update schedulers. If this
+  // power domain replaces another power domain, the previous power domain may
+  // be deallocated here when the ref pointer is released.
+  return power_management::KernelPowerDomainRegistry::Register(power_domain).status_value();
 }
 
 zx_status_t sys_system_set_processor_power_state(
-    zx_handle_t port, user_in_ptr<const zx_processor_power_state_t> power_state) {
+    zx_handle_t port, user_in_ptr<const zx_processor_power_state_t> power_state_pointer) {
   if (port == ZX_HANDLE_INVALID) {
     return ZX_ERR_BAD_HANDLE;
   }
-  zx_processor_power_state_t ps = {};
-  if (auto res = power_state.copy_from_user(&ps); res != ZX_OK) {
-    return res;
+  zx_processor_power_state_t power_state = {};
+  if (zx_status_t result = power_state_pointer.copy_from_user(&power_state); result != ZX_OK) {
+    return result;
   }
 
   ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
   fbl::RefPtr<PortDispatcher> port_dispatcher;
-  if (zx_status_t res =
+  if (zx_status_t result =
           up->handle_table().GetDispatcherWithRights(*up, port, ZX_RIGHT_READ, &port_dispatcher);
-      res != ZX_OK) {
-    return res;
+      result != ZX_OK) {
+    return result;
   }
 
-  return power_management::KernelPowerDomainRegistry::UpdatePowerLevel(
-             ps.domain_id, port_dispatcher->get_koid(),
-             static_cast<power_management::ControlInterface>(ps.control_interface),
-             ps.control_argument)
-      .status_value();
+  const zx::result<cpu_mask_t> result =
+      power_management::KernelPowerDomainRegistry::UpdatePowerLevel(
+          power_state.domain_id, port_dispatcher->get_koid(),
+          static_cast<power_management::ControlInterface>(power_state.control_interface),
+          power_state.control_argument);
+  if (result.is_ok()) {
+    Scheduler::RescheduleCpus(result.value());
+  }
+
+  return result.status_value();
 }
 
 zx_status_t sys_system_barrier(uint32_t options) {

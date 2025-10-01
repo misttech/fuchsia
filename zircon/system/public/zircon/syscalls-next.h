@@ -143,6 +143,11 @@ typedef struct zx_sampler_config {
 
 // ====== Runtime processor power management support ====== //
 
+// Enables the userspace driver control path, even if there is an in-kernel fast
+// path CPU driver. Primarily useful for testing the userspace control path on
+// platforms that have an in-kernel CPU driver.
+#define ZX_SYSTEM_SET_PROCESSOR_POWER_DOMAIN_OPTION_FORCE_USER_DRIVER ((uint64_t)(1u << 0))
+
 typedef uint64_t zx_processor_power_level_options_t;
 
 #define ZX_MAX_POWER_LEVELS ((uint64_t)(256))

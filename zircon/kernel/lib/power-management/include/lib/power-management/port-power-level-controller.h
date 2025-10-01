@@ -27,13 +27,16 @@ namespace power_management {
 class PortPowerLevelController final : public PowerLevelController {
  public:
   explicit PortPowerLevelController(fbl::RefPtr<PortDispatcher> dispatcher)
-      : PowerLevelController(), port_(std::move(dispatcher)), packet_queue_(port_.get()) {}
+      : PowerLevelController(ControlInterface::kCpuDriver),
+        port_(std::move(dispatcher)),
+        packet_queue_(port_.get()) {}
+
   ~PortPowerLevelController() final = default;
 
   // Process a pending request, which is a pending transition which could not be performed in the
   // context it originated. This method provide no guarantees on what exactly is performed. It may
   // provide defer with another entity
-  zx::result<> Post(const PowerLevelUpdateRequest& pending) final;
+  zx::result<uint32_t> Post(const PowerLevelUpdateRequest& pending) final;
 
   // Unique id of the `ControlInterface` handler.
   uint64_t id() const final { return port_->get_koid(); }
@@ -57,6 +60,7 @@ class PortPowerLevelController final : public PowerLevelController {
 
    private:
     DECLARE_SPINLOCK(PacketQueue) packet_lock_;
+
     // Current packet stashing changes.
     TA_GUARDED(&packet_lock_) size_t current_ = 0;
     TA_GUARDED(&packet_lock_) bool packet_pending_ = false;

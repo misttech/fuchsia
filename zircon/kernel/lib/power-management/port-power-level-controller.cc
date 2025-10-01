@@ -75,7 +75,7 @@ void PortPowerLevelController::PacketQueue::Free(PortPacket* packet) {
   ZX_ASSERT(port_->Queue(curr) != ZX_ERR_SHOULD_WAIT);
 }
 
-zx::result<> PortPowerLevelController::Post(const PowerLevelUpdateRequest& pending) {
+zx::result<uint32_t> PortPowerLevelController::Post(const PowerLevelUpdateRequest& pending) {
   if (pending.control != ControlInterface::kCpuDriver) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
@@ -103,7 +103,9 @@ zx::result<> PortPowerLevelController::Post(const PowerLevelUpdateRequest& pendi
 
   packet_queue_.Queue(packet);
 
-  return zx::ok();
+  // No CPUs need to be rescheduled to update their bookkeeping until userspace
+  // sends an update about the completion of the update request.
+  return zx::ok(0);
 }
 
 }  // namespace power_management

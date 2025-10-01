@@ -150,22 +150,25 @@ zx::result<EnergyModel> EnergyModel::Create(
                             std::move(power_levels_lookup), idle_levels});
 }
 
-zx::result<> PowerDomainRegistry::Register(const fbl::RefPtr<PowerDomain>& power_domain) {
-  if (const zx::result result = power_domain_set_.Update(power_domain); result.is_error()) {
-    return zx::error(result.error_value());
+zx::result<fbl::RefPtr<PowerDomain>> PowerDomainRegistry::Register(
+    const fbl::RefPtr<PowerDomain>& power_domain) {
+  zx::result<fbl::RefPtr<PowerDomain>> result = power_domain_set_.Update(power_domain);
+  if (result.is_error()) {
+    return result.take_error();
   }
 
   update_callback_(power_domain_set_);
-  return zx::ok();
+  return result;
 }
 
-zx::result<> PowerDomainRegistry::Unregister(uint32_t domain_id) {
-  if (fbl::RefPtr<PowerDomain> power_domain = power_domain_set_.Remove(domain_id); !power_domain) {
+zx::result<fbl::RefPtr<PowerDomain>> PowerDomainRegistry::Unregister(uint32_t domain_id) {
+  fbl::RefPtr<PowerDomain> power_domain = power_domain_set_.Remove(domain_id);
+  if (!power_domain) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   update_callback_(power_domain_set_);
-  return zx::ok();
+  return zx::ok(std::move(power_domain));
 }
 
 std::optional<uint8_t> EnergyModel::FindPowerLevel(ControlInterface interface_id,

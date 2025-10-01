@@ -157,11 +157,13 @@ bool PortPowerLevelControllerStopServingOnZeroHandles() {
 
 class FakePowerLevelController final : public PowerLevelController {
  public:
-  zx::result<> Post(const PowerLevelUpdateRequest& request) final {
+  FakePowerLevelController() : PowerLevelController(ControlInterface::kCpuDriver) {}
+
+  zx::result<uint32_t> Post(const PowerLevelUpdateRequest& request) final {
     count_++;
     request_ = request;
     signal_posted_.Signal(ZX_OK);
-    return zx::ok();
+    return zx::ok(0);
   }
 
   uint64_t id() const final { return 0; }

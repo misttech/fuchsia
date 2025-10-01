@@ -12,7 +12,6 @@
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls/port.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <optional>
@@ -74,6 +73,10 @@ class PowerState {
   // Domain the PowerState is being modeled after. Returns nullptr is there is
   // no power domain configured for processor owning this power state.
   PowerDomain* domain() const { return domain_; }
+
+  // The PowerLevelController associated with this PowerState and processor, IFF
+  // it supports fast path invocation from scheduler context.
+  PowerLevelController* fast_path_controller() const { return fast_path_controller_; }
 
   // Returns the id of the domain this power state belongs to.
   std::optional<uint32_t> domain_id() const {
@@ -156,6 +159,20 @@ class PowerState {
     return ProcessingRate{0};
   }
 
+  // Returns the processing rate of the preceding active power level (i.e. the
+  // lower bound of the current active power level). Returns zero if there is no
+  // preceding active power level, no active power level is set, or no domain
+  // is set.
+  ProcessingRate preceding_active_processing_rate() const {
+    if (domain() && active_power_level_.has_value()) {
+      const PowerLevel* power_level = &domain()->model().levels()[*active_power_level_];
+      if (power_level != &domain()->model().active_levels().front()) {
+        return (power_level - 1)->processing_rate();
+      }
+    }
+    return ProcessingRate{0};
+  }
+
   // Returns the current utilization of the processor.
   Utilization normalized_utilization() const { return normalized_utilization_; }
 
@@ -204,6 +221,12 @@ class PowerState {
   // instance is managed by the PowerDomainSet. Changes to that set could
   // invalidate this pointer and must be kept in sync.
   PowerDomain* domain_{nullptr};
+
+  // The power level controller if it supports direct invocation from scheduler
+  // context. The lifetime of this PowerLevelController instance is managed by
+  // the PowerDomainSet. Changes to that set could invalidate this pointer and
+  // must be kept in sync.
+  PowerLevelController* fast_path_controller_{nullptr};
 
   // The power level when the processor is actively running.
   std::optional<uint8_t> active_power_level_;

@@ -8,6 +8,8 @@
 #define ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_ENERGY_MODEL_H_
 
 #include <lib/fit/function.h>
+#include <lib/power-management/power-level-controller.h>
+#include <lib/power-management/types.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,66 +31,11 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
-#include <ffl/fixed.h>
-
-#include "power-level-controller.h"
 
 namespace power_management {
 
 // forward declaration.
 class EnergyModel;
-
-// Enum representing supported control interfaces.
-enum class ControlInterface : uint64_t {
-  kCpuDriver = ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER,
-  kArmPsci = ZX_PROCESSOR_POWER_CONTROL_ARM_PSCI,
-  kArmWfi = ZX_PROCESSOR_POWER_CONTROL_ARM_WFI,
-  kRiscvSbi = ZX_PROCESSOR_POWER_CONTROL_RISCV_SBI,
-  kRiscvWfi = ZX_PROCESSOR_POWER_CONTROL_RISCV_WFI,
-};
-
-constexpr const char* ToString(ControlInterface control_interface) {
-  switch (control_interface) {
-    case ControlInterface::kCpuDriver:
-      return "CPU_DRIVER";
-    case ControlInterface::kArmPsci:
-      return "ARM_PSCI";
-    case ControlInterface::kArmWfi:
-      return "ARM_WFI";
-    case ControlInterface::kRiscvSbi:
-      return "RISCV_SBI";
-    case ControlInterface::kRiscvWfi:
-      return "RISCV_WFI";
-    default:
-      return "[unknown]";
-  }
-}
-
-// List of support control interfaces.
-static constexpr auto kSupportedControlInterfaces = std::to_array(
-    {ControlInterface::kArmPsci, ControlInterface::kArmWfi, ControlInterface::kRiscvSbi,
-     ControlInterface::kRiscvWfi, ControlInterface::kCpuDriver});
-
-// Returns whether the interface is a supported or not.
-constexpr bool IsSupportedControlInterface(zx_processor_power_control_t interface) {
-  for (auto supported_interface : kSupportedControlInterfaces) {
-    if (supported_interface == static_cast<ControlInterface>(interface)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Returns whether the interface is handled by the kernel or not.
-constexpr bool IsKernelControlInterface(ControlInterface interface) {
-  return interface != ControlInterface::kCpuDriver;
-}
-
-// The normalized processing rate of a CPU, relative to the fastest CPU in the system.
-using ProcessingRate = ffl::Fixed<int64_t, 31>;
-
-// The normalized utilization of a CPU by a task or set of tasks.
-using Utilization = ffl::Fixed<int64_t, 31>;
 
 // Kernel representation of `zx_processor_power_level_t` with useful accessors and option support.
 class PowerLevel {
@@ -373,11 +320,11 @@ class EnergyModel {
 // Instances of PowerDomain are safe for concurrent use.
 class PowerDomain : public fbl::RefCounted<PowerDomain> {
  public:
-  PowerDomain(uint32_t id, zx_cpu_set_t cpus, EnergyModel model)
-      : PowerDomain(id, cpus, std::move(model), nullptr) {}
   PowerDomain(uint32_t id, zx_cpu_set_t cpus, EnergyModel model,
               fbl::RefPtr<PowerLevelController> controller)
-      : cpus_(cpus), id_(id), energy_model_(std::move(model)), controller_(std::move(controller)) {}
+      : cpus_(cpus), id_(id), energy_model_(std::move(model)), controller_(std::move(controller)) {
+    ZX_DEBUG_ASSERT(controller_ != nullptr);
+  }
 
   // ID representing the relationship between a set of CPUs and a power model.
   constexpr uint32_t id() const { return id_; }
@@ -502,6 +449,16 @@ class PowerDomainSet {
       }
     }
     return 0u;
+  }
+
+  std::optional<uint8_t> LookupPowerLevel(uint32_t cpu_num, ProcessingRate processing_rate) const {
+    if (PowerDomain* power_domain = FindByCpuNum(cpu_num)) {
+      if (const PowerLevel* power_level =
+              power_domain->model().FindActivePowerLevelForRate(processing_rate)) {
+        return power_level->level();
+      }
+    }
+    return std::nullopt;
   }
 
   Utilization LookupTotalNormalizedUtilization(uint32_t cpu_num) const {
@@ -653,11 +610,11 @@ class PowerDomainRegistry {
 
   // Registers the given power domain, using the given callback to update each
   // CPU with a copy of the new power domain set.
-  zx::result<> Register(const fbl::RefPtr<PowerDomain>& power_domain);
+  zx::result<fbl::RefPtr<PowerDomain>> Register(const fbl::RefPtr<PowerDomain>& power_domain);
 
   // Unregisters the given power domain, using the given callback to update each
   // CPU with a copy of the new power domain set.
-  zx::result<> Unregister(uint32_t domain_id);
+  zx::result<fbl::RefPtr<PowerDomain>> Unregister(uint32_t domain_id);
 
   // Returns a reference to the power domain with the given domain id, or
   // nullptr if one does not exist.
