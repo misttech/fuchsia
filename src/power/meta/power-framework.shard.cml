@@ -90,6 +90,7 @@
                 "fuchsia.power.systemmode.ClientConfigurator",
                 "fuchsia.power.systemmode.Requester",
                 "fuchsia.thermal.ClientStateConnector",
+                "fuchsia.thermal.SensorManager",
             ],
             from: "#power_manager",
         },

@@ -7,14 +7,9 @@
 mod family;
 mod thermal_zone;
 
-use crate::thermal_zone::{SensorProps, SensorProxy, ThermalZone};
-use async_lock::OnceCell;
+use crate::thermal_zone::{SensorProps, ThermalZone};
+use anyhow::{Error, anyhow};
 use family::ThermalFamily;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_hardware_temperature as ftemperature;
-use fuchsia_async::TimeoutExt;
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use futures::TryStreamExt;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
@@ -23,24 +18,28 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::errors::{Errno, errno};
+use starnix_uapi::errors::{Errno, errno, error};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use thermal_netlink::celsius_to_millicelsius;
+use thermal_netlink::{celsius_to_millicelsius, millicelsius_to_celsius};
 use zx::MonotonicInstant;
-
-const DEV_CLASS_DIR: &str = "/dev/class";
-const TEMPERATURE_DEVICE_CLASSES: &[&str] = &["temperature", "trippoint"];
+use {fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_thermal as fthermal};
 
 fn build_thermal_zone_directory(
     device: &Device,
-    proxy: Arc<OnceCell<SensorProxy>>,
+    proxy: ftemperature::DeviceSynchronousProxy,
+    sensor_manager: fthermal::SensorManagerSynchronousProxy,
     device_type: String,
     dir: &SimpleDirectoryMutator,
 ) {
     build_device_directory(device, dir);
+    dir.entry(
+        "emul_temp",
+        EmulTempFile::new_node(device_type.clone(), sensor_manager),
+        mode!(IFREG, 0o200),
+    );
     dir.entry("temp", TemperatureFile::new_node(proxy), mode!(IFREG, 0o664));
     dir.entry(
         "type",
@@ -56,23 +55,19 @@ fn build_thermal_zone_directory(
 }
 
 struct TemperatureFile {
-    proxy: Arc<OnceCell<SensorProxy>>,
+    proxy: ftemperature::DeviceSynchronousProxy,
 }
 
 impl TemperatureFile {
-    pub fn new_node(proxy: Arc<OnceCell<SensorProxy>>) -> impl FsNodeOps {
+    pub fn new_node(proxy: ftemperature::DeviceSynchronousProxy) -> impl FsNodeOps {
         BytesFile::new_node(Self { proxy })
     }
 }
 
 impl BytesFileOps for TemperatureFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let (zx_status, temp) = self
-            .proxy
-            .wait_blocking()
-            .sync
-            .get_temperature_celsius(MonotonicInstant::INFINITE)
-            .map_err(|e| {
+        let (zx_status, temp) =
+            self.proxy.get_temperature_celsius(MonotonicInstant::INFINITE).map_err(|e| {
                 log_error!("get_temperature_celsius failed: {}", e);
                 errno!(ENOENT)
             })?;
@@ -86,115 +81,158 @@ impl BytesFileOps for TemperatureFile {
     }
 }
 
-pub fn thermal_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel, devices: Vec<String>) {
+struct EmulTempFile {
+    device_type: String,
+    proxy: fthermal::SensorManagerSynchronousProxy,
+}
+
+impl EmulTempFile {
+    pub fn new_node(
+        device_type: String,
+        proxy: fthermal::SensorManagerSynchronousProxy,
+    ) -> impl FsNodeOps {
+        BytesFile::new_node(Self { device_type, proxy })
+    }
+}
+
+impl BytesFileOps for EmulTempFile {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let num_str = str::from_utf8(&data).map_err(|e| {
+            log_warn!("Failed to convert input temp to utf-8: {:?}", e);
+            errno!(EINVAL)
+        })?;
+
+        let temp_milli_c: i32 = num_str.trim().parse().map_err(|e| {
+            log_warn!("Failed to parse input temp as i32: {:?}", e);
+            errno!(EINVAL)
+        })?;
+
+        if temp_milli_c == 0 {
+            match self
+                .proxy
+                .clear_temperature_override(&self.device_type, zx::MonotonicInstant::INFINITE)
+            {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(error)) => {
+                    log_warn!(
+                        "Failed to clear temperature override for sensor {}: {:?}",
+                        self.device_type,
+                        error
+                    );
+                    error!(EINVAL)
+                }
+                Err(error) => {
+                    log_warn!(
+                        "Failed to call clear_temperature_override for sensor {}: {:?}",
+                        self.device_type,
+                        error
+                    );
+                    error!(EIO)
+                }
+            }
+        } else {
+            match self.proxy.set_temperature_override(
+                &self.device_type,
+                millicelsius_to_celsius(temp_milli_c as f32).into(),
+                zx::MonotonicInstant::INFINITE,
+            ) {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(error)) => {
+                    log_warn!(
+                        "Failed to set temperature override for sensor {}: {:?}",
+                        self.device_type,
+                        error
+                    );
+                    error!(EINVAL)
+                }
+                Err(error) => {
+                    log_warn!(
+                        "Failed to call set_temperature_override for sensor {}: {:?}",
+                        self.device_type,
+                        error
+                    );
+                    error!(EIO)
+                }
+            }
+        }
+    }
+}
+
+pub fn thermal_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Error> {
+    let sensor_manager =
+        fuchsia_component::client::connect_to_protocol_sync::<fthermal::SensorManagerMarker>()
+            .map_err(|error| anyhow!("Failed to connect to SensorManager: {:?}", error))?;
+
+    let sensors = sensor_manager.list_sensors(zx::MonotonicInstant::INFINITE)?;
+
     let registry = &kernel.device_registry;
     let virtual_thermal_class = registry.objects.virtual_thermal_class();
-
     let mut sensor_proxies = HashMap::new();
 
-    for (thermal_zone_id, sensor_device) in devices.into_iter().enumerate() {
+    for (thermal_zone_id, sensor_info) in sensors.into_iter().enumerate() {
+        let Some(sensor_name) = sensor_info.name else {
+            log_warn!("No sensor name for thermal zone {}, skipping.", thermal_zone_id);
+            continue;
+        };
+        let sensor_name_clone = sensor_name.clone();
+
         let thermal_zone_id = thermal_zone_id as u32;
         let thermal_zone = format!("thermal_zone{}", thermal_zone_id);
-        let proxy = Arc::new(OnceCell::new());
-        let proxy_clone = proxy.clone();
 
-        let sensor_props: Vec<_> = sensor_device.split(":").collect();
-        let sensor_name = sensor_props[0].to_owned();
-        let device_class = sensor_props[1].to_owned();
+        // Create a synchronous proxy for file requests.
+        // Reads and writes are expected to block until data or an error is returned.
+        let (sensor_sync, sensor_server_sync) = fidl::endpoints::create_sync_proxy();
+
+        if let Err(error) = sensor_manager.connect(
+            fthermal::SensorManagerConnectRequest {
+                name: Some(sensor_name.clone()),
+                server_end: Some(fthermal::SensorServer_::Temperature(sensor_server_sync)),
+                ..Default::default()
+            },
+            zx::MonotonicInstant::INFINITE,
+        ) {
+            log_error!("Failed to connect to sensor {} (sync): {:?}", sensor_name, error);
+            continue;
+        }
 
         registry.add_numberless_device(
             locked,
             thermal_zone.clone().as_str().into(),
             virtual_thermal_class.clone(),
-            |device, dir| build_thermal_zone_directory(device, proxy, sensor_name.clone(), dir),
+            move |device, dir|{
+                match fuchsia_component::client::connect_to_protocol_sync::<fthermal::SensorManagerMarker>() {
+                    Ok(sensor_manager) => build_thermal_zone_directory(device, sensor_sync, sensor_manager, sensor_name_clone, dir),
+                    Err(error) => log_warn!("Failed to connect to SensorManager when building thermal zone for sensor {}: {:?}", sensor_name_clone, error),
+                }
+            },
         );
 
+        // Create an asynchronous proxy for netlink calls.
+        // The thermal netlink server periodically gets temperature data from the thermal sensors in
+        // the background.
+        let (sensor, sensor_server) = fidl::endpoints::create_proxy();
+
+        if let Err(error) = sensor_manager.connect(
+            fthermal::SensorManagerConnectRequest {
+                name: Some(sensor_name.clone()),
+                server_end: Some(fthermal::SensorServer_::Temperature(sensor_server)),
+                ..Default::default()
+            },
+            zx::MonotonicInstant::INFINITE,
+        ) {
+            log_error!("Failed to connect to sensor {} (async): {:?}", sensor_name, error);
+            continue;
+        }
+
         sensor_proxies.insert(
-            SensorProps { name: sensor_name, device_class },
-            ThermalZone { id: thermal_zone_id, proxy: proxy_clone },
+            SensorProps { name: sensor_name },
+            ThermalZone { id: thermal_zone_id, proxy: sensor },
         );
     }
 
-    let (thermal_family, thermal_family_worker) = ThermalFamily::new(sensor_proxies.clone());
+    let (thermal_family, thermal_family_worker) = ThermalFamily::new(sensor_proxies);
     kernel.generic_netlink().add_family(Arc::new(thermal_family));
     kernel.kthreads.spawn_future(thermal_family_worker);
 
-    for device_class in TEMPERATURE_DEVICE_CLASSES {
-        // TODO: Move this to expect once test support is enabled
-        let dir = match fuchsia_fs::directory::open_in_namespace(
-            &format!("{}/{}", DEV_CLASS_DIR, device_class),
-            fuchsia_fs::PERM_READABLE,
-        ) {
-            Ok(dir) => dir,
-            Err(e) => {
-                log_warn!("Failed to open temperature driver directory: {:}", e);
-                continue;
-            }
-        };
-
-        let mut sensor_proxies_for_class = sensor_proxies.clone();
-        sensor_proxies_for_class.retain(|props, _| props.device_class == *device_class);
-
-        kernel.kthreads.spawn_future(async move {
-            let mut watcher = match fuchsia_fs::directory::Watcher::new(&dir).await {
-                Ok(watcher) => watcher,
-                Err(e) => {
-                    log_warn!("Failed to create directory watcher for temperature device: {:}", e);
-                    return;
-                }
-            };
-
-            while !sensor_proxies_for_class.is_empty() {
-                if let Ok(Some(watch_msg)) = watcher
-                    .try_next()
-                    .on_timeout(MonotonicInstant::INFINITE, || Ok(None))
-                    .await
-                    .map_err(|e| {
-                        log_error!("Error from temperature driver: {:?}", e);
-                    })
-                {
-                    let filename = watch_msg
-                        .filename
-                        .as_path()
-                        .to_str()
-                        .expect("Failed to convert watch_msg to str");
-                    if filename != "." {
-                        if watch_msg.event == fuchsia_fs::directory::WatchEvent::ADD_FILE
-                            || watch_msg.event == fuchsia_fs::directory::WatchEvent::EXISTING
-                        {
-                            let async_proxy = connect_to_named_protocol_at_dir_root::<
-                                ftemperature::DeviceMarker,
-                            >(&dir, &filename)
-                            .expect("connect_to_named_protocol_at_dir_root failed");
-
-                            let sync_proxy = connect_to_named_protocol_at_dir_root::<
-                                ftemperature::DeviceMarker,
-                            >(&dir, &filename)
-                            .expect("connect_to_named_protocol_at_dir_root failed")
-                            .into_client_end()
-                            .expect("Failed to conver proxy to client end")
-                            .into_sync_proxy();
-
-                            let sensor_name = async_proxy
-                                .get_sensor_name()
-                                .await
-                                .expect("Failed to get sensor name");
-
-                            if let Some(ThermalZone { proxy, .. }) = sensor_proxies_for_class
-                                .remove(&SensorProps {
-                                    name: sensor_name,
-                                    device_class: device_class.to_string(),
-                                })
-                            {
-                                let _ = proxy
-                                    .set(SensorProxy { sync: sync_proxy, asynch: async_proxy })
-                                    .await
-                                    .expect("Proxy already set");
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
+    Ok(())
 }

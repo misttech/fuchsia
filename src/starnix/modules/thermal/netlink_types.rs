@@ -20,6 +20,10 @@ pub fn celsius_to_millicelsius(temp: f32) -> f32 {
     temp * 1000.0
 }
 
+pub fn millicelsius_to_celsius(temp: f32) -> f32 {
+    temp / 1000.0
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ThermalAttr {
     ThermalZoneId(u32),

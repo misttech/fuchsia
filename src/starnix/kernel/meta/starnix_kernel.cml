@@ -74,18 +74,6 @@
             availability: "optional",
         },
         {
-            directory: "dev-temperature",
-            rights: [ "r*" ],
-            path: "/dev/class/temperature",
-            availability: "optional",
-        },
-        {
-            directory: "dev-trippoint",
-            rights: [ "r*" ],
-            path: "/dev/class/trippoint",
-            availability: "optional",
-        },
-        {
             // This service replaces the directory capability above.
             service: "fuchsia.gpu.magma.Service",
             availability: "optional",
@@ -171,6 +159,7 @@
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
+                "fuchsia.thermal.SensorManager",
                 "fuchsia.time.alarms.WakeAlarms",
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",

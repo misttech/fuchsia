@@ -39,8 +39,7 @@ async fn run_samplers(
             async move {
                 loop {
                     fasync::Timer::new(SAMPLING_DELAY).await;
-                    let result =
-                        thermal_zone.proxy.wait().await.asynch.get_temperature_celsius().await;
+                    let result = thermal_zone.proxy.get_temperature_celsius().await;
 
                     let temp_c = match result {
                         Ok((status, temp_c)) => {

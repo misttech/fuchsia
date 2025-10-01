@@ -166,6 +166,7 @@
                 "fuchsia.settings.Setup",
                 "fuchsia.starnix.runner.Manager",
                 "fuchsia.thermal.ClientStateConnector",
+                "fuchsia.thermal.SensorManager",
                 "fuchsia.time.alarms.WakeAlarms",
                 "fuchsia.tracing.controller.Provisioner",
                 "fuchsia.tracing.perfetto.ProducerConnector",

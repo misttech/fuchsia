@@ -263,6 +263,7 @@
                 "fuchsia.process.Launcher",
                 "fuchsia.scheduler.RoleManager",
                 "fuchsia.thermal.ClientStateConnector",
+                "fuchsia.thermal.SensorManager",
             ],
             from: "parent",
             to: "#session-manager",

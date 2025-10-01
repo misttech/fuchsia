@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use common::EXPECTED_TEMP_C;
 use linux_uapi::{THERMAL_GENL_EVENT_GROUP_NAME, THERMAL_GENL_SAMPLING_GROUP_NAME};
 use netlink_packet_core::{NLM_F_REQUEST, NetlinkMessage, NetlinkPayload};
 use netlink_packet_generic::GenlMessage;
@@ -15,9 +14,12 @@ use std::os::fd::{AsFd, AsRawFd};
 use std::time::{Duration, Instant};
 use thermal_netlink::{GenlThermalCmd, GenlThermalPayload, ThermalAttr, celsius_to_millicelsius};
 
+pub const EXPECTED_TEMP_C: f32 = 25.0;
+
 fn main() {
     println!("started");
     check_thermal_zone_is_available();
+    check_emul_temp();
     check_nlctrl_is_available();
 
     let thermal_mcast_groups = check_thermal_is_available();
@@ -45,6 +47,32 @@ fn check_thermal_zone_is_available() {
             println!("Temperature reading taking longer than 5 seconds...");
         }
     }
+}
+
+fn check_emul_temp() {
+    {
+        let real_temp_str = std::fs::read("/sys/class/thermal/thermal_zone0/temp").unwrap();
+        let expected_real_temp = celsius_to_millicelsius(EXPECTED_TEMP_C) as u32;
+        assert_eq!(&format!("{}\n", expected_real_temp), str::from_utf8(&real_temp_str).unwrap());
+    }
+    {
+        let expected_temp = "100000\n";
+        std::fs::write("/sys/class/thermal/thermal_zone0/emul_temp", expected_temp).unwrap();
+        let fake_temp_str = std::fs::read("/sys/class/thermal/thermal_zone0/temp").unwrap();
+        assert_eq!(expected_temp, str::from_utf8(&fake_temp_str).unwrap());
+    }
+    {
+        let expected_temp = "50000\n";
+        std::fs::write("/sys/class/thermal/thermal_zone0/emul_temp", expected_temp).unwrap();
+        let fake_temp_str = std::fs::read("/sys/class/thermal/thermal_zone0/temp").unwrap();
+        assert_eq!(expected_temp, str::from_utf8(&fake_temp_str).unwrap());
+    }
+
+    // Reset emul_temp.
+    std::fs::write("/sys/class/thermal/thermal_zone0/emul_temp", "0").unwrap();
+    let real_temp_str = std::fs::read("/sys/class/thermal/thermal_zone0/temp").unwrap();
+    let expected_real_temp = celsius_to_millicelsius(EXPECTED_TEMP_C) as u32;
+    assert_eq!(&format!("{}\n", expected_real_temp), str::from_utf8(&real_temp_str).unwrap());
 }
 
 fn check_nlctrl_is_available() {

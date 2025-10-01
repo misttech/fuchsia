@@ -111,7 +111,7 @@ pub struct Features {
 
     pub enable_utc_time_adjustment: bool,
 
-    pub thermal: Option<Vec<String>>,
+    pub thermal: bool,
 
     /// Whether to add android bootreason to kernel cmdline.
     pub android_bootreason: bool,
@@ -217,13 +217,7 @@ impl Features {
                 inspect_node.record_bool("network_manager", *network_manager);
                 inspect_node.record_bool("nanohub", *nanohub);
                 inspect_node.record_bool("fastrpc", *fastrpc);
-                inspect_node.record_string(
-                    "thermal",
-                    match thermal {
-                        Some(devices) => devices.join(","),
-                        None => "".to_string(),
-                    },
-                );
+                inspect_node.record_bool("thermal", *thermal);
                 inspect_node.record_bool("android_bootreason", *android_bootreason);
                 inspect_node.record_bool("hvdcp_opti", *hvdcp_opti);
 
@@ -364,12 +358,7 @@ pub fn parse_features(
             }
             (Feature::SelinuxTestSuite, _) => features.kernel.selinux_test_suite = true,
             (Feature::TestData, _) => features.test_data = true,
-            (Feature::Thermal, Some(arg)) => {
-                features.thermal = Some(arg.split(',').map(String::from).collect::<Vec<String>>())
-            }
-            (Feature::Thermal, None) => {
-                return Err(anyhow!("thermal feature must have an argument"));
-            }
+            (Feature::Thermal, _) => features.thermal = true,
             (Feature::HvdcpOpti, _) => features.hvdcp_opti = true,
         };
     }
@@ -561,8 +550,8 @@ pub fn run_container_features(
     if features.nanohub {
         nanohub_device_init(locked, system_task);
     }
-    if let Some(devices) = &features.thermal {
-        thermal_device_init(locked, kernel, devices.clone());
+    if features.thermal {
+        thermal_device_init(locked, kernel)?;
     }
     if features.hvdcp_opti {
         hvdcp_opti_init(locked, system_task)?;

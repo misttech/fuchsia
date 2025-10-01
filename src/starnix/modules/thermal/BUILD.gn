@@ -36,12 +36,12 @@ rustc_library("thermal") {
   deps = [
     ":thermal-netlink",
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_rust",
+    "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",
     "//src/connectivity/network/netlink",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-fs",
     "//src/lib/mpmc",
     "//src/starnix/kernel:starnix_core",
     "//src/starnix/lib/linux_uapi",
@@ -51,7 +51,7 @@ rustc_library("thermal") {
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_core",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
-    "//third_party/rust_crates:async-lock",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
   ]

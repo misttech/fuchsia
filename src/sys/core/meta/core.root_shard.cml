@@ -214,6 +214,7 @@
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.thermal.ClientStateConnector",
+                "fuchsia.thermal.SensorManager",
             ],
             from: "#bootstrap",
             to: "#core",

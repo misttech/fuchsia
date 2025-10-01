@@ -107,6 +107,7 @@
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
+                "fuchsia.thermal.SensorManager",
                 "fuchsia.time.alarms.WakeAlarms",
                 "fuchsia.vulkan.loader.Loader",
             ],
@@ -160,16 +161,6 @@
         },
         {
             directory: "dev-serial",
-            from: "parent",
-            to: [ "#kernels" ],
-        },
-        {
-            directory: "dev-temperature",
-            from: "parent",
-            to: [ "#kernels" ],
-        },
-        {
-            directory: "dev-trippoint",
             from: "parent",
             to: [ "#kernels" ],
         },
