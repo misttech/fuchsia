@@ -4,11 +4,12 @@
 
 use crate::test::*;
 use anyhow::*;
+use ffx_config::EnvironmentContext;
 use ffx_executor::FfxExecutor;
 use std::time::Duration;
 
-pub(crate) async fn test_manual_add_target_list() -> Result<()> {
-    let isolate = new_isolate("target-manual-add-target-list").await?;
+pub(crate) async fn test_manual_add_target_list(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "target-manual-add-target-list").await?;
     isolate.start_daemon().await?;
 
     let _ = isolate.exec_ffx(&["target", "add", "--nowait", "[::1]:8022"]).await?;
@@ -24,8 +25,10 @@ pub(crate) async fn test_manual_add_target_list() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_manual_add_target_list_late_add() -> Result<()> {
-    let isolate = new_isolate("target-manual-add-target-list-late-add").await?;
+pub(crate) async fn test_manual_add_target_list_late_add(
+    context: EnvironmentContext,
+) -> Result<()> {
+    let isolate = new_isolate(&context, "target-manual-add-target-list-late-add").await?;
     isolate.start_daemon().await?;
 
     let task = isolate.exec_ffx(&[
@@ -68,8 +71,8 @@ pub mod include_target {
     // target of "192.168.42.105"). In that situation, the address is used as a
     // _matching query_, trying to find the target with the specified address.
     // So we get back the port, but we don't know what to compare it to.
-    pub(crate) async fn test_target_list_includes_port() -> Result<()> {
-        let isolate = new_isolate("target-target-list-includes-port").await?;
+    pub(crate) async fn test_target_list_includes_port(context: EnvironmentContext) -> Result<()> {
+        let isolate = new_isolate(&context, "target-target-list-includes-port").await?;
         isolate.start_daemon().await?;
 
         let ta = get_target_addr();
@@ -107,8 +110,8 @@ pub mod include_target {
         Ok(())
     }
 
-    pub(crate) async fn test_target_show() -> Result<()> {
-        let isolate = new_isolate("target-show").await?;
+    pub(crate) async fn test_target_show(context: EnvironmentContext) -> Result<()> {
+        let isolate = new_isolate(&context, "target-show").await?;
         isolate.start_daemon().await?;
 
         let target_nodeaddr = get_target_addr();

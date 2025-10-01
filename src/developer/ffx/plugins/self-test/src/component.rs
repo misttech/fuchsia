@@ -4,13 +4,14 @@
 
 use crate::test::*;
 use anyhow::*;
+use ffx_config::EnvironmentContext;
 use ffx_executor::FfxExecutor;
 
 pub mod include_target {
     use super::*;
 
-    pub(crate) async fn test_list() -> Result<()> {
-        let isolate = new_isolate("component-list").await?;
+    pub(crate) async fn test_list(context: EnvironmentContext) -> Result<()> {
+        let isolate = new_isolate(&context, "component-list").await?;
         isolate.start_daemon().await?;
         let target_nodeaddr = get_target_addr();
 

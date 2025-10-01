@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use errors::ffx_bail;
-use ffx_config::global_env_context;
+use ffx_config::EnvironmentContext;
 use ffx_config::logging::{change_log_file, reset_log_file};
 use fuchsia_async::TimeoutExt;
 use serde_json::Value;
@@ -36,10 +36,9 @@ fn subtest_log_file(isolate: &ffx_isolate::Isolate) -> PathBuf {
 
 /// Create a new ffx isolate. This method relies on the environment provided by
 /// the ffx binary and should only be called within ffx.
-pub async fn new_isolate(name: &str) -> Result<ffx_isolate::Isolate> {
-    let ssh_key = ffx_config::get::<String, _>("ssh.priv")?.into();
-    let context = global_env_context().context("No global context")?;
-    let isolate = ffx_isolate::Isolate::new_with_sdk(name, ssh_key, &context).await?;
+pub async fn new_isolate(env: &EnvironmentContext, name: &str) -> Result<ffx_isolate::Isolate> {
+    let ssh_key = env.get::<String, _>("ssh.priv")?.into();
+    let isolate = ffx_isolate::Isolate::new_with_sdk(name, ssh_key, &env).await?;
     set_value_in_isolate(&isolate, "watchdogs.host_pipe.enabled", true.into()).await?;
     set_value_in_isolate(&isolate, "ffx.isolated", true.into()).await?;
     // Globally change the log file to one appropriate to the isolate.  We'll reset it after
@@ -57,7 +56,12 @@ pub fn get_target_addr() -> String {
 
 /// run runs the given set of tests printing results to stdout and exiting
 /// with 0 or 1 if the tests passed or failed, respectively.
-pub async fn run(tests: Vec<TestCase>, timeout: Duration, case_timeout: Duration) -> Result<()> {
+pub async fn run(
+    context: &EnvironmentContext,
+    tests: Vec<TestCase>,
+    timeout: Duration,
+    case_timeout: Duration,
+) -> Result<()> {
     let mut writer = std::io::stdout();
     let color = is_tty(&writer);
     let green = green(color);
@@ -73,7 +77,7 @@ pub async fn run(tests: Vec<TestCase>, timeout: Duration, case_timeout: Duration
         for (i, tc) in tests.iter().enumerate().map(|(i, tc)| (i + 1, tc)) {
             write!(&mut writer, "{nocol}{i}. {name} - ", name = tc.name)?;
             writer.flush()?;
-            match (tc.f)()
+            match (tc.f)(context.clone())
                 .on_timeout(case_timeout, || ffx_bail!("timed out after {:?}", case_timeout))
                 .await
             {
@@ -129,7 +133,7 @@ macro_rules! tests {
             vec![$(
                 // We need to store a boxed, pinned future, so let's provide the closure that
                 // does that.
-                $crate::test::TestCase::new(stringify!($x), move || Box::pin($x())),
+                $crate::test::TestCase::new(stringify!($x), move |ctx| { Box::pin($x(ctx))}),
             )*]
         }
     };
@@ -137,7 +141,7 @@ macro_rules! tests {
 
 // We need to store a boxed pinned future: boxed because we need it to be Sized since it's going
 // in a Vec; pinned because it's asynchronous.
-pub type TestFn = fn() -> Pin<Box<dyn Future<Output = Result<()>>>>;
+pub type TestFn = fn(EnvironmentContext) -> Pin<Box<dyn Future<Output = Result<()>>>>;
 
 pub struct TestCase {
     pub name: &'static str,

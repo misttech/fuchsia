@@ -5,6 +5,7 @@
 use crate::assert_eq;
 use crate::test::new_isolate;
 use anyhow::*;
+use ffx_config::EnvironmentContext;
 use ffx_executor::FfxExecutor;
 use fuchsia_async::MonotonicDuration;
 use nix::sys::signal;
@@ -13,8 +14,8 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration as StdDuration;
 
-pub(crate) async fn test_echo() -> Result<()> {
-    let isolate = new_isolate("daemon-echo").await?;
+pub(crate) async fn test_echo(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "daemon-echo").await?;
     isolate.start_daemon().await?;
     let out = isolate.exec_ffx(&["daemon", "echo"]).await?;
 
@@ -24,8 +25,8 @@ pub(crate) async fn test_echo() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_isolate_cleanup() -> Result<()> {
-    let isolate = std::panic::AssertUnwindSafe(new_isolate("isolate-cleanup").await?);
+pub(crate) async fn test_isolate_cleanup(context: EnvironmentContext) -> Result<()> {
+    let isolate = std::panic::AssertUnwindSafe(new_isolate(&context, "isolate-cleanup").await?);
     let isolate_dir = PathBuf::from(isolate.dir());
     let mut daemon = isolate.start_daemon().await?;
 
@@ -50,8 +51,8 @@ pub(crate) async fn test_isolate_cleanup() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_config_flag() -> Result<()> {
-    let isolate = new_isolate("daemon-config-flag").await?;
+pub(crate) async fn test_config_flag(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "daemon-config-flag").await?;
     let mut daemon = isolate.start_daemon().await?;
 
     assert_eq!(None, daemon.try_wait()?, "Daemon exited quickly after starting");
@@ -95,8 +96,8 @@ pub(crate) async fn test_config_flag() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_stop() -> Result<()> {
-    let isolate = new_isolate("daemon-stop").await?;
+pub(crate) async fn test_stop(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "daemon-stop").await?;
     let out = isolate.exec_ffx(&["daemon", "stop", "-t", "3000"]).await?;
     let want = "No daemon was running.\n";
     assert_eq!(out.stdout, want);
@@ -114,8 +115,8 @@ pub(crate) async fn test_stop() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_no_autostart() -> Result<()> {
-    let isolate = new_isolate("daemon-no-autostart").await?;
+pub(crate) async fn test_no_autostart(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "daemon-no-autostart").await?;
     let out = isolate.exec_ffx(&["daemon", "echo"]).await?;
     assert!(!out.status.success());
     let want = "FFX Daemon was told not to autostart and no existing Daemon instance was found";
@@ -144,8 +145,8 @@ pub(crate) async fn test_no_autostart() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_cleanup_on_signal() -> Result<()> {
-    let isolate = new_isolate("daemon-cleanup-on-signal").await?;
+pub(crate) async fn test_cleanup_on_signal(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "daemon-cleanup-on-signal").await?;
     let mut daemon = isolate.start_daemon().await?;
     let socket_out = isolate.exec_ffx(&["--machine", "json", "daemon", "socket"]).await?.stdout;
     let socket_details: serde_json::Value = serde_json::from_str(&socket_out)?;

@@ -4,10 +4,11 @@
 
 use crate::test::new_isolate;
 use anyhow::*;
+use ffx_config::EnvironmentContext;
 use ffx_executor::FfxExecutor;
 
-pub(crate) async fn test_not_enabled() -> Result<()> {
-    let isolate = new_isolate("experiment-not-enabled").await?;
+pub(crate) async fn test_not_enabled(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "experiment-not-enabled").await?;
     let out = isolate.exec_ffx(&["self-test", "experiment"]).await?;
 
     ensure!(out.stdout.lines().count() == 0, "stdout unexpectedly contains output: {:?}", out);
@@ -18,8 +19,8 @@ pub(crate) async fn test_not_enabled() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn test_enabled() -> Result<()> {
-    let isolate = new_isolate("experiment-enabled").await?;
+pub(crate) async fn test_enabled(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "experiment-enabled").await?;
     let _ = isolate.exec_ffx(&["config", "set", "selftest.experiment", "true"]).await?;
 
     let out = isolate.exec_ffx(&["self-test", "experiment"]).await?;

@@ -5,6 +5,7 @@
 use crate::test::*;
 use anyhow::Result;
 use errors::ffx_error;
+use ffx_config::EnvironmentContext;
 use ffx_executor::FfxExecutor;
 use ffx_selftest_args::SelftestCommand;
 use ffx_writer::SimpleWriter;
@@ -23,6 +24,7 @@ mod test;
 pub struct SelfTestTool {
     #[command]
     cmd: SelftestCommand,
+    context: EnvironmentContext,
 }
 
 fho::embedded_plugin!(SelfTestTool);
@@ -32,11 +34,11 @@ impl FfxMain for SelfTestTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        selftest(self.cmd).await.map_err(Into::into)
+        selftest(&self.context, self.cmd).await.map_err(Into::into)
     }
 }
 
-pub async fn selftest(cmd: SelftestCommand) -> Result<()> {
+pub async fn selftest(context: &EnvironmentContext, cmd: SelftestCommand) -> Result<()> {
     let default_tests = tests![
         test_isolated,
         config::test_env,
@@ -75,11 +77,12 @@ pub async fn selftest(cmd: SelftestCommand) -> Result<()> {
         tests.retain(|test| test.name.contains(&filter));
     }
 
-    run(tests, Duration::from_secs(cmd.timeout), Duration::from_secs(cmd.case_timeout)).await
+    run(context, tests, Duration::from_secs(cmd.timeout), Duration::from_secs(cmd.case_timeout))
+        .await
 }
 
-async fn test_isolated() -> Result<()> {
-    let isolate = new_isolate("isolated").await?;
+async fn test_isolated(context: EnvironmentContext) -> Result<()> {
+    let isolate = new_isolate(&context, "isolated").await?;
     let out = isolate.exec_ffx(&["config", "get", "test.is-isolated"]).await?;
     assert_eq!(out.stdout, "true\n");
 
