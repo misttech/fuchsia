@@ -61,6 +61,113 @@ zx_status_t WriteProviderInfoMetadataRecord(Writer* writer, uint32_t provider_id
   return res.status_value();
 }
 
+// Write a Profiler Module Record using the given Writer
+//
+// Associates a 16-bit module ID with a module's full build ID and
+// name. This record is emitted once per module, allowing subsequent
+// records (like Mmap records) to reference the module efficiently
+// using the module ID.
+//
+// See also: TODO(https://fxbug.dev/444078023): Update
+// https://fuchsia.dev/fuchsia-src/reference/tracing/trace-format for the new
+// profiler record.
+template <typename Writer, internal::EnableIfWriter<Writer> = 0, RefType thread_type>
+zx_status_t WriteProfilerModuleRecord(Writer* writer, uint64_t timestamp,
+                                      const ThreadRef<thread_type>& thread_ref, uint16_t module_id,
+                                      const char* name, size_t name_length, const void* build_id,
+                                      size_t build_id_length) {
+  const WordSize record_size = WordSize(2) /* header, timestamp */ +
+                               WordSize::FromBytes(name_length) +
+                               WordSize::FromBytes(build_id_length) + thread_ref.PayloadSize();
+  const uint64_t header = MakeHeader(RecordType::kProfiler, record_size) |
+                          ProfilerRecordFields::ProfilerRecordType::Make(
+                              ToUnderlyingType(ProfilerRecordType::kModule)) |
+                          ProfilerRecordFields::ThreadRef::Make(thread_ref.HeaderEntry()) |
+                          ProfilerModuleRecordFields::ModuleId::Make(module_id) |
+                          ProfilerModuleRecordFields::NameLength::Make(name_length) |
+                          ProfilerModuleRecordFields::BuildIdLength::Make(build_id_length);
+
+  zx::result<typename internal::WriterTraits<Writer>::Reservation> res = writer->Reserve(header);
+  if (res.is_ok()) {
+    res->WriteWord(timestamp);
+    thread_ref.Write(*res);
+    res->WriteBytes(name, name_length);
+    res->WriteBytes(build_id, build_id_length);
+    res->Commit();
+  }
+  return res.status_value();
+}
+
+// Write a Profiler Mmap Record using the given Writer
+//
+// Describes a specific memory mapping for a module. It links to a previously
+// emitted Module Record via the module_id and specifies the mapping's
+// start address, address range, module-relative address (vaddr), and
+// memory permissions (flags).
+//
+// See also: TODO(https://fxbug.dev/444078023): Update
+// https://fuchsia.dev/fuchsia-src/reference/tracing/trace-format for the new
+// profiler record.
+template <typename Writer, internal::EnableIfWriter<Writer> = 0, RefType thread_type>
+zx_status_t WriteProfilerMmapRecord(Writer* writer, uint64_t timestamp,
+                                    const ThreadRef<thread_type>& thread_ref, uint16_t module_id,
+                                    uint64_t start_address, uint64_t addr_range, uint64_t vaddr,
+                                    uint8_t flags) {
+  const WordSize record_size =
+      WordSize(5) /* header, timestamp, start_addr, addr_range, vaddr */ + thread_ref.PayloadSize();
+  const uint64_t header =
+      MakeHeader(RecordType::kProfiler, record_size) |
+      ProfilerRecordFields::ProfilerRecordType::Make(ToUnderlyingType(ProfilerRecordType::kMmap)) |
+      ProfilerRecordFields::ThreadRef::Make(thread_ref.HeaderEntry()) |
+      ProfilerMmapRecordFields::ModuleId::Make(module_id) |
+      ProfilerMmapRecordFields::Flags::Make(flags);
+
+  zx::result<typename internal::WriterTraits<Writer>::Reservation> res = writer->Reserve(header);
+  if (res.is_ok()) {
+    res->WriteWord(timestamp);
+    thread_ref.Write(*res);
+    res->WriteWord(start_address);
+    res->WriteWord(addr_range);
+    res->WriteWord(vaddr);
+    res->Commit();
+  }
+  return res.status_value();
+}
+
+// Write a Profiler Backtrace Record using the given Writer
+//
+// Contains a list of backtrace frames captured at a specific moment in time.
+// Batching frames into a single record simplifies downstream processing and
+// sample grouping.
+//
+// See also: TODO(https://fxbug.dev/444078023): Update
+// https://fuchsia.dev/fuchsia-src/reference/tracing/trace-format for the new
+// profiler record.
+template <typename Writer, internal::EnableIfWriter<Writer> = 0, RefType thread_type>
+zx_status_t WriteProfilerBacktraceRecord(Writer* writer, uint64_t timestamp,
+                                         const ThreadRef<thread_type>& thread_ref,
+                                         const void* backtrace_data,
+                                         size_t backtrace_data_length_bytes) {
+  const WordSize record_size = WordSize(2) /* header, timestamp */ +
+                               WordSize::FromBytes(backtrace_data_length_bytes) +
+                               thread_ref.PayloadSize();
+  const uint64_t header = MakeHeader(RecordType::kProfiler, record_size) |
+                          ProfilerRecordFields::ProfilerRecordType::Make(
+                              ToUnderlyingType(ProfilerRecordType::kBacktrace)) |
+                          ProfilerRecordFields::ThreadRef::Make(thread_ref.HeaderEntry()) |
+                          ProfilerBacktraceRecordFields::BacktraceDataLength::Make(
+                              backtrace_data_length_bytes / sizeof(uint64_t));
+
+  zx::result<typename internal::WriterTraits<Writer>::Reservation> res = writer->Reserve(header);
+  if (res.is_ok()) {
+    res->WriteWord(timestamp);
+    thread_ref.Write(*res);
+    res->WriteBytes(backtrace_data, backtrace_data_length_bytes);
+    res->Commit();
+  }
+  return res.status_value();
+}
+
 // Create a Provider Section Metadata Record using a given Writer
 //
 // This metadata delimits sections of the trace that have been obtained from

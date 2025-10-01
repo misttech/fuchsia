@@ -183,6 +183,26 @@ struct LogRecordFields : RecordFields {
   using ThreadRef = Field<32, 39>;
 };
 
+struct ProfilerRecordFields : RecordFields {
+  using ProfilerRecordType = Field<16, 19>;
+  using ThreadRef = Field<20, 27>;
+};
+
+struct ProfilerModuleRecordFields : ProfilerRecordFields {
+  using ModuleId = Field<28, 43>;
+  using NameLength = Field<44, 51>;
+  using BuildIdLength = Field<52, 59>;
+};
+
+struct ProfilerMmapRecordFields : ProfilerRecordFields {
+  using ModuleId = Field<28, 43>;
+  using Flags = Field<44, 46>;
+};
+
+struct ProfilerBacktraceRecordFields : ProfilerRecordFields {
+  using BacktraceDataLength = Field<28, 35>;
+};
+
 struct LargeBlobFields : LargeRecordFields {
   using BlobFormat = Field<40, 43>;
 };

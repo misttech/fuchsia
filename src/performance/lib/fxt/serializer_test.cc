@@ -4,6 +4,9 @@
 
 #include <lib/fxt/serializer.h>
 
+#include <cstdint>
+#include <cstring>
+
 #include <gtest/gtest.h>
 
 #include "lib/fxt/fields.h"
@@ -1017,6 +1020,108 @@ TEST(Serializer, ThreadRecord) {
   EXPECT_EQ((header & 0x0000'0000'00FF'0000) >> 16, uint64_t{index});
   EXPECT_EQ(words[1], process.koid);
   EXPECT_EQ(words[2], thread.koid);
+}
+
+TEST(Serializer, ProfilerModuleRecord) {
+  uint64_t timestamp = 0x1234'5678'90AB'CDEF;
+  fxt::ThreadRef thread_ref(0xCC);
+  uint16_t module_id = 0xABCD;
+  const char* name = "module_name";
+  // build id: 333e89f0c175000cee9b7e201fedcd6f9b4ba8ae
+  const std::vector<std::byte> build_id{
+      std::byte{0x33}, std::byte{0x3e}, std::byte{0x89}, std::byte{0xf0}, std::byte{0xc1},
+      std::byte{0x75}, std::byte{0x00}, std::byte{0x0c}, std::byte{0xee}, std::byte{0x9b},
+      std::byte{0x7e}, std::byte{0x20}, std::byte{0x1f}, std::byte{0xed}, std::byte{0xcd},
+      std::byte{0x6f}, std::byte{0x9b}, std::byte{0x4b}, std::byte{0xa8}, std::byte{0xae}};
+
+  FakeWriter writer;
+  EXPECT_EQ(ZX_OK, fxt::WriteProfilerModuleRecord(&writer, timestamp, thread_ref, module_id, name,
+                                                  strlen(name), build_id.data(), build_id.size()));
+
+  // 2 words for header and timestamp, 2 for name, 3 for build_id
+  EXPECT_EQ(writer.bytes.size(), fxt::WordSize(7).SizeInBytes());
+
+  uint64_t* words = reinterpret_cast<uint64_t*>(writer.bytes.data());
+  uint64_t header = words[0];
+  EXPECT_EQ(fxt::RecordFields::Type::Get<fxt::RecordType>(header), fxt::RecordType::kProfiler);
+  EXPECT_EQ(fxt::ProfilerRecordFields::ProfilerRecordType::Get<fxt::ProfilerRecordType>(header),
+            fxt::ProfilerRecordType::kModule);
+  EXPECT_EQ(fxt::ProfilerRecordFields::ThreadRef::Get<uint8_t>(header), thread_ref.id());
+  EXPECT_EQ(fxt::ProfilerModuleRecordFields::ModuleId::Get<uint16_t>(header), module_id);
+  EXPECT_EQ(fxt::ProfilerModuleRecordFields::NameLength::Get<size_t>(header), strlen(name));
+  EXPECT_EQ(fxt::ProfilerModuleRecordFields::BuildIdLength::Get<size_t>(header), build_id.size());
+
+  EXPECT_EQ(words[1], timestamp);
+  EXPECT_EQ(std::memcmp(words + 2, "module_n", 8), 0);
+  EXPECT_EQ(std::memcmp(words + 3, "ame\0\0\0\0\0", 8), 0);
+  const uint8_t expected_build_id_1[] = {0x33, 0x3e, 0x89, 0xf0, 0xc1, 0x75, 0x00, 0x0c};
+  EXPECT_EQ(std::memcmp(words + 4, expected_build_id_1, 8), 0);
+  const uint8_t expected_build_id_2[] = {
+      0xee, 0x9b, 0x7e, 0x20, 0x1f, 0xed, 0xcd, 0x6f,
+  };
+
+  EXPECT_EQ(std::memcmp(words + 5, expected_build_id_2, 8), 0);
+  const uint8_t expected_build_id_3[] = {0x9b, 0x4b, 0xa8, 0xae, 0x00, 0x00, 0x00, 0x00};
+  EXPECT_EQ(std::memcmp(words + 6, expected_build_id_3, 8), 0);
+}
+
+TEST(Serializer, ProfilerMmapRecord) {
+  uint64_t timestamp = 0x1234'5678'90AB'CDEF;
+  fxt::ThreadRef thread_ref(0xCC);
+  uint16_t module_id = 0xABCD;
+  uint64_t start_address = 0x1000;
+  uint64_t addr_range = 0x2000;
+  uint64_t vaddr = 0x3000;
+  uint8_t flags = 0b101;
+
+  FakeWriter writer;
+  EXPECT_EQ(ZX_OK, fxt::WriteProfilerMmapRecord(&writer, timestamp, thread_ref, module_id,
+                                                start_address, addr_range, vaddr, flags));
+
+  // 1 for header, 1 for timestamp, 3 for addresses
+  EXPECT_EQ(writer.bytes.size(), fxt::WordSize(5).SizeInBytes());
+
+  uint64_t* words = reinterpret_cast<uint64_t*>(writer.bytes.data());
+  uint64_t header = words[0];
+  EXPECT_EQ(fxt::RecordFields::Type::Get<fxt::RecordType>(header), fxt::RecordType::kProfiler);
+  EXPECT_EQ(fxt::ProfilerRecordFields::ProfilerRecordType::Get<fxt::ProfilerRecordType>(header),
+            fxt::ProfilerRecordType::kMmap);
+  EXPECT_EQ(fxt::ProfilerRecordFields::ThreadRef::Get<uint8_t>(header), thread_ref.id());
+  EXPECT_EQ(fxt::ProfilerMmapRecordFields::ModuleId::Get<uint16_t>(header), module_id);
+  EXPECT_EQ(fxt::ProfilerMmapRecordFields::Flags::Get<uint8_t>(header), flags);
+
+  EXPECT_EQ(words[1], timestamp);
+  EXPECT_EQ(words[2], start_address);
+  EXPECT_EQ(words[3], addr_range);
+  EXPECT_EQ(words[4], vaddr);
+}
+
+TEST(Serializer, ProfilerBacktraceRecord) {
+  uint64_t timestamp = 0x1234'5678'90AB'CDEF;
+  fxt::ThreadRef thread_ref(0xDEADBEEF, 0xCAFEF00D);
+  uint64_t backtrace_data[] = {0x1, 0x2, 0x3};
+
+  FakeWriter writer;
+  EXPECT_EQ(ZX_OK, fxt::WriteProfilerBacktraceRecord(&writer, timestamp, thread_ref, backtrace_data,
+                                                     sizeof(backtrace_data)));
+
+  // 1 for header, 1 for timestamp, 2 for thread ref, 3 for backtrace data
+  EXPECT_EQ(writer.bytes.size(), fxt::WordSize(7).SizeInBytes());
+
+  uint64_t* words = reinterpret_cast<uint64_t*>(writer.bytes.data());
+  uint64_t header = words[0];
+  EXPECT_EQ(fxt::RecordFields::Type::Get<fxt::RecordType>(header), fxt::RecordType::kProfiler);
+  EXPECT_EQ(fxt::ProfilerRecordFields::ProfilerRecordType::Get<fxt::ProfilerRecordType>(header),
+            fxt::ProfilerRecordType::kBacktrace);
+  EXPECT_EQ(fxt::ProfilerBacktraceRecordFields::BacktraceDataLength::Get<size_t>(header),
+            sizeof(backtrace_data) / sizeof(uint64_t));
+
+  EXPECT_EQ(words[1], timestamp);
+  EXPECT_EQ(words[2], 0xDEADBEEF);
+  EXPECT_EQ(words[3], 0xCAFEF00D);
+  EXPECT_EQ(words[4], backtrace_data[0]);
+  EXPECT_EQ(words[5], backtrace_data[1]);
+  EXPECT_EQ(words[6], backtrace_data[2]);
 }
 
 }  // namespace
