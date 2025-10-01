@@ -42,7 +42,7 @@ struct FlashPartitionInfo {
 FlashPartitionInfo GetPartitionInfo(std::string_view partition_label) {
   size_t len = partition_label.length();
   if (len < 2) {
-    return {partition_label, std::nullopt};
+    return {.partition = partition_label, .configuration = std::nullopt};
   }
 
   FlashPartitionInfo ret;
@@ -198,13 +198,13 @@ zx::result<> Fastboot::GetVar(const std::string& command, Transport* transport) 
     return SendResponse(ResponseType::kFail, "Unknown variable", transport);
   }
 
-  zx::result<std::string> var_ret = (this->*(find_res->second))(args, transport);
-  if (var_ret.is_error()) {
+  zx::result<std::string> var = (this->*(find_res->second))(args, transport);
+  if (var.is_error()) {
     return SendResponse(ResponseType::kFail, "Fail to get variable", transport,
-                        zx::error(var_ret.status_value()));
+                        zx::error(var.status_value()));
   }
 
-  return SendResponse(ResponseType::kOkay, var_ret.value(), transport);
+  return SendResponse(ResponseType::kOkay, *var, transport);
 }
 
 zx::result<std::string> Fastboot::GetVarVersion(const std::vector<std::string_view>&, Transport*) {
@@ -252,33 +252,28 @@ zx::result<std::string> Fastboot::GetVarHwRevision(const std::vector<std::string
   if (svc_root.is_error()) {
     return zx::error(svc_root.status_value());
   }
-
-  auto connect_result = component::ConnectAt<fuchsia_buildinfo::Provider>(svc_root.value());
-  if (connect_result.is_error()) {
-    return zx::error(connect_result.status_value());
+  auto provider = component::ConnectAt<fuchsia_buildinfo::Provider>(*svc_root);
+  if (provider.is_error()) {
+    return zx::error(provider.status_value());
   }
-
-  auto provider = fidl::WireSyncClient(std::move(connect_result.value()));
-
-  auto resp = provider->GetBuildInfo();
-  if (!resp.ok()) {
-    return zx::error(resp.status());
+  auto build_info = fidl::WireCall(*provider)->GetBuildInfo();
+  if (!build_info.ok()) {
+    return zx::error(build_info.status());
   }
-
-  return zx::ok(resp->build_info.board_config().data());
+  return zx::ok(build_info->build_info.board_config().data());
 }
 
 zx::result<std::string> Fastboot::GetVarSlotCount(const std::vector<std::string_view>&,
                                                   Transport* transport) {
-  auto boot_manager_res = FindBootManager();
-  if (boot_manager_res.is_error()) {
+  auto boot_manager = FindBootManager();
+  if (boot_manager.is_error()) {
     auto ret = SendResponse(ResponseType::kFail, "Failed to find boot manager", transport,
-                            zx::error(boot_manager_res.status_value()));
+                            zx::error(boot_manager.status_value()));
     return zx::error(ret.status_value());
   }
   // `fastboot set_active` only cares whether the device has >1 slots. Doesn't care how many
   // exactly.
-  return boot_manager_res.value()->QueryCurrentConfiguration().ok() ? zx::ok("2") : zx::ok("1");
+  return boot_manager->QueryCurrentConfiguration().ok() ? zx::ok("2") : zx::ok("1");
 }
 
 zx::result<std::string> Fastboot::GetVarIsUserspace(const std::vector<std::string_view>&,
@@ -295,7 +290,7 @@ zx::result<fidl::UnownedClientEnd<fuchsia_io::Directory>> Fastboot::GetSvcRoot()
           << "Failed to connect to svc root " << svc_root.status_string();
       return zx::error(ZX_ERR_INTERNAL);
     }
-    svc_root_ = std::move(*svc_root);
+    svc_root_ = *std::move(svc_root);
   }
 
   return zx::ok(fidl::UnownedClientEnd<fuchsia_io::Directory>(svc_root_));
@@ -307,14 +302,12 @@ zx::result<fidl::WireSyncClient<fuchsia_paver::Paver>> Fastboot::ConnectToPaver(
   if (svc_root.is_error()) {
     return zx::error(svc_root.status_value());
   }
-
-  auto paver_svc = component::ConnectAt<fuchsia_paver::Paver>(*svc_root);
-  if (!paver_svc.is_ok()) {
+  auto paver = component::ConnectAt<fuchsia_paver::Paver>(*svc_root);
+  if (!paver.is_ok()) {
     FX_LOGST(ERROR, kFastbootLogTag) << "Unable to open /svc/fuchsia.paver.Paver";
-    return zx::error(paver_svc.error_value());
+    return zx::error(paver.error_value());
   }
-
-  return zx::ok(fidl::WireSyncClient(std::move(*paver_svc)));
+  return zx::ok(fidl::WireSyncClient(*std::move(paver)));
 }
 
 fuchsia_mem::wire::Buffer Fastboot::GetWireBufferFromDownload() {
@@ -327,34 +320,35 @@ fuchsia_mem::wire::Buffer Fastboot::GetWireBufferFromDownload() {
 zx::result<> Fastboot::WriteFirmware(fuchsia_paver::wire::Configuration config,
                                      std::string_view firmware_type, Transport* transport,
                                      fidl::WireSyncClient<fuchsia_paver::DataSink>& data_sink) {
-  auto ret = data_sink->WriteFirmware(config, fidl::StringView::FromExternal(firmware_type),
-                                      GetWireBufferFromDownload());
-  if (ret.status() != ZX_OK) {
+  auto response = data_sink->WriteFirmware(config, fidl::StringView::FromExternal(firmware_type),
+                                           GetWireBufferFromDownload());
+  if (response.status() != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Failed to invoke paver bootloader write", transport,
-                        zx::error(ret.status()));
+                        zx::error(response.status()));
   }
-
-  if (ret.value().result.is_status() && ret.value().result.status() != ZX_OK) {
+  const auto& result = response->result;
+  if (result.is_status() && result.status() != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Failed to write bootloader", transport,
-                        zx::error(ret.value().result.status()));
+                        zx::error(response->result.status()));
   }
-
-  if (ret.value().result.is_unsupported() && ret.value().result.unsupported()) {
+  if (result.is_unsupported() && result.unsupported()) {
     return SendResponse(ResponseType::kFail, "Firmware type is not supported", transport);
   }
-
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
 zx::result<> Fastboot::WriteAsset(fuchsia_paver::wire::Configuration config,
                                   fuchsia_paver::wire::Asset asset, Transport* transport,
                                   fidl::WireSyncClient<fuchsia_paver::DataSink>& data_sink) {
-  auto ret = data_sink->WriteAsset(config, asset, GetWireBufferFromDownload());
-  zx_status_t status = ret.status() == ZX_OK ? ret.value().status : ret.status();
-  if (status != ZX_OK) {
-    return SendResponse(ResponseType::kFail, "Failed to flash asset", transport, zx::error(status));
+  auto response = data_sink->WriteAsset(config, asset, GetWireBufferFromDownload());
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke paver data sink write asset",
+                        transport, zx::error(response.status()));
   }
-
+  if (response->status != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to flash asset", transport,
+                        zx::error(response->status));
+  }
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
@@ -378,19 +372,20 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
       return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
                           transport);
     }
-    auto connect_result = ConnectToRecoveryService();
-    if (connect_result.is_error()) {
+    auto recovery = ConnectToRecoveryService();
+    if (recovery.is_error()) {
       return SendResponse(ResponseType::kFail, "Failed to connect to recovery", transport,
-                          zx::error(connect_result.status_value()));
+                          zx::error(recovery.status_value()));
     }
-    auto response = recovery_svc_->WriteSystemBlobImage(GetWireBufferFromDownload().vmo);
+    auto response =
+        fidl::WireCall(*recovery)->WriteSystemBlobImage(GetWireBufferFromDownload().vmo);
     if (response.status() != ZX_OK) {
       return SendResponse(ResponseType::kFail, "Recovery.WriteSystemBlobImage Failed", transport,
                           zx::error(response.status()));
     }
-    if (response.value().is_error()) {
+    if (response->is_error()) {
       return SendResponse(ResponseType::kFail, "Failed to write blob image", transport,
-                          zx::error(response.value().error_value()));
+                          zx::error(response->error_value()));
     }
     return SendResponse(ResponseType::kOkay, "", transport);
   }
@@ -404,22 +399,17 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     return SendResponse(ResponseType::kFail, "Android sparse image is not supported.", transport);
   }
 
-  auto paver_client_res = ConnectToPaver();
-  if (paver_client_res.is_error()) {
+  auto paver = ConnectToPaver();
+  if (paver.is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to connect to paver", transport,
-                        zx::error(paver_client_res.status_value()));
+                        zx::error(paver.status_value()));
   }
 
   // Connect to the data sink
-  auto data_sink_endpoints = fidl::CreateEndpoints<fuchsia_paver::DataSink>();
-  if (data_sink_endpoints.is_error()) {
-    return SendResponse(ResponseType::kFail, "Unable to create data sink endpoint", transport,
-                        zx::error(data_sink_endpoints.status_value()));
-  }
-  auto [data_sink_local, data_sink_remote] = std::move(*data_sink_endpoints);
+  auto [client, server] = fidl::Endpoints<fuchsia_paver::DataSink>::Create();
   // TODO(https://fxbug.dev/42180237) Consider handling the error instead of ignoring it.
-  (void)paver_client_res.value()->FindDataSink(std::move(data_sink_remote));
-  fidl::WireSyncClient data_sink{std::move(data_sink_local)};
+  (void)paver->FindDataSink(std::move(server));
+  fidl::WireSyncClient data_sink{std::move(client)};
 
   if (info.partition == "bootloader") {
     // If abr suffix is not given, assume that firmware ABR is not supported and just provide a
@@ -428,34 +418,39 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
         info.configuration ? *info.configuration : fuchsia_paver::wire::Configuration::kA;
     std::string_view firmware_type = args.size() == 3 ? args[2] : "";
     return WriteFirmware(config, firmware_type, transport, data_sink);
-  } else if (info.partition == "fuchsia-esp") {
+  }
+
+  if (info.partition == "fuchsia-esp") {
     // x64 platform uses 'fuchsia-esp' for bootloader partition . We should eventually move to use
     // "bootloader"
     // For legacy `fuchsia-esp` we don't consider firmware ABR or type.
     return WriteFirmware(fuchsia_paver::wire::Configuration::kA, "", transport, data_sink);
-  } else if (info.partition == "zircon" && info.configuration) {
+  }
+
+  if (info.partition == "zircon" && info.configuration) {
     return WriteAsset(*info.configuration, fuchsia_paver::wire::Asset::kKernel, transport,
                       data_sink);
-  } else if (info.partition == "vbmeta" && info.configuration) {
+  }
+
+  if (info.partition == "vbmeta" && info.configuration) {
     return WriteAsset(*info.configuration, fuchsia_paver::wire::Asset::kVerifiedBootMetadata,
                       transport, data_sink);
-  } else if (info.partition == "fvm") {
-    auto ret = data_sink->WriteOpaqueVolume(GetWireBufferFromDownload());
+  }
 
-    zx_status_t status = ZX_OK;
-    if (ret.status() != ZX_OK) {
-      status = ret.status();
-    } else if (ret->is_error()) {
-      status = ret->error_value();
+  if (info.partition == "fvm") {
+    auto response = data_sink->WriteOpaqueVolume(GetWireBufferFromDownload());
+    if (response.status() != ZX_OK) {
+      return SendResponse(ResponseType::kFail, "Failed to invoke paver data sink write opaque fvm",
+                          transport, zx::error(response.status()));
     }
-
-    if (status != ZX_OK) {
+    if (response->is_error()) {
       return SendResponse(ResponseType::kFail, "Failed to flash opaque fvm", transport,
-                          zx::error(status));
+                          zx::error(response->error_value()));
     }
-
     return SendResponse(ResponseType::kOkay, "", transport);
-  } else if (info.partition == "fvm.sparse") {
+  }
+
+  if (info.partition == "fvm.sparse") {
     // Flashing the sparse format FVM image via the paver. Note that at the time this code is
     // written, the format of FVM for fuchsia has not reached at a stable point yet. However, the
     // implementation of the paver fidl interface `WriteVolumes()` depends on the format of the FVM.
@@ -463,12 +458,7 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     // before using this fastboot command. This typically means flashing the latest kernel and
     // reboot first. Otherwise, if FVM format changes and the currently running paver is not
     // up-to-date, the FVM may be flashed wrongly.
-    auto streamer_endpoints = fidl::CreateEndpoints<fuchsia_paver::PayloadStream>();
-    if (streamer_endpoints.is_error()) {
-      return SendResponse(ResponseType::kFail, "Failed to create payload streamer", transport,
-                          zx::error(streamer_endpoints.status_value()));
-    }
-    auto [client, server] = std::move(*streamer_endpoints);
+    auto [client, server] = fidl::Endpoints<fuchsia_paver::PayloadStream>::Create();
 
     // Launch thread which implements interface.
     async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
@@ -476,15 +466,21 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
                                        download_vmo_mapper_.size());
     loop.StartThread("fastboot-payload-stream");
 
-    auto result = data_sink->WriteVolumes(std::move(client));
-    zx_status_t status = result.ok() ? result.value().status : result.status();
-    if (status != ZX_OK) {
-      return SendResponse(ResponseType::kFail, "Failed to write fvm", transport, zx::error(status));
+    auto response = data_sink->WriteVolumes(std::move(client));
+    if (response.status() != ZX_OK) {
+      return SendResponse(ResponseType::kFail, "Failed to invoke paver data sink write volumes",
+                          transport, zx::error(response.status()));
+    }
+    if (response->status != ZX_OK) {
+      return SendResponse(ResponseType::kFail, "Failed to write fvm", transport,
+                          zx::error(response->status));
     }
 
     download_vmo_mapper_.Reset();
     return SendResponse(ResponseType::kOkay, "", transport);
-  } else if (info.partition == "gpt-meta") {
+  }
+
+  if (info.partition == "gpt-meta") {
     // gpt-meta is a pseudo-partition; we don't write the contents directly to the GPT but instead
     // it provides some higher-level information about what the GPT should look like and it's up to
     // the device implementation to translate that to an actual GPT.
@@ -500,54 +496,46 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     // mechanism rather than having to teach it about the `oem init-partition-tables` command.
     std::string_view contents(reinterpret_cast<const char*>(download_vmo_mapper_.start()),
                               download_vmo_mapper_.size());
-    if (contents == kGptMetaDefault) {
-      return OemInitPartitionTables(command, transport);
-    } else {
+    if (contents != kGptMetaDefault) {
       return SendResponse(ResponseType::kFail, "Invalid gpt-meta contents", transport,
                           zx::error(ZX_ERR_INVALID_ARGS));
     }
-  } else if (info.partition == "super") {
+
+    return OemInitPartitionTables(command, transport);
+  }
+
+  if (info.partition == "super") {
     // TODO(https://fxbug.dev/397515768): We don't yet handle the presence or absence of the -w
     // flag which is used to indicate if we should wipe userdata or not. For now, this will always
     // overwrite userdata regardless of this flag.
-    auto ret = data_sink->WriteSparseVolume(GetWireBufferFromDownload());
-    if (ret.status() != ZX_OK) {
+    auto response = data_sink->WriteSparseVolume(GetWireBufferFromDownload());
+    if (response.status() != ZX_OK) {
       return SendResponse(ResponseType::kFail,
                           "Failed to invoke fuchsia.paver/DataSink.WriteSparseVolume", transport,
-                          zx::error(ret.status()));
+                          zx::error(response.status()));
     }
-    if (ret.value().is_error()) {
+    if (response->is_error()) {
       return SendResponse(ResponseType::kFail, "Failed to flash super", transport,
-                          zx::error(ret.value().error_value()));
+                          zx::error(response->error_value()));
     }
     return SendResponse(ResponseType::kOkay, "", transport);
-
-  } else {
-    return SendResponse(ResponseType::kFail, "Unsupported partition", transport);
   }
 
-  return zx::ok();
+  return SendResponse(ResponseType::kFail, "Unsupported partition", transport);
 }
 
 zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> Fastboot::FindBootManager() {
-  auto paver_client_res = ConnectToPaver();
-  if (!paver_client_res.is_ok()) {
-    return zx::error(paver_client_res.status_value());
+  auto paver = ConnectToPaver();
+  if (!paver.is_ok()) {
+    return zx::error(paver.status_value());
   }
-
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_paver::BootManager>();
-  if (endpoints.is_error()) {
-    FX_LOGST(ERROR, kFastbootLogTag) << "Failed to create endpoint";
-    return zx::error(endpoints.status_value());
-  }
-
-  fidl::Status res = paver_client_res.value()->FindBootManager(std::move(endpoints->server));
-  if (!res.ok()) {
+  auto [client, server] = fidl::Endpoints<fuchsia_paver::BootManager>::Create();
+  auto response = paver->FindBootManager(std::move(server));
+  if (!response.ok()) {
     FX_LOGST(ERROR, kFastbootLogTag) << "Failed to find boot manager";
-    return zx::error(res.status());
+    return zx::error(response.status());
   }
-
-  return zx::ok(fidl::WireSyncClient(std::move(endpoints->client)));
+  return zx::ok(fidl::WireSyncClient(std::move(client)));
 }
 
 zx::result<> Fastboot::SetActive(const std::string& command, Transport* transport) {
@@ -557,10 +545,10 @@ zx::result<> Fastboot::SetActive(const std::string& command, Transport* transpor
     return SendResponse(ResponseType::kFail, "Not enough arguments", transport);
   }
 
-  auto boot_manager_res = FindBootManager();
-  if (boot_manager_res.is_error()) {
+  auto boot_manager = FindBootManager();
+  if (boot_manager.is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to find boot manager", transport,
-                        zx::error(boot_manager_res.status_value()));
+                        zx::error(boot_manager.status_value()));
   }
 
   fuchsia_paver::wire::Configuration config = fuchsia_paver::wire::Configuration::kB;
@@ -570,11 +558,14 @@ zx::result<> Fastboot::SetActive(const std::string& command, Transport* transpor
     return SendResponse(ResponseType::kFail, "Invalid slot", transport);
   }
 
-  auto result = boot_manager_res.value()->SetConfigurationActive(config);
-  zx_status_t status = result.ok() ? result.value().status : result.status();
-  if (status != ZX_OK) {
+  auto response = boot_manager->SetConfigurationActive(config);
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke paver boot manager set active",
+                        transport, zx::error(response.status()));
+  }
+  if (response->status != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Failed to set configuration active: ", transport,
-                        zx::error(status));
+                        zx::error(response->status));
   }
 
   return SendResponse(ResponseType::kOkay, "", transport);
@@ -586,28 +577,25 @@ Fastboot::ConnectToPowerStateControl() {
   if (svc_root.is_error()) {
     return zx::error(svc_root.status_value());
   }
-
-  auto connect_result = component::ConnectAt<fuchsia_hardware_power_statecontrol::Admin>(*svc_root);
-  if (connect_result.is_error()) {
-    return zx::error(connect_result.status_value());
+  auto admin = component::ConnectAt<fuchsia_hardware_power_statecontrol::Admin>(*svc_root);
+  if (admin.is_error()) {
+    return zx::error(admin.status_value());
   }
-
-  return zx::ok(fidl::WireSyncClient(std::move(connect_result.value())));
+  return zx::ok(fidl::WireSyncClient(*std::move(admin)));
 }
 
 zx::result<> Fastboot::Reboot(const std::string& command, Transport* transport) {
-  auto connect_result = ConnectToPowerStateControl();
-  if (connect_result.is_error()) {
+  auto admin = ConnectToPowerStateControl();
+  if (admin.is_error()) {
     return SendResponse(ResponseType::kFail,
                         "Failed to connect to power state control service: ", transport,
-                        zx::error(connect_result.status_value()));
+                        zx::error(admin.status_value()));
   }
-
   // Send an okay response regardless of the result. Because once system reboots, we have
   // no chance to send any response.
-  zx::result<> ret = SendResponse(ResponseType::kOkay, "", transport);
-  if (ret.is_error()) {
-    return ret;
+  zx::result<> response = SendResponse(ResponseType::kOkay, "", transport);
+  if (response.is_error()) {
+    return response;
   }
   // Wait for 1s to make sure the response is sent over to the transport
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -619,49 +607,44 @@ zx::result<> Fastboot::Reboot(const std::string& command, Transport* transport) 
   auto vector_view =
       fidl::VectorView<fuchsia_hardware_power_statecontrol::RebootReason2>::FromExternal(reasons);
   builder.reasons(vector_view);
-  auto resp = connect_result.value()->PerformReboot(builder.Build());
-  if (!resp.ok()) {
-    return zx::error(resp.status());
-  }
-
-  return zx::ok();
+  auto resp = admin->PerformReboot(builder.Build());
+  return zx::make_result(resp.status());
 }
 
 zx::result<> Fastboot::Continue(const std::string& command, Transport* transport) {
-  zx::result<> ret = SendResponse(
+  zx::result<> response = SendResponse(
       ResponseType::kInfo, "userspace fastboot cannot continue, rebooting instead", transport);
-  if (ret.is_error()) {
-    return ret;
+  if (response.is_error()) {
+    return response;
   }
-
   return Reboot(command, transport);
 }
 
 zx::result<> Fastboot::RebootBootloader(const std::string& command, Transport* transport) {
-  zx::result<> ret = SendResponse(
+  zx::result<> response = SendResponse(
       ResponseType::kInfo,
       "userspace fastboot cannot reboot to bootloader, rebooting to recovery instead", transport);
-  if (ret.is_error()) {
-    return ret;
+  if (response.is_error()) {
+    return response;
   }
 
-  auto connect_result = ConnectToPowerStateControl();
-  if (connect_result.is_error()) {
+  auto admin = ConnectToPowerStateControl();
+  if (admin.is_error()) {
     return SendResponse(ResponseType::kFail,
                         "Failed to connect to power state control service: ", transport,
-                        zx::error(connect_result.status_value()));
+                        zx::error(admin.status_value()));
   }
 
   // Send an okay response regardless of the result. Because once system reboots, we have
   // no chance to send any response.
-  ret = SendResponse(ResponseType::kOkay, "", transport);
-  if (ret.is_error()) {
-    return ret;
+  response = SendResponse(ResponseType::kOkay, "", transport);
+  if (response.is_error()) {
+    return response;
   }
   // Wait for 1s to make sure the response is sent over to the transport
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
-  auto resp = connect_result.value()->RebootToRecovery();
+  auto resp = admin->RebootToRecovery();
   if (!resp.ok()) {
     return zx::error(resp.status());
   }
@@ -676,75 +659,63 @@ zx::result<> Fastboot::OemAddStagedBootloaderFile(const std::string& command,
   if (args.size() != 3) {
     return SendResponse(ResponseType::kFail, "Invalid number of arguments", transport);
   }
-
   if (args[2] != sshd_host::kAuthorizedKeysBootloaderFileName) {
     return SendResponse(ResponseType::kFail, "Unsupported file: " + std::string(args[2]),
                         transport);
   }
-
-  auto connect_result = ConnectToRecoveryService();
-  if (connect_result.is_error()) {
+  auto recovery = ConnectToRecoveryService();
+  if (recovery.is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to connect to fuchsia.fshost/Recovery",
-                        transport, zx::error(connect_result.status_value()));
+                        transport, zx::error(recovery.status_value()));
   }
 
-  auto resp = recovery_svc_->WriteDataFile(
+  auto response = fidl::WireCall(*recovery)->WriteDataFile(
       fidl::StringView::FromExternal(sshd_host::kAuthorizedKeyPathInData),
       download_vmo_mapper_.Release());
-  zx_status_t status = ZX_OK;
-  if (resp.status() != ZX_OK) {
-    status = resp.status();
-  } else if (resp->is_error()) {
-    status = resp->error_value();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke recovery WriteDataFile", transport,
+                        zx::error(response.status()));
   }
-
-  if (status != ZX_OK) {
+  if (response->is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to write ssh key", transport,
-                        zx::error(status));
+                        zx::error(response->error_value()));
   }
-
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
 zx::result<fidl::WireSyncClient<fuchsia_paver::DynamicDataSink>> Fastboot::ConnectToDynamicDataSink(
     Transport* transport) {
-  auto paver_client_res = ConnectToPaver();
-  if (paver_client_res.is_error()) {
+  auto paver = ConnectToPaver();
+  if (paver.is_error()) {
     return zx::error(SendResponse(ResponseType::kFail, "Failed to connect to paver", transport,
-                                  zx::error(paver_client_res.status_value()))
+                                  zx::error(paver.status_value()))
                          .status_value());
   }
-
-  auto data_sink_endpoints = fidl::CreateEndpoints<fuchsia_paver::DynamicDataSink>();
-  if (data_sink_endpoints.is_error()) {
-    return zx::error(data_sink_endpoints.status_value());
-  }
-  auto [data_sink_local, data_sink_remote] = std::move(*data_sink_endpoints);
-  auto res = paver_client_res.value()->FindPartitionTableManager(
-      fidl::ServerEnd<fuchsia_paver::DynamicDataSink>(data_sink_remote.TakeChannel()));
-
-  if (!res.ok()) {
+  auto [client, server] = fidl::Endpoints<fuchsia_paver::DynamicDataSink>::Create();
+  auto response = paver->FindPartitionTableManager(
+      fidl::ServerEnd<fuchsia_paver::DynamicDataSink>(server.TakeChannel()));
+  if (!response.ok()) {
     return zx::error(SendResponse(ResponseType::kFail, "Failed to find dynamic data sink",
-                                  transport, zx::error(res.status()))
+                                  transport, zx::error(response.status()))
                          .status_value());
   }
-
-  return zx::ok(fidl::WireSyncClient(std::move(data_sink_local)));
+  return zx::ok(fidl::WireSyncClient(std::move(client)));
 }
 
 zx::result<> Fastboot::OemInitPartitionTables(const std::string& command, Transport* transport) {
-  auto data_sink_client = ConnectToDynamicDataSink(transport);
-  if (data_sink_client.is_error()) {
-    return zx::error(data_sink_client.status_value());
+  auto data_sink = ConnectToDynamicDataSink(transport);
+  if (data_sink.is_error()) {
+    return zx::error(data_sink.status_value());
   }
-
-  auto res = data_sink_client.value()->InitializePartitionTables();
-  auto status = res.ok() ? res.value().status : res.status();
-  if (status != ZX_OK) {
+  auto response = data_sink->InitializePartitionTables();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke paver partition table init",
+                        transport, zx::error(response.status()));
+  }
+  if (response->status != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Failed to init partition table", transport,
-                        zx::error(status));
+                        zx::error(response->status));
   }
-
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
@@ -781,51 +752,52 @@ zx::result<> Fastboot::OemInstallFromUsb(const std::string& command, Transport* 
 }
 
 zx::result<> Fastboot::OemWipePartitionTables(const std::string& command, Transport* transport) {
-  auto data_sink_client = ConnectToDynamicDataSink(transport);
-  if (data_sink_client.is_error()) {
-    return zx::error(data_sink_client.status_value());
+  auto data_sink = ConnectToDynamicDataSink(transport);
+  if (data_sink.is_error()) {
+    return zx::error(data_sink.status_value());
   }
-
-  auto res = data_sink_client.value()->WipePartitionTables();
-  auto status = res.ok() ? res.value().status : res.status();
-  if (status != ZX_OK) {
+  auto response = data_sink->WipePartitionTables();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke paver partition table wipe",
+                        transport, zx::error(response.status()));
+  }
+  if (response->status != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Failed to wipe partition table", transport,
-                        zx::error(status));
+                        zx::error(response->status));
   }
-
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
-zx::result<> Fastboot::ConnectToRecoveryService() {
-  if (recovery_svc_) {
-    return zx::ok();
+zx::result<fidl::UnownedClientEnd<fuchsia_fshost::Recovery>> Fastboot::ConnectToRecoveryService() {
+  if (fshost_recovery_) {
+    return zx::ok(fshost_recovery_.borrow());
   }
   auto svc_root = GetSvcRoot();
   if (svc_root.is_error()) {
     return zx::error(svc_root.status_value());
   }
-  auto connect_result = component::ConnectAt<fuchsia_fshost::Recovery>(*svc_root);
-  if (connect_result.is_error()) {
-    return zx::error(connect_result.status_value());
+  auto fshost_recovery = component::ConnectAt<fuchsia_fshost::Recovery>(*svc_root);
+  if (fshost_recovery.is_error()) {
+    return zx::error(fshost_recovery.status_value());
   }
-  recovery_svc_ = fidl::WireSyncClient(std::move(connect_result.value()));
-  return zx::ok();
+  fshost_recovery_ = *std::move(fshost_recovery);
+  return zx::ok(fshost_recovery_.borrow());
 }
 
 zx::result<> Fastboot::OemInstallBlobImage(const std::string& command, Transport* transport) {
-  auto connect_result = ConnectToRecoveryService();
-  if (connect_result.is_error()) {
+  auto recovery = ConnectToRecoveryService();
+  if (recovery.is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to connect to recovery", transport,
-                        zx::error(connect_result.status_value()));
+                        zx::error(recovery.status_value()));
   }
-  auto response = recovery_svc_->InstallSystemBlobImage();
+  auto response = fidl::WireCall(*recovery)->InstallSystemBlobImage();
   if (response.status() != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Recovery.InstallSystemBlobImage Failed", transport,
                         zx::error(response.status()));
   }
-  if (response.value().is_error()) {
+  if (response->is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to install blob image", transport,
-                        zx::error(response.value().error_value()));
+                        zx::error(response->error_value()));
   }
   return SendResponse(ResponseType::kOkay, "", transport);
 }

@@ -34,17 +34,17 @@ class __EXPORT Fastboot : public FastbootBase {
   // Creates a Fastboot with max download size as a portion of total system memory.
   Fastboot();
   // Creates a Fastboot with specified max download size and svc_root for testing.
-  Fastboot(size_t max_download_size, fidl::ClientEnd<fuchsia_io::Directory> svc_root =
-                                         fidl::ClientEnd<fuchsia_io::Directory>());
+  explicit Fastboot(size_t max_download_size, fidl::ClientEnd<fuchsia_io::Directory> svc_root =
+                                                  fidl::ClientEnd<fuchsia_io::Directory>());
 
  private:
   size_t max_download_size_;
   fzl::OwnedVmoMapper download_vmo_mapper_;
   // Channel to svc.
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
-  fidl::WireSyncClient<fuchsia_fshost::Recovery> recovery_svc_;
+  fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
 
-  zx::result<> ProcessCommand(std::string_view cmd, Transport *transport) override;
+  zx::result<> ProcessCommand(std::string_view command, Transport *transport) override;
   zx::result<void *> GetDownloadBuffer(size_t total_download_size) override;
   void DoClearDownload() override;
 
@@ -71,7 +71,7 @@ class __EXPORT Fastboot : public FastbootBase {
       Transport *);
   zx::result<fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin>>
   ConnectToPowerStateControl();
-  zx::result<> ConnectToRecoveryService();
+  zx::result<fidl::UnownedClientEnd<fuchsia_fshost::Recovery>> ConnectToRecoveryService();
   zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> FindBootManager();
   zx::result<> WriteFirmware(fuchsia_paver::wire::Configuration config,
                              std::string_view firmware_type, Transport *transport,
