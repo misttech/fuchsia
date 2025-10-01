@@ -23,10 +23,7 @@ type IpSocketMatcher = flexible union {
     4: proto fuchsia.net.matchers.SocketTransportProtocol;
     /// Matches the network interface the socket was bound to (e.g. using
     /// `SetBindToDevice`).
-    ///
-    /// NOTE: This means it never never matches sockets that haven't been bound
-    /// to a specific interface, even if packets from the socket are using it.
-    5: bound_interface fuchsia.net.matchers.Interface;
+    5: bound_interface fuchsia.net.matchers.BoundInterface;
     /// Matches the cookie of the socket.
     6: cookie fuchsia.net.matchers.SocketCookie;
     /// Matches the first mark on the socket.
@@ -101,7 +98,7 @@ closed protocol Diagnostics {
 /// overhead of the `IpIterator.Next()` response is 40 bytes, and the worst-case
 /// size of a single `IpSocketState` is 706 bytes, so we selected the maximum N
 /// where 40 + N * 706 <= 65535.
-const MAX_BATCH_SIZE uint32 = 92;
+const MAX_IP_SOCKET_BATCH_SIZE uint32 = 92;
 
 /// The state for each individual socket returned from `IpIterator.Next()`.
 type IpSocketState = table {
@@ -181,7 +178,7 @@ open protocol IpIterator {
     /// could have occurred in between results for each socket being
     /// materialized.
     strict Next() -> (struct {
-        sockets vector<IpSocketState>:MAX_BATCH_SIZE;
+        sockets vector<IpSocketState>:MAX_IP_SOCKET_BATCH_SIZE;
 
         /// Whether there are more results available. the server immediately
         /// closes its end of the channel after yielding a response with
