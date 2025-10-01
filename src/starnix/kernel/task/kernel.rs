@@ -18,8 +18,7 @@ use crate::task::tracing::PidToKoidMap;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
     HrTimerManager, HrTimerManagerHandle, IpTables, KernelCgroups, KernelStats, KernelThreads,
-    LockedAndTask, PidTable, SchedulerManager, StopState, Syslog, ThreadGroup, UtsNamespace,
-    UtsNamespaceHandle,
+    PidTable, SchedulerManager, StopState, Syslog, ThreadGroup, UtsNamespace, UtsNamespaceHandle,
 };
 use crate::vdso::vdso_loader::Vdso;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
@@ -673,7 +672,7 @@ impl Kernel {
     ///
     /// This function follows the lazy initialization pattern, where the first
     /// call will instantiate the Netlink implementation.
-    pub fn network_netlink(&self) -> &Netlink<NetlinkContextImpl> {
+    pub fn network_netlink(self: &Arc<Self>) -> &Netlink<NetlinkContextImpl> {
         self.network_netlink.get_or_init(|| {
             let (network_netlink, worker_params) =
                 Netlink::new(InterfacesHandlerImpl(self.weak_self.clone()));
@@ -684,12 +683,12 @@ impl Kernel {
             // to use main table for routing.
             let feature_flags =
                 netlink::FeatureFlags { copy_routes_to_main_table: !self.features.netstack_mark };
-
-            self.kthreads.spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
+            let kernel = self.clone();
+            self.kthreads.spawn_future(async move {
                 netlink::run_netlink_worker(
                     worker_params,
                     feature_flags,
-                    NetlinkAccessControl::new(locked_and_task.current_task()),
+                    NetlinkAccessControl::new(kernel.kthreads.system_task()),
                 )
                 .await;
                 log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");

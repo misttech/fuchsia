@@ -66,7 +66,7 @@ pub const SOCKET_MAX_SIZE: usize = 4 << 20;
 const SOL_NETLINK: u32 = 270;
 
 pub fn new_netlink_socket(
-    kernel: &Kernel,
+    kernel: &Arc<Kernel>,
     socket_type: SocketType,
     family: NetlinkFamily,
 ) -> Result<Box<dyn SocketOps>, Errno> {
@@ -930,7 +930,7 @@ struct RouteNetlinkSocket {
 }
 
 impl RouteNetlinkSocket {
-    pub fn new(kernel: &Kernel) -> Result<Self, Errno> {
+    pub fn new(kernel: &Arc<Kernel>) -> Result<Self, Errno> {
         let inner = Arc::new(Mutex::new(NetlinkSocketInner::new(NetlinkFamily::Route)));
         let (message_sender, message_receiver) = mpsc::unbounded();
         let client = match kernel
