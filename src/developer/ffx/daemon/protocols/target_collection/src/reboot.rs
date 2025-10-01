@@ -257,7 +257,8 @@ impl RebootController {
                     self.context.get(USE_SSH_FOR_REBOOT_FROM_PRODUCT).unwrap_or(false);
 
                 if use_ssh_for_reboot {
-                    let res = run_ssh_command(Rc::downgrade(&self.target), state).await;
+                    let res =
+                        run_ssh_command(&self.context, Rc::downgrade(&self.target), state).await;
                     match res {
                         Ok(_) => responder.send(Ok(())).map_err(Into::into),
                         Err(e) => {
@@ -348,11 +349,15 @@ pub(crate) fn handle_fidl_connection_err(e: Error, responder: TargetRebootRespon
     Ok(())
 }
 
-async fn run_ssh_command(target: Weak<Target>, state: TargetRebootState) -> Result<()> {
+async fn run_ssh_command(
+    env: &EnvironmentContext,
+    target: Weak<Target>,
+    state: TargetRebootState,
+) -> Result<()> {
     let t =
         target.upgrade().ok_or_else(|| anyhow!("Could not upgrade Target to build ssh command"))?;
     let addr = t.ssh_address().ok_or_else(|| anyhow!("Could not get ssh address for target"))?;
-    let mut cmd = build_ssh_command_local(addr.into(), state).await?;
+    let mut cmd = build_ssh_command_local(env, addr.into(), state).await?;
     log::debug!("About to run command on target to reboot: {:?}", cmd);
     let ssh = cmd.spawn()?;
     let output = ssh.wait_with_output()?;
@@ -377,6 +382,7 @@ async fn run_ssh_command(target: Weak<Target>, state: TargetRebootState) -> Resu
 }
 
 async fn build_ssh_command_local(
+    env: &EnvironmentContext,
     addr: TargetIpAddr,
     desired_state: TargetRebootState,
 ) -> Result<Command> {
@@ -385,7 +391,11 @@ async fn build_ssh_command_local(
         TargetRebootState::Recovery => vec!["dm", "reboot-recovery"],
         TargetRebootState::Product => vec!["dm", "reboot"],
     };
-    Ok(build_ssh_command(netext::ScopedSocketAddr::from_socket_addr(addr.into())?, device_command)?)
+    Ok(build_ssh_command(
+        env,
+        netext::ScopedSocketAddr::from_socket_addr(addr.into())?,
+        device_command,
+    )?)
 }
 
 // END BLOCK
