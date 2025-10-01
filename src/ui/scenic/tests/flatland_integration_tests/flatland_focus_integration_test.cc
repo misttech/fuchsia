@@ -55,12 +55,12 @@ const fuchsia::ui::composition::TransformId kRootTransform{.value = 1};
 
 }  // namespace
 
-class FlatlandFocusIntegrationTest : public ScenicCtfTest, public FocusChainListener {
+class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChainListener {
  protected:
   FlatlandFocusIntegrationTest() : focus_chain_listener_(this) {}
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     // Set up focus chain listener and wait for the initial null focus chain.
     fidl::InterfaceHandle<FocusChainListener> listener_handle;

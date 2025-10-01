@@ -33,10 +33,10 @@ constexpr fuc::TransformId kTransformId = {1};
 constexpr fuc::ContentId kContentId = {1};
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
-class FlatlandViewIntegrationTest : public ScenicCtfTest {
+class FlatlandViewIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     // Create the flatland display.
     flatland_display_ = ConnectSyncIntoRealm<fuc::FlatlandDisplay>();

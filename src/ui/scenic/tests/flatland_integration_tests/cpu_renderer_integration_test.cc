@@ -30,10 +30,10 @@ using fuchsia::ui::composition::FlatlandPtr;
 using fuchsia::ui::composition::ParentViewportWatcher;
 using fuchsia::ui::composition::TransformId;
 
-class CpuRendererIntegrationTest : public ScenicCtfTest {
+class CpuRendererIntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 

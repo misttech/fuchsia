@@ -23,7 +23,7 @@
 
 namespace integration_tests {
 
-/// ScenicCtfTest use realm_proxy to connect scenic test realm.
+/// ScenicCtfHlcppTest use realm_proxy to connect scenic test realm.
 /// The scenic test realm consists of three components:
 ///   * Scenic
 ///   * Fake Cobalt
@@ -37,10 +37,10 @@ namespace integration_tests {
 /// ----------------------------  <- realm_proxy
 ///     /      |     \            <- Scenic realm
 ///  Scenic  Cobalt  Hdcp
-class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
+class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
-  ScenicCtfTest() = default;
-  ~ScenicCtfTest() override = default;
+  ScenicCtfHlcppTest() = default;
+  ~ScenicCtfHlcppTest() override = default;
 
   /// SetUp connect test realm so test can use realm_proxy_ to access.
   void SetUp() override;

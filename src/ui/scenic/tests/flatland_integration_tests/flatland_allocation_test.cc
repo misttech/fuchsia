@@ -51,10 +51,10 @@ fuchsia::sysmem2::BufferCollectionConstraints GetDefaultBufferConstraints() {
 }
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
-class AllocationTest : public ScenicCtfTest {
+class AllocationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     auto context = sys::ComponentContext::Create();
     context->svc()->Connect(sysmem_allocator_.NewRequest());
@@ -84,7 +84,7 @@ class AllocationTest : public ScenicCtfTest {
     root_flatland_.Unbind();
     flatland_display_.Unbind();
 
-    ScenicCtfTest::TearDown();
+    ScenicCtfHlcppTest::TearDown();
   }
 
  protected:

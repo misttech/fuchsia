@@ -13,12 +13,12 @@ namespace integration_tests {
 
 using fuci_DisplayOwnership = fuchsia::ui::composition::internal::DisplayOwnership;
 
-class DisplayOwnershipIntegrationTest : public ScenicCtfTest {
+class DisplayOwnershipIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   DisplayOwnershipIntegrationTest() = default;
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
     ownership_ = ConnectSyncIntoRealm<fuci_DisplayOwnership>();
   }
 

@@ -73,7 +73,7 @@ std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const 
 
 }  // namespace
 
-class FlatlandTouchIntegrationTest : public ScenicCtfTest {
+class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   static constexpr uint32_t kDeviceId = 1111;
   static constexpr uint32_t kPointerId = 2222;
@@ -86,7 +86,7 @@ class FlatlandTouchIntegrationTest : public ScenicCtfTest {
   // clang-format on
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     flatland_display_ = ConnectSyncIntoRealm<fuchsia::ui::composition::FlatlandDisplay>();
     pointerinjector_registry_ = ConnectSyncIntoRealm<fuchsia::ui::pointerinjector::Registry>();

@@ -127,7 +127,7 @@ void ExpectEqualPointer(const fuchsia::ui::pointer::MousePointerSample& pointer_
   }
 }
 
-class FlatlandMouseIntegrationTest : public ScenicCtfTest {
+class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   static constexpr uint32_t kDeviceId = 1111;
 
@@ -144,7 +144,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfTest {
   // clang-format on
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     flatland_display_ = ConnectSyncIntoRealm<FlatlandDisplay>();
     pointerinjector_registry_ = ConnectSyncIntoRealm<Registry>();

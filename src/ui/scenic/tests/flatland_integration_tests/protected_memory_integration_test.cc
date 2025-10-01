@@ -24,10 +24,10 @@ using fuchsia::ui::composition::FlatlandPtr;
 using fuchsia::ui::composition::ParentViewportWatcher;
 using fuchsia::ui::composition::TransformId;
 
-class ProtectedMemoryIntegrationTest : public ScenicCtfTest {
+class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 

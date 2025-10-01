@@ -148,13 +148,13 @@ std::vector<fuog_ViewTreeSnapshot>::const_iterator GetFirstSnapshotWithView(
 
 // Test fixture that sets up an environment with Registry protocol we can connect to. This test
 // fixture is used for tests where the view nodes are created by Flatland instances.
-class FlatlandObserverRegistryIntegrationTest : public ScenicCtfTest,
+class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
                                                 public fuf_FocusChainListener {
  protected:
   FlatlandObserverRegistryIntegrationTest() : focus_chain_listener_(this) {}
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     // Set up focus chain listener and wait for the initial null focus chain.
     fidl::InterfaceHandle<fuf_FocusChainListener> listener_handle;

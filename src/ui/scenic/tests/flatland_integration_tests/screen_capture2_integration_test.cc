@@ -38,10 +38,10 @@ using fuchsia::ui::composition::internal::ScreenCapture;
 using fuchsia::ui::composition::internal::ScreenCaptureConfig;
 using fuchsia::ui::composition::internal::ScreenCaptureError;
 
-class ScreenCapture2IntegrationTest : public ScenicCtfTest {
+class ScreenCapture2IntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 

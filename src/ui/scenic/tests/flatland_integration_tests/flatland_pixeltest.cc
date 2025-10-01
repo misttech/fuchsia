@@ -46,10 +46,10 @@ void CompareColor(utils::Pixel actual, utils::Pixel expected) {
 }
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
-class FlatlandPixelTestBase : public ScenicCtfTest {
+class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 
@@ -98,7 +98,7 @@ class FlatlandPixelTestBase : public ScenicCtfTest {
     zxtest::Test::TearDown();
   }
 
-  // `ScenicCtfTest`:
+  // `ScenicCtfHlcppTest`:
   uint32_t DisplayMaxLayerCount() const override { return 4; }
   bool DisplayComposition() const override { return true; }
 

@@ -6,7 +6,7 @@
 
 namespace integration_tests {
 
-void ScenicCtfTest::SetUp() {
+void ScenicCtfHlcppTest::SetUp() {
   {
     context_ = sys::ComponentContext::Create();
     ASSERT_EQ(context_->svc()->Connect(realm_factory_.NewRequest()), ZX_OK);
@@ -32,22 +32,24 @@ void ScenicCtfTest::SetUp() {
   }
 }
 
-const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfTest::LocalServiceDirectory() const {
+const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDirectory() const {
   return context_->svc();
 }
 
-uint64_t ScenicCtfTest::DisplayRotation() const { return 0; }
+uint64_t ScenicCtfHlcppTest::DisplayRotation() const { return 0; }
 
-fuchsia::ui::test::context::RendererType ScenicCtfTest::Renderer() const {
+fuchsia::ui::test::context::RendererType ScenicCtfHlcppTest::Renderer() const {
   return fuchsia::ui::test::context::RendererType::VULKAN;
 }
 
-fuchsia::math::SizeU ScenicCtfTest::DisplayDimensions() const { return {.width = 0, .height = 0}; }
+fuchsia::math::SizeU ScenicCtfHlcppTest::DisplayDimensions() const {
+  return {.width = 0, .height = 0};
+}
 
-uint32_t ScenicCtfTest::DisplayRefreshRateMillihertz() const { return 0; }
+uint32_t ScenicCtfHlcppTest::DisplayRefreshRateMillihertz() const { return 0; }
 
-uint32_t ScenicCtfTest::DisplayMaxLayerCount() const { return 0; }
+uint32_t ScenicCtfHlcppTest::DisplayMaxLayerCount() const { return 0; }
 
-bool ScenicCtfTest::DisplayComposition() const { return true; }
+bool ScenicCtfHlcppTest::DisplayComposition() const { return true; }
 
 }  // namespace integration_tests

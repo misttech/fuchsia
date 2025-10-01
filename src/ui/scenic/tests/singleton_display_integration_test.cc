@@ -29,13 +29,13 @@ struct DisplayConfig {
   uint32_t refresh_rate_millihertz;
 };
 
-class SingletonDisplayIntegrationTest : public ScenicCtfTest,
+class SingletonDisplayIntegrationTest : public ScenicCtfHlcppTest,
                                         public zxtest::WithParamInterface<DisplayConfig> {
  public:
   SingletonDisplayIntegrationTest() = default;
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     // Post a "just in case" quit task, if the test hangs.
     async::PostDelayedTask(
@@ -46,7 +46,7 @@ class SingletonDisplayIntegrationTest : public ScenicCtfTest,
     singleton_display_ = ConnectSyncIntoRealm<fuds_Info>();
   }
 
-  // `ScenicCtfTest`:
+  // `ScenicCtfHlcppTest`:
   fuchsia::math::SizeU DisplayDimensions() const override { return GetParam().dimensions; }
   uint32_t DisplayRefreshRateMillihertz() const override {
     return GetParam().refresh_rate_millihertz;

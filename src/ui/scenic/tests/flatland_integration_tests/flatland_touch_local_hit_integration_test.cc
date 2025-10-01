@@ -60,7 +60,7 @@ using TouchSourcePtr = fuchsia::ui::pointer::TouchSourcePtr;
 
 using ViewRef = fuchsia::ui::views::ViewRef;
 
-class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfTest {
+class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   static constexpr uint32_t kDeviceId = 1111;
   static constexpr uint32_t kPointerId = 2222;
@@ -74,7 +74,7 @@ class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfTest {
   // clang-format on
 
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     flatland_display_ = ConnectSyncIntoRealm<FlatlandDisplay>();
     pointerinjector_registry_ = ConnectSyncIntoRealm<fuchsia::ui::pointerinjector::Registry>();

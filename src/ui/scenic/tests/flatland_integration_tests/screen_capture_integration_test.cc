@@ -39,10 +39,10 @@ using fuchsia::ui::composition::TransformId;
 using fuchsia::ui::composition::ViewportProperties;
 using fuchsia::ui::views::ViewRef;
 
-class ScreenCaptureIntegrationTest : public ScenicCtfTest {
+class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 

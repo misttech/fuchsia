@@ -27,10 +27,10 @@ namespace fuv = fuchsia::ui::views;
 using WatchResult = fuv::ViewRefInstalled_Watch_Result;
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
-class FlatlandViewRefInstalledIntegrationTest : public ScenicCtfTest {
+class FlatlandViewRefInstalledIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   void SetUp() override {
-    ScenicCtfTest::SetUp();
+    ScenicCtfHlcppTest::SetUp();
 
     flatland_display_ = ConnectSyncIntoRealm<fuc::FlatlandDisplay>();
 
