@@ -67,6 +67,7 @@ rustc_binary("bin") {
     "src/peer/procedure/codec_connection_setup.rs",
     "src/peer/procedure/hang_up.rs",
     "src/peer/procedure/initiate_call.rs",
+    "src/peer/procedure/query_calls.rs",
     "src/peer/procedure/slc_initialization.rs",
     "src/peer/procedure/test.rs",
     "src/peer/procedure_manager.rs",

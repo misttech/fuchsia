@@ -24,10 +24,10 @@
 //! `Call` structs.  Similarly, the `Calls` struct has several public methods to
 //! set `Call` state that are routed to the proper `Call`.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_helpers::maybe_stream::MaybeStream;
 use bt_hfp::call::list::{Idx as CallIndex, List as CallList};
-use bt_hfp::call::{indicators as call_indicators, Direction, Number};
+use bt_hfp::call::{Direction, Number, indicators as call_indicators};
 use fidl_fuchsia_bluetooth_hfp::{
     CallDirection, CallMarker, CallRequest, CallRequestStream, CallState, CallWatchStateResponder,
     NextCall, PeerHandlerWatchNextCallResponder,
@@ -48,6 +48,9 @@ use crate::peer::ag_indicators::CallIndicator;
 use crate::peer::procedure::{CommandFromHf, ProcedureInput};
 
 use shutdown_state::ShutdownState;
+
+// Maximum call count to prevent malicious peers from adding arbitrarily many calls.
+static MAX_NUM_CALLS: usize = 20;
 
 /// Information sent to the responder method for the WatchNextCall hanging get matcher.
 struct WatchCallResponderInfo {
@@ -128,6 +131,7 @@ mod shutdown_state {
 pub enum CallOutput {
     ProcedureInput(ProcedureInput),
     TransferCallToAg,
+    QueryCalls,
 }
 
 /// This struct contains information about individual calls and methods to
@@ -172,7 +176,7 @@ impl Call {
         Self {
             peer_id,
             call_index: None,
-            state: None, // We never know the state when a call is created
+            state: None,
             number: None,
             direction: None,
             request_stream: MaybeStream::default(),
@@ -292,6 +296,35 @@ impl Call {
         self.awaken();
     }
 
+    pub fn set_queried_call_info(
+        &mut self,
+        direction: Direction,
+        state: CallState,
+        // TODO(https://fxbug.dev/135119) Handle multiple calls
+        _multiparty: bool,
+        number: Option<Number>,
+    ) {
+        if Some(direction) != self.direction && self.direction.is_some() {
+            error!("Queried call info for call {:?} has different direction {:?}", self, direction);
+        }
+        self.direction = Some(direction);
+
+        if Some(state) != self.state && self.state.is_some() {
+            error!("Queried call info for call {:?} has different state {:?}", self, state);
+        }
+        self.set_and_report_state(state);
+
+        if number != self.number && self.state.is_some() && number.is_some() {
+            // Number is some
+            error!(
+                "Queried call info for call {:?} has different number {:?}",
+                self,
+                number.as_ref().unwrap()
+            );
+        }
+        self.number = number;
+    }
+
     // The watch_state_hanging_get_matcher stream should be drained affer calling this method, as
     // it does not set store the waker so no client will poll the stream and do so for us.
     fn handle_watch_state(&mut self, responder: CallWatchStateResponder) {
@@ -358,22 +391,29 @@ impl Call {
     pub fn possibly_generate_next_call(&mut self) -> Result<NextCall, Error> {
         // TODO (https://fxbug.dev/135158) It's not clear we will always have a number for all calls, so handle,
         // that case.
-        let result = match (self.state.is_some(), self.number.is_some(), self.direction.is_some(), !self.request_stream.is_some()) {
-            (false, _, _, _) => Err(format_err!("Call {:?} does not yet have a state.", self )),
+        let result = match (
+            self.state.is_some(),
+            self.number.is_some(),
+            self.direction.is_some(),
+            !self.request_stream.is_some(),
+        ) {
+            (false, _, _, _) => Err(format_err!("Call {:?} does not yet have a state.", self)),
             (true, false, _, _) => Err(format_err!("Call {:?} does not yet have a number.", self)),
-            (true, true, false, _) =>  Err(format_err!("Call {:?} does not yet have a direction.", self)),
-            (true, true, true, false) => {
-                Err(format_err!(
-                    "(Not an error) Call {:?} already has a request stream, indicating that this call has already been converted to a NextCall",
-                    self))
+            (true, true, false, _) => {
+                Err(format_err!("Call {:?} does not yet have a direction.", self))
             }
+            (true, true, true, false) => Err(format_err!(
+                "(Not an error) Call {:?} already has a request stream, indicating that this call has already been converted to a NextCall",
+                self
+            )),
             (true, true, true, true) => {
                 let (client_end, server_end) = fidl::endpoints::create_endpoints::<CallMarker>();
                 self.request_stream.set(server_end.into_stream());
 
                 let number = String::from(self.number.clone().expect("Number should be set."));
                 let state = self.state.expect("State should be set.");
-                let direction = CallDirection::from(self.direction.expect("Direction should be set"));
+                let direction =
+                    CallDirection::from(self.direction.expect("Direction should be set"));
                 Ok(NextCall {
                     call: Some(client_end),
                     remote: Some(number),
@@ -479,9 +519,11 @@ pub struct Calls {
     peer_id: PeerId,
     call_list: CallList<Call>,
     sco_connected: bool,
-    // Calls for which a +CIEV(call = 0) has been received but which are still responding to a
-    // WatchCallState request.
+    /// Calls for which a +CIEV(call = 0) has been received but which are still responding to a
+    /// WatchCallState request.
     terminated_calls: VecDeque<Call>,
+    /// Set when a new call is inserted to cause the `poll_next` implementation to yield QueryCalls next time it's called.
+    query_calls: bool,
     watch_next_call_hanging_get_matcher: NextCallMatcher,
     waker: Option<Waker>,
 }
@@ -502,6 +544,7 @@ impl Calls {
             sco_connected: false,
             terminated_calls: VecDeque::new(),
             watch_next_call_hanging_get_matcher,
+            query_calls: false,
             waker: None,
         }
     }
@@ -512,8 +555,13 @@ impl Calls {
         }
     }
 
-    pub fn insert_new_call(&mut self) -> CallIndex {
-        // TODO(https://fxbug.dev/135119) Handle multiple calls
+    pub fn insert_new_call(&mut self) -> anyhow::Result<CallIndex> {
+        // If a new call is added we want to query for its direction and number.
+        self.insert_new_call_inner(/* query_calls_afterwards */ true)
+    }
+
+    fn insert_new_call_inner(&mut self, query_calls_afterwards: bool) -> anyhow::Result<CallIndex> {
+        // TODO(https://fxbug.dev/135119) Handle multiparty calls
         if self.call_list.len() > 0 {
             unimplemented!(
                 "Inserting new call for peer {:} when calls currently exist: {:?}",
@@ -523,6 +571,19 @@ impl Calls {
         }
 
         let call = Call::new(self.peer_id);
+
+        let call_list_size = self.call_list.len();
+        if call_list_size == MAX_NUM_CALLS {
+            warn!(
+                "Inserting when there are already {:} calls which is too many calls.",
+                call_list_size
+            );
+            return Err(format_err!(
+                "Inserting call when there are already {:} calls which is too many calls.",
+                call_list_size
+            ));
+        }
+
         let call_index = self.call_list.insert(call);
 
         let call = self.call_list.get_mut(call_index);
@@ -534,10 +595,11 @@ impl Calls {
         // We can't have the state, number or direction here, so no need to
         // possibly_respond_to_watch_next_call
 
-        call_index
+        // Maybe cause the stream to yield an enhanced call status
+        // fetch procedure input to get number and direction.
+        self.query_calls |= query_calls_afterwards;
 
-        // TODO(b/432243006) Cause the stream to yield an hanced call status
-        // fetch procedure input to get number and direction
+        Ok(call_index)
     }
 
     pub fn set_call_state_by_indicator(&mut self, indicator: CallIndicator) {
@@ -611,6 +673,35 @@ impl Calls {
                 self.peer_id, call_index, number
             ),
         }
+    }
+
+    pub fn set_queried_call_info(
+        &mut self,
+        index: CallIndex,
+        direction: Direction,
+        state: CallState,
+        multiparty: bool,
+        number: Option<Number>,
+    ) -> anyhow::Result<()> {
+        // Calls take the lowest available index.  Thus, if we have a call with
+        // a given index, in a conformant peer all lower indices should be used
+        // by calls.  To prevent malicious peers from sending us very high
+        // indices and forcing us to allocate calls for all lower indices,
+        // insert_new_call only allows a certain number of calls,
+        // MAX_NUM_CALLS, at a time.
+        while let None = self.call_list.get(index) {
+            // Will err if too many calls are added
+            // We've already queried call info, so don't do that.
+            let _index = self.insert_new_call_inner(/* query_calls_afterwards */ false)?;
+        }
+
+        let call =
+            self.call_list.get_mut(index).expect("Call was just inserted and so must be present.");
+
+        call.set_queried_call_info(direction, state, multiparty, number);
+        self.possibly_respond_to_watch_next_call(index);
+
+        Ok(())
     }
 
     #[allow(unused)]
@@ -691,6 +782,11 @@ impl Stream for Calls {
         // their state to the FIDL client or had an error.
         self.terminated_calls.retain(|call| !call.shutdown_state.lock().is_complete());
 
+        if self.query_calls {
+            self.query_calls = false;
+            return Poll::Ready(Some(CallOutput::QueryCalls));
+        }
+
         // TODO(http://fxbug.dev/135119) Handle multiple calls.
         let call_index = 1; // Calls are 1-indexed
         let call_option = self.call_list.get_mut(call_index);
@@ -725,7 +821,7 @@ mod test {
 
     use assert_matches::assert_matches;
     use fidl_fuchsia_bluetooth_hfp as fidl_hfp;
-    use futures::future::{select, Either, FutureExt};
+    use futures::future::{Either, FutureExt, select};
 
     static PEER_ID: PeerId = PeerId(1);
 
@@ -883,10 +979,9 @@ mod test {
 
         calls.set_call_state_by_indicator(CallIndicator::Call(call_indicators::Call::Some));
 
-        // Pump stream to respond to WatchNextCall
+        // Pump stream to get the QueryCalls
         let call_output_option = calls.next().now_or_never();
-        // No calls have been returned to client yet with WatchNextCall
-        assert_matches!(call_output_option, None);
+        assert_matches!(call_output_option, Some(Some(CallOutput::QueryCalls)));
 
         let next_call_hang = watch_next_call_continue_fut.now_or_never();
         // The NextcCall is never ready to be sent to clients.

@@ -4,6 +4,9 @@
 
 use anyhow::{Error, Result};
 use at_commands as at;
+use bt_hfp::call::list::Idx as CallIndex;
+use bt_hfp::call::{Direction, Number};
+use fidl_fuchsia_bluetooth_hfp::CallState;
 use std::fmt;
 use std::fmt::Debug;
 
@@ -29,6 +32,9 @@ use hang_up::HangUpProcedure;
 
 pub mod initiate_call;
 use initiate_call::InitiateCallProcedure;
+
+pub mod query_calls;
+use query_calls::QueryCallsProcedure;
 
 pub mod slc_initialization;
 use slc_initialization::SlcInitProcedure;
@@ -89,6 +95,7 @@ pub enum CommandFromHf {
     StartAudioConnection,
     AnswerIncoming,
     HangUpCall,
+    QueryCalls,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -104,9 +111,21 @@ impl_from_to_variant!(CommandFromHf, ProcedureInput, CommandFromHf);
 /// component or its FIDL clients, should perform the specified action.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommandToHf {
-    SetInitialAgIndicatorValues { ordered_values: Vec<i64> },
-    SetAgIndicatorIndex { indicator: AgIndicatorIndex, index: i64 },
+    SetInitialAgIndicatorValues {
+        ordered_values: Vec<i64>,
+    },
+    SetAgIndicatorIndex {
+        indicator: AgIndicatorIndex,
+        index: i64,
+    },
     AwaitRemoteSco,
+    QueryCallsResponse {
+        index: CallIndex,
+        direction: Direction,
+        state: CallState,
+        multiparty: bool,
+        number: Option<Number>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -148,6 +167,10 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
                 Some(Box::new(AnswerIncomingProcedure::new()))
             }
 
+            ProcedureInput::CommandFromHf(CommandFromHf::QueryCalls) => {
+                Some(Box::new(QueryCallsProcedure::new()))
+            }
+
             _ => None,
         }
     }
@@ -155,13 +178,13 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
     fn can_start_procedure(&self) -> bool {
         match self {
             ProcedureInput::CommandFromHf(CommandFromHf::StartSlci { .. })
-            | at_resp!(Ciev)
             | at_resp!(Bcs)
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionDialFromNumber { .. })
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionDialFromMemory { .. })
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionRedialLast)
             | ProcedureInput::CommandFromHf(CommandFromHf::AnswerIncoming)
-            | ProcedureInput::CommandFromHf(CommandFromHf::HangUpCall) => true,
+            | ProcedureInput::CommandFromHf(CommandFromHf::HangUpCall)
+            | ProcedureInput::CommandFromHf(CommandFromHf::QueryCalls) => true,
             _ => false,
         }
     }

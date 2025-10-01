@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use bt_hfp::call::indicators as call_indicators;
 use bt_hfp::codec_id::CodecId;
 use bt_hfp::{a2dp, audio, sco};
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_sync::Mutex;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::{debug, error, info, warn};
 use std::sync::Arc;
 use vigil::{DropWatch, Vigil};
@@ -244,8 +244,8 @@ impl PeerTask {
     }
 
     fn handle_at_response(&mut self, at_response: AtResponse) {
-        if Self::at_response_is_unsolicted(&at_response) {
-            self.handle_unsolicited_response(at_response)
+        if Self::at_response_is_indicator(&at_response) {
+            self.handle_indicator_response(at_response)
         } else {
             let procedure_input = ProcedureInput::AtResponseFromAg(at_response);
 
@@ -253,7 +253,7 @@ impl PeerTask {
         }
     }
 
-    fn at_response_is_unsolicted(at_response: &AtResponse) -> bool {
+    fn at_response_is_indicator(at_response: &AtResponse) -> bool {
         match at_response {
             AtResponse::Recognized(at::Response::Success(at::Success::Ciev { .. }))
             | AtResponse::Recognized(at::Response::Success(at::Success::Clip { .. })) => true,
@@ -261,8 +261,10 @@ impl PeerTask {
         }
     }
 
-    // Must take an unolicited AT Response--a +CIEV or a +CLIP.
-    fn handle_unsolicited_response(&mut self, at_response: AtResponse) {
+    // Must take an unolicited AT Response indicator--a +CIEV or a +CLIP.  These
+    // don't start a procedure but instead have data that is immediately usable.
+    // This is in contrast to +BCS which is unsolicited but starts a procedure.
+    fn handle_indicator_response(&mut self, at_response: AtResponse) {
         match at_response {
             AtResponse::Recognized(at::Response::Success(at::Success::Ciev { ind, value })) => {
                 let indicator = self.ag_indicator_translator.translate_indicator(ind, value);
@@ -322,6 +324,15 @@ impl PeerTask {
             ProcedureOutput::CommandToHf(CommandToHf::AwaitRemoteSco) => {
                 // We've renegotiated the codec, so wait for a SCO connection with the new codec.
                 self.await_remote_sco()
+            }
+            ProcedureOutput::CommandToHf(CommandToHf::QueryCallsResponse {
+                index,
+                direction,
+                state,
+                multiparty,
+                number,
+            }) => {
+                self.calls.set_queried_call_info(index, direction, state, multiparty, number)?;
             }
         };
 
@@ -386,6 +397,10 @@ impl PeerTask {
             }
             CallOutput::TransferCallToAg => {
                 self.close_sco();
+            }
+            CallOutput::QueryCalls => {
+                self.procedure_manager
+                    .enqueue(ProcedureInput::CommandFromHf(CommandFromHf::QueryCalls));
             }
         }
     }

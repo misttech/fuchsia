@@ -33,10 +33,10 @@ command { AT+CLCC }
 # HFP 1.8 4.34.2
 response { +CLCC:
     index: Integer,
-    dir: Integer,
+    direction: Integer,
     status: Integer,
     mode: Integer,
-    mpty: Integer,
+    multiparty: Integer,
     number: Option<String>,
     ty: Option<Integer>,
 }

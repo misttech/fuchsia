@@ -169,7 +169,10 @@ mod tests {
         assert!(list.remove(i1).is_some());
         assert!(list.remove(i3).is_some());
         let i5 = list.insert(5);
-        assert_eq!(i5, i1, "i5 is the lowest possible index (i1) even though i1 was not the first or last index removed");
+        assert_eq!(
+            i5, i1,
+            "i5 is the lowest possible index (i1) even though i1 was not the first or last index removed"
+        );
         assert_eq!(list.get(i5), Some(&5), "The value at i5 is correct");
         let i6 = list.insert(6);
         let i7 = list.insert(7);

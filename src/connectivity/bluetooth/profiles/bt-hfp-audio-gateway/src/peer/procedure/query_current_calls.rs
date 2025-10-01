@@ -120,10 +120,10 @@ pub fn build_clcc_response(call: Call) -> Option<at::Response> {
 
     Some(at::success(at::Success::Clcc {
         index: call.index as i64,
-        dir: call.direction.into(),
+        direction: call.direction.into(),
         status,
         mode: 0,
-        mpty: 0,
+        multiparty: 0,
         ty: Some(call.number.type_()),
         number: Some(call.number.into()),
     }))

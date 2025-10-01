@@ -6,7 +6,7 @@
 //! generated AT command and response types to the low level generic ASTs.
 
 use super::common::type_names::*;
-use super::common::{to_initial_capital, write_indent, write_newline, TABSTOP};
+use super::common::{TABSTOP, to_initial_capital, write_indent, write_newline};
 use super::error::Result;
 use crate::definition::{
     Argument, Arguments, Command, Definition, DelimitedArguments, PossiblyOptionType,
@@ -464,10 +464,10 @@ fn codegen_arguments_encoding<W: io::Write>(
                     )?;
                 }
                 write_indented!(
-                        sink,
-                        indent,
-                        "let arguments = lowlevel::Arguments::ParenthesisDelimitedArgumentLists(raw_arguments_outer);\n"
-                    )?;
+                    sink,
+                    indent,
+                    "let arguments = lowlevel::Arguments::ParenthesisDelimitedArgumentLists(raw_arguments_outer);\n"
+                )?;
             }
             Arguments::ArgumentList(arg_vec) => {
                 write_indented!(
