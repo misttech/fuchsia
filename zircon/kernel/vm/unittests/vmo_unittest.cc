@@ -2630,7 +2630,11 @@ static bool vmo_discardable_states_test() {
   EXPECT_TRUE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsReclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
-  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
+  } else {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  }
 
   // Should be able to discard now.
   reclaimed = vmo->DebugGetCowPages()->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint,
@@ -2677,7 +2681,11 @@ static bool vmo_discardable_states_test() {
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
   ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
-  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
+  } else {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  }
 
   // Lock again and verify the lock state returned without a discard.
   EXPECT_EQ(ZX_OK, vmo->LockRange(0, kSize, &lock_state));
@@ -2698,7 +2706,11 @@ static bool vmo_discardable_states_test() {
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsUnreclaimable());
   EXPECT_FALSE(vmo->DebugGetCowPages()->DebugGetDiscardableTracker()->DebugIsDiscarded());
   ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
-  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
+  } else {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  }
 
   ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
   reclaimed = vmo->DebugGetCowPages()->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint,
@@ -2745,7 +2757,11 @@ static bool vmo_discard_test() {
   EXPECT_EQ(kSize, vmo->size());
 
   // Page should be in reclaimable queue.
-  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
+  } else {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  }
 
   uint64_t reclamation_count = vmo->ReclamationEventCount();
 
@@ -2794,7 +2810,11 @@ static bool vmo_discard_test() {
 
   // Unpin the pages. Should be able to discard now.
   vmo->Unpin(0, kSize);
-  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
+  } else {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  }
   reclaimed = vmo->DebugGetCowPages()->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint,
                                                    nullptr);
   ASSERT_TRUE(reclaimed.is_ok());
@@ -2814,7 +2834,11 @@ static bool vmo_discard_test() {
   }
   EXPECT_EQ(ZX_OK, vmo->UnlockRange(0, kNewSize));
   ASSERT_OK(vmo->GetPageBlocking(0, 0, nullptr, &page, nullptr));
-  EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  if (Pmm::Node().GetPageQueues()->ReclaimIsOnlyPagerBacked()) {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsAnonymous(page));
+  } else {
+    EXPECT_TRUE(Pmm::Node().GetPageQueues()->DebugPageIsReclaim(page));
+  }
 
   // Cannot discard a non-discardable vmo.
   vmo.reset();
