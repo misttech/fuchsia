@@ -3282,7 +3282,7 @@ mod tests {
         struct Observer(Arc<AtomicU64>);
 
         impl vmo_backed_block_server::Observer for Observer {
-            fn flush(&self) {
+            fn flush(&self, _writes: Option<&mut vmo_backed_block_server::Writes>) {
                 self.0.fetch_add(1, Ordering::Relaxed);
             }
         }

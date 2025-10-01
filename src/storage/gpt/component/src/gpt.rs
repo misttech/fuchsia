@@ -1052,7 +1052,7 @@ mod tests {
         struct Observer(Arc<AtomicBool>);
 
         impl vmo_backed_block_server::Observer for Observer {
-            fn barrier(&self) {
+            fn barrier(&self, _writes: Option<&mut vmo_backed_block_server::Writes>) {
                 self.0.store(true, Ordering::Relaxed);
             }
         }

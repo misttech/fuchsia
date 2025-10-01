@@ -7,6 +7,8 @@ use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
+use fuchsia_sync::Mutex;
+use rand::Rng as _;
 use std::borrow::Cow;
 use std::num::NonZero;
 use std::sync::Arc;
@@ -40,9 +42,17 @@ pub trait Observer: Send + Sync {
         WriteAction::Write
     }
 
-    fn barrier(&self) {}
+    // If [`VmoBackedServerOptions::write_tracking`] is enabled, `writes` is set to the batch since
+    // last flush or barrier and can be freely modified.
+    fn barrier(&self, _writes: Option<&mut Writes>) {}
 
-    fn flush(&self) {}
+    // If [`VmoBackedServerOptions::write_tracking`] is enabled, `writes` is set to the batch since
+    // last flush or barrier and can be freely modified.
+    fn flush(&self, _writes: Option<&mut Writes>) {}
+
+    // If [`VmoBackedServerOptions::write_tracking`] is enabled, `writes` is set to the batch since
+    // last flush or barrier and can be freely modified.
+    fn close(&self, _writes: Option<&mut Writes>) {}
 
     fn trim(&self, _device_block_offset: u64, _block_count: u32) {}
 }
@@ -72,6 +82,10 @@ pub struct VmoBackedServerOptions<'a> {
     pub block_size: u32,
     pub initial_contents: InitialContents<'a>,
     pub observer: Option<Box<dyn Observer>>,
+    /// Enables write tracking so [`Observer::flush`] and [`Observer::barrier`] will be provided
+    /// with [`Writes`].
+    /// Note that this is expensive and should mainly be used for tests.
+    pub write_tracking: bool,
 }
 
 impl Default for VmoBackedServerOptions<'_> {
@@ -85,6 +99,7 @@ impl Default for VmoBackedServerOptions<'_> {
             block_size: 512,
             initial_contents: InitialContents::FromCapacity(0),
             observer: None,
+            write_tracking: false,
         }
     }
 }
@@ -138,7 +153,17 @@ impl VmoBackedServerOptions<'_> {
         Ok(VmoBackedServer {
             server: BlockServer::new(
                 self.block_size,
-                Arc::new(Data { info, block_size: self.block_size, data, observer: self.observer }),
+                Arc::new(Data {
+                    info,
+                    block_size: self.block_size,
+                    data,
+                    observer: self.observer,
+                    write_tracking: if self.write_tracking {
+                        Some(Mutex::new(Writes::new(self.block_size as u64)))
+                    } else {
+                        None
+                    },
+                }),
             ),
         })
     }
@@ -147,7 +172,9 @@ impl VmoBackedServerOptions<'_> {
 impl VmoBackedServer {
     /// Handles `requests`.  The future will resolve when the stream terminates.
     pub async fn serve(&self, requests: fvolume::VolumeRequestStream) -> Result<(), Error> {
-        self.server.handle_requests(requests).await
+        let res = self.server.handle_requests(requests).await;
+        self.server.session_manager().interface().client_closed();
+        res
     }
 }
 
@@ -173,6 +200,105 @@ impl BlockConnector for VmoBackedServerConnector {
             let _ = server.serve(server_end.into_stream()).await;
         });
         Ok(())
+    }
+}
+
+/// Keeps track of a sequence of writes since the last flush or barrier, and allows them to be
+/// arbitrarily modified or re-ordered.
+pub struct Writes {
+    block_size: u64,
+    block_offsets: Vec<u64>,
+    buffer: Vec<u8>,
+}
+
+impl Writes {
+    fn new(block_size: u64) -> Self {
+        Self { block_size, block_offsets: vec![], buffer: vec![] }
+    }
+
+    fn insert(&mut self, block_offset: u64, contents: &[u8]) {
+        let block_count = contents.len() as u64 / self.block_size;
+        let mut buf_offset = 0;
+        for offset in block_offset..block_offset + block_count {
+            self.block_offsets.push(offset);
+            self.buffer
+                .extend_from_slice(&contents[buf_offset..buf_offset + self.block_size as usize]);
+            buf_offset += self.block_size as usize;
+        }
+    }
+
+    // Reads the last written value, falling back to `data` if there are no local updates.
+    fn read(
+        &self,
+        data: &zx::Vmo,
+        block_offset: u64,
+        contents: &mut [u8],
+    ) -> Result<(), zx::Status> {
+        let block_count = contents.len() as u64 / self.block_size;
+        let max_offset = block_offset + block_count;
+        data.read(contents, block_offset * self.block_size)?;
+        // Apply any buffered writes that would overwrite the actual contents.  If the same offset
+        // shows up multiple times, we want to use the most recent write, so it's important to
+        // iterate in order.
+        for (idx, offset) in self.block_offsets.iter().enumerate() {
+            if *offset >= block_offset && *offset < max_offset {
+                let in_offset = idx * self.block_size as usize;
+                let out_offset = ((*offset - block_offset) * self.block_size) as usize;
+                contents[out_offset..out_offset + self.block_size as usize]
+                    .copy_from_slice(&self.buffer[in_offset..in_offset + self.block_size as usize]);
+            }
+        }
+        Ok(())
+    }
+
+    // Persists all writes to `data` and empties the cache.
+    fn apply(&mut self, data: &zx::Vmo) -> Result<(), zx::Status> {
+        let mut buf_offset = 0;
+        for offset in self.block_offsets.drain(..) {
+            data.write(
+                &self.buffer[buf_offset..buf_offset + self.block_size as usize],
+                offset * self.block_size,
+            )?;
+            buf_offset += self.block_size as usize;
+        }
+        self.buffer.clear();
+        Ok(())
+    }
+
+    /// Returns an iterator over the batch of writes (in temporal sequence).
+    pub fn iter(&self) -> impl Iterator<Item = (&u64, &[u8])> {
+        self.block_offsets.iter().zip(self.buffer.windows(self.block_size as usize))
+    }
+
+    fn swap_writes(&mut self, i: usize, j: usize) {
+        self.block_offsets.swap(i, j);
+        let bs = self.block_size as usize;
+        let mut buf = vec![0u8; bs];
+        buf.copy_from_slice(&self.buffer[i * bs..(i + 1) * bs]);
+        self.buffer.copy_within(j * bs..(j + 1) * bs, i * bs);
+        self.buffer[j * bs..(j + 1) * bs].copy_from_slice(&buf[..]);
+    }
+
+    /// Reorders all writes.
+    pub fn shuffle(&mut self) {
+        // Implements the Fisher–Yates shuffle.
+        let mut rng = rand::rng();
+        for i in 0..self.block_offsets.len() {
+            let j = rng.random_range(0..=i);
+            if i != j {
+                self.swap_writes(i, j);
+            }
+        }
+    }
+
+    /// Discards a random number of writes from the tail, simulating a power-cut.
+    pub fn discard_some(&mut self) {
+        let mut rng = rand::rng();
+        let idx = rng.random_range(0..=self.block_offsets.len());
+        for i in idx..self.block_offsets.len() {
+            self.buffer[i * self.block_size as usize..(i + 1) * self.block_size as usize]
+                .fill(0xab);
+        }
     }
 }
 
@@ -238,6 +364,19 @@ struct Data {
     block_size: u32,
     data: zx::Vmo,
     observer: Option<Box<dyn Observer>>,
+    write_tracking: Option<Mutex<Writes>>,
+}
+
+impl Data {
+    fn client_closed(&self) {
+        if let Some(observer) = self.observer.as_ref() {
+            let mut write_tracking = self.write_tracking.as_ref().map(|w| w.lock());
+            match write_tracking.as_mut() {
+                Some(w) => observer.close(Some(&mut *w)),
+                None => observer.close(None),
+            }
+        }
+    }
 }
 
 impl Interface for Data {
@@ -264,13 +403,17 @@ impl Interface for Data {
         if device_block_offset + block_count as u64 > self.info.block_count().unwrap() {
             Err(zx::Status::OUT_OF_RANGE)
         } else {
-            vmo.write(
-                &self.data.read_to_vec(
+            let data = if let Some(tracking) = self.write_tracking.as_ref() {
+                let mut data = vec![0u8; block_count as usize * self.block_size as usize];
+                tracking.lock().read(&self.data, device_block_offset, &mut data[..])?;
+                data
+            } else {
+                self.data.read_to_vec(
                     device_block_offset * self.block_size as u64,
                     block_count as u64 * self.block_size as u64,
-                )?,
-                vmo_offset,
-            )
+                )?
+            };
+            vmo.write(&data[..], vmo_offset)
         }
     }
 
@@ -297,25 +440,34 @@ impl Interface for Data {
         if device_block_offset + block_count as u64 > self.info.block_count().unwrap() {
             Err(zx::Status::OUT_OF_RANGE)
         } else {
-            self.data.write(
-                &vmo.read_to_vec(vmo_offset, block_count as u64 * self.block_size as u64)?,
-                device_block_offset * self.block_size as u64,
-            )
+            let data = vmo.read_to_vec(vmo_offset, block_count as u64 * self.block_size as u64)?;
+            if let Some(tracking) = self.write_tracking.as_ref() {
+                tracking.lock().insert(device_block_offset, &data[..]);
+            }
+            self.data.write(&data[..], device_block_offset * self.block_size as u64)
         }
     }
 
     fn barrier(&self) -> Result<(), zx::Status> {
+        let mut write_tracking = self.write_tracking.as_ref().map(|w| w.lock());
         if let Some(observer) = self.observer.as_ref() {
-            observer.barrier();
+            match write_tracking.as_mut() {
+                Some(w) => observer.barrier(Some(&mut *w)),
+                None => observer.barrier(None),
+            }
         }
-        Ok(())
+        if let Some(w) = write_tracking.as_mut() { w.apply(&self.data) } else { Ok(()) }
     }
 
     async fn flush(&self, _trace_flow_id: Option<NonZero<u64>>) -> Result<(), zx::Status> {
+        let mut write_tracking = self.write_tracking.as_ref().map(|w| w.lock());
         if let Some(observer) = self.observer.as_ref() {
-            observer.flush();
+            match write_tracking.as_mut() {
+                Some(w) => observer.flush(Some(&mut *w)),
+                None => observer.flush(None),
+            }
         }
-        Ok(())
+        if let Some(w) = write_tracking.as_mut() { w.apply(&self.data) } else { Ok(()) }
     }
 
     async fn trim(

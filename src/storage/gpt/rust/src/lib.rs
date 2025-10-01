@@ -386,8 +386,19 @@ impl Gpt {
             log::warn!(err:?; "Failed to write metadata");
             TransactionCommitError::Io
         })?;
+        // NB: It would be preferable to use a barrier here, but not all drivers support barriers at
+        // this time.
+        // TODO(https://fxbug.dev/416348380): Use a barrier between writing secondary/primary.
+        self.client.flush().await.map_err(|err| {
+            log::warn!(err:?; "Failed to flush metadata writes");
+            TransactionCommitError::Io
+        })?;
         self.write_metadata(&new_header, &partition_table_raw[..]).await.map_err(|err| {
             log::warn!(err:?; "Failed to write metadata");
+            TransactionCommitError::Io
+        })?;
+        self.client.flush().await.map_err(|err| {
+            log::warn!(err:?; "Failed to flush metadata writes");
             TransactionCommitError::Io
         })?;
 
@@ -500,6 +511,7 @@ mod tests {
     use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient};
     use std::ops::Range;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };
@@ -1636,5 +1648,112 @@ mod tests {
         let manager = Gpt::open(manager.take_client()).await.expect("reload should succeed");
         assert_eq!(manager.header().num_parts, 4);
         assert_eq!(manager.partitions().len(), num);
+    }
+
+    /// An Observer that shuffles writes and discards some of the tail since last flush.
+    struct ShufflingObserver {
+        // Only start shuffling once this is set.
+        start: Arc<AtomicBool>,
+        // Only shuffle if there is a write to this offset.
+        shuffle_if_contains_offset: u64,
+    }
+
+    impl vmo_backed_block_server::Observer for ShufflingObserver {
+        fn flush(&self, writes: Option<&mut vmo_backed_block_server::Writes>) {
+            if self.start.load(Ordering::Relaxed) {
+                let Some(writes) = writes else { unreachable!() };
+                if writes
+                    .iter()
+                    .filter(|(offset, _)| **offset == self.shuffle_if_contains_offset)
+                    .next()
+                    .is_some()
+                {
+                    writes.shuffle();
+                    writes.discard_some();
+                }
+            }
+        }
+
+        fn close(&self, writes: Option<&mut vmo_backed_block_server::Writes>) {
+            // Always shuffle every write which had yet to be flushed when the client closed.
+            if self.start.load(Ordering::Relaxed) {
+                let Some(writes) = writes else { unreachable!() };
+                writes.shuffle();
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    async fn metadata_update_is_atomic() {
+        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_COUNT: u64 = 128;
+        // Test once where we shuffle any set of writes which contains the primary superblock, and
+        // once where we shuffle any set of writes which contains the secondary superblock.
+        // The goal is to ensure that writes are correctly sequenced with some sort of flush or
+        // barrier (secondary, <barrier>, primary), so metadata updates are atomic.
+        for shuffle_if_contains_offset in [1, BLOCK_COUNT - 1] {
+            let vmo = zx::Vmo::create(BLOCK_SIZE * BLOCK_COUNT).unwrap();
+            let start_shuffling = Arc::new(AtomicBool::new(false));
+            let server = Arc::new(
+                VmoBackedServerOptions {
+                    initial_contents: InitialContents::FromVmo(vmo),
+                    block_size: BLOCK_SIZE as u32,
+                    observer: Some(Box::new(ShufflingObserver {
+                        start: start_shuffling.clone(),
+                        shuffle_if_contains_offset,
+                    })),
+                    write_tracking: true,
+                    ..Default::default()
+                }
+                .build()
+                .unwrap(),
+            );
+            let (client, server_end) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+            let _task =
+                fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
+            let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            Gpt::format(client.clone(), vec![PartitionInfo::nil(); 80])
+                .await
+                .expect("format failed");
+
+            start_shuffling.store(true, Ordering::Relaxed);
+
+            let mut manager = Gpt::open(client).await.expect("load should succeed");
+            let mut transaction = manager.create_transaction().unwrap();
+            transaction.partitions.truncate(40);
+            let mut num = 0;
+            loop {
+                match manager.add_partition(
+                    &mut transaction,
+                    crate::PartitionInfo {
+                        label: format!("part-{num}"),
+                        type_guid: crate::Guid::generate(),
+                        instance_guid: crate::Guid::generate(),
+                        start_block: 0,
+                        num_blocks: 1,
+                        flags: 0,
+                    },
+                ) {
+                    Ok(_) => {
+                        num += 1;
+                    }
+                    Err(AddPartitionError::InvalidArguments) => panic!("Unexpected error"),
+                    Err(AddPartitionError::NoSpace) => break,
+                };
+            }
+            assert!(num <= 40);
+            manager.commit_transaction(transaction).await.expect("Commit failed");
+
+            // Check state before and after a reload.
+            assert_eq!(manager.header().num_parts, 40);
+            assert_eq!(manager.partitions().len(), num);
+
+            // If the GPT implementation has appropriate barriers/flushes between secondary and
+            // primary metadata updates, then we will end up in either the old state or the new
+            // state.  Otherwise, both copies might become corrupt and the GPT would be unreadable.
+            let manager = Gpt::open(manager.take_client()).await.expect("reload should succeed");
+            let len = manager.partitions().len();
+            assert!(len == 0 || len == num);
+        }
     }
 }
