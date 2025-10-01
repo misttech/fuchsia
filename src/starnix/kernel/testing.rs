@@ -13,7 +13,9 @@ use crate::mm::syscalls::{do_mmap, sys_mremap};
 use crate::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::task::container_namespace::ContainerNamespace;
-use crate::task::{CurrentTask, Kernel, KernelOrTask, SchedulerManager, Task, TaskBuilder};
+use crate::task::{
+    CurrentTask, ExitStatus, Kernel, KernelOrTask, SchedulerManager, Task, TaskBuilder,
+};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     Anon, CacheMode, DirEntry, FdNumber, FileHandle, FileObject, FileOps, FileSystem,
@@ -32,7 +34,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
-use starnix_uapi::{MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE, statfs};
+use starnix_uapi::{MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE, errno, error, statfs};
 use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
@@ -132,19 +134,23 @@ where
     let kernel = create_test_kernel(locked, security_server);
     let fs = create_test_fs_context(locked, &kernel, fs_factory);
     let init_task = create_test_init_task(locked, &kernel, fs);
-    let (sender, receiver) = mpsc::channel();
-    let res = execute_task_with_prerun_result(
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let error = execute_task_with_prerun_result(
         locked,
         init_task,
-        |locked, current_task| Ok(callback(locked, current_task)),
-        move |result| {
-            sender.send(result).expect("send task result");
+        move |locked, current_task| -> Result<(), Errno> {
+            let result = callback(locked, current_task);
+            current_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+            sender.send(result).map_err(|e| errno!(EIO, e))?;
+            error!(EHWPOISON)
         },
+        |_| {},
         None,
     )
-    .expect("successfully started task");
-    let _ = receiver.recv().expect("received task result");
-    res
+    .unwrap_err();
+    // EHWPOISON is expected from the pre_run task, any other error is returned.
+    assert_eq!(error, errno!(EHWPOISON));
+    receiver.recv().expect("recv")
 }
 
 #[deprecated = "Do not add new callers, use spawn_kernel_and_run() instead."]

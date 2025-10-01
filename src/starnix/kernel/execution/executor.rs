@@ -496,7 +496,11 @@ where
 
         let pre_run_result = { pre_run(locked, &mut current_task) };
         if pre_run_result.is_err() {
-            log_error!("Pre run failed from {pre_run_result:?}. The task will not be run.");
+            // Only log if the pre run didn't exit the task. Otherwise, consider this is expected
+            // by the caller.
+            if current_task.exit_status().is_none() {
+                log_error!("Pre run failed from {pre_run_result:?}. The task will not be run.");
+            }
 
             // Drop the task_complete callback to ensure that the closure isn't holding any
             // releasables.
