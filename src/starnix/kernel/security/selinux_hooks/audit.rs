@@ -4,15 +4,47 @@
 
 use crate::vfs::{NamespaceNode, PathWithReachability};
 use bstr::BStr;
+use fuchsia_sync::Mutex;
 use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
-use selinux::{ClassPermission, KernelPermission, SecurityId};
+use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
 use starnix_core::task::{CurrentTask, Task};
 use starnix_core::vfs::{FileObject, FileSystem, FsNode, FsStr};
-use starnix_logging::{__track_stub_inner, BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
+use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
+use std::collections::HashMap;
 use std::fmt::{Display, Error};
 use std::num::NonZeroU64;
+use std::sync::LazyLock;
+
+/// Represents a unique auditable instance, for rate limiting purposes.
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct AuditableInstance {
+    source_sid: SecurityId,
+    target_sid: SecurityId,
+    class: KernelClass,
+    bug: NonZeroU64,
+}
+
+/// Stores count of todo_deny logged per auditable instance.
+static TODO_DENY_COUNTS: LazyLock<Mutex<HashMap<AuditableInstance, u64>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Checks whether an audit log entry should still be emitted for this audit instance.
+fn should_audit(
+    source_sid: SecurityId,
+    target_sid: SecurityId,
+    class: KernelClass,
+    bug: NonZeroU64,
+) -> bool {
+    // Audit-log the first few denials, but skip further denials to avoid logspamming.
+    const MAX_TODO_AUDIT_DENIALS: u64 = 5;
+
+    let mut counts = TODO_DENY_COUNTS.lock();
+    let count = counts.entry(AuditableInstance { source_sid, target_sid, class, bug }).or_default();
+    *count += 1;
+    *count <= MAX_TODO_AUDIT_DENIALS
+}
 
 /// Container for a reference to kernel state from which to include details when emitting audit
 /// logging.  [`Auditable`] instances are created from references to objects via `into()`, e.g:
@@ -137,18 +169,9 @@ pub(super) fn audit_decision(
         // If `todo_bug` is set then this check is being granted to accommodate errata, rather than
         // the denial being enforced.
 
-        // Audit-log the first few denials, but skip further denials to avoid logspamming.
-        const MAX_TODO_AUDIT_DENIALS: u64 = 5;
-
         // Re-using the `track_stub!()` internals to track the denial, and determine whether
         // too many denial audit logs have already been emit for this case.
-        if __track_stub_inner(
-            BugRef::from(todo_bug),
-            "Enforce access check",
-            None,
-            std::panic::Location::caller(),
-        ) > MAX_TODO_AUDIT_DENIALS
-        {
+        if !should_audit(source_sid, target_sid, permission.class(), todo_bug) {
             return;
         }
 
