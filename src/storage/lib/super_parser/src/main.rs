@@ -94,7 +94,7 @@ fn main() -> Result<(), Error> {
         SubCommand::Extract(extract_args) => {
             let slot_index: usize = extract_args.slot.parse()?;
             let partition_device =
-                block_on(super_parser.get_sub_partition(&extract_args.partition, slot_index))?;
+                super_parser.get_sub_partition(&extract_args.partition, slot_index)?;
             let mut out_file =
                 OpenOptions::new().write(true).create_new(true).open(extract_args.out_file)?;
             let partition_size = partition_device.size();
