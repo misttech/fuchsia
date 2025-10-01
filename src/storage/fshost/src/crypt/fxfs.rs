@@ -13,11 +13,16 @@ use fs_management::filesystem::{ServingMultiVolumeFilesystem, ServingVolume};
 use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at_dir_root, open_childs_exposed_directory,
 };
+use fuchsia_fs::directory::open_directory;
+use fuchsia_fs::node::OpenError;
 use key_bag::{AES128_KEY_SIZE, AES256_KEY_SIZE, Aes256Key, KeyBagManager, WrappingKey};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
+
+const KEYBAG_DIR_NAME: &str = "keys";
+const KEYBAG_FILE_NAME: &str = "fxfs-data";
 
 async fn unwrap_or_create_keys(
     mut keybag: KeyBagManager,
@@ -86,16 +91,16 @@ pub async fn unlock_data_volume(
             .await
             .context("Failed to open unencrypted")?,
         async |unencrypted_volume: &mut ServingVolume| {
-            let keybag_dir = fuchsia_fs::directory::open_directory(
+            let keybag_dir = open_directory(
                 unencrypted_volume.root(),
-                "keys",
+                KEYBAG_DIR_NAME,
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .await
             .context("Failed to open keys dir")?;
             let keybag_dir_fd =
                 fdio::create_fd(keybag_dir.into_channel().unwrap().into_zx_channel().into())?;
-            let keybag = match KeyBagManager::open(keybag_dir_fd, Path::new("fxfs-data"))? {
+            let keybag = match KeyBagManager::open(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))? {
                 Some(keybag) => keybag,
                 None => return Ok(None),
             };
@@ -156,14 +161,14 @@ pub async fn init_data_volume<'a>(
         async |unencrypted_volume| {
             let keybag_dir = fuchsia_fs::directory::create_directory(
                 unencrypted_volume.root(),
-                "keys",
+                KEYBAG_DIR_NAME,
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .await
             .context("Failed to create keys dir")?;
             let keybag_dir_fd =
                 fdio::create_fd(keybag_dir.into_channel().unwrap().into_zx_channel().into())?;
-            let keybag = KeyBagManager::create(keybag_dir_fd, Path::new("fxfs-data"))?;
+            let keybag = KeyBagManager::create(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))?;
 
             let (data_unwrapped, metadata_unwrapped) = unwrap_or_create_keys(keybag, true).await?;
 
@@ -275,24 +280,48 @@ impl Drop for CryptService {
     }
 }
 
+/// Attempts to shred the key bag stored in the unencrypted volume of `fs`, if it exists.
+/// If we fail to find the key bag, we log a warning and return success, since the keys may have
+/// already been shredded.
 pub async fn shred_key_bag(fs: &ServingMultiVolumeFilesystem) -> Result<(), Error> {
+    if !fs.has_volume(UNENCRYPTED_VOLUME_LABEL).await.context("checking for unencrypted volume")? {
+        // If the unencrypted volume is missing, the keys are already gone.
+        log::warn!("Unencrypted volume not present");
+        return Ok(());
+    }
+
     with_unencrypted_volume(
         fs.open_volume(UNENCRYPTED_VOLUME_LABEL, MountOptions::default())
             .await
-            .context("Failed to open unencrypted")?,
-        async |unencrypted_volume| {
-            let dir = fuchsia_fs::directory::open_directory(
-                unencrypted_volume.root(),
-                "keys",
-                fio::PERM_WRITABLE,
-            )
-            .await
-            .context("Failed to open keys dir")?;
-            dir.unlink("fxfs-data", &fio::UnlinkOptions::default())
-                .await?
-                .map_err(|e| anyhow!(zx::Status::from_raw(e)))
-                .context("Failed to remove keybag")?;
-            Ok(())
+            .context("Failed to open unencrypted volume")?,
+        async |vol| {
+            // Open the keybag directory and remove the keybag file.
+            let dir = match open_directory(vol.root(), KEYBAG_DIR_NAME, fio::PERM_WRITABLE).await {
+                Ok(dir) => dir,
+                Err(OpenError::OpenError(zx::Status::NOT_FOUND)) => {
+                    // If the keybag directory is missing, the keys may have already been shredded.
+                    log::warn!("Keybag directory not present");
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(e).context("Failed to open keybag directory");
+                }
+            };
+            match dir
+                .unlink(KEYBAG_FILE_NAME, &Default::default())
+                .await
+                .context("transport error on unlink")?
+                .map_err(zx::Status::from_raw)
+            {
+                Ok(()) => Ok(()),
+                Err(zx::Status::NOT_FOUND) => {
+                    // If the keybag is missing, the keys may have already been shredded.
+                    log::warn!("Keybag file not present");
+                    Ok(())
+                }
+                Err(status) => Err(status),
+            }
+            .context("Failed to unlink keybag file")
         },
     )
     .await
