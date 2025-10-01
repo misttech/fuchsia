@@ -107,13 +107,14 @@ impl<P: PartialEq, T: MaybeTransportPacket> Matcher<(Option<P>, T)>
             return false;
         };
 
-        proto == packet_proto
-            && src_port.required_matches(
-                packet.transport_packet_data().as_ref().map(TransportPacketData::src_port).as_ref(),
+        proto == packet_proto && {
+            let transport_data = packet.transport_packet_data();
+            src_port.required_matches(
+                transport_data.as_ref().map(TransportPacketData::src_port).as_ref(),
+            ) && dst_port.required_matches(
+                transport_data.as_ref().map(TransportPacketData::dst_port).as_ref(),
             )
-            && dst_port.required_matches(
-                packet.transport_packet_data().as_ref().map(TransportPacketData::dst_port).as_ref(),
-            )
+        }
     }
 }
 
