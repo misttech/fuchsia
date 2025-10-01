@@ -704,6 +704,7 @@ pub(in crate::security) fn check_task_capable(
     let sid = current_task_state(current_task).lock().current_sid;
     let permission = permission_from_capability(capability);
     check_self_permission(&permission_check, current_task, sid, permission, current_task.into())
+        .map_err(|_| errno!(EPERM))
 }
 
 /// Checks if the task with `source_sid` has the permission to get and/or set limits on the task with `target_sid`.
