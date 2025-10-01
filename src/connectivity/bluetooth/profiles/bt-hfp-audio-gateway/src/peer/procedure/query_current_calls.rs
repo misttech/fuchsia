@@ -126,6 +126,8 @@ pub fn build_clcc_response(call: Call) -> Option<at::Response> {
         multiparty: 0,
         ty: Some(call.number.type_()),
         number: Some(call.number.into()),
+        alpha: None,
+        priority: None,
     }))
 }
 

@@ -39,6 +39,10 @@ response { +CLCC:
     multiparty: Integer,
     number: Option<String>,
     ty: Option<Integer>,
+    # The following fields aren't part of the HFP v1.8 spec, but are defined in ETSI TS 127 007 V6.8.0,
+    # and are sent by iPhones.
+    alpha: Option<String>,
+    priority: Option<Integer>,
 }
 
 # Bluetooth Codec Connection

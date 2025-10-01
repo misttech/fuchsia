@@ -127,7 +127,14 @@ impl PeerTask {
                     let at_response_result =
                         at_response_result_option
                             .ok_or_else(|| format_err!("AT connection stream closed for peer {}", self.peer_id))?;
-                    let at_response = at_response_result?;
+                    let at_response = match at_response_result {
+                        Ok(response) => response,
+                        Err(err) => {
+                            warn!("Unable to parse AT response: {:?}", err);
+                            // Don't fail on unknown AT responses as we have not implemented all features.
+                            continue;
+                        }
+                    };
 
                     self.handle_at_response(at_response);
                 }

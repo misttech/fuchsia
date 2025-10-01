@@ -84,17 +84,16 @@ impl Stream for Connection {
 
             if let Some(error) = deserialize_error {
                 // In this case, we may have other commands that deserialized correctly, so continue.
-                // This is probably an AT command that isn't specified in a .at file, so let it
-                // be returned up to the client for manual parsing.
+                // This is probably an AT command that isn't specified in a .at file, so try manual parsing.
                 debug!(
                     "Could not deserialize AT response received from peer {}: {:?}",
                     self.peer_id, error
                 );
-                let hand_parsed_response = Self::parse_unparsed_bytes(error.bytes);
+                let hand_parsed_response = Self::parse_unparsed_bytes(error.bytes.clone());
 
                 match hand_parsed_response {
                     Ok(resp) => self.unreturned_responses.push_back(resp),
-                    err @ Err(_) => return Poll::Ready(Some(err)),
+                    err @ Err(_) => return Poll::Ready(Some(Err(error.into()))), // Return original error
                 }
             }
 

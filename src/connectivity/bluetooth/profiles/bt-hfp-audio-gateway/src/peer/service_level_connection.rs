@@ -380,6 +380,7 @@ impl ServiceLevelConnection {
     /// Adds the sequence of AT `messages` to the queue of outgoing data packets, until there is
     /// a serialization error..
     /// Returns Error if serialization fails, OK otherwise.
+    #[allow(clippy::result_large_err)]
     fn queue_messages_to_peer_until_error(
         &mut self,
         messages: &[at::Response],

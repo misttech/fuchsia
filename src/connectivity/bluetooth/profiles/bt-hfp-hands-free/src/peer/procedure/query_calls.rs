@@ -48,7 +48,17 @@ impl Procedure<ProcedureInput, ProcedureOutput> for QueryCallsProcedure {
             }
             (
                 Self::WaitingForClccOrOk,
-                at_resp!(Clcc { index, direction, status, mode: _, multiparty, number, ty: _ }),
+                at_resp!(Clcc {
+                    index,
+                    direction,
+                    status,
+                    mode: _,
+                    multiparty,
+                    number,
+                    ty: _,
+                    alpha: _,
+                    priority: _
+                }),
             ) => {
                 let procedure_output =
                     at_response_to_output(index, direction, status, multiparty, number)?;
