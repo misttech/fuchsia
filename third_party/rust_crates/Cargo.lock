@@ -1650,6 +1650,7 @@ dependencies = [
  "iota",
  "itertools 0.14.0",
  "itoa 1.0.15",
+ "json-spanned-value",
  "json5format",
  "lazy_static",
  "libc",
@@ -2416,6 +2417,16 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 [[package]]
 name = "js-sys"
 version = "0.3.68"
+
+[[package]]
+name = "json-spanned-value"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb343fa4e3b1b22b344937deedac88da995abf139c2232cbeaa436c38380a210"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "json5format"

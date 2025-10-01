@@ -501,6 +501,10 @@ group("itoa") {
   public_deps = [ ":itoa-v1_0_15" ]
 }
 
+group("json-spanned-value") {
+  public_deps = [ ":json-spanned-value-v0_2_2" ]
+}
+
 group("json5format") {
   public_deps = [ ":json5format-v0_2_6" ]
 }
@@ -9351,6 +9355,43 @@ rustc_library("json5format-v0_2_6") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":json5format-v0_2_6.license" ]
+}
+
+license("json-spanned-value-v0_2_2.license") {
+  public_package_name = "json_spanned_value"
+  license_files = [
+    "//third_party/rust_crates/vendor/json-spanned-value-0.2.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/json-spanned-value-0.2.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/json-spanned-value-0.2.2/LICENSE.md",
+  ]
+}
+
+rustc_library("json-spanned-value-v0_2_2") {
+  crate_name = "json_spanned_value"
+  source_root =
+      "//third_party/rust_crates/vendor/json-spanned-value-0.2.2/src/lib.rs"
+  output_name = "json_spanned_value-58dbf788abac5c4f"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":serde-v1_0_204" ]
+  deps += [ ":serde_json-v1_0_143" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=58dbf788abac5c4f",
+    "-Cextra-filename=-58dbf788abac5c4f",
+    "--cfg=feature=\"default\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":json-spanned-value-v0_2_2.license" ]
 }
 
 license("jsonway-v2_0_0.license") {

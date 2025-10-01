@@ -1399,6 +1399,18 @@ alias(
 )
 
 alias(
+    name = "json-spanned-value-0.2.2",
+    actual = "//third_party/rust_crates/vendor/json-spanned-value-0.2.2:json_spanned_value",
+    tags = ["manual"],
+)
+
+alias(
+    name = "json-spanned-value",
+    actual = "//third_party/rust_crates/vendor/json-spanned-value-0.2.2:json_spanned_value",
+    tags = ["manual"],
+)
+
+alias(
     name = "json5format-0.2.6",
     actual = "//third_party/rust_crates/vendor/json5format-0.2.6:json5format",
     tags = ["manual"],
