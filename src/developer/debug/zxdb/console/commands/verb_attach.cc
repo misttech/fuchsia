@@ -230,7 +230,8 @@ void RunVerbAttach(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
     if (err_or_target.has_error())
       return cmd_context->ReportError(err_or_target.err());
     err_or_target.value()->Attach(
-        koid, {.weak = false, .target = debug_ipc::AttachConfig::Target::kProcess},
+        koid,
+        {.weak = cmd.HasSwitch(kSwitchWeak), .target = debug_ipc::AttachConfig::Target::kProcess},
         [cmd_context](fxl::WeakPtr<Target> target, const Err& err, uint64_t timestamp) mutable {
           // Don't display a message on success because the ConsoleContext will print the new
           // process information when it's detected.

@@ -76,6 +76,10 @@ bool ProcessImpl::HasLoadedSymbols() const { return !symbols_.GetStatus().empty(
 Process::SymbolStatus ProcessImpl::GetSymbolStatus() {
   auto process_symbol_status = GetSymbols()->GetStatus();
 
+  if (process_symbol_status.empty()) {
+    return SymbolStatus::kNoModules;
+  }
+
   // Callers don't care about how many symbols are being loaded, just that some are.
   if (std::any_of(process_symbol_status.begin(), process_symbol_status.end(),
                   [this](const auto& status) {

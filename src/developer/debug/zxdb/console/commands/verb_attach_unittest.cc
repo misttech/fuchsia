@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -119,6 +120,39 @@ TEST_F(VerbAttach, Koid) {
   EXPECT_EQ(MockConsole::OutputEvent::Type::kOutput, event.type);
   EXPECT_EQ("Process " + kLargeKoidInString + " is already being debugged.",
             event.output.AsString());
+}
+
+TEST_F(VerbAttach, KoidWeak) {
+  const std::string kLargeKoidInString = std::to_string(kLargeKoid);
+  const std::string kCommand = "attach --weak " + kLargeKoidInString;
+  console().ProcessInputLine(kCommand);
+
+  // This should create a new process context and give "process 2" because the default console test
+  // harness makes a mock running process #1 by default.
+  ASSERT_TRUE(attach_remote_api()->last_attach);
+  ASSERT_EQ(kLargeKoid, attach_remote_api()->last_attach->request.koid);
+  debug_ipc::AttachReply reply;
+  reply.status = debug::Status();
+  reply.koid = kLargeKoid;
+  reply.name = "some process";
+  attach_remote_api()->last_attach->cb(Err(), reply);
+
+  auto event = console().GetOutputEvent();
+  EXPECT_EQ(MockConsole::OutputEvent::Type::kOutput, event.type);
+  EXPECT_EQ(
+      "Attached Process 2 state=Running koid=" + kLargeKoidInString + " name=\"some process\"\n",
+      event.output.AsString());
+
+  // Attaching to the same process again should give an error.
+  console().ProcessInputLine(kCommand);
+  event = console().GetOutputEvent();
+  EXPECT_EQ(MockConsole::OutputEvent::Type::kOutput, event.type);
+  EXPECT_EQ("Process " + kLargeKoidInString + " is already being debugged.",
+            event.output.AsString());
+
+  // We should not load any symbols because we are attached weakly.
+  const auto process = console().context().session()->system().ProcessFromKoid(kLargeKoid);
+  EXPECT_EQ(Process::SymbolStatus::kNoModules, process->GetSymbolStatus());
 }
 
 TEST_F(VerbAttach, Filter) {

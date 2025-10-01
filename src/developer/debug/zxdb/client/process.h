@@ -82,12 +82,19 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
 
   // This enum represents the possible states of loading symbols for a particular module in a
   // particular process. The transition edges are as follows:
-  //    kNone -> kLoaded when symbols are loaded synchronously.
-  //    kNone -> kInProgrses when symbols need to be downloaded.
-  //    kInProgress -> kNotLoaded when the symbols aren't found on any symbol servers or indexing
-  //                   failed.
+  //    kNone       ->  kNoModules: When a Process object has been created. Simply creating a
+  //                                Process object does not imply that it will send a `GetModules`
+  //                                request (that depends on the attach method).
+  //    kNoModules  ->     kLoaded: When `GetModules` returns and symbols are loaded synchronously.
+  //    kNoModules  -> kInProgress: When symbols are not found locally and need to be downloaded
+  //                                after a `GetModules` call.
+  //    kInProgress ->  kNotLoaded: When the symbols aren't found on any symbol servers or indexing
+  //                                failed.
   enum class SymbolStatus {
     kNone = 1,
+    // No modules have been sent for this process from the backend. This could be because we are
+    // weakly attached, or we haven't received a response from a `GetModules` request yet.
+    kNoModules,
     // All symbols are loaded for this process, there are no pending downloads or indexing
     // operations.
     kLoaded,
@@ -96,12 +103,16 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
     // symbol files have been downloaded and indexed.
     kInProgress,
     // Some module does not have loaded symbols for some reason. Query the ProcessSymbols object for
-    // more detailed information.
+    // more detailed information. This typically is indicative of missing symbol files either on the
+    // symbol servers or in a user's local build directory.
     kNotLoaded,
   };
 
   // Provides a high level "how are symbols doing" for this process. In the happy case, where
-  // everything is loaded and ready to go, this function will return |kLoaded|.
+  // everything is loaded and ready to go, this function will return |kLoaded|. If this is called
+  // before `GetModules` has been called, |kNoModules| is returned. This can be the case if the user
+  // requested a "weak" attach and we haven't received an event that would cause us to load symbols
+  // yet, or we're still waiting on the response to `GetModules` from the backend.
   //
   // In certain cases, such as when running as part of a script or tests that run many operations
   // faster than a user would normally type them, or when downloading large symbol files, this
