@@ -517,6 +517,7 @@ impl FileOps for InputFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
+        trace_duration!(c"input", c"InputFile::read");
         debug_assert!(offset == 0);
         let mut inner = self.inner.lock();
         let num_events = inner.events.len();
