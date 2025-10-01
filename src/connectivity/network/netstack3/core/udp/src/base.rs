@@ -1177,6 +1177,11 @@ pub trait BoundStateContext<I: IpExt, BC: UdpBindingsContext<I, Self::DeviceId>>
 
     /// Returns a context for dual- or non-dual-stack operation.
     fn dual_stack_context(
+        &self,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext>;
+
+    /// Same as [`BoundStateContext::dual_stack_context`], but returns mutable references.
+    fn dual_stack_context_mut(
         &mut self,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext>;
 
@@ -1474,7 +1479,7 @@ fn try_deliver<
                 original_bound_addr: _,
             }) => match socket_type {
                 DatagramBoundSocketStateType::Connected { state, sharing: _ } => {
-                    match BoundStateContext::dual_stack_context(core_ctx) {
+                    match BoundStateContext::dual_stack_context_mut(core_ctx) {
                         MaybeDualStack::DualStack(dual_stack) => {
                             match dual_stack.ds_converter().convert(state) {
                                 DualStackConnState::ThisStack(state) => state.should_receive(),
@@ -2651,9 +2656,15 @@ impl<
 
     type DualStackContext = CC::DualStackContext;
     type NonDualStackContext = CC::NonDualStackContext;
-    fn dual_stack_context(
+    fn dual_stack_context_mut(
         core_ctx: &mut CC,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
+        BoundStateContext::dual_stack_context_mut(core_ctx)
+    }
+
+    fn dual_stack_context(
+        core_ctx: &CC,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
         BoundStateContext::dual_stack_context(core_ctx)
     }
 
@@ -3117,6 +3128,30 @@ mod tests {
         }
 
         fn dual_stack_context(
+            &self,
+        ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+            struct Wrap<'a, I: TestIpExt, D: FakeStrongDeviceId + 'static>(
+                MaybeDualStack<
+                    &'a I::UdpDualStackBoundStateContext<D>,
+                    &'a I::UdpNonDualStackBoundStateContext<D>,
+                >,
+            );
+            // TODO(https://fxbug.dev/42082123): Replace this with a derived impl.
+            impl<'a, I: TestIpExt, NewIp: TestIpExt, D: FakeStrongDeviceId + 'static>
+                GenericOverIp<NewIp> for Wrap<'a, I, D>
+            {
+                type Type = Wrap<'a, NewIp, D>;
+            }
+
+            let Wrap(context) = I::map_ip_out(
+                self,
+                |this| Wrap(MaybeDualStack::NotDualStack(this)),
+                |this| Wrap(MaybeDualStack::DualStack(this)),
+            );
+            context
+        }
+
+        fn dual_stack_context_mut(
             &mut self,
         ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
             struct Wrap<'a, I: TestIpExt, D: FakeStrongDeviceId + 'static>(
@@ -6392,7 +6427,7 @@ mod tests {
     >(
         core_ctx: &'a mut CC,
     ) -> &'a mut CC::DualStackContext {
-        match core_ctx.dual_stack_context() {
+        match core_ctx.dual_stack_context_mut() {
             MaybeDualStack::NotDualStack(_) => unreachable!("UDP is a dual stack enabled protocol"),
             MaybeDualStack::DualStack(ds) => ds,
         }

@@ -244,7 +244,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
         CC: DatagramBoundStateContext<I, BC, S, WeakDeviceId = D>,
     >(
         &'a self,
-        core_ctx: &mut CC,
+        core_ctx: &CC,
     ) -> (&'a IpOptions<I, CC::WeakDeviceId, S>, &'a Option<CC::WeakDeviceId>) {
         match self {
             SocketState::Unbound(state) => {
@@ -288,7 +288,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
         CC: DatagramBoundStateContext<I, BC, S, WeakDeviceId = D>,
     >(
         &'a self,
-        core_ctx: &mut CC,
+        core_ctx: &CC,
     ) -> &'a IpOptions<I, CC::WeakDeviceId, S> {
         match self {
             SocketState::Unbound(state) => {
@@ -343,7 +343,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
                         ip_options
                     }
                     BoundSocketStateType::Connected { state, sharing: _ } => {
-                        match core_ctx.dual_stack_context() {
+                        match core_ctx.dual_stack_context_mut() {
                             MaybeDualStack::DualStack(dual_stack) => {
                                 match dual_stack.ds_converter().convert(state) {
                                     DualStackConnState::ThisStack(state) => state.as_mut(),
@@ -949,6 +949,11 @@ pub trait DatagramBoundStateContext<
     /// `DualStackContext`, which can be used by the caller to access dual-stack
     /// state.
     fn dual_stack_context(
+        &self,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext>;
+
+    /// The same as [`dual_stack_context`], but provides mutable references.
+    fn dual_stack_context_mut(
         &mut self,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext>;
 
@@ -2461,7 +2466,7 @@ fn listen_inner<
         SocketState::Bound(_) => return Err(Either::Left(ExpectedUnboundError)),
     };
 
-    let dual_stack = core_ctx.dual_stack_context();
+    let dual_stack = core_ctx.dual_stack_context_mut();
     let bound_operation: BoundOperation<'_, I, _, _> = match (dual_stack, addr) {
         // Dual-stack support and unspecified address.
         (MaybeDualStack::DualStack(dual_stack), None) => {
@@ -3410,7 +3415,7 @@ fn disconnect_to_unbound<
     clear_device_on_disconnect: bool,
     socket_state: &BoundSocketState<I, CC::WeakDeviceId, S>,
 ) -> UnboundSocketState<I, CC::WeakDeviceId, S> {
-    let (ip_options, sharing, mut device) = match core_ctx.dual_stack_context() {
+    let (ip_options, sharing, mut device) = match core_ctx.dual_stack_context_mut() {
         MaybeDualStack::NotDualStack(nds) => {
             let remove_op = SingleStackRemoveOperation::new_from_state(nds, id, socket_state);
             let info = core_ctx.with_bound_sockets_mut(|_core_ctx, bound| remove_op.apply(bound));
@@ -3446,7 +3451,7 @@ fn disconnect_to_listener<
     clear_device_on_disconnect: bool,
     socket_state: &BoundSocketState<I, CC::WeakDeviceId, S>,
 ) -> BoundSocketState<I, CC::WeakDeviceId, S> {
-    let (ip_options, sharing, device) = match core_ctx.dual_stack_context() {
+    let (ip_options, sharing, device) = match core_ctx.dual_stack_context_mut() {
         MaybeDualStack::NotDualStack(nds) => {
             let ListenerIpAddr { addr, identifier } =
                 nds.nds_converter().convert(listener_ip.clone());
@@ -4126,7 +4131,7 @@ where
                 SocketState::Unbound(UnboundSocketState { device: _, sharing: _, ip_options }) => {
                     ip_options.clone()
                 }
-                SocketState::Bound(state) => match core_ctx.dual_stack_context() {
+                SocketState::Bound(state) => match core_ctx.dual_stack_context_mut() {
                     MaybeDualStack::DualStack(dual_stack) => {
                         let op = DualStackRemoveOperation::new_from_state(dual_stack, &id, state);
                         dual_stack
@@ -4189,7 +4194,7 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_state_mut(id, |core_ctx, state| {
             let (conn_state, sharing) = match (
-                core_ctx.dual_stack_context(),
+                core_ctx.dual_stack_context_mut(),
                 DualStackRemoteIp::<I, _>::new(remote_ip.clone()),
             ) {
                 (MaybeDualStack::DualStack(ds), remote_ip) => {
@@ -4250,7 +4255,7 @@ where
                 BoundSocketStateType::Connected { state, sharing: _ } => state,
             };
 
-            let clear_device_on_disconnect = match core_ctx.dual_stack_context() {
+            let clear_device_on_disconnect = match core_ctx.dual_stack_context_mut() {
                 MaybeDualStack::DualStack(dual_stack) => {
                     match dual_stack.ds_converter().convert(conn_state) {
                         DualStackConnState::ThisStack(conn_state) => {
@@ -4300,7 +4305,7 @@ where
                     }
                 }
             };
-            let Shutdown { send, receive } = match core_ctx.dual_stack_context() {
+            let Shutdown { send, receive } = match core_ctx.dual_stack_context_mut() {
                 MaybeDualStack::DualStack(ds) => ds.ds_converter().convert(state).as_ref(),
                 MaybeDualStack::NotDualStack(nds) => nds.nds_converter().convert(state).as_ref(),
             };
@@ -4329,7 +4334,7 @@ where
                 }
             };
             let (shutdown_send, shutdown_receive) = which.to_send_receive();
-            let Shutdown { send, receive } = match core_ctx.dual_stack_context() {
+            let Shutdown { send, receive } = match core_ctx.dual_stack_context_mut() {
                 MaybeDualStack::DualStack(ds) => ds.ds_converter().convert(state).as_mut(),
                 MaybeDualStack::NotDualStack(nds) => nds.nds_converter().convert(state).as_mut(),
             };
@@ -4395,7 +4400,7 @@ where
                 _Phantom((Never, PhantomData<BC>)),
             }
 
-            let (shutdown, operation) = match core_ctx.dual_stack_context() {
+            let (shutdown, operation) = match core_ctx.dual_stack_context_mut() {
                 MaybeDualStack::DualStack(dual_stack) => {
                     match dual_stack.ds_converter().convert(state) {
                         DualStackConnState::ThisStack(ConnState {
@@ -4542,7 +4547,7 @@ where
             }
 
             let (operation, shutdown) = match (
-                core_ctx.dual_stack_context(),
+                core_ctx.dual_stack_context_mut(),
                 DualStackRemoteIp::<I, _>::new(remote_ip.clone()),
             ) {
                 (MaybeDualStack::NotDualStack(_), DualStackRemoteIp::OtherStack(_)) => {
@@ -4850,7 +4855,7 @@ where
                     }
 
                     // Determine which operation needs to be applied.
-                    let op = match core_ctx.dual_stack_context() {
+                    let op = match core_ctx.dual_stack_context_mut() {
                         MaybeDualStack::DualStack(ds) => match socket_type {
                             BoundSocketStateType::Listener { state, sharing: _ } => {
                                 let ListenerState {
@@ -5157,7 +5162,7 @@ where
         self.core_ctx().with_socket_state(id, |core_ctx, state| {
             let (options, device) = state.get_options_device(core_ctx);
             let device = device.as_ref().and_then(|d| d.upgrade());
-            match DatagramBoundStateContext::<I, _, _>::dual_stack_context(core_ctx) {
+            match DatagramBoundStateContext::<I, _, _>::dual_stack_context_mut(core_ctx) {
                 MaybeDualStack::NotDualStack(_) => Err(NotDualStackCapableError),
                 MaybeDualStack::DualStack(ds) => {
                     let default_hop_limits =
@@ -6018,7 +6023,12 @@ mod test {
                 DeviceId = D,
                 WeakDeviceId = FakeWeakDeviceId<D>,
             >;
+
         fn dual_stack_context(
+            core_ctx: &FakeDualStackCoreCtx<D>,
+        ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext>;
+
+        fn dual_stack_context_mut(
             core_ctx: &mut FakeDualStackCoreCtx<D>,
         ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext>;
     }
@@ -6026,7 +6036,14 @@ mod test {
     impl<D: FakeStrongDeviceId> DualStackContextsIpExt<D> for Ipv4 {
         type DualStackContext = UninstantiableWrapper<FakeDualStackCoreCtx<D>>;
         type NonDualStackContext = FakeDualStackCoreCtx<D>;
+
         fn dual_stack_context(
+            core_ctx: &FakeDualStackCoreCtx<D>,
+        ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+            MaybeDualStack::NotDualStack(core_ctx)
+        }
+
+        fn dual_stack_context_mut(
             core_ctx: &mut FakeDualStackCoreCtx<D>,
         ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
             MaybeDualStack::NotDualStack(core_ctx)
@@ -6036,7 +6053,14 @@ mod test {
     impl<D: FakeStrongDeviceId> DualStackContextsIpExt<D> for Ipv6 {
         type DualStackContext = FakeDualStackCoreCtx<D>;
         type NonDualStackContext = UninstantiableWrapper<FakeDualStackCoreCtx<D>>;
+
         fn dual_stack_context(
+            core_ctx: &FakeDualStackCoreCtx<D>,
+        ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+            MaybeDualStack::DualStack(core_ctx)
+        }
+
+        fn dual_stack_context_mut(
             core_ctx: &mut FakeDualStackCoreCtx<D>,
         ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
             MaybeDualStack::DualStack(core_ctx)
@@ -6096,9 +6120,15 @@ mod test {
         }
 
         fn dual_stack_context(
+            core_ctx: &FakeDualStackCoreCtx<D>,
+        ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+            I::dual_stack_context(core_ctx)
+        }
+
+        fn dual_stack_context_mut(
             core_ctx: &mut FakeDualStackCoreCtx<D>,
         ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
-            I::dual_stack_context(core_ctx)
+            I::dual_stack_context_mut(core_ctx)
         }
     }
 

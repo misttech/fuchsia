@@ -595,6 +595,12 @@ where
     }
 
     fn dual_stack_context(
+        core_ctx: &CC,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+        MaybeDualStack::NotDualStack(core_ctx)
+    }
+
+    fn dual_stack_context_mut(
         core_ctx: &mut CC,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
         MaybeDualStack::NotDualStack(core_ctx)

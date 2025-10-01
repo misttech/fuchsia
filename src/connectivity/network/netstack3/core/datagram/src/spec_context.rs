@@ -193,6 +193,10 @@ pub trait DatagramSpecBoundStateContext<
     ) -> O;
 
     fn dual_stack_context(
+        core_ctx: &CC,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext>;
+
+    fn dual_stack_context_mut(
         core_ctx: &mut CC,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext>;
 
@@ -234,9 +238,15 @@ where
     }
 
     fn dual_stack_context(
+        &self,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+        S::dual_stack_context(self)
+    }
+
+    fn dual_stack_context_mut(
         &mut self,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
-        S::dual_stack_context(self)
+        S::dual_stack_context_mut(self)
     }
 
     fn with_transport_context<O, F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O>(

@@ -392,6 +392,12 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>
     }
 
     fn dual_stack_context(
+        &self,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+        MaybeDualStack::NotDualStack(self)
+    }
+
+    fn dual_stack_context_mut(
         &mut self,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
         MaybeDualStack::NotDualStack(self)
@@ -440,6 +446,12 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>
     }
 
     fn dual_stack_context(
+        &self,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+        MaybeDualStack::DualStack(self)
+    }
+
+    fn dual_stack_context_mut(
         &mut self,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
         MaybeDualStack::DualStack(self)

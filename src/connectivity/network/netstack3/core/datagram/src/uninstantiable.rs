@@ -27,6 +27,11 @@ impl<
     type DualStackContext = P::DualStackContext;
     type NonDualStackContext = P::NonDualStackContext;
     fn dual_stack_context(
+        core_ctx: &UninstantiableWrapper<P>,
+    ) -> MaybeDualStack<&Self::DualStackContext, &Self::NonDualStackContext> {
+        core_ctx.uninstantiable_unreachable()
+    }
+    fn dual_stack_context_mut(
         core_ctx: &mut UninstantiableWrapper<P>,
     ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
         core_ctx.uninstantiable_unreachable()
