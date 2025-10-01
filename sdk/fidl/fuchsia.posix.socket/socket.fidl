@@ -1213,7 +1213,9 @@ type SocketCreationOptions = resource table {
     ///
     /// If absent, the socket is not added to any wake group. If the token
     /// provided does not correspond to an existing wake group, socket creation
-    /// fails with `fuchsia.posix/Errno.EINVAL`.
+    /// succeeds, but the socket is not added to any wake group. This makes it
+    /// easier for clients to avoid a race between shutting down their wake
+    /// group and creating a new socket.
     2: group fuchsia.net.resources.WakeGroupToken;
 };
 
