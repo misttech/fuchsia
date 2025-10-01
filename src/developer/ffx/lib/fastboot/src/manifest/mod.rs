@@ -13,6 +13,7 @@ use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use camino::Utf8Path;
 use errors::ffx_bail;
+use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::{BootParams, Command, FlashManifestVersion, ManifestParams};
 use pbms::load_product_bundle;
@@ -102,6 +103,7 @@ impl Boot for FlashManifestVersion {
 }
 
 pub async fn from_sdk<F: FastbootInterface>(
+    context: &EnvironmentContext,
     messenger: &Sender<Event>,
     fastboot_interface: &mut F,
     cmd: ManifestParams,
@@ -109,7 +111,7 @@ pub async fn from_sdk<F: FastbootInterface>(
     log::debug!("fastboot manifest from_sdk");
     match cmd.product_bundle.as_ref() {
         Some(b) => {
-            let product_bundle = load_product_bundle(b).await?.into();
+            let product_bundle = load_product_bundle(context, b).await?.into();
             FlashManifest {
                 resolver: Resolver::new(PathBuf::from(b))?,
                 version: FlashManifestVersion::from_product_bundle(&product_bundle)?,
@@ -187,6 +189,7 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
 }
 
 pub async fn from_in_tree<T: FastbootInterface>(
+    context: &EnvironmentContext,
     messenger: &Sender<Event>,
     fastboot_interface: &mut T,
     cmd: ManifestParams,
@@ -194,7 +197,7 @@ pub async fn from_in_tree<T: FastbootInterface>(
     log::debug!("fastboot manifest from_in_tree");
     if cmd.product_bundle.is_some() {
         log::debug!("in tree, but product bundle specified, use in-tree sdk");
-        from_sdk(messenger, fastboot_interface, cmd).await
+        from_sdk(context, messenger, fastboot_interface, cmd).await
     } else {
         bail!("manifest or product_bundle must be specified")
     }

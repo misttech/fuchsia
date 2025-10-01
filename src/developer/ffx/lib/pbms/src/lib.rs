@@ -97,6 +97,7 @@ pub fn is_local_product_bundle<P: AsRef<Path>>(product_bundle: P) -> bool {
 /// it is joined to the build_dir. This way, command line references to relative
 /// paths work as developer's expect, and still maintain the legacy behavior.
 pub async fn load_product_bundle(
+    env: &EnvironmentContext,
     product_bundle: impl AsRef<Utf8Path>,
 ) -> Result<LoadedProductBundle> {
     // Can't use unwrap_or_else here since ffx config get is async.
@@ -110,8 +111,6 @@ pub async fn load_product_bundle(
     if is_local_product_bundle(&bundle_path) {
         return LoadedProductBundle::try_load_from(&bundle_path);
     } else if bundle_path.is_relative() {
-        let env = ffx_config::global_env_context().expect("cannot get global_env_context");
-
         if let Some(base_path) = env.build_dir().map(Utf8Path::from_path).flatten() {
             let base_dir_based_path: Utf8PathBuf = base_path.join(&bundle_path);
 
@@ -231,18 +230,18 @@ mod tests {
         let test_dir = TempDir::new().expect("output directory");
         let build_dir =
             Utf8Path::from_path(test_dir.path()).expect("cannot convert builddir to Utf8Path");
-        let _env = test_env().in_tree(&test_dir.path()).build().unwrap();
+        let env = test_env().in_tree(&test_dir.path()).build().unwrap();
 
         // If pb provided but invalid path return None
         let pb_path = build_dir.join("__invalid__").to_string();
-        let pb = load_product_bundle(&pb_path.clone()).await;
+        let pb = load_product_bundle(&env.context, &pb_path.clone()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("Could not find product bundle in \"{pb_path}\"")
         );
 
         // If pb provided and absolute and valid return Some(abspath)
-        let pb = load_product_bundle(build_dir).await;
+        let pb = load_product_bundle(&env.context, build_dir).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("No such file or directory (os error 2): \"{build_dir}/product_bundle.json\"")
@@ -251,14 +250,14 @@ mod tests {
         // If pb provided, relative and but to a file not a directory.
         let relpath = "foo".to_string();
         std::fs::File::create(build_dir.join(relpath.clone())).expect("create relative dir");
-        let pb = load_product_bundle(&relpath.clone()).await;
+        let pb = load_product_bundle(&env.context, &relpath.clone()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("{}/{relpath} is not a directory", build_dir.to_string())
         );
 
         // If pb provided and relative and invalid return None
-        let pb = load_product_bundle(&"invalid".to_string()).await;
+        let pb = load_product_bundle(&env.context, &"invalid".to_string()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!(
@@ -270,10 +269,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_load_product_bundle_no_build_dir() {
-        let _env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().await.unwrap();
 
         // Can handle an empty build path
-        let pb = load_product_bundle("some_place".to_string()).await;
+        let pb = load_product_bundle(&env.context, "some_place".to_string()).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
             format!("Could not find product bundle in \"some_place\"")
@@ -337,9 +336,11 @@ mod tests {
     async fn test_load_product_bundle_v2_valid() {
         let tmp = TempDir::new().unwrap();
         let pb_dir = make_pb_v2_in!(tmp, "fake.x64");
+        let env = ffx_config::test_init().await.expect("create test config");
 
         // Load with passing a path directly
-        let pb = load_product_bundle(pb_dir).await.expect("could not load product bundle");
+        let pb =
+            load_product_bundle(&env.context, pb_dir).await.expect("could not load product bundle");
         assert_eq!(pb.loaded_from_path(), pb_dir);
     }
 
@@ -347,10 +348,10 @@ mod tests {
     async fn test_load_product_bundle_v2_invalid() {
         let tmp = TempDir::new().unwrap();
         let pb_dir = Utf8Path::from_path(tmp.path()).unwrap();
-        let _env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().await.expect("create test config");
 
         // Load with passing a path directly
-        let pb = load_product_bundle(pb_dir).await;
+        let pb = load_product_bundle(&env.context, pb_dir).await;
         assert!(pb.is_err());
     }
 }

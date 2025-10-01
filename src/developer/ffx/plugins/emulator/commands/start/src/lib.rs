@@ -105,7 +105,7 @@ impl EngineOperations for EngineOperationsData {
             Some(b) => b,
             None => &pbms::get_product_bundle_path(&self.context)?,
         };
-        pbms::load_product_bundle(pb)
+        pbms::load_product_bundle(&self.context, pb)
             .await
             .map_err(|e| fho::user_error!("Error loading product bundle: {e}"))
     }

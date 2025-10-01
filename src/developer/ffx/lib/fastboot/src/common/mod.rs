@@ -614,8 +614,12 @@ where
                 let mut path = sdk.get_path_prefix().to_path_buf();
                 path.push("flash.json"); // Not actually used, placeholder value needed.
                 match sdk.get_version() {
-                    SdkVersion::InTree => from_in_tree(&messenger, fastboot_interface, cmd).await,
-                    SdkVersion::Version(_) => from_sdk(&messenger, fastboot_interface, cmd).await,
+                    SdkVersion::InTree => {
+                        from_in_tree(context, &messenger, fastboot_interface, cmd).await
+                    }
+                    SdkVersion::Version(_) => {
+                        from_sdk(context, &messenger, fastboot_interface, cmd).await
+                    }
                     _ => ffx_bail!("Unknown SDK type"),
                 }
             }
