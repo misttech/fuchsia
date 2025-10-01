@@ -20,6 +20,8 @@ use log::{info, warn};
 use std::time::Duration;
 use {fuchsia_async as fasync, fuchsia_trace as trace};
 
+use crate::media::AUDIO_SOURCE_UUID;
+
 /// Builder is a MediaTaskBuilder will build `ConfiguredTask`s when configured.
 #[derive(Clone)]
 pub struct Builder {
@@ -197,7 +199,9 @@ impl ConfiguredTask {
     }
 
     // TODO(https://fxbug.dev/445946972): Add inspect details here
-    fn update_inspect(&self) {}
+    fn update_inspect(&self) {
+        self.inspect.record_bool("running", self.running.is_some());
+    }
 }
 
 impl Inspect for &mut ConfiguredTask {
@@ -207,6 +211,8 @@ impl Inspect for &mut ConfiguredTask {
         name: impl AsRef<str>,
     ) -> Result<(), AttachError> {
         self.inspect = parent.create_child(name.as_ref());
+        self.inspect.record_string("peer_id", self.peer_id.to_string());
+        self.inspect.record_string("codec_config", format!("{:?}", self.codec_config));
         self.update_inspect();
         Ok(())
     }
@@ -269,7 +275,7 @@ impl RunningTask {
         info!("Stream Task Starting..");
         use fidl_fuchsia_audio_device::*;
         use fidl_fuchsia_hardware_audio::*;
-        let device_id = peer_audio_stream_id(peer_id, crate::media::sources::AUDIO_SOURCE_UUID);
+        let device_id = peer_audio_stream_id(peer_id, AUDIO_SOURCE_UUID);
         let (mut soft_codec, codec_client) = fuchsia_audio_device::codec::SoftCodec::create(
             Some(&device_id),
             "Fuchsia",

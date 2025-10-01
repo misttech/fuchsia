@@ -129,11 +129,11 @@ async fn streams_builder(
         return Ok(streams_builder);
     };
 
-    use media::sources::AudioSourceType::*;
+    use media::AudioSourceType::*;
     match source_type {
         AudioOut | BigBen => {
             let inband_source_builder =
-                media::inband_source::Builder::new(source_type, aac_available).await?;
+                media::encoding_source::Builder::new(source_type, aac_available).await?;
             streams_builder.add_builder(inband_source_builder);
         }
         Offload => {
@@ -441,7 +441,7 @@ mod tests {
     use futures::task::Poll;
 
     use crate::config::DEFAULT_INITIATOR_DELAY;
-    use crate::media::sources::AudioSourceType;
+    use crate::media::AudioSourceType;
 
     fn run_to_stalled(exec: &mut fasync::TestExecutor) {
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());

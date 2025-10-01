@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use a2dp_profile_config::Config;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_bluetooth as fidl_bt;
 use std::collections::HashSet;
 use thiserror::Error;
 
-use crate::media::sources::AudioSourceType;
+use crate::media::AudioSourceType;
 
 pub(crate) const DEFAULT_DOMAIN: &str = "Bluetooth";
 pub(crate) const DEFAULT_INITIATOR_DELAY: zx::MonotonicDuration =

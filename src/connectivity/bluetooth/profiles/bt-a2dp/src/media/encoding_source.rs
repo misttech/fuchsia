@@ -14,13 +14,28 @@ use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Shared, WeakShared};
+use futures::stream::BoxStream;
 use futures::{AsyncWriteExt, FutureExt, TryFutureExt, TryStreamExt};
 use log::{info, trace, warn};
+use std::sync::Arc;
 use std::time::Duration;
 use {fuchsia_async as fasync, fuchsia_trace as trace};
 
-use super::sources;
 use crate::encoding::EncodedStream;
+use crate::media::AudioSourceType;
+
+pub mod audio_out_stream;
+pub mod big_ben_stream;
+
+pub trait AudioSourceStreamBuilder: Send + Sync {
+    fn build(
+        &self,
+        peer_id: &PeerId,
+        pcm_format: PcmFormat,
+        external_delay: std::time::Duration,
+        inspect_parent: &mut Node,
+    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>, Error>;
+}
 
 /// Builder is a MediaTaskBuilder will build `ConfiguredTask`s when configured.
 /// `source_type` determines where the source of audio is provided.
@@ -31,8 +46,10 @@ use crate::encoding::EncodedStream;
 /// TODO(https://fxbug.dev/42145257): Avoid this creation / destruction on configure
 #[derive(Clone)]
 pub struct Builder {
-    /// The type of source audio.
-    source_type: sources::AudioSourceType,
+    /// The type of source audio, for inspecting.
+    source_type: AudioSourceType,
+    /// The builder for the audio source stream.
+    stream_builder: Arc<Box<dyn AudioSourceStreamBuilder>>,
     /// Whether AAC has been detected to be available
     aac_available: bool,
 }
@@ -119,12 +136,19 @@ impl MediaTaskBuilder for Builder {
 }
 
 impl Builder {
-    /// Make a new builder that will source audio from `source_type`.  See `sources::build_stream`
-    /// for documentation on the types of streams that are available.
+    /// Make a new builder that will source audio from `source_type`.
     pub async fn new(
-        source_type: sources::AudioSourceType,
+        source_type: AudioSourceType,
         mut aac_available: bool,
     ) -> Result<Self, MediaTaskError> {
+        let stream_builder: Box<dyn AudioSourceStreamBuilder> = match source_type {
+            AudioSourceType::AudioOut => Box::new(audio_out_stream::AudioOutStream {}),
+            AudioSourceType::BigBen => Box::new(big_ben_stream::BigBenStream::default()),
+            AudioSourceType::Offload => {
+                return Err(MediaTaskError::Other("Offload source not supported".to_string()));
+            }
+        };
+
         // Check to see that we can encode SBC audio.
         // This is a requirement of A2DP 1.3: Section 4.2
         test_encodable(&MediaCodecConfig::min_sbc()).await?;
@@ -134,7 +158,7 @@ impl Builder {
                 aac_available = false;
             }
         }
-        Ok(Self { source_type, aac_available })
+        Ok(Self { source_type, stream_builder: Arc::new(stream_builder), aac_available })
     }
 
     pub(crate) fn configure_task(
@@ -154,14 +178,20 @@ impl Builder {
             channel_map,
         };
         let source_stream = self
-            .source_type
+            .stream_builder
             .build(&peer_id, pcm_format.clone(), Duration::ZERO, &mut Default::default())
             .map_err(|_e| MediaTaskError::NotSupported)?;
         if let Err(e) = EncodedStream::build(pcm_format.clone(), source_stream, codec_config) {
             trace!("inband_source::Builder: can't build encoded stream: {e:?}");
             return Err(MediaTaskError::Other(format!("Can't build encoded stream: {e}")));
         }
-        Ok(ConfiguredTask::build(pcm_format, self.source_type, peer_id.clone(), codec_config))
+        Ok(ConfiguredTask::build(
+            pcm_format,
+            self.source_type,
+            self.stream_builder.clone(),
+            peer_id.clone(),
+            codec_config,
+        ))
     }
 }
 
@@ -169,7 +199,9 @@ impl Builder {
 /// this task is started, and destroyed when stopped.
 pub(crate) struct ConfiguredTask {
     /// The type of source audio.
-    source_type: sources::AudioSourceType,
+    source_type: AudioSourceType,
+    /// The builder for the audio source stream.
+    stream_builder: Arc<Box<dyn AudioSourceStreamBuilder>>,
     /// Format the source audio should be produced in.
     pub(crate) pcm_format: PcmFormat,
     /// Id of the peer that will be receiving the stream.  Used to distinguish sources for Fuchsia
@@ -192,13 +224,15 @@ impl ConfiguredTask {
     /// stream.  No checks are done when building.
     pub(crate) fn build(
         pcm_format: PcmFormat,
-        source_type: sources::AudioSourceType,
+        source_type: AudioSourceType,
+        stream_builder: Arc<Box<dyn AudioSourceStreamBuilder>>,
         peer_id: PeerId,
         codec_config: &MediaCodecConfig,
     ) -> Self {
         Self {
             pcm_format,
             source_type,
+            stream_builder,
             peer_id,
             codec_config: codec_config.clone(),
             delay: Duration::ZERO,
@@ -232,7 +266,7 @@ impl MediaTaskRunner for ConfiguredTask {
         _offload: Option<AudioOffloadExtProxy>,
     ) -> Result<Box<dyn MediaTask>, MediaTaskError> {
         let source_stream = self
-            .source_type
+            .stream_builder
             .build(&self.peer_id, self.pcm_format.clone(), self.delay.into(), &mut self.inspect)
             .map_err(|e| MediaTaskError::Other(format!("Building stream: {}", e)))?;
         let encoded_stream =
@@ -356,7 +390,7 @@ mod tests {
     #[cfg(not(feature = "test_encoding"))]
     #[fuchsia::test]
     async fn test_encoding_fails_in_non_encoding_test_environment() {
-        let builder_result = Builder::new(sources::AudioSourceType::BigBen, false).await;
+        let builder_result = Builder::new(AudioSourceType::BigBen, false).await;
 
         assert!(builder_result.is_err());
     }
@@ -376,8 +410,7 @@ mod tests {
 
         #[fuchsia::test]
         async fn configures_source_from_codec_config() {
-            let builder =
-                Builder::new(sources::AudioSourceType::BigBen, false).await.expect("can encode");
+            let builder = Builder::new(AudioSourceType::BigBen, false).await.expect("can encode");
 
             // Minimum SBC requirements are mono, 48kHz
             let mono_config = MediaCodecConfig::min_sbc();
@@ -410,8 +443,7 @@ mod tests {
 
         #[fuchsia::test]
         async fn source_media_stream_stats() {
-            let builder =
-                Builder::new(sources::AudioSourceType::BigBen, false).await.expect("can encode");
+            let builder = Builder::new(AudioSourceType::BigBen, false).await.expect("can encode");
 
             let inspector = inspect::component::inspector();
             let root = inspector.root();
