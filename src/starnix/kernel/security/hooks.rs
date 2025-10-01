@@ -2006,6 +2006,7 @@ mod tests {
             );
             assert_eq!(run_else_result, TestHookResult::WasNotRun);
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2022,6 +2023,7 @@ mod tests {
             );
             assert_eq!(run_else_result, TestHookResult::WasNotRun);
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2040,6 +2042,7 @@ mod tests {
                 assert_eq!(run_else_result, TestHookResult::WasRun);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2047,6 +2050,7 @@ mod tests {
         spawn_kernel_and_run(|_locked, current_task| {
             task_alloc(current_task, 0);
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2055,6 +2059,7 @@ mod tests {
             assert!(current_task.kernel().security_state.state.is_none());
             assert_eq!(check_task_create_access(current_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2065,6 +2070,7 @@ mod tests {
                 assert_eq!(check_task_create_access(current_task), Ok(()));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2077,6 +2083,7 @@ mod tests {
                 Ok(ResolvedElfState { sid: None })
             );
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2090,6 +2097,7 @@ mod tests {
                 assert!(result.expect("Exec check should succeed").sid.is_some());
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2113,6 +2121,7 @@ mod tests {
             );
             assert_eq!(current_task.security_state.lock().current_sid, before_hook_sid)
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2127,6 +2136,7 @@ mod tests {
             exec_binprm(locked, current_task, &elf_state);
             assert_eq!(*current_task.security_state.lock(), initial_state);
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2152,6 +2162,7 @@ mod tests {
                 assert_eq!(current_task.security_state.lock().current_sid, elf_sid);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2160,6 +2171,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getsched_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2168,6 +2180,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getsched_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2176,6 +2189,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setsched_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2184,6 +2198,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setsched_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2192,6 +2207,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getpgid_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2200,6 +2216,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getpgid_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2208,6 +2225,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setpgid_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2216,6 +2234,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setpgid_access(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2224,6 +2243,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_task_getsid(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2232,6 +2252,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_task_getsid(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2240,6 +2261,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_signal_access(current_task, &another_task, SIGTERM), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2248,6 +2270,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_signal_access(current_task, &another_task, SIGTERM), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2256,6 +2279,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_traceme(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2264,6 +2288,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_traceme(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2272,6 +2297,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_access_check(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2280,6 +2306,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_access_check(current_task, &another_task), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2288,6 +2315,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(task_prlimit(current_task, &another_task, true, true), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2296,6 +2324,7 @@ mod tests {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(task_prlimit(current_task, &another_task, true, true), Ok(()));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2304,7 +2333,8 @@ mod tests {
             let node = &testing::create_test_file(locked, current_task).entry.node;
             task_to_fs_node(current_task, &current_task.temp_task(), &node);
             assert_eq!(None, selinux_hooks::get_cached_sid(node));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2324,6 +2354,7 @@ mod tests {
 
             assert_eq!(None, selinux_hooks::get_cached_sid(node));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2342,6 +2373,7 @@ mod tests {
 
             assert_eq!(None, selinux_hooks::get_cached_sid(node));
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2372,6 +2404,7 @@ mod tests {
                 assert_eq!(Some(expected_sid), selinux_hooks::get_cached_sid(node));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2402,6 +2435,7 @@ mod tests {
                 assert_eq!(whatever_sid, selinux_hooks::get_cached_sid(node));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2428,6 +2462,7 @@ mod tests {
                 assert_eq!(before_sid, selinux_hooks::get_cached_sid(node));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2452,6 +2487,7 @@ mod tests {
                 assert_eq!(Some(InitialSid::Unlabeled.into()), selinux_hooks::get_cached_sid(node));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2490,6 +2526,7 @@ mod tests {
                 assert_ne!(first_sid, second_sid);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2531,6 +2568,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2565,6 +2603,7 @@ mod tests {
                 assert_eq!(result, Ok(ValueOrSize::Value(FsString::new(TEST_VALUE.into()))));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2616,6 +2655,7 @@ mod tests {
                 assert!(get_procattr(current_task, current_task, ProcAttr::Current).is_ok());
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2658,6 +2698,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2687,6 +2728,7 @@ mod tests {
                 assert_eq!(current_task.security_state.lock().fscreate_sid, None);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2738,6 +2780,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2784,6 +2827,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -2817,6 +2861,7 @@ mod tests {
                 error!(EINVAL)
             );
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -2854,6 +2899,7 @@ mod tests {
 
                 assert_eq!(get_cached_sid(&dir_entry.node), Some(sid));
             },
-        );
+        )
+        .await;
     }
 }

@@ -882,7 +882,8 @@ mod tests {
         spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
             exec_hello_starnix(locked, current_task).expect("failed to load executable");
             assert!(current_task.mm().unwrap().get_mapping_count() > 0);
-        });
+        })
+        .await;
     }
 
     // TODO(https://fxbug.dev/42072654): Figure out why this snapshot fails.
@@ -902,7 +903,8 @@ mod tests {
                 current_task.mm().unwrap().get_mapping_count(),
                 current2.mm().unwrap().get_mapping_count()
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]

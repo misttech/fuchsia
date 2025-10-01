@@ -1761,7 +1761,8 @@ mod test {
                 .expect("recvmsg");
             assert!(info.ancillary_data.is_empty());
             assert_eq!(info.message_length, 1);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1800,7 +1801,8 @@ mod test {
                 .unwrap()
                 .open(locked, &current_task, OpenFlags::RDONLY, AccessCheck::default())
                 .unwrap();
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1823,7 +1825,8 @@ mod test {
                 .unwrap();
 
             assert_eq!(bytes_read, bytes.len());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1878,7 +1881,8 @@ mod test {
                 .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
                 .expect("wait");
             assert!(fds.is_empty());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1892,7 +1896,8 @@ mod test {
                 .expect("new_remote_file");
             assert!(fd.node().is_dir());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1906,7 +1911,8 @@ mod test {
                 .expect("new_remote_file");
             assert!(!fd.node().is_dir());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1917,7 +1923,8 @@ mod test {
             let fd = new_remote_file(locked, &current_task, counter.into(), OpenFlags::RDONLY)
                 .expect("new_remote_file");
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1928,7 +1935,8 @@ mod test {
                 .expect("new_remote_file");
             assert!(!fd.node().is_dir());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test(threads = 2)]
@@ -1974,7 +1982,8 @@ mod test {
             let stat_result = child.entry.node.stat(locked, &current_task).expect("stat failed");
             assert_eq!(stat_result.st_size as usize, LINK_SIZE);
             fixture
-        });
+        })
+        .await;
 
         // Simulate a second run to ensure the symlink was persisted correctly.
         let fixture = TestFixture::open(
@@ -2013,7 +2022,8 @@ mod test {
                 child.entry.node.stat(locked, &current_task).expect("stat failed after remount");
             assert_eq!(stat_result.st_size as usize, LINK_SIZE);
             fixture
-        });
+        })
+        .await;
 
         fixture.close().await;
     }
@@ -2028,12 +2038,12 @@ mod test {
 
         // Simulate a first run of starnix.
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::new();
 
             let (server, client) = zx::Channel::create();
             fixture.root().clone(server.into()).expect("clone failed");
 
-            spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2092,7 +2102,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2108,8 +2118,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 current_task
                     .kernel()
@@ -2177,7 +2187,7 @@ mod test {
                         }
                     })
                     .unwrap();
-            });
+            }));
             fixture
         })
         .await;
@@ -2194,8 +2204,8 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFDIR.bits() | 0o777);
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(|_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(|_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2301,7 +2311,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2317,8 +2327,8 @@ mod test {
         const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(|_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(|_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2387,7 +2397,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2403,8 +2413,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2450,7 +2460,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2465,8 +2475,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2500,7 +2510,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2517,8 +2527,8 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2566,7 +2576,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2582,8 +2592,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2612,7 +2622,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2629,8 +2639,8 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2675,7 +2685,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2690,8 +2700,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2721,7 +2731,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2736,8 +2746,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |locked, current_task| {
                 let kernel = current_task.kernel();
                 let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
                 let fs = RemoteFs::new_fs(
@@ -2759,7 +2769,7 @@ mod test {
                 assert!(statfs.f_fsid.val[0] != 0 || statfs.f_fsid.val[1] != 0);
                 assert!(statfs.f_namelen > 0);
                 assert!(statfs.f_frsize > 0);
-            });
+            }));
         })
         .await;
 
@@ -2773,8 +2783,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2826,7 +2836,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2841,8 +2851,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2894,7 +2904,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -2911,77 +2921,78 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let (fixture, last_modified) = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            let last_modified = spawn_kernel_and_run(move |_locked, current_task| {
-                let kernel = current_task.kernel().clone();
-                kernel
-                    .kthreads
-                    .spawner()
-                    .spawn_and_get_result_sync({
-                        let kernel = Arc::clone(&kernel);
-                        move |locked, current_task| {
-                            let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
-                            let fs = RemoteFs::new_fs(
-                                locked,
-                                &kernel,
-                                client,
-                                FileSystemOptions {
-                                    source: FlyByteStr::new(b"/"),
-                                    ..Default::default()
-                                },
-                                rights,
-                            )
-                            .expect("new_fs failed");
-                            let ns: Arc<Namespace> = Namespace::new(fs);
-                            current_task.fs().set_umask(FileMode::from_bits(0));
-                            let child = ns
-                                .root()
-                                .create_node(
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            let last_modified =
+                exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+                    let kernel = current_task.kernel().clone();
+                    kernel
+                        .kthreads
+                        .spawner()
+                        .spawn_and_get_result_sync({
+                            let kernel = Arc::clone(&kernel);
+                            move |locked, current_task| {
+                                let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+                                let fs = RemoteFs::new_fs(
                                     locked,
-                                    &current_task,
-                                    "file".into(),
-                                    MODE,
-                                    DeviceType::NONE,
+                                    &kernel,
+                                    client,
+                                    FileSystemOptions {
+                                        source: FlyByteStr::new(b"/"),
+                                        ..Default::default()
+                                    },
+                                    rights,
                                 )
-                                .expect("create_node failed");
-                            // Write to file (this should update mtime (time_modify))
-                            let file = child
-                                .open(
-                                    locked,
-                                    &current_task,
-                                    OpenFlags::RDWR,
-                                    AccessCheck::default(),
-                                )
-                                .expect("open failed");
-                            // Call `fetch_and_refresh_info(..)` to refresh `time_modify` with the time managed by the
-                            // underlying filesystem
-                            let time_before_write = child
-                                .entry
-                                .node
-                                .fetch_and_refresh_info(locked, &current_task)
-                                .expect("fetch_and_refresh_info failed")
-                                .time_modify;
-                            let write_bytes: [u8; 5] = [1, 2, 3, 4, 5];
-                            let written = file
-                                .write(
-                                    locked,
-                                    &current_task,
-                                    &mut VecInputBuffer::new(&write_bytes),
-                                )
-                                .expect("write failed");
-                            assert_eq!(written, write_bytes.len());
-                            let last_modified = child
-                                .entry
-                                .node
-                                .fetch_and_refresh_info(locked, &current_task)
-                                .expect("fetch_and_refresh_info failed")
-                                .time_modify;
-                            assert!(last_modified > time_before_write);
-                            last_modified
-                        }
-                    })
-                    .expect("spawn")
-            });
+                                .expect("new_fs failed");
+                                let ns: Arc<Namespace> = Namespace::new(fs);
+                                current_task.fs().set_umask(FileMode::from_bits(0));
+                                let child = ns
+                                    .root()
+                                    .create_node(
+                                        locked,
+                                        &current_task,
+                                        "file".into(),
+                                        MODE,
+                                        DeviceType::NONE,
+                                    )
+                                    .expect("create_node failed");
+                                // Write to file (this should update mtime (time_modify))
+                                let file = child
+                                    .open(
+                                        locked,
+                                        &current_task,
+                                        OpenFlags::RDWR,
+                                        AccessCheck::default(),
+                                    )
+                                    .expect("open failed");
+                                // Call `fetch_and_refresh_info(..)` to refresh `time_modify` with the time managed by the
+                                // underlying filesystem
+                                let time_before_write = child
+                                    .entry
+                                    .node
+                                    .fetch_and_refresh_info(locked, &current_task)
+                                    .expect("fetch_and_refresh_info failed")
+                                    .time_modify;
+                                let write_bytes: [u8; 5] = [1, 2, 3, 4, 5];
+                                let written = file
+                                    .write(
+                                        locked,
+                                        &current_task,
+                                        &mut VecInputBuffer::new(&write_bytes),
+                                    )
+                                    .expect("write failed");
+                                assert_eq!(written, write_bytes.len());
+                                let last_modified = child
+                                    .entry
+                                    .node
+                                    .fetch_and_refresh_info(locked, &current_task)
+                                    .expect("fetch_and_refresh_info failed")
+                                    .time_modify;
+                                assert!(last_modified > time_before_write);
+                                last_modified
+                            }
+                        })
+                        .expect("spawn")
+                }));
             (fixture, last_modified)
         })
         .await;
@@ -2996,8 +3007,8 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
         let refreshed_modified_time = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3033,7 +3044,7 @@ mod test {
                         }
                     })
                     .expect("spawn")
-            })
+            }))
         })
         .await;
         assert_eq!(last_modified, refreshed_modified_time);
@@ -3050,8 +3061,8 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3133,7 +3144,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
         })
         .await;
         fixture.close().await;
@@ -3148,8 +3159,8 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3237,7 +3248,7 @@ mod test {
                         }
                     })
                     .expect("spawn");
-            });
+            }));
             fixture
         })
         .await;
@@ -3252,8 +3263,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            let _ = spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            let _ = exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3295,7 +3306,7 @@ mod test {
                         }
                     })
                     .expect("spawn")
-            });
+            }));
             fixture
         })
         .await;
@@ -3309,8 +3320,8 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
         let casefold = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3346,7 +3357,7 @@ mod test {
                         }
                     })
                     .expect("spawn")
-            })
+            }))
         })
         .await;
         assert!(casefold);
@@ -3366,68 +3377,69 @@ mod test {
 
             // Set up file.
             let (fixture, info_after_read) = fuchsia_async::unblock(move || {
-                let _exec = fuchsia_async::LocalExecutor::new();
-                let info_after_read = spawn_kernel_and_run(move |_locked, current_task| {
-                    let kernel = current_task.kernel().clone();
-                    kernel
-                        .kthreads
-                        .spawner()
-                        .spawn_and_get_result_sync({
-                            let kernel = Arc::clone(&kernel);
-                            move |locked, current_task| {
-                                let fs = RemoteFs::new_fs(
-                                    locked,
-                                    &kernel,
-                                    client,
-                                    FileSystemOptions {
-                                        source: FlyByteStr::new(b"/"),
-                                        flags: MountFlags::RELATIME,
-                                        ..Default::default()
-                                    },
-                                    fio::PERM_READABLE | fio::PERM_WRITABLE,
-                                )
-                                .expect("new_fs failed");
-                                let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
-                                let child = ns
-                                    .root()
-                                    .open_create_node(
+                let mut exec = fuchsia_async::LocalExecutor::new();
+                let info_after_read =
+                    exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+                        let kernel = current_task.kernel().clone();
+                        kernel
+                            .kthreads
+                            .spawner()
+                            .spawn_and_get_result_sync({
+                                let kernel = Arc::clone(&kernel);
+                                move |locked, current_task| {
+                                    let fs = RemoteFs::new_fs(
                                         locked,
-                                        &current_task,
-                                        TEST_FILE.into(),
-                                        FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
-                                        DeviceType::NONE,
-                                        OpenFlags::empty(),
+                                        &kernel,
+                                        client,
+                                        FileSystemOptions {
+                                            source: FlyByteStr::new(b"/"),
+                                            flags: MountFlags::RELATIME,
+                                            ..Default::default()
+                                        },
+                                        fio::PERM_READABLE | fio::PERM_WRITABLE,
                                     )
-                                    .expect("create_node failed");
+                                    .expect("new_fs failed");
+                                    let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
+                                    let child = ns
+                                        .root()
+                                        .open_create_node(
+                                            locked,
+                                            &current_task,
+                                            TEST_FILE.into(),
+                                            FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
+                                            DeviceType::NONE,
+                                            OpenFlags::empty(),
+                                        )
+                                        .expect("create_node failed");
 
-                                let file_handle = child
-                                    .open(
-                                        locked,
-                                        &current_task,
-                                        OpenFlags::RDWR,
-                                        AccessCheck::default(),
-                                    )
-                                    .expect("open failed");
+                                    let file_handle = child
+                                        .open(
+                                            locked,
+                                            &current_task,
+                                            OpenFlags::RDWR,
+                                            AccessCheck::default(),
+                                        )
+                                        .expect("open failed");
 
-                                // Expect atime to be updated as this is the first file access since the
-                                // last file modification or status change.
-                                file_handle
-                                    .read(locked, &current_task, &mut VecOutputBuffer::new(10))
-                                    .expect("read failed");
+                                    // Expect atime to be updated as this is the first file access since the
+                                    // last file modification or status change.
+                                    file_handle
+                                        .read(locked, &current_task, &mut VecOutputBuffer::new(10))
+                                        .expect("read failed");
 
-                                // Call `fetch_and_refresh_info` to persist atime update.
-                                let info_after_read = child
-                                    .entry
-                                    .node
-                                    .fetch_and_refresh_info(locked, &current_task)
-                                    .expect("fetch_and_refresh_info failed")
-                                    .clone();
+                                    // Call `fetch_and_refresh_info` to persist atime update.
+                                    let info_after_read = child
+                                        .entry
+                                        .node
+                                        .fetch_and_refresh_info(locked, &current_task)
+                                        .expect("fetch_and_refresh_info failed")
+                                        .clone();
 
-                                info_after_read
-                            }
-                        })
-                        .expect("spawn failed")
-                });
+                                    info_after_read
+                                }
+                            })
+                            .expect("spawn failed")
+                    }));
                 (fixture, info_after_read)
             })
             .await;
@@ -3446,8 +3458,8 @@ mod test {
             fixture.root().clone(server.into()).expect("clone failed");
 
             let fixture = fuchsia_async::unblock(move || {
-                let _exec = fuchsia_async::LocalExecutor::new();
-                spawn_kernel_and_run(move |_locked, current_task| {
+                let mut exec = fuchsia_async::LocalExecutor::new();
+                exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                     let kernel = current_task.kernel().clone();
                     kernel
                         .kthreads
@@ -3491,7 +3503,7 @@ mod test {
                             }
                         })
                         .expect("spawn failed")
-                });
+                }));
                 fixture
             })
             .await;
@@ -3510,8 +3522,8 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let _exec = fuchsia_async::LocalExecutor::new();
-            spawn_kernel_and_run(move |_locked, current_task| {
+            let mut exec = fuchsia_async::LocalExecutor::new();
+            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3608,7 +3620,7 @@ mod test {
                         }
                     })
                     .expect("spawn failed");
-            });
+            }));
             fixture
         })
         .await;

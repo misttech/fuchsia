@@ -1408,7 +1408,8 @@ mod tests {
                 starnix_thread.join().expect("thread join").expect("thread result");
                 process_accessor_task.await.expect("process accessor wait");
             });
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1551,7 +1552,7 @@ mod tests {
                 .wake(fbinder::ContainerPowerControllerWakeRequest { ..Default::default() })
                 .unwrap();
             executor.run_singlethreaded(wait_for_message(&message_counter));
-        });
+        }).await;
     }
 
     #[test]

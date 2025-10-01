@@ -2822,7 +2822,8 @@ mod tests {
 
             // Assert the contents.
             assert_eq!(&[0; CONTENT_LEN], buffer.data());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2871,7 +2872,8 @@ mod tests {
             assert_eq!(stat.st_mtime, 0);
             assert_eq!(stat.st_mtime_nsec, 3);
             assert_eq!(stat.st_rdev, DeviceType::new(13, 13).bits());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2968,7 +2970,8 @@ mod tests {
             assert_eq!(check_access(locked, 0, 3, 0o070, Access::EXEC), Ok(()));
             assert_eq!(check_access(locked, 0, 3, 0o070, Access::READ), Ok(()));
             assert_eq!(check_access(locked, 0, 3, 0o070, Access::WRITE), Ok(()));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -3003,7 +3006,8 @@ mod tests {
                 ),
                 error!(EPERM)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -3038,7 +3042,8 @@ mod tests {
                 ),
                 error!(EPERM)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -3088,6 +3093,7 @@ mod tests {
                 ),
                 Ok(ValueOrSize::Value("security_label".into()))
             );
-        });
+        })
+        .await;
     }
 }

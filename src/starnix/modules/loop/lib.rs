@@ -863,7 +863,8 @@ mod tests {
             loop_file.read(locked, current_task, &mut buf).unwrap();
 
             assert_eq!(buf.data(), expected_contents);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -889,7 +890,8 @@ mod tests {
             loop_file.read(locked, current_task, &mut buf).unwrap();
 
             assert_eq!(buf.data(), b"lo, world!");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -916,7 +918,8 @@ mod tests {
             let size = memory.get_content_size();
             let memory_contents = memory.read_to_vec(0, size).unwrap();
             assert_eq!(memory_contents, expected_contents);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -962,6 +965,7 @@ mod tests {
             let size = memory.get_content_size();
             let memory_contents = memory.read_to_vec(0, size).unwrap();
             assert_eq!(memory_contents, expected_contents);
-        });
+        })
+        .await;
     }
 }

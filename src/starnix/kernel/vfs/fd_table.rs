@@ -587,7 +587,8 @@ mod test {
             assert_eq!(files.get(FdNumber::from_raw(fd1.raw() + 1)).map(|_| ()), error!(EBADF));
 
             files.release(());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -619,7 +620,8 @@ mod test {
 
             forked.release(());
             files.release(());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -642,7 +644,8 @@ mod test {
             assert!(files.get(fd1).is_ok());
 
             files.release(());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -668,6 +671,7 @@ mod test {
             assert_eq!(another_fd.raw(), 0);
 
             files.release(());
-        });
+        })
+        .await;
     }
 }

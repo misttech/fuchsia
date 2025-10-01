@@ -1702,7 +1702,8 @@ mod test {
             let pids = kernel.pids.read();
             assert_eq!(pids.get_task(1).upgrade().unwrap().get_tid(), 1);
             assert_eq!(pids.get_task(another_tid).upgrade().unwrap().get_tid(), another_tid);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1721,7 +1722,8 @@ mod test {
             assert_ne!(current_task.get_pid(), child_task.get_pid());
             assert_ne!(current_task.get_tid(), child_task.get_tid());
             assert_eq!(current_task.get_pid(), child_task.thread_group().read().get_ppid());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1732,7 +1734,8 @@ mod test {
 
             current_task.set_creds(Credentials::with_ids(1, 1));
             assert!(!security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1751,6 +1754,7 @@ mod test {
             let child_task = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             let child_fsize = child_task.thread_group().get_rlimit(locked, Resource::FSIZE);
             assert_eq!(child_fsize, 10)
-        });
+        })
+        .await;
     }
 }

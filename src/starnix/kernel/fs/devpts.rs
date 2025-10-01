@@ -1058,7 +1058,8 @@ mod tests {
             lookup_node(locked, task, &fs, "0".into()).unwrap_err();
             let _ptmx = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
             lookup_node(locked, task, &fs, "0".into()).expect("pty");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1073,7 +1074,8 @@ mod tests {
             std::mem::drop(ptmx);
             task.trigger_delayed_releaser(locked);
             lookup_node(locked, task, &fs, "0".into()).unwrap_err();
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1098,7 +1100,8 @@ mod tests {
 
             _ptmx1 = open_ptmx_and_unlock(locked, task, &fs).expect("ptmx");
             lookup_node(locked, task, &fs, "1".into()).expect("component_lookup");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1132,7 +1135,8 @@ mod tests {
                 .expect("custom_pts");
             let node = NamespaceNode::new_anonymous(pts.clone());
             assert!(node.open(locked, task, OpenFlags::RDONLY, AccessCheck::skip()).is_err());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1162,7 +1166,8 @@ mod tests {
                 .expect("tty");
             // TIOCGPTN is not implemented on replica terminals
             assert!(ioctl::<i32>(locked, task, &tty, TIOCGPTN, &0).is_err());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1177,7 +1182,8 @@ mod tests {
 
             let pts_file = open_file(locked, task, &fs, "0".into()).expect("open file");
             assert_eq!(pts_file.ioctl(locked, task, 42, Default::default()), error!(ENOTTY));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1194,7 +1200,8 @@ mod tests {
 
             let pts1 = ioctl::<u32>(locked, task, &ptmx1, TIOCGPTN, &0).expect("ioctl");
             assert_eq!(pts1, 1);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1210,7 +1217,8 @@ mod tests {
                 pts.open(locked, task, OpenFlags::RDONLY, AccessCheck::default()).map(|_| ()),
                 error!(EIO)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1236,7 +1244,8 @@ mod tests {
                 pts.open(locked, task, OpenFlags::RDONLY, AccessCheck::default()).map(|_| ()),
                 error!(EIO)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1254,7 +1263,8 @@ mod tests {
             assert_eq!(pts_stats.st_mode & FileMode::PERMISSIONS.bits(), 0o600);
             assert_eq!(pts_stats.st_uid, 22);
             // TODO(qsr): Check that gid is tty.
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1306,7 +1316,8 @@ mod tests {
                     .controlling_terminal
                     .is_some()
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1346,7 +1357,8 @@ mod tests {
                 ioctl::<i32>(locked, &task2, &opened_replica, TIOCGPGRP, &0),
                 error!(ENOTTY)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1427,7 +1439,8 @@ mod tests {
                     .controlling_terminal
                     .is_none()
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1517,7 +1530,8 @@ mod tests {
                     .get_foreground_process_group_leader(),
                 task2_pgid
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1553,7 +1567,8 @@ mod tests {
                     .controlling_terminal
                     .is_none()
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1599,6 +1614,7 @@ mod tests {
 
             // Data has not been echoed
             assert!(!has_data_ready_to_read(locked, &pts));
-        });
+        })
+        .await;
     }
 }

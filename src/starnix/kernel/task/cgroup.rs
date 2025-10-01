@@ -718,7 +718,8 @@ mod test {
                 path_from_root(Some(Arc::downgrade(&child_cgroup))),
                 Ok("/test/child".into())
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -748,6 +749,7 @@ mod test {
             let thread_state = thread.read();
             let kernel_signals = thread_state.kernel_signals_for_test();
             assert_matches!(kernel_signals.front(), Some(KernelSignal::Freeze(_)));
-        });
+        })
+        .await;
     }
 }

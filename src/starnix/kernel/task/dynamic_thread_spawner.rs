@@ -375,7 +375,8 @@ mod tests {
         spawn_kernel_and_run(|_locked, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             spawner.spawn(|_, _| {});
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -385,7 +386,8 @@ mod tests {
             for _ in 0..10 {
                 spawner.spawn(|_, _| {});
             }
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -416,7 +418,8 @@ mod tests {
                 }),
                 Ok(())
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -424,7 +427,8 @@ mod tests {
         spawn_kernel_and_run(|_locked, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             assert_eq!(spawner.spawn_and_get_result_sync(|_, _| 3), Ok(3));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -438,6 +442,7 @@ mod tests {
                 let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
                 exec.run_singlethreaded(wrapped_future);
             });
-        });
+        })
+        .await;
     }
 }

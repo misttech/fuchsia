@@ -902,7 +902,8 @@ mod tests {
                     panic!("mmap with colliding hint failed: {error:?}");
                 }
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -929,7 +930,8 @@ mod tests {
                     panic!("mmap with fixed collision failed: {error:?}");
                 }
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -956,7 +958,8 @@ mod tests {
                     panic!("mmap with fixed_noreplace collision failed: {result:?}");
                 }
             }
-        });
+        })
+        .await;
     }
 
     /// It is ok to call munmap with an address that is a multiple of the page size, and
@@ -973,7 +976,8 @@ mod tests {
 
             // Verify that the memory is no longer readable.
             assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
-        });
+        })
+        .await;
     }
 
     /// It is ok to call munmap on an unmapped range.
@@ -990,7 +994,8 @@ mod tests {
                 sys_munmap(locked, &current_task, mapped_address, *PAGE_SIZE as usize),
                 Ok(())
             );
-        });
+        })
+        .await;
     }
 
     /// It is an error to call munmap with a length of 0.
@@ -1000,7 +1005,8 @@ mod tests {
             let mapped_address =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             assert_eq!(sys_munmap(locked, &current_task, mapped_address, 0), error!(EINVAL));
-        });
+        })
+        .await;
     }
 
     /// It is an error to call munmap with an address that is not a multiple of the page size.
@@ -1021,7 +1027,8 @@ mod tests {
 
             // Verify that the memory is still readable.
             assert!(current_task.read_memory_to_array::<5>(mapped_address).is_ok());
-        });
+        })
+        .await;
     }
 
     /// The entire page should be unmapped, not just the range [address, address + length).
@@ -1042,7 +1049,8 @@ mod tests {
                     .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE - 2)).unwrap()),
                 error!(EFAULT)
             );
-        });
+        })
+        .await;
     }
 
     /// All pages that intersect the munmap range should be unmapped.
@@ -1063,7 +1071,8 @@ mod tests {
                     .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap()),
                 error!(EFAULT)
             );
-        });
+        })
+        .await;
     }
 
     /// Only the pages that intersect the munmap range should be unmapped.
@@ -1084,7 +1093,8 @@ mod tests {
                     .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap())
                     .is_ok()
             );
-        });
+        })
+        .await;
     }
 
     /// Unmap the middle page of a mapping.
@@ -1114,7 +1124,8 @@ mod tests {
                     .read_memory_to_vec((mapped_address + (*PAGE_SIZE * 2)).unwrap(), 5)
                     .is_ok()
             );
-        });
+        })
+        .await;
     }
 
     /// Unmap a range of pages that includes disjoint mappings.
@@ -1136,7 +1147,8 @@ mod tests {
             for mapped_address in mapped_addresses {
                 assert_eq!(current_task.read_memory_to_vec(mapped_address, 5), error!(EFAULT));
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1208,7 +1220,8 @@ mod tests {
                 ),
                 Ok(())
             );
-        });
+        })
+        .await;
     }
 
     /// Shrinks an entire range.
@@ -1236,7 +1249,8 @@ mod tests {
 
             check_page_eq(&current_task, addr, 'a');
             check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
-        });
+        })
+        .await;
     }
 
     /// Shrinks part of a range, introducing a hole in the middle.
@@ -1266,7 +1280,8 @@ mod tests {
             check_page_eq(&current_task, addr, 'a');
             check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
             check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
-        });
+        })
+        .await;
     }
 
     /// Shrinking doesn't care if the range specified spans multiple mappings.
@@ -1311,7 +1326,8 @@ mod tests {
             check_page_eq(&current_task, addr, 'a');
             check_unmapped(&current_task, (addr + *PAGE_SIZE).unwrap());
             check_unmapped(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap());
-        });
+        })
+        .await;
     }
 
     /// Grows a mapping in-place.
@@ -1354,7 +1370,8 @@ mod tests {
             check_page_ne(&current_task, (addr + *PAGE_SIZE).unwrap(), 'b');
 
             check_page_eq(&current_task, (addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
-        });
+        })
+        .await;
     }
 
     /// Tries to grow a set of pages that cannot fit, and forces a move.
@@ -1394,7 +1411,8 @@ mod tests {
 
             // The newly grown page should not be the same as the original third page.
             check_page_ne(&current_task, (new_addr + (*PAGE_SIZE * 2)).unwrap(), 'c');
-        });
+        })
+        .await;
     }
 
     /// Shrinks a set of pages and move them to a fixed location.
@@ -1439,7 +1457,8 @@ mod tests {
 
             // The second page should be part of the original dst mapping.
             check_page_eq(&current_task, (new_addr + *PAGE_SIZE).unwrap(), 'z');
-        });
+        })
+        .await;
     }
 
     /// Clobbers the middle of an existing mapping with mremap to a fixed location.
@@ -1491,7 +1510,8 @@ mod tests {
 
             check_page_eq(&current_task, dst_addr, 'x');
             check_page_eq(&current_task, (dst_addr + *PAGE_SIZE).unwrap(), 'b');
-        });
+        })
+        .await;
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -1522,6 +1542,7 @@ mod tests {
                     }
                 }
             }
-        });
+        })
+        .await;
     }
 }

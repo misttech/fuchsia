@@ -2129,7 +2129,8 @@ mod tests {
                 error!(EFAULT),
                 current_task.mm().unwrap().get_mapping_name((mapped_address + 24u64).unwrap())
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2167,7 +2168,8 @@ mod tests {
                     assert_eq!(result, error!(EINVAL));
                 }
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2213,7 +2215,8 @@ mod tests {
                 ),
                 Ok(SUCCESS)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2254,7 +2257,8 @@ mod tests {
                 ),
                 Ok(SUCCESS)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2273,7 +2277,8 @@ mod tests {
                 .expect("failed to set dumpable");
             sys_prctl(locked, current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
                 .expect("failed to get dumpable");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2303,7 +2308,8 @@ mod tests {
                 sys_getsid(locked, &current_task, second_current.get_tid())
                     .expect("failed to get sid")
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2328,7 +2334,8 @@ mod tests {
                 sys_sched_getaffinity(locked, &current_task, pid, 9, mapped_address),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2352,7 +2359,8 @@ mod tests {
                 sys_sched_setaffinity(locked, &current_task, pid, 1, mapped_address),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2381,7 +2389,8 @@ mod tests {
 
             let out_name = current_task.read_memory_to_vec(mapped_address, name_length).unwrap();
             assert_eq!(name.as_bytes(), &out_name);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2406,7 +2415,8 @@ mod tests {
             let max_bad_policy_error =
                 sys_sched_get_priority_max(locked, &current_task, std::u32::MAX).unwrap_err();
             assert_eq!(max_bad_policy_error, errno!(EINVAL));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2439,7 +2449,8 @@ mod tests {
             let param_value: sched_param =
                 current_task.read_object(mapped_address.into()).expect("read_object");
             assert_eq!(param_value.sched_priority, 15);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2452,7 +2463,8 @@ mod tests {
             let param_value: sched_param =
                 current_task.read_object(mapped_address.into()).expect("read_object");
             assert_eq!(param_value.sched_priority, 0);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2504,7 +2516,8 @@ mod tests {
             assert_eq!(creds.euid, 43);
             assert_eq!(creds.uid, 41);
             assert_eq!(creds.saved_uid, 43);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2538,6 +2551,7 @@ mod tests {
                 ),
                 error!(E2BIG)
             );
-        });
+        })
+        .await;
     }
 }

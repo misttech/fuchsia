@@ -659,6 +659,7 @@ mod test {
                 ]
                 .into()
             );
-        });
+        })
+        .await;
     }
 }

@@ -48,7 +48,8 @@ mod test {
     async fn test_create_from_invalid_handle() {
         spawn_kernel_and_run(|locked, current_task| {
             assert!(create_file_from_handle(locked, current_task, zx::Handle::invalid()).is_err());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -59,6 +60,7 @@ mod test {
                 .expect("failed to create left FileHandle");
             create_file_from_handle(locked, current_task, right_handle.into_handle())
                 .expect("failed to create right FileHandle");
-        });
+        })
+        .await;
     }
 }

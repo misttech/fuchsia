@@ -269,6 +269,7 @@ mod tests {
     use starnix_uapi::file_mode::Access;
     use starnix_uapi::signals::{SIGUSR1, SIGUSR2};
     use starnix_uapi::{__NR_rt_sigreturn, SA_RESTART, SA_RESTORER, SA_SIGINFO, SI_USER};
+    use std::future::Future;
 
     const SYSCALL_INSTRUCTION_ADDRESS: UserAddress = UserAddress::const_from(100);
     const SYSCALL_NUMBER: u64 = 42;
@@ -351,7 +352,8 @@ mod tests {
                 current_task.thread_state.registers.rip,
                 SYSCALL_INSTRUCTION_ADDRESS.ptr() as u64
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -486,7 +488,8 @@ mod tests {
                 current_task.thread_state.registers.rip,
                 SYSCALL_INSTRUCTION_ADDRESS.ptr() as u64
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -553,11 +556,12 @@ mod tests {
                 current_task.thread_state.registers.rip,
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64
             );
-        });
+        })
+        .await;
     }
 
     /// Creates a kernel and initial task, giving the task a stack.
-    fn spawn_kernel_and_run_with_stack<F>(callback: F)
+    fn spawn_kernel_and_run_with_stack<F>(callback: F) -> impl Future<Output = ()>
     where
         F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
     {
@@ -587,6 +591,6 @@ mod tests {
             current_task.thread_state.registers.rsp = stack_address.ptr() as u64;
 
             callback(locked, current_task);
-        });
+        })
     }
 }

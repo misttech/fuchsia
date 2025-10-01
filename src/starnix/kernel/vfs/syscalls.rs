@@ -3906,6 +3906,7 @@ mod tests {
 
             Ok(())
         })
+        .await
     }
 
     #[::fuchsia::test]
@@ -3924,6 +3925,7 @@ mod tests {
 
             Ok(())
         })
+        .await
     }
 
     #[::fuchsia::test]
@@ -3965,6 +3967,7 @@ mod tests {
 
             Ok(())
         })
+        .await
     }
 
     #[::fuchsia::test]
@@ -3984,6 +3987,7 @@ mod tests {
             assert!(current_task.files.get_fd_flags_allowing_opath(fd)?.contains(FdFlags::CLOEXEC));
             Ok(())
         })
+        .await
     }
 
     #[::fuchsia::test]
@@ -3995,6 +3999,7 @@ mod tests {
 
             Ok(())
         })
+        .await
     }
 
     #[::fuchsia::test]
@@ -4027,6 +4032,7 @@ mod tests {
                 default_statfs(u32::from_be_bytes(*b"f.io")).as_bytes()
             );
         })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4068,7 +4074,8 @@ mod tests {
             // Success with AT_REMOVEDIR.
             sys_unlinkat(locked, current_task, FdNumber::AT_FDCWD, slash_user_path, AT_REMOVEDIR)
                 .unwrap();
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4111,6 +4118,7 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(error, errno!(EEXIST));
-        });
+        })
+        .await;
     }
 }

@@ -2161,7 +2161,8 @@ mod test {
                     .thread_groups()
                     .contains(&OwnedRef::temp(child_task.thread_group()))
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2174,7 +2175,8 @@ mod test {
                 current_task.thread_group().read().zombie_children[0].exit_info.status,
                 ExitStatus::Exit(42)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2256,7 +2258,8 @@ mod test {
                     .thread_groups()
                     .contains(&OwnedRef::temp(child_task2.thread_group()))
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2273,6 +2276,7 @@ mod test {
 
             // Task3 parent should be current_task.
             assert_eq!(task3.thread_group().read().get_ppid(), current_task.tid);
-        });
+        })
+        .await;
     }
 }

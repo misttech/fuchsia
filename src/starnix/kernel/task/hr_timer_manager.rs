@@ -1166,7 +1166,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1192,7 +1193,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1209,7 +1211,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1224,7 +1227,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1248,7 +1252,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1279,7 +1284,8 @@ mod tests {
                 counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1314,7 +1320,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1344,7 +1351,8 @@ mod tests {
                     .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]

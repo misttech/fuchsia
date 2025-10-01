@@ -622,7 +622,8 @@ mod tests {
                 )
                 .unwrap_err();
             assert_eq!(err, errno!(EAGAIN));
-        });
+        })
+        .await;
         handle.join().expect("join");
     }
 
@@ -653,7 +654,8 @@ mod tests {
                 )
                 .unwrap_err();
             assert_eq!(err, errno!(ECONNRESET));
-        });
+        })
+        .await;
         handle.join().expect("join");
     }
 }

@@ -197,7 +197,8 @@ mod test {
             assert_eq!(FileMode::from_bits(0o646), fs.apply_umask(FileMode::from_bits(0o666)));
             assert_eq!(FileMode::from_bits(0o3646), fs.apply_umask(FileMode::from_bits(0o3666)));
             assert_eq!(FileMode::from_bits(0o20), fs.set_umask(FileMode::from_bits(0o11)));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -247,6 +248,7 @@ mod test {
                 .expect("Failed to chdir");
             assert_eq!("/", current_task.fs().cwd().path_escaping_chroot());
             assert!(current_task.open_file(locked, "bin".into(), OpenFlags::RDONLY).is_ok());
-        });
+        })
+        .await;
     }
 }

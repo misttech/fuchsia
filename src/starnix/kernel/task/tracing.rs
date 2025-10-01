@@ -179,7 +179,8 @@ mod tests {
             assert_eq!(pair.process, pkoid);
             assert_eq!(pair.thread, tkoid);
             sender.send(()).unwrap();
-        });
+        })
+        .await;
         receiver.await.unwrap();
     }
 
@@ -252,7 +253,8 @@ mod tests {
             manager.clear();
             assert!(manager.map.read().is_empty());
             sender.send(()).unwrap();
-        });
+        })
+        .await;
         receiver.await.unwrap();
     }
 }

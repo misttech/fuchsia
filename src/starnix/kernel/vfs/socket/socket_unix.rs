@@ -1205,6 +1205,7 @@ mod tests {
             let retrieved_capacity = socklen_t::from_ne_bytes(opt_bytes.try_into().unwrap());
             // Setting SO_SNDBUF actually sets it to double the size
             assert_eq!(2 * send_capacity, retrieved_capacity);
-        });
+        })
+        .await;
     }
 }

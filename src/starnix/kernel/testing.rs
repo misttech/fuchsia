@@ -36,6 +36,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE, errno, error, statfs};
 use std::ffi::CString;
+use std::future::Future;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::{Arc, mpsc};
@@ -65,7 +66,7 @@ where
 ///
 /// This function is useful if you want to test code that requires a CurrentTask because
 /// your callback is called with the init process as the CurrentTask.
-pub fn spawn_kernel_and_run<F, R>(callback: F) -> R
+pub fn spawn_kernel_and_run<F, R>(callback: F) -> impl Future<Output = R>
 where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
@@ -78,7 +79,7 @@ where
 ///
 /// This function is useful if you want to test code that requires a CurrentTask because
 /// your callback is called with the init process as the CurrentTask.
-pub fn spawn_kernel_and_run_with_pkgfs<F, R>(callback: F) -> R
+pub fn spawn_kernel_and_run_with_pkgfs<F, R>(callback: F) -> impl Future<Output = R>
 where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
@@ -91,7 +92,7 @@ where
 /// SELinux security-server.
 // TODO: https://fxbug.dev/335397745 - Only provide an admin/test API to the test, so that tests
 // must generally exercise hooks via public entrypoints.
-pub fn spawn_kernel_with_selinux_and_run<F, R>(callback: F) -> R
+pub fn spawn_kernel_with_selinux_and_run<F, R>(callback: F) -> impl Future<Output = R>
 where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>) -> R
         + Send
@@ -116,7 +117,7 @@ where
 
 /// Create a Kernel object, with the optional caller-supplied `security_server`, and run the given
 /// callback in the init process for that kernel.
-fn spawn_kernel_and_run_internal<F, FS, R>(
+async fn spawn_kernel_and_run_internal<F, FS, R>(
     callback: F,
     security_server: Option<Arc<SecurityServer>>,
     fs_factory: FS,

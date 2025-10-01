@@ -1008,7 +1008,8 @@ mod tests {
                 .expect("failed to call sigaltstack");
             let ss = current_task.read_object(user_ss).expect("failed to read struct");
             assert!(ss.ss_flags & (SS_DISABLE as i32) != 0);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1042,7 +1043,8 @@ mod tests {
                 sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into()),
                 error!(ENOMEM)
             );
-        });
+        })
+        .await;
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -1098,7 +1100,8 @@ mod tests {
             current_task.write_object(user_ss, &ss).expect("failed to write struct");
             sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
                 .expect("failed to call sigaltstack");
-        });
+        })
+        .await;
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -1148,7 +1151,8 @@ mod tests {
             current_task.write_object(user_ss, &ss).expect("failed to write struct");
             sys_sigaltstack(locked, &current_task, user_ss.into(), nullptr.into())
                 .expect("failed to call sigaltstack");
-        });
+        })
+        .await;
     }
 
     /// It is invalid to call rt_sigprocmask with a sigsetsize that does not match the size of
@@ -1182,7 +1186,8 @@ mod tests {
                 ),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     /// It is invalid to call rt_sigprocmask with a bad `how`.
@@ -1206,7 +1211,8 @@ mod tests {
                 ),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     /// It is valid to call rt_sigprocmask with a null value for set. In that case, old_set should
@@ -1242,7 +1248,8 @@ mod tests {
 
             let old_mask = current_task.read_object(old_set).expect("failed to read mask");
             assert_eq!(old_mask, original_mask);
-        });
+        })
+        .await;
     }
 
     /// It is valid to call rt_sigprocmask with null values for both set and old_set.
@@ -1271,7 +1278,8 @@ mod tests {
                 Ok(())
             );
             assert_eq!(current_task.read().signal_mask(), original_mask);
-        });
+        })
+        .await;
     }
 
     /// Calling rt_sigprocmask with SIG_SETMASK should set the mask to the provided set.
@@ -1311,7 +1319,8 @@ mod tests {
             let old_mask = current_task.read_object(old_set).expect("failed to read mask");
             assert_eq!(old_mask, original_mask);
             assert_eq!(current_task.read().signal_mask(), new_mask);
-        });
+        })
+        .await;
     }
 
     /// Calling st_sigprocmask with a how of SIG_BLOCK should add to the existing set.
@@ -1351,7 +1360,8 @@ mod tests {
             let old_mask = current_task.read_object(old_set).expect("failed to read mask");
             assert_eq!(old_mask, original_mask);
             assert_eq!(current_task.read().signal_mask(), new_mask | original_mask);
-        });
+        })
+        .await;
     }
 
     /// Calling st_sigprocmask with a how of SIG_UNBLOCK should remove from the existing set.
@@ -1391,7 +1401,8 @@ mod tests {
             let old_mask = current_task.read_object(old_set).expect("failed to read mask");
             assert_eq!(old_mask, original_mask);
             assert_eq!(current_task.read().signal_mask(), SIGIO.into());
-        });
+        })
+        .await;
     }
 
     /// It's ok to call sigprocmask to unblock a signal that is not set.
@@ -1431,7 +1442,8 @@ mod tests {
             let old_mask = current_task.read_object(old_set).expect("failed to read mask");
             assert_eq!(old_mask, original_mask);
             assert_eq!(current_task.read().signal_mask(), original_mask);
-        });
+        })
+        .await;
     }
 
     /// It's not possible to block SIGKILL or SIGSTOP.
@@ -1471,7 +1483,8 @@ mod tests {
             let old_mask = current_task.read_object(old_set).expect("failed to read mask");
             assert_eq!(old_mask, original_mask);
             assert_eq!(current_task.read().signal_mask(), original_mask);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1513,7 +1526,8 @@ mod tests {
                 ),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1548,7 +1562,8 @@ mod tests {
             let old_action =
                 current_task.read_object(old_action_ref).expect("failed to read action");
             assert_eq!(old_action.as_bytes(), original_action.as_bytes());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1583,7 +1598,8 @@ mod tests {
                 current_task.thread_group().signal_actions.get(SIGINT).as_bytes(),
                 original_action.as_bytes()
             );
-        });
+        })
+        .await;
     }
 
     /// A task should be able to signal itself.
@@ -1591,7 +1607,8 @@ mod tests {
     async fn test_kill_same_task() {
         spawn_kernel_and_run(|locked, current_task| {
             assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGINT.into()), Ok(()));
-        });
+        })
+        .await;
     }
 
     /// A task should be able to signal its own thread group.
@@ -1606,7 +1623,8 @@ mod tests {
             assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
             assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
             assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
-        });
+        })
+        .await;
     }
 
     /// A task should be able to signal a thread group.
@@ -1621,7 +1639,8 @@ mod tests {
             assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
             assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
             assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
-        });
+        })
+        .await;
     }
 
     /// A task should be able to signal everything but init and itself.
@@ -1636,7 +1655,8 @@ mod tests {
             assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
             assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
             assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
-        });
+        })
+        .await;
     }
 
     /// A task should not be able to signal a nonexistent task.
@@ -1644,7 +1664,8 @@ mod tests {
     async fn test_kill_inexistant_task() {
         spawn_kernel_and_run(|locked, current_task| {
             assert_eq!(sys_kill(locked, &current_task, 9, SIGINT.into()), error!(ESRCH));
-        });
+        })
+        .await;
     }
 
     /// A task should not be able to signal a task owned by another uid.
@@ -1659,7 +1680,8 @@ mod tests {
             assert!(task1.can_signal(&task2, SIGINT.into()).is_err());
             assert_eq!(sys_kill(locked, &task2, task1.tid, SIGINT.into()), error!(EPERM));
             assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
-        });
+        })
+        .await;
     }
 
     /// A task should not be able to signal a task owned by another uid in a thead group.
@@ -1675,7 +1697,8 @@ mod tests {
             assert!(task2.can_signal(&task1, SIGINT.into()).is_err());
             assert_eq!(sys_kill(locked, &task2, -task1.tid, SIGINT.into()), error!(EPERM));
             assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
-        });
+        })
+        .await;
     }
 
     /// A task should not be able to send an invalid signal.
@@ -1686,7 +1709,8 @@ mod tests {
                 sys_kill(locked, &current_task, current_task.tid, UncheckedSignal::from(75)),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     /// Sending a blocked signal should result in a pending signal.
@@ -1719,7 +1743,8 @@ mod tests {
             // A second signal should not increment the number of pending signals.
             assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGIO.into()), Ok(()));
             assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
-        });
+        })
+        .await;
     }
 
     /// More than one instance of a real-time signal can be blocked.
@@ -1752,7 +1777,8 @@ mod tests {
             // A second signal should increment the number of pending signals.
             assert_eq!(sys_kill(locked, &current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
             assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 2);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1798,7 +1824,8 @@ mod tests {
             );
             tx.send(()).expect("send");
             futures::executor::block_on(thread).expect("join");
-        });
+        })
+        .await;
     }
 
     /// Waitid does not support all options.
@@ -1830,7 +1857,8 @@ mod tests {
                 ),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     /// Wait4 does not support all options.
@@ -1871,7 +1899,8 @@ mod tests {
                 ),
                 error!(EINVAL)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1898,7 +1927,8 @@ mod tests {
                 ),
                 error!(ECHILD)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1926,7 +1956,8 @@ mod tests {
                 ),
                 Ok(Some(expected_result))
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1987,7 +2018,8 @@ mod tests {
             // Child is deleted, the thread must be able to terminate.
             let child_id = thread.join().expect("join");
             assert_eq!(waited_child.pid, child_id);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2014,7 +2046,8 @@ mod tests {
             )
             .expect_err("wait_on_pid");
             assert_eq!(errno, ERESTARTSYS);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2039,10 +2072,15 @@ mod tests {
                 .expect("wait4");
             let wstatus = current_task.read_object(address_ref).expect("read memory");
             assert_eq!(wstatus, SIGKILL.number() as i32);
-        });
+        })
+        .await;
     }
 
-    fn test_exit_status_for_signal(sig: Signal, wait_status: i32, exit_signal: Option<Signal>) {
+    async fn test_exit_status_for_signal(
+        sig: Signal,
+        wait_status: i32,
+        exit_signal: Option<Signal>,
+    ) {
         spawn_kernel_and_run(move |locked, current_task| {
             let mut child = current_task.clone_task_for_test(locked, 0, exit_signal);
 
@@ -2063,15 +2101,16 @@ mod tests {
                 .expect("wait4");
             let wstatus = current_task.read_object(address_ref).expect("read memory");
             assert_eq!(wstatus, wait_status);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
     async fn test_exit_status() {
         // Default action is Terminate
-        test_exit_status_for_signal(SIGTERM, SIGTERM.number() as i32, Some(SIGCHLD));
+        test_exit_status_for_signal(SIGTERM, SIGTERM.number() as i32, Some(SIGCHLD)).await;
         // Default action is CoreDump
-        test_exit_status_for_signal(SIGSEGV, (SIGSEGV.number() as i32) | 0x80, Some(SIGCHLD));
+        test_exit_status_for_signal(SIGSEGV, (SIGSEGV.number() as i32) | 0x80, Some(SIGCHLD)).await;
     }
 
     #[::fuchsia::test]
@@ -2109,7 +2148,8 @@ mod tests {
                 ),
                 Ok(child1_pid)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2154,7 +2194,8 @@ mod tests {
                 ),
                 Ok(())
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2238,7 +2279,8 @@ mod tests {
             } else {
                 panic!("expected a queued signal");
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2300,7 +2342,8 @@ mod tests {
 
             assert!(!term_int_events.contains(FdEvents::POLLIN));
             assert!(chld_events.contains(FdEvents::POLLIN));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2408,6 +2451,7 @@ mod tests {
             let ready_items = ready_items.lock();
             assert_eq!(ready_items.len(), 1);
             assert_eq!(ready_items[0].key, sfd_chld.into());
-        });
+        })
+        .await;
     }
 }

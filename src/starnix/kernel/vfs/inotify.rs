@@ -773,7 +773,8 @@ mod tests {
                 let state = inotify.state.lock();
                 assert_eq!(state.events.queue.len(), 0);
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -813,7 +814,8 @@ mod tests {
                 assert_eq!(state.events.queue.get(0).unwrap().mask, InotifyMask::DELETE_SELF);
                 assert_eq!(state.events.queue.get(1).unwrap().mask, InotifyMask::IGNORED);
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -873,7 +875,8 @@ mod tests {
                 assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::ACCESS));
                 assert!(watchers.get(&file_key).unwrap().mask.contains(InotifyMask::MODIFY));
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -902,6 +905,7 @@ mod tests {
                 assert_eq!(state.watches.len(), 1);
                 assert_eq!(state.events.queue.len(), 1);
             }
-        });
+        })
+        .await;
     }
 }

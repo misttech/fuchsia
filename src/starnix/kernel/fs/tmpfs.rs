@@ -471,7 +471,8 @@ mod test {
             let mut names = root.copy_child_names();
             names.sort();
             assert!(names.iter().eq(["etc", "usr"].iter()));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -504,7 +505,8 @@ mod test {
             let read = wr_file.read_at(locked, &current_task, 0, &mut read_buffer).unwrap();
             assert_eq!(read, test_bytes.len());
             assert_eq!(test_bytes, read_buffer.data());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -532,7 +534,8 @@ mod test {
             let result =
                 rd_file.read_at(locked, &current_task, test_offset, &mut output_buffer).unwrap();
             assert_eq!(result, 0);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -601,7 +604,8 @@ mod test {
                 file.write(locked, &current_task, &mut VecInputBuffer::new(&[]))
                     .expect("failed to write")
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -695,7 +699,8 @@ mod test {
             usr.name
                 .unlink(locked, &current_task, "bin".into(), UnlinkKind::Directory, false)
                 .expect("failed to unlink /usr/bin");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -717,6 +722,7 @@ mod test {
             assert_eq!(info.mode, mode!(IFDIR, 0o123));
             assert_eq!(info.uid, 42);
             assert_eq!(info.gid, 84);
-        });
+        })
+        .await;
     }
 }

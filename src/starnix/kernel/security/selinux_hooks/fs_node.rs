@@ -1368,6 +1368,7 @@ mod tests {
                 assert!(get_cached_sid(node).is_some());
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1422,6 +1423,7 @@ mod tests {
                 assert_eq!(unlabeled_initial_sid, fs_node_effective_sid_and_class(node).sid);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1478,6 +1480,7 @@ mod tests {
                 assert_eq!(cached_sid, fs_node_effective_sid_and_class(node).sid);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1503,6 +1506,7 @@ mod tests {
                 assert_eq!(Some(expected_sid), get_cached_sid(node));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1512,7 +1516,8 @@ mod tests {
             let dir_entry = current_task.fs().root().entry;
 
             assert_eq!(BStr::new(b"/"), get_fs_relative_path(&dir_entry));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1523,7 +1528,8 @@ mod tests {
 
             let expected = format!("/{}", TEST_FILE_NAME);
             assert_eq!(BStr::new(&expected), get_fs_relative_path(&dir_entry));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1538,6 +1544,7 @@ mod tests {
             .entry;
 
             assert_eq!(BStr::new(b"/foo/bar"), get_fs_relative_path(&dir_entry));
-        });
+        })
+        .await;
     }
 }

@@ -472,7 +472,8 @@ mod tests {
             assert_eq!(read_at(locked, 4, 4).unwrap(), &[4, 5, 6, 7]);
             assert_eq!(read_at(locked, 0, 2).unwrap(), &[0, 1]);
             assert_eq!(read_at(locked, 4, 2).unwrap(), &[4, 5]);
-        });
+        })
+        .await;
     }
 
     struct TestFileSource {
@@ -521,7 +522,8 @@ mod tests {
 
             // Try reading from a new position. Content should be updated.
             assert_eq!(read_at(locked, 5, 2).unwrap(), [7, 8]);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -554,6 +556,7 @@ mod tests {
             // Seeking to `pos > 0` should update the content.
             file.seek(locked, &current_task, SeekTarget::Set(1)).unwrap();
             assert_eq!(*counter.value.lock(), 3);
-        });
+        })
+        .await;
     }
 }

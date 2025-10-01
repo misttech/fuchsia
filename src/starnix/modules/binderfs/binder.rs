@@ -5891,7 +5891,8 @@ pub mod tests {
                 device.get_context_manager(&current_task).expect("failed to find handle 0");
             assert_eq!(OwnedRef::as_ptr(&sender.proc), TempRef::as_ptr(&owner));
             assert!(Arc::ptr_eq(&context_manager, &object));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -5900,7 +5901,8 @@ pub mod tests {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             assert!(&sender.proc.lock().handles.get(3).is_none());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -5954,7 +5956,7 @@ pub mod tests {
                 proc_2.proc.lock().handles.get(handle.object_index()).expect("valid object");
             assert!(Arc::ptr_eq(&retrieved_object, &transaction_ref));
             guard.release(&mut RefCountActions::default_released());
-        });
+        }).await;
     }
 
     #[fuchsia::test]
@@ -5997,7 +5999,7 @@ pub mod tests {
 
             // The handle should now have been dropped.
             assert!(proc_2.proc.lock().handles.get(handle.object_index()).is_none());
-        });
+        }).await;
     }
 
     #[fuchsia::test]
@@ -6070,7 +6072,7 @@ pub mod tests {
                 proc_2.proc.lock().handles.get(handle.object_index()).is_none(),
                 "handle should be dropped"
             );
-        });
+        }).await;
     }
 
     #[fuchsia::test]
@@ -6439,7 +6441,8 @@ pub mod tests {
                 &proc.proc.command_queue.lock().commands.front(),
                 Some((Command::ReleaseRef(LOCAL_BINDER_OBJECT), _))
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -6515,7 +6518,8 @@ pub mod tests {
             handle_table
                 .dec_weak(handle.object_index(), &mut RefCountActions::default_released())
                 .expect_err("handle should no longer exist");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -6899,7 +6903,8 @@ pub mod tests {
                 .expect("failed to read security_context");
             assert_eq!(&buffer[..], security_context);
             transaction_state.release(());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -6978,7 +6983,8 @@ pub mod tests {
                 Some((Command::AcquireRef(BINDER_OBJECT), _))
             );
             transaction_state.release(());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -7049,7 +7055,7 @@ pub mod tests {
                 __bindgen_anon_1.binder: binder_object.local.weak_ref_addr.ptr() as u64,
             }));
             assert_eq!(&expected_transaction_data, &transaction_data);
-        });
+        }).await;
     }
 
     #[fuchsia::test]
@@ -7146,7 +7152,8 @@ pub mod tests {
             assert_eq!(object.owner.as_ptr(), OwnedRef::as_ptr(&owner.proc));
             assert_eq!(object.local, binder_object);
             transaction_state.release(());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -7287,7 +7294,8 @@ pub mod tests {
             assert_eq!(object.owner.as_ptr(), OwnedRef::as_ptr(&other_proc.proc));
             assert_eq!(object.local, binder_object_addr);
             transaction_state.release(());
-        });
+        })
+        .await;
     }
 
     /// Tests that hwbinder's scatter-gather buffer-fix-up implementation is correct.
@@ -7409,7 +7417,8 @@ pub mod tests {
                 .read_object(UserRef::new(UserAddress::from(translated_objects[0].buffer)))
                 .expect("read buffer 0");
             assert_eq!(foo_ptr, foo_addr);
-        });
+        })
+        .await;
     }
 
     /// Tests that when the scatter-gather buffer size reported by userspace is too small, we stop
@@ -7495,7 +7504,8 @@ pub mod tests {
                     None,
                 )
                 .expect_err("copy_transaction_buffers should fail");
-        });
+        })
+        .await;
     }
 
     /// Tests that when a scatter-gather buffer refers to a parent that comes *after* it in the
@@ -7578,7 +7588,8 @@ pub mod tests {
                     None,
                 )
                 .expect_err("copy_transaction_buffers should fail");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -7777,7 +7788,8 @@ pub mod tests {
                     .expect_err("file should be closed")
                     == EBADF
             );
-        });
+        })
+        .await;
     }
     #[fuchsia::test]
     async fn transaction_receiver_exits_after_getting_fd_array() {
@@ -7899,7 +7911,8 @@ pub mod tests {
             device
                 .handle_transaction(locked, &sender.context(current_task), &mut Vec::new(), input)
                 .expect("transaction queued");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8045,7 +8058,8 @@ pub mod tests {
                 receiver.task().files.get_allowing_opath(fd).expect_err("file should be closed")
                     == EBADF
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8081,7 +8095,8 @@ pub mod tests {
                 .expect_err("translate handles unexpectedly succeeded");
 
             assert_eq!(transaction_ref_error, TransactionError::Failure);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8117,7 +8132,8 @@ pub mod tests {
                 .expect_err("translate handles unexpectedly succeeded");
 
             assert_eq!(transaction_ref_error, TransactionError::Malformed(errno!(EINVAL)));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8171,7 +8187,8 @@ pub mod tests {
                 receiver.proc.lock().handles.get(0).is_none(),
                 "handle present when it should have been dropped"
             );
-        });
+        })
+        .await;
     }
 
     // Open the binder device, which creates an instance of the binder device associated with
@@ -8218,7 +8235,8 @@ pub mod tests {
 
             // Verify that the process state no longer exists.
             binder_driver.find_process(identifier).expect_err("process was not cleaned up");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8275,7 +8293,8 @@ pub mod tests {
             thread.join().expect("join");
             binder_thread.release(current_task.kernel());
             binder_proc.release(current_task.kernel());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8352,7 +8371,8 @@ pub mod tests {
 
             // Now the binder object representation should also be gone.
             assert!(weak_object.upgrade().is_none(), "object should be dead");
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8395,7 +8415,8 @@ pub mod tests {
                 receiver.proc.command_queue.lock().commands.front(),
                 Some((Command::DeadBinder(DEATH_NOTIFICATION_COOKIE), _))
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8440,7 +8461,8 @@ pub mod tests {
                 receiver.proc.command_queue.lock().commands.front(),
                 Some((Command::DeadBinder(DEATH_NOTIFICATION_COOKIE), _))
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8507,7 +8529,8 @@ pub mod tests {
 
             // The client process should have no notification.
             assert!(client.proc.command_queue.lock().commands.is_empty());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8589,7 +8612,8 @@ pub mod tests {
 
             assert_eq!(expected_transaction_data, transaction_data);
             transaction_state.release(());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8659,7 +8683,8 @@ pub mod tests {
 
             assert_eq!(expected_transaction_data, transaction_data);
             transaction_state.release(());
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8709,7 +8734,8 @@ pub mod tests {
                 receiver.task().files.get_all_fds().is_empty(),
                 "receiver should not have any files"
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8781,7 +8807,8 @@ pub mod tests {
                 &sender.proc.command_queue.lock().commands.front(),
                 Some((Command::ReleaseRef(BINDER_OBJECT), _))
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8804,7 +8831,8 @@ pub mod tests {
 
             TransactionError::Dead.dispatch(&proc.thread).expect("no error");
             assert_matches!(proc.thread.lock().command_queue.pop_front(), Some(Command::DeadReply));
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -8944,7 +8972,8 @@ pub mod tests {
                 !object.lock().handling_oneway_transaction,
                 "object oneway queue should no longer be marked as being handled"
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9054,7 +9083,8 @@ pub mod tests {
                     _
                 ))
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9114,7 +9144,8 @@ pub mod tests {
             );
             // Check that the transaction has been popped.
             assert_matches!(sender.thread.lock().transactions.pop(), None);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9239,7 +9270,8 @@ pub mod tests {
                 .expect("read command");
             // Verify that the transaction was popped by the dead reply.
             assert_eq!(sender.thread.lock().transactions.len(), 0);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9298,7 +9330,8 @@ pub mod tests {
                 Some((Command::DeadReply, _))
             );
             assert_matches!(sender.thread.lock().transactions.pop(), None);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9381,7 +9414,8 @@ pub mod tests {
                 Some((Command::DeadReply, _))
             );
             assert_matches!(sender.thread.lock().transactions.pop(), None);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9476,7 +9510,8 @@ pub mod tests {
                 sender.thread.lock().command_queue.pop_front(),
                 Some(Command::FailedReply)
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9487,7 +9522,8 @@ pub mod tests {
             // Opening the driver twice from the same task must succeed.
             let _d1 = open_binder_fd(locked, &current_task, &driver);
             let _d2 = open_binder_fd(locked, &current_task, &driver);
-        });
+        })
+        .await;
     }
 
     pub type TestFdTable = BTreeMap<i32, fbinder::FileHandle>;
@@ -9698,7 +9734,8 @@ pub mod tests {
             let fds = process_accessor_thread.join().expect("join").expect("fds");
             // Close and get requests both remove file descriptors.
             assert_eq!(fds.len(), fbinder::MAX_REQUEST_COUNT as usize);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9768,6 +9805,7 @@ pub mod tests {
                 Some(TransactionRole::Sender(_))
             );
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9866,6 +9904,7 @@ pub mod tests {
             assert_eq!(read_frozen_status_info.sync_recv, 1);
             assert_eq!(read_frozen_status_info.async_recv, 0)
         })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9913,7 +9952,8 @@ pub mod tests {
                 client.proc.command_queue.lock().commands.front(),
                 Some((Command::FrozenBinder(binder_frozen_state_info { is_frozen: 1, .. }), _))
             );
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -9982,6 +10022,7 @@ pub mod tests {
             assert!(client.thread.lock().command_queue.is_empty());
             // The client process should have no notification.
             assert!(client.proc.command_queue.lock().commands.is_empty());
-        });
+        })
+        .await;
     }
 }

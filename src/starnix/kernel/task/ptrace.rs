@@ -1465,7 +1465,8 @@ mod tests {
                 )
                 .is_ok()
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1506,6 +1507,7 @@ mod tests {
                 )
                 .is_ok()
             );
-        });
+        })
+        .await;
     }
 }

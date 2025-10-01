@@ -896,7 +896,8 @@ mod tests {
                     simple_device_ops::<DevNull>,
                 )
                 .expect_err("fail to register duplicate");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -956,7 +957,8 @@ mod tests {
                     DeviceMode::Char,
                 )
                 .expect("opens device");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -998,7 +1000,8 @@ mod tests {
                     DeviceMode::Char,
                 )
                 .expect("opens device");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1035,7 +1038,8 @@ mod tests {
                 .expect("add_device");
 
             assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1074,7 +1078,8 @@ mod tests {
             assert!(
                 registry.objects.root.lookup("devices/my-bus/my-class/my-device".into()).is_some()
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1118,7 +1123,8 @@ mod tests {
             assert!(registry.objects.root.lookup("bus/pci/devices/mouse".into()).is_none());
             assert!(registry.objects.root.lookup("devices/pci/input/mouse".into()).is_none());
             assert!(registry.objects.root.lookup("class/input/mouse".into()).is_none());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1153,6 +1159,7 @@ mod tests {
                     .lookup("devices/virtual/thermal/cooling_device0".into())
                     .is_none()
             );
-        });
+        })
+        .await;
     }
 }

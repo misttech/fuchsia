@@ -1427,7 +1427,8 @@ pub mod tests {
             ];
 
             assert_eq!(expected_vmo, data);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1539,7 +1540,8 @@ pub mod tests {
             ];
 
             assert_eq!(expected_vmo, data);
-        });
+        })
+        .await;
     }
 
     #[fuchsia::test]
@@ -1678,6 +1680,7 @@ pub mod tests {
             ];
 
             assert_eq!(expected_vmo, data);
-        });
+        })
+        .await;
     }
 }

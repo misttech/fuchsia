@@ -1182,7 +1182,8 @@ mod tests {
                 ),
                 error!(EFAULT)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]

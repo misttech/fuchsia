@@ -412,7 +412,8 @@ mod test {
 
             let read_guard2 = queue.read(locked, current_task).expect("shouldn't be interrupted");
             std::mem::drop(read_guard2);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -452,7 +453,8 @@ mod test {
                 thread1.await.expect("failed to join thread");
                 thread2.await.expect("failed to join thread");
             });
-        });
+        })
+        .await;
     }
 
     lock_ordering! {
@@ -536,6 +538,7 @@ mod test {
             }
 
             block_on(join_all(threads)).into_iter().for_each(|r| r.expect("failed to join thread"));
-        });
+        })
+        .await;
     }
 }

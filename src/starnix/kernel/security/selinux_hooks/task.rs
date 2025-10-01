@@ -979,6 +979,7 @@ mod tests {
                 assert_eq!(security_state, parent_security_state);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1006,6 +1007,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1022,6 +1024,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1054,6 +1057,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1088,6 +1092,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     // TODO(http://b/330904217): reenable test once filesystems are labeled and access is denied.
@@ -1123,6 +1128,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1151,6 +1157,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     // TODO(http://b/330904217): reenable test once filesystems are labeled and access is denied.
@@ -1183,6 +1190,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1227,6 +1235,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1314,6 +1323,7 @@ mod tests {
                 }
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1351,6 +1361,7 @@ mod tests {
                 assert_eq!(post_exec_itimer_val.it_value.tv_sec, 0);
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1383,6 +1394,7 @@ mod tests {
                 assert_eq!(child_task.read().signal_mask(), SigSet(0));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1408,6 +1420,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1433,6 +1446,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1458,6 +1472,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1483,6 +1498,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1508,6 +1524,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1533,6 +1550,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1559,6 +1577,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1585,6 +1604,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1611,6 +1631,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1638,6 +1659,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1667,6 +1689,7 @@ mod tests {
                 }
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1696,6 +1719,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1726,6 +1750,7 @@ mod tests {
                 // TODO: Verify that the tracer has not been set on `tracee_task`.
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -1799,5 +1824,6 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 }

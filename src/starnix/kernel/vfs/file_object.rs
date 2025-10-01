@@ -2403,6 +2403,7 @@ mod tests {
 
             let _ = write_thread.unwrap();
             let _ = truncate_thread.unwrap();
-        });
+        })
+        .await;
     }
 }

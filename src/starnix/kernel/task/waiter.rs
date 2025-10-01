@@ -1198,7 +1198,8 @@ mod tests {
             assert_eq!(no_written, read_size);
 
             assert_eq!(output_buffer.data(), test_string.as_bytes());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1242,7 +1243,8 @@ mod tests {
                     assert_eq!(wait_result, Ok(()));
                     assert_eq!(1, final_count);
                 }
-            });
+            })
+            .await;
         }
     }
 
@@ -1256,7 +1258,8 @@ mod tests {
             wk1.cancel();
             wait_queue.notify_all();
             assert!(waiter.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1271,7 +1274,8 @@ mod tests {
             wait_queue.notify_all();
             assert!(waiter1.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_err());
             assert!(waiter2.wait_until(locked, &current_task, zx::MonotonicInstant::ZERO).is_ok());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1301,7 +1305,8 @@ mod tests {
             // Only the remaining (unnotified) waiters should be notified.
             queue.notify_all();
             assert_eq!(total_waiters - INITIAL_NOTIFY_COUNT, woken(locked));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1328,6 +1333,7 @@ mod tests {
             });
 
             assert_eq!(output, Ok(()));
-        });
+        })
+        .await;
     }
 }

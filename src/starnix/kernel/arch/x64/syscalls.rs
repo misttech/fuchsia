@@ -495,7 +495,8 @@ mod tests {
                 .expect("open_file");
             let fd = current_task.add_file(locked, file_handle, FdFlags::empty()).expect("add");
             assert_eq!(sys_dup2(locked, current_task, fd, fd), Ok(fd));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -520,7 +521,8 @@ mod tests {
                     .unwrap()
                     .contains(FdFlags::CLOEXEC)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -541,6 +543,7 @@ mod tests {
             let time3: __kernel_time_t =
                 current_task.read_object(address.into()).expect("read_object");
             assert_eq!(time2, time3);
-        });
+        })
+        .await;
     }
 }

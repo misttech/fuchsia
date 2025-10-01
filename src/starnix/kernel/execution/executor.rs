@@ -871,7 +871,8 @@ mod tests {
 
             // The task should not be blocked anymore.
             task.block_while_stopped(locked);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -914,6 +915,7 @@ mod tests {
 
             // The task should not be blocked because it is stopped.
             task.block_while_stopped(locked);
-        });
+        })
+        .await;
     }
 }

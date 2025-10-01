@@ -4045,7 +4045,8 @@ mod tests {
                 .expect("failed to drastically shrink brk to zero");
             assert_eq!(addr5, base_addr);
             assert_eq!(get_range(base_addr), None);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4085,7 +4086,8 @@ mod tests {
             assert_eq!(brk_addr, brk_addr2);
             let mapped_addr2 = map_memory(locked, &current_task, mapped_addr, *PAGE_SIZE);
             assert_eq!(mapped_addr, mapped_addr2);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4181,7 +4183,8 @@ mod tests {
                 mm_state.get_contiguous_mappings_at(addr_d, page_size * 10).unwrap(),
                 vec![(map_b, page_size)],
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4210,7 +4213,8 @@ mod tests {
             let data_readback =
                 ma.read_memory_to_vec(test_addr, data.len()).expect("failed to read test data");
             assert_eq!(&data, &data_readback);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4238,7 +4242,8 @@ mod tests {
             // However, accessing zero bytes in unmapped memory is not an error.
             ma.write_memory(unmapped_addr, &[]).expect("failed to write no data");
             ma.read_memory_to_vec(unmapped_addr, 0).expect("failed to read no data");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4269,7 +4274,8 @@ mod tests {
                 ma.read_c_string_to_vec(UserCString::new(current_task, addr), max_size).unwrap(),
                 random_data[..max_size - 1]
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4330,7 +4336,8 @@ mod tests {
                 ma.read_c_string_to_vec(UserCString::null(current_task), max_size),
                 error!(EFAULT)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4373,7 +4380,8 @@ mod tests {
                 ma.read_nul_delimited_c_string_list(addr, payload.len()).unwrap(),
                 expected_parses,
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4393,7 +4401,8 @@ mod tests {
                 vec![b"first".to_vec(), b"second".to_vec(), b"thi".to_vec()],
                 "Skipping last three bytes of payload should skip last two bytes of 3rd string"
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4455,7 +4464,8 @@ mod tests {
 
             // Expect error if the address is invalid.
             assert_eq!(ma.read_c_string(UserCString::null(current_task), buf), error!(EFAULT));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4501,7 +4511,8 @@ mod tests {
 
             // Searching for more memory than available should fail.
             assert_eq!(mm.state.read().find_next_unused_range(mmap_top), None);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4551,7 +4562,8 @@ mod tests {
                 mm.state.read().count_possible_placements(page_size, &subrange_ten),
                 Some(9)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4582,7 +4594,8 @@ mod tests {
                 mm.state.read().pick_placement(4 * page_size, 2, &subrange_ten),
                 Some(UserAddress::from_ptr(RESTRICTED_ASPACE_BASE + 6 * page_size))
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4604,7 +4617,8 @@ mod tests {
                 );
             }
             assert_eq!(mm.state.read().find_random_unused_range(page_size, &subrange_ten), None);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4630,7 +4644,8 @@ mod tests {
 
             let subrange_ten = UserAddress::from_ptr(RESTRICTED_ASPACE_BASE)..addr;
             assert_eq!(mm.state.read().find_random_unused_range(page_size, &subrange_ten), None);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4647,7 +4662,8 @@ mod tests {
             assert!(unmap_result.is_ok());
             assert_eq!(released_mappings.len(), 1);
             released_mappings.finalize(mm_state);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4666,7 +4682,8 @@ mod tests {
             assert!(unmap_result.is_ok());
             assert_eq!(released_mappings.len(), 2);
             released_mappings.finalize(mm_state);
-        });
+        })
+        .await;
     }
 
     /// Maps two pages in separate mappings next to each other, then unmaps the first page.
@@ -4735,7 +4752,8 @@ mod tests {
                 }
                 MappingBacking::PrivateAnonymous => panic!("Unexpected private anonymous mapping"),
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4753,7 +4771,8 @@ mod tests {
                 .expect("Failed to read object array.");
 
             assert_eq!(items_written, items_read);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4771,7 +4790,8 @@ mod tests {
                 .expect("Failed to read empty object array.");
 
             assert_eq!(items_written, items_read);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4818,7 +4838,8 @@ mod tests {
                 ma.read_object_partial(UserRef::<Items>::new(UserAddress::from(1)), 16),
                 error!(EFAULT)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4842,7 +4863,8 @@ mod tests {
                 ma.read_memory_partial_to_vec(addr, bytes.len()).unwrap().len(),
                 *PAGE_SIZE as usize,
             );
-        });
+        })
+        .await;
     }
 
     fn map_memory_growsdown<L>(
@@ -4870,7 +4892,8 @@ mod tests {
             let addr = UserAddress::from(0x100000);
 
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr, false), Ok(false));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4881,7 +4904,8 @@ mod tests {
             let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr, false), Ok(false));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4903,7 +4927,8 @@ mod tests {
 
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr, false), Ok(false));
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr, true), Ok(false));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4925,7 +4950,8 @@ mod tests {
 
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr, false), Ok(false));
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr, true), Ok(false));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4936,7 +4962,8 @@ mod tests {
             let addr = map_memory_growsdown(locked, &current_task, *PAGE_SIZE) - *PAGE_SIZE;
 
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr.unwrap(), false), Ok(true));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4950,7 +4977,8 @@ mod tests {
                 mm.extend_growsdown_mapping_to_address(addr.unwrap(), false),
                 Ok(false)
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -4969,7 +4997,8 @@ mod tests {
             );
 
             assert_eq!(mm.get_mapping_count(), 1);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5061,7 +5090,8 @@ mod tests {
             port.queue(&zx::Packet::from_user_packet(0, 0, zx::UserPacket::from_u8_array([0; 32])))
                 .unwrap();
             thread.join().unwrap();
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5090,7 +5120,8 @@ mod tests {
                 *current_task.mm().unwrap().get_mapping_name(mapping_addr).unwrap().unwrap(),
                 vma_name
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5135,7 +5166,8 @@ mod tests {
                 let (_, mapping) = state.mappings.get(second_mapping_addr).unwrap();
                 assert_eq!(mapping.name(), MappingName::Vma("foo".into()));
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5174,7 +5206,8 @@ mod tests {
                 let (_, mapping) = state.mappings.get(mapping_addr).unwrap();
                 assert_eq!(mapping.name(), MappingName::Vma("foo".into()));
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5214,7 +5247,8 @@ mod tests {
                 let (_, mapping) = state.mappings.get(second_page).unwrap();
                 assert_eq!(mapping.name(), MappingName::None);
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5257,7 +5291,8 @@ mod tests {
                     state.mappings.get((mapping_addr + (2 * *PAGE_SIZE)).unwrap()).unwrap();
                 assert_eq!(mapping.name(), MappingName::None);
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -5299,6 +5334,7 @@ mod tests {
                 let (_, mapping) = state.mappings.get(mapping_addr).unwrap();
                 assert_eq!(mapping.name(), MappingName::Vma("foo".into()));
             }
-        });
+        })
+        .await;
     }
 }

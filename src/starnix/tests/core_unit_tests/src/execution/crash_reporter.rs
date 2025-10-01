@@ -23,5 +23,6 @@ async fn begin_crash_report_throttling_ends() {
 
         std::thread::sleep(std::time::Duration::from_millis(250));
         assert!(crash_reporter.begin_crash_report(current_task).is_some());
-    });
+    })
+    .await;
 }

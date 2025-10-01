@@ -630,6 +630,7 @@ mod tests {
                 assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -655,6 +656,7 @@ mod tests {
                 );
             },
         )
+        .await;
     }
 
     #[fuchsia::test]
@@ -677,5 +679,6 @@ mod tests {
                 ), Err(errno) if errno == EACCES);
             },
         )
+        .await;
     }
 }

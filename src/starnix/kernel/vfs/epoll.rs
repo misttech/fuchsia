@@ -608,7 +608,8 @@ mod tests {
             assert_eq!(bytes_read, WRITE_COUNT.get());
             assert_eq!(bytes_read, test_len);
             assert_eq!(buffer.data(), test_string.as_bytes());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -653,7 +654,8 @@ mod tests {
             let bytes_read = pipe_out.read(locked, &current_task, &mut buffer).unwrap();
             assert_eq!(bytes_read, test_len);
             assert_eq!(buffer.data(), test_bytes);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -718,7 +720,8 @@ mod tests {
                     assert_eq!(event.data(), EVENT_DATA);
                 }
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -787,7 +790,8 @@ mod tests {
 
             let fds = poll(locked);
             assert!(fds.is_empty());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -838,7 +842,8 @@ mod tests {
                 0
             );
             // That shouldn't crash
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -889,7 +894,8 @@ mod tests {
             let event = &triggered_events[0];
             assert_eq!(event.events(), FdEvents::POLLOUT);
             assert_eq!(event.data(), EVENT_DATA);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -913,6 +919,7 @@ mod tests {
             std::mem::drop(event);
 
             assert!(epoll_file.state.lock().waiters.is_empty());
-        });
+        })
+        .await;
     }
 }

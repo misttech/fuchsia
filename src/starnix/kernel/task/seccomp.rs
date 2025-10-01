@@ -1092,6 +1092,7 @@ mod test {
                 std::string::String::from_utf8(actions.clone()).unwrap(),
                 write_result.unwrap_err()
             );
-        });
+        })
+        .await;
     }
 }

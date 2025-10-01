@@ -953,7 +953,8 @@ mod tests {
                     assert_eq!(&data[..25], &buffer[..25]);
                     assert_eq!(&data[64..76], &buffer[25..37]);
                 }
-            });
+            })
+            .await;
         });
     }
 
@@ -1005,7 +1006,8 @@ mod tests {
                     assert_eq!(&data[0..25], &buffer[0..25]);
                     assert_eq!(&data[25..37], &buffer[64..76]);
                 }
-            });
+            })
+            .await;
         });
     }
 

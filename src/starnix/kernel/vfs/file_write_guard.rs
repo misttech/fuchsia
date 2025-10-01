@@ -213,7 +213,8 @@ mod tests {
 
             FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
                 .expect("FsNode::lock failed unexpectedly");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -256,7 +257,8 @@ mod tests {
             );
 
             std::mem::drop(file_guard);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -286,7 +288,8 @@ mod tests {
                 assert_eq!(state.try_add_seal(SealFlags::WRITE), Ok(()));
                 assert_eq!(state.check_no_seal(SealFlags::WRITE), error!(EPERM));
             }
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -301,6 +304,7 @@ mod tests {
 
             assert_eq!(state.try_add_seal(SealFlags::WRITE), error!(EPERM));
             assert_eq!(state.get_seals(), Ok(SealFlags::SEAL));
-        });
+        })
+        .await;
     }
 }

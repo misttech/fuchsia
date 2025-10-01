@@ -1876,7 +1876,8 @@ mod test {
             let dev_parent =
                 dev.parent().ok_or_else(|| errno!(ENOENT)).expect("failed to get parent of dev");
             assert!(Arc::ptr_eq(&dev_parent.entry, &ns.root().entry));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1916,7 +1917,8 @@ mod test {
                 .expect("failed to lookup pts");
             let mut context = LookupContext::default();
             assert!(dev.lookup_child(locked, &current_task, &mut context, "pts".into()).is_err());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -1956,7 +1958,8 @@ mod test {
             assert_eq!("/", ns.root().path_escaping_chroot());
             assert_eq!("/dev", dev.path_escaping_chroot());
             assert_eq!("/dev/pts", pts.path_escaping_chroot());
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2009,7 +2012,8 @@ mod test {
                     .entry,
                 foofs1.root()
             ));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2047,7 +2051,8 @@ mod test {
                     .unwrap_err(),
                 errno!(ENOENT),
             );
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -2137,7 +2142,8 @@ mod test {
                     .unwrap_err(),
                 errno!(ENOENT)
             );
-        });
+        })
+        .await;
     }
 
     /// Symlinks which need to be traversed across types (nodes and paths), as well as across
@@ -2242,6 +2248,7 @@ mod test {
 
             // The lookup resolution should have correctly followed the symlinks to the real_file node.
             assert!(node_symlink_resolution.entry.node.ino == real_file_node.entry.node.ino);
-        });
+        })
+        .await;
     }
 }

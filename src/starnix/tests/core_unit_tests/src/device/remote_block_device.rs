@@ -55,7 +55,8 @@ async fn test_remote_block_device_registry() {
         file.seek(locked, &current_task, SeekTarget::Set(0)).expect("seek failed");
         file.read(locked, &current_task, &mut buf).expect("read failed.");
         assert_eq!(buf.data(), &[1u8; 512]);
-    });
+    })
+    .await;
 }
 
 #[::fuchsia::test]
@@ -78,5 +79,6 @@ async fn test_read_write_past_eof() {
 
         let mut buf = VecInputBuffer::from(vec![1u8; 512]);
         assert_eq!(file.write(locked, &current_task, &mut buf).expect("write failed."), 0);
-    });
+    })
+    .await;
 }

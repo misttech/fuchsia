@@ -418,7 +418,8 @@ mod tests {
 
             server_socket.close(locked, &current_task);
             listen_socket.close(locked, &current_task);
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -475,7 +476,8 @@ mod tests {
             assert_eq!(XFER_SIZE, fs1.read(&mut buffer).unwrap());
             assert_eq!(XFER_SIZE, fs1.write(&buffer[..XFER_SIZE]).unwrap());
             block_on(thread).unwrap();
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -554,6 +556,7 @@ mod tests {
                 .wait(locked, &current_task, 1, zx::MonotonicInstant::ZERO)
                 .expect("wait");
             assert!(fds.is_empty());
-        });
+        })
+        .await;
     }
 }

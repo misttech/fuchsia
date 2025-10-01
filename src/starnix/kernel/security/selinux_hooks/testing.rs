@@ -11,6 +11,7 @@ use crate::vfs::{FsStr, NamespaceNode};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::file_mode::FileMode;
+use std::future::Future;
 use std::sync::Arc;
 
 // The default name used files used in testing.
@@ -62,7 +63,9 @@ const HOOKS_TESTS_BINARY_POLICY: &[u8] =
 /// loads the hooks test policy, before delegating to the supplied test `callback`.
 // TODO: https://fxbug.dev/335397745 - Only provide an admin/test API to the test, so that tests
 // must generally exercise hooks via public entrypoints.
-pub fn spawn_kernel_with_selinux_hooks_test_policy_and_run<F>(callback: F)
+pub fn spawn_kernel_with_selinux_hooks_test_policy_and_run<F>(
+    callback: F,
+) -> impl Future<Output = ()>
 where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>)
         + Send
@@ -123,6 +126,7 @@ mod tests {
                     security_server.sid_to_security_context(effective_sid).unwrap();
                 assert_eq!(effective_context, VALID_SECURITY_CONTEXT);
             },
-        );
+        )
+        .await;
     }
 }

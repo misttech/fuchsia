@@ -413,6 +413,7 @@ mod tests {
                 .unwrap();
 
             assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
-        });
+        })
+        .await;
     }
 }

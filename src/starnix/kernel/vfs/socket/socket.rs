@@ -880,6 +880,7 @@ mod tests {
             );
 
             rec_dgram.close(locked, &current_task);
-        });
+        })
+        .await;
     }
 }

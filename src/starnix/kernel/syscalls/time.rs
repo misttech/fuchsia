@@ -706,7 +706,8 @@ mod test {
             );
 
             thread.join().expect("join");
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -737,7 +738,8 @@ mod test {
             .unwrap();
             let elapsed = test_clock.read().unwrap() - before;
             assert!(elapsed >= UtcDuration::from_seconds(1));
-        });
+        })
+        .await;
     }
 
     #[::fuchsia::test]
@@ -809,6 +811,7 @@ mod test {
                 elapsed + duration_from_timespec(remaining_written).unwrap(),
                 UtcDuration::from_seconds(2)
             );
-        });
+        })
+        .await;
     }
 }
