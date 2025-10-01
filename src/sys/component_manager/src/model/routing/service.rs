@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use crate::model::component::WeakComponentInstance;
+use crate::model::component::instance::InstanceState;
 use async_trait::async_trait;
-use cm_rust::{CapabilityTypeName, ChildRef, ComponentDecl, ExposeDecl, ExposeDeclCommon};
+use cm_rust::{CapabilityTypeName, ChildRef};
 use cm_types::{IterablePath, Name, RelativePath};
 use errors::{ModelError, VfsError};
 use fidl_fuchsia_io as fio;
@@ -92,13 +93,6 @@ impl AnonymizedServiceRoute {
                 .iter()
                 .any(|m| matches!(m, AggregateMember::Child(c) if c == &component_leaf_name))
         }
-    }
-
-    /// Returns true if the component exposes the same services aggregated in this route.
-    fn matches_exposed_service(&self, decl: &ComponentDecl) -> bool {
-        decl.exposes.iter().any(|expose| {
-            matches!(expose, ExposeDecl::Service(_)) && expose.target_name() == &self.service_name
-        })
     }
 }
 
@@ -226,6 +220,12 @@ impl AnonymizedAggregateServiceDir {
         let service_name = self.route.service_name.as_str();
         match self.aggregate_capability_provider.route_instance(instance).await {
             Ok((router, source)) => {
+                if source.type_name() != CapabilityTypeName::Service {
+                    // This isn't actually a service capability, so it's not part of the
+                    // aggregate and we have nothing to do.
+                    return Ok(());
+                }
+
                 // Add entries for the component `name`, from its `source`,
                 // the service exposed by the component.
                 // We will use this oneshot channel to know when we have reached the idle state
@@ -274,7 +274,6 @@ impl AnonymizedAggregateServiceDir {
                             router.clone(),
                             source.clone(),
                         )?;
-
                         // Since we put in our idle_sender, we will want to do a wait.
                         true
                     }
@@ -336,7 +335,8 @@ impl AnonymizedAggregateServiceDir {
         let instance_watcher_task = async move {
             let service_name = self_clone.route.service_name.as_str();
 
-            // The CapabilitySource must be for a service capability.
+            // The CapabilitySource must be for a service capability. This is normally detected
+            // by the caller before we get here.
             if source.type_name() != CapabilityTypeName::Service {
                 error!(
                     component:% = instance,
@@ -738,29 +738,74 @@ impl AnonymizedAggregateServiceDir {
     async fn on_started_async(
         self: Arc<Self>,
         component_moniker: &Moniker,
-        component_decl: &ComponentDecl,
     ) -> Result<(), ModelError> {
         // If this component is a child in a collection from which the aggregated service
         // is routed, add service instances from the component's service to the aggregated service.
-        if self.route.matches_child_component(component_moniker)
-            && self.route.matches_exposed_service(component_decl)
+        if !self.route.matches_child_component(component_moniker) {
+            return Ok(());
+        }
+
+        // Check that the component exposes the service bound to this route.
+        let Ok(parent) = self.parent.upgrade() else {
+            return Ok(());
+        };
+        let child_name = component_moniker.leaf().expect("checked in matches_child_component");
+        let component = {
+            let guard = parent.lock_state().await;
+            let resolved = match &*guard {
+                InstanceState::Resolved(r) => r,
+                InstanceState::Started(r, _) => r,
+                InstanceState::Unresolved(_)
+                | InstanceState::Shutdown(_, _)
+                | InstanceState::Destroyed => {
+                    return Ok(());
+                }
+            };
+            let Some(component) = resolved.get_child(child_name) else {
+                return Ok(());
+            };
+            component.clone()
+        };
         {
-            let child_moniker = component_moniker.leaf().unwrap(); // checked in `matches_child_component`
-            let instance = AggregateInstance::Child(child_moniker.into());
-            let (router, capability_source) =
-                self.aggregate_capability_provider.route_instance(&instance).await?;
-
-            // If we have not already spawned a watcher task we want to do that here.
-            let mut inner = self.inner.lock();
-            if !inner.watchers_spawned.contains_key(&instance) {
-                // We have not spawned the watcher, so we create the entry with a None oneshot
-                // sender that will eventually be replaced with one if necessary from the
-                // |add_entries_from_instance| method.
-                inner.watchers_spawned.insert(instance.clone(), WatcherEntry::WaitingForIdle(None));
-
-                // Spawn the watcher.
-                self.spawn_instance_watcher_task(instance, router, capability_source)?;
+            let guard = component.lock_state().await;
+            let resolved = match &*guard {
+                InstanceState::Resolved(r) => r,
+                InstanceState::Started(r, _) => r,
+                InstanceState::Unresolved(_)
+                | InstanceState::Shutdown(_, _)
+                | InstanceState::Destroyed => {
+                    return Ok(());
+                }
+            };
+            let to_parent = resolved.sandbox.component_output.capabilities();
+            if let Ok(Some(_)) = to_parent.get(&self.route.service_name) {
+                // Proceed.
+            } else {
+                // This component doesn't expose the capability we're matching on, nothing
+                // to do.
+                return Ok(());
             }
+        }
+
+        let instance = AggregateInstance::Child(child_name.into());
+        let (router, capability_source) =
+            self.aggregate_capability_provider.route_instance(&instance).await?;
+        if capability_source.type_name() != CapabilityTypeName::Service {
+            // This isn't actually a service capability, so it's not part of the
+            // aggregate and there is nothing to do.
+            return Ok(());
+        }
+
+        // If we have not already spawned a watcher task we want to do that here.
+        let mut inner = self.inner.lock();
+        if !inner.watchers_spawned.contains_key(&instance) {
+            // We have not spawned the watcher, so we create the entry with a None oneshot
+            // sender that will eventually be replaced with one if necessary from the
+            // |add_entries_from_instance| method.
+            inner.watchers_spawned.insert(instance.clone(), WatcherEntry::WaitingForIdle(None));
+
+            // Spawn the watcher.
+            self.spawn_instance_watcher_task(instance, router, capability_source)?;
         }
         Ok(())
     }
@@ -790,10 +835,10 @@ impl AnonymizedAggregateServiceDir {
 impl Hook for AnonymizedAggregateServiceDir {
     async fn on(self: Arc<Self>, event: &Event) -> Result<(), ModelError> {
         match &event.payload {
-            EventPayload::Started { component_decl, .. } => {
+            EventPayload::Started { .. } => {
                 if let ExtendedMoniker::ComponentInstance(component_moniker) = &event.target_moniker
                 {
-                    self.on_started_async(&component_moniker, component_decl).await?;
+                    self.on_started_async(&component_moniker).await?;
                 }
             }
             EventPayload::Stopped { .. } => {
@@ -1834,8 +1879,11 @@ mod tests {
             service_name: "my.service.Service".parse().unwrap(),
         };
 
-        let dir =
-            Arc::new(AnonymizedAggregateServiceDir::new(root.as_weak(), route, Box::new(provider)));
+        let dir = Arc::new(AnonymizedAggregateServiceDir::new(
+            container_component.as_weak(),
+            route,
+            Box::new(provider),
+        ));
         dir.add_entries_from_children().await.unwrap();
 
         root.hooks.install(dir.hooks());

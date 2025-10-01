@@ -127,8 +127,10 @@ async fn do_resolve(
     }
 
     let weak = WeakComponentInstance::new(component).into();
-    let event = component
-        .new_event(EventPayload::Resolved { component: weak, decl: component_info.decl.clone() });
+    let event = component.new_event(EventPayload::Resolved {
+        component: weak,
+        decl: Box::new(component_info.decl.clone()),
+    });
     component.hooks.dispatch(&event).await;
     Ok(())
 }
@@ -141,12 +143,12 @@ pub mod tests {
         StartAction, StopAction,
     };
     use crate::model::component::{IncomingCapabilities, StartReason};
-    use crate::model::testing::test_helpers::{component_decl_with_test_runner, ActionsTest};
+    use crate::model::testing::test_helpers::{ActionsTest, component_decl_with_test_runner};
     use assert_matches::assert_matches;
     use cm_rust_testing::ComponentDeclBuilder;
     use errors::{ActionError, ResolveActionError};
-    use futures::channel::oneshot;
     use futures::FutureExt;
+    use futures::channel::oneshot;
     use moniker::Moniker;
 
     #[fuchsia::test]

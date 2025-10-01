@@ -2282,6 +2282,71 @@ async fn offer_service_from_collection() {
     .await;
 }
 
+#[fuchsia::test]
+async fn offer_service_from_collection_type_mismatch() {
+    let use_decl = UseBuilder::service().name("foo").build();
+    let components = vec![
+        (
+            "a",
+            ComponentDeclBuilder::new()
+                .use_realm()
+                .offer(
+                    OfferBuilder::service()
+                        .name("foo")
+                        .source(OfferSource::Collection("coll".parse().unwrap()))
+                        .target_static_child("b"),
+                )
+                .collection_default("coll")
+                .child_default("b")
+                .build(),
+        ),
+        ("b", ComponentDeclBuilder::new().use_(use_decl.clone()).build()),
+        (
+            "c1",
+            ComponentDeclBuilder::new()
+                .expose(ExposeBuilder::service().name("foo").source(ExposeSource::Self_))
+                .capability(CapabilityBuilder::service().name("foo").path("/svc/foo.service"))
+                .build(),
+        ),
+        (
+            "c2",
+            ComponentDeclBuilder::new()
+                // name matches, but wrong type
+                .expose(ExposeBuilder::directory().name("foo").source(ExposeSource::Self_))
+                .capability(CapabilityBuilder::directory().name("foo").path("/svc/foo.service"))
+                .build(),
+        ),
+    ];
+    let test = RoutingTestBuilder::new("a", components).build().await;
+
+    // Populate the collection of the aggregate with dynamic children.
+    for child_name in ["coll:c1", "coll:c2"] {
+        {
+            let child_name: ChildName = child_name.parse().unwrap();
+            test.create_dynamic_child(
+                &Moniker::root(),
+                child_name.collection().unwrap().as_ref(),
+                ChildBuilder::new().name(child_name.name().as_ref()),
+            )
+            .await;
+        }
+        test.start_instance_and_wait_start(&child_name.parse().unwrap()).await.unwrap();
+    }
+
+    // The aggregated service should work, but it should only have one entry because the other one
+    // did not match.
+    test.check_use(
+        "b".parse().unwrap(),
+        CheckUse::Service {
+            path: "/svc/foo".parse().unwrap(),
+            instance: ServiceInstance::Aggregated(1),
+            member: "echo".to_string(),
+            expected_res: ExpectedResult::Ok,
+        },
+    )
+    .await;
+}
+
 ///   a
 ///  / \
 /// b   (coll1, coll2, coll3)

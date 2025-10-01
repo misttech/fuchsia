@@ -227,12 +227,11 @@ pub enum EventPayload {
     Destroyed,
     Resolved {
         component: WeakInstanceToken,
-        decl: ComponentDecl,
+        decl: Box<ComponentDecl>,
     },
     Unresolved,
     Started {
         runtime: RuntimeInfo,
-        component_decl: ComponentDecl,
     },
     Stopped {
         status: zx::Status,
@@ -279,17 +278,15 @@ impl fmt::Debug for EventPayload {
             EventPayload::CapabilityRequested { name, .. } => {
                 formatter.field("name", &name).finish()
             }
-            EventPayload::Started { component_decl, .. } => {
-                formatter.field("component_decl", &component_decl).finish()
-            }
             EventPayload::Resolved { component: _, decl, .. } => {
-                formatter.field("decl", decl).finish()
+                formatter.field("decl", &*decl).finish()
             }
             EventPayload::Stopped { status, exit_code, .. } => {
                 formatter.field("status", status).field("exit_code", exit_code).finish()
             }
             EventPayload::Unresolved
             | EventPayload::Destroyed
+            | EventPayload::Started { .. }
             | EventPayload::DebugStarted { .. } => formatter.finish(),
         }
     }

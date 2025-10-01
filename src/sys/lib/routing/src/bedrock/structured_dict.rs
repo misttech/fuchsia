@@ -267,7 +267,7 @@ impl ComponentOutput {
         Ok(Self(dest))
     }
 
-    /// Returns the sub-dictionary containing capabilities routed by the component's parent.
+    /// Returns the sub-dictionary containing capabilities routed to the component's parent.
     /// framework. Lazily adds the dictionary if it does not exist yet.
     pub fn capabilities(&self) -> Dict {
         get_or_insert(&self.0, &*PARENT)
