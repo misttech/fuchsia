@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_THERMAL_DRIVERS_AML_THERMISTOR_THERMISTOR_H_
-#define SRC_DEVICES_THERMAL_DRIVERS_AML_THERMISTOR_THERMISTOR_H_
+#ifndef SRC_DEVICES_THERMAL_DRIVERS_AML_THERMISTOR_AML_THERMISTOR_H_
+#define SRC_DEVICES_THERMAL_DRIVERS_AML_THERMISTOR_AML_THERMISTOR_H_
 
 #include <lib/ddk/device.h>
 #include <lib/thermal/ntc.h>
@@ -33,4 +33,4 @@ class AmlThermistor : public DeviceType {
 };
 }  // namespace thermal
 
-#endif  // SRC_DEVICES_THERMAL_DRIVERS_AML_THERMISTOR_THERMISTOR_H_
+#endif  // SRC_DEVICES_THERMAL_DRIVERS_AML_THERMISTOR_AML_THERMISTOR_H_

@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "thermistor.h"
+#include "aml-thermistor.h"
 
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/defer.h>
 #include <lib/thermal/metadata.h>
 #include <lib/zx/interrupt.h>

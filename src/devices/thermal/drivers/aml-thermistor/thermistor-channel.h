@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.adc/cpp/wire.h>
 #include <fidl/fuchsia.hardware.temperature/cpp/wire.h>
 #include <lib/ddk/device.h>
-#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/thermal/ntc.h>
 #include <lib/zx/interrupt.h>
 
