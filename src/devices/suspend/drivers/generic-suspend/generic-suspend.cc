@@ -148,9 +148,12 @@ zx::result<WakeSourceReport> GenericSuspend::SystemSuspendEnter() {
   TRACE_DURATION("power", "generic-suspend:suspend");
   // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
   WakeSourceReport report;
-  const zx_status_t status = zx_system_suspend_enter(
-      cpu_resource_.get(), ZX_TIME_INFINITE, /*options=*/0, &report.header, report.entries,
-      sizeof(report.entries) / sizeof(report.entries[0]), &report.actual_entry_count);
+  const auto entry_count = sizeof(report.entries) / sizeof(report.entries[0]);
+  FDF_LOG(DEBUG, "entry_count requested: %lu", entry_count);
+  const zx_status_t status =
+      zx_system_suspend_enter(cpu_resource_.get(), ZX_TIME_INFINITE, /*options=*/0, &report.header,
+                              report.entries, entry_count, &report.actual_entry_count);
+  FDF_LOG(DEBUG, "entry_count actual: %d", report.actual_entry_count);
   if (status != ZX_OK) {
     return zx::error(status);
   }
