@@ -23,6 +23,7 @@ pub mod answer_incoming;
 use answer_incoming::AnswerIncomingProcedure;
 
 pub mod audio_connection_setup;
+use audio_connection_setup::AudioConnectionSetupProcedure;
 
 pub mod codec_connection_setup;
 use codec_connection_setup::CodecConnectionSetupProcedure;
@@ -92,10 +93,10 @@ pub enum CommandFromHf {
     CallActionDialFromNumber { number: String },
     CallActionDialFromMemory { memory: String },
     CallActionRedialLast,
-    StartAudioConnection,
     AnswerIncoming,
     HangUpCall,
     QueryCalls,
+    StartAudioConnection,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -151,8 +152,6 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
                 Some(Box::new(SlcInitProcedure::new()))
             }
 
-            at_resp!(Bcs) => Some(Box::new(CodecConnectionSetupProcedure::new())),
-
             ProcedureInput::CommandFromHf(CommandFromHf::CallActionDialFromNumber { .. })
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionDialFromMemory { .. })
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionRedialLast) => {
@@ -171,6 +170,12 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
                 Some(Box::new(QueryCallsProcedure::new()))
             }
 
+            ProcedureInput::CommandFromHf(CommandFromHf::StartAudioConnection) => {
+                Some(Box::new(AudioConnectionSetupProcedure::new()))
+            }
+
+            at_resp!(Bcs) => Some(Box::new(CodecConnectionSetupProcedure::new())),
+
             _ => None,
         }
     }
@@ -178,6 +183,7 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
     fn can_start_procedure(&self) -> bool {
         match self {
             ProcedureInput::CommandFromHf(CommandFromHf::StartSlci { .. })
+            | ProcedureInput::CommandFromHf(CommandFromHf::StartAudioConnection)
             | at_resp!(Bcs)
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionDialFromNumber { .. })
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionDialFromMemory { .. })

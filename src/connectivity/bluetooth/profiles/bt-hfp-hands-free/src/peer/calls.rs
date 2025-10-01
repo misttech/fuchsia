@@ -374,11 +374,21 @@ impl Call {
             // TODO(https://fxbug.dev/135119) Handle multiple calls
             CallRequest::RequestHold { control_handle: _ } => unimplemented!(),
             // TODO(https://fxbug.dev/135119) Handle multiple calls
-            CallRequest::RequestActive { control_handle: _ } => {
-                Poll::Ready(Some(CallOutput::ProcedureInput(ProcedureInput::CommandFromHf(
-                    CommandFromHf::AnswerIncoming,
-                ))))
-            }
+            CallRequest::RequestActive { control_handle: _ } => match self.state {
+                Some(CallState::IncomingRinging) => Poll::Ready(Some(CallOutput::ProcedureInput(
+                    ProcedureInput::CommandFromHf(CommandFromHf::AnswerIncoming),
+                ))),
+                Some(CallState::TransferredToAg) => Poll::Ready(Some(CallOutput::ProcedureInput(
+                    ProcedureInput::CommandFromHf(CommandFromHf::StartAudioConnection),
+                ))),
+                _ => {
+                    warn!(
+                        "Got Call Request {:?} for call in inappropriate state: {:?}",
+                        call_request, self
+                    );
+                    Poll::Pending
+                }
+            },
             CallRequest::RequestTerminate { control_handle: _ } => self.maybe_hang_up(),
             CallRequest::RequestTransferAudio { control_handle: _ } => {
                 Poll::Ready(Some(CallOutput::TransferCallToAg))
