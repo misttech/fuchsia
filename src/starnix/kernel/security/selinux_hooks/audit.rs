@@ -48,6 +48,7 @@ pub enum Auditable<'a> {
     Name(&'a FsStr),
     NamespaceNode(&'a NamespaceNode),
     Task(&'a Task),
+    TodoCheck,
     // keep-sorted end
 }
 
@@ -200,16 +201,28 @@ pub(super) fn audit_todo_decision(
     permission: KernelPermission,
     audit_context: Auditable<'_>,
 ) {
-    result.todo_bug = result.todo_bug.or_else(|| Some(bug.into()));
-    audit_decision(
-        current_task,
-        permission_check,
-        result,
-        source_sid,
-        target_sid,
-        permission,
-        audit_context,
-    )
+    if result.todo_bug.is_none() {
+        result.todo_bug = Some(bug.into());
+        audit_decision(
+            current_task,
+            permission_check,
+            result,
+            source_sid,
+            target_sid,
+            permission,
+            (&[Auditable::TodoCheck, audit_context]).into(),
+        )
+    } else {
+        audit_decision(
+            current_task,
+            permission_check,
+            result,
+            source_sid,
+            target_sid,
+            permission,
+            audit_context,
+        )
+    }
 }
 
 impl Display for Auditable<'_> {
@@ -248,6 +261,9 @@ impl Display for Auditable<'_> {
             }
             Auditable::Task(task) => {
                 write!(f, " pid={}, comm={}", task.get_pid(), BStr::new(task.command().as_bytes()))
+            }
+            Auditable::TodoCheck => {
+                write!(f, " todo_check")
             }
         }
     }
