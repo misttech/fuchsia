@@ -5,6 +5,49 @@
 import("//build/fidl/toolchain.gni")
 import("//build/sdk/sdk_molecule.gni")
 
+# How Category Compatibility Checking Works.
+#
+# Currently, category compatibility checking is performed in
+# //build/sdk/create_atom_manifest.py, which is invoked by `sdk_atom()`. As a
+# result, category compatibility checks are only performed if the `sdk_atom()`
+# target, which often ends in "_sdk", is in the build dependency graph. Directly
+# using, for example, a FIDL library does not require a dependency on the "_sdk"
+# target and thus would not trigger category compatibility checks for the
+# library.
+#
+# Atoms in the IDK are all referenced by the "_sdk" target and thus covered by
+# category compatibility checks. All non-FIDL atoms can only be in the "partner"
+# category, and all atoms in the "partner" category are assumed to be in the
+# IDK.
+#
+# For FIDL, the ":fidl" target in this file depends on the "_sdk" target for all
+# FIDL libraries in `_partner_idk_fidl_libraries_targets_list`. For all other
+# categories, the ":<category>_fidl_libraries_non_sdk_molecule" target depends
+# on this target for all FIDL libraries in the category. For libraries other
+# than "compat_test", ":fidl" takes a `non_sdk_deps` on these molecules,
+# ensuring that the "_sdk" targets for all FIDL libraries in those categories is
+# in the dependency tree and thus that their category compatibility will be
+# checked.
+#
+# The outlier is "compat_test" and
+# ":compat_test_fidl_libraries_non_sdk_molecule". Because the latter contains
+# test-only FIDL libraries, it cannot be a dependency of ":fidl" or even the IDK
+# (see https://fxbug.dev/42070088).
+# LINT.IfChange(ensure_compatibility_checks)
+# Instead, it (and ":fidl") is an indirect dependency of ":compatibility_tests",
+# which is a dependency of "//:default". This ensures category compatibility
+# checks are performed for all FIDL libraries in an SDK category during default
+# builds. (It also ensures that FIDL compatibility tests are performed for all
+# such FIDL libraries.)
+# LINT.ThenChange(//BUILD.gn:fidl_compatibility_checks)
+#
+# LINT.IfChange(prebuild_info_category_compatibility_checks)
+# There is a newer mechanism based on prebuild info in `IdkGenerator`. Because
+# it uses prebuild info collected from the dependencies of an IDK collection,
+# it is currently limited to categories other than "compat_test".
+# TODO(https://fxbug.dev/419105478): Fix that and update this comment.
+# LINT.ThenChange(//build/sdk/generate_prebuild_idk/idk_generator.py:fidl_category_checks)
+
 # The list of FIDL libraries distributed in the partner IDK.
 # Targets must be included if and only if the `fidl()` target specifies:
 # `sdk_category = "partner"`.

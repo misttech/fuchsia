@@ -2213,8 +2213,12 @@ group("default") {
     "//build/images/updates:packages",
     "//sdk",
 
-    # Ensure compatibility tests run for all FIDL libraries that require them.
+    # LINT.IfChange(fidl_compatibility_checks)
+    # Ensure compatibility tests and SDK category checks run for all FIDL
+    # libraries that require them.
     "//sdk/fidl:compatibility_tests",
+
+    # LINT.ThenChange(//sdk/fidl/BUILD.gn:ensure_compatibility_checks)
   ]
 
   # SDK-only builds must not attempt to build images.

@@ -291,8 +291,8 @@ class PrebuildMap(object):
     def verify_dependency_relationships(self) -> None:
         """Verifies relationships between IDK atoms.
 
-        Verifies atom dependencies are of allowed types.
-        TODO(https://fxbug.dev/419105478): Add category validation.
+        Verifies an atom's direct dependencies are of allowed types and
+        categories for all atoms in `self._labels_map`.
 
         Note: Unlike the old .sdk build manifest-based verification, which
         relied on a flat manifest containing all direct and indirect
@@ -986,12 +986,19 @@ class IdkGenerator(object):
         # Relationships are verified for all atoms, not just those that are
         # included in the collection. This covers dependency checks, including
         # category compatibility, for all atoms reachable from the target for
-        # which the prebuild data was generated. However, not all atoms in the
-        # build tree are covered.
+        # which the prebuild data was generated.
+        #
+        # LINT.IfChange(fidl_category_checks)
+        # For IDK collections that depend on "//sdk/fidl", which depends on
+        # the allowed list of libraries for most categories, this includes
+        # the majority of FIDL libraries. See the comment block at the top of
+        # //sdk/fidl/BUILD.gn. The exception are libraries in the "compat_test"
+        # category because of the limitation on `testonly` dependencies in the
+        # IDK.
         # TODO(https://fxbug.dev/419105478): Determine how to validate all such
-        # atoms and consider restricting this check to atoms in the IDK
-        # (i.e., in `_verify_collection()`).
+        # atoms.
         self._prebuild_map.verify_dependency_relationships()
+        # LINT.ThenChange(//sdk/fidl/BUILD.gn:prebuild_info_category_compatibility_checks)
 
         # Note: Due to the way the prebuild manifest is currently generated,
         # any atom in the "partner" category that is a dependency of the IDK
