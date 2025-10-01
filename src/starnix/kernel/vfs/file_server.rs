@@ -780,95 +780,119 @@ mod tests {
 
     #[::fuchsia::test]
     async fn access_file_system() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let fs = TmpFs::new_fs(locked, &kernel);
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
 
-        let file = &fs.root().open_anonymous(locked, &current_task, OpenFlags::RDWR).expect("open");
-        let (root_handle, scope) =
-            serve_file(&current_task, file, FullCredentials::for_kernel()).expect("serve");
+            let file =
+                &fs.root().open_anonymous(locked, current_task, OpenFlags::RDWR).expect("open");
+            let (root_handle, scope) =
+                serve_file(current_task, file, FullCredentials::for_kernel()).expect("serve");
 
-        // Capture information from the filesystem in the main thread. The filesystem must not be
-        // transferred to the other thread.
-        let fs_dev_id = fs.dev_id;
-        fasync::unblock(move || {
-            let root_zxio = Zxio::create(root_handle.into_handle()).expect("create");
+            // Capture information from the filesystem in the main thread. The filesystem must not be
+            // transferred to the other thread.
+            let fs_dev_id = fs.dev_id;
+            std::thread::spawn(move || {
+                let root_zxio = Zxio::create(root_handle.into_handle()).expect("create");
 
-            assert_directory_content(&root_zxio, &[b"."]);
-            // Check that one can reiterate from the start.
-            assert_directory_content(&root_zxio, &[b"."]);
+                assert_directory_content(&root_zxio, &[b"."]);
+                // Check that one can reiterate from the start.
+                assert_directory_content(&root_zxio, &[b"."]);
 
-            let attrs = root_zxio
-                .attr_get(zxio_node_attr_has_t { id: true, ..Default::default() })
-                .expect("attr_get");
-            assert_eq!(attrs.id, fs_dev_id.bits());
+                let attrs = root_zxio
+                    .attr_get(zxio_node_attr_has_t { id: true, ..Default::default() })
+                    .expect("attr_get");
+                assert_eq!(attrs.id, fs_dev_id.bits());
 
-            let mut attrs = syncio::zxio_node_attributes_t::default();
-            attrs.has.creation_time = true;
-            attrs.has.modification_time = true;
-            attrs.creation_time = 0;
-            attrs.modification_time = 42;
-            root_zxio.attr_set(&attrs).expect("attr_set");
-            let attrs = root_zxio
-                .attr_get(zxio_node_attr_has_t {
-                    creation_time: true,
-                    modification_time: true,
-                    ..Default::default()
-                })
-                .expect("attr_get");
-            assert_eq!(attrs.creation_time, 0);
-            assert_eq!(attrs.modification_time, 42);
+                let mut attrs = syncio::zxio_node_attributes_t::default();
+                attrs.has.creation_time = true;
+                attrs.has.modification_time = true;
+                attrs.creation_time = 0;
+                attrs.modification_time = 42;
+                root_zxio.attr_set(&attrs).expect("attr_set");
+                let attrs = root_zxio
+                    .attr_get(zxio_node_attr_has_t {
+                        creation_time: true,
+                        modification_time: true,
+                        ..Default::default()
+                    })
+                    .expect("attr_get");
+                assert_eq!(attrs.creation_time, 0);
+                assert_eq!(attrs.modification_time, 42);
 
-            assert_eq!(
-                root_zxio
-                    .open("foo", fio::PERM_READABLE | fio::PERM_WRITABLE, Default::default())
-                    .expect_err("open"),
-                zx::Status::NOT_FOUND
-            );
-            let foo_zxio = root_zxio
-                .open(
-                    "foo",
-                    fio::PERM_READABLE
-                        | fio::PERM_WRITABLE
-                        | fio::Flags::FLAG_MAYBE_CREATE
-                        | fio::Flags::PROTOCOL_FILE,
-                    Default::default(),
-                )
-                .expect("zxio_open");
-            assert_directory_content(&root_zxio, &[b".", b"foo"]);
+                assert_eq!(
+                    root_zxio
+                        .open("foo", fio::PERM_READABLE | fio::PERM_WRITABLE, Default::default())
+                        .expect_err("open"),
+                    zx::Status::NOT_FOUND
+                );
+                let foo_zxio = root_zxio
+                    .open(
+                        "foo",
+                        fio::PERM_READABLE
+                            | fio::PERM_WRITABLE
+                            | fio::Flags::FLAG_MAYBE_CREATE
+                            | fio::Flags::PROTOCOL_FILE,
+                        Default::default(),
+                    )
+                    .expect("zxio_open");
+                assert_directory_content(&root_zxio, &[b".", b"foo"]);
 
-            assert_eq!(foo_zxio.write(b"hello").expect("write"), 5);
-            assert_eq!(foo_zxio.write_at(2, b"ch").expect("write_at"), 2);
-            let mut buffer = [0; 7];
-            assert_eq!(foo_zxio.read_at(2, &mut buffer).expect("read_at"), 3);
-            assert_eq!(&buffer[..3], b"cho");
-            assert_eq!(foo_zxio.seek(syncio::SeekOrigin::Start, 0).expect("seek"), 0);
-            assert_eq!(foo_zxio.read(&mut buffer).expect("read"), 5);
-            assert_eq!(&buffer[..5], b"hecho");
+                assert_eq!(foo_zxio.write(b"hello").expect("write"), 5);
+                assert_eq!(foo_zxio.write_at(2, b"ch").expect("write_at"), 2);
+                let mut buffer = [0; 7];
+                assert_eq!(foo_zxio.read_at(2, &mut buffer).expect("read_at"), 3);
+                assert_eq!(&buffer[..3], b"cho");
+                assert_eq!(foo_zxio.seek(syncio::SeekOrigin::Start, 0).expect("seek"), 0);
+                assert_eq!(foo_zxio.read(&mut buffer).expect("read"), 5);
+                assert_eq!(&buffer[..5], b"hecho");
 
-            let attrs = foo_zxio
-                .attr_get(zxio_node_attr_has_t { id: true, ..Default::default() })
-                .expect("attr_get");
-            assert_eq!(attrs.id, fs_dev_id.bits());
+                let attrs = foo_zxio
+                    .attr_get(zxio_node_attr_has_t { id: true, ..Default::default() })
+                    .expect("attr_get");
+                assert_eq!(attrs.id, fs_dev_id.bits());
 
-            let mut attrs = syncio::zxio_node_attributes_t::default();
-            attrs.has.creation_time = true;
-            attrs.has.modification_time = true;
-            attrs.creation_time = 0;
-            attrs.modification_time = 42;
-            foo_zxio.attr_set(&attrs).expect("attr_set");
-            let attrs = foo_zxio
-                .attr_get(zxio_node_attr_has_t {
-                    creation_time: true,
-                    modification_time: true,
-                    ..Default::default()
-                })
-                .expect("attr_get");
-            assert_eq!(attrs.creation_time, 0);
-            assert_eq!(attrs.modification_time, 42);
+                let mut attrs = syncio::zxio_node_attributes_t::default();
+                attrs.has.creation_time = true;
+                attrs.has.modification_time = true;
+                attrs.creation_time = 0;
+                attrs.modification_time = 42;
+                foo_zxio.attr_set(&attrs).expect("attr_set");
+                let attrs = foo_zxio
+                    .attr_get(zxio_node_attr_has_t {
+                        creation_time: true,
+                        modification_time: true,
+                        ..Default::default()
+                    })
+                    .expect("attr_get");
+                assert_eq!(attrs.creation_time, 0);
+                assert_eq!(attrs.modification_time, 42);
 
-            assert_eq!(
-                root_zxio
+                assert_eq!(
+                    root_zxio
+                        .open(
+                            "bar/baz",
+                            fio::Flags::PROTOCOL_DIRECTORY
+                                | fio::Flags::FLAG_MAYBE_CREATE
+                                | fio::PERM_READABLE
+                                | fio::PERM_WRITABLE,
+                            Default::default(),
+                        )
+                        .expect_err("open"),
+                    zx::Status::NOT_FOUND
+                );
+
+                let bar_zxio = root_zxio
+                    .open(
+                        "bar",
+                        fio::Flags::PROTOCOL_DIRECTORY
+                            | fio::Flags::FLAG_MAYBE_CREATE
+                            | fio::PERM_READABLE
+                            | fio::PERM_WRITABLE,
+                        Default::default(),
+                    )
+                    .expect("open");
+                let baz_zxio = root_zxio
                     .open(
                         "bar/baz",
                         fio::Flags::PROTOCOL_DIRECTORY
@@ -877,85 +901,89 @@ mod tests {
                             | fio::PERM_WRITABLE,
                         Default::default(),
                     )
-                    .expect_err("open"),
-                zx::Status::NOT_FOUND
-            );
+                    .expect("open");
+                assert_directory_content(&root_zxio, &[b".", b"foo", b"bar"]);
+                assert_directory_content(&bar_zxio, &[b".", b"baz"]);
 
-            let bar_zxio = root_zxio
-                .open(
-                    "bar",
-                    fio::Flags::PROTOCOL_DIRECTORY
-                        | fio::Flags::FLAG_MAYBE_CREATE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                    Default::default(),
-                )
-                .expect("open");
-            let baz_zxio = root_zxio
-                .open(
-                    "bar/baz",
-                    fio::Flags::PROTOCOL_DIRECTORY
-                        | fio::Flags::FLAG_MAYBE_CREATE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                    Default::default(),
-                )
-                .expect("open");
-            assert_directory_content(&root_zxio, &[b".", b"foo", b"bar"]);
-            assert_directory_content(&bar_zxio, &[b".", b"baz"]);
-
-            bar_zxio.rename("baz", &root_zxio, "quz").expect("rename");
-            assert_directory_content(&bar_zxio, &[b"."]);
-            assert_directory_content(&root_zxio, &[b".", b"foo", b"bar", b"quz"]);
-            assert_directory_content(&baz_zxio, &[b"."]);
+                bar_zxio.rename("baz", &root_zxio, "quz").expect("rename");
+                assert_directory_content(&bar_zxio, &[b"."]);
+                assert_directory_content(&root_zxio, &[b".", b"foo", b"bar", b"quz"]);
+                assert_directory_content(&baz_zxio, &[b"."]);
+            })
+            .join()
+            .expect("join");
+            scope.shutdown();
+            fasync::LocalExecutor::new().run_singlethreaded(scope.wait());
+            // This ensures fs cannot be captures in the thread.
+            std::mem::drop(fs);
         })
         .await;
-        scope.shutdown();
-        scope.wait().await;
-        // This ensures fs cannot be captures in the thread.
-        std::mem::drop(fs);
     }
 
     #[::fuchsia::test]
     async fn open() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
-        let fs = TmpFs::new_fs(locked, &kernel);
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
 
-        let file = &fs
-            .root()
-            .open_anonymous(locked, &current_task, OpenFlags::RDWR)
-            .expect("open_anonymous failed");
-        let (root_handle, scope) = serve_file(&current_task, file, FullCredentials::for_kernel())
-            .expect("serve_file failed");
+            let file = &fs
+                .root()
+                .open_anonymous(locked, current_task, OpenFlags::RDWR)
+                .expect("open_anonymous failed");
+            let (root_handle, scope) =
+                serve_file(current_task, file, FullCredentials::for_kernel())
+                    .expect("serve_file failed");
 
-        fasync::unblock(move || {
-            let root_zxio = Zxio::create(root_handle.into_handle()).expect("zxio create failed");
+            std::thread::spawn(move || {
+                let root_zxio =
+                    Zxio::create(root_handle.into_handle()).expect("zxio create failed");
 
-            assert_directory_content(&root_zxio, &[b"."]);
-            assert_eq!(
+                assert_directory_content(&root_zxio, &[b"."]);
+                assert_eq!(
+                    root_zxio
+                        .open(
+                            "foo",
+                            fio::PERM_READABLE | fio::PERM_WRITABLE,
+                            ZxioOpenOptions::default()
+                        )
+                        .expect_err("open3 passed unexpectedly"),
+                    zx::Status::NOT_FOUND
+                );
                 root_zxio
                     .open(
                         "foo",
-                        fio::PERM_READABLE | fio::PERM_WRITABLE,
-                        ZxioOpenOptions::default()
+                        fio::Flags::PROTOCOL_FILE
+                            | fio::PERM_READABLE
+                            | fio::PERM_WRITABLE
+                            | fio::Flags::FLAG_MUST_CREATE,
+                        ZxioOpenOptions::default(),
                     )
-                    .expect_err("open3 passed unexpectedly"),
-                zx::Status::NOT_FOUND
-            );
-            root_zxio
-                .open(
-                    "foo",
-                    fio::Flags::PROTOCOL_FILE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE
-                        | fio::Flags::FLAG_MUST_CREATE,
-                    ZxioOpenOptions::default(),
-                )
-                .expect("open3 failed");
-            assert_directory_content(&root_zxio, &[b".", b"foo"]);
+                    .expect("open3 failed");
+                assert_directory_content(&root_zxio, &[b".", b"foo"]);
 
-            assert_eq!(
+                assert_eq!(
+                    root_zxio
+                        .open(
+                            "bar/baz",
+                            fio::Flags::PROTOCOL_DIRECTORY
+                                | fio::PERM_READABLE
+                                | fio::PERM_WRITABLE
+                                | fio::Flags::FLAG_MUST_CREATE,
+                            ZxioOpenOptions::default()
+                        )
+                        .expect_err("open3 passed unexpectedly"),
+                    zx::Status::NOT_FOUND
+                );
+                let bar_zxio = root_zxio
+                    .open(
+                        "bar",
+                        fio::Flags::PROTOCOL_DIRECTORY
+                            | fio::PERM_READABLE
+                            | fio::PERM_WRITABLE
+                            | fio::Flags::FLAG_MUST_CREATE,
+                        ZxioOpenOptions::default(),
+                    )
+                    .expect("open3 failed");
                 root_zxio
                     .open(
                         "bar/baz",
@@ -963,92 +991,77 @@ mod tests {
                             | fio::PERM_READABLE
                             | fio::PERM_WRITABLE
                             | fio::Flags::FLAG_MUST_CREATE,
-                        ZxioOpenOptions::default()
+                        ZxioOpenOptions::default(),
                     )
-                    .expect_err("open3 passed unexpectedly"),
-                zx::Status::NOT_FOUND
-            );
-            let bar_zxio = root_zxio
-                .open(
-                    "bar",
-                    fio::Flags::PROTOCOL_DIRECTORY
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE
-                        | fio::Flags::FLAG_MUST_CREATE,
-                    ZxioOpenOptions::default(),
-                )
-                .expect("open3 failed");
-            root_zxio
-                .open(
-                    "bar/baz",
-                    fio::Flags::PROTOCOL_DIRECTORY
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE
-                        | fio::Flags::FLAG_MUST_CREATE,
-                    ZxioOpenOptions::default(),
-                )
-                .expect("open3 failed");
-            assert_directory_content(&root_zxio, &[b".", b"foo", b"bar"]);
-            assert_directory_content(&bar_zxio, &[b".", b"baz"]);
+                    .expect("open3 failed");
+                assert_directory_content(&root_zxio, &[b".", b"foo", b"bar"]);
+                assert_directory_content(&bar_zxio, &[b".", b"baz"]);
+            })
+            .join()
+            .expect("join");
+            scope.shutdown();
+            fasync::LocalExecutor::new().run_singlethreaded(scope.wait());
+
+            // This ensures fs cannot be captured in the thread.
+            std::mem::drop(fs);
         })
         .await;
-        scope.shutdown();
-        scope.wait().await;
-
-        // This ensures fs cannot be captured in the thread.
-        std::mem::drop(fs);
     }
 
     #[::fuchsia::test]
     async fn use_credentials() {
-        #[allow(deprecated, reason = "pre-existing usage")]
-        let (kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
-        let fs = TmpFs::new_fs(locked, &kernel);
+        spawn_kernel_and_run(|locked, current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
 
-        let file = &fs
-            .root()
-            .open_anonymous(&mut locked, &current_task, OpenFlags::RDWR)
-            .expect("open_anonymous failed");
-        // Create a file as root.
-        let ns = Namespace::new(fs);
-        ns.root()
-            .open_create_node(
-                &mut locked,
-                &current_task,
-                "test".into(),
-                FileMode::from_bits(0o600) | FileMode::IFREG,
-                DeviceType::NONE,
-                OpenFlags::empty(),
-            )
-            .expect("open_create_node failed");
+            let file = &fs
+                .root()
+                .open_anonymous(locked, current_task, OpenFlags::RDWR)
+                .expect("open_anonymous failed");
+            // Create a file as root.
+            let ns = Namespace::new(fs);
+            ns.root()
+                .open_create_node(
+                    locked,
+                    current_task,
+                    "test".into(),
+                    FileMode::from_bits(0o600) | FileMode::IFREG,
+                    DeviceType::NONE,
+                    OpenFlags::empty(),
+                )
+                .expect("open_create_node failed");
 
-        let mut user_credentials = FullCredentials::for_kernel();
-        user_credentials.creds.fsuid = 1;
-        user_credentials.creds.cap_effective = Capabilities::empty();
+            let mut user_credentials = FullCredentials::for_kernel();
+            user_credentials.creds.fsuid = 1;
+            user_credentials.creds.cap_effective = Capabilities::empty();
 
-        let (root_handle, scope) =
-            serve_file(&current_task, file, user_credentials).expect("serve_file failed");
+            let (root_handle, scope) =
+                serve_file(current_task, file, user_credentials).expect("serve_file failed");
 
-        fasync::unblock(move || {
-            let root_zxio = Zxio::create(root_handle.into_handle()).expect("zxio create failed");
+            std::thread::spawn(move || {
+                let root_zxio =
+                    Zxio::create(root_handle.into_handle()).expect("zxio create failed");
 
-            assert_directory_content(&root_zxio, &[b".", b"test"]);
-            assert_eq!(
-                root_zxio
-                    .open(
-                        "test",
-                        fio::PERM_READABLE | fio::PERM_WRITABLE,
-                        ZxioOpenOptions::default()
-                    )
-                    .expect_err("open3 passed unexpectedly"),
-                zx::Status::ACCESS_DENIED
-            );
+                assert_directory_content(&root_zxio, &[b".", b"test"]);
+                assert_eq!(
+                    root_zxio
+                        .open(
+                            "test",
+                            fio::PERM_READABLE | fio::PERM_WRITABLE,
+                            ZxioOpenOptions::default()
+                        )
+                        .expect_err("open3 passed unexpectedly"),
+                    zx::Status::ACCESS_DENIED
+                );
+            })
+            .join()
+            .expect("join");
+            scope.shutdown();
+            fasync::LocalExecutor::new().run_singlethreaded(scope.wait());
+
+            // This ensures fs cannot be captured in the thread.
+            std::mem::drop(ns);
         })
         .await;
-        scope.shutdown();
-        scope.wait().await;
-
-        // This ensures fs cannot be captured in the thread.
-        std::mem::drop(ns);
     }
 }
