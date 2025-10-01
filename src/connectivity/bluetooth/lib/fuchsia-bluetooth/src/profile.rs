@@ -135,35 +135,37 @@ pub fn psm_from_protocol(protocol: &Vec<ProtocolDescriptor>) -> Option<Psm> {
     None
 }
 
-/// Search for a Service Class UUID from a list of attributes (such as returned via Service Search)
+/// Search for Service Class UUIDs of well known services from a list of attributes (such as returned via Service Search)
 pub fn find_service_classes(
     attributes: &[fidl_fuchsia_bluetooth_bredr::Attribute],
 ) -> Vec<AssignedNumber> {
-    let attr = match attributes.iter().find(|a| a.id == Some(ATTR_SERVICE_CLASS_ID_LIST)) {
-        None => return vec![],
-        Some(attr) => attr,
-    };
-    if let Some(fidl_fuchsia_bluetooth_bredr::DataElement::Sequence(elems)) = &attr.element {
-        let uuids: Vec<Uuid> = elems
-            .iter()
-            .filter_map(|e| {
-                e.as_ref().and_then(|e| {
-                    if let fidl_fuchsia_bluetooth_bredr::DataElement::Uuid(uuid) = **e {
-                        Some(uuid.into())
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-        SERVICE_CLASS_UUIDS
-            .iter()
-            .filter(|scn| uuids.contains(&Uuid::new16(scn.number)))
-            .cloned()
-            .collect()
-    } else {
+    let uuids = find_all_service_classes(attributes);
+    SERVICE_CLASS_UUIDS
+        .iter()
+        .filter(|scn| uuids.contains(&Uuid::new16(scn.number)))
+        .cloned()
+        .collect()
+}
+
+/// Search for all Service Class UUID from a list of attributes (such as returned via Service Search)
+pub fn find_all_service_classes(
+    attributes: &[fidl_fuchsia_bluetooth_bredr::Attribute],
+) -> Vec<Uuid> {
+    let Some(attr) = attributes.iter().find(|a| a.id == Some(ATTR_SERVICE_CLASS_ID_LIST)) else {
         return vec![];
-    }
+    };
+    let Some(fidl_fuchsia_bluetooth_bredr::DataElement::Sequence(elems)) = &attr.element else {
+        return vec![];
+    };
+    elems
+        .iter()
+        .filter_map(|e| {
+            e.as_ref().and_then(|e| match **e {
+                fidl_fuchsia_bluetooth_bredr::DataElement::Uuid(uuid) => Some(uuid.into()),
+                _ => None,
+            })
+        })
+        .collect()
 }
 
 /// Given two SecurityRequirements, combines both into requirements as strict as either.
@@ -1588,5 +1590,46 @@ mod tests {
             rust_bool_err,
             Err(DataElementConversionError { data_element: data_element_bool })
         );
+    }
+
+    #[test]
+    fn test_find_service_class_uuids() {
+        // No attributes -> empty vec.
+        assert_eq!(find_all_service_classes(&[]), Vec::<Uuid>::new());
+
+        // No service class attribute -> empty vec.
+        let attributes = vec![fidl_bredr::Attribute {
+            id: Some(fidl_bredr::ATTR_BLUETOOTH_PROFILE_DESCRIPTOR_LIST),
+            element: Some(fidl_bredr::DataElement::Sequence(vec![Some(Box::new(
+                fidl_bredr::DataElement::Uuid(Uuid::new16(0x1101).into()),
+            ))])),
+            ..Default::default()
+        }];
+        assert_eq!(find_all_service_classes(&attributes), Vec::<Uuid>::new());
+
+        // Wrong element type for service class attribute -> empty vec.
+        let attributes = vec![fidl_bredr::Attribute {
+            id: Some(fidl_bredr::ATTR_SERVICE_CLASS_ID_LIST),
+            element: Some(fidl_bredr::DataElement::Uint32(0xc0defae5u32)),
+            ..Default::default()
+        }];
+        assert_eq!(find_all_service_classes(&attributes), Vec::<Uuid>::new());
+
+        // Valid attribute with a mix of elements -> returns only UUIDs.
+        let uuid1 = Uuid::new16(0x1101);
+        let uuid2 = Uuid::from_bytes([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        let attribute = fidl_bredr::Attribute {
+            id: Some(fidl_bredr::ATTR_SERVICE_CLASS_ID_LIST),
+            element: Some(fidl_bredr::DataElement::Sequence(vec![
+                Some(Box::new(fidl_bredr::DataElement::Uuid(uuid1.into()))),
+                Some(Box::new(fidl_bredr::DataElement::Uint16(5))), // Not a UUID, should be ignored.
+                Some(Box::new(fidl_bredr::DataElement::Uuid(uuid2.into()))),
+                None, // Empty element, should be ignored.
+            ])),
+            ..Default::default()
+        };
+
+        let result = find_all_service_classes(&[attribute]);
+        assert_eq!(vec![uuid1, uuid2], result);
     }
 }
