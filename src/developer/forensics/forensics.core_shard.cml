@@ -30,7 +30,7 @@
         {
             protocol: [
                 "fuchsia.boot.ReadOnlyLog",
-                "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.process.Launcher",
                 "fuchsia.sysinfo.SysInfo",
             ],

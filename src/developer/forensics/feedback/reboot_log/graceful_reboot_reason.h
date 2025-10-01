@@ -25,6 +25,8 @@ enum class GracefulRebootReason {
   kRetrySystemUpdate,
   kHighTemperature,
   kSessionFailure,
+  // TODO(https://fxbug.dev/394392398): kSysmgrFailure is from CFv1, remove once it's no longer
+  // written as a graceful reboot reason or once deprecated reasons can be ignored.
   kSysmgrFailure,
   kCriticalComponentFailure,
   kFdr,
@@ -44,12 +46,12 @@ enum class GracefulRebootReason {
 std::string ToString(GracefulRebootReason reason);
 
 std::vector<GracefulRebootReason> ToGracefulRebootReasons(
-    fuchsia::hardware::power::statecontrol::RebootOptions options);
+    fuchsia::hardware::power::statecontrol::ShutdownOptions options);
 
-// The input is limited to values corresponding to |power::statecontrol::RebootReason|.
+// The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
 std::vector<GracefulRebootReason> FromFileContent(std::string content);
 
-// The input is limited to values corresponding to |power::statecontrol::RebootReason|.
+// The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
 std::string ToFileContent(const std::vector<GracefulRebootReason>& reasons);
 
 std::string ToLog(const std::vector<GracefulRebootReason>& reasons);

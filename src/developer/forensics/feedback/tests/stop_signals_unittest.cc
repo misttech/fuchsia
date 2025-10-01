@@ -19,6 +19,8 @@ namespace forensics::feedback {
 namespace {
 
 using WaitForLifecycleStopTest = UnitTestFixture;
+using ::fuchsia::hardware::power::statecontrol::ShutdownAction;
+using ::fuchsia::hardware::power::statecontrol::ShutdownWatcher_OnShutdown_Result;
 
 TEST_F(WaitForLifecycleStopTest, BadChannel) {
   async::Executor executor(dispatcher());
@@ -99,9 +101,9 @@ TEST_F(WaitForRebootReasonTest, BadChannel) {
   async::Executor executor(dispatcher());
 
   std::optional<Error> error;
-  fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::RebootWatcher> request;
+  fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request;
   executor.schedule_task(
-      WaitForRebootReason(dispatcher(), std::move(request)).or_else([&error](const Error& e) {
+      WaitForShutdownReason(dispatcher(), std::move(request)).or_else([&error](const Error& e) {
         error = e;
         return fpromise::error();
       }));
@@ -114,8 +116,8 @@ TEST_F(WaitForRebootReasonTest, ClientDisconnects) {
   async::Executor executor(dispatcher());
 
   std::optional<Error> error;
-  fuchsia::hardware::power::statecontrol::RebootWatcherPtr ptr;
-  executor.schedule_task(WaitForRebootReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
+  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
                              .or_else([&error](const Error& e) {
                                error = e;
                                return fpromise::error();
@@ -130,8 +132,8 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackExecution) {
   async::Executor executor(dispatcher());
 
   std::optional<GracefulRebootReasonSignal> signal;
-  fuchsia::hardware::power::statecontrol::RebootWatcherPtr ptr;
-  executor.schedule_task(WaitForRebootReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
+  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
                              .and_then([&signal](GracefulRebootReasonSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
@@ -139,11 +141,13 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackExecution) {
 
   bool called{false};
 
-  fuchsia::hardware::power::statecontrol::RebootOptions options;
-  std::vector<fuchsia::hardware::power::statecontrol::RebootReason2> reasons = {
-      fuchsia::hardware::power::statecontrol::RebootReason2::USER_REQUEST};
+  fuchsia::hardware::power::statecontrol::ShutdownOptions options;
+  std::vector<fuchsia::hardware::power::statecontrol::ShutdownReason> reasons = {
+      fuchsia::hardware::power::statecontrol::ShutdownReason::USER_REQUEST};
   options.set_reasons(reasons);
-  ptr->OnReboot(std::move(options), [&called] { called = true; });
+  options.set_action(ShutdownAction::REBOOT);
+  ptr->OnShutdown(std::move(options),
+                  [&called](const ShutdownWatcher_OnShutdown_Result& result) { called = true; });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(ptr.is_bound());
@@ -160,8 +164,8 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
   async::Executor executor(dispatcher());
 
   std::optional<GracefulRebootReasonSignal> signal;
-  fuchsia::hardware::power::statecontrol::RebootWatcherPtr ptr;
-  executor.schedule_task(WaitForRebootReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
+  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
                              .and_then([&signal](GracefulRebootReasonSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
@@ -169,11 +173,13 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
 
   bool called{false};
 
-  fuchsia::hardware::power::statecontrol::RebootOptions options;
-  std::vector<fuchsia::hardware::power::statecontrol::RebootReason2> reasons = {
-      fuchsia::hardware::power::statecontrol::RebootReason2::USER_REQUEST};
+  fuchsia::hardware::power::statecontrol::ShutdownOptions options;
+  std::vector<fuchsia::hardware::power::statecontrol::ShutdownReason> reasons = {
+      fuchsia::hardware::power::statecontrol::ShutdownReason::USER_REQUEST};
   options.set_reasons(reasons);
-  ptr->OnReboot(std::move(options), [&called] { called = true; });
+  options.set_action(ShutdownAction::REBOOT);
+  ptr->OnShutdown(std::move(options),
+                  [&called](const ShutdownWatcher_OnShutdown_Result& result) { called = true; });
 
   RunLoopUntilIdle();
   ASSERT_NE(signal, std::nullopt);
@@ -183,6 +189,85 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
   RunLoopUntilIdle();
   EXPECT_TRUE(called);
   EXPECT_FALSE(ptr.is_bound());
+}
+
+TEST_F(WaitForRebootReasonTest, NoCompletionOnNoAction) {
+  async::Executor executor(dispatcher());
+
+  std::optional<GracefulRebootReasonSignal> signal;
+  fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
+  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+                             .and_then([&signal](GracefulRebootReasonSignal& s) {
+                               signal = std::move(s);
+                               return fpromise::ok();
+                             }));
+
+  bool called{false};
+
+  fuchsia::hardware::power::statecontrol::ShutdownOptions options;
+  std::vector<fuchsia::hardware::power::statecontrol::ShutdownReason> reasons = {
+      fuchsia::hardware::power::statecontrol::ShutdownReason::USER_REQUEST};
+  options.set_reasons(reasons);
+  ptr->OnShutdown(std::move(options),
+                  [&called](const ShutdownWatcher_OnShutdown_Result& result) { called = true; });
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(signal, std::nullopt);
+  EXPECT_TRUE(called);
+}
+
+struct TestParam {
+  std::string test_name;
+  ShutdownAction action;
+};
+
+class WaitForRebootReasonParameterizedTest : public UnitTestFixture,
+                                             public testing::WithParamInterface<TestParam> {};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, WaitForRebootReasonParameterizedTest,
+                         ::testing::ValuesIn(std::vector<TestParam>({
+                             {
+                                 "Poweroff",
+                                 ShutdownAction::POWEROFF,
+                             },
+                             {
+                                 "RebootToBootloader",
+                                 ShutdownAction::REBOOT_TO_BOOTLOADER,
+                             },
+                             {
+                                 "RebootToRecovery",
+                                 ShutdownAction::REBOOT_TO_RECOVERY,
+                             },
+                         })),
+                         [](const testing::TestParamInfo<TestParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(WaitForRebootReasonParameterizedTest, NoCompletion) {
+  const auto& param = GetParam();
+  async::Executor executor(dispatcher());
+
+  std::optional<GracefulRebootReasonSignal> signal;
+  fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
+  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+                             .and_then([&signal](GracefulRebootReasonSignal& s) {
+                               signal = std::move(s);
+                               return fpromise::ok();
+                             }));
+
+  bool called{false};
+
+  fuchsia::hardware::power::statecontrol::ShutdownOptions options;
+  std::vector<fuchsia::hardware::power::statecontrol::ShutdownReason> reasons = {
+      fuchsia::hardware::power::statecontrol::ShutdownReason::USER_REQUEST};
+  options.set_reasons(reasons);
+  options.set_action(param.action);
+  ptr->OnShutdown(std::move(options),
+                  [&called](const ShutdownWatcher_OnShutdown_Result& result) { called = true; });
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(signal, std::nullopt);
+  EXPECT_TRUE(called);
 }
 
 }  // namespace

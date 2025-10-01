@@ -26,6 +26,8 @@
 namespace forensics::feedback {
 namespace {
 
+using fuchsia::hardware::power::statecontrol::ShutdownWatcherRegister_RegisterWatcher_Result;
+
 std::unique_ptr<CachedAsyncAnnotationProvider> MakeDeviceIdProvider(
     const std::optional<std::string>& local_device_id_path, async_dispatcher_t* dispatcher,
     const std::shared_ptr<sys::ServiceDirectory>& services) {
@@ -108,8 +110,8 @@ MainService::MainService(
             FX_LOGS(ERROR) << "Won't receive lifecycle signal: " << ToString(error);
           }));
 
-  fidl::InterfaceHandle<fuchsia::hardware::power::statecontrol::RebootWatcher> handle;
-  executor_.schedule_task(WaitForRebootReason(dispatcher_, handle.NewRequest())
+  fidl::InterfaceHandle<fuchsia::hardware::power::statecontrol::ShutdownWatcher> handle;
+  executor_.schedule_task(WaitForShutdownReason(dispatcher_, handle.NewRequest())
                               .and_then([this, path = options.graceful_reboot_reason_write_path](
                                             GracefulRebootReasonSignal& signal) {
                                 const std::vector<GracefulRebootReason> reasons = signal.Reasons();
@@ -124,13 +126,14 @@ MainService::MainService(
                                     << "Won't receive reboot reason: " << ToString(error);
                               }));
 
-  // We register ourselves with RebootWatcher using a fire-and-forget request that gives
+  // We register ourselves with ShutdownWatcher using a fire-and-forget request that gives
   // an endpoint to a long-lived connection we maintain.
   //
   // The ack response is ignored because the failures aren't expected unless the system is in a dire
   // state.
-  services->Connect<fuchsia::hardware::power::statecontrol::RebootMethodsWatcherRegister>()
-      ->RegisterWatcher(std::move(handle), [] {});
+  services->Connect<fuchsia::hardware::power::statecontrol::ShutdownWatcherRegister>()
+      ->RegisterWatcher(std::move(handle),
+                        [](const ShutdownWatcherRegister_RegisterWatcher_Result& result) {});
 
   network_watcher_.Register(
       fit::bind_member(&crash_reports_, &CrashReports::SetNetworkIsReachable));

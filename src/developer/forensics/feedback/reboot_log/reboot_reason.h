@@ -39,6 +39,8 @@ enum class RebootReason {
   kZbiSwap,
   kHighTemperature,
   kSessionFailure,
+  // TODO(https://fxbug.dev/394392398): kSysmgrFailure is from CFv1, remove once it's no longer
+  // written as a graceful reboot reason or once deprecated reasons can be ignored.
   kSysmgrFailure,
   kCriticalComponentFailure,
   kFdr,

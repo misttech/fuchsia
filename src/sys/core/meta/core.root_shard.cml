@@ -191,6 +191,7 @@
                 "fuchsia.fxfs.BlobReader",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.logger.Log",
                 "fuchsia.paver.Paver",
                 "fuchsia.pkg.PackageCache",

@@ -133,6 +133,7 @@
             protocol: [
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
             ],
             from: "#shutdown_shim",
         },

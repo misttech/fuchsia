@@ -30,7 +30,7 @@ class LifecycleStopSignal {
   fit::callback<void(void)> callback_;
 };
 
-// Indicates `fuchsia.hardware.power.statecontrol/RebootMethodsWatcher.OnReboot` has been called and
+// Indicates `fuchsia.hardware.power.statecontrol/ShutdownWatcher.OnShutdown` has been called and
 // provides a way to get the reasons and send a response to the server.
 class GracefulRebootReasonSignal {
  public:
@@ -53,13 +53,13 @@ fpromise::promise<LifecycleStopSignal, Error> WaitForLifecycleStop(
     async_dispatcher_t* dispatcher,
     fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> request);
 
-// Returns a promise which will complete successfully when the reboot reason signal is received.
+// Returns a promise which will complete successfully when the shutdown signal is received.
 //
 // Note, the response will be sent when the `GracefulRebootReasonSignal` object is destroyed, if it
 // hasn't already been sent.
-fpromise::promise<GracefulRebootReasonSignal, Error> WaitForRebootReason(
+fpromise::promise<GracefulRebootReasonSignal, Error> WaitForShutdownReason(
     async_dispatcher_t* dispatcher,
-    fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::RebootWatcher> request);
+    fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request);
 
 }  // namespace forensics::feedback
 

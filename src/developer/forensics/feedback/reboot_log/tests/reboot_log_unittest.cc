@@ -22,18 +22,18 @@ namespace forensics {
 namespace feedback {
 namespace {
 
-using fuchsia::hardware::power::statecontrol::RebootReason2;
+using fuchsia::hardware::power::statecontrol::ShutdownReason;
 
 struct RebootReasonTestParam {
   std::string test_name;
   std::optional<std::string> zircon_reboot_log;
-  std::optional<RebootReason2> reboot_reason;
+  std::optional<ShutdownReason> shutdown_reason;
   RebootReason output_reboot_reason;
 };
 
 struct RebootMultiReasonTestParam {
   std::string test_name;
-  std::vector<RebootReason2> reasons;
+  std::vector<ShutdownReason> reasons;
   RebootReason output_reboot_reason;
 };
 
@@ -53,7 +53,7 @@ struct CriticalProcessTestParam {
 struct RebootLogStrTestParam {
   std::string test_name;
   std::optional<std::string> zircon_reboot_log;
-  std::vector<RebootReason2> reboot_reasons;
+  std::vector<ShutdownReason> shutdown_reasons;
   std::optional<std::string> output_reboot_log_str;
 };
 
@@ -71,7 +71,7 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
   }
 
   void WriteGracefulRebootLogContents(
-      fuchsia::hardware::power::statecontrol::RebootOptions options) {
+      fuchsia::hardware::power::statecontrol::ShutdownOptions options) {
     FX_CHECK(tmp_dir_.NewTempFileWithData("", &graceful_reboot_log_path_))
         << "Failed to create temporary graceful reboot log";
 
@@ -91,9 +91,9 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
 
 using RebootLogReasonTest = RebootLogTest<RebootReasonTestParam>;
 
-fuchsia::hardware::power::statecontrol::RebootOptions NewRebootOptions(
-    std::vector<RebootReason2> reasons) {
-  fuchsia::hardware::power::statecontrol::RebootOptions options;
+fuchsia::hardware::power::statecontrol::ShutdownOptions NewShutdownOptions(
+    std::vector<ShutdownReason> reasons) {
+  fuchsia::hardware::power::statecontrol::ShutdownOptions options;
   options.set_reasons(std::move(reasons));
   return options;
 }
@@ -110,92 +110,92 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "ZirconCleanGracefulUserRequest",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kUserRequest,
         },
         {
             "ZirconCleanGracefulSystemUpdate",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::SYSTEM_UPDATE,
+            ShutdownReason::SYSTEM_UPDATE,
             RebootReason::kSystemUpdate,
         },
         {
             "ZirconCleanGracefulNetstackMigration",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::NETSTACK_MIGRATION,
+            ShutdownReason::NETSTACK_MIGRATION,
             RebootReason::kNetstackMigration,
         },
         {
             "ZirconCleanGracefulHighTemperature",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::HIGH_TEMPERATURE,
+            ShutdownReason::HIGH_TEMPERATURE,
             RebootReason::kHighTemperature,
         },
         {
             "ZirconCleanGracefulSessionFailure",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::SESSION_FAILURE,
+            ShutdownReason::SESSION_FAILURE,
             RebootReason::kSessionFailure,
         },
         {
             "ZirconCleanGracefulNotSupported",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            static_cast<RebootReason2>(1000u),
+            static_cast<ShutdownReason>(1000u),
             RebootReason::kGenericGraceful,
         },
         {
             "Cold",
             std::nullopt,
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kCold,
 
         },
         {
             "KernelPanic",
             "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kKernelPanic,
         },
         {
             "OOM",
             "ZIRCON REBOOT REASON (OOM)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kOOM,
         },
         {
             "SwWatchdog",
             "ZIRCON REBOOT REASON (SW WATCHDOG)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kSoftwareWatchdogTimeout,
         },
         {
             "HwWatchdog",
             "ZIRCON REBOOT REASON (HW WATCHDOG)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kHardwareWatchdogTimeout,
         },
         {
             "Brownout",
             "ZIRCON REBOOT REASON (BROWNOUT)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kBrownout,
         },
         {
             "Spontaneous",
             "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kSpontaneous,
         },
         {
             "RootJobTermination",
             "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kRootJobTermination,
         },
         {
             "NotParseable",
             "NOT PARSEABLE",
-            RebootReason2::USER_REQUEST,
+            ShutdownReason::USER_REQUEST,
             RebootReason::kNotParseable,
 
         },
@@ -208,8 +208,8 @@ TEST_P(RebootLogReasonTest, Succeed) {
     WriteZirconRebootLogContents(param.zircon_reboot_log.value());
   }
 
-  if (param.reboot_reason.has_value()) {
-    WriteGracefulRebootLogContents(NewRebootOptions({param.reboot_reason.value()}));
+  if (param.shutdown_reason.has_value()) {
+    WriteGracefulRebootLogContents(NewShutdownOptions({param.shutdown_reason.value()}));
   }
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
@@ -221,7 +221,7 @@ TEST_P(RebootLogReasonTest, Succeed) {
 TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulFdr) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents(NewRebootOptions({RebootReason2::SYSTEM_UPDATE}));
+  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::SYSTEM_UPDATE}));
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/false));
@@ -249,7 +249,7 @@ TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulNotParseable) {
 TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  fuchsia::hardware::power::statecontrol::RebootOptions options;
+  fuchsia::hardware::power::statecontrol::ShutdownOptions options;
   WriteGracefulRebootLogContents(std::move(options));
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));
@@ -260,7 +260,7 @@ TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
 TEST_F(RebootLogReasonTest, Succeed_RebootReasonsEmpty) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents(NewRebootOptions({}));
+  WriteGracefulRebootLogContents(NewShutdownOptions({}));
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));
 
@@ -274,24 +274,24 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, RebootLogMultiReasonTest,
                              {{
                                   "SystemUpdateThenNetstackMigration",
                                   {
-                                      RebootReason2::SYSTEM_UPDATE,
-                                      RebootReason2::NETSTACK_MIGRATION,
+                                      ShutdownReason::SYSTEM_UPDATE,
+                                      ShutdownReason::NETSTACK_MIGRATION,
                                   },
                                   RebootReason::kSystemUpdate,
                               },
                               {
                                   "NetstackMigrationThenSystemUpdate",
                                   {
-                                      RebootReason2::NETSTACK_MIGRATION,
-                                      RebootReason2::SYSTEM_UPDATE,
+                                      ShutdownReason::NETSTACK_MIGRATION,
+                                      ShutdownReason::SYSTEM_UPDATE,
                                   },
                                   RebootReason::kSystemUpdate,
                               },
                               {
                                   "UnexpectedCombination",
                                   {
-                                      RebootReason2::OUT_OF_MEMORY,
-                                      RebootReason2::SYSTEM_UPDATE,
+                                      ShutdownReason::OUT_OF_MEMORY,
+                                      ShutdownReason::SYSTEM_UPDATE,
                                   },
                                   RebootReason::kUnexpectedReasonGraceful,
                               }})),
@@ -305,7 +305,7 @@ TEST_P(RebootLogMultiReasonTest, Succeed) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
 
-  WriteGracefulRebootLogContents(NewRebootOptions(param.reasons));
+  WriteGracefulRebootLogContents(NewShutdownOptions(param.reasons));
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));
@@ -449,7 +449,7 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "ConcatenatesZirconAndGraceful",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            {RebootReason2::USER_REQUEST},
+            {ShutdownReason::USER_REQUEST},
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: (USER "
             "REQUEST)\n\nFINAL REBOOT REASON (USER REQUEST)",
         },
@@ -458,7 +458,7 @@ INSTANTIATE_TEST_SUITE_P(
             // ungraceful zircon reboot reason and a graceful reboot reason.
             "ConcatenatesZirconUngracefulAndGraceful",
             "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            {RebootReason2::USER_REQUEST},
+            {ShutdownReason::USER_REQUEST},
             "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: "
             "(USER REQUEST)\n\nFINAL REBOOT REASON (KERNEL PANIC)",
         },
@@ -472,14 +472,14 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "MultipleGracefulRebootLog",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            {RebootReason2::NETSTACK_MIGRATION, RebootReason2::SYSTEM_UPDATE},
+            {ShutdownReason::NETSTACK_MIGRATION, ShutdownReason::SYSTEM_UPDATE},
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: "
             "(NETSTACK MIGRATION,SYSTEM UPDATE)\n\nFINAL REBOOT REASON (SYSTEM UPDATE)",
         },
         {
             "NoZirconRebootLog",
             std::nullopt,
-            {RebootReason2::USER_REQUEST},
+            {ShutdownReason::USER_REQUEST},
             "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (COLD)",
         },
     })),
@@ -491,8 +491,8 @@ TEST_P(RebootLogStrTest, Succeed) {
     WriteZirconRebootLogContents(param.zircon_reboot_log.value());
   }
 
-  if (!param.reboot_reasons.empty()) {
-    WriteGracefulRebootLogContents(NewRebootOptions(param.reboot_reasons));
+  if (!param.shutdown_reasons.empty()) {
+    WriteGracefulRebootLogContents(NewShutdownOptions(param.shutdown_reasons));
   }
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
@@ -507,7 +507,7 @@ TEST_P(RebootLogStrTest, Succeed) {
 TEST_F(RebootLogStrTest, Succeed_SetGracefulFDR) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents(NewRebootOptions({RebootReason2::FACTORY_DATA_RESET}));
+  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::FACTORY_DATA_RESET}));
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));
@@ -549,7 +549,7 @@ GRACEFUL REBOOT REASONS: (NONE)
 FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
-  WriteGracefulRebootLogContents(NewRebootOptions({RebootReason2::CRITICAL_COMPONENT_FAILURE}));
+  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));
@@ -573,7 +573,7 @@ TEST_F(RebootLogStrTest, Succeed_EmptyDlog) {
   FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
-  WriteGracefulRebootLogContents(NewRebootOptions({RebootReason2::CRITICAL_COMPONENT_FAILURE}));
+  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));
@@ -594,7 +594,7 @@ TEST_F(RebootLogStrTest, Succeed_NoDlog) {
   FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
-  WriteGracefulRebootLogContents(NewRebootOptions({RebootReason2::CRITICAL_COMPONENT_FAILURE}));
+  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(RebootLog::ParseRebootLog(
       zircon_reboot_log_path_, graceful_reboot_log_path_, /*not_a_fdr=*/true));

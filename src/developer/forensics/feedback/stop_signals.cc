@@ -89,29 +89,33 @@ fpromise::promise<LifecycleStopSignal, Error> WaitForLifecycleStop(
 
 namespace {
 
-// Handles receiving the reason a reboot is expected to occur and converting into a
+// Handles receiving the reason a shutdown is expected to occur and converting into a
 // `GracefulRebootReasonSignal`.
-class RebootWatcherServer : public fuchsia::hardware::power::statecontrol::RebootWatcher {
+class ShutdownWatcherServer : public fuchsia::hardware::power::statecontrol::ShutdownWatcher {
  public:
-  RebootWatcherServer(
+  ShutdownWatcherServer(
       async_dispatcher_t* dispatcher,
-      fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::RebootWatcher> request,
+      fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request,
       fpromise::completer<GracefulRebootReasonSignal, Error> completer);
 
-  void OnReboot(fuchsia::hardware::power::statecontrol::RebootOptions options,
-                OnRebootCallback callback) override;
+  void OnShutdown(fuchsia::hardware::power::statecontrol::ShutdownOptions options,
+                  OnShutdownCallback callback) override;
+
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
+    FX_LOGS(WARNING) << "Received an unknown method with ordinal: " << ordinal;
+  }
 
  private:
-  std::unique_ptr<fidl::Binding<fuchsia::hardware::power::statecontrol::RebootWatcher>> binding_;
+  std::unique_ptr<fidl::Binding<fuchsia::hardware::power::statecontrol::ShutdownWatcher>> binding_;
   fpromise::completer<GracefulRebootReasonSignal, Error> completer_;
 };
 
-RebootWatcherServer::RebootWatcherServer(
+ShutdownWatcherServer::ShutdownWatcherServer(
     async_dispatcher_t* dispatcher,
-    fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::RebootWatcher> request,
+    fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request,
     fpromise::completer<GracefulRebootReasonSignal, Error> completer)
     : binding_(
-          std::make_unique<fidl::Binding<fuchsia::hardware::power::statecontrol::RebootWatcher>>(
+          std::make_unique<fidl::Binding<fuchsia::hardware::power::statecontrol::ShutdownWatcher>>(
               this, std::move(request), dispatcher)),
       completer_(std::move(completer)) {
   binding_->set_error_handler([this](const zx_status_t status) {
@@ -119,22 +123,28 @@ RebootWatcherServer::RebootWatcherServer(
       return;
     }
 
-    FX_PLOGS(WARNING, status)
-        << "Lost connection to reboot methods watcher client, wont' reconnect";
+    FX_PLOGS(WARNING, status) << "Lost connection to shutdown watcher client, won't reconnect";
     completer_.complete_error(Error::kConnectionError);
   });
 }
 
-void RebootWatcherServer::OnReboot(fuchsia::hardware::power::statecontrol::RebootOptions options,
-                                   OnRebootCallback callback) {
+void ShutdownWatcherServer::OnShutdown(
+    fuchsia::hardware::power::statecontrol::ShutdownOptions options, OnShutdownCallback callback) {
   if (!completer_) {
-    callback();
+    callback(fpromise::ok());
+    return;
+  }
+
+  if (!options.has_action() ||
+      options.action() != fuchsia::hardware::power::statecontrol::ShutdownAction::REBOOT) {
+    // TODO(https://fxbug.dev/414413282): implement for other shutdown actions.
+    callback(fpromise::ok());
     return;
   }
 
   // Move `binding_` to avoid breaking references to internal member variables.
   auto cb = fit::defer([cb = std::move(callback), b = std::move(binding_)]() mutable {
-    cb();
+    cb(fpromise::ok());
     b->Unbind();
   });
   completer_.complete_ok(GracefulRebootReasonSignal(ToGracefulRebootReasons(std::move(options)),
@@ -149,17 +159,17 @@ GracefulRebootReasonSignal::GracefulRebootReasonSignal(std::vector<GracefulReboo
   FX_CHECK(callback_ != nullptr);
 }
 
-fpromise::promise<GracefulRebootReasonSignal, Error> WaitForRebootReason(
+fpromise::promise<GracefulRebootReasonSignal, Error> WaitForShutdownReason(
     async_dispatcher_t* dispatcher,
-    fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::RebootWatcher> request) {
+    fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request) {
   if (!request.is_valid()) {
     return fpromise::make_result_promise<GracefulRebootReasonSignal, Error>(
         fpromise::error(Error::kBadValue));
   }
 
   fpromise::bridge<GracefulRebootReasonSignal, Error> bridge;
-  auto watcher = std::make_unique<RebootWatcherServer>(dispatcher, std::move(request),
-                                                       std::move(bridge.completer));
+  auto watcher = std::make_unique<ShutdownWatcherServer>(dispatcher, std::move(request),
+                                                         std::move(bridge.completer));
   return bridge.consumer.promise_or(fpromise::error(Error::kLogicError))
       .then([w = std::move(watcher)](fpromise::result<GracefulRebootReasonSignal, Error>& result) {
         return std::move(result);

@@ -217,38 +217,36 @@ std::vector<GracefulRebootReason> FromFileContent(const std::string reasons) {
 }
 
 GracefulRebootReason FromReason(
-    const fuchsia::hardware::power::statecontrol::RebootReason2& reason) {
-  using fuchsia::hardware::power::statecontrol::RebootReason2;
+    const fuchsia::hardware::power::statecontrol::ShutdownReason& reason) {
+  using fuchsia::hardware::power::statecontrol::ShutdownReason;
   switch (reason) {
-    case RebootReason2::USER_REQUEST:
+    case ShutdownReason::USER_REQUEST:
       return GracefulRebootReason::kUserRequest;
-    case RebootReason2::SYSTEM_UPDATE:
+    case ShutdownReason::SYSTEM_UPDATE:
       return GracefulRebootReason::kSystemUpdate;
-    case RebootReason2::RETRY_SYSTEM_UPDATE:
+    case ShutdownReason::RETRY_SYSTEM_UPDATE:
       return GracefulRebootReason::kRetrySystemUpdate;
-    case RebootReason2::HIGH_TEMPERATURE:
+    case ShutdownReason::HIGH_TEMPERATURE:
       return GracefulRebootReason::kHighTemperature;
-    case RebootReason2::SESSION_FAILURE:
+    case ShutdownReason::SESSION_FAILURE:
       return GracefulRebootReason::kSessionFailure;
-    case RebootReason2::SYSMGR_FAILURE:
-      return GracefulRebootReason::kSysmgrFailure;
-    case RebootReason2::CRITICAL_COMPONENT_FAILURE:
+    case ShutdownReason::CRITICAL_COMPONENT_FAILURE:
       return GracefulRebootReason::kCriticalComponentFailure;
-    case RebootReason2::FACTORY_DATA_RESET:
+    case ShutdownReason::FACTORY_DATA_RESET:
       return GracefulRebootReason::kFdr;
-    case RebootReason2::ZBI_SWAP:
+    case ShutdownReason::ZBI_SWAP:
       return GracefulRebootReason::kZbiSwap;
-    case RebootReason2::OUT_OF_MEMORY:
+    case ShutdownReason::OUT_OF_MEMORY:
       return GracefulRebootReason::kOutOfMemory;
-    case RebootReason2::NETSTACK_MIGRATION:
+    case ShutdownReason::NETSTACK_MIGRATION:
       return GracefulRebootReason::kNetstackMigration;
-    case RebootReason2::ANDROID_UNEXPECTED_REASON:
+    case ShutdownReason::ANDROID_UNEXPECTED_REASON:
       return GracefulRebootReason::kAndroidUnexpectedReason;
-    case RebootReason2::ANDROID_RESCUE_PARTY:
+    case ShutdownReason::ANDROID_RESCUE_PARTY:
       return GracefulRebootReason::kAndroidRescueParty;
-    case RebootReason2::ANDROID_CRITICAL_PROCESS_FAILURE:
+    case ShutdownReason::ANDROID_CRITICAL_PROCESS_FAILURE:
       return GracefulRebootReason::kAndroidCriticalProcessFailure;
-    case RebootReason2::DEVELOPER_REQUEST:
+    case ShutdownReason::DEVELOPER_REQUEST:
       return GracefulRebootReason::kDeveloperRequest;
     default:
       return GracefulRebootReason::kNotSupported;
@@ -256,7 +254,7 @@ GracefulRebootReason FromReason(
 }
 
 std::vector<GracefulRebootReason> ToGracefulRebootReasons(
-    const fuchsia::hardware::power::statecontrol::RebootOptions options) {
+    const fuchsia::hardware::power::statecontrol::ShutdownOptions options) {
   if (!options.has_reasons()) {
     return {};
   }
