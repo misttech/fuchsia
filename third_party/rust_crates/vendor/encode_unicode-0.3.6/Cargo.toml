@@ -3,7 +3,7 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g. crates.io) dependencies
+# to registry (e.g., crates.io) dependencies
 #
 # If you believe there's an error in this file please file an
 # issue against the rust-lang/cargo repository. If you're
@@ -12,7 +12,7 @@
 
 [package]
 name = "encode_unicode"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["Torbjørn Birch Moltu <t.b.moltu@lyse.net>"]
 description = "UTF-8 and UTF-16 character types, iterators and related methods for char, u8 and u16.\n"
 documentation = "https://docs.rs/encode_unicode/"
@@ -24,7 +24,7 @@ repository = "https://github.com/tormol/encode_unicode"
 [package.metadata.docs.rs]
 features = ["ascii/std"]
 [dependencies.ascii]
-version = ">=0.8, <=0.10"
+version = ">=0.8, <2"
 optional = true
 default-features = false
 

@@ -6064,19 +6064,19 @@ rustc_library("elliptic-curve-v0_12_3") {
   applicable_licenses = [ ":elliptic-curve-v0_12_3.license" ]
 }
 
-license("encode_unicode-v0_3_5.license") {
+license("encode_unicode-v0_3_6.license") {
   public_package_name = "encode_unicode"
   license_files = [
-    "//third_party/rust_crates/vendor/encode_unicode-0.3.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/encode_unicode-0.3.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/encode_unicode-0.3.6/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/encode_unicode-0.3.6/LICENSE-MIT",
   ]
 }
 
-rustc_library("encode_unicode-v0_3_5") {
+rustc_library("encode_unicode-v0_3_6") {
   crate_name = "encode_unicode"
   source_root =
-      "//third_party/rust_crates/vendor/encode_unicode-0.3.5/src/lib.rs"
-  output_name = "encode_unicode-ab58d040036a3fcc"
+      "//third_party/rust_crates/vendor/encode_unicode-0.3.6/src/lib.rs"
+  output_name = "encode_unicode-57fb3c2141f4c504"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -6088,15 +6088,15 @@ rustc_library("encode_unicode-v0_3_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ab58d040036a3fcc",
-    "-Cextra-filename=-ab58d040036a3fcc",
+    "-Cmetadata=57fb3c2141f4c504",
+    "-Cextra-filename=-57fb3c2141f4c504",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":encode_unicode-v0_3_5.license" ]
+  applicable_licenses = [ ":encode_unicode-v0_3_6.license" ]
 }
 
 license("enum-as-inner-v0_5_1.license") {
@@ -13071,7 +13071,7 @@ rustc_library("prettytable-rs-v0_8_0") {
   deps = []
   deps += [ ":csv-v1_3_1" ]
   deps += [ ":atty-v0_2_11" ]
-  deps += [ ":encode_unicode-v0_3_5" ]
+  deps += [ ":encode_unicode-v0_3_6" ]
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":term-v0_5_1" ]
   deps += [ ":unicode-width-v0_1_14" ]
