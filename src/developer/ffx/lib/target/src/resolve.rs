@@ -20,9 +20,10 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use target_errors::FfxTargetError;
+use tokio::sync::Mutex;
 
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
@@ -599,7 +600,7 @@ impl TargetResolver for DefaultTargetResolver {
         let mut res = None;
         for t in manual_targets::watcher::parse_manual_targets(&finder).await.into_iter() {
             let addr = t.addr();
-            let mut resolution = Resolution::from_addr(addr);
+            let resolution = Resolution::from_addr(addr);
             let identify = resolution
                 .identify(ctx)
                 .on_timeout(ssh_timeout, || {
@@ -756,8 +757,8 @@ pub struct Resolution {
     target: ResolutionTarget,
     discovered: Option<TargetHandle>,
     connection: Mutex<Option<Arc<Connection>>>,
-    rcs_proxy: Option<RemoteControlProxy>,
-    identify_host_response: Option<IdentifyHostResponse>,
+    rcs_proxy: Mutex<Option<RemoteControlProxy>>,
+    identify_host_response: Mutex<Option<IdentifyHostResponse>>,
 }
 
 impl Resolution {
@@ -766,8 +767,8 @@ impl Resolution {
             target,
             discovered: None,
             connection: Mutex::new(None),
-            rcs_proxy: None,
-            identify_host_response: None,
+            rcs_proxy: Mutex::new(None),
+            identify_host_response: Mutex::new(None),
         }
     }
     fn from_addr(sa: SocketAddr) -> Self {
@@ -797,8 +798,8 @@ impl Resolution {
         Self::from_target(ResolutionTarget::TestMock(Box::new(f)))
     }
 
-    pub fn set_connection_for_test(&mut self, connection: Option<Connection>) {
-        *self.connection.lock().unwrap() = connection.map(Arc::new);
+    pub async fn set_connection_for_test(&self, connection: Option<Connection>) {
+        *self.connection.lock().await = connection.map(Arc::new);
     }
 
     pub fn usb_cid(&self) -> Option<u32> {
@@ -814,88 +815,86 @@ impl Resolution {
     }
 
     pub async fn ensure_connected(&self, context: &EnvironmentContext) -> Result<()> {
-        {
-            let mut conn = self.connection.lock().unwrap();
-            if conn.as_ref().map(|x| x.is_terminated()).unwrap_or(true) {
-                *conn = None;
-            }
-        }
-
-        let _conn = self.get_connection(context).await?;
-        Ok(())
+        self.get_connection(context).await.map(|_| ())
     }
 
     pub async fn get_connection(&self, context: &EnvironmentContext) -> Result<Arc<Connection>> {
-        if let Some(conn) = self.connection.lock().unwrap().clone() {
-            Ok(conn)
-        } else {
-            let conn = match &self.target {
-                ResolutionTarget::Addr(socket_addr) => {
-                    if !context.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
-                        bail!("Network connections are disabled");
-                    }
-                    let connector = SshConnector::new(
-                        netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
-                        context,
-                    )?;
-                    Connection::new(connector)
-                        .await
-                        .map_err(|e| crate::KnockError::CriticalError(e.into()))?
-                }
-                ResolutionTarget::Usb(cid) => {
-                    if !context.get(CONFIG_ENABLE_USB).unwrap_or(false) {
-                        bail!("USB connections are disabled");
-                    }
-                    let connector = UsbConnector::new(*cid, context).await?;
-                    Connection::new(connector)
-                        .await
-                        .map_err(|e| crate::KnockError::CriticalError(e.into()))?
-                }
-                ResolutionTarget::TestMock(f) => f()?,
-                ResolutionTarget::Vsock(_) => bail!("VSOCK not yet supported"),
-                ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
-            };
-            let mut conn_slot = self.connection.lock().unwrap();
-            if let Some(conn) = conn_slot.clone() {
-                log::debug!("Discarding connection due to race");
-                return Ok(conn);
-            }
+        // Hold a lock to make sure only one connection is being initialized at a time.
+        // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
+        // await points.
+        let mut conn_guard = self.connection.lock().await;
 
-            let conn = Arc::new(conn);
-            *conn_slot = Some(Arc::clone(&conn));
-            Ok(conn)
+        if let Some(conn) = conn_guard.as_ref()
+            && !conn.is_terminated()
+        {
+            return Ok(conn.clone());
         }
+
+        let conn = match &self.target {
+            ResolutionTarget::Addr(socket_addr) => {
+                if !context.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+                    bail!("Network connections are disabled");
+                }
+                let connector = SshConnector::new(
+                    netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
+                    context,
+                )?;
+                Connection::new(connector)
+                    .await
+                    .map_err(|e| crate::KnockError::CriticalError(e.into()))?
+            }
+            ResolutionTarget::Usb(cid) => {
+                if !context.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+                    bail!("USB connections are disabled");
+                }
+                let connector = UsbConnector::new(*cid, context).await?;
+                Connection::new(connector)
+                    .await
+                    .map_err(|e| crate::KnockError::CriticalError(e.into()))?
+            }
+            ResolutionTarget::TestMock(f) => f()?,
+            ResolutionTarget::Vsock(_) => bail!("VSOCK not yet supported"),
+            ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
+        };
+
+        let conn = Arc::new(conn);
+        *conn_guard = Some(conn.clone());
+        Ok(conn)
     }
 
     pub fn get_connection_if_already_established(&self) -> Option<Arc<Connection>> {
-        self.connection.lock().unwrap().clone()
+        if let Ok(guard) = self.connection.try_lock() { guard.as_ref().cloned() } else { None }
     }
 
-    pub async fn get_rcs_proxy(
-        &mut self,
-        context: &EnvironmentContext,
-    ) -> Result<&RemoteControlProxy> {
-        if self.rcs_proxy.is_none() {
+    pub async fn get_rcs_proxy(&self, context: &EnvironmentContext) -> Result<RemoteControlProxy> {
+        // Hold a lock to make sure only one RCS proxy is being initialized at a time.
+        // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
+        // await points.
+        let mut rcs_proxy_guard = self.rcs_proxy.lock().await;
+        if rcs_proxy_guard.is_none() {
             let conn = self.get_connection(context).await?;
-            self.rcs_proxy = Some(conn.rcs_proxy().await?);
+            *rcs_proxy_guard = Some(conn.rcs_proxy().await?);
         }
-        Ok(self.rcs_proxy.as_ref().unwrap())
+        // Unwrap safety: either the guard was already Some(), or we just initialized it with Some()
+        Ok(rcs_proxy_guard.as_ref().unwrap().clone())
     }
 
-    pub async fn identify(
-        &mut self,
-        context: &EnvironmentContext,
-    ) -> Result<&IdentifyHostResponse> {
-        if self.identify_host_response.is_none() {
+    pub async fn identify(&self, context: &EnvironmentContext) -> Result<IdentifyHostResponse> {
+        // Hold a lock to make sure only one IdentifyHost is being called at a time.
+        // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
+        // await points.
+        let mut identify_guard = self.identify_host_response.lock().await;
+        if identify_guard.is_none() {
             let rcs_proxy = self.get_rcs_proxy(context).await?;
-            self.identify_host_response = Some(
+            *identify_guard = Some(
                 rcs_proxy
                     .identify_host()
                     .await?
                     .map_err(|e| anyhow::anyhow!("Error identifying host: {e:?}"))?,
             );
         }
-        Ok(self.identify_host_response.as_ref().unwrap())
+        // Unwrap safety: either the guard was already Some(), or we just initialized it with Some()
+        Ok(identify_guard.as_ref().unwrap().clone())
     }
 }
 

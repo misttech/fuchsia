@@ -616,15 +616,15 @@ mod tests {
         };
     }
 
-    fn setup_fake_direct_connector() -> Arc<Resolution> {
+    async fn setup_fake_direct_connector() -> Arc<Resolution> {
         let device_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 22);
         let target_addr = TargetIpAddr::from(device_address.clone());
         let target_info =
             TargetInfo { addresses: Some(vec![target_addr.into()]), ..Default::default() };
-        let mut ret = Resolution::from_target_handle(target_info.try_into().unwrap()).unwrap();
+        let ret = Resolution::from_target_handle(target_info.try_into().unwrap()).unwrap();
         let fidl_pipe = FidlPipe::fake(Some(device_address));
         let conn = ffx_target::Connection::fake(fidl_pipe);
-        ret.set_connection_for_test(Some(conn));
+        ret.set_connection_for_test(Some(conn)).await;
         Arc::new(ret)
     }
 
@@ -636,7 +636,9 @@ mod tests {
         let fho_env = FhoEnvironment::default();
         let target_env = ffx_target::fho::target_interface(&fho_env);
         target_env
-            .set_behavior(FhoConnectionBehavior::DirectConnector(setup_fake_direct_connector()))
+            .set_behavior(FhoConnectionBehavior::DirectConnector(
+                setup_fake_direct_connector().await,
+            ))
             .expect("set_behavior");
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },

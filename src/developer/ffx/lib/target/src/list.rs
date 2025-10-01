@@ -21,15 +21,13 @@ async fn try_get_target_info(
     spec: TargetInfoQuery,
     context: &EnvironmentContext,
 ) -> Result<(ffx::RemoteControlState, Option<String>, Option<String>), KnockError> {
-    let mut resolution = resolve_target_address(&spec, context)
+    let resolution = resolve_target_address(&spec, context)
         .await
         .map_err(|e| KnockError::CriticalError(e.into()))?;
     let (rcs_state, pc, bc) = match resolution.identify(context).await {
-        Ok(id_result) => (
-            ffx::RemoteControlState::Up,
-            id_result.product_config.clone(),
-            id_result.board_config.clone(),
-        ),
+        Ok(id_result) => {
+            (ffx::RemoteControlState::Up, id_result.product_config, id_result.board_config)
+        }
         _ => (ffx::RemoteControlState::Down, None, None),
     };
     Ok((rcs_state, pc, bc))
