@@ -10,7 +10,8 @@
 
 pub use crate::parser::common::ParseError;
 use crate::{highlevel, lowlevel};
-use std::io;
+use std::error::Error as StdError;
+use std::{fmt, io};
 use thiserror::Error;
 
 /// Errors that can occur while deserializing AT commands into high level generated AT command
@@ -61,6 +62,14 @@ pub struct DeserializeError {
     pub bytes: Vec<u8>,
 }
 
+impl fmt::Display for DeserializeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl StdError for DeserializeError {}
+
 #[derive(Debug, Error)]
 pub enum SerializeErrorCause {
     #[error("IO error: {0:?}")]
@@ -72,6 +81,26 @@ impl From<io::Error> for SerializeErrorCause {
         SerializeErrorCause::IoError(io_error)
     }
 }
+
+/// An error and remaining item to serialize if a serialization failure occurs while
+/// serializing multiple items.
+#[derive(Debug)]
+pub struct SerializeError<T> {
+    #[cfg_attr(test, allow(unused))]
+    pub remaining: Vec<T>,
+    #[cfg_attr(test, allow(unused))]
+    pub failed: T,
+    #[cfg_attr(test, allow(unused))]
+    pub cause: SerializeErrorCause,
+}
+
+impl<T: fmt::Debug> fmt::Display for SerializeError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl<T: fmt::Debug> StdError for SerializeError<T> {}
 
 // While public traits can't depend on private traits, they can depend on public traits
 // in private modules.  By wrapping traits library clients should not have access to in
@@ -169,19 +198,7 @@ pub(crate) mod internal {
     }
 } // mod internal
 
-/// An error and remaining item to serialize if a serialization failure occurs while
-/// serializing multiple items.
-#[derive(Debug)]
-pub struct SerializeError<T> {
-    #[cfg_attr(test, allow(unused))]
-    pub remaining: Vec<T>,
-    #[cfg_attr(test, allow(unused))]
-    pub failed: T,
-    #[cfg_attr(test, allow(unused))]
-    pub cause: SerializeErrorCause,
-}
-
-/// An abstract representaiton of bytes remaining after a deserialization failure.
+/// An abstract representation of bytes remaining after a deserialization failure.
 #[derive(Debug, PartialEq)]
 pub struct DeserializeBytes {
     // Public for testing; this allows the use of assert_eq on DeserializeBytes.
