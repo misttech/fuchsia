@@ -39,7 +39,7 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
         utils::CreateSysmemAllocatorSyncPtr("CreateBCInfo2WithConstraints");
     // Create Sysmem tokens.
 
-    auto [local_token, dup_token] = utils::CreateSysmemTokens(sysmem_allocator.get());
+    auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator.get());
 
     // Import into ScreenCaptureBufferCollectionImporter.
     bool result = importer_->ImportBufferCollection(
@@ -90,7 +90,7 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportAndReleaseBufferCollection) {
       utils::CreateSysmemAllocatorSyncPtr("SCBCTest-ImportAndReleaseBC");
   // Create Sysmem tokens.
 
-  auto [local_token, dup_token] = utils::CreateSysmemTokens(sysmem_allocator.get());
+  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator.get());
 
   // Import into ScreenCaptureBufferCollectionImporter.
   auto collection_id = allocation::GenerateUniqueBufferCollectionId();
@@ -278,7 +278,7 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_Buffe
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator =
       utils::CreateSysmemAllocatorSyncPtr("GetBCBC_BuffersNotAllocated");
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokens(sysmem_allocator.get());
+  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator.get());
   // Import into ScreenCaptureBufferCollectionImporter.
   bool result =
       importer_->ImportBufferCollection(collection_id, sysmem_allocator.get(), std::move(dup_token),

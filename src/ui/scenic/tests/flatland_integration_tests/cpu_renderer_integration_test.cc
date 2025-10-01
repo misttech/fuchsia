@@ -117,7 +117,7 @@ class CpuRendererIntegrationTest : public ScenicCtfHlcppTest {
 };
 
 TEST_F(CpuRendererIntegrationTest, RenderSmokeTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -161,7 +161,7 @@ class CpuRendererIntegrationTestWithFormat
       public zxtest::WithParamInterface<fuchsia::images2::PixelFormat> {};
 
 TEST_P(CpuRendererIntegrationTestWithFormat, RendersImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =

@@ -42,7 +42,7 @@ void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
   zx_status_t status;
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokens(sysmem_allocator);
+  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
   fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args;
   rbc_args.export_token(fidl::HLCPPToNatural(std::move(export_token)));

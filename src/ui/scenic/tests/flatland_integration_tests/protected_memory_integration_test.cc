@@ -116,7 +116,7 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
 };
 
 TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -149,7 +149,7 @@ TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
 }
 
 TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =

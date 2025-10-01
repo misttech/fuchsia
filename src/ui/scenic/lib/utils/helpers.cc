@@ -113,7 +113,7 @@ fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
   return sysmem_allocator;
 }
 
-SysmemTokens CreateSysmemTokens(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
+SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
   FX_DCHECK(sysmem_allocator);
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
   fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_request;

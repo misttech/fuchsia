@@ -16,7 +16,7 @@
 
 namespace utils {
 
-using SysmemTokens = struct {
+using SysmemTokensHlcpp = struct {
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
 };
@@ -53,7 +53,7 @@ fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
     const std::string& debug_name_suffix = std::string());
 
 // Create local and dup tokens for sysmem.
-SysmemTokens CreateSysmemTokens(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator);
+SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator);
 
 // Creates default constraints for |buffer_collection|
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(

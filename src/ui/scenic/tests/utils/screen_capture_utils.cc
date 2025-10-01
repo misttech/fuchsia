@@ -99,7 +99,7 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
   RegisterBufferCollectionArgs rbc_args = {};
   zx_status_t status;
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokens(sysmem_allocator);
+  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
   rbc_args.set_export_token(std::move(export_token));
   rbc_args.set_buffer_collection_token2(std::move(dup_token));

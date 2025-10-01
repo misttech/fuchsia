@@ -237,7 +237,7 @@ INSTANTIATE_TEST_SUITE_P(YuvPixelFormats, ParameterizedYUVPixelTest,
                                         fuchsia::images2::PixelFormat::I420));
 
 TEST_P(ParameterizedYUVPixelTest, YUVTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -329,7 +329,7 @@ INSTANTIATE_TEST_SUITE_P(ExoticRgbPixelFormats, ParameterizedSRGBPixelTest,
                                         fuchsia::images2::PixelFormat::R5G6B5));
 
 TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -626,7 +626,7 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
   constexpr auto kByterPerPixel = 4;
   const uint64_t image_vmo_bytes = num_pixels * kByterPerPixel;
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -742,7 +742,7 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
   constexpr auto kByterPerPixel = 4;
   const uint64_t image_vmo_bytes = num_pixels * kByterPerPixel;
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =

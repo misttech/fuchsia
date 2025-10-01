@@ -129,7 +129,7 @@ class AllocationTest : public ScenicCtfHlcppTest {
 TEST_F(AllocationTest, CreateAndReleaseImage) {
   auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -165,7 +165,7 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
   auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
   for (uint64_t i = 1; i <= kImageCount; ++i) {
-    auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+    auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
     // Send one token to root_flatland_ Allocator.
     allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -234,7 +234,7 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
       LoggingEventLoop present_loop;
       auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
-      auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_.get());
+      auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
 
       // Send one token to Flatland Allocator.
       allocation::BufferCollectionImportExportTokens bc_tokens =
