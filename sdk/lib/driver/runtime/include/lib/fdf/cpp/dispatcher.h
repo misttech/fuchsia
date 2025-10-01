@@ -188,6 +188,7 @@ class Dispatcher {
       static_assert(offsetof(DispatcherShutdownContext, observer_) == 0);
       auto self = reinterpret_cast<DispatcherShutdownContext*>(observer);
       self->handler_(dispatcher);
+
       // Delete the pointer allocated in |SynchronizedDispatcher::Create| or
       // |UnsynchronizedDispatcher::Create|.
       delete self;
@@ -248,6 +249,7 @@ class SynchronizedDispatcher final : public Dispatcher {
                       FDF_DISPATCHER_OPTION_SYNCHRONIZED,
                   "options.value=%u, needs to have FDF_DISPATCHER_OPTION_SYNCHRONIZED",
                   options.value);
+    ZX_ASSERT_MSG(shutdown_handler, "Cannot provide a null shutdown handler.");
     // We need to create an additional shutdown context in addition to the fdf::Dispatcher
     // object, as the fdf::SynchronizedDispatcher may be destructed before the shutdown handler
     // is called. This can happen if the raw pointer is released from the
@@ -328,6 +330,7 @@ class UnsynchronizedDispatcher final : public Dispatcher {
                       FDF_DISPATCHER_OPTION_UNSYNCHRONIZED,
                   "options.value=%u, needs to have FDF_DISPATCHER_OPTION_UNSYNCHRONIZED",
                   options.value);
+    ZX_ASSERT_MSG(shutdown_handler, "Cannot provide a null shutdown handler.");
     // We need to create an additional shutdown context in addition to the fdf::Dispatcher
     // object, as the fdf::UnsynchronizedDispatcher may be destructed before the shutdown handler
     // is called. This can happen if the raw pointer is released from the

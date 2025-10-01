@@ -133,6 +133,10 @@ __EXPORT zx_status_t fdf_dispatcher_create(uint32_t options, const char* name, s
                                            const char* scheduler_role, size_t scheduler_role_len,
                                            fdf_dispatcher_shutdown_observer_t* observer,
                                            fdf_dispatcher_t** out_dispatcher) {
+  if (!observer || !observer->handler) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   driver_runtime::Dispatcher* dispatcher;
   auto status = driver_runtime::Dispatcher::Create(
       options, std::string_view(name, name_len),

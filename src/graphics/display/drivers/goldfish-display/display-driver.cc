@@ -152,7 +152,8 @@ zx::result<> DisplayDriver::Start() {
 
   zx::result<fdf::SynchronizedDispatcher> create_dispatcher_result =
       fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options{},
-                                          "display-event-dispatcher", /*shutdown_handler=*/{});
+                                          "display-event-dispatcher",
+                                          /*shutdown_handler=*/[](fdf_dispatcher_t*) {});
   if (create_dispatcher_result.is_error()) {
     fdf::error("Failed to create display event dispatcher: {}", create_dispatcher_result);
     return create_dispatcher_result.take_error();
