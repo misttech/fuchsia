@@ -433,6 +433,7 @@ pub fn new_memfd(
     mut name: FsString,
     seals: SealFlags,
     flags: OpenFlags,
+    use_ashmem_workaround: bool,
 ) -> Result<FileHandle, Errno> {
     struct MemFdTmpfs {
         tmpfs: FileSystemHandle,
@@ -456,7 +457,9 @@ pub fn new_memfd(
         FsNodeLinkBehavior::Disallowed,
     )?;
     fs_node.write_guard_state.lock().enable_sealing(seals);
-    security::fs_node_label_memfd(current_task, &fs_node);
+    if use_ashmem_workaround {
+        security::fs_node_memfd_ashmem_workaround(current_task, &fs_node);
+    }
 
     // memfd instances appear in /proc[pid]/fd as though they are O_TMPFILE files with names of
     // the form "memfd:[name]".

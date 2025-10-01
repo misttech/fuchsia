@@ -1864,7 +1864,9 @@ pub fn sys_memfd_create(
         SealFlags::SEAL
     };
 
-    let file = new_memfd(locked, current_task, name, seals, OpenFlags::RDWR)?;
+    let use_ashmem_workaround = flags == (MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    let file =
+        new_memfd(locked, current_task, name, seals, OpenFlags::RDWR, use_ashmem_workaround)?;
 
     let mut fd_flags = FdFlags::empty();
     if flags & MFD_CLOEXEC != 0 {

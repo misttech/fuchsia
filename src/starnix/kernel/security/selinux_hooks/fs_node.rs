@@ -1279,7 +1279,10 @@ pub(in crate::security) fn fs_node_copy_up<R>(
 /// specified in the exception config. This is a workaround for https://fxbug.dev/412957798 - no
 /// such hook exists in SELinux.
 // TODO(https://fxbug.dev/412957798): Remove when not needed anymore.
-pub(in crate::security) fn fs_node_label_memfd(security_server: &SecurityServer, fs_node: &FsNode) {
+pub(in crate::security) fn fs_node_memfd_ashmem_workaround(
+    security_server: &SecurityServer,
+    fs_node: &FsNode,
+) {
     let mut security_state = fs_node.security_state.lock();
     if let FsNodeLabel::SecurityId { ref mut sid } = security_state.label {
         if let Some(new_sid) = security_server.transform_memfd_sid(*sid) {
