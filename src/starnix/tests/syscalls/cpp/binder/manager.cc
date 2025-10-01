@@ -97,9 +97,6 @@ auto ManagerBehavior(std::string_view binder_dir, test_helper::Poker ready) {
                   ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &acquire_write_read);
               ASSERT_THAT(acquire_result, SyscallSucceeds());
 
-              // TODO: https://fxbug.dev/441444000 - it doesn't look right that
-              // .data.ptr.buffer gets set to non-nullptr but .data.ptr.offsets gets set to
-              // nullptr.
               ReplyWriteBuffer reply_write_buffer = {
                   .command = BC_REPLY,
                   .data =
@@ -180,8 +177,8 @@ auto ManagerBehavior(std::string_view binder_dir, test_helper::Poker ready) {
             }
             case kServiceSendFd:
               // NOTE(https://fxbug.dev/441447806): control flow passes through here when the
-              // client has permission to impersonate the provider and the impersonation transaction
-              // succeeds.
+              // client has permission to impersonate the provider and the invocation of the
+              // impersonation transaction succeeds.
               break;
             default:
               FAIL() << "Unexpected transaction_data.code " << transaction_data.code << "!";
