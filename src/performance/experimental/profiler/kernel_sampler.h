@@ -24,7 +24,6 @@ class KernelSamplerSession {
 
   zx::result<> Start();
   zx::result<> Stop();
-  zx::result<> AttachThread(const zx::thread& thread) const;
   zx::result<zx::iob> GetBuffers() {
     zx::iob duplicate;
     return zx::make_result(per_cpu_buffers_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate),

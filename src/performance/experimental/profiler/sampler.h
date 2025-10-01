@@ -56,7 +56,7 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   zx::result<profiler::SymbolizationContext> GetContexts();
   fxl::WeakPtr<Sampler> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
-  std::unordered_map<zx_koid_t, std::vector<Sample>> GetSamples() { return samples_; }
+  std::unordered_map<zx_koid_t, std::vector<Sample>>& GetSamples() { return samples_; }
   std::vector<zx::ticks> SamplingDurations() { return inspecting_durations_; }
   virtual zx::result<> AddTarget(JobTarget&& target);
   virtual ~Sampler() = default;

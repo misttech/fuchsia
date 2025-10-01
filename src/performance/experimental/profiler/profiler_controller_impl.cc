@@ -436,6 +436,11 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
     return;
   }
 
+  size_t num_samples{0};
+  for (const auto& [_pid, samples] : sampler_->GetSamples()) {
+    num_samples += samples.size();
+  }
+
   zx::result<profiler::SymbolizationContext> modules = sampler_->GetContexts();
   if (modules.is_error()) {
     FX_PLOGS(ERROR, modules.status_value()) << "Failed to get modules";
@@ -454,18 +459,17 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
     }
   }
 
-  const auto samples = sampler_->GetSamples();
   std::vector<zx::ticks> inspecting_durations = sampler_->SamplingDurations();
 
   fuchsia_cpu_profiler::SessionStopResponse stats{{
-      .samples_collected = inspecting_durations.size(),
+      .samples_collected = num_samples,
       .missing_process_mappings = std::vector<zx_koid_t>(),
   }};
 
   // Verify that we were able to grab module information for each process we sampled. If we find any
   // processes without associated modules, report them back to the caller.
   std::set<zx_koid_t> pids_with_missing_modules;
-  for (const auto& [pid, _] : samples) {
+  for (const auto& [pid, _] : sampler_->GetSamples()) {
     if (!modules->process_contexts.contains(pid) && !pids_with_missing_modules.contains(pid)) {
       stats.missing_process_mappings()->push_back(pid);
       pids_with_missing_modules.insert(pid);

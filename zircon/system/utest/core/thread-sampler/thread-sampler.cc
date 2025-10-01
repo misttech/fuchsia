@@ -39,6 +39,19 @@ NEEDS_NEXT_SYSCALL(zx_sampler_create);
 
 namespace {
 
+zx_koid_t GetTid(zx_handle_t thread) {
+  zx_info_handle_basic_t info;
+  size_t actual = 0;
+  size_t avail = 0;
+  if (zx_object_get_info(thread, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), &actual, &avail) !=
+      ZX_OK) {
+    return ZX_KOID_INVALID;
+  }
+  ZX_ASSERT(actual == 1);
+  ZX_ASSERT(avail == 1);
+  return info.koid;
+}
+
 void TestFn(zx::unowned_event event) {
   event->signal(0u, ZX_USER_SIGNAL_0);
   for (;;) {
@@ -69,11 +82,56 @@ zx::result<size_t> CountRecords(const zx::iob& sampler, size_t buffer_size) {
       if (header == 0) {
         break;
       }
-      record_count += 1;
       size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
       if (record_words == 0) {
         return zx::error(ZX_ERR_OUT_OF_RANGE);
       }
+      record_count += 1;
+      offset += record_words * 8;
+    }
+  }
+  return zx::ok(record_count);
+}
+
+zx::result<size_t> CountRecordsContainingTid(const zx::iob& sampler, size_t buffer_size,
+                                             zx_koid_t desired_tid) {
+  zx_info_iob_t info;
+  zx_status_t res = sampler.get_info(ZX_INFO_IOB, &info, sizeof(info), nullptr, nullptr);
+  if (res != ZX_OK) {
+    return zx::error(res);
+  }
+  size_t record_count{0};
+  for (uint32_t i = 0; i < info.region_count; i++) {
+    zx_vaddr_t addr;
+    size_t offset = 0;
+    res = zx::vmar::root_self()->map_iob(ZX_VM_PERM_READ, 0, sampler, i, 0, buffer_size, &addr);
+    if (res != ZX_OK) {
+      return zx::error(res);
+    }
+    auto d = fit::defer([buffer_size, addr]() { zx::vmar::root_self()->unmap(addr, buffer_size); });
+    while (offset < buffer_size) {
+      uint64_t header = *reinterpret_cast<uint64_t*>(addr + offset);
+      if (header == 0) {
+        break;
+      }
+      size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
+      if (record_words == 0) {
+        return zx::error(ZX_ERR_OUT_OF_RANGE);
+      }
+      ZX_ASSERT(fxt::RecordFields::Type::Get<size_t>(header) ==
+                static_cast<size_t>(fxt::RecordType::kLargeRecord));
+      ZX_ASSERT(record_words >= 4);
+      // Record format looks like
+      // 0-7  : header
+      // 8-15 : metadata
+      // 16-23: ts
+      // 24-31: pid
+      // 32-40: tid
+      zx_koid_t tid = *reinterpret_cast<zx_koid_t*>(addr + offset + 32);
+      if (tid == desired_tid) {
+        record_count += 1;
+      }
+
       offset += record_words * 8;
     }
   }
@@ -115,14 +173,17 @@ TEST(ThreadSampler, StartStop) {
   zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
 
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   ASSERT_OK(zx_sampler_start(sampler.get()));
+
+  zx_koid_t tid = GetTid(native_handle);
+  ASSERT_NE(tid, ZX_KOID_INVALID);
+
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
   ASSERT_OK(zx_sampler_stop(sampler.get()));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
 
-  zx::result<size_t> record_count = CountRecords(sampler, buffer_size);
+  zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, 10);
 }
@@ -199,9 +260,10 @@ TEST(ThreadSampler, DroppedSampler) {
   // Create a thread
   std::thread sample_thread{TestFn, event.borrow()};
   zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
+  zx_koid_t tid = GetTid(native_handle);
+  ASSERT_NE(tid, ZX_KOID_INVALID);
 
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   ASSERT_OK(zx_sampler_start(sampler.get()));
 
   // Drop the sampler mid session
@@ -211,7 +273,6 @@ TEST(ThreadSampler, DroppedSampler) {
   create_res =
       zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
   ASSERT_OK(create_res);
-  ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   ASSERT_OK(zx_sampler_start(sampler.get()));
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
   ASSERT_OK(zx_sampler_stop(sampler.get()));
@@ -219,7 +280,7 @@ TEST(ThreadSampler, DroppedSampler) {
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
 
-  zx::result<size_t> record_count = CountRecords(sampler, buffer_size);
+  zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, 10);
 }
@@ -272,13 +333,8 @@ TEST(ThreadSampler, BadIob) {
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
   std::thread sample_thread{TestFn, event.borrow()};
-  zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
-
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_attach(ep0, native_handle));
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_attach(ep1, native_handle));
 
-  ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_stop(ep0));
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_stop(ep1));
   EXPECT_OK(zx_sampler_stop(sampler.get()));
@@ -321,12 +377,9 @@ TEST(ThreadSampler, NoRights) {
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
   std::thread sample_thread{TestFn, event.borrow()};
-  zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
 
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_attach(no_right_sampler.get(), native_handle));
 
-  ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_stop(no_right_sampler.get()));
   EXPECT_OK(zx_sampler_stop(sampler.get()));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
@@ -364,10 +417,8 @@ TEST(ThreadSampler, ClosedHandleReadBuffers) {
 
   // Create a thread
   std::thread sample_thread{TestFn, event.borrow()};
-  zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
 
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   ASSERT_OK(zx_sampler_start(sampler.get()));
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
   ASSERT_OK(zx_sampler_stop(sampler.get()));
@@ -437,7 +488,8 @@ TEST(ThreadSampler, NonRunningThread) {
   }
   TestThread test_thread;
   ASSERT_NO_FATAL_FAILURE(test_thread.Init("NonRunningThread"));
-  ASSERT_OK(zx_sampler_attach(sampler.get(), test_thread.thread().get()));
+  zx_koid_t tid = GetTid(test_thread.thread().get());
+  ASSERT_NE(tid, ZX_KOID_INVALID);
 
   ASSERT_OK(create_res);
 
@@ -458,7 +510,7 @@ TEST(ThreadSampler, NonRunningThread) {
 
   ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
 
-  zx::result<size_t> record_count = CountRecords(sampler, buffer_size);
+  zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, size_t{10});
 }
@@ -498,11 +550,8 @@ TEST(ThreadSampler, HighFrequency) {
     ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
 
     // Create a thread
-    std::thread& sample_thread = threads.emplace_back(TestFn, event.borrow());
-    zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
-
+    threads.emplace_back(TestFn, event.borrow());
     ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-    ASSERT_OK(zx_sampler_attach(sampler.get(), native_handle));
   }
 
   ASSERT_OK(zx_sampler_start(sampler.get()));

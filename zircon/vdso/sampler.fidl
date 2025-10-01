@@ -113,14 +113,12 @@ closed protocol Sampler {
     ///
     /// ## See also
     ///
-    ///  - [`zx_sampler_attach()`]
     ///  - [`zx_sampler_start()`]
     ///  - [`zx_sampler_stop()`]
     ///  - [FXT Format]
     ///  - [`zx_vmar_map_iob()`]
     ///
     /// [FXT Large Blob with Metadata]: /docs/reference/tracing/trace-format.md#large-blob-record
-    /// [`zx_sampler_attach()`]: sampler_attach.md
     /// [`zx_sampler_start()`]: sampler_start.md
     /// [`zx_sampler_stop()`]: sampler_stop.md
     /// [FXT Format]: /docs/reference/tracing/trace-format.md
@@ -133,58 +131,6 @@ closed protocol Sampler {
     }) -> (resource struct {
         per_cpu_buffers Handle;
     }) error Status;
-
-    /// ## Summary
-    ///
-    /// Configure a thread to have its stack periodically sampled and written to
-    /// the provided IOBuffer. The provided IOBuffer must be one previously
-    /// returned by zx_sampler_create.
-    ///
-    /// ## Declaration
-    ///
-    /// ```c
-    /// #include <zircon/syscalls.h>
-    ///
-    /// zx_status_t zx_sampler_attach(zx_handle_t iobuffer,
-    ///                               zx_handle_t thread);
-    /// ```
-    ///
-    /// ## Description
-    ///
-    /// Configure a thread to have its stack periodically sampled and written to
-    /// the provided IOBuffer. The provided IOBuffer must be one previously
-    /// returned by zx_sampler_create. The frequency and write strategy of
-    /// sampling is determined by the zx_sampler_config_t used when calling
-    /// zx_sampler_create.
-    ///
-    /// If a thread is attached to before a session starts, in which it will be
-    /// sampled when the session starts. Alternatively, if a thread is attached
-    /// to during a session, it will start to be sampled immediately.
-    ///
-    /// ## Errors
-    ///
-    /// `ZX_ERR_BAD_STATE` The requested `thread` to be sampled is not in a
-    /// state where it can be sampled. It is either ZX_THREAD_STATE_DYING or
-    /// ZX_THREAD_STATE_DEAD.
-    ///
-    /// `ZX_ERR_NOT_SUPPORTED`  `kernel.enable-debugging-syscalls` is not set to `true`
-    /// on the kernel command line or the experimental_thread_sampler_enabled
-    /// build param is not set to true.
-    ///
-    /// `ZX_ERR_PERMISION_DENIED`
-    /// - *iobuffer* is not an IOBuffer returned by zx_sampler_create.
-    /// - *thread* does not have ZX_RIGHT_READ.
-    ///
-    /// ## See also
-    ///
-    ///  - [`zx_sampler_create()`]
-    ///
-    /// [`zx_sampler_create()`]: sampler_create.md
-    @next
-    strict Attach(resource struct {
-        iobuffer Handle;
-        thread Handle:THREAD;
-    }) -> () error Status;
 
     /// ## Summary
     ///
@@ -222,11 +168,9 @@ closed protocol Sampler {
     ///
     /// ## See also
     ///
-    ///  - [`zx_sampler_attach()`]
     ///  - [`zx_sampler_create()`]
     ///  - [`zx_sampler_stop()`]
     ///
-    /// [`zx_sampler_attach()`]: sampler_attach.md
     /// [`zx_sampler_create()`]: sampler_create.md
     /// [`zx_sampler_stop()`]: sampler_stop.md
     @next
@@ -269,11 +213,9 @@ closed protocol Sampler {
     ///
     /// ## See also
     ///
-    ///  - [`zx_sampler_attach()`]
     ///  - [`zx_sampler_create()`]
     ///  - [`zx_sampler_start()`]
     ///
-    /// [`zx_sampler_attach()`]: sampler_attach.md
     /// [`zx_sampler_create()`]: sampler_create.md
     /// [`zx_sampler_start()`]: sampler_stop.md
     @next

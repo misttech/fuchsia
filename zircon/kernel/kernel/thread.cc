@@ -1335,22 +1335,13 @@ void Thread::Current::DoSampleStack(GeneralRegsSource source, void* gregs) {
       return;
     }
 
-    const uint64_t expected_sampler = current_thread->user_thread()->SamplerId();
-
     // If a thread was marked to be sampled but was first suspended, it may now be long after the
     // sampling session has ended. sampler::SampleThread grabs the global state, checks if it's
-    // valid and if the session is the one we were expecting to sample to before attempting a
-    // sample.
+    // still valid.
     auto sampler_result = sampler::ThreadSamplerDispatcher::SampleThread(
-        current_thread->pid(), current_thread->tid(), source, gregs, expected_sampler);
-    // ZX_ERR_NOT_SUPPORTED indicates that we didn't take a sample, but that was intentional and we
-    // should move on.
-    if (sampler_result.is_error() && sampler_result.error_value() != ZX_ERR_NOT_SUPPORTED) {
-      // Any other error means sampling failed for this thread and likely won't succeed in the
-      // future. Likely either the global sampler is now disabled or the per cpu buffer is full.
-      // Disable future attempts to sample.
+        current_thread->pid(), current_thread->tid(), source, gregs);
+    if (sampler_result.is_error()) {
       kcounter_add(thread_sampling_failed, 1);
-      current_thread->user_thread()->DisableStackSampling();
     }
   }
 }

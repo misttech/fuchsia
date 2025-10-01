@@ -67,7 +67,7 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
   // It should only be called from Thread::Current::ProcessPendingSignals where we can be user that
   // the user copies are safe to do and where the current stack size should be relatively shallow.
   static zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                                   void* gregs, uint64_t sampler_koid);
+                                   void* gregs);
 
  protected:
   internal::PerCpuState& GetPerCpuState(size_t i) const { return per_cpu_state_[i]; }
@@ -85,8 +85,8 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
 
   // Given information about a thread and its registers, walk its userstack and write out a sample
   // if sampling is enabled.
-  zx::result<> SampleThreadImpl(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source, void* gregs,
-                                uint64_t sampler_session);
+  zx::result<> SampleThreadImpl(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
+                                void* gregs);
   zx::result<> StartImpl() TA_EXCL(get_lock());
   zx::result<> StopImpl() TA_EXCL(get_lock());
 

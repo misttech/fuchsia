@@ -82,36 +82,6 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
       buffers_out);
 }
 
-// zx_status_t zx_sampler_attach
-zx_status_t sys_sampler_attach(zx_handle_t iobuffer, zx_handle_t thread) {
-  if constexpr (!kSamplerEnabled) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  if (!gBootOptions->enable_debugging_syscalls) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<ThreadDispatcher> thread_dispatcher;
-
-  if (zx_status_t status = up->handle_table().GetDispatcherWithRights(*up, thread, ZX_RIGHT_READ,
-                                                                      &thread_dispatcher);
-      status != ZX_OK) {
-    return status;
-  }
-
-  fbl::RefPtr<IoBufferDispatcher> thread_sampler;
-  if (zx_status_t status = up->handle_table().GetDispatcherWithRights(
-          *up, iobuffer, ZX_RIGHT_APPLY_PROFILE, &thread_sampler);
-      status != ZX_OK) {
-    return status;
-  }
-
-  return sampler::ThreadSamplerDispatcher::AddThread(thread_sampler, thread_dispatcher)
-      .status_value();
-}
-
 // zx_status_t zx_sampler_start
 zx_status_t sys_sampler_start(zx_handle_t iobuffer) {
   if constexpr (!kSamplerEnabled) {

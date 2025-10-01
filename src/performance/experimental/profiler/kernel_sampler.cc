@@ -11,6 +11,8 @@
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls.h>
 
+#include <unordered_set>
+
 #include <trace-reader/reader.h>
 #include <trace-reader/records.h>
 
@@ -63,12 +65,6 @@ zx::result<> profiler::KernelSamplerSession::Stop() {
   return zx::make_result(zx_sampler_stop(per_cpu_buffers_.get()));
 }
 
-zx::result<> profiler::KernelSamplerSession::AttachThread(const zx::thread& thread) const {
-  TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-  FX_LOGS(DEBUG) << "Attaching to thread: " << thread.get();
-  return zx::make_result(zx_sampler_attach(per_cpu_buffers_.get(), thread.get()));
-}
-
 zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   // Verify we support the requested samples
@@ -110,19 +106,6 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
         // Before we start sampling the thread, make sure we've recorded information about its
         // process
         CacheModules(p);
-
-        for (const auto& [koid, thread] : p.threads) {
-          zx::result res = session_->AttachThread(thread.handle);
-          if (res.is_ok()) {
-            continue;
-          }
-          if (res.error_value() == ZX_ERR_BAD_STATE) {
-            FX_PLOGS(DEBUG, res.error_value()) << "Thread exited before attaching, skipping";
-          } else {
-            FX_PLOGS(ERROR, res.error_value()) << "Failed to attach sampler to thread.";
-            return res;
-          }
-        }
 
         std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
         auto process_watcher = std::make_unique<ProcessWatcher>(
@@ -177,13 +160,6 @@ zx::result<> profiler::KernelSampler::AddTarget(JobTarget&& target) {
           // Before we start sampling the thread, make sure we've recorded information about its
           // process
           CacheModules(p);
-
-          for (const auto& [koid, thread] : p.threads) {
-            if (zx::result res = session_->AttachThread(thread.handle); res.is_error()) {
-              FX_PLOGS(ERROR, res.error_value()) << "failed Add thread target";
-              return res;
-            }
-          }
           return zx::ok();
         });
     if (res.is_error()) {
@@ -215,7 +191,19 @@ zx::result<> profiler::KernelSampler::Stop() {
     return zx::error(res);
   }
 
-  trace::TraceReader::RecordConsumer consume_record = [this](trace::Record rec) {
+  // Flatten the watched threads so that we can filter out the records that aren't relevant.
+  std::unordered_set<zx_koid_t> profiled_threads;
+
+  // This will always return zx::ok;
+  auto _ = targets_.ForEachProcess(
+      [&profiled_threads](std::span<const zx_koid_t> job_path, const ProcessTarget& p) {
+        for (const auto& [koid, _] : p.threads) {
+          profiled_threads.insert(koid);
+        }
+        return zx::ok();
+      });
+
+  trace::TraceReader::RecordConsumer consume_record = [this, &profiled_threads](trace::Record rec) {
     if (rec.type() != trace::RecordType::kLargeRecord) {
       FX_LOGS(WARNING) << "Unhandled record type: " << static_cast<uint64_t>(rec.type());
       return;
@@ -237,14 +225,12 @@ zx::result<> profiler::KernelSampler::Stop() {
         std::get<trace::LargeRecordData::BlobEvent>(blob);
     // The blob we are given is an array of instruction pointers of size blob_size
     const uint64_t* read_head = reinterpret_cast<const uint64_t*>(blob_event.blob);
-    const std::vector<uint64_t> stack{read_head,
-                                      read_head + blob_event.blob_size / sizeof(uint64_t)};
+    std::vector<uint64_t> stack{read_head, read_head + (blob_event.blob_size / sizeof(uint64_t))};
     const zx_koid_t pid = blob_event.process_thread.process_koid();
     const zx_koid_t tid = blob_event.process_thread.thread_koid();
-    samples_[pid].push_back({pid, tid, std::move(stack)});
-
-    // TODO(gmtr) figure out how properly measure the overhead of kernel sampling
-    inspecting_durations_.emplace_back(0);
+    if (profiled_threads.contains(tid)) {
+      samples_[pid].emplace_back(pid, tid, std::move(stack));
+    }
   };
   zx_status_t encountered_error = ZX_OK;
   trace::TraceReader::ErrorHandler handle_error = [&encountered_error](std::string_view err) {
@@ -290,10 +276,7 @@ void profiler::KernelSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid
     }
   }
 
-  if (zx::result res = session_->AttachThread(t); res.is_error()) {
-    FX_PLOGS(ERROR, res.status_value()) << "Failed to start sampling thread: " << tid;
-  }
-  // Add the the thread it so we can later grab its address space and module information for
+  // Add the thread so we can later grab its address space and module information for
   // symbolization purposes.
   if (zx::result res =
           targets_.AddThread(job_path, pid, ThreadTarget{.handle = std::move(t), .tid = tid});
@@ -304,9 +287,8 @@ void profiler::KernelSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid
 
 void profiler::KernelSampler::RemoveThread(std::vector<zx_koid_t> job_path, zx_koid_t pid,
                                            zx_koid_t tid) {
+  // Skip removing the thread, we need its metadata to remain around for when we read through the
+  // samples. Once we have streaming and we won't have any more samplings coming from the thread any
+  // more, we can properly remove it.
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__, "pid", pid, "tid", tid);
-  zx::result res = targets_.RemoveThread(job_path, pid, tid);
-  if (res.is_error()) {
-    FX_PLOGS(ERROR, res.status_value()) << "Failed to remove exited thread: " << tid;
-  }
 }

@@ -201,8 +201,7 @@ void sampler::ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
 
 zx::result<> sampler::ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, zx_koid_t tid,
                                                                 GeneralRegsSource source,
-                                                                void* gregs,
-                                                                uint64_t sampler_koid) {
+                                                                void* gregs) {
   DEBUG_ASSERT(GetEndpointId() == IobEndpointId::Ep0);
   // We are going to attempt a usercopy below which might fault, so interrupts cannot be disabled.
   DEBUG_ASSERT(!arch_ints_disabled());
@@ -225,8 +224,8 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, z
   //
   // If we find that writes are disabled, we throw away our sample as it's no longer safe to write
   // to the buffers.
-  if (State() != SamplingState::Running || sampler_koid != get_koid()) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  if (State() != SamplingState::Running) {
+    return zx::error(ZX_ERR_BAD_STATE);
   }
 
   size_t frame_num = 0;
@@ -420,26 +419,8 @@ zx::result<> sampler::ThreadSamplerDispatcher::Start(const fbl::RefPtr<IoBufferD
   return gThreadSampler_.dispatcher()->StartImpl();
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::AddThread(
-    const fbl::RefPtr<IoBufferDispatcher>& disp, const fbl::RefPtr<ThreadDispatcher>& thread) {
-  Guard<Mutex> guard(ThreadSamplerLock::Get());
-  if (gThreadSampler_.dispatcher() == nullptr) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  if (disp->get_koid() != gThreadSampler_.dispatcher()->get_related_koid()) {
-    return zx::error(ZX_ERR_BAD_HANDLE);
-  }
-  return zx::make_result(thread->EnableStackSampling(gThreadSampler_.dispatcher()->get_koid()));
-}
-
 zx::result<> sampler::ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_koid_t tid,
-                                                            GeneralRegsSource source, void* gregs,
-                                                            uint64_t sampler_koid) {
-  if (sampler_koid == ZX_KOID_INVALID) {
-    // Whatever thread this sampler_koid came from doesn't have sampling enabled.
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
-
+                                                            GeneralRegsSource source, void* gregs) {
   fbl::RefPtr<sampler::ThreadSamplerDispatcher> sampler_ref;
   {
     // We hold the global ThreadSamplerLock only long enough to increase the reference count on
@@ -460,5 +441,5 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_ko
     sampler_ref = gThreadSampler_.dispatcher();
   }
 
-  return sampler_ref->SampleThreadImpl(pid, tid, source, gregs, sampler_koid);
+  return sampler_ref->SampleThreadImpl(pid, tid, source, gregs);
 }

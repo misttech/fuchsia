@@ -122,7 +122,6 @@
     "zx_restricted_enter",
     "zx_restricted_kick",
     "zx_restricted_unbind_state",
-    "zx_sampler_attach",
     "zx_sampler_create",
     "zx_sampler_start",
     "zx_sampler_stop",
