@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::TODO_DENY;
 use crate::security::selinux_hooks::{
     BinderConnectionState, check_permission, check_self_permission, current_task_state,
+    todo_check_permission,
 };
 use crate::task::CurrentTask;
 use selinux::{BinderPermission, SecurityServer};
@@ -72,4 +74,25 @@ pub fn binder_transaction(
         audit_context,
     )?;
     Ok(())
+}
+
+/// Checks whether the given `current_task` has permission to transfer Binder objects
+/// to the `target_task`.
+pub fn binder_transfer_binder(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    target_task: &Task,
+) -> Result<(), Errno> {
+    let audit_context = current_task.into();
+    let source_sid = current_task_state(current_task).lock().current_sid;
+    let target_sid = target_task.security_state.lock().current_sid;
+    todo_check_permission(
+        TODO_DENY!("https://fxbug.dev/364569358", "Enforce all the time in all contexts."),
+        &security_server.as_permission_check(),
+        current_task,
+        source_sid,
+        target_sid,
+        BinderPermission::Transfer,
+        audit_context,
+    )
 }

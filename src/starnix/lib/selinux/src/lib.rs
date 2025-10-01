@@ -1188,6 +1188,8 @@ class_permission_enum! {
         Impersonate("impersonate"),
         /// Permission to set oneself as a context manager.
         SetContextMgr("set_context_mgr"),
+        /// Permission to transfer Binder objects as part of a Binder transaction.
+        Transfer("transfer"),
         // keep-sorted end
     }
 }

@@ -4276,6 +4276,7 @@ impl BinderDriver {
                     binder_proc,
                     binder_thread,
                     files,
+                    &target_task,
                     target_proc.get_resource_accessor(target_task.deref()),
                     &target_proc,
                     &data,
@@ -4448,6 +4449,7 @@ impl BinderDriver {
                     binder_proc,
                     binder_thread,
                     files,
+                    &target_task,
                     target_proc.get_resource_accessor(target_task.deref()),
                     &target_proc,
                     &data,
@@ -4671,6 +4673,7 @@ impl BinderDriver {
         source_proc: &BinderProcess,
         source_thread: &BinderThread,
         source_files: &mut Vec<fbinder::FileHandle>,
+        target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
         target_proc: &BinderProcess,
         data: &binder_transaction_data_sg,
@@ -4726,6 +4729,7 @@ impl BinderDriver {
             source_proc,
             source_thread,
             source_files,
+            target_task,
             target_resource_accessor,
             target_proc,
             allocations.offsets_buffer.as_bytes(),
@@ -4824,6 +4828,7 @@ impl BinderDriver {
         source_proc: &BinderProcess,
         source_thread: &BinderThread,
         source_files: &mut Vec<fbinder::FileHandle>,
+        target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
         target_proc: &BinderProcess,
         offsets: &[binder_uintptr_t],
@@ -4850,6 +4855,9 @@ impl BinderDriver {
                     SerializedBinderObject::from_bytes(&transaction_data[object_offset..])?;
                 let translated_object = match serialized_object {
                     SerializedBinderObject::Handle { handle, flags, cookie } => {
+                        security::binder_transfer_binder(current_task, target_task)
+                            .map_err(|_| TransactionError::Failure)?;
+
                         match handle {
                             Handle::ContextManager => {
                                 // The special handle 0 does not need to be translated. It is universal.
@@ -4896,6 +4904,9 @@ impl BinderDriver {
                         }
                     }
                     SerializedBinderObject::Object { local, flags } => {
+                        security::binder_transfer_binder(current_task, target_task)
+                            .map_err(|_| TransactionError::Failure)?;
+
                         let mut actions = RefCountActions::default();
                         release_after!(actions, (), {
                             // We are passing a binder object across process boundaries. We need
@@ -6862,6 +6873,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    &receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &transaction,
@@ -6939,6 +6951,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -7036,6 +7049,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -7120,6 +7134,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -7242,6 +7257,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -7400,6 +7416,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     current_task,
+                    current_task,
                     &receiver.proc,
                     &input,
                     None,
@@ -7507,6 +7524,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &input,
                     None,
@@ -7592,6 +7610,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &input,
@@ -8067,6 +8086,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &input,
                     None,
@@ -8117,6 +8137,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &[0 as binder_uintptr_t],
                     &mut transaction_data,
@@ -8155,6 +8176,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &[0 as binder_uintptr_t],
@@ -8205,6 +8227,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &[
@@ -8592,6 +8615,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -8684,6 +8708,7 @@ pub mod tests {
                     &sender.thread,
                     &mut source_files,
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -8749,6 +8774,7 @@ pub mod tests {
                     &sender.thread,
                     &mut Vec::new(),
                     receiver.task(),
+                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -8806,6 +8832,7 @@ pub mod tests {
                     &sender.proc,
                     &sender.thread,
                     &mut Vec::new(),
+                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
