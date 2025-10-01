@@ -33,10 +33,10 @@ Examples:
 EOF
 } # end usage
 
-if [["$#" -ne 2 ]]; then
+if [[ "$#" -ne 2 ]]; then
   echo "Error: Incorrect number of arguments." >&2
   usage
-  exit 1
+  exit 125
 fi
 
 readonly TOOLCHAIN_BUILDER=$1
@@ -49,7 +49,7 @@ echo "Current LLVM commit: $LLVM_COMMIT"
 
 echo "Building toolchain using $TOOLCHAIN_BUILDER at LLVM commit $LLVM_COMMIT..."
 
-local DIRNAME="$(dirname "$0")"
+readonly DIRNAME="$(dirname "$0")"
 
 # Launch the toolchain build at the specific LLVM commit and wait for its CAS digest.
 # We replicate the led-try-head launch logic but pipe the output of led launch
@@ -64,8 +64,8 @@ TOOLCHAIN_DIGEST="$(
 # Check if we successfully obtained a digest. led-wait-for-cas exits non-zero
 # on failure, which set -e will catch, but an explicit check is also good.
 if [[ -z "$TOOLCHAIN_DIGEST" ]]; then
-  echo "error: failed to get toolchain CAS digest from led-wait-for-cash"
-  exit 1
+  echo "error: failed to get toolchain CAS digest from led-wait-for-cas"
+  exit 125
 fi
 
 echo "Toolchain built successfully. CAS digest: $TOOLCHAIN_DIGEST"
