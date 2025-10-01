@@ -8,12 +8,10 @@ use crate::telemetry::TelemetryEvent::{ScanQueueStatistics, ScanRequestFulfillme
 use crate::telemetry::TelemetrySender;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use futures::channel::oneshot;
-use lazy_static::lazy_static;
 use log::warn;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref WILDCARD_SSID: Ssid = Ssid::from_bytes_unchecked("".into());
-}
+static WILDCARD_SSID: LazyLock<Ssid> = LazyLock::new(|| Ssid::from_bytes_unchecked("".into()));
 
 struct QueuedRequest {
     reason: ScanReason,
@@ -141,7 +139,12 @@ impl RequestQueue {
                     reason = "mass allow for https://fxbug.dev/381896734"
                 )]
                 if let Err(_) = req.responder.send(result.clone()) {
-                    warn!("Failed to send scan results to requester, receiving end was dropped. Request reason: {:?}, ssid count: {}, channel count: {}", req.reason, req.ssids.len(), req.channels.len());
+                    warn!(
+                        "Failed to send scan results to requester, receiving end was dropped. Request reason: {:?}, ssid count: {}, channel count: {}",
+                        req.reason,
+                        req.ssids.len(),
+                        req.channels.len()
+                    );
                 };
                 // Record metrics about scan request fulfillment time
                 let req_duration = current_time - req.received_at;
@@ -174,9 +177,8 @@ mod tests {
     use futures::channel::mpsc;
     use test_case::test_case;
 
-    lazy_static! {
-        static ref WILDCARD_STR: String = WILDCARD_SSID.to_string_not_redactable().into();
-    }
+    static WILDCARD_STR: LazyLock<String> =
+        LazyLock::new(|| WILDCARD_SSID.to_string_not_redactable().into());
 
     fn active_sme_req(ssids: Vec<&str>, channels: Vec<u8>) -> fidl_sme::ScanRequest {
         fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {

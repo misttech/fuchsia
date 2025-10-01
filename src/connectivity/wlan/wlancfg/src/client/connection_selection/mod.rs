@@ -7,8 +7,8 @@ use crate::client::types::{
     self, Bss, InternalSavedNetworkData, SecurityType, SecurityTypeDetailed,
 };
 use crate::config_management::{
-    self, network_config, select_authentication_method, select_subset_potentially_hidden_networks,
-    Credential, SavedNetworksManagerApi,
+    self, Credential, SavedNetworksManagerApi, network_config, select_authentication_method,
+    select_subset_potentially_hidden_networks,
 };
 use crate::telemetry::{self, TelemetryEvent, TelemetrySender};
 use anyhow::format_err;
@@ -636,7 +636,10 @@ fn merge_config_and_scan_data(
         let authenticator = match get_authenticator(bss, &network_config.credential) {
             Some(authenticator) => authenticator,
             None => {
-                error!("Failed to create authenticator for bss candidate {:?} (SSID: {:?}). Removing from candidates.", bss.bssid, &network_config.ssid);
+                error!(
+                    "Failed to create authenticator for bss candidate {:?} (SSID: {:?}). Removing from candidates.",
+                    bss.bssid, &network_config.ssid
+                );
                 continue;
             }
         };
@@ -680,7 +683,10 @@ async fn merge_saved_networks_and_scan_data(
                 let authenticator = match get_authenticator(&bss, &saved_config.credential) {
                     Some(authenticator) => authenticator,
                     None => {
-                        error!("Failed to create authenticator for bss candidate {} (SSID: {}). Removing from candidates.", bss.bssid, saved_config.ssid);
+                        error!(
+                            "Failed to create authenticator for bss candidate {} (SSID: {}). Removing from candidates.",
+                            bss.bssid, saved_config.ssid
+                        );
                         continue;
                     }
                 };
@@ -755,13 +761,13 @@ mod tests {
         generate_random_password, generate_random_scan_result, generate_random_scanned_candidate,
     };
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyNumericProperty};
+    use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
     use futures::task::Poll;
     use ieee80211_testutils::BSSID_REGEX;
-    use lazy_static::lazy_static;
     use rand::Rng;
     use std::pin::pin;
     use std::rc::Rc;
+    use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::bss::BssDescription;
     use wlan_common::random_fidl_bss_description;
@@ -772,9 +778,8 @@ mod tests {
         fuchsia_async as fasync, fuchsia_inspect as inspect,
     };
 
-    lazy_static! {
-        pub static ref TEST_PASSWORD: Credential = Credential::Password(b"password".to_vec());
-    }
+    pub static TEST_PASSWORD: LazyLock<Credential> =
+        LazyLock::new(|| Credential::Password(b"password".to_vec()));
 
     struct TestValues {
         connection_selector: Rc<ConnectionSelector>,
@@ -845,19 +850,23 @@ mod tests {
         let credential_2 = Credential::Password("bar_pass".as_bytes().to_vec());
 
         // insert the saved networks
-        assert!(test_values
-            .real_saved_network_manager
-            .store(test_id_1.clone(), credential_1.clone())
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            test_values
+                .real_saved_network_manager
+                .store(test_id_1.clone(), credential_1.clone())
+                .await
+                .unwrap()
+                .is_none()
+        );
 
-        assert!(test_values
-            .real_saved_network_manager
-            .store(test_id_2.clone(), credential_2.clone())
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            test_values
+                .real_saved_network_manager
+                .store(test_id_2.clone(), credential_2.clone())
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         // build some scan results
         let mock_scan_results = vec![
@@ -1095,12 +1104,13 @@ mod tests {
         let credential_1 = Credential::Password("foo_pass".as_bytes().to_vec());
 
         // insert saved networks
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 test_values.saved_network_manager.store(test_id_1.clone(), credential_1.clone()),
             )
             .unwrap()
-            .is_none());
+            .is_none()
+        );
 
         // Prep the scan results
         let mutual_security_protocols_1 = [SecurityDescriptor::WPA3_PERSONAL];
@@ -1159,30 +1169,33 @@ mod tests {
         let credential = Credential::Password("some_pass".as_bytes().to_vec());
 
         // insert saved networks
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 test_values
                     .saved_network_manager
                     .store(test_id_not_hidden.clone(), credential.clone()),
             )
             .unwrap()
-            .is_none());
-        assert!(exec
-            .run_singlethreaded(
+            .is_none()
+        );
+        assert!(
+            exec.run_singlethreaded(
                 test_values
                     .saved_network_manager
                     .store(test_id_maybe_hidden.clone(), credential.clone()),
             )
             .unwrap()
-            .is_none());
-        assert!(exec
-            .run_singlethreaded(
+            .is_none()
+        );
+        assert!(
+            exec.run_singlethreaded(
                 test_values
                     .saved_network_manager
                     .store(test_id_hidden_but_seen.clone(), credential.clone()),
             )
             .unwrap()
-            .is_none());
+            .is_none()
+        );
 
         // Set the hidden probability for test_id_not_hidden and test_id_hidden_but_seen
         exec.run_singlethreaded(
@@ -1342,8 +1355,10 @@ mod tests {
         );
 
         // Kick off network selection
-        let mut connection_selection_fut = pin!(connection_selector
-            .find_and_select_connection_candidate(None, generate_random_connect_reason()));
+        let mut connection_selection_fut = pin!(
+            connection_selector
+                .find_and_select_connection_candidate(None, generate_random_connect_reason())
+        );
         // Check that nothing is returned
         assert_matches!(exec.run_until_stalled(&mut connection_selection_fut), Poll::Ready(None));
 
@@ -1402,22 +1417,24 @@ mod tests {
         let bssid_2 = types::Bssid::from([2, 2, 2, 2, 2, 2]);
 
         // insert some new saved networks
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 test_values
                     .real_saved_network_manager
                     .store(test_id_1.clone(), credential_1.clone()),
             )
             .unwrap()
-            .is_none());
-        assert!(exec
-            .run_singlethreaded(
+            .is_none()
+        );
+        assert!(
+            exec.run_singlethreaded(
                 test_values
                     .real_saved_network_manager
                     .store(test_id_2.clone(), credential_2.clone()),
             )
             .unwrap()
-            .is_none());
+            .is_none()
+        );
 
         // Mark them as having connected. Make connection passive so that no active scans are made.
         exec.run_singlethreaded(test_values.real_saved_network_manager.record_connect_result(
@@ -1505,8 +1522,10 @@ mod tests {
         ])));
 
         // Check that we pick a network
-        let mut connection_selection_fut = pin!(connection_selector
-            .find_and_select_connection_candidate(None, generate_random_connect_reason()));
+        let mut connection_selection_fut = pin!(
+            connection_selector
+                .find_and_select_connection_candidate(None, generate_random_connect_reason())
+        );
         let results =
             exec.run_singlethreaded(&mut connection_selection_fut).expect("no selected candidate");
         assert_eq!(&results.network, &test_id_1.clone());
@@ -1599,14 +1618,15 @@ mod tests {
         };
 
         // insert saved networks
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 test_values
                     .real_saved_network_manager
                     .store(test_id_1.clone(), TEST_PASSWORD.clone()),
             )
             .unwrap()
-            .is_none());
+            .is_none()
+        );
 
         // Prep the scan results
         let mutual_security_protocols_1 = [SecurityDescriptor::WPA3_PERSONAL];
@@ -1928,9 +1948,9 @@ mod tests {
         let mut requester = ConnectionSelectionRequester { sender: request_sender };
 
         // Call request method
-        let mut connection_selection_fut =
-            pin!(requester
-                .do_connection_selection(None, types::ConnectReason::IdleInterfaceAutoconnect));
+        let mut connection_selection_fut = pin!(
+            requester.do_connection_selection(None, types::ConnectReason::IdleInterfaceAutoconnect)
+        );
         assert_matches!(exec.run_until_stalled(&mut connection_selection_fut), Poll::Pending);
 
         // Run the service loop forward

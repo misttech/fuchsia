@@ -1524,9 +1524,10 @@ mod tests {
     use futures::stream::StreamFuture;
     use futures::task::Poll;
     use ieee80211::MacAddr;
-    use lazy_static::lazy_static;
+
     use std::collections::HashMap;
     use std::pin::pin;
+    use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::RadioConfig;
     use wlan_common::channel::Cbw;
@@ -1537,9 +1538,8 @@ mod tests {
     pub const TEST_AP_IFACE_ID: u16 = 1;
 
     // Fake WLAN network that tests will scan for and connect to.
-    lazy_static! {
-        pub static ref TEST_SSID: ap_types::Ssid = ap_types::Ssid::try_from("test_ssid").unwrap();
-    }
+    pub static TEST_SSID: LazyLock<ap_types::Ssid> =
+        LazyLock::new(|| ap_types::Ssid::try_from("test_ssid").unwrap());
     pub static TEST_PASSWORD: &str = "test_password";
 
     /// Holds all of the boilerplate required for testing IfaceManager.

@@ -33,14 +33,14 @@ use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
 use futures::task::Poll;
-use lazy_static::lazy_static;
+
 use log::{debug, info};
 use proc_macros::with_roam_protection_permutations;
 use rand::Rng;
 use std::convert::Infallible;
 use std::pin::{Pin, pin};
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use test_case::test_case;
 use wlan_common::random_fidl_bss_description;
 use wlan_common::scan::write_vmo;
@@ -60,10 +60,9 @@ pub const TEST_CLIENT_IFACE_ID: u16 = 42;
 pub const TEST_PHY_ID: u16 = 41;
 const RECOVERY_PROFILE_EMPTY_STRING: &str = "";
 const RECOVERY_PROFILE_THRESHOLDED_RECOVERY: &str = "thresholded_recovery";
-lazy_static! {
-    pub static ref TEST_SSID: types::Ssid = types::Ssid::try_from("test_ssid").unwrap();
-}
 
+pub static TEST_SSID: LazyLock<types::Ssid> =
+    LazyLock::new(|| types::Ssid::try_from("test_ssid").unwrap());
 #[derive(Clone)]
 pub struct TestCredentials {
     policy: fidl_policy::Credential,
@@ -80,70 +79,69 @@ pub struct TestCredentialVariants {
     pub wpa_psk: TestCredentials,
 }
 
-lazy_static! {
-    pub static ref TEST_CREDS: TestCredentialVariants = TestCredentialVariants {
+pub static TEST_CREDS: LazyLock<TestCredentialVariants> =
+    LazyLock::new(|| TestCredentialVariants {
         none: TestCredentials {
             policy: fidl_policy::Credential::None(fidl_policy::Empty),
-            sme: None
+            sme: None,
         },
         wep_64_hex: TestCredentials {
             policy: fidl_policy::Credential::Password(b"7465737431".to_vec()),
             sme: Some(Box::new(fidl_common_security::Credentials::Wep(
-                fidl_common_security::WepCredentials { key: b"test1".to_vec() }
-            )))
+                fidl_common_security::WepCredentials { key: b"test1".to_vec() },
+            ))),
         },
         wep_64_ascii: TestCredentials {
             policy: fidl_policy::Credential::Password(b"test1".to_vec()),
             sme: Some(Box::new(fidl_common_security::Credentials::Wep(
-                fidl_common_security::WepCredentials { key: b"test1".to_vec() }
-            )))
+                fidl_common_security::WepCredentials { key: b"test1".to_vec() },
+            ))),
         },
         wep_128_hex: TestCredentials {
             policy: fidl_policy::Credential::Password(b"74657374317465737432333435".to_vec()),
             sme: Some(Box::new(fidl_common_security::Credentials::Wep(
-                fidl_common_security::WepCredentials { key: b"test1test2345".to_vec() }
-            )))
+                fidl_common_security::WepCredentials { key: b"test1test2345".to_vec() },
+            ))),
         },
         wep_128_ascii: TestCredentials {
             policy: fidl_policy::Credential::Password(b"test1test2345".to_vec()),
             sme: Some(Box::new(fidl_common_security::Credentials::Wep(
-                fidl_common_security::WepCredentials { key: b"test1test2345".to_vec() }
-            )))
+                fidl_common_security::WepCredentials { key: b"test1test2345".to_vec() },
+            ))),
         },
         wpa_pass_min: TestCredentials {
             policy: fidl_policy::Credential::Password(b"eight111".to_vec()),
             sme: Some(Box::new(fidl_common_security::Credentials::Wpa(
-                fidl_common_security::WpaCredentials::Passphrase(b"eight111".to_vec())
-            )))
+                fidl_common_security::WpaCredentials::Passphrase(b"eight111".to_vec()),
+            ))),
         },
         wpa_pass_max: TestCredentials {
             policy: fidl_policy::Credential::Password(
-                b"thisIs63CharactersLong!!!#$#%thisIs63CharactersLong!!!#$#%00009".to_vec()
+                b"thisIs63CharactersLong!!!#$#%thisIs63CharactersLong!!!#$#%00009".to_vec(),
             ),
             sme: Some(Box::new(fidl_common_security::Credentials::Wpa(
                 fidl_common_security::WpaCredentials::Passphrase(
-                    b"thisIs63CharactersLong!!!#$#%thisIs63CharactersLong!!!#$#%00009".to_vec()
-                )
-            )))
+                    b"thisIs63CharactersLong!!!#$#%thisIs63CharactersLong!!!#$#%00009".to_vec(),
+                ),
+            ))),
         },
         wpa_psk: TestCredentials {
             policy: fidl_policy::Credential::Psk(
                 hex::decode(b"f10aedbb0ea29c928b06997ed305a697706ddad220ff5a98f252558a470a748f")
-                    .unwrap()
+                    .unwrap(),
             ),
             sme: Some(Box::new(fidl_common_security::Credentials::Wpa(
                 fidl_common_security::WpaCredentials::Psk(
                     hex::decode(
-                        b"f10aedbb0ea29c928b06997ed305a697706ddad220ff5a98f252558a470a748f"
+                        b"f10aedbb0ea29c928b06997ed305a697706ddad220ff5a98f252558a470a748f",
                     )
                     .unwrap()
                     .try_into()
-                    .unwrap()
-                )
-            )))
+                    .unwrap(),
+                ),
+            ))),
         },
-    };
-}
+    });
 
 struct TestValues {
     internal_objects: InternalObjects,

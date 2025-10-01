@@ -1222,8 +1222,7 @@ mod tests {
     use super::*;
     use crate::client::roaming::lib::{PolicyRoamRequest, RoamTriggerData};
     use crate::client::roaming::local_roam_manager::RoamServiceRequest;
-    use crate::config_management::PastConnectionList;
-    use crate::config_management::network_config::{self, Credential};
+    use crate::config_management::{PastConnectionList, network_config};
     use crate::util::listener;
     use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
     use crate::util::testing::{
@@ -1238,16 +1237,10 @@ mod tests {
     use futures::Future;
     use futures::task::Poll;
     use ieee80211::MacAddrBytes;
-    use lazy_static::lazy_static;
     use rand::Rng;
     use std::pin::pin;
     use wlan_common::random_fidl_bss_description;
     use wlan_metrics_registry::PolicyDisconnectionMigratedMetricDimensionReason;
-
-    lazy_static! {
-        pub static ref TEST_PASSWORD: Credential = Credential::Password(b"password".to_vec());
-        pub static ref TEST_WEP_PSK: Credential = Credential::Password(b"five0".to_vec());
-    }
 
     struct TestValues {
         common_options: CommonStateOptions,
