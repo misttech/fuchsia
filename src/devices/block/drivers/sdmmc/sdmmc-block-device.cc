@@ -19,6 +19,8 @@
 #include <zircon/status.h>
 #include <zircon/threads.h>
 
+#include <algorithm>
+
 #include <fbl/alloc_checker.h>
 #include <safemath/safe_conversions.h>
 
@@ -858,6 +860,9 @@ zx::result<uint16_t> SdmmcBlockDevice::GetRpmbRequestType(const RpmbRequestInfo&
 }
 
 zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
+  const bool supports_32_frame_writes =
+      raw_ext_csd_[MMC_EXT_CSD_WR_REL_PARAM] & MMC_EXT_CSD_EN_RPMB_REL_WR_MASK;
+
   // TODO(https://fxbug.dev/42166356): Find out if RPMB requests can be retried.
   using fuchsia_hardware_rpmb::wire::kFrameSize;
 
@@ -876,49 +881,60 @@ zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
     return status;
   }
 
-  sdmmc_req_t set_tx_block_count = {
-      .cmd_idx = SDMMC_SET_BLOCK_COUNT,
-      .cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS,
-      .arg = static_cast<uint32_t>(tx_frame_count),
-  };
-
-  switch (*request_type) {
-    case kRpmbRequestReadWriteCounter:
-    case kRpmbRequestReadData:
-    case kRpmbRequestReadResult:
-    case kRpmbRequestReadConfiguration:
-      break;
-    default:
-      // Use reliable writes unless the request is one of the four known read request types.
-      set_tx_block_count.arg |= MMC_SET_BLOCK_COUNT_RELIABLE_WRITE;
-      break;
-  }
-
   uint32_t unused_response[4];
-  if ((status = sdmmc_->Request(&set_tx_block_count, unused_response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to set block count for RPMB request: %d", status);
-    properties_.io_errors_.Add(1);
-    return status;
-  }
+  for (uint64_t frames_sent = 0; frames_sent < tx_frame_count;) {
+    const uint64_t remaining_frames = tx_frame_count - frames_sent;
 
-  const sdmmc_buffer_region_t write_region = {
-      .buffer = {.vmo = request.tx_frames.vmo.get()},
-      .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
-      .offset = request.tx_frames.offset,
-      .size = tx_frame_count * kFrameSize,
-  };
-  const sdmmc_req_t write_tx_frames = {
-      .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
-      .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
-      .arg = 0,  // Ignored by the card.
-      .blocksize = kFrameSize,
-      .buffers_list = &write_region,
-      .buffers_count = 1,
-  };
-  if ((status = sdmmc_->Request(&write_tx_frames, unused_response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to write RPMB frames: %d", status);
-    properties_.io_errors_.Add(1);
-    return status;
+    // Writes must either be one or two frames, or 32 frames if supported. Intermediate values are
+    // not allowed.
+    const uint64_t frames_to_send =
+        (supports_32_frame_writes && remaining_frames >= 32) ? 32 : std::min(remaining_frames, 2UL);
+
+    sdmmc_req_t set_tx_block_count = {
+        .cmd_idx = SDMMC_SET_BLOCK_COUNT,
+        .cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS,
+        .arg = static_cast<uint32_t>(frames_to_send),
+    };
+
+    switch (*request_type) {
+      case kRpmbRequestReadWriteCounter:
+      case kRpmbRequestReadData:
+      case kRpmbRequestReadResult:
+      case kRpmbRequestReadConfiguration:
+        break;
+      default:
+        // Use reliable writes unless the request is one of the four known read request types.
+        set_tx_block_count.arg |= MMC_SET_BLOCK_COUNT_RELIABLE_WRITE;
+        break;
+    }
+
+    if ((status = sdmmc_->Request(&set_tx_block_count, unused_response)) != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "failed to set block count for RPMB request: %d", status);
+      properties_.io_errors_.Add(1);
+      return status;
+    }
+
+    const sdmmc_buffer_region_t write_region = {
+        .buffer = {.vmo = request.tx_frames.vmo.get()},
+        .type = SDMMC_BUFFER_TYPE_VMO_HANDLE,
+        .offset = request.tx_frames.offset + (frames_sent * kFrameSize),
+        .size = frames_to_send * kFrameSize,
+    };
+    const sdmmc_req_t write_tx_frames = {
+        .cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK,
+        .cmd_flags = SDMMC_WRITE_MULTIPLE_BLOCK_FLAGS,
+        .arg = 0,  // Ignored by the card.
+        .blocksize = kFrameSize,
+        .buffers_list = &write_region,
+        .buffers_count = 1,
+    };
+    if ((status = sdmmc_->Request(&write_tx_frames, unused_response)) != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "failed to write RPMB frames: %d", status);
+      properties_.io_errors_.Add(1);
+      return status;
+    }
+
+    frames_sent += frames_to_send;
   }
 
   if (!read_needed) {

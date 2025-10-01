@@ -1794,8 +1794,6 @@ TEST_P(SdmmcBlockDeviceTest, RpmbPartition) {
 
   sync_completion_wait(&completion, zx::duration::infinite().get());
   sync_completion_reset(&completion);
-
-  ASSERT_NO_FATAL_FAILURE(CheckSdmmc(4, 0));
 }
 
 TEST_P(SdmmcBlockDeviceTest, RpmbRequestLimit) {
@@ -1930,6 +1928,139 @@ TEST_P(SdmmcBlockDeviceTest, RpmbPartitionReliableWrite) {
 
   // Read data request: reliable write should not be used.
   EXPECT_EQ(block_count_args, (std::vector<uint32_t>{1, 1}));
+}
+
+TEST_P(SdmmcBlockDeviceTest, RpmbMultipleRequests) {
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    out_data[MMC_EXT_CSD_RPMB_SIZE_MULT] = 0x74;
+    out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 0xa8;
+    out_data[MMC_EXT_CSD_REL_WR_SEC_C] = 1;
+    // 32-frame writes not supported.
+    out_data[MMC_EXT_CSD_WR_REL_PARAM] = 0;
+  });
+
+  ASSERT_OK(StartDriverForMmc());
+  BindRpmbClient();
+
+  sync_completion_t completion;
+
+  fzl::VmoMapper tx_frames_mapper;
+  zx::vmo tx_frames;
+
+  ASSERT_OK(tx_frames_mapper.CreateAndMap(512 * 37ul, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr,
+                                          &tx_frames));
+
+  fuchsia_hardware_rpmb::wire::Request write_read_request = {};
+  ASSERT_OK(tx_frames.duplicate(ZX_RIGHT_SAME_RIGHTS, &write_read_request.tx_frames.vmo));
+
+  write_read_request.tx_frames.offset = 0;
+  write_read_request.tx_frames.size = 512 * 37ul;
+  FillVmo(tx_frames_mapper, 37, 0);
+
+  // The SDMMC driver should make 18 two-frame requests followed by a one-frame request.
+  uint32_t write_count = 0;
+  sdmmc_.set_command_callback(SDMMC_SET_BLOCK_COUNT, [&write_count](const sdmmc_req_t& req) {
+    if (write_count < 18) {
+      EXPECT_EQ(req.arg & 0xffff, 2);
+    } else if (write_count == 18) {
+      EXPECT_EQ(req.arg & 0xffff, 1);
+    }
+  });
+  sdmmc_.set_command_callback(SDMMC_WRITE_MULTIPLE_BLOCK,
+                              [&write_count](cpp20::span<uint8_t> data) {
+                                if (write_count < 18) {
+                                  EXPECT_EQ(data.size(), 1024);
+                                } else if (write_count == 18) {
+                                  EXPECT_EQ(data.size(), 512);
+                                }
+                                write_count++;
+                              });
+
+  rpmb_client_->Request(std::move(write_read_request))
+      .ThenExactlyOnce([&](fidl::WireUnownedResult<fuchsia_hardware_rpmb::Rpmb::Request>& result) {
+        if (!result.ok()) {
+          FAIL("Request failed: %s", result.error().FormatDescription().c_str());
+          return;
+        }
+        EXPECT_FALSE(result->is_error());
+        sync_completion_signal(&completion);
+      });
+
+  sync_completion_wait(&completion, zx::duration::infinite().get());
+  sync_completion_reset(&completion);
+
+  EXPECT_EQ(write_count, 19);
+  // The address is always zero for RPMB requests, so the first two blocks will end up getting
+  // overwritten.
+  ASSERT_NO_FATAL_FAILURE(CheckSdmmc(2, 0));
+}
+
+TEST_P(SdmmcBlockDeviceTest, RpmbMultipleRequests32FramesSupported) {
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    out_data[MMC_EXT_CSD_RPMB_SIZE_MULT] = 0x74;
+    out_data[MMC_EXT_CSD_PARTITION_CONFIG] = 0xa8;
+    out_data[MMC_EXT_CSD_REL_WR_SEC_C] = 1;
+    // 32-frame writes supported.
+    out_data[MMC_EXT_CSD_WR_REL_PARAM] = MMC_EXT_CSD_EN_RPMB_REL_WR_MASK;
+  });
+
+  ASSERT_OK(StartDriverForMmc());
+  BindRpmbClient();
+
+  sync_completion_t completion;
+
+  fzl::VmoMapper tx_frames_mapper;
+  zx::vmo tx_frames;
+
+  ASSERT_OK(tx_frames_mapper.CreateAndMap(512 * 37ul, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr,
+                                          &tx_frames));
+
+  fuchsia_hardware_rpmb::wire::Request write_read_request = {};
+  ASSERT_OK(tx_frames.duplicate(ZX_RIGHT_SAME_RIGHTS, &write_read_request.tx_frames.vmo));
+
+  write_read_request.tx_frames.offset = 0;
+  write_read_request.tx_frames.size = 512 * 37ul;
+  FillVmo(tx_frames_mapper, 37, 0);
+
+  // The SDMMC driver should make a 32-frame request, two two-frame requests, and then a one-frame
+  // request.
+  uint32_t write_count = 0;
+  sdmmc_.set_command_callback(SDMMC_SET_BLOCK_COUNT, [&write_count](const sdmmc_req_t& req) {
+    if (write_count == 0) {
+      EXPECT_EQ(req.arg & 0xffff, 32);
+    } else if (write_count == 3) {
+      EXPECT_EQ(req.arg & 0xffff, 1);
+    } else if (write_count < 3) {
+      EXPECT_EQ(req.arg & 0xffff, 2);
+    }
+  });
+  sdmmc_.set_command_callback(SDMMC_WRITE_MULTIPLE_BLOCK,
+                              [&write_count](cpp20::span<uint8_t> data) {
+                                if (write_count == 0) {
+                                  EXPECT_EQ(data.size(), 512 * 32);
+                                } else if (write_count == 3) {
+                                  EXPECT_EQ(data.size(), 512);
+                                } else if (write_count < 3) {
+                                  EXPECT_EQ(data.size(), 1024);
+                                }
+                                write_count++;
+                              });
+
+  rpmb_client_->Request(std::move(write_read_request))
+      .ThenExactlyOnce([&](fidl::WireUnownedResult<fuchsia_hardware_rpmb::Rpmb::Request>& result) {
+        if (!result.ok()) {
+          FAIL("Request failed: %s", result.error().FormatDescription().c_str());
+          return;
+        }
+        EXPECT_FALSE(result->is_error());
+        sync_completion_signal(&completion);
+      });
+
+  sync_completion_wait(&completion, zx::duration::infinite().get());
+  sync_completion_reset(&completion);
+
+  EXPECT_EQ(write_count, 4);
+  ASSERT_NO_FATAL_FAILURE(CheckSdmmc(32, 0));
 }
 
 void SdmmcBlockDeviceTest::QueueBlockOps() {
