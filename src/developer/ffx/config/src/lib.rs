@@ -189,16 +189,6 @@ pub fn query<'a>(with: impl Into<ConfigQuery<'a>>) -> ConfigQuery<'a> {
     with.into()
 }
 
-/// A shorthand for the very common case of querying a value from the global config
-/// cache and environment, using the provided value converted into a query.
-pub fn get<'a, T, U>(with: U) -> std::result::Result<T, ConfigError>
-where
-    T: TryConvert + ValueStrategy,
-    U: Into<ConfigQuery<'a>>,
-{
-    query(with).get()
-}
-
 pub fn get_optional<'a, T, U>(with: U) -> std::result::Result<T, ConfigError>
 where
     T: TryConvert + ValueStrategy,
