@@ -73,7 +73,11 @@ impl ControlGroupFileSource {
 }
 
 impl DynamicFileSource for ControlGroupFileSource {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let cgroup = self.cgroup()?;
         for pid in cgroup.get_pids(self.kernel()?.as_ref()) {
             write!(sink, "{pid}\n")?;

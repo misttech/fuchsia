@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_core::task::KernelStats;
+use starnix_core::task::{CurrentTask, KernelStats};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::log_error;
@@ -24,7 +24,11 @@ impl StatFile {
 }
 
 impl DynamicFileSource for StatFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let uptime = zx::MonotonicInstant::get() - zx::MonotonicInstant::ZERO;
 
         let cpu_stats =

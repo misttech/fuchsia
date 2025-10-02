@@ -806,7 +806,11 @@ mod tests {
     }
 
     impl DynamicFileSource for PassthroughTestFile {
-        fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        fn generate(
+            &self,
+            _current_task: &CurrentTask,
+            sink: &mut DynamicFileBuf,
+        ) -> Result<(), Errno> {
             sink.write(&self.0);
             Ok(())
         }

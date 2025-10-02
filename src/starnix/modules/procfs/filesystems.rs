@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
@@ -20,7 +21,11 @@ impl FilesystemsFile {
 }
 
 impl DynamicFileSource for FilesystemsFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         // TODO(https://fxbug.dev/441966997): Report nodev for filesystems that don't need a block
         // device.
         for entry in self.fs_registry.list_all() {

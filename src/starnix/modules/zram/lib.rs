@@ -95,7 +95,11 @@ impl MmStatFile {
     }
 }
 impl DynamicFileSource for MmStatFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let stats = self.device.get_stats()?;
 
         let compressed_storage_bytes = stats.compressed_storage_bytes.unwrap_or_default();

@@ -3774,6 +3774,7 @@ impl SequenceFileSource for ProcMapsFile {
 
     fn next(
         &self,
+        _current_task: &CurrentTask,
         cursor: UserAddress,
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<UserAddress>, Errno> {
@@ -3799,7 +3800,11 @@ impl ProcSmapsFile {
 }
 
 impl DynamicFileSource for ProcSmapsFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let page_size_kb = *PAGE_SIZE / 1024;
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/smaps is empty for kthreads

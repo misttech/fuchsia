@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_component::client::connect_to_protocol_sync;
+use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::log_error;
@@ -18,7 +19,11 @@ impl CpuinfoFile {
 }
 
 impl DynamicFileSource for CpuinfoFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let is_qemu = SYSINFO.is_qemu();
 
         for i in 0..zx::system_get_num_cpus() {

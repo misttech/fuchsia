@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use starnix_core::mm::PAGE_SIZE;
-use starnix_core::task::KernelStats;
+use starnix_core::task::{CurrentTask, KernelStats};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::log_error;
@@ -28,7 +28,11 @@ static VM_STAT_HACK_COUNTER: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 impl DynamicFileSource for VmStatFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let mem_stats = self
             .kernel_stats
             .get()

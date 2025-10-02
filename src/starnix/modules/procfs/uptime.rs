@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_core::task::KernelStats;
+use starnix_core::task::{CurrentTask, KernelStats};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_uapi::errno;
@@ -21,7 +21,11 @@ impl UptimeFile {
 }
 
 impl DynamicFileSource for UptimeFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let uptime = (zx::BootInstant::get() - zx::BootInstant::ZERO).into_seconds_f64();
 
         // Fetch CPU stats from `fuchsia.kernel.Stats` to calculate idle time.

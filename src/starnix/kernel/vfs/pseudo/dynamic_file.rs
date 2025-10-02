@@ -25,6 +25,7 @@ pub trait SequenceFileSource: Send + Sync + 'static {
     type Cursor: Default + Send;
     fn next(
         &self,
+        _current_task: &CurrentTask,
         _cursor: Self::Cursor,
         _sink: &mut DynamicFileBuf,
     ) -> Result<Option<Self::Cursor>, Errno> {
@@ -37,15 +38,20 @@ pub trait SequenceFileSource: Send + Sync + 'static {
     fn next_locked(
         &self,
         _locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
         cursor: Self::Cursor,
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<Self::Cursor>, Errno> {
-        self.next(cursor, sink)
+        self.next(current_task, cursor, sink)
     }
 }
 
 pub trait DynamicFileSource: Send + Sync + 'static {
-    fn generate(&self, _sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        _sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         // SAFETY: This cannot compile and ensure this method is never reached
         unsafe {
             undefined_symbol_to_prevent_compilation();
@@ -55,9 +61,10 @@ pub trait DynamicFileSource: Send + Sync + 'static {
     fn generate_locked(
         &self,
         _locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        self.generate(sink)
+        self.generate(current_task, sink)
     }
 }
 
@@ -69,10 +76,11 @@ where
     fn next_locked(
         &self,
         locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
         _cursor: (),
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<()>, Errno> {
-        self.generate_locked(locked, sink).map(|_| None)
+        self.generate_locked(locked, current_task, sink).map(|_| None)
     }
 }
 
@@ -178,10 +186,11 @@ impl<Source: SequenceFileSource> DynamicFile<Source> {
     fn read_internal(
         &self,
         locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        self.state.lock().read(locked, offset, data)
+        self.state.lock().read(locked, current_task, offset, data)
     }
 }
 
@@ -196,11 +205,11 @@ impl<Source: SequenceFileSource> FileOps for DynamicFile<Source> {
         &self,
         locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        self.read_internal(locked, offset, data)
+        self.read_internal(locked, current_task, offset, data)
     }
 
     fn write(
@@ -218,7 +227,7 @@ impl<Source: SequenceFileSource> FileOps for DynamicFile<Source> {
         &self,
         locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         current_offset: off_t,
         target: SeekTarget,
     ) -> Result<off_t, Errno> {
@@ -228,7 +237,7 @@ impl<Source: SequenceFileSource> FileOps for DynamicFile<Source> {
         // seeking to the start of the file).
         if new_offset > 0 {
             let mut dummy_buf = VecOutputBuffer::new(0);
-            self.read_internal(locked, new_offset as usize, &mut dummy_buf)?;
+            self.read_internal(locked, current_task, new_offset as usize, &mut dummy_buf)?;
         }
 
         Ok(new_offset)
@@ -278,6 +287,7 @@ impl<Source: SequenceFileSource> DynamicFileState<Source> {
     fn read(
         &mut self,
         locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
@@ -294,11 +304,12 @@ impl<Source: SequenceFileSource> DynamicFileState<Source> {
                 break;
             };
             let mut buf = std::mem::take(&mut self.buf);
-            self.cursor = self.source.next_locked(locked, cursor, &mut buf).map_err(|e| {
-                // Reset everything on failure
-                self.reset();
-                e
-            })?;
+            self.cursor =
+                self.source.next_locked(locked, current_task, cursor, &mut buf).map_err(|e| {
+                    // Reset everything on failure
+                    self.reset();
+                    e
+                })?;
             self.buf = buf;
 
             // If the seek pointer is ahead of our current byte offset, we will generate data that
@@ -391,7 +402,11 @@ struct ConstFileSource {
 }
 
 impl DynamicFileSource for ConstFileSource {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         sink.write(&self.data);
         Ok(())
     }
@@ -424,6 +439,7 @@ impl FileOps for ConstFile {
 
 #[cfg(test)]
 mod tests {
+    use crate::task::CurrentTask;
     use crate::testing::{anon_test_file, spawn_kernel_and_run};
     use crate::vfs::pseudo::dynamic_file::{
         DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
@@ -442,7 +458,12 @@ mod tests {
 
     impl SequenceFileSource for TestSequenceFileSource {
         type Cursor = u8;
-        fn next(&self, i: u8, sink: &mut DynamicFileBuf) -> Result<Option<u8>, Errno> {
+        fn next(
+            &self,
+            _current_task: &CurrentTask,
+            i: u8,
+            sink: &mut DynamicFileBuf,
+        ) -> Result<Option<u8>, Errno> {
             sink.write(&[i]);
             Ok(if i == u8::MAX { None } else { Some(i + 1) })
         }
@@ -481,7 +502,11 @@ mod tests {
     }
 
     impl DynamicFileSource for TestFileSource {
-        fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        fn generate(
+            &self,
+            _current_task: &CurrentTask,
+            sink: &mut DynamicFileBuf,
+        ) -> Result<(), Errno> {
             let mut counter = self.counter.value.lock();
             let base = *counter;
             // Write 10 bytes where v[i] = base + i.

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::log_error;
@@ -17,7 +18,11 @@ impl ConfigFile {
 }
 
 impl DynamicFileSource for ConfigFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let contents = std::fs::read("/pkg/data/config.gz").map_err(|e| {
             log_error!("Error reading /pkg/data/config.gz: {e}");
             errno!(EIO)

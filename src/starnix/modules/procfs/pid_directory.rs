@@ -693,7 +693,11 @@ impl CgroupFile {
     }
 }
 impl DynamicFileSource for CgroupFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         let cgroup = task.kernel().cgroups.cgroup2.get_cgroup(task.thread_group());
         let path = path_from_root(cgroup)?;
@@ -727,7 +731,11 @@ impl CmdlineFile {
     }
 }
 impl DynamicFileSource for CmdlineFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         // Opened cmdline file should still be functional once the task is a zombie.
         let task = if let Some(task) = self.0.upgrade() {
             task
@@ -755,7 +763,11 @@ impl EnvironFile {
     }
 }
 impl DynamicFileSource for EnvironFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/environ doesn't contain anything for kthreads
         let Ok(mm) = task.mm() else {
@@ -778,7 +790,11 @@ impl AuxvFile {
     }
 }
 impl DynamicFileSource for AuxvFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/auxv doesn't contain anything for kthreads
         let Ok(mm) = task.mm() else {
@@ -838,7 +854,11 @@ impl FileOps for CommFile {
 #[derive(Clone)]
 pub struct CommFileSource(TaskPersistentInfo);
 impl DynamicFileSource for CommFileSource {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         sink.write(self.0.command().as_bytes());
         sink.write(b"\n");
         Ok(())
@@ -854,7 +874,11 @@ impl IoFile {
     }
 }
 impl DynamicFileSource for IoFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         track_stub!(TODO("https://fxbug.dev/322874250"), "/proc/pid/io");
         sink.write(b"rchar: 0\n");
         sink.write(b"wchar: 0\n");
@@ -879,6 +903,7 @@ impl DynamicFileSource for LimitsFile {
     fn generate_locked(
         &self,
         locked: &mut Locked<FileOpsCore>,
+        _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
@@ -1027,6 +1052,7 @@ impl DynamicFileSource for StatFile {
     fn generate_locked(
         &self,
         locked: &mut Locked<FileOpsCore>,
+        _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.task)?;
@@ -1161,7 +1187,11 @@ impl StatmFile {
     }
 }
 impl DynamicFileSource for StatmFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let mem_stats = if let Ok(mm) = Task::from_weak(&self.0)?.mm() {
             mm.get_stats()
         } else {
@@ -1191,7 +1221,11 @@ impl StatusFile {
     }
 }
 impl DynamicFileSource for StatusFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let task = &self.0.upgrade();
         let (tgid, pid, creds_string) = {
             if let Some(task) = task {

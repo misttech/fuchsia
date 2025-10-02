@@ -545,7 +545,11 @@ impl WaitingFile {
 }
 
 impl DynamicFileSource for WaitingFile {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let value = {
             let state = self.connection.state.lock();
             state.operations.len() + state.message_queue.len()

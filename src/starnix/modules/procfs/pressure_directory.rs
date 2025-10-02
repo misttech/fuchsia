@@ -77,7 +77,11 @@ struct MemoryPressureFileSource {
 }
 
 impl DynamicFileSource for MemoryPressureFileSource {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         let PsiProviderGetMemoryPressureStatsResponse { some, full, .. } = self
             .psi_provider
             .proxy
@@ -436,7 +440,11 @@ fn get_events_from_signals(signals: zx::Signals) -> FdEvents {
 struct StubPressureFileSource;
 
 impl DynamicFileSource for StubPressureFileSource {
-    fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
         writeln!(sink, "some avg10=0.00 avg60=0.00 avg300=0.00 total=0")?;
         writeln!(sink, "full avg10=0.00 avg60=0.00 avg300=0.00 total=0")?;
         Ok(())
