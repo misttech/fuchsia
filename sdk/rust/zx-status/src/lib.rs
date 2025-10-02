@@ -60,11 +60,7 @@ impl Status {
     /// Returns `Ok(())` if the status was `OK`,
     /// otherwise returns `Err(status)`.
     pub fn ok(raw: sys::zx_status_t) -> Result<(), Status> {
-        if raw == Status::OK.0 {
-            Ok(())
-        } else {
-            Err(Status(raw))
-        }
+        if raw == Status::OK.0 { Ok(()) } else { Err(Status(raw)) }
     }
 
     pub fn from_raw(raw: sys::zx_status_t) -> Self {
