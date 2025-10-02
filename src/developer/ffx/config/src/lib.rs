@@ -185,7 +185,7 @@ pub fn build<'a>() -> ConfigQuery<'a> {
 /// ffx_config::query("a_key").get();
 /// ffx_config::query(ffx_config::ConfigLevel::User).get();
 /// ```
-pub fn query<'a>(with: impl Into<ConfigQuery<'a>>) -> ConfigQuery<'a> {
+pub(crate) fn query<'a>(with: impl Into<ConfigQuery<'a>>) -> ConfigQuery<'a> {
     with.into()
 }
 
