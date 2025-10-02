@@ -6,6 +6,7 @@
 //! space.  See [MappedClock] for details.
 
 use std::ptr;
+use zx::HandleBased;
 use zx_status::Status;
 
 /// A clock backed by memory mapped into this process' virtual address space.
@@ -19,10 +20,10 @@ use zx_status::Status;
 /// To create one, you will need a [zx::Clock], a [zx::Vmar] and a call to
 /// [MappedClock::try_new].
 #[derive(Debug)]
-pub struct MappedClock<'a, Reference: zx::Timeline, Output: zx::Timeline> {
+pub struct MappedClock<Reference: zx::Timeline, Output: zx::Timeline> {
     // The address range that the clock is mapped into.  We keep a reference
     // so we can unmap the range when this struct goes out of scope.
-    parent_vmar: &'a zx::Vmar,
+    parent_vmar: zx::Vmar,
     // The pointer to the beginning of the memory area for this mappable clock.
     addr: ptr::NonNull<u8>,
     // The size of the memory area used by this mappable clock.
@@ -30,9 +31,7 @@ pub struct MappedClock<'a, Reference: zx::Timeline, Output: zx::Timeline> {
     _mark: std::marker::PhantomData<(Reference, Output)>,
 }
 
-impl<'a, Reference: zx::Timeline, Output: zx::Timeline> Drop
-    for MappedClock<'a, Reference, Output>
-{
+impl<Reference: zx::Timeline, Output: zx::Timeline> Drop for MappedClock<Reference, Output> {
     fn drop(&mut self) {
         unsafe {
             // SAFETY: try_new ensures `addr` and `clock_size` are correctly initialized and
@@ -46,7 +45,7 @@ impl<'a, Reference: zx::Timeline, Output: zx::Timeline> Drop
     }
 }
 
-impl<'a, Reference: zx::Timeline, Output: zx::Timeline> MappedClock<'a, Reference, Output> {
+impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Output> {
     /// Tries to convert the supplied regular `clock` into a memory mapped clock.
     ///
     /// A memory mapped clock can be read more efficiently than a regular kernel
@@ -67,8 +66,7 @@ impl<'a, Reference: zx::Timeline, Output: zx::Timeline> MappedClock<'a, Referenc
     ///
     /// - `clock`: the clock to convert to a mapped clock.
     /// - `parent_vmar`: a handle to the virtual memory address range to map the clock into.
-    ///   The clock will be unmapped when [Self] goes out of scope. If you need a mapped
-    ///   clock without this cleanup behavior, take a reference to [Self].
+    ///   The clock will be unmapped when [Self] goes out of scope. Must be cloneable.
     ///
     /// # Errors
     ///
@@ -76,8 +74,13 @@ impl<'a, Reference: zx::Timeline, Output: zx::Timeline> MappedClock<'a, Referenc
     /// [ClockOpts::MAPPABLE] at its creation time.
     pub fn try_new(
         clock: zx::Clock<Reference, Output>,
-        parent_vmar: &'a zx::Vmar,
-    ) -> Result<MappedClock<'a, Reference, Output>, Status> {
+        parent_vmar: &zx::Vmar,
+    ) -> Result<MappedClock<Reference, Output>, Status> {
+        // The easiest way to ensure we can drop() without affecting the caller
+        // API. Consider changing if it becomes a problem.
+        let parent_vmar = parent_vmar
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .inspect_err(|err| log::error!("MappedClock: try_new: {err:?}"))?;
         // Follows the C++ example from:
         // https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0266_memory_mappable_kernel_clocks
         // but requires `zx::Rights::INSPECT`, which here we do not have.
@@ -87,10 +90,12 @@ impl<'a, Reference: zx::Timeline, Output: zx::Timeline> MappedClock<'a, Referenc
         //   .inspect_err(|err| log::error!("in get_mapped_size: {err:?}"))?;
         // ```
         // instead "just" do this:
+        /// The size of the memory-mapped clock object. Should be replaced with a call
+        /// to get the size from a syscall.
         const PAGE_SIZE: usize = 4096;
         let mapping = parent_vmar
             .map_clock(zx::VmarFlags::PERM_READ, 0, &clock, PAGE_SIZE)
-            .inspect_err(|err| log::error!("in map_clock: {err:?}"))?;
+            .inspect_err(|err| log::error!("MappedClock: map_clock: {err:?}"))?;
 
         let addr = unsafe {
             // SAFETY: map_clock will not return an invalid pointer, but will
@@ -103,6 +108,11 @@ impl<'a, Reference: zx::Timeline, Output: zx::Timeline> MappedClock<'a, Referenc
     /// Returns the raw value of the address this clock is mapped to.
     pub fn raw_addr(&self) -> usize {
         self.addr.as_ptr() as usize
+    }
+
+    /// The size of the memory region occupied by this memory mapped clock.
+    pub fn size(&self) -> usize {
+        self.clock_size
     }
 
     /// Read the clock indication.
