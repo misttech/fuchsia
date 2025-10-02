@@ -1010,7 +1010,9 @@ impl ObjectStore {
                     return Err(anyhow!(FxfsError::NotFound));
                 }
                 Some(data) => {
-                    data_object_handle.set_fsverity_state_some(descriptor, data);
+                    data_object_handle
+                        .set_fsverity_state_some(descriptor, data)
+                        .context("Invalid or mismatched merkle tree")?;
                 }
             }
         }

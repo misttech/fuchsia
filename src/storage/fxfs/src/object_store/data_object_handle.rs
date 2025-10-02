@@ -34,7 +34,6 @@ use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use fxfs_trace::trace;
-use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use std::cmp::min;
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
@@ -128,6 +127,19 @@ impl FsverityStateInner {
     pub fn new(descriptor: FsverityMetadata, merkle_tree: Box<[u8]>) -> Self {
         FsverityStateInner { descriptor, merkle_tree }
     }
+
+    fn get_hasher_for_block_size(&self, block_size: usize) -> FsVerityHasher {
+        match self.descriptor.root_digest {
+            RootDigest::Sha256(_) => FsVerityHasher::Sha256(FsVerityHasherOptions::new(
+                self.descriptor.salt.clone(),
+                block_size,
+            )),
+            RootDigest::Sha512(_) => FsVerityHasher::Sha512(FsVerityHasherOptions::new(
+                self.descriptor.salt.clone(),
+                block_size,
+            )),
+        }
+    }
 }
 
 impl<S: HandleOwner> Deref for DataObjectHandle<S> {
@@ -216,11 +228,33 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     }
 
     /// Sets `self.fsverity_state` directly to Some without going through the entire state machine.
-    /// Used to set `self.fsverity_state` on open of a verified file.
-    pub fn set_fsverity_state_some(&self, descriptor: FsverityMetadata, merkle_tree: Box<[u8]>) {
+    /// Used to set `self.fsverity_state` on open of a verified file. The merkle tree data is
+    /// verified against the root digest here, and will return an error if the tree is not correct.
+    pub fn set_fsverity_state_some(
+        &self,
+        descriptor: FsverityMetadata,
+        merkle_tree: Box<[u8]>,
+    ) -> Result<(), Error> {
+        // Validate the merkle tree data against the root before applying it.
+        let metadata = FsverityStateInner { descriptor, merkle_tree };
+        let hasher = metadata.get_hasher_for_block_size(self.block_size() as usize);
+        ensure!(metadata.merkle_tree.len() % hasher.hash_size() == 0, FxfsError::Inconsistent);
+        let leaf_chunks = metadata.merkle_tree.chunks_exact(hasher.hash_size());
+        let mut builder = MerkleTreeBuilder::new(hasher);
+        for leaf in leaf_chunks {
+            builder.push_data_hash(leaf.to_vec());
+        }
+        let tree = builder.finish();
+        let root_hash = match &metadata.descriptor.root_digest {
+            RootDigest::Sha256(root_hash) => root_hash.as_slice(),
+            RootDigest::Sha512(root_hash) => root_hash.as_slice(),
+        };
+        ensure!(root_hash == tree.root(), FxfsError::IntegrityError);
+
         let mut fsverity_guard = self.fsverity_state.lock();
         assert!(matches!(*fsverity_guard, FsverityState::None));
-        *fsverity_guard = FsverityState::Some(FsverityStateInner { descriptor, merkle_tree });
+        *fsverity_guard = FsverityState::Some(metadata);
+        Ok(())
     }
 
     /// Verifies contents of `buffer` against the corresponding hashes in the stored merkle tree.
@@ -239,23 +273,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 &*fsverity_state
             )),
             FsverityState::Some(metadata) => {
-                let (hasher, digest_size) = match metadata.descriptor.root_digest {
-                    RootDigest::Sha256(_) => {
-                        let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new(
-                            metadata.descriptor.salt.clone(),
-                            block_size,
-                        ));
-                        (hasher, <Sha256 as Hasher>::Digest::DIGEST_LEN)
-                    }
-                    RootDigest::Sha512(_) => {
-                        let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new(
-                            metadata.descriptor.salt.clone(),
-                            block_size,
-                        ));
-                        (hasher, <Sha512 as Hasher>::Digest::DIGEST_LEN)
-                    }
-                };
-                let leaf_nodes: Vec<&[u8]> = metadata.merkle_tree.chunks(digest_size).collect();
+                let hasher = metadata.get_hasher_for_block_size(block_size);
+                let leaf_nodes: Vec<&[u8]> =
+                    metadata.merkle_tree.chunks(hasher.hash_size()).collect();
                 fxfs_trace::duration!(c"fsverity-verify", "len" => buffer.len());
                 // TODO(b/318880297): Consider parallelizing computation.
                 for b in buffer.chunks(block_size) {
@@ -2883,6 +2903,68 @@ mod tests {
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object.read(0, buf.as_mut()).await.expect_err("verification during read should fail");
 
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_verify_data_corrupt_tree() {
+        let fs: OpenFxFilesystem = test_filesystem().await;
+        let object_id = {
+            let store = fs.root_store();
+            let mut transaction = fs
+                .clone()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+            let object = Arc::new(
+                ObjectStore::create_object(
+                    &store,
+                    &mut transaction,
+                    HandleOptions::default(),
+                    None,
+                )
+                .await
+                .expect("create_object failed"),
+            );
+            let object_id = object.object_id();
+
+            transaction.commit().await.unwrap();
+
+            let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
+            buf.as_mut_slice().fill(123);
+            object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+
+            object
+                .enable_verity(fio::VerificationOptions {
+                    hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                    salt: Some(vec![]),
+                    ..Default::default()
+                })
+                .await
+                .expect("set verified file metadata failed");
+            object.read(0, buf.as_mut()).await.expect("verified read");
+
+            // Corrupt the merkle tree before closing.
+            let mut merkle = object
+                .read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID)
+                .await
+                .unwrap()
+                .expect("Reading merkle tree");
+            merkle[0] = merkle[0].wrapping_add(1);
+            object
+                .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &*merkle)
+                .await
+                .expect("Overwriting merkle");
+
+            object_id
+        }; // Close object.
+
+        // Reopening the object should complain about the corrupted merkle tree.
+        assert!(
+            ObjectStore::open_object(&fs.root_store(), object_id, HandleOptions::default(), None)
+                .await
+                .is_err()
+        );
         fs.close().await.expect("Close failed");
     }
 
