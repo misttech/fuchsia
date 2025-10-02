@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::crypt::zxcrypt::{UnsealOutcome, ZxcryptDevice};
-use crate::debug_log;
 use crate::device::constants::{
     self, BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL, DATA_PARTITION_LABEL,
     LEGACY_DATA_PARTITION_LABEL, ZXCRYPT_DRIVER_PATH,
@@ -394,8 +393,8 @@ async fn shred_data_volume(
     // If we expect the filesystems to be live, ask `environment` to shred the data volume.
     if (config.data || config.fxfs_blob) && !config.ramdisk_image {
         log::info!("Filesystem is running; shredding online.");
-        environment.lock().await.shred_data().await.map_err(|err| {
-            debug_log(&format!("Failed to shred data: {:?}", err));
+        environment.lock().await.shred_data().await.map_err(|error| {
+            log::error!(error:?; "Failed to shred data");
             zx::Status::INTERNAL
         })?;
     } else {
@@ -439,7 +438,7 @@ async fn shred_data_volume(
                 log::error!(error:?; "Failed to unmount fxfs");
                 zx::Status::INTERNAL
             })?;
-            debug_log("Deleted fxfs-data keybag");
+            log::info!("Deleted fxfs-data keybag");
         } else if config.storage_host && config.data_filesystem_format == "minfs" {
             if format != DiskFormat::Fvm {
                 return Ok(());
@@ -458,7 +457,7 @@ async fn shred_data_volume(
                 log::error!(error:?; "Failed to call shred data on fvm component");
                 zx::Status::INTERNAL
             })?;
-            debug_log("Shredded zxcrypt instances in fvm");
+            log::info!("Shredded zxcrypt instances in fvm");
         } else if !config.storage_host && config.data_filesystem_format == "fxfs" {
             // fvm+fxfs, fxblob is handled above.
             if format != DiskFormat::Fvm {
@@ -486,7 +485,7 @@ async fn shred_data_volume(
                 log::error!(error:?; "Failed to unmount fxfs");
                 zx::Status::INTERNAL
             })?;
-            debug_log("Deleted fxfs-data keybag");
+            log::info!("Deleted fxfs-data keybag");
         }
     }
     log::info!("Shredded the data volume.  Data will be lost!!");
@@ -572,8 +571,8 @@ pub fn fshost_volume_provider(
                                     Err(zx::Status::INTERNAL.into_raw())
                                 }
                             };
-                        responder.send(res).unwrap_or_else(|e| {
-                            log::error!("failed to send Mount response. error: {:?}", e);
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::StarnixVolumeProviderRequest::Create {
@@ -590,8 +589,8 @@ pub fn fshost_volume_provider(
                                     Err(zx::Status::INTERNAL.into_raw())
                                 }
                             };
-                        responder.send(res).unwrap_or_else(|e| {
-                            log::error!("failed to send Create response. error: {:?}", e);
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Err(e) => {
@@ -622,24 +621,23 @@ pub fn fshost_admin(
                         let res =
                             match shred_data_volume(&system_partition_lock, &env, &config).await {
                                 Ok(()) => Ok(()),
-                                Err(e) => {
-                                    debug_log(&format!(
-                                        "admin service: shred_data_volume failed: {:?}",
-                                        e
-                                    ));
-                                    Err(e.into_raw())
+                                Err(status) => {
+                                    // If shredding is not supported, only emit a warning.
+                                    if status == zx::Status::NOT_SUPPORTED {
+                                        log::warn!("shred_data_volume not supported");
+                                    } else {
+                                        log::error!(status:?; "shred_data_volume failed");
+                                    }
+                                    Err(status.into_raw())
                                 }
                             };
-                        responder.send(res).unwrap_or_else(|e| {
-                            log::error!("failed to send ShredDataVolume response. error: {:?}", e);
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::AdminRequest::StorageHostEnabled { responder }) => {
-                        responder.send(config.storage_host).unwrap_or_else(|e| {
-                            log::error!(
-                                "failed to send StorageHostEnabled response. error: {:?}",
-                                e
-                            );
+                        responder.send(config.storage_host).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Err(e) => {
@@ -683,13 +681,13 @@ pub fn fshost_recovery(
                         .await
                         {
                             Ok(()) => Ok(()),
-                            Err(e) => {
-                                log::error!("recovery service: write_data_file failed: {:?}", e);
+                            Err(error) => {
+                                log::error!(error:?; "write_data_file failed");
                                 Err(zx::Status::INTERNAL.into_raw())
                             }
                         };
-                        responder.send(res).unwrap_or_else(|e| {
-                            log::error!("failed to send WriteDataFile response. error: {:?}", e);
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::InitSystemPartitionTable {
@@ -706,19 +704,13 @@ pub fn fshost_recovery(
                         .await
                         {
                             Ok(()) => Ok(()),
-                            Err(e) => {
-                                debug_log(&format!(
-                                    "recovery service: init_system_partition_table failed: {:?}",
-                                    e
-                                ));
-                                Err(e.into_raw())
+                            Err(error) => {
+                                log::error!(error:?; "init_system_partition_table failed");
+                                Err(error.into_raw())
                             }
                         };
-                        responder.send(res).unwrap_or_else(|e| {
-                            log::error!(
-                                "failed to send InitSystemPartitionTable response. error: {:?}",
-                                e
-                            );
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::FormatSystemBlobVolume { responder }) => {
@@ -731,20 +723,17 @@ pub fn fshost_recovery(
                         .await
                         {
                             Ok(()) => Ok(()),
-                            Err(e) => {
-                                debug_log(&format!("format_system_blob_volume failed: {:?}", e));
-                                Err(if let Ok(status) = e.downcast::<zx::Status>() {
+                            Err(error) => {
+                                log::error!(error:?; "format_system_blob_volume failed");
+                                Err(if let Ok(status) = error.downcast::<zx::Status>() {
                                     status
                                 } else {
                                     zx::Status::INTERNAL
                                 })
                             }
                         };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|e| {
-                            log::error!(
-                                "failed to send FormatSystemBlobVolume response. error: {:?}",
-                                e
-                            );
+                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::MountSystemBlobVolume {
@@ -761,20 +750,17 @@ pub fn fshost_recovery(
                         .await
                         {
                             Ok(()) => Ok(()),
-                            Err(e) => {
-                                debug_log(&format!("mount_system_blob_volume failed: {:?}", e));
-                                Err(if let Ok(status) = e.downcast::<zx::Status>() {
+                            Err(error) => {
+                                log::error!(error:?; "mount_system_blob_volume failed");
+                                Err(if let Ok(status) = error.downcast::<zx::Status>() {
                                     status
                                 } else {
                                     zx::Status::INTERNAL
                                 })
                             }
                         };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|e| {
-                            log::error!(
-                                "failed to send MountSystemBlobVolume response. error: {:?}",
-                                e
-                            );
+                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::WriteSystemBlobImage { payload, responder }) => {
@@ -794,7 +780,7 @@ pub fn fshost_recovery(
                                 }
                             };
                         responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send WriteSystemBlobImage response");
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Ok(fshost::RecoveryRequest::InstallSystemBlobImage { responder }) => {
@@ -812,7 +798,7 @@ pub fn fshost_recovery(
                                 }
                             };
                         responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send InstallSystemBlobImage response");
+                            log::error!(error:?; "failed to send fidl response");
                         });
                     }
                     Err(e) => {
