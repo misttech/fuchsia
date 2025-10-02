@@ -7,10 +7,9 @@ use crate::events::SagEventLogger;
 use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::Result;
 use async_lock::OnceCell;
-use fidl::endpoints::create_endpoints;
 use fuchsia_inspect::Node as INode;
-use futures::StreamExt;
 use futures::future::LocalBoxFuture;
+use futures::StreamExt;
 use power_broker_client::{LeaseDependency, LeaseHelper, PowerElementContext};
 use std::rc::Rc;
 use zx::{HandleBased, Rights};
@@ -64,8 +63,6 @@ where
         sag_factory: F,
     ) -> Rc<Self> {
         log::info!("Creating CPU power element");
-        let (element_runner_client, element_runner) =
-            create_endpoints::<fbroker::ElementRunnerMarker>();
         let cpu = Rc::new(
             PowerElementContext::builder(
                 topology,
@@ -74,7 +71,6 @@ where
                     fsystem::CpuLevel::Inactive.into_primitive(),
                     fsystem::CpuLevel::Active.into_primitive(),
                 ],
-                element_runner_client,
             )
             .build()
             .await
@@ -87,7 +83,7 @@ where
 
         let cpu_manager = Rc::new(CpuManager::new(cpu.clone(), suspender, sag_event_logger));
 
-        cpu_manager.run(element_runner, &power_elements_node2);
+        cpu_manager.run(&power_elements_node2);
 
         log::info!("Leasing CPU power element");
         let cpu_lease = LeaseHelper::new(
