@@ -48,6 +48,6 @@
     // LINT.ThenChange(src/starnix/kernel/task/scheduler/manager.rs)
   },
   "memory": {
-    "fuchsia.starnix.mlock": { "priority": 24 },
+    "fuchsia.starnix.pinned_memory": { "priority": 24 },
   },
 }

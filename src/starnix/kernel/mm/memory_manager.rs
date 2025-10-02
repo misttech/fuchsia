@@ -8,9 +8,8 @@ use crate::mm::memory_accessor::{MemoryAccessor, TaskMemoryAccessor};
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
-    MappingFlags, MappingName, MlockMapping, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey,
-    ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment,
-    read_to_array,
+    MappingFlags, MappingName, MlockPinFlavor, PrivateFutexKey, ProtectionFlags, UserFault,
+    VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment, read_to_array,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -25,6 +24,7 @@ use bitflags::bitflags;
 use flyweights::FlyByteStr;
 use fuchsia_inspect_contrib::{ProfileDuration, profile_duration};
 use linux_uapi::BUS_ADRERR;
+use memory_pinning::PinnedMapping;
 use range_map::RangeMap;
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{
@@ -232,7 +232,7 @@ pub struct MemoryManagerState {
     ///
     /// Used for MlockPinFlavor::ShadowProcess to keep track of when we need to unmap
     /// memory from the shadow process.
-    shadow_mappings_for_mlock: RangeMap<UserAddress, Arc<MlockMapping>>,
+    shadow_mappings_for_mlock: RangeMap<UserAddress, Arc<PinnedMapping>>,
 
     forkable_state: MemoryManagerForkableState,
 }
@@ -1461,10 +1461,13 @@ impl MemoryManagerState {
                 let shadow_mapping = match current_task.kernel().features.mlock_pin_flavor {
                     // Pin the memory by mapping the backing memory into the high priority vmar.
                     MlockPinFlavor::ShadowProcess => {
-                        let shadow_process = current_task
-                            .kernel()
-                            .expando
-                            .get_or_try_init(|| MlockShadowProcess::new())?;
+                        let shadow_process =
+                            current_task.kernel().expando.get_or_try_init(|| {
+                                memory_pinning::ShadowProcess::new(zx::Name::new_lossy(
+                                    "starnix_mlock_pins",
+                                ))
+                                .map_err(|_| errno!(EPERM))
+                            })?;
 
                         let (vmo, offset) = match self.get_mapping_backing(&mapping) {
                             MappingBacking::Memory(m) => (
@@ -1479,7 +1482,7 @@ impl MemoryManagerState {
                                 range.start.ptr() as u64,
                             ),
                         };
-                        Some(shadow_process.lock_pages(vmo, offset, range.end - range.start)?)
+                        Some(shadow_process.pin_pages(vmo, offset, range.end - range.start)?)
                     }
 
                     // Relying on VMAR-level operations means just flags are set per-mapping.

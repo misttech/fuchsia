@@ -7,7 +7,7 @@ use crate::device::remote_block_device::RemoteBlockDeviceRegistry;
 use crate::device::{DeviceMode, DeviceRegistry};
 use crate::execution::CrashReporter;
 use crate::fs::fuchsia::nmfs::NetworkManagerHandle;
-use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor, MlockShadowProcess, SharedFutexKey};
+use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor, SharedFutexKey};
 use crate::power::SuspendResumeManagerHandle;
 use crate::security::{self, AuditLogger};
 use crate::task::container_namespace::ContainerNamespace;
@@ -551,7 +551,7 @@ impl Kernel {
         }
 
         // Step 4: Clean up any structures that can keep non-Linux processes live in our job.
-        self.expando.remove::<MlockShadowProcess>();
+        self.expando.remove::<memory_pinning::ShadowProcess>();
 
         // Step 5: Make sure this is the only process running in the job. We already should have
         // cleared up all processes other than the system task at this point, but wait on any that

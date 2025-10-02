@@ -30,6 +30,7 @@ group("tests") {
     "extended_pstate:tests",
     "features:tests",
     "kernel_manager:tests",
+    "memory_pinning:tests",
     "range_map:tests",
     "selinux:tests",
     "split_enum_storage:tests",
