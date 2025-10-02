@@ -864,7 +864,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_channel::{Receiver, Sender};
-    use ffx_config::{ConfigLevel, query};
+    use ffx_config::ConfigLevel;
     use fidl_fuchsia_developer_ffx::TargetQuery;
     use fidl_fuchsia_net::{IpAddress, Ipv6Address};
     use futures::channel::oneshot::channel;
@@ -994,8 +994,8 @@ mod tests {
         }
     }
 
-    async fn init_test_config(_env: &ffx_config::TestEnv<'_>, temp_dir: &Path) {
-        query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
+    async fn init_test_config(env: &ffx_config::TestEnv<'_>, temp_dir: &Path) {
+        env.context.query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_dir.display().to_string()))
             .unwrap();
