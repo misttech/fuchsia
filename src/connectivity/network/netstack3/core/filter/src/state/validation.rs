@@ -466,10 +466,10 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::Ipv4;
     use netstack3_base::InterfaceMatcher;
+    use netstack3_base::testutil::FakeDeviceClass;
     use test_case::test_case;
 
     use super::*;
-    use crate::context::testutil::FakeDeviceClass;
     use crate::{PacketMatcher, TransparentProxy};
 
     #[derive(Debug, Clone, PartialEq)]

@@ -148,6 +148,84 @@ impl<DeviceClass: Debug> InspectableValue for BoundInterfaceMatcher<DeviceClass>
     }
 }
 
+#[cfg(any(test, feature = "testutils"))]
+pub(crate) mod testutil {
+    use alloc::string::String;
+    use core::num::NonZeroU64;
+
+    use crate::matchers::InterfaceProperties;
+    use crate::testutil::{FakeDeviceClass, FakeStrongDeviceId, FakeWeakDeviceId};
+    use crate::{DeviceIdentifier, StrongDeviceIdentifier};
+
+    /// A fake device ID for testing matchers.
+    #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+    #[allow(missing_docs)]
+    pub struct FakeMatcherDeviceId {
+        pub id: NonZeroU64,
+        pub name: String,
+        pub class: FakeDeviceClass,
+    }
+
+    #[allow(missing_docs)]
+    impl FakeMatcherDeviceId {
+        pub fn wlan_interface() -> FakeMatcherDeviceId {
+            FakeMatcherDeviceId {
+                id: NonZeroU64::new(1).unwrap(),
+                name: String::from("wlan"),
+                class: FakeDeviceClass::Wlan,
+            }
+        }
+
+        pub fn ethernet_interface() -> FakeMatcherDeviceId {
+            FakeMatcherDeviceId {
+                id: NonZeroU64::new(2).unwrap(),
+                name: String::from("eth"),
+                class: FakeDeviceClass::Ethernet,
+            }
+        }
+    }
+
+    impl StrongDeviceIdentifier for FakeMatcherDeviceId {
+        type Weak = FakeWeakDeviceId<Self>;
+
+        fn downgrade(&self) -> Self::Weak {
+            FakeWeakDeviceId(self.clone())
+        }
+    }
+
+    impl DeviceIdentifier for FakeMatcherDeviceId {
+        fn is_loopback(&self) -> bool {
+            false
+        }
+    }
+
+    impl FakeStrongDeviceId for FakeMatcherDeviceId {
+        fn is_alive(&self) -> bool {
+            true
+        }
+    }
+
+    impl PartialEq<FakeWeakDeviceId<FakeMatcherDeviceId>> for FakeMatcherDeviceId {
+        fn eq(&self, FakeWeakDeviceId(other): &FakeWeakDeviceId<FakeMatcherDeviceId>) -> bool {
+            self == other
+        }
+    }
+
+    impl InterfaceProperties<FakeDeviceClass> for FakeMatcherDeviceId {
+        fn id_matches(&self, id: &NonZeroU64) -> bool {
+            &self.id == id
+        }
+
+        fn name_matches(&self, name: &str) -> bool {
+            &self.name == name
+        }
+
+        fn device_class_matches(&self, class: &FakeDeviceClass) -> bool {
+            &self.class == class
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::format;

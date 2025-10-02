@@ -181,11 +181,12 @@ pub mod testutil {
     pub use crate::device::address::testutil::FakeWeakAddressId;
     pub use crate::device::link::testutil::{FakeLinkAddress, FakeLinkDevice, FakeLinkDeviceId};
     pub use crate::device::testutil::{
-        FakeDeviceId, FakeReferencyDeviceId, FakeStrongDeviceId, FakeWeakDeviceId,
+        FakeDeviceClass, FakeDeviceId, FakeReferencyDeviceId, FakeStrongDeviceId, FakeWeakDeviceId,
         MultipleDevicesId, MultipleDevicesIdState,
     };
     pub use crate::event::testutil::FakeEventCtx;
     pub use crate::frame::testutil::{FakeFrameCtx, FakeTxMetadata, WithFakeFrameContext};
+    pub use crate::matchers::testutil::FakeMatcherDeviceId;
     pub use crate::rng::testutil::{FakeCryptoRng, new_rng, run_with_many_seeds};
     pub use crate::settings::testutil::AlwaysDefaultsSettingsContext;
     pub use crate::socket::sndbuf::testutil::FakeSocketWritableListener;

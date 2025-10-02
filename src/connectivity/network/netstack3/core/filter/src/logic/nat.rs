@@ -1315,6 +1315,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
     use netstack3_base::IntoCoreTimerCtx;
+    use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
     use packet::{EmptyBuf, PacketBuilder, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
@@ -1323,10 +1324,9 @@ mod tests {
     use super::*;
     use crate::conntrack::Tuple;
     use crate::context::testutil::{
-        FakeBindingsCtx, FakeDeviceClass, FakeNatCtx, FakePrimaryAddressId, FakeWeakAddressId,
+        FakeBindingsCtx, FakeNatCtx, FakePrimaryAddressId, FakeWeakAddressId,
     };
     use crate::matchers::PacketMatcher;
-    use crate::matchers::testutil::{FakeDeviceId, ethernet_interface};
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeUdpPacket, IcmpErrorMessage, Icmpv4DestUnreachableError,
         Icmpv6DestUnreachableError,
@@ -1608,7 +1608,8 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let assigned_addr = AddrSubnet::new(I::SRC_IP_2, I::SUBNET.prefix()).unwrap();
-        let mut core_ctx = FakeNatCtx::new([(ethernet_interface(), assigned_addr)]);
+        let mut core_ctx =
+            FakeNatCtx::new([(FakeMatcherDeviceId::ethernet_interface(), assigned_addr)]);
         let packet = FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value();
         let mut conn = ConnectionExclusive::from_packet(&bindings_ctx, &packet);
 
@@ -1637,7 +1638,10 @@ mod tests {
                 &mut conn,
                 &hook,
                 &packet,
-                Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+                Interfaces {
+                    ingress: None,
+                    egress: Some(&FakeMatcherDeviceId::ethernet_interface())
+                },
             ),
             Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(Some(_))))
         );
@@ -1668,7 +1672,10 @@ mod tests {
                 &mut conn,
                 &hook,
                 &packet,
-                Interfaces { ingress: Some(&ethernet_interface()), egress: None },
+                Interfaces {
+                    ingress: Some(&FakeMatcherDeviceId::ethernet_interface()),
+                    egress: None
+                },
             ),
             Verdict::Drop.into()
         );
@@ -1699,30 +1706,41 @@ mod tests {
                 &mut conn,
                 &hook,
                 &packet,
-                Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+                Interfaces {
+                    ingress: None,
+                    egress: Some(&FakeMatcherDeviceId::ethernet_interface())
+                },
             ),
             Verdict::Drop
         );
     }
 
     trait NatHookExt<I: FilterIpExt>: NatHook<I, Verdict<()>: PartialEq> {
-        fn interfaces<'a>(interface: &'a FakeDeviceId) -> Interfaces<'a, FakeDeviceId>;
+        fn interfaces<'a>(
+            interface: &'a FakeMatcherDeviceId,
+        ) -> Interfaces<'a, FakeMatcherDeviceId>;
     }
 
     impl<I: FilterIpExt> NatHookExt<I> for IngressHook {
-        fn interfaces<'a>(interface: &'a FakeDeviceId) -> Interfaces<'a, FakeDeviceId> {
+        fn interfaces<'a>(
+            interface: &'a FakeMatcherDeviceId,
+        ) -> Interfaces<'a, FakeMatcherDeviceId> {
             Interfaces { ingress: Some(interface), egress: None }
         }
     }
 
     impl<I: FilterIpExt> NatHookExt<I> for LocalEgressHook {
-        fn interfaces<'a>(interface: &'a FakeDeviceId) -> Interfaces<'a, FakeDeviceId> {
+        fn interfaces<'a>(
+            interface: &'a FakeMatcherDeviceId,
+        ) -> Interfaces<'a, FakeMatcherDeviceId> {
             Interfaces { ingress: None, egress: Some(interface) }
         }
     }
 
     impl<I: FilterIpExt> NatHookExt<I> for EgressHook {
-        fn interfaces<'a>(interface: &'a FakeDeviceId) -> Interfaces<'a, FakeDeviceId> {
+        fn interfaces<'a>(
+            interface: &'a FakeMatcherDeviceId,
+        ) -> Interfaces<'a, FakeMatcherDeviceId> {
             Interfaces { ingress: None, egress: Some(interface) }
         }
     }
@@ -1767,7 +1785,9 @@ mod tests {
                 }],
             },
             &mut packet,
-            <LocalEgressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <LocalEgressHook as NatHookExt<I>>::interfaces(
+                &FakeMatcherDeviceId::ethernet_interface(),
+            ),
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -1787,7 +1807,7 @@ mod tests {
                 }],
             },
             &mut packet,
-            <EgressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -1817,7 +1837,9 @@ mod tests {
             direction,
             &Hook::default(),
             &mut packet,
-            <LocalEgressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <LocalEgressHook as NatHookExt<I>>::interfaces(
+                &FakeMatcherDeviceId::ethernet_interface(),
+            ),
         );
         assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(conn.external_data().destination.get(), None);
@@ -1833,7 +1855,7 @@ mod tests {
             direction,
             &Hook::default(),
             &mut packet,
-            <EgressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(conn.external_data().destination.get(), None);
@@ -1860,7 +1882,7 @@ mod tests {
             direction,
             &Hook::default(),
             &mut reply,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
         assert_eq!(conn.external_data().destination.get(), None);
@@ -1876,7 +1898,7 @@ mod tests {
             direction,
             &Hook::default(),
             &mut reply,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(conn.external_data().destination.get(), Some(&ShouldNat::No));
@@ -1910,7 +1932,7 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let mut core_ctx = FakeNatCtx::new([(
-            ethernet_interface(),
+            FakeMatcherDeviceId::ethernet_interface(),
             AddrSubnet::new(I::DST_IP_2, I::SUBNET.prefix()).unwrap(),
         )]);
 
@@ -1943,7 +1965,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut packet,
-            Original::interfaces(&ethernet_interface()),
+            Original::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -1953,7 +1975,7 @@ mod tests {
         let (redirect_addr, cached_addr) = Original::redirect_addr(
             &mut core_ctx,
             &packet,
-            Original::interfaces(&ethernet_interface()).ingress,
+            Original::interfaces(&FakeMatcherDeviceId::ethernet_interface()).ingress,
         )
         .expect("get redirect addr for NAT hook");
         let expected = FakeIpPacket::<_, FakeUdpPacket> {
@@ -1998,7 +2020,7 @@ mod tests {
             ConnectionDirection::Reply,
             &nat_routines,
             &mut reply_packet,
-            Reply::interfaces(&ethernet_interface()),
+            Reply::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
         assert_eq!(reply_packet, pre_nat_packet.reply());
@@ -2011,7 +2033,8 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let assigned_addr = AddrSubnet::new(I::SRC_IP_2, I::SUBNET.prefix()).unwrap();
-        let mut core_ctx = FakeNatCtx::new([(ethernet_interface(), assigned_addr)]);
+        let mut core_ctx =
+            FakeNatCtx::new([(FakeMatcherDeviceId::ethernet_interface(), assigned_addr)]);
 
         // Create a packet and get the corresponding connection from conntrack.
         let mut packet = FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value();
@@ -2040,7 +2063,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut packet,
-            Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+            Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -2089,7 +2112,7 @@ mod tests {
             ConnectionDirection::Reply,
             &nat_routines,
             &mut reply_packet,
-            Interfaces { ingress: Some(&ethernet_interface()), egress: None },
+            Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
         assert_eq!(reply_packet, pre_nat_packet.reply());
@@ -2106,7 +2129,8 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let assigned_addr = AddrSubnet::new(I::SRC_IP_2, I::SUBNET.prefix()).unwrap();
-        let mut core_ctx = FakeNatCtx::new([(ethernet_interface(), assigned_addr)]);
+        let mut core_ctx =
+            FakeNatCtx::new([(FakeMatcherDeviceId::ethernet_interface(), assigned_addr)]);
         let packet = FakeIpPacket {
             body: FakeUdpPacket { src_port, ..ArbitraryValue::arbitrary_value() },
             ..ArbitraryValue::arbitrary_value()
@@ -2136,7 +2160,7 @@ mod tests {
             &conntrack,
             &mut conn,
             &packet,
-            &Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+            &Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
             /* src_port */ None,
         );
 
@@ -2171,7 +2195,8 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let assigned_addr = AddrSubnet::new(I::SRC_IP_2, I::SUBNET.prefix()).unwrap();
-        let mut core_ctx = FakeNatCtx::new([(ethernet_interface(), assigned_addr)]);
+        let mut core_ctx =
+            FakeNatCtx::new([(FakeMatcherDeviceId::ethernet_interface(), assigned_addr)]);
 
         // Create a packet and get the corresponding connection from conntrack.
         let mut packet = FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value();
@@ -2193,7 +2218,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut packet,
-            N::interfaces(&ethernet_interface()),
+            N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -2224,7 +2249,7 @@ mod tests {
             ConnectionDirection::Original,
             &nat_routines,
             &mut FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value(),
-            N::interfaces(&ethernet_interface()),
+            N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Drop.into());
         let (nat, _nat_type) = conn.relevant_config(N::NAT_TYPE, ConnectionDirection::Original);
@@ -2235,9 +2260,10 @@ mod tests {
         // Reassign the address to the interface, and packet traversal should now
         // succeed, with NAT re-acquiring a handle to the address.
         assert_matches!(
-            core_ctx
-                .device_addrs
-                .insert(ethernet_interface(), FakePrimaryAddressId(Arc::new(assigned_addr))),
+            core_ctx.device_addrs.insert(
+                FakeMatcherDeviceId::ethernet_interface(),
+                FakePrimaryAddressId(Arc::new(assigned_addr))
+            ),
             None
         );
         let verdict = perform_nat::<N, _, _, _, _>(
@@ -2249,7 +2275,7 @@ mod tests {
             ConnectionDirection::Original,
             &nat_routines,
             &mut FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value(),
-            N::interfaces(&ethernet_interface()),
+            N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
         let (nat, _nat_type) = conn.relevant_config(N::NAT_TYPE, ConnectionDirection::Original);
@@ -2533,7 +2559,7 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let mut core_ctx = FakeNatCtx::new([(
-            ethernet_interface(),
+            FakeMatcherDeviceId::ethernet_interface(),
             AddrSubnet::new(I::NETSTACK, I::SUBNET.prefix()).unwrap(),
         )]);
 
@@ -2575,7 +2601,7 @@ mod tests {
             ConnectionDirection::Original,
             &nat_routines,
             &mut packet,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -2585,7 +2611,8 @@ mod tests {
         let (redirect_addr, cached_addr) = IngressHook::redirect_addr(
             &mut core_ctx,
             &packet,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()).ingress,
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface())
+                .ingress,
         )
         .expect("get redirect addr for NAT hook");
 
@@ -2643,7 +2670,7 @@ mod tests {
             ConnectionDirection::Reply,
             &nat_routines,
             &mut error_packet,
-            <EgressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -2681,7 +2708,7 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let mut core_ctx = FakeNatCtx::new([(
-            ethernet_interface(),
+            FakeMatcherDeviceId::ethernet_interface(),
             AddrSubnet::new(I::NETSTACK, I::SUBNET.prefix()).unwrap(),
         )]);
 
@@ -2725,7 +2752,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut packet,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -2735,7 +2762,8 @@ mod tests {
         let (redirect_addr, cached_addr) = IngressHook::redirect_addr(
             &mut core_ctx,
             &packet,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()).ingress,
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface())
+                .ingress,
         )
         .expect("get redirect addr for NAT hook");
 
@@ -2795,7 +2823,7 @@ mod tests {
             ConnectionDirection::Reply,
             &nat_routines,
             &mut reply_packet,
-            <EgressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -2842,7 +2870,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut error_packet,
-            <IngressHook as NatHookExt<I>>::interfaces(&ethernet_interface()),
+            <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -2907,7 +2935,8 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let assigned_addr = AddrSubnet::new(I::NETSTACK, I::SUBNET.prefix()).unwrap();
-        let mut core_ctx = FakeNatCtx::new([(ethernet_interface(), assigned_addr)]);
+        let mut core_ctx =
+            FakeNatCtx::new([(FakeMatcherDeviceId::ethernet_interface(), assigned_addr)]);
 
         // Create a packet and get the corresponding connection from conntrack.
         let mut packet = EmptyBuf
@@ -2948,7 +2977,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut packet,
-            Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+            Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -3005,7 +3034,7 @@ mod tests {
             ConnectionDirection::Reply,
             &nat_routines,
             &mut error_packet,
-            Interfaces { ingress: Some(&ethernet_interface()), egress: None },
+            Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -3043,7 +3072,8 @@ mod tests {
         let mut bindings_ctx = FakeBindingsCtx::<I>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
         let assigned_addr = AddrSubnet::new(I::NETSTACK, I::SUBNET.prefix()).unwrap();
-        let mut core_ctx = FakeNatCtx::new([(ethernet_interface(), assigned_addr)]);
+        let mut core_ctx =
+            FakeNatCtx::new([(FakeMatcherDeviceId::ethernet_interface(), assigned_addr)]);
 
         // Create a packet and get the corresponding connection from conntrack.
         let mut packet = EmptyBuf
@@ -3083,7 +3113,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut packet,
-            Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+            Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
         assert_eq!(verdict, Verdict::Accept(()));
 
@@ -3144,7 +3174,7 @@ mod tests {
             ConnectionDirection::Reply,
             &nat_routines,
             &mut reply_packet,
-            Interfaces { ingress: Some(&ethernet_interface()), egress: None },
+            Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
         assert_eq!(verdict, Verdict::Accept(()).into());
 
@@ -3189,7 +3219,7 @@ mod tests {
             direction,
             &nat_routines,
             &mut error_packet,
-            Interfaces { ingress: None, egress: Some(&ethernet_interface()) },
+            Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
         assert_eq!(verdict, Verdict::Accept(()));
 

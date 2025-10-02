@@ -188,8 +188,8 @@ pub(crate) mod testutil {
     use derivative::Derivative;
     use net_types::ip::{AddrSubnet, GenericOverIp, Ip};
     use netstack3_base::testutil::{
-        FakeAtomicInstant, FakeCryptoRng, FakeInstant, FakeTimerCtx, FakeWeakDeviceId,
-        WithFakeTimerContext,
+        FakeAtomicInstant, FakeCryptoRng, FakeDeviceClass, FakeInstant, FakeMatcherDeviceId,
+        FakeTimerCtx, FakeWeakDeviceId, WithFakeTimerContext,
     };
     use netstack3_base::{
         AnyDevice, AssignedAddrIpExt, DeviceIdContext, InspectableValue, InstantContext,
@@ -201,7 +201,6 @@ pub(crate) mod testutil {
     use crate::conntrack;
     use crate::logic::FilterTimerId;
     use crate::logic::nat::NatConfig;
-    use crate::matchers::testutil::FakeDeviceId;
     use crate::state::validation::ValidRoutines;
     use crate::state::{IpRoutines, NatRoutines, OneWayBoolean, Routines};
 
@@ -299,12 +298,6 @@ pub(crate) mod testutil {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-    pub enum FakeDeviceClass {
-        Ethernet,
-        Wlan,
-    }
-
     pub struct FakeCtx<I: TestIpExt> {
         state: State<I, FakeWeakAddressId<I>, FakeBindingsCtx<I>>,
         nat: FakeNatCtx<I>,
@@ -313,7 +306,7 @@ pub(crate) mod testutil {
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
     pub struct FakeNatCtx<I: TestIpExt> {
-        pub(crate) device_addrs: HashMap<FakeDeviceId, FakePrimaryAddressId<I>>,
+        pub(crate) device_addrs: HashMap<FakeMatcherDeviceId, FakePrimaryAddressId<I>>,
     }
 
     impl<I: TestIpExt> FakeCtx<I> {
@@ -351,7 +344,7 @@ pub(crate) mod testutil {
             bindings_ctx: &mut FakeBindingsCtx<I>,
             routines: NatRoutines<I, FakeDeviceClass, ()>,
             device_addrs: impl IntoIterator<
-                Item = (FakeDeviceId, AddrSubnet<I::Addr, I::AssignedWitness>),
+                Item = (FakeMatcherDeviceId, AddrSubnet<I::Addr, I::AssignedWitness>),
             >,
         ) -> Self {
             let (installed_routines, uninstalled_routines) =
@@ -381,8 +374,8 @@ pub(crate) mod testutil {
     }
 
     impl<I: TestIpExt> DeviceIdContext<AnyDevice> for FakeCtx<I> {
-        type DeviceId = FakeDeviceId;
-        type WeakDeviceId = FakeWeakDeviceId<FakeDeviceId>;
+        type DeviceId = FakeMatcherDeviceId;
+        type WeakDeviceId = FakeWeakDeviceId<FakeMatcherDeviceId>;
     }
 
     impl<I: TestIpExt> IpDeviceAddressIdContext<I> for FakeCtx<I> {
@@ -408,7 +401,7 @@ pub(crate) mod testutil {
     impl<I: TestIpExt> FakeNatCtx<I> {
         pub fn new(
             device_addrs: impl IntoIterator<
-                Item = (FakeDeviceId, AddrSubnet<I::Addr, I::AssignedWitness>),
+                Item = (FakeMatcherDeviceId, AddrSubnet<I::Addr, I::AssignedWitness>),
             >,
         ) -> Self {
             Self {
@@ -421,8 +414,8 @@ pub(crate) mod testutil {
     }
 
     impl<I: TestIpExt> DeviceIdContext<AnyDevice> for FakeNatCtx<I> {
-        type DeviceId = FakeDeviceId;
-        type WeakDeviceId = FakeWeakDeviceId<FakeDeviceId>;
+        type DeviceId = FakeMatcherDeviceId;
+        type WeakDeviceId = FakeWeakDeviceId<FakeMatcherDeviceId>;
     }
 
     impl<I: TestIpExt> IpDeviceAddressIdContext<I> for FakeNatCtx<I> {

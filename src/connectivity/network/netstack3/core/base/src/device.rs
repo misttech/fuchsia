@@ -188,6 +188,13 @@ pub(crate) mod testutil {
     use crate::InterfaceProperties;
     use crate::testutil::FakeCoreCtx;
 
+    #[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+    #[allow(missing_docs)]
+    pub enum FakeDeviceClass {
+        Ethernet,
+        Wlan,
+    }
+
     /// A fake weak device id.
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
     pub struct FakeWeakDeviceId<D>(pub D);

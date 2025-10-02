@@ -158,81 +158,6 @@ impl<I: FilterIpExt, DeviceClass> PacketMatcher<I, DeviceClass> {
 }
 
 #[cfg(test)]
-pub(crate) mod testutil {
-    use alloc::string::String;
-    use core::num::NonZeroU64;
-
-    use netstack3_base::testutil::{FakeStrongDeviceId, FakeWeakDeviceId};
-    use netstack3_base::{DeviceIdentifier, StrongDeviceIdentifier};
-
-    use super::*;
-    use crate::context::testutil::FakeDeviceClass;
-
-    #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-    pub struct FakeDeviceId {
-        pub id: NonZeroU64,
-        pub name: String,
-        pub class: FakeDeviceClass,
-    }
-
-    impl StrongDeviceIdentifier for FakeDeviceId {
-        type Weak = FakeWeakDeviceId<Self>;
-
-        fn downgrade(&self) -> Self::Weak {
-            FakeWeakDeviceId(self.clone())
-        }
-    }
-
-    impl DeviceIdentifier for FakeDeviceId {
-        fn is_loopback(&self) -> bool {
-            false
-        }
-    }
-
-    impl FakeStrongDeviceId for FakeDeviceId {
-        fn is_alive(&self) -> bool {
-            true
-        }
-    }
-
-    impl PartialEq<FakeWeakDeviceId<FakeDeviceId>> for FakeDeviceId {
-        fn eq(&self, FakeWeakDeviceId(other): &FakeWeakDeviceId<FakeDeviceId>) -> bool {
-            self == other
-        }
-    }
-
-    impl InterfaceProperties<FakeDeviceClass> for FakeDeviceId {
-        fn id_matches(&self, id: &NonZeroU64) -> bool {
-            &self.id == id
-        }
-
-        fn name_matches(&self, name: &str) -> bool {
-            &self.name == name
-        }
-
-        fn device_class_matches(&self, class: &FakeDeviceClass) -> bool {
-            &self.class == class
-        }
-    }
-
-    pub fn wlan_interface() -> FakeDeviceId {
-        FakeDeviceId {
-            id: NonZeroU64::new(1).unwrap(),
-            name: String::from("wlan"),
-            class: FakeDeviceClass::Wlan,
-        }
-    }
-
-    pub fn ethernet_interface() -> FakeDeviceId {
-        FakeDeviceId {
-            id: NonZeroU64::new(2).unwrap(),
-            name: String::from("eth"),
-            class: FakeDeviceClass::Ethernet,
-        }
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
@@ -240,18 +165,17 @@ mod tests {
     use test_case::test_case;
 
     use netstack3_base::SegmentHeader;
+    use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
 
-    use super::testutil::*;
     use super::*;
-    use crate::context::testutil::FakeDeviceClass;
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIcmpEchoRequest, FakeIpPacket, FakeNullPacket, FakeTcpSegment,
         FakeUdpPacket, TestIpExt, TransportPacketExt,
     };
 
-    #[test_case(InterfaceMatcher::Id(wlan_interface().id))]
-    #[test_case(InterfaceMatcher::Name(wlan_interface().name))]
-    #[test_case(InterfaceMatcher::DeviceClass(wlan_interface().class))]
+    #[test_case(InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id))]
+    #[test_case(InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name))]
+    #[test_case(InterfaceMatcher::DeviceClass(FakeMatcherDeviceId::wlan_interface().class))]
     fn match_on_interface_properties(matcher: InterfaceMatcher<FakeDeviceClass>) {
         let matcher = PacketMatcher {
             in_interface: Some(matcher.clone()),
@@ -262,7 +186,10 @@ mod tests {
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: Some(&wlan_interface()), egress: Some(&wlan_interface()) },
+                &Interfaces {
+                    ingress: Some(&FakeMatcherDeviceId::wlan_interface()),
+                    egress: Some(&FakeMatcherDeviceId::wlan_interface())
+                },
             ),
             true
         );
@@ -270,17 +197,17 @@ mod tests {
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces {
-                    ingress: Some(&ethernet_interface()),
-                    egress: Some(&ethernet_interface())
+                    ingress: Some(&FakeMatcherDeviceId::ethernet_interface()),
+                    egress: Some(&FakeMatcherDeviceId::ethernet_interface())
                 },
             ),
             false
         );
     }
 
-    #[test_case(InterfaceMatcher::Id(wlan_interface().id))]
-    #[test_case(InterfaceMatcher::Name(wlan_interface().name))]
-    #[test_case(InterfaceMatcher::DeviceClass(wlan_interface().class))]
+    #[test_case(InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id))]
+    #[test_case(InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name))]
+    #[test_case(InterfaceMatcher::DeviceClass(FakeMatcherDeviceId::wlan_interface().class))]
     fn interface_matcher_specified_but_not_available_in_hook_does_not_match(
         matcher: InterfaceMatcher<FakeDeviceClass>,
     ) {
@@ -293,21 +220,24 @@ mod tests {
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: Some(&wlan_interface()) },
+                &Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::wlan_interface()) },
             ),
             false
         );
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: Some(&wlan_interface()), egress: None },
+                &Interfaces { ingress: Some(&FakeMatcherDeviceId::wlan_interface()), egress: None },
             ),
             false
         );
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: Some(&wlan_interface()), egress: Some(&wlan_interface()) },
+                &Interfaces {
+                    ingress: Some(&FakeMatcherDeviceId::wlan_interface()),
+                    egress: Some(&FakeMatcherDeviceId::wlan_interface())
+                },
             ),
             true
         );
@@ -359,14 +289,14 @@ mod tests {
             PacketMatcher { dst_address: Some(matcher), ..Default::default() },
         ] {
             assert_ne!(
-                matcher.matches::<_, FakeDeviceId>(
+                matcher.matches::<_, FakeMatcherDeviceId>(
                     &FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                     &Interfaces { ingress: None, egress: None },
                 ),
                 invert
             );
             assert_eq!(
-                matcher.matches::<_, FakeDeviceId>(
+                matcher.matches::<_, FakeMatcherDeviceId>(
                     &FakeIpPacket {
                         src_ip: I::IP_OUTSIDE_SUBNET,
                         dst_ip: I::IP_OUTSIDE_SUBNET,
@@ -437,7 +367,8 @@ mod tests {
             ..Default::default()
         };
 
-        matcher.matches::<_, FakeDeviceId>(&packet, &Interfaces { ingress: None, egress: None })
+        matcher
+            .matches::<_, FakeMatcherDeviceId>(&packet, &Interfaces { ingress: None, egress: None })
     }
 
     #[test_case(
@@ -481,7 +412,7 @@ mod tests {
         };
         let (src, dst) = transport_header;
         assert_eq!(
-            matcher.matches::<_, FakeDeviceId>(
+            matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<Ipv4, _> {
                     body: FakeTcpSegment {
                         src_port: src,
@@ -507,7 +438,7 @@ mod tests {
         };
         let (src, dst) = transport_header;
         assert_eq!(
-            matcher.matches::<_, FakeDeviceId>(
+            matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<Ipv4, _> {
                     body: FakeUdpPacket { src_port: src, dst_port: dst },
                     ..ArbitraryValue::arbitrary_value()
@@ -533,7 +464,7 @@ mod tests {
         };
 
         assert_eq!(
-            matcher.matches::<_, FakeDeviceId>(
+            matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<_, FakeTcpSegment> {
                     src_ip: I::IP_OUTSIDE_SUBNET,
                     ..ArbitraryValue::arbitrary_value()
@@ -543,7 +474,7 @@ mod tests {
             false
         );
         assert_eq!(
-            matcher.matches::<_, FakeDeviceId>(
+            matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<_, FakeTcpSegment> {
                     dst_ip: I::IP_OUTSIDE_SUBNET,
                     ..ArbitraryValue::arbitrary_value()
@@ -553,7 +484,7 @@ mod tests {
             false
         );
         assert_eq!(
-            matcher.matches::<_, FakeDeviceId>(
+            matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
             ),
@@ -564,7 +495,7 @@ mod tests {
     #[test]
     fn match_by_default_if_no_specified_matchers() {
         assert_eq!(
-            PacketMatcher::<_, FakeDeviceClass>::default().matches::<_, FakeDeviceId>(
+            PacketMatcher::<_, FakeDeviceClass>::default().matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                 &Interfaces { ingress: None, egress: None },
             ),
