@@ -79,7 +79,6 @@ const std::vector<Fastboot::CommandEntry>& Fastboot::GetCommandTable() {
   // Using a static pointer and allocate with `new` so that the static instance
   // never gets deleted.
 
-  // TODO(https://fxbug.dev/397515768): We need to support the `erase` command for fxblob products.
   static const std::vector<CommandEntry>* kCommandTable = new std::vector<CommandEntry>({
       {
           .name = "getvar",
@@ -88,6 +87,10 @@ const std::vector<Fastboot::CommandEntry>& Fastboot::GetCommandTable() {
       {
           .name = "flash",
           .cmd = &Fastboot::Flash,
+      },
+      {
+          .name = "erase",
+          .cmd = &Fastboot::Erase,
       },
       {
           .name = "set_active",
@@ -192,6 +195,19 @@ zx::result<> Fastboot::GetVar(const std::string& command, Transport* transport) 
     return SendResponse(ResponseType::kFail, "Not enough arguments", transport);
   }
 
+  // TODO(https://fxbug.dev/397515768): We should avoid hard-coding partition types/sizes here.
+  // This is a temporary implementation to unblock fastboot -w support. Hard-coding these here means
+  // we won't see these variables with `fastboot getvar all`, but the current variable table doesn't
+  // support a means of querying multi-part variables.
+  if (args.size() >= 3) {
+    if (args[1] == "partition-type" && args[2] == "userdata") {
+      return SendResponse(ResponseType::kOkay, "fxfs-vol", transport);
+    }
+    if (args[1] == "partition-size" && args[2] == "userdata") {
+      return SendResponse(ResponseType::kOkay, "0x00", transport);
+    }
+  }
+
   const VariableHashTable& var_table = GetVariableTable();
   const VariableHashTable::const_iterator find_res = var_table.find(args[1].data());
   if (find_res == var_table.end()) {
@@ -200,7 +216,7 @@ zx::result<> Fastboot::GetVar(const std::string& command, Transport* transport) 
 
   zx::result<std::string> var = (this->*(find_res->second))(args, transport);
   if (var.is_error()) {
-    return SendResponse(ResponseType::kFail, "Fail to get variable", transport,
+    return SendResponse(ResponseType::kFail, "Failed to get variable", transport,
                         zx::error(var.status_value()));
   }
 
@@ -522,6 +538,43 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
   }
 
   return SendResponse(ResponseType::kFail, "Unsupported partition", transport);
+}
+
+zx::result<> Fastboot::Erase(const std::string& command, Transport* transport) {
+  std::vector<std::string_view> args =
+      fxl::SplitString(command, ":", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
+  if (args.size() < 2) {
+    return SendResponse(ResponseType::kFail, "Not enough arguments", transport);
+  }
+  auto partition_label = args[1];
+  // We only support erasing the userdata partition.
+  if (partition_label != "userdata") {
+    FX_LOGST(ERROR, kFastbootLogTag) << "Ignoring request to erase partition: " << partition_label;
+    return SendResponse(ResponseType::kFail, "Unknown partition", transport);
+  }
+  auto svc_root = GetSvcRoot();
+  if (svc_root.is_error()) {
+    return zx::error(svc_root.status_value());
+  }
+  auto fshost_admin = component::ConnectAt<fuchsia_fshost::Admin>(*svc_root);
+  if (fshost_admin.is_error()) {
+    return zx::error(fshost_admin.status_value());
+  }
+  // Use the fuchsia.fshost/Admin.ShredDataVolume to ensure the userdata partition is shredded on
+  // the next boot. Note that this does not delete the volume immediately, but it will be deleted
+  // on the next boot when we fail to unlock the volume.
+  FX_LOGST(INFO, kFastbootLogTag) << "Shredding data volume.";
+  auto response = fidl::WireCall(*fshost_admin)->ShredDataVolume();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke ShredDataVolume", transport,
+                        zx::error(response.status()));
+  }
+  if (response->is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to shred data volume", transport,
+                        zx::error(response->error_value()));
+  }
+
+  return SendResponse(ResponseType::kOkay, "", transport);
 }
 
 zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> Fastboot::FindBootManager() {

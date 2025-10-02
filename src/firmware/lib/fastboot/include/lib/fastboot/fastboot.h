@@ -56,6 +56,7 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<std::string> GetVarVersion(const std::vector<std::string_view> &, Transport *);
   zx::result<std::string> GetVarAll(const std::vector<std::string_view> &, Transport *);
   zx::result<> Flash(const std::string &command, Transport *transport);
+  zx::result<> Erase(const std::string &command, Transport *transport);
   zx::result<> SetActive(const std::string &command, Transport *transport);
   zx::result<> Reboot(const std::string &command, Transport *transport);
   zx::result<> RebootBootloader(const std::string &command, Transport *transport);
