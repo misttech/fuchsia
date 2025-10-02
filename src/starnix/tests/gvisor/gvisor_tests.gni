@@ -167,7 +167,6 @@ gvisor_tests = [
   "tcp_socket_test",
   "tgkill_test",
   "time_test",
-  "timerfd_test",
   "timers_test",
   "tkill_test",
   "truncate_test",
@@ -270,6 +269,14 @@ gvisor_tests_custom_manifest = [
     binary = "syslog_test"
     capabilities = [ "SYSLOG" ]
   },
+  {
+    test_name = "timerfd_test"
+    capabilities = [ "SYSLOG" ]
+    container_config = {
+      extra_features = []
+      enable_utc_time_adjustment = true
+    }
+  },
 ]
 
 gvisor_tests_container_config = []
@@ -352,6 +359,7 @@ template("gvisor_test_package") {
 
   _container_config = {
   }
+
   if (defined(invoker.container_config)) {
     _container_config = invoker.container_config
   }
@@ -394,7 +402,11 @@ template("gvisor_test_package") {
   starnix_container_config_offers(_container_config_shard_label) {
     output = _container_config_shard
     offer_from = "#config"
-    offer_to = [ "#container" ]
+    offer_to = [
+      "#container",
+      "#runner",
+      "#timekeeper",
+    ]
   }
 
   _bin_resource_label = "${target_name}_bin"

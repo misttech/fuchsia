@@ -154,6 +154,13 @@ syscall_tests_etc = [
       extra_features = [ "framebuffer" ]
     }
   },
+  {
+    name = "timerfd_mutable_test"
+    container_config = {
+      extra_features = []
+      enable_utc_time_adjustment = true
+    }
+  },
 ]
 
 if (target_cpu == "x64") {

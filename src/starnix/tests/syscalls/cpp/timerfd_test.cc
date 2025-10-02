@@ -24,21 +24,21 @@ void run_timerfd_test(clockid_t clock_id) {
   ASSERT_EQ(0, clock_gettime(CLOCK_REALTIME, &begin));
 
   int fd = timerfd_create(clock_id, 0);
-  ASSERT_NE(-1, fd) << errno;
+  ASSERT_NE(-1, fd) << strerror(errno);
 
   // Test timer 1 second in the future.
   struct itimerspec its = {};
   its.it_value = begin;
   its.it_value.tv_sec += 1;
-  EXPECT_EQ(0, timerfd_settime(fd, TFD_TIMER_ABSTIME, &its, nullptr));
+  EXPECT_EQ(0, timerfd_settime(fd, TFD_TIMER_ABSTIME, &its, nullptr)) << strerror(errno);
 
   // Test polling on the timer expiration signal.
   pollfd pfd = {.fd = fd, .events = POLLIN};
-  ASSERT_EQ(poll(&pfd, 1, -1), 1);
+  ASSERT_EQ(poll(&pfd, 1, -1), 1) << strerror(errno);
   EXPECT_EQ(pfd.revents, POLLIN);
 
   uint64_t val = 0;
-  EXPECT_EQ(ssize_t(sizeof(val)), read(fd, &val, sizeof(val))) << errno;
+  EXPECT_EQ(ssize_t(sizeof(val)), read(fd, &val, sizeof(val))) << strerror(errno);
   EXPECT_EQ(1u, val);  // Timer went off one time.
 
   // Elapsed time should be at least one second in the future.

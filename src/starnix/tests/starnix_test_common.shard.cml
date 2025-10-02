@@ -45,11 +45,19 @@
         },
         {
             name: "timekeeper",
-            url: "wake-alarms#meta/default.cm",
+            url: "timekeeper-for-starnix-tests#meta/timekeeper.cm",
+        },
+        {
+            name: "utc-handle-vendor",
+            url: "utc-handle-vendor#meta/default.cm",
         },
         {
             name: "profiler",
             url: "profiler#meta/profiler.cm",
+        },
+        {
+            name: "cobalt",
+            url: "fake_cobalt#meta/fake_cobalt.cm",
         },
     ],
     capabilities: [
@@ -106,6 +114,7 @@
                 "#fake-hrtimer",
                 "#kernel",
                 "#test-system-activity-governor",
+                "#timekeeper",
             ],
         },
         {
@@ -114,7 +123,10 @@
                 "fuchsia.power.system.ActivityGovernor",
             ],
             from: "#test-system-activity-governor",
-            to: [ "#kernel" ],
+            to: [
+                "#kernel",
+                "#timekeeper",
+            ],
         },
         {
             protocol: [
@@ -162,9 +174,16 @@
             to: [ "#kernel" ],
         },
         {
-            protocol: [ "fuchsia.time.alarms.WakeAlarms" ],
+            protocol: [
+                "fuchsia.time.alarms.WakeAlarms",
+                "fuchsia.time.external.Adjust",
+            ],
             from: "#timekeeper",
-            to: [ "#kernel" ],
+            to: [
+                "#kernel",
+                "#runner",
+            ],
+            availability: "optional",
         },
         {
             protocol: [ "fuchsia.net.tun.Control" ],
@@ -206,6 +225,21 @@
             event_stream: [ "debug_started" ],
             from: "parent",
             to: "#profiler",
+        },
+        {
+            // Provides a fake UTC clock handle to programs that need to manipulate
+            // the UTC handle in tests. This should *never* be done in production.
+            protocol: [ "fuchsia.time.Maintenance" ],
+            from: "#utc-handle-vendor",
+            to: [
+                "#kernel",
+                "#timekeeper",
+            ],
+        },
+        {
+            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
+            from: "#cobalt",
+            to: [ "#timekeeper" ],
         },
     ],
     environments: [

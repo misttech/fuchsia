@@ -17,6 +17,11 @@ starnix_test_subpackages = [
   "//src/starnix/runner:starnix_package",
   "//src/starnix/tests:netstack_package",
   "//src/storage/fxfs/test-fxfs:test-fxfs-package",
+  "//src/sys/time/timekeeper:timekeeper-with-config-for-starnix-tests",
+  "//src/sys/time/testing/utc-handle-vendor:pkg",
   "//src/sys/time/testing/fake-hrtimer:pkg",
-  "//src/sys/time/testing/wake-alarms:pkg",
+  "//src/sys/time/testing/dev_time_source:pkg",
+
+  # Timekeeper needs.
+  "//src/cobalt/bin/testing/fake_cobalt",
 ]

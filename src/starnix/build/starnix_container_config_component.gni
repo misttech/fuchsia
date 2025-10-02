@@ -11,7 +11,7 @@ _config_schema = "//src/starnix/containers/container_config.shard.cml"
 # Arguments:
 #   config (scope)
 #     Defines the actual configuration values. Can include any of the keys listed for capabilities
-#     in //src/starnix/containers/container_config.shard.json. Provided values for each key must
+#     in //src/starnix/containers/container_config.shard.cml. Provided values for each key must
 #     match the type specified in the schema.
 template("starnix_container_config_component") {
   assert(defined(invoker.config), "must define a config")

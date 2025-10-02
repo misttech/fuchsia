@@ -2213,13 +2213,6 @@ pub fn sys_timerfd_settime(
         return error!(EINVAL);
     }
 
-    if flags & TFD_TIMER_CANCEL_ON_SET != 0 {
-        track_stub!(
-            TODO("https://fxbug.dev/297433837"),
-            "timerfd_settime: TFD_TIMER_CANCEL_ON_SET",
-        );
-    }
-
     let file = current_task.files.get(fd)?;
     let timer_file = file.downcast_file::<TimerFile>().ok_or_else(|| errno!(EINVAL))?;
 

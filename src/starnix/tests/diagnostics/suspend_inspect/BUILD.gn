@@ -76,7 +76,8 @@ fuchsia_package("starnix_suspend_inspect_test") {
     ":suspend_client",
     "//src/starnix/containers/debian:container_resources",
   ]
-  subpackages = starnix_test_subpackages
+  subpackages =
+      starnix_test_subpackages + [ "//src/sys/time/testing/wake-alarms:pkg" ]
 }
 
 fuchsia_test_component("starnix_suspend_inspect_test_root_component") {

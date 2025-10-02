@@ -94,7 +94,11 @@ template("syscall_test") {
   starnix_container_config_offers(_container_config_shard_label) {
     output = _container_config_shard
     offer_from = "#config"
-    offer_to = [ "#container" ]
+    offer_to = [
+      "#container",
+      "#timekeeper",
+      "#runner",
+    ]
   }
 
   # Generate the manifest

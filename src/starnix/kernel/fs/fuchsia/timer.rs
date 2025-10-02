@@ -5,7 +5,7 @@
 use crate::power::OnWakeOps;
 use crate::task::{CurrentTask, TargetTime};
 use crate::time::utc::estimate_boot_deadline_from_utc;
-use crate::vfs::timer::TimerOps;
+use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, from_status_like_fdio};
 use std::sync::Weak;
@@ -48,7 +48,7 @@ impl TimerOps for MonotonicZxTimer {
     }
 
     // Not supported.
-    fn get_timeline_changes_counter(&self, _: &CurrentTask) -> Option<zx::Counter> {
+    fn get_timeline_change_observer(&self, _: &CurrentTask) -> Option<TimelineChangeObserver> {
         None
     }
 }
@@ -95,7 +95,7 @@ impl TimerOps for BootZxTimer {
     }
 
     // Not supported.
-    fn get_timeline_changes_counter(&self, _: &CurrentTask) -> Option<zx::Counter> {
+    fn get_timeline_change_observer(&self, _: &CurrentTask) -> Option<TimelineChangeObserver> {
         None
     }
 }

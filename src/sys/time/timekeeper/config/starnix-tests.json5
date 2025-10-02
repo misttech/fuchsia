@@ -11,11 +11,14 @@
     max_frequency_error_ppm: 10,
 
     // Subpackage.
-    primary_time_source_url: "#meta/dev_time_source.cm",
+    primary_time_source_url: "dev_time_source#meta/dev_time_source.cm",
     initial_frequency_ppm: 1000000,
     monitor_uses_pull: false,
-    back_off_time_between_pull_samples_sec: 5,
-    first_sampling_delay_sec: 0,
+    back_off_time_between_pull_samples_sec: 500,
+
+    // Effectively turn off the time source so that it does not introduce
+    // added indeterminacy in the tests.
+    first_sampling_delay_sec: 100000,
     primary_uses_pull: false,
     monitor_time_source_url: "",
 
@@ -30,10 +33,16 @@
     // This should not be needed for tests.
     has_real_time_clock: false,
     utc_start_at_startup_when_invalid_rtc: false,
+
+    // Required for Starnix tests.
     serve_fuchsia_time_alarms: true,
     has_always_on_counter: false,
+
+    // Required for Starnix tests.
     serve_fuchsia_time_external_adjust: true,
-    utc_max_allowed_delta_past_sec: 0,
-    utc_max_allowed_delta_future_sec: 0,
+
+    // We allow freely setting UTC within ~2-3 days of actual.
+    utc_max_allowed_delta_past_sec: 200000,
+    utc_max_allowed_delta_future_sec: 200000,
     use_connectivity: false,
 }

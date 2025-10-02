@@ -4,12 +4,12 @@
 
 use crate::power::{OnWakeOps, create_proxy_for_wake_events_counter_zero};
 use crate::task::{CurrentTask, LockedAndTask, TargetTime};
-use crate::vfs::timer::TimerOps;
+use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::{FutureExt, SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
 use starnix_logging::{log_debug, log_error, log_warn};
 use starnix_sync::{Mutex, MutexGuard};
@@ -304,7 +304,7 @@ enum Cmd {
         suspend_lock: SuspendLock,
     },
     /// Install a timeline change monitor
-    MonitorUtc { timer: HrTimerHandle, counter: zx::Counter },
+    MonitorUtc { timer: HrTimerHandle, counter: zx::Counter, recv: mpsc::UnboundedReceiver<bool> },
 }
 
 // Increments `counter` every time the UTC timeline changes.
@@ -324,7 +324,7 @@ enum Cmd {
 // has been signaled, so does not fulfill (1). Atomics don't generate a signal on increment, so
 // don't satisfy (2). Conversely, the `wait_async` machinery on timers can already deal with
 // HandleBased objects, so a Counter can be readily used there.
-async fn run_utc_timeline_monitor(counter: zx::Counter) {
+async fn run_utc_timeline_monitor(counter: zx::Counter, mut recv: mpsc::UnboundedReceiver<bool>) {
     log_debug!("run_utc_timeline_monitor: monitoring UTC clock timeline changes: enter");
     let utc_handle = crate::time::utc::duplicate_real_utc_clock_handle().inspect_err(|err| {
         log_error!("run_utc_timeline_monitor: could not monitor UTC timeline: {err:?}")
@@ -336,28 +336,41 @@ async fn run_utc_timeline_monitor(counter: zx::Counter) {
         );
         let utc_handle = std::rc::Rc::new(utc_handle);
         let utc_handle_fn = || utc_handle.clone();
+        let mut interested = false;
         loop {
             let utc_handle = utc_handle_fn();
             // CLOCK_UPDATED is auto-cleared.
-            let result =
+            let mut updated_fut =
                 fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED)
-                    .await
-                    .inspect_err(|err| {
-                        log_warn!("run_utc_timeline_monitor: could not wait on signals: {err:?}, counter={counter:?}");
-                    });
-            if result.is_err() {
-                break;
-            }
-            log_debug!("run_utc_timeline_monitor: UTC timeline updated, counter: {counter:?}");
-            // The counter reader should write a zero once it observes
-            // `zx::Signals::COUNTER_POSITIVE`.
-            counter
-                .add(1)
-                // Ignore the error after logging it. Should we exit the loop here?
-                .inspect_err(|err| {
-                    log_error!("run_utc_timeline_monitor: could not increment counter: {err:?}")
-                })
-                .unwrap_or(());
+                    .fuse();
+            let mut interest_fut = recv.next();
+            select! {
+                result = updated_fut => {
+                    if result.is_err() {
+                        log_warn!("run_utc_timeline_monitor: could not wait on signals: {:?}, counter={counter:?}", result);
+                        break;
+                    }
+                    if interested {
+                        log_debug!("run_utc_timeline_monitor: UTC timeline updated, counter: {counter:?}");
+                        // The consumer of this `counter` should wait for COUNTER_POSITIVE, and
+                        // once it observes the value of the counter, subtract the read value from
+                        // counter.
+                        counter
+                            .add(1)
+                            // Ignore the error after logging it. Should we exit the loop here?
+                            .inspect_err(|err| {
+                                log_error!("run_utc_timeline_monitor: could not increment counter: {err:?}")
+                            })
+                            .unwrap_or(());
+                    }
+                },
+                result = interest_fut => {
+                    if let Some(interest) = result {
+                        log_debug!("interest change: {counter:?}, interest: {interest:?}");
+                        interested = interest;
+                    }
+                },
+            };
         }
     }
     log_debug!("run_utc_timeline_monitor: monitoring UTC clock timeline changes: exit");
@@ -447,17 +460,24 @@ impl HrTimerManager {
     ///
     /// # Args
     /// - `timer`: the handle of the timer that needs monitoring of timeline changes.
-    pub fn get_timeline_change_counter(&self, timer: &HrTimerHandle) -> Result<zx::Counter, Errno> {
-        let counter = zx::Counter::create();
-        let ret = duplicate_handle(&counter);
+    pub fn get_timeline_change_observer(
+        &self,
+        timer: &HrTimerHandle,
+    ) -> Result<TimelineChangeObserver, Errno> {
         let timer_id = timer.get_id();
+        let counter = zx::Counter::create();
+        let counter_clone = duplicate_handle(&counter).map_err(|err| {
+            log_error!("could not duplicate handle: {err:?}");
+            errno!(EINVAL, format!("could not duplicate handle: {err}, {timer_id:?}"))
+        })?;
+        let (send, recv) = mpsc::unbounded();
         self.get_sender()
-            .unbounded_send(Cmd::MonitorUtc { timer: timer.clone(), counter })
+            .unbounded_send(Cmd::MonitorUtc { timer: timer.clone(), counter, recv })
             .map_err(|err| {
-                log_error!("could not send: {err:?}");
-                errno!(EINVAL, format!("could not send Cmd::Monitor: {err}, {timer_id:?}"))
-            })?;
-        ret
+            log_error!("could not send: {err:?}");
+            errno!(EINVAL, format!("could not send Cmd::Monitor: {err}, {timer_id:?}"))
+        })?;
+        Ok(TimelineChangeObserver::new(counter_clone, send))
     }
 
     /// Initialize the [HrTimerManager] in the context of the current system task.
@@ -834,11 +854,11 @@ impl HrTimerManager {
                     }
                     log_debug!("Cmd::Stop done: {timer_id:?}");
                 }
-                Cmd::MonitorUtc { timer, counter } => {
+                Cmd::MonitorUtc { timer, counter, recv } => {
                     ftrace::duration!(c"alarms", c"starnix:hrtimer:monitor_utc", "timer_id" => timer.get_id());
                     ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", timer.trace_id());
                     let monitor_task = fasync::Task::local(async move {
-                        run_utc_timeline_monitor(counter).await;
+                        run_utc_timeline_monitor(counter, recv).await;
                     });
                     task_by_timer_id.insert(timer.get_id(), monitor_task);
                 }
@@ -1040,12 +1060,15 @@ impl TimerOps for HrTimerHandle {
         self.event.as_handle_ref()
     }
 
-    fn get_timeline_changes_counter(&self, current_task: &CurrentTask) -> Option<zx::Counter> {
+    fn get_timeline_change_observer(
+        &self,
+        current_task: &CurrentTask,
+    ) -> Option<TimelineChangeObserver> {
         // Should this return errno instead?
         current_task
             .kernel()
             .hrtimer_manager
-            .get_timeline_change_counter(self)
+            .get_timeline_change_observer(self)
             .inspect_err(|err| {
                 log_error!("hr_timer_manager: could not create timeline change counter: {err:?}")
             })
