@@ -32,6 +32,7 @@
  *
  */
 
+#include <openthread/platform/logging.h>
 #include <openthread/platform/misc.h>
 #include <openthread/platform/settings.h>
 

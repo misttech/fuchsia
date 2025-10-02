@@ -28,6 +28,8 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <cstdarg>
+
 #include <openthread/platform/logging.h>
 #include <openthread/platform/toolchain.h>
 

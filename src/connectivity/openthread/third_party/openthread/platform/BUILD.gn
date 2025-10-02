@@ -59,8 +59,8 @@ source_set("platform") {
   }
 
   if (openthread_upstream_version ==
-      "33a1f095691bd9e5a8743011d8ef03eca363a251") {
-    defines = [ "OPENTHREAD_250225=1" ]
+      "9ff0f8834e5a869eeee942619cb0408d3f82c876") {
+    defines = [ "OPENTHREAD_250514=1" ]
   }
 
   deps = [ "//third_party/openthread:lib-ot-core" ]

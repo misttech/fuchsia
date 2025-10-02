@@ -74,7 +74,7 @@ void Radio::Init(const char *aUrl) {
   VerifyOrDie(mRadioUrl.GetPath() != nullptr, OT_EXIT_INVALID_ARGUMENTS);
 
   memset(&callbacks, 0, sizeof(callbacks));
-#if OPENTHREAD_CONFIG_DIAG_ENABLE
+#if OPENTHREAD_CONFIG_DIAG_ENABLE && OPENTHREAD_250514
   callbacks.mDiagReceiveDone = otPlatDiagRadioReceiveDone;
   callbacks.mDiagTransmitDone = otPlatDiagRadioTransmitDone;
 #endif  // OPENTHREAD_CONFIG_DIAG_ENABLE
@@ -969,4 +969,9 @@ const otRcpInterfaceMetrics *otSysGetRcpInterfaceMetrics(void) {
 void otSysSetRcpRestorationEnabled(bool aEnabled) {
   return GetRadioSpinel().SetRcpRestorationEnabled(aEnabled);
 }
+#endif
+
+#ifndef OPENTHREAD_20250514
+extern "C" bool otPlatDnsIsUpstreamQueryAvailable(otInstance *aInstance) { return true; }
+
 #endif
