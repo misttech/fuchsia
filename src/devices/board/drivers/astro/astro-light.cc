@@ -9,7 +9,6 @@
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
-#include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
@@ -61,7 +60,7 @@ zx_status_t Astro::LightInit() {
       .metadata =
           std::vector<fpbus::Metadata>{
               {{
-                  .id = std::to_string(DEVICE_METADATA_PRIVATE),
+                  .id = fuchsia_hardware_lightsensor::Metadata::kSerializableName,
                   .data = std::move(persisted_light_sensor_metadata.value()),
               }},
           },

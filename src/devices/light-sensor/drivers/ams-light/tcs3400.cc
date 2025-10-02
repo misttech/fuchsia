@@ -7,21 +7,15 @@
 #include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/metadata.h>
-#include <lib/ddk/platform-defs.h>
-#include <lib/fidl/cpp/wire/server.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/clock.h>
-#include <threads.h>
 #include <unistd.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/port.h>
 
-#include <ddktl/fidl.h>
 #include <fbl/auto_lock.h>
 
-#include "lib/inspect/cpp/vmo/types.h"
 #include "tcs3400-regs.h"
 
 namespace {
@@ -89,7 +83,6 @@ bool FeatureValueValid(int64_t value, const T& axis) {
   return value >= axis.range.min && value <= axis.range.max;
 }
 
-constexpr size_t kMaxFeatureReports = 10;
 constexpr std::string_view kEventTime("event_time");
 constexpr std::string_view kReportingIntervalUs("report_interval_us");
 constexpr std::string_view kReportingState("reporting_state");
@@ -196,16 +189,7 @@ InspectTcs3400FeatureReport::InspectTcs3400FeatureReport(inspect::Node n,
   integration_time_us.Set(report.integration_time_us);
 }
 
-Tcs3400Device::Tcs3400Device(zx_device_t* device, async_dispatcher_t* dispatcher,
-                             ddk::I2cChannel i2c, fidl::ClientEnd<fuchsia_hardware_gpio::Gpio> gpio)
-    : DeviceType(device),
-      dispatcher_(dispatcher),
-      i2c_(std::move(i2c)),
-      gpio_(std::move(gpio)),
-      inspect_reports_(inspect::BoundedListNode(inspect_.GetRoot().CreateChild("feature_reports"),
-                                                kMaxFeatureReports)) {}
-
-zx::result<Tcs3400InputReport> Tcs3400Device::ReadInputRpt() {
+zx::result<Tcs3400InputReport> Tcs3400::ReadInputRpt() {
   Tcs3400InputReport report{.event_time = zx::clock::get_monotonic()};
 
   bool saturatedReading = false;
@@ -221,40 +205,36 @@ zx::result<Tcs3400InputReport> Tcs3400Device::ReadInputRpt() {
   };
 
   for (const auto& i : regs) {
-    uint8_t buf_h, buf_l;
-    zx_status_t status;
     // Read lower byte first, the device holds upper byte of a sample in a shadow register after
     // a lower byte read
-    status = ReadReg(i.reg_l, buf_l);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "i2c_write_read_sync failed: %d", status);
-      return zx::error(status);
+    zx::result buf_l = ReadReg(i.reg_l);
+    if (buf_l.is_error()) {
+      fdf::error("i2c_write_read_sync failed: {}", buf_l);
+      return buf_l.take_error();
     }
-    status = ReadReg(i.reg_h, buf_h);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "i2c_write_read_sync failed: %d", status);
-      return zx::error(status);
+    zx::result buf_h = ReadReg(i.reg_h);
+    if (buf_h.is_error()) {
+      fdf::error("i2c_write_read_sync failed: {}", buf_h);
+      return buf_h.take_error();
     }
-    auto out = static_cast<uint16_t>(static_cast<float>(((buf_h & 0xFF) << 8) | (buf_l & 0xFF)));
+    auto out = static_cast<uint16_t>(
+        static_cast<float>(((buf_h.value() & 0xFF) << 8) | (buf_l.value() & 0xFF)));
 
     // Use memcpy here because i.out is a misaligned pointer and dereferencing a
     // misaligned pointer is UB. This ends up getting lowered to a 16-bit store.
     memcpy(i.out, &out, sizeof(out));
 
-    zxlogf(DEBUG, "raw: 0x%04X  again: %u  atime: %u", out, again_, atime_);
+    fdf::debug("raw: {:#04x}  again: {}  atime: {}", out, again_, atime_);
   }
 
-  uint8_t status_val;
-  zx_status_t status;
-  status = ReadReg(TCS_I2C_STATUS, status_val);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "i2c_write_read_sync failed: %d", status);
-    return zx::error(status);
+  zx::result status_val = ReadReg(TCS_I2C_STATUS);
+  if (status_val.is_error()) {
+    fdf::error("i2c_write_read_sync failed: {}", status_val);
+    return status_val.take_error();
   }
-  if ((status_val & TCS_I2C_STATUS_ASAT) == TCS_I2C_STATUS_ASAT) {
-    status = WriteReg(TCS_I2C_CICLEAR, 0x00);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Unable to clear saturation status");
+  if ((status_val.value() & TCS_I2C_STATUS_ASAT) == TCS_I2C_STATUS_ASAT) {
+    if (zx::result result = WriteReg(TCS_I2C_CICLEAR, 0x00); result.is_error()) {
+      fdf::error("Unable to clear saturation status: {}", result);
     }
 
     report.red = kMaxSaturationRed;
@@ -263,18 +243,18 @@ zx::result<Tcs3400InputReport> Tcs3400Device::ReadInputRpt() {
     report.illuminance = kMaxSaturationClear;
     saturatedReading = true;
     if (!isSaturated_ || zx::clock::get_monotonic() - lastSaturatedLog_ >= kSaturatedLogTime) {
-      zxlogf(INFO, "sensor is saturated via status register");
+      fdf::info("sensor is saturated via status register");
       lastSaturatedLog_ = zx::clock::get_monotonic();
     }
   } else if (isSaturated_) {
-    zxlogf(INFO, "sensor is no longer saturated");
+    fdf::info("sensor is no longer saturated");
   }
   isSaturated_ = saturatedReading;
 
   return zx::ok(report);
 }
 
-void Tcs3400Device::Configure() {
+void Tcs3400::Configure() {
   Tcs3400FeatureReport feature_report;
   {
     fbl::AutoLock lock(&feature_lock_);
@@ -311,9 +291,8 @@ void Tcs3400Device::Configure() {
        TCS_I2C_ENABLE_POWER_ON | TCS_I2C_ENABLE_ADC_ENABLE | TCS_I2C_ENABLE_INT_ENABLE},
   };
   for (const auto& i : setup) {
-    auto status = WriteReg(i.cmd, i.val);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "i2c_write_sync failed: %d", status);
+    if (zx::result result = WriteReg(i.cmd, i.val); result.is_error()) {
+      fdf::error("i2c_write_sync failed: {}", result);
       break;  // do not exit thread, future transactions may succeed
     }
   }
@@ -321,12 +300,12 @@ void Tcs3400Device::Configure() {
   // per spec 0 is device's default. we define the default as no polling.
   polling_handler_.Cancel();
   if (feature_report.report_interval_us != 0) {
-    polling_handler_.PostDelayed(dispatcher_, zx::usec(feature_report.report_interval_us));
+    polling_handler_.PostDelayed(dispatcher(), zx::usec(feature_report.report_interval_us));
   }
 }
 
-void Tcs3400Device::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq,
-                              zx_status_t status, const zx_packet_interrupt_t* interrupt) {
+void Tcs3400::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
+                        const zx_packet_interrupt_t* interrupt) {
   Tcs3400FeatureReport feature_report;
   {
     fbl::AutoLock lock(&feature_lock_);
@@ -337,12 +316,12 @@ void Tcs3400Device::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* ir
 
   const zx::result<Tcs3400InputReport> report = ReadInputRpt();
   if (report.is_error()) {
-    rearm_irq_handler_.PostDelayed(dispatcher_, zx::duration(INTERRUPTS_HYSTERESIS));
+    rearm_irq_handler_.PostDelayed(dispatcher, zx::duration(INTERRUPTS_HYSTERESIS));
     return;
   }
   if (feature_report.reporting_state ==
       fuchsia_input_report::wire::SensorReportingState::kReportNoEvents) {
-    rearm_irq_handler_.PostDelayed(dispatcher_, zx::duration(INTERRUPTS_HYSTERESIS));
+    rearm_irq_handler_.PostDelayed(dispatcher, zx::duration(INTERRUPTS_HYSTERESIS));
     return;
   }
 
@@ -354,19 +333,19 @@ void Tcs3400Device::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* ir
   fbl::AutoLock lock(&input_lock_);
   input_rpt_ = *report;
 
-  rearm_irq_handler_.PostDelayed(dispatcher_, zx::duration(INTERRUPTS_HYSTERESIS));
+  rearm_irq_handler_.PostDelayed(dispatcher, zx::duration(INTERRUPTS_HYSTERESIS));
 }
 
-void Tcs3400Device::RearmIrq() {
+void Tcs3400::RearmIrq() {
   // rearm interrupt at the device level
-  auto status = WriteReg(TCS_I2C_AICLEAR, 0x00);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "i2c_write_sync failed: %d", status);
+  zx::result result = WriteReg(TCS_I2C_AICLEAR, 0x00);
+  if (result.is_error()) {
+    fdf::error("i2c_write_sync failed: {}", result);
     // Continue on error, future transactions may succeed
   }
 }
 
-void Tcs3400Device::HandlePoll() {
+void Tcs3400::HandlePoll() {
   Tcs3400FeatureReport feature_report;
   {
     fbl::AutoLock lock(&feature_lock_);
@@ -383,16 +362,16 @@ void Tcs3400Device::HandlePoll() {
     }
   }
 
-  polling_handler_.PostDelayed(dispatcher_, zx::usec(feature_report.report_interval_us));
+  polling_handler_.PostDelayed(dispatcher(), zx::usec(feature_report.report_interval_us));
 }
 
-void Tcs3400Device::GetInputReportsReader(GetInputReportsReaderRequestView request,
-                                          GetInputReportsReaderCompleter::Sync& completer) {
-  readers_.CreateReader(dispatcher_, std::move(request->reader));
-  sync_completion_signal(&next_reader_wait_);  // Only for tests.
+void Tcs3400::GetInputReportsReader(GetInputReportsReaderRequestView request,
+                                    GetInputReportsReaderCompleter::Sync& completer) {
+  readers_.CreateReader(dispatcher(), std::move(request->reader));
+  OnNextReader();
 }
 
-void Tcs3400Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
+void Tcs3400::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   using SensorAxisVector = fidl::VectorView<fuchsia_input_report::wire::SensorAxis>;
 
   fidl::Arena<kFeatureAndDescriptorBufferSize> allocator;
@@ -452,19 +431,19 @@ void Tcs3400Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   completer.Reply(descriptor);
 }
 
-void Tcs3400Device::SendOutputReport(SendOutputReportRequestView request,
-                                     SendOutputReportCompleter::Sync& completer) {
+void Tcs3400::SendOutputReport(SendOutputReportRequestView request,
+                               SendOutputReportCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-void Tcs3400Device::GetFeatureReport(GetFeatureReportCompleter::Sync& completer) {
+void Tcs3400::GetFeatureReport(GetFeatureReportCompleter::Sync& completer) {
   fbl::AutoLock lock(&feature_lock_);
   fidl::Arena<kFeatureAndDescriptorBufferSize> allocator;
   completer.ReplySuccess(feature_rpt_.ToFidlFeatureReport(allocator));
 }
 
-void Tcs3400Device::SetFeatureReport(SetFeatureReportRequestView request,
-                                     SetFeatureReportCompleter::Sync& completer) {
+void Tcs3400::SetFeatureReport(SetFeatureReportRequestView request,
+                               SetFeatureReportCompleter::Sync& completer) {
   const auto& report = request->report;
   if (!report.has_sensor()) {
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
@@ -529,8 +508,8 @@ void Tcs3400Device::SetFeatureReport(SetFeatureReportRequestView request,
   completer.ReplySuccess();
 }
 
-void Tcs3400Device::GetInputReport(GetInputReportRequestView request,
-                                   GetInputReportCompleter::Sync& completer) {
+void Tcs3400::GetInputReport(GetInputReportRequestView request,
+                             GetInputReportCompleter::Sync& completer) {
   if (request->device_type != fuchsia_input_report::wire::DeviceType::kSensor) {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
     return;
@@ -563,47 +542,14 @@ void Tcs3400Device::GetInputReport(GetInputReportRequestView request,
   completer.ReplySuccess(report.Build());
 }
 
-void Tcs3400Device::WaitForNextReader() {
-  sync_completion_wait(&next_reader_wait_, ZX_TIME_INFINITE);
-  sync_completion_reset(&next_reader_wait_);
-}
-
-// static
-zx_status_t Tcs3400Device::Create(void* ctx, zx_device_t* parent) {
-  ddk::I2cChannel channel(parent, "i2c");
-  if (!channel.is_valid()) {
-    return ZX_ERR_NO_RESOURCES;
-  }
-
-  zx::result gpio =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_gpio::Service::Device>(parent, "gpio");
-  if (gpio.is_error()) {
-    zxlogf(ERROR, "Failed to connect to gpio protocol: %s", gpio.status_string());
-    return gpio.error_value();
-  }
-
-  auto dev = std::make_unique<tcs::Tcs3400Device>(
-      parent, fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_get_current_dispatcher()),
-      std::move(channel), std::move(gpio.value()));
-  auto status = dev->Bind();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "bind failed: %d", status);
-    return status;
-  }
-  // devmgr is now in charge of the memory for dev
-  [[maybe_unused]] auto ptr = dev.release();
-
-  return ZX_OK;
-}
-
-zx_status_t Tcs3400Device::InitGain(uint8_t gain) {
-  if (!(gain == 1 || gain == 4 || gain == 16 || gain == 64)) {
-    zxlogf(WARNING, "Invalid gain (%u) using gain = 1", gain);
+zx_status_t Tcs3400::InitGain(uint8_t gain) {
+  if (gain != 1 && gain != 4 && gain != 16 && gain != 64) {
+    fdf::warn("Invalid gain ({}) using gain = 1", gain);
     gain = 1;
   }
 
   again_ = gain;
-  zxlogf(DEBUG, "again (%u)", again_);
+  fdf::debug("again ({})", again_);
 
   uint8_t reg;
   // clang-format off
@@ -613,34 +559,41 @@ zx_status_t Tcs3400Device::InitGain(uint8_t gain) {
   if (gain == 64) reg = 3;
   // clang-format on
 
-  auto status = WriteReg(TCS_I2C_CONTROL, reg);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Setting gain failed %d", status);
-    return status;
+  zx::result result = WriteReg(TCS_I2C_CONTROL, reg);
+  if (result.is_error()) {
+    fdf::error("Setting gain failed {}", result);
+    return result.status_value();
   }
 
   return ZX_OK;
 }
 
-zx_status_t Tcs3400Device::InitMetadata() {
-  zx::result metadata_result = ddk::GetEncodedMetadata<fuchsia_hardware_lightsensor::Metadata>(
-      parent(), DEVICE_METADATA_PRIVATE);
+zx::result<> Tcs3400::InitMetadata() {
+  zx::result pdev_client =
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  if (pdev_client.is_error()) {
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
+    return pdev_client.take_error();
+  }
+  fdf::PDev pdev(std::move(pdev_client.value()));
+
+  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_lightsensor::Metadata>();
   if (metadata_result.is_error()) {
-    zxlogf(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
-    return metadata_result.status_value();
+    fdf::error("Failed to get metadata: {}", metadata_result);
+    return metadata_result.take_error();
   }
   const fuchsia_hardware_lightsensor::Metadata& metadata = metadata_result.value();
   if (!metadata.integration_time().has_value()) {
-    zxlogf(ERROR, "Metadata missing `integration_time` field");
-    return ZX_ERR_INTERNAL;
+    fdf::error("Metadata missing `integration_time` field");
+    return zx::error(ZX_ERR_INTERNAL);
   }
   if (!metadata.gain().has_value()) {
-    zxlogf(ERROR, "Metadata missing `gain` field");
-    return ZX_ERR_INTERNAL;
+    fdf::error("Metadata missing `gain` field");
+    return zx::error(ZX_ERR_INTERNAL);
   }
   if (!metadata.polling_time().has_value()) {
-    zxlogf(ERROR, "Metadata missing `polling_time` field");
-    return ZX_ERR_INTERNAL;
+    fdf::error("Metadata missing `polling_time` field");
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   // ATIME = 256 - Integration Time / 2.78 ms.
@@ -648,23 +601,19 @@ zx_status_t Tcs3400Device::InitMetadata() {
   int64_t atime = integration_time.get() / kIntegrationTimeStepSize.get();
   if (atime < kMinIntegrationTimeStep || atime > kMaxIntegrationTimeStep) {
     atime = kMaxIntegrationTimeStep - 1;
-    zxlogf(WARNING, "Invalid integration time (%lius) using atime = 1",
-           integration_time.to_usecs());
+    fdf::warn("Invalid integration time ({}us) using atime = 1", integration_time.to_usecs());
   }
   atime_ = static_cast<uint8_t>(kMaxIntegrationTimeStep - atime);
 
-  zxlogf(DEBUG, "atime (%u)", atime_);
-  {
-    zx_status_t status = WriteReg(TCS_I2C_ATIME, atime_);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Setting integration time failed %d", status);
-      return status;
-    }
+  fdf::debug("atime ({})", atime_);
+  if (zx::result result = WriteReg(TCS_I2C_ATIME, atime_); result.is_error()) {
+    fdf::error("Setting integration time failed {}", result);
+    return result.take_error();
   }
 
   zx_status_t status = InitGain(metadata.gain().value());
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
   // Set the default features and send a configuration packet.
@@ -687,40 +636,48 @@ zx_status_t Tcs3400Device::InitMetadata() {
       [feature_report](inspect::Node& n) { RecordReport(n, feature_report); });
 
   Configure();
-  return ZX_OK;
+  return zx::ok();
 }
 
-zx_status_t Tcs3400Device::ReadReg(uint8_t reg, uint8_t& output_value) {
-  uint8_t write_buffer[] = {reg};
+zx::result<uint8_t> Tcs3400::ReadReg(uint8_t reg) {
+  const std::array<uint8_t, 1> write_data = {reg};
   constexpr uint8_t kNumberOfRetries = 2;
   constexpr zx::duration kRetryDelay = zx::msec(1);
-  auto ret = i2c_.WriteReadSyncRetries(write_buffer, std::size(write_buffer), &output_value,
-                                       sizeof(uint8_t), kNumberOfRetries, kRetryDelay);
-  if (ret.status != ZX_OK) {
-    zxlogf(ERROR, "I2C write reg 0x%02X error %d, %d retries", reg, ret.status, ret.retries);
+  std::array<uint8_t, 1> read_data;
+  auto result = i2c_.WriteReadSyncRetries(write_data, read_data, kNumberOfRetries, kRetryDelay);
+  if (result.is_error()) {
+    fdf::error("I2C write to register {:#02x} failed: {}", reg, result);
+    return result.take_error();
   }
-  return ret.status;
+  return zx::ok(read_data[0]);
 }
 
-zx_status_t Tcs3400Device::WriteReg(uint8_t reg, uint8_t value) {
-  uint8_t write_buffer[] = {reg, value};
+zx::result<> Tcs3400::WriteReg(uint8_t reg, uint8_t value) {
+  std::array<uint8_t, 2> write_data = {reg, value};
   constexpr uint8_t kNumberOfRetries = 2;
   constexpr zx::duration kRetryDelay = zx::msec(1);
-  auto ret =
-      i2c_.WriteSyncRetries(write_buffer, std::size(write_buffer), kNumberOfRetries, kRetryDelay);
-  if (ret.status != ZX_OK) {
-    zxlogf(ERROR, "I2C write reg 0x%02X error %d, %d retries", reg, ret.status, ret.retries);
+  auto result = i2c_.WriteSyncRetries(write_data, kNumberOfRetries, kRetryDelay);
+  if (result.is_error()) {
+    fdf::error("I2C write to register {:#02x} failed: {}", reg, result);
+    return result.take_error();
   }
-  return ret.status;
+  return zx::ok();
 }
 
-zx_status_t Tcs3400Device::Bind() {
-  zx_status_t status =
-      DdkAdd(ddk::DeviceAddArgs("tcs-3400").set_inspect_vmo(inspect_.DuplicateVmo()));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "DdkAdd failed: %d", status);
-    return status;
+zx::result<> Tcs3400::Start() {
+  zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
+  if (gpio.is_error()) {
+    fdf::error("Failed to connect to gpio protocol: {}", gpio);
+    return gpio.take_error();
   }
+  gpio_.Bind(std::move(gpio.value()));
+
+  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming(), "i2c");
+  if (i2c.is_error()) {
+    fdf::error("Failed to create i2c channel: {}", i2c);
+    return i2c.take_error();
+  }
+  i2c_ = std::move(i2c.value());
 
   fidl::Arena arena;
   auto interrupt_config = fuchsia_hardware_gpio::wire::InterruptConfiguration::Builder(arena)
@@ -728,56 +685,58 @@ zx_status_t Tcs3400Device::Bind() {
                               .Build();
   fidl::WireResult configure_result = gpio_->ConfigureInterrupt(interrupt_config);
   if (!configure_result.ok()) {
-    zxlogf(ERROR, "Failed to send ConfigureInterrupt request to gpio: %s",
-           configure_result.status_string());
-    return configure_result.status();
+    fdf::error("Failed to send ConfigureInterrupt request to gpio: {}",
+               configure_result.status_string());
+    return zx::error(configure_result.status());
   }
   if (configure_result->is_error()) {
-    zxlogf(ERROR, "Failed to configure interrupt: %s",
-           zx_status_get_string(configure_result->error_value()));
-    return configure_result->error_value();
+    fdf::error("Failed to configure interrupt: {}",
+               zx_status_get_string(configure_result->error_value()));
+    return configure_result->take_error();
   }
 
   fidl::WireResult interrupt_result = gpio_->GetInterrupt({});
   if (!interrupt_result.ok()) {
-    zxlogf(ERROR, "Failed to send GetInterrupt request to gpio: %s",
-           interrupt_result.status_string());
-    return interrupt_result.status();
+    fdf::error("Failed to send GetInterrupt request to gpio: {}", interrupt_result.status_string());
+    return zx::error(interrupt_result.status());
   }
   if (interrupt_result->is_error()) {
-    zxlogf(ERROR, "Failed to get interrupt from gpio: %s",
-           zx_status_get_string(interrupt_result->error_value()));
-    return interrupt_result->error_value();
+    fdf::error("Failed to get interrupt from gpio: {}",
+               zx_status_get_string(interrupt_result->error_value()));
+    return interrupt_result->take_error();
   }
   irq_ = std::move(interrupt_result->value()->interrupt);
   irq_handler_.set_object(irq_.get());
-  irq_handler_.Begin(dispatcher_);
+  irq_handler_.Begin(dispatcher());
 
-  status = InitMetadata();
-  if (status != ZX_OK) {
-    return status;
+  if (zx::result result = InitMetadata(); result.is_error()) {
+    return result.take_error();
+    ;
   }
 
-  return ZX_OK;
+  zx::result connector = devfs_connector_.Bind(dispatcher());
+  if (connector.is_error()) {
+    fdf::error("Failed bind devfs connector: {}", connector.status_string());
+    return connector.take_error();
+  }
+
+  fuchsia_driver_framework::DevfsAddArgs devfs_args(
+      {.connector = std::move(connector.value()), .class_name = "input-report"});
+
+  zx::result child = AddOwnedChild(kChildNodeName, devfs_args);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return child.take_error();
+  }
+  child_ = std::move(child.value());
+
+  return zx::ok();
 }
 
-void Tcs3400Device::DdkUnbind(ddk::UnbindTxn txn) {
-  irq_handler_.Cancel();
-  rearm_irq_handler_.Cancel();
-  polling_handler_.Cancel();
-  irq_.destroy();
-  txn.Reply();
+void Tcs3400::DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> request) {
+  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
 }
-
-void Tcs3400Device::DdkRelease() { delete this; }
-
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = Tcs3400Device::Create;
-  return ops;
-}();
 
 }  // namespace tcs
 
-ZIRCON_DRIVER(tcs3400_light, tcs::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(tcs::Tcs3400);

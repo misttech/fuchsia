@@ -5,25 +5,22 @@
 #include "tcs3400.h"
 
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
+#include <fidl/fuchsia.hardware.i2c/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
-#include <lib/async/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/ddk/metadata.h>
+#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-i2c/fake-i2c.h>
-#include <lib/inspect/cpp/inspect.h>
-#include <lib/mock-i2c/mock-i2c.h>
+#include <lib/inspect/cpp/reader.h>
+#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/zx/clock.h>
 
 #include <fbl/auto_lock.h>
 #include <fbl/mutex.h>
-#include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
-#include <zxtest/zxtest.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "src/devices/gpio/testing/fake-gpio/fake-gpio.h"
-#include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/lib/testing/predicates/status.h"
 #include "tcs3400-regs.h"
 
 namespace tcs {
@@ -44,6 +41,8 @@ class FakeLightSensor : public fake_i2c::FakeI2c {
     registers_[address].push_back(value);
   }
 
+  void set_fail_transactions(bool fail_transactions) { fail_transactions_ = fail_transactions; }
+
   sync_completion_t* read_completion() { return &read_completion_; }
 
   sync_completion_t* configuration_completion() { return &configuration_completion_; }
@@ -51,6 +50,10 @@ class FakeLightSensor : public fake_i2c::FakeI2c {
  protected:
   zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size, uint8_t* read_buffer,
                        size_t* read_buffer_size) override {
+    if (fail_transactions_) {
+      return ZX_ERR_INTERNAL;
+    }
+
     if (write_buffer_size < 1) {
       return ZX_ERR_NOT_SUPPORTED;
     }
@@ -94,96 +97,131 @@ class FakeLightSensor : public fake_i2c::FakeI2c {
   sync_completion_t read_completion_;
   sync_completion_t configuration_completion_;
   bool first_enable_written_ = false;
+  bool fail_transactions_ = false;
 };
 
-struct IncomingNamespace {
-  FakeLightSensor fake_i2c_;
-  fake_gpio::FakeGpio fake_gpio_;
-  component::OutgoingDirectory outgoing_{async_get_default_dispatcher()};
-};
-
-class Tcs3400Test : public inspect::InspectTestHelper, public zxtest::Test {
+class Tcs3400TestEnvironment : public fdf_testing::Environment {
  public:
-  void SetUp() override {
-    ASSERT_OK(incoming_loop_.StartThread("incoming-ns-thread"));
+  void Init(const fuchsia_hardware_lightsensor::Metadata& metadata, zx::interrupt gpio_interrupt) {
+    gpio_.SetInterrupt(zx::ok(std::move(gpio_interrupt)));
 
-    static const fuchsia_hardware_lightsensor::Metadata kLightSensorMetadata({
-        .gain = 16,
-        .integration_time = zx::usec(615'680).get(),
-        .polling_time = zx::usec(0).get(),
-    });
+    ASSERT_OK(
+        pdev_.AddFidlMetadata(fuchsia_hardware_lightsensor::Metadata::kSerializableName, metadata));
+  }
 
-    const fit::result persisted_light_sensor_metadata = fidl::Persist(kLightSensorMetadata);
-    ASSERT_TRUE(persisted_light_sensor_metadata.is_ok());
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_light_sensor_metadata->data(),
-                              persisted_light_sensor_metadata->size());
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        pdev_.GetInstanceHandler(dispatcher), "pdev"));
 
-    // Create i2c fragment.
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    incoming_.SyncCall([&endpoints](IncomingNamespace* incoming) {
-      auto service_result = incoming->outgoing_.AddService<fuchsia_hardware_i2c::Service>(
-          incoming->fake_i2c_.CreateInstanceHandler());
-      ZX_ASSERT(service_result.is_ok());
-      ZX_ASSERT(incoming->outgoing_.Serve(std::move(endpoints->server)).is_ok());
-    });
-    fake_parent_->AddFidlService(fuchsia_hardware_i2c::Service::Name, std::move(endpoints->client),
-                                 "i2c");
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_i2c::Service>(
+        i2c_.CreateInstanceHandler(dispatcher), "i2c"));
 
-    // Create gpio fragment.
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_gpio::Service>(
+        gpio_.CreateInstanceHandler(), "gpio"));
+
+    return zx::ok();
+  }
+
+  FakeLightSensor& i2c() { return i2c_; }
+
+ private:
+  fdf_fake::FakePDev pdev_;
+  FakeLightSensor i2c_;
+  fake_gpio::FakeGpio gpio_;
+};
+
+// Wrapper around `Tcs3400` needed in order to expose the driver's inspect data.
+class TestTcs3400 : public Tcs3400 {
+ public:
+  TestTcs3400(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : Tcs3400(std::move(start_args), std::move(driver_dispatcher)) {}
+
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestTcs3400>::initialize,
+                                          fdf_internal::DriverServer<TestTcs3400>::destroy);
+  }
+
+  inspect::ComponentInspector& inspector() { return Tcs3400::inspector(); }
+  std::shared_ptr<sync_completion_t> next_reader_wait() { return next_reader_wait_; }
+
+ protected:
+  void OnNextReader() { sync_completion_signal(next_reader_wait_.get()); }
+
+ private:
+  std::shared_ptr<sync_completion_t> next_reader_wait_ = std::make_shared<sync_completion_t>();
+};
+
+class TestConfig final {
+ public:
+  using DriverType = TestTcs3400;
+  using EnvironmentType = Tcs3400TestEnvironment;
+};
+
+class Tcs3400TestBase {
+ public:
+  void StartDriver(const fuchsia_hardware_lightsensor::Metadata& metadata) {
     ASSERT_OK(zx::interrupt::create(zx::resource(ZX_HANDLE_INVALID), 0, ZX_INTERRUPT_VIRTUAL,
                                     &gpio_interrupt_));
     zx::interrupt gpio_interrupt;
     ASSERT_OK(gpio_interrupt_.duplicate(ZX_RIGHT_SAME_RIGHTS, &gpio_interrupt));
-    endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    incoming_.SyncCall([&endpoints, &gpio_interrupt](IncomingNamespace* incoming) {
-      incoming->fake_gpio_.SetInterrupt(zx::ok(std::move(gpio_interrupt)));
-      auto service_result = incoming->outgoing_.AddService<fuchsia_hardware_gpio::Service>(
-          incoming->fake_gpio_.CreateInstanceHandler());
-      ZX_ASSERT(service_result.is_ok());
-      ZX_ASSERT(incoming->outgoing_.Serve(std::move(endpoints->server)).is_ok());
-    });
-    fake_parent_->AddFidlService(fuchsia_hardware_gpio::Service::Name, std::move(endpoints->client),
-                                 "gpio");
 
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
-      const auto status = Tcs3400Device::Create(nullptr, fake_parent_.get());
-      ASSERT_OK(status);
-    });
-    EXPECT_OK(result.status_value());
-    auto* child = fake_parent_->GetLatestChild();
-    device_ = child->GetDeviceContext<Tcs3400Device>();
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](auto& env) { env.Init(metadata, std::move(gpio_interrupt)); });
+
+    ASSERT_OK(driver_test_.StartDriver());
 
     WaitForConfiguration();
 
-    incoming_.SyncCall([](IncomingNamespace* incoming) {
-      EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_ATIME), 35);
-      EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_CONTROL), 0x02);
+    zx::result input_device = driver_test_.ConnectThroughDevfs<fuchsia_input_report::InputDevice>(
+        Tcs3400::kChildNodeName);
+    ASSERT_OK(input_device);
+    input_device_.Bind(std::move(input_device.value()));
+
+    driver_test_.RunInDriverContext(
+        [&](auto& driver) { next_reader_wait_ = driver.next_reader_wait(); });
+  }
+
+  void WaitForConfiguration() {
+    sync_completion_t* completion;
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](auto& env) { completion = env.i2c().configuration_completion(); });
+
+    sync_completion_wait(completion, ZX_TIME_INFINITE);
+    sync_completion_reset(completion);
+  }
+
+  fidl::WireSyncClient<fuchsia_input_report::InputDevice>& input_device() { return input_device_; }
+  zx::interrupt& gpio_interrupt() { return gpio_interrupt_; }
+  fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
+  std::shared_ptr<sync_completion_t>& next_reader_wait() { return next_reader_wait_; }
+
+ private:
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  zx::interrupt gpio_interrupt_;
+  fidl::WireSyncClient<fuchsia_input_report::InputDevice> input_device_;
+  std::shared_ptr<sync_completion_t> next_reader_wait_;
+};
+
+class Tcs3400Test : public Tcs3400TestBase, public ::testing::Test {
+ public:
+  static const fuchsia_hardware_lightsensor::Metadata kLightSensorMetadata;
+
+  void SetUp() override {
+    StartDriver(kLightSensorMetadata);
+
+    driver_test().RunInEnvironmentTypeContext([](auto& env) {
+      EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_ATIME), 35);
+      EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_CONTROL), 0x02);
     });
   }
 
-  void TearDown() override {
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
-      device_async_remove(device_->zxdev());
-      EXPECT_OK(mock_ddk::ReleaseFlaggedDevices(fake_parent_.get()));
-    });
-    EXPECT_OK(result.status_value());
-  }
-
-  fidl::ClientEnd<fuchsia_input_report::InputDevice> FidlClient() {
-    auto endpoints = fidl::CreateEndpoints<fuchsia_input_report::InputDevice>();
-    EXPECT_OK(endpoints);
-
-    fidl::BindServer(dispatcher_->async_dispatcher(), std::move(endpoints->server), device_);
-    return std::move(endpoints->client);
-  }
+  void TearDown() override { ASSERT_OK(driver_test().StopDriver()); }
 
  protected:
-  static void GetFeatureReport(fidl::WireSyncClient<fuchsia_input_report::InputDevice>& client,
-                               Tcs3400FeatureReport* const out_report) {
-    const auto response = client->GetFeatureReport();
+  void GetFeatureReport(Tcs3400FeatureReport* const out_report) {
+    const auto response = input_device()->GetFeatureReport();
     ASSERT_TRUE(response.ok());
     ASSERT_FALSE(response->is_error());
     ASSERT_TRUE(response->value()->report.has_sensor());
@@ -193,13 +231,13 @@ class Tcs3400Test : public inspect::InspectTestHelper, public zxtest::Test {
     ASSERT_TRUE(report.has_reporting_state());
 
     ASSERT_TRUE(report.has_sensitivity());
-    ASSERT_EQ(report.sensitivity().size(), 1);
+    ASSERT_EQ(report.sensitivity().size(), 1u);
 
     ASSERT_TRUE(report.has_threshold_high());
-    ASSERT_EQ(report.threshold_high().size(), 1);
+    ASSERT_EQ(report.threshold_high().size(), 1u);
 
     ASSERT_TRUE(report.has_threshold_low());
-    ASSERT_EQ(report.threshold_low().size(), 1);
+    ASSERT_EQ(report.threshold_low().size(), 1u);
 
     ASSERT_TRUE(report.has_sampling_rate());
 
@@ -211,8 +249,12 @@ class Tcs3400Test : public inspect::InspectTestHelper, public zxtest::Test {
     out_report->integration_time_us = report.sampling_rate();
   }
 
-  static auto SetFeatureReport(fidl::WireSyncClient<fuchsia_input_report::InputDevice>& client,
-                               const Tcs3400FeatureReport& report) {
+  void WaitForNextReader() {
+    sync_completion_wait(next_reader_wait().get(), ZX_TIME_INFINITE);
+    sync_completion_reset(next_reader_wait().get());
+  }
+
+  auto SetFeatureReport(const Tcs3400FeatureReport& report) {
     fidl::Arena<512> allocator;
     fidl::VectorView<int64_t> sensitivity(allocator, 1);
     sensitivity[0] = report.sensitivity;
@@ -237,63 +279,42 @@ class Tcs3400Test : public inspect::InspectTestHelper, public zxtest::Test {
                                 .sensor(set_sensor_report)
                                 .Build();
 
-    return client->SetFeatureReport(set_report);
+    return input_device()->SetFeatureReport(set_report);
   }
 
   void SetLightDataRegisters(uint16_t illuminance, uint16_t red, uint16_t green, uint16_t blue) {
-    incoming_.SyncCall([&](IncomingNamespace* incoming) {
-      incoming->fake_i2c_.SetRegister(TCS_I2C_CDATAL, illuminance & 0xff);
-      incoming->fake_i2c_.SetRegister(TCS_I2C_CDATAH, illuminance >> 8);
+    driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+      env.i2c().SetRegister(TCS_I2C_CDATAL, illuminance & 0xff);
+      env.i2c().SetRegister(TCS_I2C_CDATAH, illuminance >> 8);
 
-      incoming->fake_i2c_.SetRegister(TCS_I2C_RDATAL, red & 0xff);
-      incoming->fake_i2c_.SetRegister(TCS_I2C_RDATAH, red >> 8);
+      env.i2c().SetRegister(TCS_I2C_RDATAL, red & 0xff);
+      env.i2c().SetRegister(TCS_I2C_RDATAH, red >> 8);
 
-      incoming->fake_i2c_.SetRegister(TCS_I2C_GDATAL, green & 0xff);
-      incoming->fake_i2c_.SetRegister(TCS_I2C_GDATAH, green >> 8);
+      env.i2c().SetRegister(TCS_I2C_GDATAL, green & 0xff);
+      env.i2c().SetRegister(TCS_I2C_GDATAH, green >> 8);
 
-      incoming->fake_i2c_.SetRegister(TCS_I2C_BDATAL, blue & 0xff);
-      incoming->fake_i2c_.SetRegister(TCS_I2C_BDATAH, blue >> 8);
+      env.i2c().SetRegister(TCS_I2C_BDATAL, blue & 0xff);
+      env.i2c().SetRegister(TCS_I2C_BDATAH, blue >> 8);
     });
   }
 
   void WaitForLightDataRead() {
     sync_completion_t* completion;
-    incoming_.SyncCall([&completion](IncomingNamespace* incoming) {
-      completion = incoming->fake_i2c_.read_completion();
-    });
+    driver_test().RunInEnvironmentTypeContext(
+        [&](auto& env) { completion = env.i2c().read_completion(); });
 
     sync_completion_wait(completion, ZX_TIME_INFINITE);
     sync_completion_reset(completion);
   }
-
-  void WaitForConfiguration() {
-    sync_completion_t* completion;
-    incoming_.SyncCall([&completion](IncomingNamespace* incoming) {
-      completion = incoming->fake_i2c_.configuration_completion();
-    });
-
-    sync_completion_wait(completion, ZX_TIME_INFINITE);
-    sync_completion_reset(completion);
-  }
-
- private:
-  std::shared_ptr<MockDevice> fake_parent_ = MockDevice::FakeRootParent();
-  fdf::UnownedSynchronizedDispatcher dispatcher_ =
-      fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
-
-  async::Loop incoming_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
-
- protected:
-  zx::interrupt gpio_interrupt_;
-  Tcs3400Device* device_ = nullptr;
-  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_{incoming_loop_.dispatcher(),
-                                                                   std::in_place};
 };
 
-TEST_F(Tcs3400Test, GetInputReport) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
+const fuchsia_hardware_lightsensor::Metadata Tcs3400Test::kLightSensorMetadata({
+    .gain = 16,
+    .integration_time = zx::usec(615'680).get(),
+    .polling_time = zx::usec(0).get(),
+});
 
+TEST_F(Tcs3400Test, GetInputReport) {
   SetLightDataRegisters(0x1772, 0x95fa, 0xb263, 0x2f32);
 
   constexpr Tcs3400FeatureReport kEnableAllEvents = {
@@ -306,7 +327,7 @@ TEST_F(Tcs3400Test, GetInputReport) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kEnableAllEvents);
+    const auto response = SetFeatureReport(kEnableAllEvents);
     ASSERT_TRUE(response.ok());
     EXPECT_FALSE(response->is_error());
   }
@@ -315,7 +336,8 @@ TEST_F(Tcs3400Test, GetInputReport) {
 
   for (;;) {
     // Wait for the driver's stored values to be updated.
-    const auto response = client->GetInputReport(fuchsia_input_report::wire::DeviceType::kSensor);
+    const auto response =
+        input_device()->GetInputReport(fuchsia_input_report::wire::DeviceType::kSensor);
     ASSERT_TRUE(response.ok());
     if (response->is_error()) {
       continue;
@@ -325,7 +347,7 @@ TEST_F(Tcs3400Test, GetInputReport) {
 
     ASSERT_TRUE(report.has_sensor());
     ASSERT_TRUE(report.sensor().has_values());
-    ASSERT_EQ(report.sensor().values().size(), 4);
+    ASSERT_EQ(report.sensor().values().size(), 4u);
 
     EXPECT_EQ(report.sensor().values()[0], 0x1772);
     EXPECT_EQ(report.sensor().values()[1], 0x95fa);
@@ -344,13 +366,14 @@ TEST_F(Tcs3400Test, GetInputReport) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kEnableThresholdEvents);
+    const auto response = SetFeatureReport(kEnableThresholdEvents);
     ASSERT_TRUE(response.ok());
     EXPECT_FALSE(response->is_error());
   }
 
   {
-    const auto response = client->GetInputReport(fuchsia_input_report::wire::DeviceType::kSensor);
+    const auto response =
+        input_device()->GetInputReport(fuchsia_input_report::wire::DeviceType::kSensor);
     ASSERT_TRUE(response.ok());
     // Not supported when only threshold events are enabled.
     EXPECT_TRUE(response->is_error());
@@ -366,22 +389,20 @@ TEST_F(Tcs3400Test, GetInputReport) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kDisableEvents);
+    const auto response = SetFeatureReport(kDisableEvents);
     ASSERT_TRUE(response.ok());
     EXPECT_FALSE(response->is_error());
   }
 
   {
-    const auto response = client->GetInputReport(fuchsia_input_report::wire::DeviceType::kSensor);
+    const auto response =
+        input_device()->GetInputReport(fuchsia_input_report::wire::DeviceType::kSensor);
     ASSERT_TRUE(response.ok());
     EXPECT_TRUE(response->is_error());
   }
 }
 
 TEST_F(Tcs3400Test, GetInputReports) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
   constexpr Tcs3400FeatureReport kEnableThresholdEvents = {
       .report_interval_us = 0,
       .reporting_state = fuchsia_input_report::wire::SensorReportingState::kReportThresholdEvents,
@@ -392,20 +413,20 @@ TEST_F(Tcs3400Test, GetInputReports) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kEnableThresholdEvents);
+    const auto response = SetFeatureReport(kEnableThresholdEvents);
     ASSERT_TRUE(response.ok());
     EXPECT_FALSE(response->is_error());
   }
 
   auto endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
   fidl::WireSyncClient reader(std::move(endpoints.client));
-  auto result = client->GetInputReportsReader(std::move(endpoints.server));
+  auto result = input_device()->GetInputReportsReader(std::move(endpoints.server));
   ASSERT_OK(result.status());
-  device_->WaitForNextReader();
+  WaitForNextReader();
 
   SetLightDataRegisters(0x00f8, 0xe79d, 0xa5e4, 0xfb1b);
 
-  EXPECT_OK(gpio_interrupt_.trigger(0, zx::clock::get_boot()));
+  EXPECT_OK(gpio_interrupt().trigger(0, zx::clock::get_boot()));
 
   // Wait for the driver to read out the data registers. At this point the interrupt has been ack'd
   // and it is safe to trigger again.
@@ -418,10 +439,10 @@ TEST_F(Tcs3400Test, GetInputReports) {
 
     const auto& reports = response->value()->reports;
 
-    ASSERT_EQ(reports.size(), 1);
+    ASSERT_EQ(reports.size(), 1u);
     ASSERT_TRUE(reports[0].has_sensor());
     ASSERT_TRUE(reports[0].sensor().has_values());
-    ASSERT_EQ(reports[0].sensor().values().size(), 4);
+    ASSERT_EQ(reports[0].sensor().values().size(), 4u);
 
     EXPECT_EQ(reports[0].sensor().values()[0], 0x00f8);
     EXPECT_EQ(reports[0].sensor().values()[1], 0xe79d);
@@ -430,11 +451,11 @@ TEST_F(Tcs3400Test, GetInputReports) {
   }
 
   SetLightDataRegisters(0x67f3, 0xbe39, 0x21e9, 0x319a);
-  EXPECT_OK(gpio_interrupt_.trigger(0, zx::clock::get_boot()));
+  EXPECT_OK(gpio_interrupt().trigger(0, zx::clock::get_boot()));
   WaitForLightDataRead();
 
   SetLightDataRegisters(0xa5df, 0x0101, 0xc776, 0xc531);
-  EXPECT_OK(gpio_interrupt_.trigger(0, zx::clock::get_boot()));
+  EXPECT_OK(gpio_interrupt().trigger(0, zx::clock::get_boot()));
   WaitForLightDataRead();
 
   // The previous illuminance value did not cross a threshold, so there should only be one report to
@@ -446,10 +467,10 @@ TEST_F(Tcs3400Test, GetInputReports) {
 
     const auto& reports = response->value()->reports;
 
-    ASSERT_EQ(reports.size(), 1);
+    ASSERT_EQ(reports.size(), 1u);
     ASSERT_TRUE(reports[0].has_sensor());
     ASSERT_TRUE(reports[0].sensor().has_values());
-    ASSERT_EQ(reports[0].sensor().values().size(), 4);
+    ASSERT_EQ(reports[0].sensor().values().size(), 4u);
 
     EXPECT_EQ(reports[0].sensor().values()[0], 0xa5df);
     EXPECT_EQ(reports[0].sensor().values()[1], 0x0101);
@@ -469,7 +490,7 @@ TEST_F(Tcs3400Test, GetInputReports) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kEnableAllEvents);
+    const auto response = SetFeatureReport(kEnableAllEvents);
     ASSERT_TRUE(response.ok());
     EXPECT_FALSE(response->is_error());
   }
@@ -482,7 +503,7 @@ TEST_F(Tcs3400Test, GetInputReports) {
     for (const auto& report : response->value()->reports) {
       ASSERT_TRUE(report.has_sensor());
       ASSERT_TRUE(report.sensor().has_values());
-      ASSERT_EQ(report.sensor().values().size(), 4);
+      ASSERT_EQ(report.sensor().values().size(), 4u);
 
       EXPECT_EQ(report.sensor().values()[0], 0x1772);
       EXPECT_EQ(report.sensor().values()[1], 0x95fa);
@@ -494,9 +515,6 @@ TEST_F(Tcs3400Test, GetInputReports) {
 }
 
 TEST_F(Tcs3400Test, GetMultipleInputReports) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
   constexpr Tcs3400FeatureReport kEnableThresholdEvents = {
       .report_interval_us = 0,
       .reporting_state = fuchsia_input_report::wire::SensorReportingState::kReportThresholdEvents,
@@ -506,7 +524,7 @@ TEST_F(Tcs3400Test, GetMultipleInputReports) {
       .integration_time_us = 615'000,
   };
 
-  const auto response = SetFeatureReport(client, kEnableThresholdEvents);
+  const auto response = SetFeatureReport(kEnableThresholdEvents);
   ASSERT_TRUE(response.ok());
   EXPECT_FALSE(response->is_error());
 
@@ -514,9 +532,9 @@ TEST_F(Tcs3400Test, GetMultipleInputReports) {
 
   auto endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
   fidl::WireSyncClient reader(std::move(endpoints.client));
-  auto result = client->GetInputReportsReader(std::move(endpoints.server));
+  auto result = input_device()->GetInputReportsReader(std::move(endpoints.server));
   ASSERT_OK(result.status());
-  device_->WaitForNextReader();
+  WaitForNextReader();
 
   constexpr uint16_t kExpectedLightValues[][4] = {
       {0x00f8, 0xe79d, 0xfb1b, 0xa5e4},
@@ -526,7 +544,7 @@ TEST_F(Tcs3400Test, GetMultipleInputReports) {
 
   for (const auto& values : kExpectedLightValues) {
     SetLightDataRegisters(values[0], values[1], values[2], values[3]);
-    EXPECT_OK(gpio_interrupt_.trigger(0, zx::clock::get_boot()));
+    EXPECT_OK(gpio_interrupt().trigger(0, zx::clock::get_boot()));
     WaitForLightDataRead();
   }
 
@@ -538,7 +556,7 @@ TEST_F(Tcs3400Test, GetMultipleInputReports) {
     for (const auto& report : response->value()->reports) {
       ASSERT_TRUE(report.has_sensor());
       ASSERT_TRUE(report.sensor().has_values());
-      ASSERT_EQ(report.sensor().values().size(), 4);
+      ASSERT_EQ(report.sensor().values().size(), 4u);
 
       EXPECT_EQ(report.sensor().values()[0], kExpectedLightValues[i][0]);
       EXPECT_EQ(report.sensor().values()[1], kExpectedLightValues[i][1]);
@@ -550,9 +568,6 @@ TEST_F(Tcs3400Test, GetMultipleInputReports) {
 }
 
 TEST_F(Tcs3400Test, GetInputReportsMultipleReaders) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
   constexpr Tcs3400FeatureReport kEnableThresholdEvents = {
       .report_interval_us = 0,
       .reporting_state = fuchsia_input_report::wire::SensorReportingState::kReportThresholdEvents,
@@ -562,7 +577,7 @@ TEST_F(Tcs3400Test, GetInputReportsMultipleReaders) {
       .integration_time_us = 615'000,
   };
 
-  const auto response = SetFeatureReport(client, kEnableThresholdEvents);
+  const auto response = SetFeatureReport(kEnableThresholdEvents);
   ASSERT_TRUE(response.ok());
   EXPECT_FALSE(response->is_error());
 
@@ -572,14 +587,14 @@ TEST_F(Tcs3400Test, GetInputReportsMultipleReaders) {
   for (auto& reader : readers) {
     auto endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
     reader.Bind(std::move(endpoints.client));
-    auto result = client->GetInputReportsReader(std::move(endpoints.server));
+    auto result = input_device()->GetInputReportsReader(std::move(endpoints.server));
     ASSERT_OK(result.status());
-    device_->WaitForNextReader();
+    WaitForNextReader();
   }
 
   SetLightDataRegisters(0x00f8, 0xe79d, 0xa5e4, 0xfb1b);
 
-  EXPECT_OK(gpio_interrupt_.trigger(0, zx::clock::get_boot()));
+  EXPECT_OK(gpio_interrupt().trigger(0, zx::clock::get_boot()));
 
   for (auto& reader : readers) {
     const auto response = reader->ReadInputReports();
@@ -588,10 +603,10 @@ TEST_F(Tcs3400Test, GetInputReportsMultipleReaders) {
 
     const auto& reports = response->value()->reports;
 
-    ASSERT_EQ(reports.size(), 1);
+    ASSERT_EQ(reports.size(), 1u);
     ASSERT_TRUE(reports[0].has_sensor());
     ASSERT_TRUE(reports[0].sensor().has_values());
-    ASSERT_EQ(reports[0].sensor().values().size(), 4);
+    ASSERT_EQ(reports[0].sensor().values().size(), 4u);
 
     EXPECT_EQ(reports[0].sensor().values()[0], 0x00f8);
     EXPECT_EQ(reports[0].sensor().values()[1], 0xe79d);
@@ -601,9 +616,6 @@ TEST_F(Tcs3400Test, GetInputReportsMultipleReaders) {
 }
 
 TEST_F(Tcs3400Test, InputReportSaturatedSensor) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
   constexpr Tcs3400FeatureReport kEnableThresholdEvents = {
       .report_interval_us = 0,
       .reporting_state = fuchsia_input_report::wire::SensorReportingState::kReportAllEvents,
@@ -614,24 +626,23 @@ TEST_F(Tcs3400Test, InputReportSaturatedSensor) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kEnableThresholdEvents);
+    const auto response = SetFeatureReport(kEnableThresholdEvents);
     ASSERT_TRUE(response.ok());
     EXPECT_FALSE(response->is_error());
   }
 
   auto endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
   fidl::WireSyncClient reader(std::move(endpoints.client));
-  auto result = client->GetInputReportsReader(std::move(endpoints.server));
+  auto result = input_device()->GetInputReportsReader(std::move(endpoints.server));
   ASSERT_OK(result.status());
-  device_->WaitForNextReader();
+  WaitForNextReader();
 
   // Set normal value so we can be sure status register is causing saturation.
   SetLightDataRegisters(0x0010, 0x0010, 0x0010, 0x0010);
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->fake_i2c_.SetRegister(TCS_I2C_STATUS, 0x0 | TCS_I2C_STATUS_ASAT);
-  });
+  driver_test().RunInEnvironmentTypeContext(
+      [](auto& env) { env.i2c().SetRegister(TCS_I2C_STATUS, 0x0 | TCS_I2C_STATUS_ASAT); });
 
-  EXPECT_OK(gpio_interrupt_.trigger(0, zx::clock::get_boot()));
+  EXPECT_OK(gpio_interrupt().trigger(0, zx::clock::get_boot()));
 
   WaitForLightDataRead();
 
@@ -641,33 +652,29 @@ TEST_F(Tcs3400Test, InputReportSaturatedSensor) {
 
   const auto& reports = response->value()->reports;
 
-  ASSERT_EQ(reports.size(), 1);
+  ASSERT_EQ(reports.size(), 1u);
   ASSERT_TRUE(reports[0].has_sensor());
   ASSERT_TRUE(reports[0].sensor().has_values());
-  ASSERT_EQ(reports[0].sensor().values().size(), 4);
+  ASSERT_EQ(reports[0].sensor().values().size(), 4u);
 
   EXPECT_EQ(reports[0].sensor().values()[0], 65085);
   EXPECT_EQ(reports[0].sensor().values()[1], 21067);
   EXPECT_EQ(reports[0].sensor().values()[2], 20395);
   EXPECT_EQ(reports[0].sensor().values()[3], 20939);
 
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_CICLEAR), 0x00);
-  });
+  driver_test().RunInEnvironmentTypeContext(
+      [](auto& env) { EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_CICLEAR), 0x00); });
 }
 
 TEST_F(Tcs3400Test, GetDescriptor) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
-  const auto response = client->GetDescriptor();
+  const auto response = input_device()->GetDescriptor();
   ASSERT_TRUE(response.ok());
   ASSERT_TRUE(response.value().descriptor.has_device_information());
   ASSERT_TRUE(response.value().descriptor.has_sensor());
   ASSERT_TRUE(response.value().descriptor.sensor().has_input());
-  ASSERT_EQ(response.value().descriptor.sensor().input().size(), 1);
+  ASSERT_EQ(response.value().descriptor.sensor().input().size(), 1u);
   ASSERT_TRUE(response.value().descriptor.sensor().input()[0].has_values());
-  ASSERT_EQ(response.value().descriptor.sensor().input()[0].values().size(), 4);
+  ASSERT_EQ(response.value().descriptor.sensor().input()[0].values().size(), 4u);
 
   EXPECT_EQ(response.value().descriptor.device_information().vendor_id(),
             static_cast<uint32_t>(fuchsia_input_report::wire::VendorId::kGoogle));
@@ -689,20 +696,20 @@ TEST_F(Tcs3400Test, GetDescriptor) {
   }
 
   ASSERT_TRUE(response.value().descriptor.sensor().has_feature());
-  ASSERT_EQ(response.value().descriptor.sensor().feature().size(), 1);
+  ASSERT_EQ(response.value().descriptor.sensor().feature().size(), 1u);
   const auto& feature_descriptor = response.value().descriptor.sensor().feature()[0];
 
   ASSERT_TRUE(feature_descriptor.has_report_interval());
   ASSERT_TRUE(feature_descriptor.has_supports_reporting_state());
 
   ASSERT_TRUE(feature_descriptor.has_sensitivity());
-  ASSERT_EQ(feature_descriptor.sensitivity().size(), 1);
+  ASSERT_EQ(feature_descriptor.sensitivity().size(), 1u);
 
   ASSERT_TRUE(feature_descriptor.has_threshold_high());
-  ASSERT_EQ(feature_descriptor.threshold_high().size(), 1);
+  ASSERT_EQ(feature_descriptor.threshold_high().size(), 1u);
 
   ASSERT_TRUE(feature_descriptor.has_threshold_low());
-  ASSERT_EQ(feature_descriptor.threshold_low().size(), 1);
+  ASSERT_EQ(feature_descriptor.threshold_low().size(), 1u);
 
   EXPECT_EQ(feature_descriptor.report_interval().range.min, 0);
   EXPECT_EQ(feature_descriptor.report_interval().unit.type,
@@ -737,11 +744,8 @@ TEST_F(Tcs3400Test, GetDescriptor) {
 }
 
 TEST_F(Tcs3400Test, FeatureReport) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
   Tcs3400FeatureReport report;
-  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(client, &report));
+  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(&report));
 
   // Check the default report values.
   EXPECT_EQ(report.reporting_state,
@@ -755,19 +759,24 @@ TEST_F(Tcs3400Test, FeatureReport) {
   EXPECT_EQ(report.sensitivity, 16);
 
   // Inspect report should match.
-  ASSERT_NO_FATAL_FAILURE(ReadInspect(device_->inspect().DuplicateVmo()));
-  auto* root = hierarchy().GetByPath({"feature_report", "1"});
-  ASSERT_FALSE(root);
+  {
+    zx::vmo inspect_vmo;
+    driver_test().RunInDriverContext(
+        [&](auto& driver) { inspect_vmo = driver.inspector().inspector().DuplicateVmo(); });
+    inspect::Hierarchy hierarchy = inspect::ReadFromVmo(inspect_vmo).take_value();
+    const inspect::Hierarchy* root = hierarchy.GetByPath({"feature_report", "1"});
+    ASSERT_EQ(root, nullptr);
+  }
 
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->fake_i2c_.SetRegister(TCS_I2C_ENABLE, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_AILTL, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_AILTH, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_AIHTL, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_AIHTH, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_PERS, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_CONTROL, 0);
-    incoming->fake_i2c_.SetRegister(TCS_I2C_ATIME, 0);
+  driver_test().RunInEnvironmentTypeContext([](auto& env) {
+    env.i2c().SetRegister(TCS_I2C_ENABLE, 0);
+    env.i2c().SetRegister(TCS_I2C_AILTL, 0);
+    env.i2c().SetRegister(TCS_I2C_AILTH, 0);
+    env.i2c().SetRegister(TCS_I2C_AIHTL, 0);
+    env.i2c().SetRegister(TCS_I2C_AIHTH, 0);
+    env.i2c().SetRegister(TCS_I2C_PERS, 0);
+    env.i2c().SetRegister(TCS_I2C_CONTROL, 0);
+    env.i2c().SetRegister(TCS_I2C_ATIME, 0);
   });
 
   constexpr Tcs3400FeatureReport kNewFeatureReport = {
@@ -778,24 +787,24 @@ TEST_F(Tcs3400Test, FeatureReport) {
       .threshold_low = 0x1234,
       .integration_time_us = 278'000,
   };
-  const auto response = SetFeatureReport(client, kNewFeatureReport);
+  const auto response = SetFeatureReport(kNewFeatureReport);
   ASSERT_TRUE(response.ok());
   EXPECT_FALSE(response->is_error());
 
   WaitForConfiguration();
 
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterAtIndex(0, TCS_I2C_ENABLE), 0b0001'0001);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_AILTL), 0x34);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_AILTH), 0x12);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_AIHTL), 0xcd);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_AIHTH), 0xab);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_CONTROL), 3);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_ATIME), 156);
-    EXPECT_EQ(incoming->fake_i2c_.GetRegisterAtIndex(1, TCS_I2C_ENABLE), 0b0001'0011);
+  driver_test().RunInEnvironmentTypeContext([](auto& env) {
+    EXPECT_EQ(env.i2c().GetRegisterAtIndex(0, TCS_I2C_ENABLE), 0b0001'0001);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_AILTL), 0x34);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_AILTH), 0x12);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_AIHTL), 0xcd);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_AIHTH), 0xab);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_CONTROL), 3);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_ATIME), 156);
+    EXPECT_EQ(env.i2c().GetRegisterAtIndex(1, TCS_I2C_ENABLE), 0b0001'0011);
   });
 
-  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(client, &report));
+  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(&report));
   EXPECT_EQ(report.report_interval_us, 1'000);
   EXPECT_EQ(report.reporting_state,
             fuchsia_input_report::wire::SensorReportingState::kReportAllEvents);
@@ -805,27 +814,24 @@ TEST_F(Tcs3400Test, FeatureReport) {
   EXPECT_EQ(report.integration_time_us, 278'000);
 
   // Inspect report should match.
-  ASSERT_NO_FATAL_FAILURE(ReadInspect(device_->inspect().DuplicateVmo()));
-  root = hierarchy().GetByPath({"feature_reports", "1"});
-  ASSERT_TRUE(root);
-  ASSERT_NO_FATAL_FAILURE(
-      CheckProperty(root->node(), "report_interval_us", inspect::UintPropertyValue(1'000)));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckProperty(root->node(), "reporting_state", inspect::StringPropertyValue("AllEvents")));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckProperty(root->node(), "sensitivity", inspect::UintPropertyValue(64)));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckProperty(root->node(), "threshold_high", inspect::UintPropertyValue(0xabcd)));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckProperty(root->node(), "threshold_low", inspect::UintPropertyValue(0x1234)));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckProperty(root->node(), "integration_time_us", inspect::UintPropertyValue(278'000)));
+  zx::vmo inspect_vmo;
+  driver_test().RunInDriverContext(
+      [&](auto& driver) { inspect_vmo = driver.inspector().inspector().DuplicateVmo(); });
+  inspect::Hierarchy hierarchy = inspect::ReadFromVmo(inspect_vmo).take_value();
+  const inspect::Hierarchy* root = hierarchy.GetByPath({"feature_reports", "1"});
+  ASSERT_NE(root, nullptr);
+
+  EXPECT_THAT(root->node(),
+              inspect::testing::PropertyList(testing::AllOf(
+                  testing::Contains(inspect::testing::UintIs("report_interval_us", 1'000)),
+                  testing::Contains(inspect::testing::StringIs("reporting_state", "AllEvents")),
+                  testing::Contains(inspect::testing::UintIs("sensitivity", 64)),
+                  testing::Contains(inspect::testing::UintIs("threshold_high", 0xabcd)),
+                  testing::Contains(inspect::testing::UintIs("threshold_low", 0x1234)),
+                  testing::Contains(inspect::testing::UintIs("integration_time_us", 278'000)))));
 }
 
 TEST_F(Tcs3400Test, SetInvalidFeatureReport) {
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(FidlClient());
-  ASSERT_TRUE(client.client_end().is_valid());
-
   constexpr Tcs3400FeatureReport kInvalidReportInterval = {
       .report_interval_us = -1,
       .reporting_state = fuchsia_input_report::wire::SensorReportingState::kReportAllEvents,
@@ -833,13 +839,13 @@ TEST_F(Tcs3400Test, SetInvalidFeatureReport) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kInvalidReportInterval);
+    const auto response = SetFeatureReport(kInvalidReportInterval);
     ASSERT_TRUE(response.ok());
     EXPECT_TRUE(response->is_error());
   }
 
   Tcs3400FeatureReport report;
-  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(client, &report));
+  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(&report));
   // Make sure the feature report wasn't affected by the bad call.
   EXPECT_EQ(report.sensitivity, 16);
   EXPECT_EQ(report.report_interval_us, 0);
@@ -850,12 +856,12 @@ TEST_F(Tcs3400Test, SetInvalidFeatureReport) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kInvalidSensitivity);
+    const auto response = SetFeatureReport(kInvalidSensitivity);
     ASSERT_TRUE(response.ok());
     EXPECT_TRUE(response->is_error());
   }
 
-  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(client, &report));
+  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(&report));
   EXPECT_EQ(report.sensitivity, 16);
 
   constexpr Tcs3400FeatureReport kInvalidThresholdHigh = {
@@ -865,12 +871,12 @@ TEST_F(Tcs3400Test, SetInvalidFeatureReport) {
   };
 
   {
-    const auto response = SetFeatureReport(client, kInvalidThresholdHigh);
+    const auto response = SetFeatureReport(kInvalidThresholdHigh);
     ASSERT_TRUE(response.ok());
     EXPECT_TRUE(response->is_error());
   }
 
-  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(client, &report));
+  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(&report));
   EXPECT_EQ(report.threshold_high, 0xffff);
   EXPECT_EQ(report.sensitivity, 16);
 
@@ -895,12 +901,12 @@ TEST_F(Tcs3400Test, SetInvalidFeatureReport) {
                               .Build();
 
   {
-    const auto response = client->SetFeatureReport(set_report);
+    const auto response = input_device()->SetFeatureReport(set_report);
     ASSERT_TRUE(response.ok());
     EXPECT_TRUE(response->is_error());
   }
 
-  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(client, &report));
+  ASSERT_NO_FATAL_FAILURE(GetFeatureReport(&report));
   EXPECT_EQ(report.threshold_high, 0xffff);
   EXPECT_EQ(report.threshold_low, 0x0000);
   EXPECT_EQ(report.sensitivity, 16);
@@ -909,153 +915,64 @@ TEST_F(Tcs3400Test, SetInvalidFeatureReport) {
             fuchsia_input_report::wire::SensorReportingState::kReportAllEvents);
 }
 
-class Tcs3400MetadataTest : public zxtest::Test {
+class Tcs3400MetadataTest
+    : public Tcs3400TestBase,
+      public ::testing::TestWithParam<std::tuple<uint8_t, uint8_t, zx::duration, uint8_t>> {
+ public:
+  void TearDown() override { ASSERT_OK(driver_test().StopDriver()); }
+
  protected:
-  void SetGainTest(uint8_t gain, uint8_t again_register) {
-    // integration_time_us = 612'000 for atime = 36.
-    SetGainAndIntegrationTest(gain, zx::usec(612'000), again_register, 36);
-  }
+  void StartDriver(uint8_t gain, zx::duration integration_time) {
+    driver_test().RunInEnvironmentTypeContext([](auto& env) {
+      env.i2c().SetRegister(TCS_I2C_ATIME, 0xff);
+      env.i2c().SetRegister(TCS_I2C_CONTROL, 0xff);
+    });
 
-  void SetIntegrationTest(zx::duration integration_time, uint8_t atime_register) {
-    // gain = 1 for again = 0x00.
-    SetGainAndIntegrationTest(1, integration_time, 0x00, atime_register);
-  }
-
-  void SetGainAndIntegrationTest(uint8_t gain, zx::duration integration_time,
-                                 uint8_t again_register, uint8_t atime_register) {
     const fuchsia_hardware_lightsensor::Metadata metadata(
         {.gain = gain, .integration_time = integration_time.get(), .polling_time = 0});
 
-    const fit::result persisted_metadata = fidl::Persist(metadata);
-    ASSERT_TRUE(persisted_metadata.is_ok());
-
-    std::shared_ptr<MockDevice> fake_parent = MockDevice::FakeRootParent();
-    fdf::UnownedSynchronizedDispatcher dispatcher =
-        fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
-    fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata->data(),
-                             persisted_metadata->size());
-
-    async::Loop incoming_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
-    EXPECT_OK(incoming_loop.StartThread("incoming-ns-thread"));
-    async_patterns::TestDispatcherBound<IncomingNamespace> incoming{incoming_loop.dispatcher(),
-                                                                    std::in_place};
-
-    // Create i2c fragment.
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    incoming.SyncCall([&](IncomingNamespace* incoming) {
-      auto service_result = incoming->outgoing_.AddService<fuchsia_hardware_i2c::Service>(
-          fuchsia_hardware_i2c::Service::InstanceHandler(
-              {.device = incoming->fake_i2c_.bind_handler(async_get_default_dispatcher())}));
-      ZX_ASSERT(service_result.is_ok());
-      ZX_ASSERT(incoming->outgoing_.Serve(std::move(endpoints->server)).is_ok());
-    });
-    fake_parent->AddFidlService(fuchsia_hardware_i2c::Service::Name, std::move(endpoints->client),
-                                "i2c");
-    // Create gpio fragment.
-    endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    incoming.SyncCall([&](IncomingNamespace* incoming) {
-      auto service_result = incoming->outgoing_.AddService<fuchsia_hardware_gpio::Service>(
-          fuchsia_hardware_gpio::Service::InstanceHandler(
-              {.device = incoming->fake_gpio_.bind_handler(async_get_default_dispatcher())}));
-      ZX_ASSERT(service_result.is_ok());
-      ZX_ASSERT(incoming->outgoing_.Serve(std::move(endpoints->server)).is_ok());
-    });
-    fake_parent->AddFidlService(fuchsia_hardware_gpio::Service::Name, std::move(endpoints->client),
-                                "gpio");
-
-    incoming.SyncCall([](IncomingNamespace* incoming) {
-      incoming->fake_i2c_.SetRegister(TCS_I2C_ATIME, 0xff);
-      incoming->fake_i2c_.SetRegister(TCS_I2C_CONTROL, 0xff);
-    });
-
-    auto result = fdf::RunOnDispatcherSync(dispatcher->async_dispatcher(), [&]() {
-      const auto status = Tcs3400Device::Create(nullptr, fake_parent.get());
-      ASSERT_OK(status);
-    });
-    ASSERT_OK(result);
-    auto* child = fake_parent->GetLatestChild();
-
-    sync_completion_t* completion;
-    incoming.SyncCall([&completion](IncomingNamespace* incoming) {
-      completion = incoming->fake_i2c_.configuration_completion();
-    });
-    sync_completion_wait(completion, ZX_TIME_INFINITE);
-    sync_completion_reset(completion);
-
-    incoming.SyncCall([atime_register, again_register](IncomingNamespace* incoming) {
-      EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_ATIME), atime_register);
-      EXPECT_EQ(incoming->fake_i2c_.GetRegisterLastWrite(TCS_I2C_CONTROL), again_register);
-    });
-
-    result = fdf::RunOnDispatcherSync(dispatcher->async_dispatcher(), [&]() {
-      device_async_remove(child);
-      EXPECT_OK(mock_ddk::ReleaseFlaggedDevices(fake_parent.get()));
-    });
-    ASSERT_OK(result);
+    Tcs3400TestBase::StartDriver(metadata);
   }
 };
 
-TEST_F(Tcs3400MetadataTest, Gain) {
-  SetGainTest(99, 0x00);  // Invalid gain sets again = 0 (gain = 1).
-  SetGainTest(1, 0x00);
-  SetGainTest(4, 0x01);
-  SetGainTest(16, 0x02);
-  SetGainTest(64, 0x03);
+TEST_P(Tcs3400MetadataTest, MetadataTest) {
+  auto [gain, again_register, integration_time, atime_register] = GetParam();
+
+  StartDriver(gain, integration_time);
+
+  driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_ATIME), atime_register);
+    EXPECT_EQ(env.i2c().GetRegisterLastWrite(TCS_I2C_CONTROL), again_register);
+  });
 }
 
-TEST_F(Tcs3400MetadataTest, IntegrationTime) {
-  SetIntegrationTest(zx::usec(750'000), 0x01);  // Invalid integration time sets atime = 1.
-  SetIntegrationTest(zx::usec(708'900), 0x01);
-  SetIntegrationTest(zx::usec(706'120), 0x02);
-  SetIntegrationTest(zx::usec(703'340), 0x03);
-  SetIntegrationTest(zx::usec(2'780), 0xFF);
-}
+INSTANTIATE_TEST_SUITE_P(
+    Tcs3400MetadataTests, Tcs3400MetadataTest,
+    ::testing::Values(
+        std::tuple(99, 0x00, zx::usec(612'000), 36),  // Invalid gain sets again = 0 (gain = 1).
+        std::tuple(1, 0x00, zx::usec(612'000), 36), std::tuple(4, 0x01, zx::usec(612'000), 36),
+        std::tuple(16, 0x02, zx::usec(612'000), 36), std::tuple(64, 0x03, zx::usec(612'000), 36),
+        std::tuple(1, 0x00, zx::usec(750'000), 0x01),  // Invalid integration time sets atime = 1
+        std::tuple(1, 0x00, zx::usec(708'900), 0x01), std::tuple(1, 0x00, zx::usec(706'120), 0x02),
+        std::tuple(1, 0x00, zx::usec(703'340), 0x03), std::tuple(1, 0x00, zx::usec(2'780), 0xFF)));
 
-TEST(Tcs3400Test, TooManyI2cErrors) {
-  std::shared_ptr<MockDevice> fake_parent = MockDevice::FakeRootParent();
+TEST(Tcs3400ErrorTest, TooManyI2cErrors) {
+  Tcs3400TestBase test;
   static const fuchsia_hardware_lightsensor::Metadata kMetadata({
       .gain = 64,
       .integration_time = zx::usec(708'900).get(),  // For atime = 0x01.
   });
 
-  async::Loop incoming_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
-  ASSERT_OK(incoming_loop.StartThread("incoming-ns-thread"));
-  struct TestNamespace {
-    mock_i2c::MockI2c mock_i2c;
-    fake_gpio::FakeGpio fake_gpio;
-  };
-  async_patterns::TestDispatcherBound<TestNamespace> incoming{incoming_loop.dispatcher(),
-                                                              std::in_place};
+  zx::interrupt gpio_interrupt;
+  ASSERT_OK(zx::interrupt::create(zx::resource(ZX_HANDLE_INVALID), 0, ZX_INTERRUPT_VIRTUAL,
+                                  &gpio_interrupt));
 
-  auto i2c_endpoints = fidl::CreateEndpoints<fuchsia_hardware_i2c::Device>();
-  EXPECT_TRUE(i2c_endpoints.is_ok());
-  incoming.SyncCall([&i2c_endpoints](TestNamespace* test) {
-    test->mock_i2c
-        .ExpectWriteStop({0x81, 0x01}, ZX_ERR_INTERNAL)   // error, will retry.
-        .ExpectWriteStop({0x81, 0x01}, ZX_ERR_INTERNAL)   // error, will retry.
-        .ExpectWriteStop({0x81, 0x01}, ZX_ERR_INTERNAL);  // error, we are done.
-    fidl::BindServer(async_get_default_dispatcher(), std::move(i2c_endpoints->server),
-                     &test->mock_i2c);
+  test.driver_test().RunInEnvironmentTypeContext([&](auto& env) {
+    env.Init(kMetadata, std::move(gpio_interrupt));
+    env.i2c().set_fail_transactions(true);
   });
 
-  auto gpio_endpoints = fidl::CreateEndpoints<fuchsia_hardware_gpio::Gpio>();
-  ASSERT_TRUE(gpio_endpoints.is_ok());
-  incoming.SyncCall([&gpio_endpoints](TestNamespace* test) {
-    fidl::BindServer(async_get_default_dispatcher(), std::move(gpio_endpoints->server),
-                     &test->fake_gpio);
-  });
-
-  Tcs3400Device device(fake_parent.get(), nullptr, std::move(i2c_endpoints->client),
-                       std::move(gpio_endpoints->client));
-
-  const fit::result persisted_metadata = fidl::Persist(kMetadata);
-  ASSERT_TRUE(persisted_metadata.is_ok());
-
-  fake_parent->SetMetadata(DEVICE_METADATA_PRIVATE, persisted_metadata->data(),
-                           persisted_metadata->size());
-  EXPECT_NOT_OK(device.InitMetadata());
+  ASSERT_NE(test.driver_test().StartDriver().status_value(), ZX_OK);
 }
 
 }  // namespace tcs

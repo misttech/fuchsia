@@ -9,20 +9,17 @@
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/input_report_reader/reader.h>
-#include <lib/inspect/cpp/inspect.h>
-#include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
 #include <time.h>
 
-#include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/mutex.h>
 
-#include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
+#include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
 
 namespace tcs {
 
@@ -65,25 +62,20 @@ struct InspectTcs3400FeatureReport {
   explicit InspectTcs3400FeatureReport(inspect::Node n, const Tcs3400FeatureReport& report);
 };
 
-class Tcs3400Device;
-using DeviceType =
-    ddk::Device<Tcs3400Device, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin,
-                ddk::Unbindable>;
-
-class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
+class Tcs3400 : public fdf::DriverBase, public fidl::WireServer<fuchsia_input_report::InputDevice> {
  public:
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
+  static constexpr std::string_view kDriverName = "tcs3400_light";
+  static constexpr std::string_view kChildNodeName = "tcs-3400";
 
-  Tcs3400Device(zx_device_t* device, async_dispatcher_t* dispatcher, ddk::I2cChannel i2c,
-                fidl::ClientEnd<fuchsia_hardware_gpio::Gpio> gpio);
-  ~Tcs3400Device() override = default;
+  Tcs3400(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
-  zx_status_t Bind();
-  zx_status_t InitMetadata();
+  // fdf::DriverBase implementation.
+  zx::result<> Start() override;
 
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
+  zx::result<> InitMetadata();
 
+  // fidl::WireServer<fuchsia_input_report::InputDevice> implementation.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
                              GetInputReportsReaderCompleter::Sync& completer) override;
 
@@ -98,15 +90,18 @@ class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_I
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_input_report::InputDevice> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    zxlogf(WARNING, "Unexpected fidl method invoked: %ld", metadata.method_ordinal);
+    fdf::warn("Unexpected fidl method invoked: {}", metadata.method_ordinal);
   }
 
-  // Visible for testing.
-  void WaitForNextReader();
-  inspect::Inspector& inspect() { return inspect_; }
+ protected:
+  // Used by tests.
+  virtual void OnNextReader() {}
 
  private:
+  static constexpr size_t kMaxFeatureReports = 10;
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
+
+  void DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> request);
 
   void HandlePoll();
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
@@ -114,12 +109,11 @@ class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_I
   void RearmIrq();
   void Configure();
 
-  async_dispatcher_t* dispatcher_;
-  async::IrqMethod<Tcs3400Device, &Tcs3400Device::HandleIrq> irq_handler_{this};
-  async::TaskClosureMethod<Tcs3400Device, &Tcs3400Device::HandlePoll> polling_handler_{this};
-  async::TaskClosureMethod<Tcs3400Device, &Tcs3400Device::RearmIrq> rearm_irq_handler_{this};
+  async::IrqMethod<Tcs3400, &Tcs3400::HandleIrq> irq_handler_{this};
+  async::TaskClosureMethod<Tcs3400, &Tcs3400::HandlePoll> polling_handler_{this};
+  async::TaskClosureMethod<Tcs3400, &Tcs3400::RearmIrq> rearm_irq_handler_{this};
 
-  ddk::I2cChannel i2c_;  // Accessed by the main thread only before thread_ has been started.
+  i2c::I2cChannel i2c_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> gpio_;
   zx::interrupt irq_;
   fbl::Mutex input_lock_;
@@ -130,17 +124,21 @@ class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_I
   uint8_t again_ = 1;
   bool isSaturated_ = false;
   zx::time lastSaturatedLog_ = zx::time::infinite_past();
-  sync_completion_t next_reader_wait_;
   input_report_reader::InputReportReaderManager<Tcs3400InputReport,
                                                 fuchsia_input_report::wire::kMaxDeviceReportCount>
       readers_;
-  inspect::Inspector inspect_;
-  inspect::BoundedListNode inspect_reports_;
+  inspect::BoundedListNode inspect_reports_{
+      inspector().inspector().GetRoot().CreateChild("feature_reports"), kMaxFeatureReports};
 
   zx::result<Tcs3400InputReport> ReadInputRpt();
   zx_status_t InitGain(uint8_t gain);
-  zx_status_t WriteReg(uint8_t reg, uint8_t value);
-  zx_status_t ReadReg(uint8_t reg, uint8_t& output_value);
+  zx::result<> WriteReg(uint8_t reg, uint8_t value);
+  zx::result<uint8_t> ReadReg(uint8_t reg);
+
+  driver_devfs::Connector<fuchsia_input_report::InputDevice> devfs_connector_{
+      fit::bind_member<&Tcs3400::DevfsConnect>(this)};
+  fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
+  fdf::OwnedChildNode child_;
 };
 }  // namespace tcs
 

@@ -29,32 +29,31 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.lightsensor:fuchsia.hardware.lightsensor_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/input_report_reader",
-    "//src/devices/i2c/lib/i2c-channel-legacy",
-    "//src/devices/lib/driver",
-    "//src/devices/lib/driver:driver_runtime",
+    "//sdk/lib/driver/platform-device/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/input_report_reader",
+    "//src/devices/i2c/lib/i2c-channel",
+    "//zircon/system/ulib/zircon-internal",
   ]
 }
 
 fuchsia_cc_driver("ams-light-driver") {
-  legacy = true
   output_name = "ams-light"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
 }
 
 fuchsia_driver_component("ams-light") {
@@ -82,27 +81,17 @@ test("ams-light-test-bin") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
     "//sdk/fidl/fuchsia.hardware.lightsensor:fuchsia.hardware.lightsensor_cpp",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
-    "//sdk/lib/async-default",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/async_patterns/testing/cpp",
-    "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/driver/runtime/testing/cpp",
+    "//sdk/lib/driver/fake-platform-device/cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/input_report_reader",
-    "//sdk/lib/inspect/testing/cpp:zxtest",
+    "//sdk/lib/inspect/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
-    "//src/devices/i2c/lib/i2c-channel-legacy",
     "//src/devices/i2c/testing/fake-i2c",
-    "//src/devices/i2c/testing/mock-i2c",
-    "//src/devices/testing/mock-ddk",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/inspect",
-    "//zircon/system/ulib/mock-function",
     "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 
