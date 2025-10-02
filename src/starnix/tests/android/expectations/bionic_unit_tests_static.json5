@@ -23,7 +23,6 @@
 
                 // Our test runner doesn't understand DISABLED
                 "android_mallopt.DISABLED_multiple_enable_gwp_asan",
-                "malloc.DISABLED_alloc_after_fork",
                 "__cxa_demangle.DISABLED_cxa_demangle_fuzz_167977068",
 
                 // Requires MTE support
@@ -122,6 +121,10 @@
                 // This test tries to determine if the system has >=4GB of total memory which is not true in all test environments.
                 "*.fread_int_overflow",
 
+                // This test tries to determine if the system has >=4GB of total memory which is not true in all test environments.
+                // It also writes 2GB of zero bytes to /dev/null, which we currently try to log.
+                "*.fread_fwrite_int_overflow",
+
                 // These tests are arm32 specific
                 "aeabi.read_tp",
                 "getauxval.arm_has_AT_HWCAP2",
@@ -134,6 +137,9 @@
                 "pthread.pthread_create__mmap_failures",
                 "pthread.pthread_sigmask64_SIGTRMIN",
                 "signal.pthread_sigqueue_other",
+
+                // This test requires scudo
+                "malloc.alloc_after_fork",
 
                 // Tests for deprecated functions not supported in our configuration.
                 "malloc.pvalloc_std",
