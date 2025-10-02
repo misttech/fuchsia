@@ -721,6 +721,54 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     }
   }
 
+  template <typename IoProvider, typename IrqProvider>
+  void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {
+    // Start by disabling our top level interrupt at the GIC level of things.
+    // Then, mask the TX/RX specific interrupts in the Geni hardware.
+    irq.SetInterruptsEnabled(false);
+    EnableTxInterrupt(io, false);
+    EnableRxInterrupt(io, false);
+
+    // Cancel any TX commands which are in flight, and wait for the HW to
+    // confirm that they have been canceled.  According to docs, if we have a TX
+    // command in flight when the clocks go away, we risk corrupting the state
+    // machine and wedging the TX pipeline.  Finally, once the command has been
+    // canceled, ack the "command cancel" interrupt which was pended as a
+    // result.
+    MainCommandControlRegister::Get().FromValue(0).set_cancel_command(1).WriteTo(io.io());
+    while (MainIrqStatusRegister::Get().ReadFrom(io.io()).command_cancel() == 0) {
+      // No operations, just spin.
+    }
+    MainIrqStatusClearRegister::Get().FromValue(0).set_command_cancel(1).WriteTo(io.io());
+
+    // TODO(johngro): pay attention to the TX FIFO status after canceling the
+    // command.  It will report how full the FIFO was when the command got
+    // canceled.  Adding a FIFO-sized buffer to the driver and paying attention
+    // to this value will allow us to pick up where we left off when we come out
+    // of suspend, instead of simply dropping whatever was in the FIFO.
+
+    // Now, repeat the process, this time for the RX side of things.  In theory,
+    // we don't have to do this.  In practice, failure to cancel the
+    // never-ending RX command and resume it later on results in wedging the RX
+    // pipeline.
+    SecondaryCommandControlRegister::Get().FromValue(0).set_cancel_command(1).WriteTo(io.io());
+    while (SecondaryIrqStatusRegister::Get().ReadFrom(io.io()).command_cancel() == 0) {
+      // No operations, just spin.
+    }
+    SecondaryIrqStatusClearRegister::Get().FromValue(0).set_command_cancel(1).WriteTo(io.io());
+  }
+
+  template <typename IoProvider, typename IrqProvider>
+  void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {
+    // Resuming is pretty simple right now.  We just need to issue a "go"
+    // command to the RX pipeline in order to start receiving bytes again, and
+    // then re-enable our interrupts.
+    SecondaryCommandRegister::Get().FromValue(0).set_start_read(1).WriteTo(io.io());
+    EnableRxInterrupt(io, true);
+    EnableTxInterrupt(io, true);
+    irq.SetInterruptsEnabled(true);
+  }
+
  private:
   uint32_t rx_fifo_depth_ = kRxFifoDepth;
   uint32_t tx_fifo_depth_ = kTxFifoDepth;
