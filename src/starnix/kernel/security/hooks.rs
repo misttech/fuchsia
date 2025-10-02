@@ -46,10 +46,10 @@ use syncio::zxio_node_attr_has_t;
 use zerocopy::FromBytes;
 
 macro_rules! track_hook_duration {
-    ($cname:literal) => {{
+    ($cname:literal) => {
         trace_duration!(CATEGORY_STARNIX_SECURITY, $cname);
         profile_duration!($cname.to_str().unwrap());
-    }};
+    };
 }
 
 bitflags::bitflags! {
