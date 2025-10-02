@@ -309,7 +309,41 @@ build_config = struct(
     prebuilt_host_tools = ["ninja", "gn", "buildifier"]
     prebuilt_bin_host_tools = ["jq"]  # Tools that live in an additional "bin" subdirectory.
 
+    # LINT.IfChange
+    gn_args = json.decode(
+        repo_ctx.read("{}/fuchsia_build_generated/args.json".format(repo_ctx.workspace_root)),
+    )
+
+    # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py)
+
+    # In case users set a custom clang prefix in GN, respect that config.
+    if "clang_prefix" in gn_args:
+        clang_prefix = gn_args["clang_prefix"]
+
+        # GN clang_prefix can be GN labels, which are relative to workspace root.
+        if clang_prefix.startswith("//"):
+            clang_prefix = "{}/{}".format(repo_ctx.workspace_root, clang_prefix[2:])
+
+        # GN clang_prefix points to the `bin` directory under clang dir.
+        repo_ctx.symlink(repo_ctx.path(clang_prefix).dirname, "host_prebuilts/clang")
+    else:
+        prebuilt_host_subdirs.append("clang")
+
+    for subdir in prebuilt_host_subdirs:
+        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}".format(repo_ctx.workspace_root, subdir, host_tag), "host_prebuilts/{}".format(subdir))
+    for tool in prebuilt_host_tools:
+        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}/{}".format(repo_ctx.workspace_root, tool, host_tag, tool), "host_prebuilts/{}".format(tool))
+    for tool in prebuilt_bin_host_tools:
+        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}/bin/{}".format(repo_ctx.workspace_root, tool, host_tag, tool), "host_prebuilts/{}".format(tool))
+
     exported_files_list = ["host_prebuilts/{}".format(tool) for tool in prebuilt_host_tools + prebuilt_bin_host_tools]
+
+    # Create a symlink to the Fuchsia prebuilt python3 binary (unlike host_prebuilts/python3
+    # which points to a directory). This avoids the heavy machinery associated with py_binary()
+    # such as toolchain resolution and middle-man scripts, but is only usable from
+    # repository rules, or target rules that run locally without a sandbox.
+    repo_ctx.symlink("{}/prebuilt/third_party/python3/{}/bin/python3".format(repo_ctx.workspace_root, host_tag), "host_prebuilts/python3_bin_no_sandbox")
+    exported_files_list.append("host_prebuilts/python3_bin_no_sandbox")
 
     # TODO: invoke `create_rbe_exec_properties_dict` to validate keys
     # https://github.com/bazelbuild/bazel-toolchains/blob/master/rules/exec_properties/README.md
@@ -336,32 +370,6 @@ platform(
         exec_properties_str = _get_formatted_starlark_dict(exec_properties, "    "),
     )
     repo_ctx.file("BUILD.bazel", build_bazel_content)
-
-    # In case users set a custom clang prefix in GN, respect that config.
-    # LINT.IfChange
-    gn_args = json.decode(
-        repo_ctx.read("{}/fuchsia_build_generated/args.json".format(repo_ctx.workspace_root)),
-    )
-
-    # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py)
-    if "clang_prefix" in gn_args:
-        clang_prefix = gn_args["clang_prefix"]
-
-        # GN clang_prefix can be GN labels, which are relative to workspace root.
-        if clang_prefix.startswith("//"):
-            clang_prefix = "{}/{}".format(repo_ctx.workspace_root, clang_prefix[2:])
-
-        # GN clang_prefix points to the `bin` directory under clang dir.
-        repo_ctx.symlink(repo_ctx.path(clang_prefix).dirname, "host_prebuilts/clang")
-    else:
-        prebuilt_host_subdirs.append("clang")
-
-    for subdir in prebuilt_host_subdirs:
-        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}".format(repo_ctx.workspace_root, subdir, host_tag), "host_prebuilts/{}".format(subdir))
-    for tool in prebuilt_host_tools:
-        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}/{}".format(repo_ctx.workspace_root, tool, host_tag, tool), "host_prebuilts/{}".format(tool))
-    for tool in prebuilt_bin_host_tools:
-        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}/bin/{}".format(repo_ctx.workspace_root, tool, host_tag, tool), "host_prebuilts/{}".format(tool))
 
 fuchsia_build_config_repository = repository_rule(
     implementation = _fuchsia_build_config_repository_impl,
