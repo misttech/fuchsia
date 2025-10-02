@@ -6,7 +6,7 @@ use crate::api::value::{ConfigValue, ValueStrategy};
 use ::errors::ffx_bail;
 use analytics::metrics_state::MetricsStatus;
 use analytics::{set_new_opt_in_status, show_status_message};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use core::fmt;
 use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
@@ -31,11 +31,11 @@ pub use aliases::{
     is_analytics_disabled, is_mdns_autoconnect_disabled, is_mdns_discovery_disabled,
     is_usb_discovery_disabled,
 };
-pub use api::query::{ConfigQuery, SelectMode};
 pub use api::ConfigError;
+pub use api::query::{ConfigQuery, SelectMode};
 pub use config_macros::FfxConfigBacked;
 
-pub use environment::{test_env, test_init, Environment, EnvironmentContext, TestEnv};
+pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_init};
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
 pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
@@ -155,26 +155,6 @@ pub fn init(context: &EnvironmentContext) -> Result<()> {
     Ok(())
 }
 
-/// Creates a [`ConfigQuery`] against the global config cache and environment.
-///
-/// Example:
-///
-/// ```no_run
-/// use ffx_config::ConfigLevel;
-/// use ffx_config::BuildSelect;
-/// use ffx_config::SelectMode;
-///
-/// let query = ffx_config::build()
-///     .name("testing")
-///     .level(Some(ConfigLevel::Build))
-///     .build(Some(BuildSelect::Path("/tmp/build.json")))
-///     .select(SelectMode::All);
-/// let value = query.get().await?;
-/// ```
-pub fn build<'a>() -> ConfigQuery<'a> {
-    ConfigQuery::default()
-}
-
 /// Creates a [`ConfigQuery`] against the global config cache and environment,
 /// using the provided value converted in to a base query.
 ///
@@ -227,7 +207,9 @@ pub fn print_config<W: Write>(ctx: &EnvironmentContext, mut writer: W) -> Result
 fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>> {
     match ctx {
         None => {
-            ffx_bail!("Failed to load host log directories from ffx config: No EnvironmentContext provided")
+            ffx_bail!(
+                "Failed to load host log directories from ffx config: No EnvironmentContext provided"
+            )
         }
         Some(con) => match con.query("log.dir").get() {
             Ok(log_dirs) => Ok(log_dirs),
@@ -288,7 +270,7 @@ mod test {
     // creates a token stream referencing `ffx_config` on the inside.
     use crate::{self as ffx_config};
     use api::value::TryConvert;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::collections::HashSet;
     use std::fs;
 
