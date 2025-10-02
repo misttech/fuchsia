@@ -32,6 +32,7 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
       NodeControllerClient phy_controller);
 
   // WlanPhyImpl protocol implementation
+  void Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) override;
   void GetSupportedMacRoles(fdf::Arena& arena,
                             GetSupportedMacRolesCompleter::Sync& completer) override;
   void CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,

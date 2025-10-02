@@ -101,6 +101,11 @@ void WlanPhyImplDevice::Init(
                        new PhyControllerEventHandler(shared_from_this()));
 }
 
+void WlanPhyImplDevice::Init(InitRequestView request, fdf::Arena& arena,
+                             InitCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void WlanPhyImplDevice::GetSupportedMacRoles(fdf::Arena& arena,
                                              GetSupportedMacRolesCompleter::Sync& completer) {
   // wlantap-phy only supports a single mac role determined by the config

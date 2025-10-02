@@ -25,6 +25,7 @@
 #include "wlan/drivers/log_instance.h"
 
 namespace wlanphy {
+using fuchsia_wlan_phyimpl::WlanPhyImplNotifyError;
 
 Device::Device(fdf::DriverStartArgs start_args,
                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
@@ -78,6 +79,35 @@ zx_status_t Device::ConnectToWlanPhyImpl() {
     lerror("WlanPhyImpl Client is not valid");
     return ZX_ERR_BAD_HANDLE;
   }
+
+  // All the errors are logged in SetupWlanPhyImplNotifyServer(), no need to log here.
+  return SetupWlanPhyImplNotifyServer();
+}
+
+zx_status_t Device::SetupWlanPhyImplNotifyServer() {
+  auto [client, server] = fidl::Endpoints<fuchsia_wlan_phyimpl::WlanPhyImplNotify>::Create();
+  phyimplnotify_bindings_.AddBinding(dispatcher(), std::move(server), this,
+                                     fidl::kIgnoreBindingClosure);
+  fdf::Arena fdf_arena(0u);
+
+  fidl::Arena fidl_arena;
+  auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplInitRequest::Builder(fidl_arena);
+  builder.notify_client(std::move(client));
+
+  client_.buffer(fdf_arena)
+      ->Init(builder.Build())
+      .ThenExactlyOnce(
+          [&](fdf::WireUnownedResult<fuchsia_wlan_phyimpl::WlanPhyImpl::Init>& result) mutable {
+            if (!result.ok()) {
+              lerror("Init failed with FIDL error %s", result.status_string());
+              return;
+            }
+            if (result->is_error()) {
+              lerror("Init failed with error %s", zx_status_get_string(result->error_value()));
+              return;
+            }
+            linfo("Successfully sent phyimplifc client end to wlan driver");
+          });
   return ZX_OK;
 }
 
@@ -505,6 +535,11 @@ void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request,
 
             completer.ReplySuccess();
           });
+}
+
+void Device::OnCriticalError(OnCriticalErrorRequestView request,
+                             OnCriticalErrorCompleter::Sync& completer) {
+  completer.ReplyError(WlanPhyImplNotifyError::kNotSupported);
 }
 
 }  // namespace wlanphy

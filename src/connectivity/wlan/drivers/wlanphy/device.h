@@ -28,6 +28,7 @@ class DeviceConnector;
 
 class Device final : public fdf::DriverBase,
                      public fidl::WireServer<fuchsia_wlan_device::Phy>,
+                     public fidl::WireServer<fuchsia_wlan_phyimpl::WlanPhyImplNotify>,
                      public fidl::WireServer<fuchsia_wlan_device::Connector>,
                      public fidl::WireAsyncEventHandler<fdf::NodeController> {
  public:
@@ -55,6 +56,8 @@ class Device final : public fdf::DriverBase,
   void GetPowerState(GetPowerStateCompleter::Sync& completer) override;
   void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request,
                             SetBtCoexistenceModeCompleter::Sync& completer) override;
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
   // Function implementations in protocol fuchsia_wlan_device::Connector.
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
@@ -62,14 +65,18 @@ class Device final : public fdf::DriverBase,
 
   zx_status_t ConnectToWlanPhyImpl();
 
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
+  void OnCriticalError(OnCriticalErrorRequestView request,
+                       OnCriticalErrorCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImplNotify> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
   void Serve(fidl::ServerEnd<fuchsia_wlan_device::Connector> server) {
     bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
   }
   zx_status_t AddWlanDeviceConnector();
+  zx_status_t SetupWlanPhyImplNotifyServer();
 
   // The FIDL client to communicate with iwlwifi
   fdf::WireSharedClient<fuchsia_wlan_phyimpl::WlanPhyImpl> client_;
@@ -81,6 +88,7 @@ class Device final : public fdf::DriverBase,
   driver_devfs::Connector<fuchsia_wlan_device::Connector> devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_wlan_device::Connector> bindings_;
   fidl::ServerBindingGroup<fuchsia_wlan_device::Phy> phy_bindings_;
+  fidl::ServerBindingGroup<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimplnotify_bindings_;
 
   friend class DeviceConnector;
 };

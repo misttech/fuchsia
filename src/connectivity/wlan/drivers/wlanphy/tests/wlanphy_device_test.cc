@@ -64,6 +64,15 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
   void ServiceConnectHandler(fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end) {
     fdf::BindServer(fdf_dispatcher_get_current_dispatcher(), std::move(server_end), this);
   }
+
+  void Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) override {
+    if (!request->has_notify_client()) {
+      completer.buffer(arena).ReplyError(ZX_ERR_BAD_HANDLE);
+      return;
+    }
+    phyimpl_notify_client_.Bind(std::move(request->notify_client()));
+    completer.buffer(arena).ReplySuccess();
+  }
   // Server end handler functions for fuchsia_wlan_phyimpl::WlanPhyImpl.
   void GetSupportedMacRoles(fdf::Arena& arena,
                             GetSupportedMacRolesCompleter::Sync& completer) override {
@@ -198,6 +207,8 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
 
   // The completion to synchronize the state in tests, because there are async FIDL calls.
   libsync::Completion test_completion_;
+
+  fidl::SyncClient<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimpl_notify_client_;
 
  protected:
   void* dummy_ctx_;

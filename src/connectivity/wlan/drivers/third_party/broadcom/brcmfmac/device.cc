@@ -267,6 +267,17 @@ brcmf_pub* Device::drvr() { return brcmf_pub_.get(); }
 
 const brcmf_pub* Device::drvr() const { return brcmf_pub_.get(); }
 
+void Device::Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) {
+  BRCMF_DBG(WLANPHY, "Received Init request");
+  if (!request->has_notify_client()) {
+    BRCMF_ERR("Init does not contain notify_client");
+    completer.buffer(arena).ReplyError(ZX_ERR_BAD_HANDLE);
+    return;
+  }
+  phyimpl_notify_client_.Bind(std::move(request->notify_client()));
+  completer.buffer(arena).ReplySuccess();
+}
+
 void Device::GetSupportedMacRoles(fdf::Arena& arena,
                                   GetSupportedMacRolesCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Received request for supported MAC roles from SME dfv2");

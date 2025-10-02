@@ -30,9 +30,56 @@ type BtCoexistenceMode = flexible enum {
     MODE_OFF = 2;
 };
 
+@available(added=HEAD)
+type WlanPhyImplNotifyError = flexible enum {
+    /// An unspecified internal error occurred.
+    INTERNAL = 1;
+    /// Receiver does not have support for handling the event.
+    NOT_SUPPORTED = 2;
+};
+
+@available(added=HEAD)
+type CriticalErrorReason = flexible enum : uint8 {
+    /// Notifies the receiver (wlanphy client) that the wlan firmware running on the wlan PHY
+    /// has crashed.  Upon receiving this event, the client can decide to forward it to
+    /// higher layers of the wlan stack, handle it itself (for example by requesting a
+    /// reset of the PHY) or ignore it.
+    FW_CRASH = 0;
+};
+
+/// This protocol is specifically meant for passing events/notifications from the WlanPhyImpl server
+/// to its client.
+@available(added=HEAD)
+@discoverable
+open protocol WlanPhyImplNotify {
+    /// Indicate to the receiver (wlanphy client) that the wlan PHY has encountered a critical
+    /// error specifying a reason code. The client can decide to forward it to higher layers of
+    /// the wlan stack, handle it itself or ignore it. The sender can decide to handle the
+    /// error if the receiver responds with an error code.
+    /// Some possible error codes are:
+    /// NOT_SUPPORTED: receiver does not have support for handling the event.
+    /// INTERNAL: Error encountered during processing (including error returned by
+    /// a higher layer module if it was forwarded).
+    flexible OnCriticalError(table {
+        1: reason_code CriticalErrorReason;
+    }) -> () error WlanPhyImplNotifyError;
+};
+
 @discoverable
 @transport("Driver")
 open protocol WlanPhyImpl {
+    /// This method can be used by the WlanPhyImpl client to send the client end of the
+    /// WlanPhyImplNotify endpoint for the WlanPhyImpl server to use. If the WlanPhyImpl client
+    /// never invokes this method that is an indirect implication that the WlanPhyImplNotify is not
+    /// supported. Some possible error codes are:
+    /// ZX_ERR_NOT_SUPPORTED: The WlanPhyImpl server does not support the WlanPhyImplNotify protocol.
+    @available(added=HEAD)
+    flexible Init(resource table {
+        /// The WlanPhyImplNotify client end.
+        /// Required.
+        1: notify_client client_end:WlanPhyImplNotify;
+    }) -> () error zx.Status;
+
     /// MAC roles supported for ifaces on the physical device.
     flexible GetSupportedMacRoles() -> (table {
         1: supported_mac_roles

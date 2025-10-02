@@ -79,6 +79,7 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   virtual fdf_dispatcher_t* GetDriverDispatcher() = 0;
 
   // WlanPhyImpl interface implementation.
+  void Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) override;
   void GetSupportedMacRoles(fdf::Arena& arena,
                             GetSupportedMacRolesCompleter::Sync& completer) override;
   void CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
@@ -186,6 +187,7 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> factory_controller_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> factory_node_;
   bool device_powered_on_ = true;
+  fidl::SyncClient<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimpl_notify_client_;
 };
 
 }  // namespace brcmfmac
