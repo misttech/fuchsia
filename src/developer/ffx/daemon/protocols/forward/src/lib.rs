@@ -80,6 +80,7 @@ impl FidlProtocol for Forward {
 
     async fn handle(&self, cx: &Context, req: ffx::TunnelRequest) -> Result<()> {
         let cx = cx.clone();
+        let cx_clone = cx.clone();
 
         match req {
             ffx::TunnelRequest::ForwardPort { target, host_address, target_address, responder } => {
@@ -105,7 +106,8 @@ impl FidlProtocol for Forward {
                     target_address: target_address_cfg,
                 })?;
 
-                let query = ffx_config::query(TUNNEL_CFG).level(Some(ConfigLevel::User));
+                let environment = cx_clone.environment();
+                let query = environment.query(TUNNEL_CFG).level(Some(ConfigLevel::User));
                 if let Err(e) = query.add(cfg) {
                     log::warn!("Failed to persist tunnel configuration: {:?}", e);
                 }
