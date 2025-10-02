@@ -24,7 +24,7 @@ group("aes-gcm-siv") {
 }
 
 group("ahash") {
-  public_deps = [ ":ahash-v0_8_11" ]
+  public_deps = [ ":ahash-v0_8_12" ]
 }
 
 group("ansi_term") {
@@ -1499,18 +1499,18 @@ rustc_library("aes-gcm-siv-v0_11_1") {
   applicable_licenses = [ ":aes-gcm-siv-v0_11_1.license" ]
 }
 
-license("ahash-v0_8_11.license") {
+license("ahash-v0_8_12.license") {
   public_package_name = "ahash"
   license_files = [
-    "//third_party/rust_crates/vendor/ahash-0.8.11/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ahash-0.8.11/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ahash-0.8.12/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ahash-0.8.12/LICENSE-MIT",
   ]
 }
 
-rustc_library("ahash-v0_8_11") {
+rustc_library("ahash-v0_8_12") {
   crate_name = "ahash"
-  source_root = "//third_party/rust_crates/vendor/ahash-0.8.11/src/lib.rs"
-  output_name = "ahash-50487ee6d25c1fa3"
+  source_root = "//third_party/rust_crates/vendor/ahash-0.8.12/src/lib.rs"
+  output_name = "ahash-5f97f0318e2b5f96"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -1518,8 +1518,8 @@ rustc_library("ahash-v0_8_11") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_3" ]
-  deps += [ ":getrandom-v0_2_10" ]
-  deps += [ ":zerocopy-v0_7_35" ]
+  deps += [ ":getrandom-v0_3_3" ]
+  deps += [ ":zerocopy-v0_8_27" ]
   if (!(false && false)) {
     deps += [ ":once_cell-v1_21_3" ]
   }
@@ -1528,8 +1528,8 @@ rustc_library("ahash-v0_8_11") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=50487ee6d25c1fa3",
-    "-Cextra-filename=-50487ee6d25c1fa3",
+    "-Cmetadata=5f97f0318e2b5f96",
+    "-Cextra-filename=-5f97f0318e2b5f96",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"getrandom\"",
     "--cfg=feature=\"runtime-rng\"",
@@ -1542,7 +1542,7 @@ rustc_library("ahash-v0_8_11") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ahash-v0_8_11.license" ]
+  applicable_licenses = [ ":ahash-v0_8_12.license" ]
 }
 
 license("aho-corasick-v0_7_18.license") {
@@ -6759,7 +6759,7 @@ rustc_library("flyweights-v0_1_5") {
 
   deps = []
   deps += [ ":byteorder-v1_5_0" ]
-  deps += [ ":ahash-v0_8_11" ]
+  deps += [ ":ahash-v0_8_12" ]
   deps += [ ":bstr-v1_5_0" ]
   deps += [ ":schemars-v0_8_22" ]
   deps += [ ":serde-v1_0_204" ]

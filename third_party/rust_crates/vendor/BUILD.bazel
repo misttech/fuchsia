@@ -67,14 +67,14 @@ alias(
 )
 
 alias(
-    name = "ahash-0.8.11",
-    actual = "//third_party/rust_crates/vendor/ahash-0.8.11:ahash",
+    name = "ahash-0.8.12",
+    actual = "//third_party/rust_crates/vendor/ahash-0.8.12:ahash",
     tags = ["manual"],
 )
 
 alias(
     name = "ahash",
-    actual = "//third_party/rust_crates/vendor/ahash-0.8.11:ahash",
+    actual = "//third_party/rust_crates/vendor/ahash-0.8.12:ahash",
     tags = ["manual"],
 )
 

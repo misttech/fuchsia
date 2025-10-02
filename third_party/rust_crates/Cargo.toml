@@ -26,7 +26,7 @@ version = "0.1.0"
 aes = "0.8.4"
 aes-gcm = "0.10.1"
 aes-gcm-siv = { version = "0.11.1", features = ["std"] }
-ahash = "0.8.11"
+ahash = "0.8.12"
 ansi_term = "0.12.0"
 anyhow = "1.0.98"
 arbitrary = { version = "1.0.3", features = ["derive"] }
@@ -520,7 +520,7 @@ license_files = ["LICENSE-APACHE"]
 rustflags = [ "--cfg=aes_armv8" ]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.ahash."0.8.11".platform."cfg(any(target_arch = \"x86_64\", target_arch = \"aarch64\", target_arch = \"mips64\", target_arch = \"powerpc64\", target_arch = \"riscv64gc\", target_arch = \"s390x\"))"]
+[gn.package.ahash."0.8.12".platform."cfg(any(target_arch = \"x86_64\", target_arch = \"aarch64\", target_arch = \"mips64\", target_arch = \"powerpc64\", target_arch = \"riscv64gc\", target_arch = \"s390x\"))"]
 rustflags = [ "--cfg=feature=\\\"folded_multiply\\\"" ]
 
 [gn.package.anyhow."1.0.98"]
