@@ -51,8 +51,6 @@ pub struct TargetCollectionProtocol {
     // If is Some, will send signal after manual targets have been successfully loaded
     #[cfg(test)]
     manual_targets_loaded_signal: Option<Sender<()>>,
-
-    context: EnvironmentContext,
 }
 
 impl Default for TargetCollectionProtocol {
@@ -67,7 +65,6 @@ impl Default for TargetCollectionProtocol {
             manual_targets: Rc::new(manual_targets),
             #[cfg(test)]
             manual_targets_loaded_signal: None,
-            context: ffx_config::global_env_context().unwrap(),
         }
     }
 }
@@ -345,7 +342,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                                 // the target based on the query. Otherwise,
                                 // fail with TargetNotFound.
                                 let can_discover =
-                                    ffx_target::is_discovery_enabled(&self.context).await;
+                                    ffx_target::is_discovery_enabled(&cx.environment()).await;
                                 if can_discover {
                                     target_collection
                                         // OpenTarget is called on behalf of
@@ -583,7 +580,7 @@ impl FidlProtocol for TargetCollectionProtocol {
         });
 
         let tc2 = cx.get_target_collection().await?;
-        let context = self.context.clone();
+        let context = cx.environment();
         let node_clone = Arc::clone(&node);
         self.tasks.spawn(async move {
             let instance_root: PathBuf = match context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
@@ -632,7 +629,7 @@ impl FidlProtocol for TargetCollectionProtocol {
             }
         });
 
-        Target::init_usb_driver(&self.context).await;
+        Target::init_usb_driver(&cx.environment()).await;
 
         if let Some(driver) = Target::get_usb_driver_connection()
             && let Ok(usb_events) = driver
