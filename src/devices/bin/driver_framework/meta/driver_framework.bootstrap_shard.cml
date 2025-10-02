@@ -477,6 +477,11 @@
             from: "#boot-drivers",
         },
         {
+            service: [ "fuchsia.hardware.platform.bus.ObservabilityService" ],
+            from: "#boot-drivers",
+            availability: "optional",
+        },
+        {
             // All the services devfs will auto expose:
             service: [
                 "fuchsia.gpu.magma.DependencyInjectionService",
