@@ -126,7 +126,7 @@ pub fn invalidate_global_cache() {
     }
 }
 
-pub fn global_env_context() -> Option<EnvironmentContext> {
+pub(crate) fn global_env_context() -> Option<EnvironmentContext> {
     ENV.lock().unwrap().clone()
 }
 
