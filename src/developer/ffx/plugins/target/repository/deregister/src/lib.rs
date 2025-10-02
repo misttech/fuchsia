@@ -252,7 +252,7 @@ mod test {
         let env = ffx_config::test_init().await.unwrap();
 
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(default_repo_name).await.unwrap();
+        pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -284,7 +284,7 @@ mod test {
         let env = ffx_config::test_init().await.unwrap();
 
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(default_repo_name).await.unwrap();
+        pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
