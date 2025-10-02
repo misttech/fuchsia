@@ -299,25 +299,29 @@ func (t *Emulator) Start(ctx context.Context, args []string, pbPath string, isBo
 		}
 		serialWriter := botanist.NewLineWriter(botanist.NewTimestampWriter(serialLog), "")
 		stdout = io.MultiWriter(stdout, serialWriter)
-		stderr = io.MultiWriter(stderr, serialWriter)
 	}
+
 	if t.ptm != nil {
 		cmd.Stdin = t.ptm
 		cmd.Stdout = io.MultiWriter(t.ptm, stdout)
-		cmd.Stderr = io.MultiWriter(t.ptm, stderr)
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Setctty: true,
 			Setsid:  true,
 		}
 	} else {
 		cmd.Stdout = stdout
-		cmd.Stderr = stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			// Set a process group ID so we can kill the entire group, meaning
 			// the process and any of its children.
 			Setpgid: true,
 		}
 	}
+
+	// The emulator's stderr will not contain logging from the guest, so it
+	// should just inherit the parent's stderr (and not play a part in the
+	// 'serial' logging).
+	cmd.Stderr = stderr
+
 	logger.Debugf(ctx, "%s invocation:\n%s", t.binary, strings.Join(append([]string{cmd.Path}, cmd.Args...), " "))
 
 	if err := cmd.Start(); err != nil {
