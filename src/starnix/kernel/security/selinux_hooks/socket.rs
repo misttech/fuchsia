@@ -350,8 +350,8 @@ pub(in crate::security) fn check_socket_getsockopt_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
-    _level: u32,
-    _optname: u32,
+    level: u32,
+    optname: u32,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
         track_stub!(
@@ -361,6 +361,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
         return Ok(());
     };
 
+    let audit_context = &[current_task.into(), Auditable::SockOptArguments(level, optname)];
     let current_sid = current_task_state(current_task).lock().current_sid;
     todo_has_socket_permission(
         TODO_DENY!("https://fxbug.dev/411396154", "Enforce socket_getsockopt checks."),
@@ -369,7 +370,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
         current_sid,
         &socket_node,
         CommonSocketPermission::GetOpt,
-        current_task.into(),
+        audit_context.into(),
     )
 }
 
