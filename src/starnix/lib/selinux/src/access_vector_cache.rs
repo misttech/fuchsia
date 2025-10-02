@@ -252,7 +252,7 @@ impl FifoQueryCache {
 }
 
 /// Default size of an access vector cache shared by all threads in the system.
-const DEFAULT_SHARED_SIZE: usize = 1000;
+const DEFAULT_SHARED_SIZE: usize = 2000;
 
 /// An access vector cache.
 #[derive(Clone)]
