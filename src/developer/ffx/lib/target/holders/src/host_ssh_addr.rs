@@ -4,14 +4,14 @@
 
 use std::ops::Deref;
 
-use crate::{TargetProxyHolder, init_connection_behavior};
+use crate::TargetProxyHolder;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use ffx_command_error::Result;
 use ffx_ssh::parse::HostAddr;
-use ffx_target::fho::{FhoConnectionBehavior, target_interface};
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
+use target_behavior::{ConnectionBehavior, init_connection_behavior, target_interface};
 
 #[derive(Clone, Debug)]
 pub struct HostAddrHolder(Option<HostAddr>);
@@ -66,7 +66,7 @@ impl TryFromEnv for HostAddrHolder {
             b
         };
         match behavior {
-            FhoConnectionBehavior::DaemonConnector(_) => {
+            ConnectionBehavior::DaemonConnector(_) => {
                 // Get a target proxy
                 let tp = TargetProxyHolder::try_from_env(env).await?;
                 let id = tp
@@ -75,7 +75,7 @@ impl TryFromEnv for HostAddrHolder {
                     .map_err(|e| anyhow!("Got Error getting target identity: {}", e))?;
                 Ok(HostAddrHolder::from(id.ssh_host_address))
             }
-            FhoConnectionBehavior::DirectConnector(direct) => {
+            ConnectionBehavior::DirectConnector(direct) => {
                 let conn = direct.get_connection(env.environment_context()).await?;
                 let host_addr_info = conn.host_ssh_address();
                 Ok(HostAddrHolder::from(host_addr_info))

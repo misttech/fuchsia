@@ -27,6 +27,7 @@ ffx_plugin("ffx_target_repository_register") {
   test_deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
+    "//src/developer/ffx/lib/target/behavior:lib",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-url",

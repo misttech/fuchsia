@@ -2,14 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Arc;
 use std::time::Duration;
 
-use daemon_proxy::Injection;
 use ffx_command_error::Result;
-use ffx_config::{EnvironmentContext, TryFromEnvContext};
-use ffx_target::Resolution;
-use ffx_target::fho::FhoConnectionBehavior;
 use fho::{FhoEnvironment, TryFromEnv as _};
 use fidl::encoding::DefaultFuchsiaResourceDialect;
 use fidl::endpoints::Proxy;
@@ -36,46 +31,6 @@ pub use target_info_query::TargetInfoQueryHolder;
 pub use target_proxy::TargetProxyHolder;
 
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Explicitly create direct connection behavior
-pub async fn init_direct_connection_behavior(
-    context: &EnvironmentContext,
-) -> Result<FhoConnectionBehavior> {
-    log::info!("Initializing FhoConnectionBehavior::DirectConnector");
-    let resolution = Resolution::try_from_env_context(context).await?;
-    Ok(FhoConnectionBehavior::DirectConnector(Arc::new(resolution)))
-}
-
-pub async fn init_connection_behavior(
-    context: &EnvironmentContext,
-) -> Result<FhoConnectionBehavior> {
-    if context.is_strict() || context.get_direct_connection_mode() {
-        init_direct_connection_behavior(context).await
-    } else {
-        let build_info = context.build_info();
-        let overnet_injector =
-            Injection::initialize_overnet(context.clone(), None, build_info).await?;
-        log::info!("Initializing FhoConnectionBehavior::DaemonConnector");
-        Ok(FhoConnectionBehavior::DaemonConnector(Arc::new(overnet_injector)))
-    }
-}
-
-/// Explicitly create daemon connection behavior, for subtools such as `ffx daemon echo`
-/// which we guarantee will use the daemon, irrespective of the configured connection type.
-/// Returns an error when in strict mode.
-pub async fn init_daemon_connection_behavior(
-    context: &EnvironmentContext,
-) -> Result<FhoConnectionBehavior> {
-    if context.is_strict() {
-        return Err(ffx_command_error::Error::User(anyhow::anyhow!(
-            "Daemon connections are not supported in strict mode"
-        )));
-    }
-    let build_info = context.build_info();
-    let overnet_injector = Injection::initialize_overnet(context.clone(), None, build_info).await?;
-    log::info!("Initializing FhoConnectionBehavior::DaemonConnector");
-    Ok(FhoConnectionBehavior::DaemonConnector(Arc::new(overnet_injector)))
-}
 
 /// A decorator for proxy types in [`crate::FfxTool`] implementations so you can
 /// specify the moniker for the component exposing the proxy you're loading.
@@ -111,52 +66,5 @@ pub(crate) async fn connect_to_rcs(env: &FhoEnvironment) -> Result<RemoteControl
             // which will be propagated after exiting the loop.
             break Ok(res?);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ffx_config::environment::ExecutableKind;
-    use ffx_config::{ConfigMap, test_env};
-
-    #[fuchsia::test]
-    async fn test_connection_behavior_correct_in_strict() {
-        let runtime_args =
-            serde_json::json!({"target": {"default" : "127.0.0.1"}}).as_object().unwrap().clone();
-        let ctx = EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
-        let behavior = init_connection_behavior(&ctx).await.unwrap();
-        assert!(matches!(behavior, FhoConnectionBehavior::DirectConnector(_)));
-    }
-
-    #[fuchsia::test]
-    async fn test_connection_behavior_correct_in_non_strict() {
-        let env = test_env().build().unwrap();
-        let behavior = init_connection_behavior(&env.context).await.unwrap();
-        assert!(matches!(behavior, FhoConnectionBehavior::DaemonConnector(_)));
-    }
-
-    #[fuchsia::test]
-    async fn test_daemon_connection_behavior() {
-        let env = test_env().build().unwrap();
-        let behavior = init_daemon_connection_behavior(&env.context).await.unwrap();
-        assert!(matches!(behavior, FhoConnectionBehavior::DaemonConnector(_)));
-    }
-
-    #[fuchsia::test]
-    async fn test_daemon_connection_behavior_fails_in_strict() {
-        let ctx =
-            EnvironmentContext::strict(ExecutableKind::Test, ConfigMap::new()).expect("strict env");
-        assert!(matches!(init_daemon_connection_behavior(&ctx).await, Err(_)));
-    }
-    #[fuchsia::test]
-    async fn test_direct_connection_behavior() {
-        let env = test_env()
-            .runtime_config("connectivity.direct", true)
-            .runtime_config("target.default", "127.0.0.1")
-            .build()
-            .unwrap();
-        let behavior = init_connection_behavior(&env.context).await.unwrap();
-        assert!(matches!(behavior, FhoConnectionBehavior::DirectConnector(_)));
     }
 }

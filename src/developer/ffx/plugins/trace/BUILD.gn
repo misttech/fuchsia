@@ -29,6 +29,7 @@ ffx_plugin("ffx_trace") {
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/target/behavior:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/trace:lib",
     "//src/developer/ffx/lib/writer:lib",

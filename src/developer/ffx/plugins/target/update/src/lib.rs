@@ -603,7 +603,6 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use ffx_target::TargetInfoQuery;
-    use ffx_target::fho::FhoConnectionBehavior;
     use ffx_update_args::Update;
     use ffx_writer::TestBuffers;
     use fho::{FhoEnvironment, TryFromEnv};
@@ -615,6 +614,7 @@ mod tests {
     use futures::prelude::*;
     use mock_installer::MockUpdateInstallerService;
     use std::sync::Arc;
+    use target_behavior::ConnectionBehavior;
     use target_holders::{FakeInjector, fake_async_proxy, fake_proxy};
 
     async fn perform_channel_control_test<V, O>(
@@ -752,9 +752,9 @@ mod tests {
         };
 
         let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
-        let target_env = ffx_target::fho::target_interface(&fho_env);
+        let target_env = target_behavior::target_interface(&fho_env);
         target_env
-            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let tool = UpdateTool {
@@ -842,9 +842,9 @@ mod tests {
         };
 
         let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
-        let target_env = ffx_target::fho::target_interface(&fho_env);
+        let target_env = target_behavior::target_interface(&fho_env);
         target_env
-            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let tool = UpdateTool {
