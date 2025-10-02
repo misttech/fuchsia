@@ -446,7 +446,7 @@ where
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -490,6 +490,7 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireBits { value } = out);
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }

@@ -231,6 +231,7 @@ func wireFormatSupported(wireFormat ir.WireFormat) bool {
 
 var encodeErrorPatternNames = map[ir.ErrorCode]string{
 	ir.NonNullableTypeWithNullValue: "EncodeError::InvalidRequiredHandle",
+	ir.StrictBitsUnknownBit:         "EncodeError::InvalidStrictBits",
 }
 
 func encodeErrorPattern(code ir.ErrorCode) (string, error) {

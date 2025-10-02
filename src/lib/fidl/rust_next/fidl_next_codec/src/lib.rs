@@ -253,7 +253,7 @@ mod primitives;
 mod slot;
 mod wire;
 
-pub use bitflags::bitflags;
+pub use bitflags;
 pub use munge::munge;
 
 pub use self::chunk::*;

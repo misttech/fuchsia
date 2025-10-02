@@ -1,4 +1,4 @@
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     {{ self.doc_string(bits.attributes) -}}
     #[derive(
         Clone,
@@ -50,6 +50,11 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let {{ wire_name }} { value } = out);
+        {% if bits.is_strict %}
+            if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+                return Err(::fidl_next::EncodeError::InvalidStrictBits);
+            }
+        {% endif %}
         let _ = value.write({{ wire_subtype }}::from(self.bits()));
         Ok(())
     }

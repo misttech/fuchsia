@@ -8,7 +8,7 @@ pub const ANSWER_IN_BINARY: u16 = 42 as u16;
 
 pub const ANSWER_NARROWED: u8 = 42 as u8;
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -53,6 +53,11 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireBitsType { value } = out);
+
+        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+        }
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }

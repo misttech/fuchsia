@@ -9,7 +9,7 @@ pub type WireAlias = ::fidl_next::WireU32;
 
 pub const EXAMPLE_CONST: u32 = 0 as u32;
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -53,6 +53,11 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireExampleBits { value } = out);
+
+        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+        }
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }

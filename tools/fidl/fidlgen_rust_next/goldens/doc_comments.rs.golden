@@ -496,7 +496,7 @@ where
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[doc = " flexible bits comment #1\n\n flexible bits comment #2\n"]#[derive(
         Clone,
         Copy,
@@ -541,6 +541,7 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireMyFlexibleBits { value } = out);
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }
@@ -742,7 +743,7 @@ impl ::core::convert::From<MyFlexibleEnum> for WireMyFlexibleEnum {
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[doc = " strict bits comment #1\n\n strict bits comment #2\n"]#[derive(
         Clone,
         Copy,
@@ -787,6 +788,11 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireMyStrictBits { value } = out);
+
+        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+        }
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }

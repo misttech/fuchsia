@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -45,6 +45,7 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireEmptyBits { value } = out);
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }
@@ -108,7 +109,7 @@ impl ::core::convert::From<EmptyBits> for WireEmptyBits {
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -153,6 +154,7 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireFlexibleBits { value } = out);
+
         let _ = value.write(::fidl_next::WireU64::from(self.bits()));
         Ok(())
     }
@@ -216,7 +218,7 @@ impl ::core::convert::From<FlexibleBits> for WireFlexibleBits {
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -262,6 +264,11 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireMyBits { value } = out);
+
+        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+        }
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }
@@ -334,7 +341,7 @@ impl ::core::convert::From<MyBits> for WireMyBits {
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -379,6 +386,11 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireStrictBits { value } = out);
+
+        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+        }
+
         let _ = value.write(::fidl_next::WireU64::from(self.bits()));
         Ok(())
     }

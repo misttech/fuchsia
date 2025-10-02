@@ -2,7 +2,7 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -47,6 +47,7 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireBitsMember { value } = out);
+
         let _ = value.write(::fidl_next::WireU32::from(self.bits()));
         Ok(())
     }
@@ -482,7 +483,7 @@ where
     }
 }
 
-::fidl_next::bitflags! {
+::fidl_next::bitflags::bitflags! {
     #[derive(
         Clone,
         Copy,
@@ -526,6 +527,7 @@ where
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let WireFlags { value } = out);
+
         let _ = value.write(::fidl_next::WireU16::from(self.bits()));
         Ok(())
     }

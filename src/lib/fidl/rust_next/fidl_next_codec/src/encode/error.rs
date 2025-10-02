@@ -30,4 +30,8 @@ pub enum EncodeError {
     /// Expected a zircon handle but was given a driver handle
     #[error("expected a zircon handle but was given a driver handle")]
     ExpectedZirconHandle,
+
+    /// Invalid bits were set in a strict bits value.
+    #[error("invalid bits were set in a strict bits value")]
+    InvalidStrictBits,
 }
