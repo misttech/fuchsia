@@ -7,7 +7,6 @@ use ::errors::ffx_bail;
 use analytics::metrics_state::MetricsStatus;
 use analytics::{set_new_opt_in_status, show_status_message};
 use anyhow::{anyhow, Context, Result};
-use api::value::TryConvert;
 use core::fmt;
 use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
@@ -187,14 +186,6 @@ pub fn build<'a>() -> ConfigQuery<'a> {
 /// ```
 pub(crate) fn query<'a>(with: impl Into<ConfigQuery<'a>>) -> ConfigQuery<'a> {
     with.into()
-}
-
-pub fn get_optional<'a, T, U>(with: U) -> std::result::Result<T, ConfigError>
-where
-    T: TryConvert + ValueStrategy,
-    U: Into<ConfigQuery<'a>>,
-{
-    query(with).get_optional()
 }
 
 pub const SDK_OVERRIDE_KEY_PREFIX: &str = "sdk.overrides";
