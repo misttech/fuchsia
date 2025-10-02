@@ -39,7 +39,6 @@ decode_failure("PayloadTooSmall") {
 }
 
 success("EmptyStructSandwich") {
-    bindings_denylist = [rust_next],
     value = EmptyStructSandwich{
         before: "before",
         es: EmptyStruct{},
@@ -514,7 +513,6 @@ success("FileGetAttrResponse") {
 
 // See comment in optionals.test.fidl for why this test case exists.
 success("Optionals") {
-    bindings_denylist = [rust_next],
     value = StructWithOptionals{
         s: EmptyStruct{},
         s2: EmptyStruct{},
@@ -759,7 +757,6 @@ success("LargeArrays") {
 // This tests the default input used in fidlviz:
 // https://fuchsia.googlesource.com/fidl-misc/+/HEAD/fidlviz/
 success("FidlvizDemo") {
-    bindings_denylist = [rust_next],
     handle_defs = {
         #0 = event(),
     },

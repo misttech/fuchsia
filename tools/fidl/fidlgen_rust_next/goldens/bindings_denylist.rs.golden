@@ -58,6 +58,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -160,6 +161,7 @@ unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding4 {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -179,6 +181,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -816,6 +819,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 should_never_appear_in_any_binding_4,
                 should_never_appear_in_any_binding_5,
                 should_never_appear_in_any_binding_6,
@@ -953,6 +957,7 @@ unsafe impl ::fidl_next::Wire for WireAllowedDeniedResponse<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 should_never_appear_in_any_binding_4,
                 should_never_appear_in_any_binding_5,
                 should_never_appear_in_any_binding_6,
@@ -983,6 +988,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut should_never_appear_in_any_binding_4,
                 mut should_never_appear_in_any_binding_5,
                 mut should_never_appear_in_any_binding_6,
@@ -1303,6 +1309,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -1405,6 +1412,7 @@ unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding1 {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -1424,6 +1432,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -2061,6 +2070,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 should_never_appear_in_any_binding_1,
                 should_never_appear_in_any_binding_2,
                 should_never_appear_in_any_binding_3,
@@ -2203,6 +2213,7 @@ unsafe impl ::fidl_next::Wire for WireDeniedShouldNeverAppearInAnyBindingRequest
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 should_never_appear_in_any_binding_1,
                 should_never_appear_in_any_binding_2,
                 should_never_appear_in_any_binding_3,
@@ -2234,6 +2245,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut should_never_appear_in_any_binding_1,
                 mut should_never_appear_in_any_binding_2,
                 mut should_never_appear_in_any_binding_3,
@@ -2554,6 +2566,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -2656,6 +2669,7 @@ unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding7 {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -2675,6 +2689,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -3312,6 +3327,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 should_never_appear_in_any_binding_7,
                 should_never_appear_in_any_binding_8,
                 should_never_appear_in_any_binding_9,
@@ -3449,6 +3465,7 @@ unsafe impl ::fidl_next::Wire for WireDeniedAnonymous<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 should_never_appear_in_any_binding_7,
                 should_never_appear_in_any_binding_8,
                 should_never_appear_in_any_binding_9,
@@ -3479,6 +3496,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut should_never_appear_in_any_binding_7,
                 mut should_never_appear_in_any_binding_8,
                 mut should_never_appear_in_any_binding_9,
@@ -3550,6 +3568,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -3654,6 +3673,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyCppRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -3673,6 +3693,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -3738,6 +3759,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 b,
 
             } = out_;
@@ -3843,6 +3865,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyCppResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 b,
 
             } = &mut *out_;
@@ -3862,6 +3885,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut b,
 
             } = slot_;
@@ -3927,6 +3951,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -4031,6 +4056,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyDartRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -4050,6 +4076,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -4115,6 +4142,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 b,
 
             } = out_;
@@ -4220,6 +4248,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyDartResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 b,
 
             } = &mut *out_;
@@ -4239,6 +4268,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut b,
 
             } = slot_;
@@ -4304,6 +4334,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -4408,6 +4439,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyGoRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -4427,6 +4459,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -4492,6 +4525,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 b,
 
             } = out_;
@@ -4597,6 +4631,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyGoResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 b,
 
             } = &mut *out_;
@@ -4616,6 +4651,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut b,
 
             } = slot_;
@@ -4681,6 +4717,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -4785,6 +4822,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyPythonRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -4804,6 +4842,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -4869,6 +4908,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 b,
 
             } = out_;
@@ -4974,6 +5014,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyPythonResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 b,
 
             } = &mut *out_;
@@ -4993,6 +5034,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut b,
 
             } = slot_;
@@ -5058,6 +5100,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -5162,6 +5205,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyRustRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -5181,6 +5225,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -5246,6 +5291,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 b,
 
             } = out_;
@@ -5351,6 +5397,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyRustResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 b,
 
             } = &mut *out_;
@@ -5370,6 +5417,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut b,
 
             } = slot_;
@@ -5435,6 +5483,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -5539,6 +5588,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenySyzkallerRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -5558,6 +5608,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -5623,6 +5674,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 b,
 
             } = out_;
@@ -5729,6 +5781,7 @@ unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenySyzkallerResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 b,
 
             } = &mut *out_;
@@ -5748,6 +5801,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut b,
 
             } = slot_;
@@ -6817,6 +6871,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 a,
 
             } = out_;
@@ -6921,6 +6976,7 @@ unsafe impl ::fidl_next::Wire for WireMemberOnlyAppearsInImportingLibrary {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 a,
 
             } = &mut *out_;
@@ -6940,6 +6996,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut a,
 
             } = slot_;
@@ -7014,6 +7071,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 member_only_appears_in_importing_library,
 
             } = out_;
@@ -7129,6 +7187,7 @@ unsafe impl ::fidl_next::Wire for WireOnlyAppearsInImportingLibrary {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 member_only_appears_in_importing_library,
 
             } = &mut *out_;
@@ -7148,6 +7207,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut member_only_appears_in_importing_library,
 
             } = slot_;
@@ -7400,9 +7460,6 @@ impl ::core::convert::From<OnlyDart> for WireOnlyDart {
 pub struct OnlyGo {}
 
 impl ::fidl_next::Encodable for OnlyGo {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WireOnlyGo> =
-        unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
     type Encoded = WireOnlyGo;
 }
 
@@ -7416,11 +7473,7 @@ where
         encoder_: &mut ___E,
         out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-
-            } = out_;
-        }
+        *out_ = ::core::mem::MaybeUninit::zeroed();
 
         Ok(())
     }
@@ -7438,6 +7491,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
+                    _empty,
+
 
             } = out_;
         }
@@ -7518,7 +7574,9 @@ impl ::fidl_next::FromWireRef<WireOnlyGo> for OnlyGo {
 /// The wire type corresponding to [`OnlyGo`].
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct WireOnlyGo {}
+pub struct WireOnlyGo {
+    _empty: fidl_next::WireEmptyStructPlaceholder,
+}
 
 unsafe impl ::fidl_next::Wire for WireOnlyGo {
     type Decoded<'de> = WireOnlyGo;
@@ -7527,6 +7585,9 @@ unsafe impl ::fidl_next::Wire for WireOnlyGo {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
+                    _empty,
+
 
             } = &mut *out_;
         }
@@ -7543,6 +7604,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
+                    mut _empty,
+
 
             } = slot_;
         }

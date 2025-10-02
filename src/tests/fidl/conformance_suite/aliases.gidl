@@ -50,7 +50,6 @@ success("AliasOfString") {
 }
 
 success("AliasOfStruct") {
-    bindings_denylist = [rust_next],
     value = AliasedStruct{
         value: AnotherEmptyStruct{},
     },

@@ -7,9 +7,6 @@
 pub struct EmptyResourceStruct {}
 
 impl ::fidl_next::Encodable for EmptyResourceStruct {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WireEmptyResourceStruct> =
-        unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
     type Encoded = WireEmptyResourceStruct;
 }
 
@@ -24,11 +21,7 @@ where
         encoder_: &mut ___E,
         out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-
-            } = out_;
-        }
+        *out_ = ::core::mem::MaybeUninit::zeroed();
 
         Ok(())
     }
@@ -77,7 +70,9 @@ impl ::fidl_next::IntoNatural for WireEmptyResourceStruct {
 /// The wire type corresponding to [`EmptyResourceStruct`].
 #[derive(Debug)]
 #[repr(C)]
-pub struct WireEmptyResourceStruct {}
+pub struct WireEmptyResourceStruct {
+    _empty: fidl_next::WireEmptyStructPlaceholder,
+}
 
 unsafe impl ::fidl_next::Wire for WireEmptyResourceStruct {
     type Decoded<'de> = WireEmptyResourceStruct;
@@ -86,6 +81,9 @@ unsafe impl ::fidl_next::Wire for WireEmptyResourceStruct {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
+                    _empty,
+
 
             } = &mut *out_;
         }
@@ -103,6 +101,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
+                    mut _empty,
+
 
             } = slot_;
         }
@@ -1153,6 +1154,7 @@ unsafe impl ::fidl_next::Wire for WireHandlesInTypes<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 normal_handle,
                 handle_in_vec,
                 handle_in_array,
@@ -1197,6 +1199,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut normal_handle,
                 mut handle_in_vec,
                 mut handle_in_array,

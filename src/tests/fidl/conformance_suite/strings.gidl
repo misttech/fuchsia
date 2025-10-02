@@ -38,7 +38,6 @@ decode_failure("EmptyStringWithNullPtrBody") {
 }
 
 success("EmptyOptionalStringWithNullPtrBody") {
-    bindings_denylist = [rust_next],
     value = OptionalStringWrapper{
         str: null,
     },

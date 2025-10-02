@@ -71,6 +71,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 monotonic,
                 boot,
                 monotonic_ticks,
@@ -206,6 +207,7 @@ unsafe impl ::fidl_next::Wire for WireAllInstants {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 monotonic,
                 boot,
                 monotonic_ticks,
@@ -234,6 +236,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut monotonic,
                 mut boot,
                 mut monotonic_ticks,

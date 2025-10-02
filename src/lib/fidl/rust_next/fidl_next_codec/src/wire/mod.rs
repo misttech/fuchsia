@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 mod boxed;
+mod empty_struct;
 mod envelope;
 mod ptr;
 mod result;
@@ -12,6 +13,7 @@ mod union;
 mod vec;
 
 pub use self::boxed::*;
+pub use self::empty_struct::*;
 pub use self::envelope::*;
 pub use self::ptr::*;
 pub use self::result::*;

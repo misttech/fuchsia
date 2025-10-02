@@ -109,6 +109,7 @@ unsafe impl ::fidl_next::Wire for WireClientEndWrapper {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 value,
 
             } = &mut *out_;
@@ -129,6 +130,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut value,
 
             } = slot_;
@@ -551,6 +553,7 @@ unsafe impl ::fidl_next::Wire for WireHandlesInProtocolSendHandlesRequest<'stati
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 t,
 
             } = &mut *out_;
@@ -572,6 +575,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut t,
 
             } = slot_;
@@ -895,6 +899,7 @@ unsafe impl ::fidl_next::Wire for WireServerEndWrapper {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 value,
 
             } = &mut *out_;
@@ -915,6 +920,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut value,
 
             } = slot_;

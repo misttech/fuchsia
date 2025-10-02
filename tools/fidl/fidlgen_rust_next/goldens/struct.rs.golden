@@ -53,6 +53,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 x,
                 y,
 
@@ -157,6 +158,7 @@ unsafe impl ::fidl_next::Wire for WireBasicStruct<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 x,
                 y,
 
@@ -184,6 +186,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut x,
                 mut y,
 
@@ -255,6 +258,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 f1,
                 f2,
 
@@ -366,6 +370,7 @@ unsafe impl ::fidl_next::Wire for WireSimple {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 f1,
                 f2,
 
@@ -388,6 +393,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut f1,
                 mut f2,
 

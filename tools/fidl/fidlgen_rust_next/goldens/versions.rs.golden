@@ -664,6 +664,7 @@ unsafe impl ::fidl_next::Wire for WireStruct {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 x,
 
             } = &mut *out_;
@@ -684,6 +685,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut x,
 
             } = slot_;

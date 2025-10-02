@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 success("EmptyStruct") {
-    bindings_denylist = [rust_next],
     value = EmptyStruct{},
     bytes = {
         v2 = [
@@ -24,7 +23,6 @@ decode_failure("EmptyStructNonZeroBytes") {
 }
 
 success("AnEmptyStructInStruct") {
-    bindings_denylist = [rust_next],
     value = AnEmptyStructInStruct{
         v: EmptyStruct{},
     },
@@ -47,7 +45,6 @@ decode_failure("AnEmptyStructInStructNonZeroBytes") {
 }
 
 success("TwoEmptyStructsInStruct") {
-    bindings_denylist = [rust_next],
     value = TwoEmptyStructsInStruct{
         a: EmptyStruct{},
         b: EmptyStruct{},
@@ -71,7 +68,6 @@ decode_failure("TwoEmptyStructsInStructNonZeroBytes") {
 }
 
 success("EmptyStructsInArrayInStruct") {
-    bindings_denylist = [rust_next],
     value = EmptyStructsInArrayInStruct{
         v: [
             EmptyStruct{},
@@ -100,7 +96,6 @@ decode_failure("EmptyStructsInArrayInStructNonZeroBytes") {
 
 // Bindings that use iovec with vectors may have special handling.
 success("EmptyStructsInVectorInStruct") {
-    bindings_denylist = [rust_next],
     value = EmptyStructsInVectorInStruct{
         v: [
             EmptyStruct{},
@@ -134,7 +129,6 @@ decode_failure("EmptyStructsInVectorInStructNonZeroBytes") {
 
 // Bindings that use iovec with vectors may have special handling.
 success("TwoEmptyStructsInStructInVectorInStruct") {
-    bindings_denylist = [rust_next],
     value = TwoEmptyStructsInStructInVectorInStruct{
         v: [
             TwoEmptyStructsInStruct{
@@ -175,7 +169,6 @@ decode_failure("TwoEmptyStructsInStructInVectorInStructNonZeroBytes") {
 }
 
 success("OptionalEmptyStructPresent") {
-    bindings_denylist = [rust_next],
     value = OptionalEmptyStructWrapper{
         s: EmptyStruct{},
     },
@@ -188,7 +181,6 @@ success("OptionalEmptyStructPresent") {
 }
 
 success("OptionalEmptyStructAbsent") {
-    bindings_denylist = [rust_next],
     value = OptionalEmptyStructWrapper{},
     bytes = {
         v2 = [
@@ -209,7 +201,6 @@ decode_failure("OptionalEmptyStructInvalidPresenceIndicator") {
 }
 
 success("RecursiveEmptyStruct") {
-    bindings_denylist = [rust_next],
     value = RecursiveEmptyStruct{ // 0
         inner: RecursiveEmptyStruct{ // 1
             inner: null,
@@ -224,7 +215,6 @@ success("RecursiveEmptyStruct") {
 }
 
 success("RecursiveEmptyStructArrayWrapper") {
-    bindings_denylist = [rust_next],
     // gidl-format off
     value = RecursiveEmptyStructArrayWrapper { // 0
         arr: [ // 0
@@ -245,7 +235,6 @@ success("RecursiveEmptyStructArrayWrapper") {
 }
 
 success("RecursiveEmptyStructVectorWrapper") {
-    bindings_denylist = [rust_next],
     value = RecursiveEmptyStructVectorWrapper{ // 0
         vec: [
             RecursiveEmptyStruct{ // 1

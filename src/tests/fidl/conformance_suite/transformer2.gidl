@@ -258,7 +258,6 @@ success("ArrayStruct") {
 }
 
 success("TransformerEmptyStruct") {
-    bindings_denylist = [rust_next],
     value = TransformerEmptyStruct{},
     bytes = {
         v2 = [

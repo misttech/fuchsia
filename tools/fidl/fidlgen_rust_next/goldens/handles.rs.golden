@@ -253,6 +253,7 @@ unsafe impl ::fidl_next::Wire for WireFdfHandles {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 fdf_channel_handle,
                 client_end_driver,
                 server_end_driver,
@@ -279,6 +280,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut fdf_channel_handle,
                 mut client_end_driver,
                 mut server_end_driver,
@@ -1020,6 +1022,7 @@ unsafe impl ::fidl_next::Wire for WireHandles {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 plain_handle,
                 bti_handle,
                 channel_handle,
@@ -1142,6 +1145,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut plain_handle,
                 mut bti_handle,
                 mut channel_handle,

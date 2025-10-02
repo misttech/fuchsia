@@ -53,6 +53,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 single_byte,
 
             } = out_;
@@ -150,6 +151,7 @@ unsafe impl ::fidl_next::Wire for WireByteAndBytes {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 single_byte,
 
             } = &mut *out_;
@@ -169,6 +171,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut single_byte,
 
             } = slot_;

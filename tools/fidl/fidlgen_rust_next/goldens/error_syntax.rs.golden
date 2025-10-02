@@ -48,6 +48,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 s,
 
             } = out_;
@@ -145,6 +146,7 @@ unsafe impl ::fidl_next::Wire for WireExampleUseOfErrorSyntaxCallWhichMayFailReq
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 s,
 
             } = &mut *out_;
@@ -166,6 +168,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut s,
 
             } = slot_;
@@ -231,6 +234,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 value,
 
             } = out_;
@@ -339,6 +343,7 @@ unsafe impl ::fidl_next::Wire for WireExampleUseOfErrorSyntaxCallWhichMayFailRes
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 value,
 
             } = &mut *out_;
@@ -358,6 +363,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut value,
 
             } = slot_;

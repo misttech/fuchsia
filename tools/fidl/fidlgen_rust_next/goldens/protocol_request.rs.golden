@@ -212,6 +212,7 @@ unsafe impl ::fidl_next::Wire for WireParentGetChildResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 c,
 
             } = &mut *out_;
@@ -232,6 +233,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut c,
 
             } = slot_;
@@ -356,6 +358,7 @@ unsafe impl ::fidl_next::Wire for WireParentGetChildRequestResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 r,
 
             } = &mut *out_;
@@ -376,6 +379,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut r,
 
             } = slot_;
@@ -494,6 +498,7 @@ unsafe impl ::fidl_next::Wire for WireParentTakeChildRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 c,
 
             } = &mut *out_;
@@ -514,6 +519,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut c,
 
             } = slot_;
@@ -638,6 +644,7 @@ unsafe impl ::fidl_next::Wire for WireParentTakeChildRequestRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 r,
 
             } = &mut *out_;
@@ -658,6 +665,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut r,
 
             } = slot_;

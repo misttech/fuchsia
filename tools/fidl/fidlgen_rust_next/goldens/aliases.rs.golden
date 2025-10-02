@@ -354,6 +354,7 @@ unsafe impl ::fidl_next::Wire for WireExampleOfUseOfAliases<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 field_of_u32,
                 field_of_vec_of_strings,
                 field_of_vec_of_strings_at_most_nine,
@@ -404,6 +405,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut field_of_u32,
                 mut field_of_vec_of_strings,
                 mut field_of_vec_of_strings_at_most_nine,

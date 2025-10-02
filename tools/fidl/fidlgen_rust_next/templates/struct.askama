@@ -27,7 +27,7 @@ pub struct {{ name }} {
 }
 
 impl ::fidl_next::Encodable for {{ name }} {
-    {% if is_static && !has_padding %}
+    {% if is_static && !has_padding && !is_empty %}
     const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, {{ wire_name }}{{ static_ }}> = unsafe {
         ::fidl_next::CopyOptimization::enable_if(
             true
@@ -59,18 +59,22 @@ where
         encoder_: &mut ___E,
         out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                {% for member in strct.members -%}
-                    {{ member.name|snake }},
-                {% endfor %}
-            } = out_;
-        }
+        {% if is_empty %}
+            *out_ = ::core::mem::MaybeUninit::zeroed();
+        {% else %}
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    {% for member in strct.members -%}
+                        {{ member.name|snake }},
+                    {% endfor %}
+                } = out_;
+            }
 
-        {% for member in strct.members %}
-            {% let member_name = filters::escape_snake(member.name) %}
-            ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }})?;
-        {% endfor %}
+            {% for member in strct.members %}
+                {% let member_name = filters::escape_snake(member.name) %}
+                ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }})?;
+            {% endfor %}
+        {% endif %}
         Ok(())
     }
 }
@@ -91,6 +95,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+                {% if is_empty %}
+                    _empty,
+                {% endif %}
                 {% for member in strct.members -%}
                     {{ member.name|snake }},
                 {% endfor %}
@@ -210,6 +217,9 @@ impl{{ de }} ::fidl_next::FromWireRef<{{ wire_name }}{{ de }}> for {{ name }} {
 )]
 #[repr(C)]
 pub struct {{ wire_name }}{{ de }} {
+    {% if is_empty %}
+        _empty: fidl_next::WireEmptyStructPlaceholder,
+    {% endif %}
     {% for member in strct.members %}
         pub {{ member.name|snake }}: {{ self.wire_type(member.ty) }},
     {% endfor %}
@@ -222,6 +232,9 @@ unsafe impl ::fidl_next::Wire for {{ wire_name }}{{ static_ }} {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+                {% if is_empty %}
+                    _empty,
+                {% endif %}
                 {% for member in strct.members -%}
                     {{ member.name|snake }},
                 {% endfor %}
@@ -254,6 +267,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+                {% if is_empty %}
+                    mut _empty,
+                {% endif %}
                 {% for member in strct.members -%}
                     mut {{ member.name|snake }},
                 {% endfor %}

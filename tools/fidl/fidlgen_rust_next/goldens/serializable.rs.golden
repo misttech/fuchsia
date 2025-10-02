@@ -7,9 +7,6 @@
 pub struct SerializableStruct {}
 
 impl ::fidl_next::Encodable for SerializableStruct {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WireSerializableStruct> =
-        unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
     type Encoded = WireSerializableStruct;
 }
 
@@ -23,11 +20,7 @@ where
         encoder_: &mut ___E,
         out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-
-            } = out_;
-        }
+        *out_ = ::core::mem::MaybeUninit::zeroed();
 
         Ok(())
     }
@@ -45,6 +38,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
+                    _empty,
+
 
             } = out_;
         }
@@ -125,7 +121,9 @@ impl ::fidl_next::FromWireRef<WireSerializableStruct> for SerializableStruct {
 /// The wire type corresponding to [`SerializableStruct`].
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct WireSerializableStruct {}
+pub struct WireSerializableStruct {
+    _empty: fidl_next::WireEmptyStructPlaceholder,
+}
 
 unsafe impl ::fidl_next::Wire for WireSerializableStruct {
     type Decoded<'de> = WireSerializableStruct;
@@ -134,6 +132,9 @@ unsafe impl ::fidl_next::Wire for WireSerializableStruct {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
+                    _empty,
+
 
             } = &mut *out_;
         }
@@ -150,6 +151,9 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
+                    mut _empty,
+
 
             } = slot_;
         }

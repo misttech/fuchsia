@@ -57,6 +57,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 vector_of_uint8,
                 vector_of_vector_of_bool,
 
@@ -169,6 +170,7 @@ unsafe impl ::fidl_next::Wire for WireExampleUseOfVectors<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 vector_of_uint8,
                 vector_of_vector_of_bool,
 
@@ -192,6 +194,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut vector_of_uint8,
                 mut vector_of_vector_of_bool,
 

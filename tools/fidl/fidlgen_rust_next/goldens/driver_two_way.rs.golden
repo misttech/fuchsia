@@ -59,6 +59,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 addend1,
                 addend2,
 
@@ -172,6 +173,7 @@ unsafe impl ::fidl_next::Wire for WireTwoWayAddRequest {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 addend1,
                 addend2,
 
@@ -194,6 +196,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut addend1,
                 mut addend2,
 
@@ -259,6 +262,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 sum,
 
             } = out_;
@@ -357,6 +361,7 @@ unsafe impl ::fidl_next::Wire for WireTwoWayAddResponse {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 sum,
 
             } = &mut *out_;
@@ -376,6 +381,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut sum,
 
             } = slot_;

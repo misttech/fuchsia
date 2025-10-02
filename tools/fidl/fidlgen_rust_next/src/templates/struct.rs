@@ -16,6 +16,7 @@ pub struct StructTemplate<'a> {
     strct: &'a Struct,
     context: Context<'a>,
 
+    is_empty: bool,
     is_static: bool,
     has_padding: bool,
     name: String,
@@ -28,6 +29,7 @@ pub struct StructTemplate<'a> {
 
 impl<'a> StructTemplate<'a> {
     pub fn new(strct: &'a Struct, context: Context<'a>) -> Self {
+        let is_empty = strct.members.is_empty();
         let is_static = strct.shape.is_static();
         let base_name = strct.name.decl_name().camel();
         let wire_name = format!("Wire{base_name}");
@@ -39,6 +41,7 @@ impl<'a> StructTemplate<'a> {
             strct,
             context,
 
+            is_empty,
             is_static,
             has_padding: strct.shape.has_padding,
             name: escape(base_name),

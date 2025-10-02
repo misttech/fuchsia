@@ -590,6 +590,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 int64_with_default,
                 string_with_default,
                 bool_with_default,
@@ -725,6 +726,7 @@ unsafe impl ::fidl_next::Wire for WireStruct<'static> {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 int64_with_default,
                 string_with_default,
                 bool_with_default,
@@ -765,6 +767,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut int64_with_default,
                 mut string_with_default,
                 mut bool_with_default,

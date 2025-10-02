@@ -1466,6 +1466,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let Self::Encoded {
+
                 field,
 
             } = out_;
@@ -1564,6 +1565,7 @@ unsafe impl ::fidl_next::Wire for WireStruct {
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge! {
             let Self {
+
                 field,
 
             } = &mut *out_;
@@ -1583,6 +1585,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge! {
             let Self {
+
                 mut field,
 
             } = slot_;
