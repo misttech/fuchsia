@@ -291,7 +291,7 @@
     <project name="linux-syscall-support"
              path="third_party/linux-syscall-support/src"
              remote="https://chromium.googlesource.com/linux-syscall-support"
-             revision="063448fd0f685f99f0cd9cd03b55a01adcadb74d"/>
+             revision="29164a80da4d41134950d76d55199ea33fbb9613"/>
     <project name="llvm-project/libc"
              path="third_party/llvm-libc/src"
              remote="https://llvm.googlesource.com/llvm-project/libc"
