@@ -270,11 +270,10 @@ INSTANTIATE_TEST_SUITE_P(
                               "test_u:test_r:netlink_socket_nlmsg_read_no_t:s0",
                               fit::error(EACCES)},
         NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_read_yes_t:s0",
-                              fit::error(ENOTSUP)},
+                              "test_u:test_r:netlink_socket_nlmsg_read_yes_t:s0", fit::ok()},
         NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
                               "test_u:test_r:netlink_socket_nlmsg_read_no_t:s0",
-                              fit::error(ENOTSUP)},
+                              fit::error(EACCES)},
         NetlinkSocketTestCase{NETLINK_ROUTE, RTM_NEWROUTE,
                               NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
                               "test_u:test_r:netlink_socket_nlmsg_write_yes_t:s0", fit::ok()},
@@ -331,11 +330,10 @@ INSTANTIATE_TEST_SUITE_P(
 
         // NETLINK_SOCK_DIAG test cases
         NetlinkSocketTestCase{NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_read_yes_t:s0",
-                              fit::error(ENOTSUP)},
+                              "test_u:test_r:netlink_socket_nlmsg_read_yes_t:s0", fit::ok()},
         NetlinkSocketTestCase{NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST | NLM_F_ACK,
                               "test_u:test_r:netlink_socket_nlmsg_read_no_t:s0",
-                              fit::error(ENOTSUP)}));
+                              fit::error(EACCES)}));
 
 TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
   const NetlinkSocketTestCase& test_case = GetParam();
@@ -387,7 +385,12 @@ TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
 
   ssize_t result = sendto(sock_fd, nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
 
-  if (test_case.expected_result.is_ok()) {
+  if (test_helper::IsStarnix() &&
+      ((test_case.protocol == NETLINK_ROUTE && test_case.message_type == RTM_GETLINK) ||
+       test_case.protocol == NETLINK_SOCK_DIAG)) {
+    // Expect `ENOTSUP` for testcases currently unsupported in Starnix.
+    EXPECT_THAT(result, SyscallFailsWithErrno(ENOTSUP));
+  } else if (test_case.expected_result.is_ok()) {
     EXPECT_THAT(result, SyscallSucceeds());
   } else {
     EXPECT_THAT(result, SyscallFailsWithErrno(test_case.expected_result.error_value()));
