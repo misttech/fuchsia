@@ -8,20 +8,23 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
+use ffx_target::fho::FhoConnectionBehavior;
 use ffx_target_ssh_args::SshCommand;
 use ffx_writer::SimpleWriter;
-use fho::{FfxContext, FfxMain, FfxTool};
+use fho::{Deferred, FfxContext, FfxMain, FfxTool, FhoEnvironment};
 use fidl_fuchsia_developer_ffx::{TargetIpAddrInfo, TargetIpPort};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address};
 use std::path::PathBuf;
 use std::process::Command;
-use target_holders::TargetInfoHolder;
+use target_holders::{TargetInfoHolder, TargetProxyHolder, init_connection_behavior};
 
 #[derive(FfxTool)]
 pub struct SshTool {
     #[command]
     cmd: SshCommand,
-    target_info: TargetInfoHolder,
+    fho_env: FhoEnvironment,
+    target_proxy: Deferred<TargetProxyHolder>,
+    target_info: Deferred<TargetInfoHolder>,
     context: EnvironmentContext,
 }
 
@@ -31,10 +34,26 @@ fho::embedded_plugin!(SshTool);
 impl FfxMain for SshTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let addr_info =
-            self.target_info.ssh_address().user_message("Failed to get target ssh address")?;
+        let behavior = init_connection_behavior(&self.context).await?;
+        let target_env = ffx_target::fho::target_interface(&self.fho_env);
+        target_env.set_behavior(behavior.clone()).expect("set_behavior");
+        let ssh_address = match behavior {
+            FhoConnectionBehavior::DirectConnector(_) => self
+                .target_info
+                .await
+                .user_message("failed to get TargetInfo")?
+                .ssh_address()
+                .user_message("failed to get target ssh address")?,
+            FhoConnectionBehavior::DaemonConnector(_) => self
+                .target_proxy
+                .await
+                .user_message("failed to get target")?
+                .get_ssh_address()
+                .await
+                .user_message("failed to get target ssh address")?,
+        };
 
-        let addr = get_addr(&self.context, &addr_info)?;
+        let addr = get_addr(&self.context, &ssh_address)?;
         let mut ssh_cmd = make_ssh_command(&self.context, self.cmd, addr)
             .bug_context("Building command to ssh to target")?;
 
