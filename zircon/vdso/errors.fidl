@@ -6,6 +6,8 @@ library zx;
 // TODO(https://fxbug.dev/42065140): `status` should be defined here and this should all
 // be a single enum definition.
 
+// LINT.IfChange(zx_status_t)
+
 /// Indicates an operation was successful.
 const OK Status = 0;
 
@@ -240,3 +242,9 @@ const ERR_CONNECTION_ABORTED Status = -76;
 /// A task was killed during an operation. This is a private error that should
 /// not be seen outside of the VDSO.
 const ERR_INTERNAL_INTR_KILLED Status = -502;
+
+// LINT.ThenChange(
+//   //sdk/rust/zx-types/src/lib.rs,
+//   //sdk/rust/zx-status/src/lib.rs,
+//   //zircon/system/public/zircon/errors.h,
+// )
