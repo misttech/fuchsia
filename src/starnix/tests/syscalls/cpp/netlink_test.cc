@@ -5,22 +5,30 @@
 #include <arpa/inet.h>
 #include <endian.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <net/if.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <format>
+#include <thread>
+
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 #include <linux/fib_rules.h>
+#include <linux/genetlink.h>
 #include <linux/if_link.h>
+#include <linux/if_tun.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/sockios.h>
 
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
@@ -39,7 +47,7 @@ class NetlinkTest : public ::testing::Test {
     ASSERT_TRUE(nl_sock_.is_valid()) << strerror(errno);
   }
 
-  ssize_t SendMsg(test_helper::NetlinkEncoder &encoder) const {
+  ssize_t SendMsg(test_helper::NetlinkEncoder& encoder) const {
     iovec iov = {};
     encoder.Finalize(iov);
     struct msghdr header = {};
@@ -65,7 +73,7 @@ class NetlinkTest : public ::testing::Test {
     char msg_buf_[4096];
     ssize_t len = recv(nl_sock_.get(), msg_buf_, sizeof(msg_buf_), 0);
     ASSERT_GT(len, 0) << strerror(errno);
-    const nlmsghdr *nlmsg = reinterpret_cast<const nlmsghdr *>(msg_buf_);
+    const nlmsghdr* nlmsg = reinterpret_cast<const nlmsghdr*>(msg_buf_);
     ASSERT_TRUE(MY_NLMSG_OK(nlmsg, len));
     // Accept either NEWLINK or DONE from the system. If there are no links
     // installed, then DONE is seen instead of NEWLINK.
@@ -123,11 +131,11 @@ TEST_F(NetlinkTest, NoCapabilities) {
 
   // Verify that we've received exactly one message that contains the `EPERM`
   // error.
-  nlmsghdr *nlmsg = reinterpret_cast<nlmsghdr *>(recv_buf);
+  nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(recv_buf);
   uint32_t len = static_cast<uint32_t>(result);
   ASSERT_TRUE(NLMSG_OK(nlmsg, len));
   EXPECT_EQ(nlmsg->nlmsg_type, NLMSG_ERROR);
-  nlmsgerr *err_data = reinterpret_cast<nlmsgerr *>(NLMSG_DATA(nlmsg));
+  nlmsgerr* err_data = reinterpret_cast<nlmsgerr*>(NLMSG_DATA(nlmsg));
   EXPECT_EQ(err_data->error, -EPERM);
 
   nlmsg = NLMSG_NEXT(nlmsg, len);
@@ -135,6 +143,422 @@ TEST_F(NetlinkTest, NoCapabilities) {
 
   // Restore the capability.
   test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
+}
+
+void SetLoopbackIfAddr(in_addr_t addr) {
+  constexpr char kLoopbackIfName[] = "lo";
+
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
+  ifreq ifr;
+  *(reinterpret_cast<sockaddr_in*>(&ifr.ifr_addr)) = sockaddr_in{
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = addr},
+  };
+  strncpy(ifr.ifr_name, kLoopbackIfName, IFNAMSIZ);
+  ASSERT_EQ(ioctl(fd.get(), SIOCSIFADDR, &ifr), 0) << strerror(errno);
+}
+
+TEST(RouteNetlinkSocket, AddDropMulticastGroup) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+  }
+
+  fbl::unique_fd nlsock(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+  ASSERT_TRUE(nlsock) << strerror(errno);
+
+  struct sockaddr_nl addr = {};
+  addr.nl_family = AF_NETLINK;
+  struct sockaddr* sa = reinterpret_cast<struct sockaddr*>(&addr);
+  ASSERT_EQ(bind(nlsock.get(), sa, sizeof(addr)), 0) << strerror(errno);
+
+  int group = RTNLGRP_IPV4_IFADDR;
+  ASSERT_EQ(setsockopt(nlsock.get(), SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, &group, sizeof(group)), 0)
+      << strerror(errno);
+
+  ASSERT_NO_FATAL_FAILURE(SetLoopbackIfAddr(inet_addr("127.0.0.2")));
+
+  sleep(1);
+
+  char buf[4096] = {};
+
+  // Should observe 2 messages (removing old address, adding new address)
+  // because we're in the corresponding multicast group.
+  ssize_t len = recv(nlsock.get(), buf, sizeof(buf), 0);
+  ASSERT_GT(len, 0) << strerror(errno);
+
+  nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(buf);
+
+  ASSERT_TRUE(MY_NLMSG_OK(nlmsg, len));
+  ASSERT_EQ(nlmsg->nlmsg_type, RTM_DELADDR);
+  rtmsg* rtm = reinterpret_cast<rtmsg*>(NLMSG_DATA(nlmsg));
+  ASSERT_EQ(rtm->rtm_family, AF_INET);
+
+  nlmsg = NLMSG_NEXT(nlmsg, len);
+
+  if (MY_NLMSG_OK(nlmsg, len)) {
+    // The next message is already in the buffer, so we don't need to do
+    // anything here.
+  } else {
+    // Need to receive again.
+    len = recv(nlsock.get(), buf, sizeof(buf), 0);
+    ASSERT_GT(len, 0) << strerror(errno);
+    nlmsg = reinterpret_cast<nlmsghdr*>(buf);
+    ASSERT_TRUE(MY_NLMSG_OK(nlmsg, len));
+  }
+
+  // Assert that the content of the second message indicates the new loopback
+  // address being added.
+  ASSERT_EQ(nlmsg->nlmsg_type, RTM_NEWADDR);
+  rtm = reinterpret_cast<rtmsg*>(NLMSG_DATA(nlmsg));
+  ASSERT_EQ(rtm->rtm_family, AF_INET);
+
+  // Now we should have run out of messages.
+  nlmsg = NLMSG_NEXT(nlmsg, len);
+  ASSERT_FALSE(MY_NLMSG_OK(nlmsg, len));
+
+  // Drop the multicast group membership so that we won't get notified about
+  // further address changes.
+  ASSERT_EQ(setsockopt(nlsock.get(), SOL_NETLINK, NETLINK_DROP_MEMBERSHIP, &group, sizeof(group)),
+            0)
+      << strerror(errno);
+
+  // Restore the usual loopback address.
+  ASSERT_NO_FATAL_FAILURE(SetLoopbackIfAddr(inet_addr("127.0.0.1")));
+
+  // Should not observe a message because we're not in any multicast group.
+  ASSERT_EQ(recv(nlsock.get(), buf, sizeof(buf), MSG_DONTWAIT), -1);
+  ASSERT_EQ(errno, EAGAIN);
+}
+
+struct RouteNetlinkSocketNewAddrParam {
+  uint8_t family;
+  const char* addr;
+  uint8_t prefix;
+  bool expect_subnet_route;
+};
+
+class RouteNetlinkSocketNewAddr : public testing::TestWithParam<RouteNetlinkSocketNewAddrParam> {
+ public:
+  void SetUp() override {
+    // TODO(https://fxbug.dev/317285180) don't skip on baseline
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+    }
+    const char* dev_tun;
+    if (test_helper::IsStarnix()) {
+      dev_tun = "/dev/tun";
+    } else {
+      dev_tun = "/dev/net/tun";
+    }
+    tun_ = fbl::unique_fd(open(dev_tun, O_RDWR));
+    ifreq ifr{};
+    ifr.ifr_flags = IFF_NO_PI | IFF_TUN;
+
+    strncpy(ifr.ifr_name, kTestIfName, IFNAMSIZ);
+
+    auto result = ioctl(tun_.get(), TUNSETIFF, &ifr);
+    ASSERT_EQ(result, 0) << strerror(errno);
+    auto s = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0));
+    ifr.ifr_flags = 0;
+    ASSERT_EQ(ioctl(s.get(), SIOCGIFFLAGS, &ifr), 0) << strerror(errno);
+    ifr.ifr_flags |= IFF_UP;
+    ASSERT_EQ(ioctl(s.get(), SIOCSIFFLAGS, &ifr), 0) << strerror(errno);
+  }
+
+  void TearDown() override {
+    tun_.reset();
+    // Wait for the device to go away so that it does not linger into the next test.
+    while (if_nametoindex(kTestIfName) > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  }
+  static constexpr char kTestIfName[] = "netlink_test";
+
+ private:
+  fbl::unique_fd tun_;
+};
+
+TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+  }
+
+  fbl::unique_fd nlsock(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+  ASSERT_TRUE(nlsock) << strerror(errno);
+
+  const auto [family, addr, prefix, expect_subnet_route] = GetParam();
+
+  struct sockaddr_nl nladdr = {};
+  nladdr.nl_family = AF_NETLINK;
+  struct sockaddr* sa = reinterpret_cast<struct sockaddr*>(&nladdr);
+  ASSERT_EQ(bind(nlsock.get(), sa, sizeof(nladdr)), 0) << strerror(errno);
+
+  {
+    test_helper::NetlinkEncoder encoder(RTM_NEWADDR, NLM_F_REQUEST | NLM_F_ACK);
+    struct ifaddrmsg ifa = {
+        .ifa_family = family,
+        .ifa_prefixlen = prefix,
+        .ifa_flags = IFA_F_PERMANENT,
+        .ifa_scope = RT_SCOPE_UNIVERSE,
+        .ifa_index = if_nametoindex(kTestIfName),
+    };
+    uint8_t addrbuf[sizeof(in6_addr)];
+    ASSERT_EQ(inet_pton(family, addr, &addrbuf), 1);
+    auto addr = std::span(addrbuf, family == AF_INET ? sizeof(in_addr) : sizeof(in6_addr));
+    encoder.Write(ifa);
+    encoder.BeginNla(IFA_ADDRESS);
+    encoder.WriteSpan(addr);
+    encoder.EndNla();
+    encoder.BeginNla(IFA_LOCAL);
+    encoder.WriteSpan(addr);
+    encoder.EndNla();
+    iovec iov = {};
+    encoder.Finalize(iov);
+    struct msghdr header = {};
+    header.msg_iov = &iov;
+    header.msg_iovlen = 1;
+
+    ASSERT_EQ(sendmsg(nlsock.get(), &header, 0), static_cast<ssize_t>(iov.iov_len))
+        << strerror(errno);
+  }
+  char buf[4096] = {};
+  ssize_t len = recv(nlsock.get(), buf, sizeof(buf), 0);
+  ASSERT_GT(len, 0) << strerror(errno);
+
+  nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(buf);
+
+  ASSERT_TRUE(MY_NLMSG_OK(nlmsg, len));
+  ASSERT_EQ(nlmsg->nlmsg_type, NLMSG_ERROR);
+  auto* errmsg = reinterpret_cast<nlmsgerr*>(NLMSG_DATA(nlmsg));
+  ASSERT_EQ(errmsg->error, 0);
+
+  {
+    test_helper::NetlinkEncoder encoder(RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP);
+    rtmsg rtm = {
+        .rtm_family = family,
+    };
+    encoder.Write(rtm);
+    iovec iov = {};
+    encoder.Finalize(iov);
+    struct msghdr msg = {};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    ASSERT_EQ(sendmsg(nlsock.get(), &msg, 0), static_cast<ssize_t>(iov.iov_len)) << strerror(errno);
+  }
+  // Use a timeout instead of MSG_DONTWAIT to avoid timing issues with delays.
+  struct timeval timeout = {.tv_sec = 0, .tv_usec = 100'000};
+  ASSERT_EQ(setsockopt(nlsock.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)), 0);
+  while (true) {
+    ssize_t len = recv(nlsock.get(), buf, sizeof(buf), 0);
+    if (len == 0) {
+      break;
+    }
+    if (len == -1) {
+      ASSERT_EQ(errno, EAGAIN);
+      break;
+    }
+    rtmsg* rtm = nullptr;
+    for (nlmsghdr* nlh = reinterpret_cast<nlmsghdr*>(buf); MY_NLMSG_OK(nlh, len);
+         nlh = NLMSG_NEXT(nlh, len)) {
+      switch (nlh->nlmsg_type) {
+        case NLMSG_DONE:
+          break;
+        case RTM_NEWROUTE:
+          rtm = reinterpret_cast<rtmsg*>(NLMSG_DATA(nlh));
+          // Linux and Fuchsia does local delivery differently, we ignore those by
+          // filtering out routes that are not in the main table.
+          if (rtm->rtm_table != RT_TABLE_MAIN) {
+            continue;
+          }
+          if (rtm->rtm_dst_len == prefix) {
+            ASSERT_TRUE(expect_subnet_route);
+            return;
+          }
+          break;
+        default:
+          FAIL() << "unknown message type: " << nlh->nlmsg_type;
+      }
+    }
+  }
+  ASSERT_FALSE(expect_subnet_route);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RouteNetlinkSocket, RouteNetlinkSocketNewAddr,
+    testing::Values(
+        RouteNetlinkSocketNewAddrParam{
+            .family = AF_INET, .addr = "192.0.2.1", .prefix = 0, .expect_subnet_route = false},
+        RouteNetlinkSocketNewAddrParam{
+            .family = AF_INET, .addr = "192.0.2.1", .prefix = 1, .expect_subnet_route = true},
+        RouteNetlinkSocketNewAddrParam{
+            .family = AF_INET, .addr = "192.0.2.1", .prefix = 32, .expect_subnet_route = false},
+        RouteNetlinkSocketNewAddrParam{
+            .family = AF_INET6, .addr = "2001:db8::1", .prefix = 0, .expect_subnet_route = true},
+        RouteNetlinkSocketNewAddrParam{
+            .family = AF_INET6, .addr = "2001:db8::1", .prefix = 1, .expect_subnet_route = true},
+        RouteNetlinkSocketNewAddrParam{
+            .family = AF_INET6, .addr = "2001:db8::1", .prefix = 128, .expect_subnet_route = true}),
+    [](const testing::TestParamInfo<RouteNetlinkSocketNewAddr::ParamType>& info) {
+      return std::format("{}_prefix_{}", info.param.family == AF_INET ? "v4" : "v6",
+                         info.param.prefix);
+    });
+
+TEST(NetlinkSocket, RecvMsg) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+  }
+  int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
+  ASSERT_GT(fd, 0);
+  test_helper::NetlinkEncoder encoder(GENL_ID_CTRL, NLM_F_REQUEST);
+  encoder.BeginGenetlinkHeader(CTRL_CMD_GETFAMILY);
+  encoder.BeginNla(CTRL_ATTR_FAMILY_NAME);
+  encoder.Write(TASKSTATS_GENL_NAME);
+  encoder.EndNla();
+  iovec iov = {};
+  encoder.Finalize(iov);
+  struct msghdr header = {};
+  header.msg_iov = &iov;
+  header.msg_iovlen = 1;
+
+  ASSERT_EQ(sendmsg(fd, &header, 0), static_cast<ssize_t>(iov.iov_len));
+  iov.iov_len = 0;
+  ssize_t received = recvmsg(fd, &header, MSG_PEEK | MSG_TRUNC);
+  ASSERT_GT(static_cast<size_t>(received), sizeof(nlmsghdr));
+  struct {
+    nlmsghdr hdr;
+    genlmsghdr genl;
+    // Family ID
+    nlattr id_attr;
+    __u16 id;
+    char padding;
+    // Family name
+    nlattr name_attr;
+    char name[sizeof(TASKSTATS_GENL_NAME)];
+    char padding_0;
+    // We should get one multicast group.
+    // It doesn't seem to matter what the ID
+    // or name of the group is.
+    nlattr multicast_group_attr;
+  } input;
+  iov.iov_len = sizeof(input);
+  iov.iov_base = &input;
+  received = recvmsg(fd, &header, 0);
+
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(input));
+  ASSERT_EQ(input.id_attr.nla_type, CTRL_ATTR_FAMILY_ID);
+  ASSERT_EQ(input.genl.cmd, CTRL_CMD_NEWFAMILY);
+  ASSERT_EQ(input.name_attr.nla_type, CTRL_ATTR_FAMILY_NAME);
+  ASSERT_FALSE(memcmp(input.name, TASKSTATS_GENL_NAME, sizeof(input.name)));
+  ASSERT_EQ(input.multicast_group_attr.nla_type, CTRL_ATTR_MCAST_GROUPS);
+  struct {
+    nlmsghdr hdr;
+    genlmsghdr genl;
+  } input_2;
+
+  // Connect to TASKSTATS
+  encoder.StartMessage(input.id, NLM_F_REQUEST);
+  // We don't parse commands currently, so this number is arbitrary.
+  encoder.BeginGenetlinkHeader(42);
+  encoder.Finalize(iov);
+  ASSERT_EQ(sendmsg(fd, &header, 0), static_cast<ssize_t>(iov.iov_len));
+  iov.iov_base = &input_2;
+  iov.iov_len = sizeof(input_2);
+  // TASKSTATS payload
+  received = recvmsg(fd, &header, 0);
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(input_2));
+  ASSERT_EQ(input_2.hdr.nlmsg_type, input.id);
+  // ACK payload
+  received = recvmsg(fd, &header, 0);
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(input_2));
+  ASSERT_EQ(input_2.hdr.nlmsg_type, NLMSG_ERROR);
+}
+
+TEST(NetlinkSocket, FamilyMissing) {
+  int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
+  ASSERT_GT(fd, 0);
+  test_helper::NetlinkEncoder encoder(GENL_ID_CTRL, NLM_F_REQUEST);
+  encoder.BeginGenetlinkHeader(CTRL_CMD_GETFAMILY);
+  encoder.BeginNla(CTRL_ATTR_FAMILY_NAME);
+  encoder.Write("Hyainailouridae");
+  encoder.EndNla();
+  iovec iov = {};
+  encoder.Finalize(iov);
+  struct msghdr header = {};
+  header.msg_iov = &iov;
+  header.msg_iovlen = 1;
+
+  ASSERT_EQ(sendmsg(fd, &header, 0), static_cast<ssize_t>(iov.iov_len));
+
+  nlmsghdr* orig_nlmsghdr = static_cast<nlmsghdr*>(iov.iov_base);
+  iov.iov_len = 0;
+  ssize_t received = recvmsg(fd, &header, MSG_PEEK | MSG_TRUNC);
+  ASSERT_GT(static_cast<size_t>(received), sizeof(nlmsghdr));
+  struct {
+    nlmsghdr hdr;
+    nlmsgerr err;
+  } input;
+  iov.iov_len = sizeof(input);
+  iov.iov_base = &input;
+  received = recvmsg(fd, &header, 0);
+
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(input));
+  ASSERT_EQ(input.hdr.nlmsg_type, NLMSG_ERROR);
+  ASSERT_EQ(input.err.error, -ENOENT);
+  ASSERT_FALSE(memcmp(&input.err.msg, orig_nlmsghdr, sizeof(nlmsghdr)));
+}
+
+TEST(NetlinkSocket, NlctrlFamily) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+  }
+
+  int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
+  ASSERT_GT(fd, 0);
+  constexpr char kNlctrl[] = "nlctrl";
+  test_helper::NetlinkEncoder encoder(GENL_ID_CTRL, NLM_F_REQUEST);
+  encoder.BeginGenetlinkHeader(CTRL_CMD_GETFAMILY);
+  encoder.BeginNla(CTRL_ATTR_FAMILY_NAME);
+  encoder.Write(kNlctrl);
+  encoder.EndNla();
+  iovec iov = {};
+  encoder.Finalize(iov);
+  struct msghdr header = {};
+  header.msg_iov = &iov;
+  header.msg_iovlen = 1;
+
+  ASSERT_EQ(sendmsg(fd, &header, 0), static_cast<ssize_t>(iov.iov_len));
+
+  iov.iov_len = 0;
+  ssize_t received = recvmsg(fd, &header, MSG_PEEK | MSG_TRUNC);
+  ASSERT_GT(static_cast<size_t>(received), sizeof(nlmsghdr));
+  struct {
+    nlmsghdr hdr;
+    genlmsghdr genl;
+    // Family ID
+    nlattr id_attr;
+    __u16 id;
+    char padding;
+    // Family name
+    nlattr name_attr;
+    char name[sizeof(kNlctrl)];
+    char padding_0;
+  } input;
+  iov.iov_len = sizeof(input);
+  iov.iov_base = &input;
+  received = recvmsg(fd, &header, 0);
+
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(input));
+  ASSERT_EQ(input.id_attr.nla_type, CTRL_ATTR_FAMILY_ID);
+  ASSERT_EQ(input.id, GENL_ID_CTRL);
+  ASSERT_EQ(input.genl.cmd, CTRL_CMD_NEWFAMILY);
+  ASSERT_EQ(input.name_attr.nla_type, CTRL_ATTR_FAMILY_NAME);
+  ASSERT_FALSE(memcmp(input.name, "nlctrl", sizeof(input.name)));
 }
 
 }  // namespace
