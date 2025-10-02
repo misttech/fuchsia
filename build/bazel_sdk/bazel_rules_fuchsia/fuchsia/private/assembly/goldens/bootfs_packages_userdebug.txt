@@ -21,7 +21,7 @@ critical-services
 devfs
 devfs-driver
 device-name-provider
-display-coordinator
+?display-coordinator
 driver-index
 driver_host
 driver_manager
@@ -79,7 +79,7 @@ usb-bus
 ?usb-hid
 ?usb-hub
 ?usb-mass-storage
-usb-peripheral
+?usb-peripheral
 ?virtual-console
 ?xhci
 ?zxcrypt

@@ -224,18 +224,25 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/spi.cm" ]
     },
     {
-      package_target = "//src/graphics/display/drivers/coordinator:package"
-      driver_components = [ "meta/display-coordinator.cm" ]
-    },
-    {
-      package_target = "//src/devices/usb/drivers/usb-peripheral:package"
-      driver_components = [ "meta/usb-peripheral.cm" ]
-    },
-    {
       package_target = "//src/devices/usb/drivers/usb-bus:package"
       driver_components = [ "meta/usb-bus.cm" ]
     },
   ]
+}
+
+_DISPLAY_DRIVER_PACKAGES = [
+  {
+    package_target = "//src/graphics/display/drivers/coordinator:package"
+    driver_components = [ "meta/display-coordinator.cm" ]
+  },
+]
+
+assembly_input_bundle("display_drivers_boot") {
+  boot_driver_packages = _DISPLAY_DRIVER_PACKAGES
+}
+
+assembly_input_bundle("display_drivers_base") {
+  base_driver_packages = _DISPLAY_DRIVER_PACKAGES
 }
 
 assembly_input_bundle("pwm_driver") {
@@ -287,6 +294,21 @@ assembly_input_bundle("network_drivers_boot") {
 
 assembly_input_bundle("network_drivers_base") {
   base_driver_packages = _NETWORK_DRIVER_PACKAGES
+}
+
+_USB_PERIPHERAL_DRIVER_PACKAGES = [
+  {
+    package_target = "//src/devices/usb/drivers/usb-peripheral:package"
+    driver_components = [ "meta/usb-peripheral.cm" ]
+  },
+]
+
+assembly_input_bundle("usb_peripheral_drivers_boot") {
+  boot_driver_packages = _USB_PERIPHERAL_DRIVER_PACKAGES
+}
+
+assembly_input_bundle("usb_peripheral_drivers_base") {
+  base_driver_packages = _USB_PERIPHERAL_DRIVER_PACKAGES
 }
 
 assembly_input_bundle("input_drivers") {

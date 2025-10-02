@@ -147,6 +147,16 @@
             to: "#base-drivers",
             availability: "optional",
         },
+        {
+            config: [
+                "fuchsia.driver.UseHardwareIommu",
+                "fuchsia.power.StoragePowerManagementEnabled",
+                "fuchsia.power.SuspendEnabled",
+                "fuchsia.usb.PeripheralConfig.Functions",
+            ],
+            from: "parent",
+            to: "#base-drivers",
+        },
     ],
     expose: [
         {

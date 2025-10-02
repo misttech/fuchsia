@@ -28,6 +28,7 @@ build-info-service
 ?dhcpv6-client
 ?diagnostics
 ?diagnostics-persistence
+?display-coordinator
 ?dns-resolver
 ?element_manager
 ?emergency
@@ -95,6 +96,7 @@ system-update-committer
 ?uart
 ?ui
 ?usb-cdc-function
+?usb-peripheral
 ?virtual_keyboard_manager
 ?vmm_launcher
 ?vsock_service

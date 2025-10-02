@@ -100,6 +100,15 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
 
         builder.set_config_capability("fuchsia.virtcon.ScrollbackRows", Config::new_void())?;
 
+        match context.feature_set_level {
+            FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable => {
+                builder.platform_bundle("display_drivers_boot");
+            }
+            FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
+                builder.platform_bundle("display_drivers_base");
+            }
+        }
+
         Ok(())
     }
 }
@@ -121,11 +130,11 @@ mod tests {
         let mut builder = ConfigurationBuilderImpl::default();
         GraphicsSubsystemConfig::define_configuration(&context, &config, &mut builder).unwrap();
         let config = builder.build();
-        assert_eq!(config.bundles, [].into());
+        assert_eq!(config.bundles, ["display_drivers_base".to_string()].into());
     }
 
     #[test]
-    fn test_user_disabled() {
+    fn test_user_virtcon_disabled() {
         let context = ConfigurationContext {
             feature_set_level: &FeatureSetLevel::Standard,
             build_type: &BuildType::User,
@@ -137,11 +146,11 @@ mod tests {
         let mut builder = ConfigurationBuilderImpl::default();
         GraphicsSubsystemConfig::define_configuration(&context, &config, &mut builder).unwrap();
         let config = builder.build();
-        assert_eq!(config.bundles, [].into());
+        assert_eq!(config.bundles, ["display_drivers_base".to_string()].into());
     }
 
     #[test]
-    fn test_user_enabled() {
+    fn test_user_virtcon_enabled() {
         let context = ConfigurationContext {
             feature_set_level: &FeatureSetLevel::Standard,
             build_type: &BuildType::User,
@@ -153,6 +162,9 @@ mod tests {
         let mut builder = ConfigurationBuilderImpl::default();
         GraphicsSubsystemConfig::define_configuration(&context, &config, &mut builder).unwrap();
         let config = builder.build();
-        assert_eq!(config.bundles, ["virtcon".to_string()].into());
+        assert_eq!(
+            config.bundles,
+            ["display_drivers_base".to_string(), "virtcon".to_string()].into()
+        );
     }
 }
