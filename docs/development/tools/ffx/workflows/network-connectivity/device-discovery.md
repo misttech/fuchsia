@@ -80,8 +80,52 @@ $ sudo tcpdump -n -i zx-c863147051da "ip6 && port 5353"
 ## mDNS firewall and netfilter rules {:#mdns-firewall-and-netfilter-rules}
 
 In some cases, there may be a need to check the kernel’s [`netfilter`][netfilter] rules to discover
-a device via mDNS. If you see something like the following when running the `nft list tables`
-command, you may need to adjust your rules:
+a device via mDNS.
+
+### ufw rules
+
+If you have a system with `ufw` installed, at some point during your checkout and code setup, you
+will have needed to run:
+
+```posix-terminal
+fx setup-ufw
+```
+
+Running this command will have set up several UFW rules for netfilter. To check your `ufw` ruleset
+you can run:
+
+```posix-terminal
+sudo ufw status
+```
+
+You should have something like the following:
+
+```none {:.devsite-disable-click-to-copy}
+Status: active
+
+To                         Action      From
+--                         ------      ----
+Anywhere (v6)              ALLOW       fe80::/10 5353/udp         # Fuchsia MDNS
+33331:33340/udp            ALLOW       fe80::/10                  # Fuchsia Netboot Protocol
+8083/tcp                   ALLOW       fe80::/10                  # Fuchsia Package Server
+Anywhere (v6)              ALLOW       fe80::/10 33340/udp        # Fuchsia Netboot TFTP Source Port
+33331:33340/udp            ALLOW       fc00::/7                   # Fuchsia Netboot Prot
+ocol
+8083/tcp                   ALLOW       fc00::/7                   # Fuchsia Package Server
+Anywhere (v6)              ALLOW       fc00::/7 33340/udp         # Fuchsia Netboot TFTP Source Port
+Anywhere (v6)              ALLOW       fc00::/7 5353/udp          # Fuchsia MDNS
+```
+
+If this isn't the case (i.e. the output is empty) you'll need to run `fx setup-ufw`.
+
+### netfilter rules
+
+There may also be additional netfilter restrictions in place.
+
+#### firewalld
+
+If you see something like the following when running the `nft list tables` command, you may need to
+adjust your rules:
 
 ```none {:.devsite-disable-click-to-copy}
 $ sudo nft list tables
@@ -111,7 +155,32 @@ table ip filter {
 }
 ```
 
-## Multicast ping {:#multicast-ping}
+### Further netfilter checks
+
+If you've tried the above and the following is true:
+
+* You do not have `ufw` installed on your machine.
+* You do not have `firewalld` running on your machine.
+* You are not able to resolve the device's address with `ffx`.
+* You _are_ able to resolve the device's address with `avahi` per
+  [the above section](#multicast-dns-resolution).
+
+You likely still have some firewall rule blocking unicast mDNS messages. You may need to add
+exceptions `iptables` manually in order to allow mDNS for link-local IPv6 messages:
+
+```posix-terminal
+sudo ip6tables -A INPUT -s fe80::/10 -d ::/0 -p udp --sport 5353 -j ACCEPT
+sudo ip6tables -A INPUT -s fc00::/10 -d ::/0 -p udp --sport 5353 -j ACCEPT
+```
+
+If this does not work, you may want to observe what kinds of firewall rules might be affecting IPv6
+traffic address this accordingly:
+
+```posix-terminal
+sudo iptables -L -n
+```
+
+# Multicast ping {:#multicast-ping}
 
 Another option to discover the target’s IPv6 address is to ping the local multicast `ff02::1` device
 address.
