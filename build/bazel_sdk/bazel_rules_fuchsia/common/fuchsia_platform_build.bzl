@@ -14,28 +14,86 @@ load(
     "to_clang_target_tuple",
 )
 
-def _get_fuchsia_source_relative_path(repo_ctx, path):
-    """Return the path of a given file relative to the fuchsia source directory.
+def _path_relativize(path_from, path_to):
+    """Give a relative path from absolute input paths.
+
+    Needed because bazel_skylib's relativize() doesn't work
+    when path_from is not a parent of path_to.
+
+    Args:
+        path_from: Start path, must be absolute.
+        path_to: Destination path, must be absolute.
+    Return:
+        Relative path from path_from to path_to. This
+        will be "." if they are the same path.
+    """
+    if not path_from.startswith("/"):
+        fail("Path is not absolute: %s" % path_from)
+    if not path_to.startswith("/"):
+        fail("Path is not absolute: %s" % path_to)
+
+    from_segments = path_from.split("/")[1:]
+    to_segments = path_to.split("/")[1:]
+
+    # Compute common prefix length.
+    from_len = len(from_segments)
+    to_len = len(to_segments)
+    common_len = min(from_len, to_len)
+    for n in range(common_len):
+        if from_segments[n] != to_segments[n]:
+            common_len = n
+            break
+
+    segments = [".."] * (from_len - common_len)
+    segments += to_segments[common_len:]
+    if segments:
+        return "/".join(segments)
+    else:
+        return "."  # They are the same path.
+
+def _get_fuchsia_source_dir_relative_to_workspace(repo_ctx):
+    fuchsia_source_dir = repo_ctx.attr.fuchsia_source_dir
+    if fuchsia_source_dir.startswith("/"):
+        # Fuchsia source dir is absolute. Compute its relative path.
+        # from the workspace root.
+        return _path_relativize(str(repo_ctx.workspace_root), fuchsia_source_dir)
+    elif fuchsia_source_dir:
+        # Fuchsia source dir is already relative to the workspace root.
+        return fuchsia_source_dir
+    else:
+        # Fuchsia source dir is empty (in-tree Fuchsia build). Since the workspace
+        # file contains symlinks to the same file under the Fuchsia source directory,
+        # resolve the real path of $WORKSPACE/README.md then take its parent as the
+        # result, then relativize that.
+        fuchsia_source_dir = str((repo_ctx.workspace_root.get_child("README.md")).realpath.dirname)
+        return _path_relativize(str(repo_ctx.workspace_root), fuchsia_source_dir)
+
+def _get_fuchsia_source_path(repo_ctx, relative_path):
+    """Return the path to a file, given its relative path from the Fuchsia source directory.
 
     Args:
        repo_ctx: repository context
-       path: A path, relative to the fuchsia source directory.
+       relative_path: A path, relative to the fuchsia source directory.
 
     Returns:
-       A new repo_ctx.path() object pointing to the file.
-       If repo_ctx.attr.fuchsia_source_dir is empty, this assumes that this
-       is run from the Fuchsia platform build, and will record a dependency
-       to the resulting file path, to ensure the repository rule is always
-       re-run when the file changes.
+       A new absolute repo_ctx.path() object pointing to the file.
     """
     fuchsia_source_dir = repo_ctx.attr.fuchsia_source_dir
-    if not fuchsia_source_dir:
-        return repo_ctx.path("%s/%s" % (repo_ctx.workspace_root, path))
+    if fuchsia_source_dir.startswith("/"):
+        # Fuchsia source dir is absolute. This can happen when defining
+        # it through the LOCAL_FUCHSIA_PLATFORM_BUILD environment variable.
+        result = "%s/%s" % (fuchsia_source_dir, relative_path)
+    elif fuchsia_source_dir:
+        # Fuchsia source dir is relative to the workspace root (e.g. used by Bazel SDK test).
+        result = "%s/%s/%s" % (repo_ctx.workspace_root, fuchsia_source_dir, relative_path)
+    else:
+        # Fuchsia source dir is empty (in-tree Fuchsia build), just use
+        # a path relative to the Bazel workspace directory, as it mimics
+        # the Fuchsia source directory anyway.
+        result = "%s/%s" % (repo_ctx.workspace_root, relative_path)
 
-    if not fuchsia_source_dir.startswith("/"):
-        fuchsia_source_dir = "%s/%s" % (repo_ctx.workspace_root, fuchsia_source_dir)
-
-    return "%s/%s" % (fuchsia_source_dir, path)
+    result = str(repo_ctx.path(result).realpath)
+    return result
 
 def _get_ninja_output_dir(repo_ctx):
     """Compute the Ninja output directory used by this workspace.
@@ -47,16 +105,20 @@ def _get_ninja_output_dir(repo_ctx):
         relative to the current workspace root.
     """
 
+    if repo_ctx.attr.fuchsia_source_dir:
+        # If repo_ctx.attr.fuchsia_dir is not empty, this repository
+        # rule is not used in the Fuchsia in-tree build (e.g. running the
+        # Bazel SDK test suite), and the Ninja output directory should not
+        # be a concern.
+        return "COULD_NOT_FIND_NINJA_OUTPUT_DIRECTORY"
+
     # LINT.IfChange(bazel_topdir_config_file)
     # The config file at this location contains the location of the TOPDIR
     # used by //build/regenerator.py, e.g. `gen/build/bazel`. This code assumes
     # that the workspace is one of its sub-directories, so compute a
     # back-tracking path prefix by counting the number of path fragments
     # in it.
-    config_path = _get_fuchsia_source_relative_path(
-        repo_ctx,
-        "build/bazel/config/bazel_top_dir",
-    )
+    config_path = repo_ctx.workspace_root.get_child("build/bazel/config/bazel_top_dir")
 
     # LINT.ThenChange(//build/bazel/bazel_workspace.gni:bazel_topdir_config_file)
     top_dir = repo_ctx.read(config_path).strip()
@@ -65,16 +127,9 @@ def _get_ninja_output_dir(repo_ctx):
     for _ in range(num_fragments):
         result += "/.."
 
-    if repo_ctx.attr.fuchsia_source_dir:
-        result = "%s/%s" % (repo_ctx.attr.fuchsia_source_dir, result)
-
-    # If a build.ninja file does not exist in the resulting file, something
-    # is wrong, so return an invalid value that will clarify the issue in
-    # future error messages if something tries to use it.
-    # Do not fail() because the resulting `build_config` can be used OOT,
-    # for example when invoking Bazel directly from //build/bazel_sdk/tests/
-    if not repo_ctx.path(result).exists:
-        result = "COULD_NOT_FIND_NINJA_OUTPUT_DIRECTORY"
+    ninja_output_dir_path = repo_ctx.path(result).realpath
+    if not ninja_output_dir_path.exists:
+        fail("Could not find Ninja build directory: %s" % ninja_output_dir_path)
 
     return result
 
@@ -94,12 +149,12 @@ def _get_rbe_config(repo_ctx):
     Returns:
       A struct with fields describing RBE-related config information.
     """
-    rewrapper_config_path = _get_fuchsia_source_relative_path(
+    rewrapper_config_path = _get_fuchsia_source_path(
         repo_ctx,
         "build/rbe/fuchsia-rewrapper.cfg",
     )
 
-    reproxy_config_path = _get_fuchsia_source_relative_path(
+    reproxy_config_path = _get_fuchsia_source_path(
         repo_ctx,
         "build/rbe/fuchsia-reproxy.cfg",
     )
@@ -169,6 +224,8 @@ def _fuchsia_build_config_repository_impl(repo_ctx):
 
     ninja_output_dir = _get_ninja_output_dir(repo_ctx)
 
+    fuchsia_source_dir = _get_fuchsia_source_dir_relative_to_workspace(repo_ctx)
+
     defs_content = '''# Auto-generated DO NOT EDIT
 
 """Global information about this build's configuration."""
@@ -211,6 +268,10 @@ build_config = struct(
     # The path to the Ninja output directory, relative to the current
     # workspace root.
     ninja_output_dir = "{ninja_output_dir}",
+
+    # The path to the Fuchsia source directory, relative to the current
+    # workspace root.
+    fuchsia_source_dir = "{fuchsia_source_dir}",
 )
 '''.format(
         host_os = host_os,
@@ -224,6 +285,7 @@ build_config = struct(
         rbe_container_image = rbe_config.container_image,
         rbe_gce_machine_type = rbe_config.gce_machine_type,
         ninja_output_dir = ninja_output_dir,
+        fuchsia_source_dir = fuchsia_source_dir,
     )
 
     repo_ctx.file("WORKSPACE.bazel", "")
@@ -305,12 +367,13 @@ fuchsia_build_config_repository = repository_rule(
     implementation = _fuchsia_build_config_repository_impl,
     doc = "A repository rule used to create an external repository that " +
           "contains a defs.bzl file exposing information about the current " +
-          "build configuration for the Fuchsia platform build.",
+          "build configuration for the Fuchsia platform build. Only the Fuchsia " +
+          "in-tree build, and the Bazel SDK test suite should use this repository rule.",
     attrs = {
         "fuchsia_source_dir": attr.string(
             mandatory = False,
             doc = "Path to the Fuchsia source directory, relative to the " +
-                  "current workspace.",
+                  "current workspace. Must be empty for the in-tree Fuchsia workspace",
         ),
     },
 )
@@ -318,15 +381,21 @@ fuchsia_build_config_repository = repository_rule(
 ### BzlMod support.
 
 def _fuchsia_build_config_ext_impl(module_ctx):
+    # See //build/bazel_sdk/tests/README.md: LOCAL_FUCHSIA_PLATFORM_BUILD
+    # can be defined to point to the in-tree Ninja build directory when
+    # running the Bazel SDK test suite.
     fuchsia_source_dir = module_ctx.os.environ.get("LOCAL_FUCHSIA_PLATFORM_BUILD", "")
     if fuchsia_source_dir:
+        # Assume the build directory is under {FUCHSIA_SOURCE_DIR}/out/<some_name>
         fuchsia_source_dir += "/../.."
 
     for mod in module_ctx.modules:
         if not mod.is_root:
             continue
         for d in mod.tags.local:
-            if d.fuchsia_source_dir:
+            if d.fuchsia_source_dir and not fuchsia_source_dir:
+                # The local() tag is used by //build/bazel_sdk/tests/MODULE.bazel
+                # to point to the Fuchsia source directory.
                 fuchsia_source_dir = d.fuchsia_source_dir
 
     fuchsia_build_config_repository(
@@ -337,7 +406,7 @@ def _fuchsia_build_config_ext_impl(module_ctx):
 _local_tag = tag_class(
     attrs = {
         "fuchsia_source_dir": attr.string(
-            mandatory = False,
+            mandatory = True,
             doc = "Path to the Fuchsia source directory, relative to the " +
                   "current workspace.",
         ),
