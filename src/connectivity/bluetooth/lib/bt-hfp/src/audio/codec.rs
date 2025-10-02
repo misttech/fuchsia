@@ -20,20 +20,37 @@ use super::{Control, ControlEvent, Error, HF_INPUT_UUID};
 use crate::codec_id::CodecId;
 use crate::sco;
 
-#[derive(Default)]
 struct CodecControlInner {
     start_request:
         Option<Box<dyn FnOnce(std::result::Result<zx::MonotonicInstant, zx::Status>) + Send>>,
     stop_request:
         Option<Box<dyn FnOnce(std::result::Result<zx::MonotonicInstant, zx::Status>) + Send>>,
+    /// The earliest time that we will relay a start request after a stop.  Used to delay until the
+    /// SCO is disconnected when encountering a start immediately after a stop.
+    earliest_start_time: fasync::MonotonicInstant,
+}
+
+impl Default for CodecControlInner {
+    fn default() -> Self {
+        Self {
+            start_request: None,
+            stop_request: None,
+            earliest_start_time: fasync::MonotonicInstant::INFINITE_PAST,
+        }
+    }
 }
 
 impl CodecControlInner {
     fn clear(&mut self) {
-        self.start_request = None;
-        self.stop_request = None;
+        *self = Self::default();
+    }
+
+    fn set_start_delay(&mut self) {
+        self.earliest_start_time = fasync::MonotonicInstant::after(DELAY_AFTER_STOP);
     }
 }
+
+const DELAY_AFTER_STOP: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(1);
 
 // Control that is connected to a Codec device registered with an
 /// AudioDeviceRegistry component.  The AudioDeviceRegistry can request that we
@@ -95,6 +112,7 @@ impl Control for CodecControl {
             });
         };
         self.connection = None;
+        self.inner.lock().set_start_delay();
         stop_request(Ok(fuchsia_async::MonotonicInstant::now().into()));
         Ok(())
     }
@@ -134,6 +152,7 @@ impl Control for CodecControl {
         self.codec_task = None;
         self.connected_peer = None;
         self.connection = None;
+        self.codec_id = None;
         self.inner.lock().clear();
     }
 
@@ -221,6 +240,15 @@ async fn codec_task(
                     continue;
                 }
                 inner.lock().start_request = Some(responder);
+                let deadline = inner.lock().earliest_start_time.clone();
+                let now = fasync::MonotonicInstant::now();
+                if deadline > now {
+                    info!(
+                        "Delaying start request {}ms due to too-fast stop->start cycle",
+                        (deadline - now).into_millis()
+                    );
+                }
+                fasync::Timer::new(deadline).await;
                 ControlEvent::RequestStart { id }
             }
             CodecRequest::Stop { responder } => {
@@ -268,8 +296,9 @@ mod tests {
     async fn connect_peer_to_codec(
         codec: &mut CodecControl,
         provider_requests: &mut ProviderRequestStream,
+        codecs: &[CodecId],
     ) -> audio::CodecProxy {
-        codec.connect(PeerId(1), &[CodecId::MSBC]);
+        codec.connect(PeerId(1), codecs);
 
         let Some(Ok(audio_device::ProviderRequest::AddDevice {
             payload:
@@ -304,7 +333,8 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<audio_device::ProviderMarker>();
         let mut codec = CodecControl::new(provider_proxy);
 
-        let codec_proxy = connect_peer_to_codec(&mut codec, &mut provider_requests).await;
+        let codec_proxy =
+            connect_peer_to_codec(&mut codec, &mut provider_requests, &[CodecId::MSBC]).await;
 
         test(codec_proxy, codec, provider_requests).await
     }
@@ -347,18 +377,19 @@ mod tests {
         codec: CodecControl,
         provider_requests: ProviderRequestStream,
     ) {
-        start_request_lifetime(codec_client, codec, provider_requests).await
+        start_request_lifetime(codec_client, codec, CodecId::MSBC, provider_requests).await
     }
 
     async fn start_request_lifetime(
         codec_client: audio::CodecProxy,
         mut codec: CodecControl,
+        good_codec: CodecId,
         _provider_requests: ProviderRequestStream,
     ) {
         let mut event_stream = codec.take_events();
         // start without a request should fail
-        let (connection, _stream) = connection_for_codec(PeerId(1), CodecId::MSBC, false);
-        let start_result = codec.start(PeerId(1), connection, CodecId::MSBC);
+        let (connection, _stream) = connection_for_codec(PeerId(1), good_codec, false);
+        let start_result = codec.start(PeerId(1), connection, good_codec);
         let Err(Error::UnsupportedParameters { .. }) = start_result else {
             panic!("Expected error from start before request");
         };
@@ -375,25 +406,27 @@ mod tests {
         };
         assert_eq!(id, PeerId(1));
 
-        // starting with a non-MSBC codec fails, and doesn't complete the future.
-        let (connection, _stream) = connection_for_codec(PeerId(1), CodecId::CVSD, false);
-        let start_result = codec.start(PeerId(1), connection, CodecId::CVSD);
+        let bad_codec: CodecId = 100u8.into();
+
+        // starting with a wrong codec fails, and doesn't complete the future.
+        let (connection, _stream) = connection_for_codec(PeerId(1), bad_codec, false);
+        let start_result = codec.start(PeerId(1), connection, bad_codec);
         let Err(Error::UnsupportedParameters { .. }) = start_result else {
             panic!("Expected error from start before request");
         };
         assert_eq!(wake_count.get(), 0);
 
         // starting after works and then completes the request.
-        let (connection, _stream) = connection_for_codec(PeerId(1), CodecId::MSBC, false);
-        codec.start(PeerId(1), connection, CodecId::MSBC).expect("should start ok");
+        let (connection, _stream) = connection_for_codec(PeerId(1), good_codec, false);
+        codec.start(PeerId(1), connection, good_codec).expect("should start ok");
 
         let Poll::Ready(_) = start_fut.poll_unpin(&mut Context::from_waker(&waker)) else {
             panic!("Expected to get response back from start");
         };
 
         // Starting after started is no good either.
-        let (connection, _stream) = connection_for_codec(PeerId(1), CodecId::MSBC, false);
-        let start_result = codec.start(PeerId(1), connection, CodecId::MSBC);
+        let (connection, _stream) = connection_for_codec(PeerId(1), good_codec, false);
+        let start_result = codec.start(PeerId(1), connection, good_codec);
         let Err(Error::AlreadyStarted) = start_result else {
             panic!("Expected error from start while started");
         };
@@ -445,6 +478,7 @@ mod tests {
         let _ = codec.stop(PeerId(2)).expect_err("shouldn't be able to stop a different peer");
 
         // can stop the one requested
+        let stop_request_time = fasync::MonotonicInstant::now();
         codec.stop(PeerId(1)).expect("should be able to stop");
 
         let Poll::Ready(_) = stop_fut.poll_unpin(&mut Context::from_waker(&waker)) else {
@@ -455,6 +489,24 @@ mod tests {
         let Err(Error::NotStarted) = codec.stop(PeerId(1)) else {
             panic!("Expected to not be able tp start when stopped");
         };
+
+        // A start coming in immediately doesn't get relayed right away.
+        let _start_fut = codec_client.start();
+
+        assert!(event_stream.next().now_or_never().is_none());
+
+        let Some(ControlEvent::RequestStart { .. }) = event_stream.next().await else {
+            panic!("Expected start request from event stream");
+        };
+
+        let fulfilled_time = fasync::MonotonicInstant::now();
+
+        let actual_delay = fulfilled_time - stop_request_time;
+        assert!(
+            actual_delay > DELAY_AFTER_STOP,
+            "expected delay before relaying request to start, only {}ms",
+            actual_delay.into_millis()
+        );
     }
 
     #[fixture(codec_setup_connected)]
@@ -468,9 +520,10 @@ mod tests {
 
         let _ = codec_client.on_closed().await;
 
-        // Reconnect.
-        codec_client = connect_peer_to_codec(&mut codec, &mut provider_requests).await;
+        // Reconnect, but with a different codec.  It should still succeed.
+        codec_client =
+            connect_peer_to_codec(&mut codec, &mut provider_requests, &[CodecId::CVSD]).await;
         // Should be able to do the whole start request lifetime again now
-        start_request_lifetime(codec_client, codec, provider_requests).await
+        start_request_lifetime(codec_client, codec, CodecId::CVSD, provider_requests).await
     }
 }
