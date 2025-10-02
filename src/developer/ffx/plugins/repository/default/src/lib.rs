@@ -36,11 +36,13 @@ pub async fn exec_repository_default_impl<W: std::io::Write + ToolIO>(
             let res: String = context.get(CONFIG_KEY_DEFAULT).unwrap_or_else(|_| "".to_owned());
             writeln!(writer, "{}", res).map_err(|e| bug!(e))?;
         }
-        SubCommand::Set(set) => ffx_config::query(CONFIG_KEY_DEFAULT)
+        SubCommand::Set(set) => context
+            .query(CONFIG_KEY_DEFAULT)
             .level(Some(set.level))
             .set(serde_json::Value::String(set.name.clone()))?,
         SubCommand::Unset(unset) => {
-            let _ = ffx_config::query(CONFIG_KEY_DEFAULT)
+            let _ = context
+                .query(CONFIG_KEY_DEFAULT)
                 .level(Some(unset.level))
                 .remove()
                 .map_err(|e| writeln!(writer.stderr(), "warning: {}", e));
