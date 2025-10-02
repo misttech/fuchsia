@@ -363,7 +363,7 @@ pub async fn exit(
                 let mut out = std::io::stderr();
                 let message = format!("{err}");
                 writeln!(&mut out, "{message}").unwrap();
-                ffx_config::print_log_hint(&mut out);
+                ffx_config::print_log_hint(&env_context, &mut out);
             };
             report_bug(env_context.as_ref(), &err).await;
         }

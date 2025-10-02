@@ -224,16 +224,21 @@ pub fn print_config<W: Write>(ctx: &EnvironmentContext, mut writer: W) -> Result
     writeln!(writer, "{}", *read_guard).context("displaying config")
 }
 
-pub fn get_log_dirs() -> Result<Vec<String>> {
-    match query("log.dir").get() {
-        Ok(log_dirs) => Ok(log_dirs),
-        Err(e) => ffx_bail!("Failed to load host log directories from ffx config: {:?}", e),
+fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>> {
+    match ctx {
+        None => {
+            ffx_bail!("Failed to load host log directories from ffx config: No EnvironmentContext provided")
+        }
+        Some(con) => match con.query("log.dir").get() {
+            Ok(log_dirs) => Ok(log_dirs),
+            Err(e) => ffx_bail!("Failed to load host log directories from ffx config: {:?}", e),
+        },
     }
 }
 
 /// Print out useful hints about where important log information might be found after an error.
-pub fn print_log_hint<W: std::io::Write>(writer: &mut W) {
-    let msg = match get_log_dirs() {
+pub fn print_log_hint<W: std::io::Write>(ctx: &Option<EnvironmentContext>, writer: &mut W) {
+    let msg = match get_log_dirs(ctx) {
         Ok(log_dirs) if log_dirs.len() == 1 => format!(
             "More information may be available in ffx host logs in directory:\n    {}",
             log_dirs[0]
