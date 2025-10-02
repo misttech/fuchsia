@@ -58,10 +58,10 @@ impl FfxMain for DaemonStartTool {
 impl DaemonStartTool {
     async fn start_in_background(self) -> fho::Result<()> {
         log::debug!("invoking daemon background start");
-        let target_env = target_behavior::target_interface(&self.fho_env);
+        let target_env = ffx_target::fho::target_interface(&self.fho_env);
         if target_env.behavior().is_none() {
             let env_context = self.fho_env.environment_context();
-            let b = target_behavior::init_daemon_connection_behavior(env_context).await?;
+            let b = target_holders::init_daemon_connection_behavior(env_context).await?;
             target_env.set_behavior(b)?;
         }
         let _ = target_env
@@ -78,8 +78,8 @@ impl DaemonStartTool {
 mod test {
     use super::*;
     use ffx_config::EnvironmentContext;
+    use ffx_target::fho::{FhoConnectionBehavior, target_interface};
     use std::sync::Arc;
-    use target_behavior::{ConnectionBehavior, target_interface};
     use target_holders::{FakeInjector, fake_proxy};
 
     fn create_fake_injector_with_result(
@@ -103,7 +103,7 @@ mod test {
         let fho_env = FhoEnvironment::new_with_args(context, &["some", "test"]);
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
         fho_env
     }

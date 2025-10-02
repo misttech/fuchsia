@@ -4,6 +4,7 @@
 
 use diagnostics_data::{BuilderArgs, LogsData, LogsDataBuilder, Severity, Timestamp};
 use ffx_config::EnvironmentContext;
+use ffx_target::fho::FhoConnectionBehavior;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_developer_remotecontrol::{
@@ -24,7 +25,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use target_behavior::ConnectionBehavior;
 use target_connector::Connector;
 use target_holders::{FakeInjector, RemoteControlProxyHolder};
 use {fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync};
@@ -150,9 +150,9 @@ impl TestEnvironment {
             ),
             &["some", "test"],
         );
-        let target_env = target_behavior::target_interface(&fho_env);
+        let target_env = ffx_target::fho::target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
         Self { fho_env, state, event_rcv: Some(event_rcv), disconnect_snd: disconnect_snd }
     }

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::init_connection_behavior;
 use async_trait::async_trait;
 use errors::FfxError;
 use fdomain_client::fidl::{
@@ -9,11 +10,11 @@ use fdomain_client::fidl::{
 };
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use ffx_command_error::{FfxContext as _, Result};
+use ffx_target::fho::{FhoConnectionBehavior, target_interface};
 use fho::{FhoEnvironment, TryFromEnv};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::{ConnectionBehavior, init_connection_behavior, target_interface};
 
 #[derive(Clone, Debug)]
 pub struct RemoteControlProxyHolder(RemoteControlProxy);
@@ -44,11 +45,11 @@ impl TryFromEnv for RemoteControlProxyHolder {
             b
         };
         match behavior {
-            ConnectionBehavior::DirectConnector(dc) => {
+            FhoConnectionBehavior::DirectConnector(dc) => {
                 let conn = dc.get_connection(env.environment_context()).await?;
                 return conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into);
             }
-            ConnectionBehavior::DaemonConnector(dc) => match dc.remote_factory_fdomain().await {
+            FhoConnectionBehavior::DaemonConnector(dc) => match dc.remote_factory_fdomain().await {
                 Ok(p) => Ok(p.into()),
                 Err(e) => {
                     let doctor_tip = "Please check the connection to the target; `ffx doctor -v` may help diagnose the issue.";

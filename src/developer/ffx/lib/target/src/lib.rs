@@ -30,6 +30,7 @@ use timeout::timeout;
 use mockall::predicate::*;
 
 pub mod connection;
+pub mod fho;
 pub mod list;
 pub mod ssh_connector;
 pub mod usb_connector;

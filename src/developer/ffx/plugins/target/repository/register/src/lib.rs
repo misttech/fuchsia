@@ -179,6 +179,7 @@ mod test {
     use camino::Utf8PathBuf;
     use ffx_config::ConfigLevel;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
+    use ffx_target::fho::{FhoConnectionBehavior, target_interface};
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx::{
         RemoteControlState,
@@ -209,7 +210,6 @@ mod test {
     use std::collections::BTreeSet;
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
-    use target_behavior::{ConnectionBehavior, target_interface};
     use target_holders::{FakeInjector, fake_proxy};
 
     const REPO_NAME: &str = "some-name";
@@ -456,7 +456,7 @@ mod test {
 
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
@@ -517,7 +517,7 @@ mod test {
 
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let expected_config = RepositoryConfig {
@@ -611,7 +611,7 @@ mod test {
 
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let default_repo_name = "default-repo";
@@ -670,7 +670,7 @@ mod test {
         };
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
@@ -731,7 +731,7 @@ mod test {
 
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
@@ -789,7 +789,7 @@ mod test {
         };
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         env.context
@@ -848,7 +848,7 @@ mod test {
         };
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         env.context
@@ -917,7 +917,7 @@ mod test {
 
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
@@ -986,7 +986,7 @@ mod test {
         };
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
             .expect("set_behavior");
 
         env.context

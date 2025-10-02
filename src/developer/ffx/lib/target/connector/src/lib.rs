@@ -6,15 +6,13 @@ use async_trait::async_trait;
 use errors::FfxError;
 use ffx_command_error::{Error, Result, return_bug};
 use ffx_target::Resolution;
+use ffx_target::fho::{FhoConnectionBehavior, FhoTargetEnvironment, target_interface};
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::{
-    ConnectionBehavior, FhoTargetEnvironment, init_connection_behavior, target_interface,
-};
-use target_holders::DaemonProxyHolder;
+use target_holders::{DaemonProxyHolder, init_connection_behavior};
 
 /// A connector lets a tool make multiple attempts to connect to an object. It
 /// retains the environment in the tool body to allow this.
@@ -38,7 +36,7 @@ impl<T: TryFromEnv> Connector<T> {
     ) -> Result<T> {
         if let Some(behavior) = self.target_env.behavior() {
             match &behavior {
-                ConnectionBehavior::DaemonConnector(_) => {
+                FhoConnectionBehavior::DaemonConnector(_) => {
                     daemon_try_connect(
                         &self.env,
                         &mut log_target_wait,
@@ -47,7 +45,7 @@ impl<T: TryFromEnv> Connector<T> {
                     )
                     .await
                 }
-                ConnectionBehavior::DirectConnector(dc) => {
+                FhoConnectionBehavior::DirectConnector(dc) => {
                     direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
                 }
             }

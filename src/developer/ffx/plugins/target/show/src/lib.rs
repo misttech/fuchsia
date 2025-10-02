@@ -11,6 +11,7 @@ use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProx
 use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy};
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
 use ffx_target::Resolution;
+use ffx_target::fho::FhoConnectionBehavior;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
@@ -20,7 +21,6 @@ use show::{
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::ConnectionBehavior;
 use target_holders::TargetProxyHolder;
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 use timeout::timeout;
@@ -67,8 +67,8 @@ impl ShowTool {
         // To add more show information, add a `gather_*_show(*) call to this
         // list, as well as the labels in the Ok() and vec![] just below.
         // Returns Some(dc) only if we have a direct connection
-        let resolution = match target_behavior::target_interface(&self.fho_env).behavior() {
-            Some(ConnectionBehavior::DirectConnector(ref direct)) => Some(direct.clone()),
+        let resolution = match ffx_target::fho::target_interface(&self.fho_env).behavior() {
+            Some(FhoConnectionBehavior::DirectConnector(ref direct)) => Some(direct.clone()),
             _ => None,
         };
         let show = match futures::try_join!(
@@ -634,9 +634,11 @@ mod tests {
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
         let fho_env = FhoEnvironment::default();
-        let target_env = target_behavior::target_interface(&fho_env);
+        let target_env = ffx_target::fho::target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DirectConnector(setup_fake_direct_connector().await))
+            .set_behavior(FhoConnectionBehavior::DirectConnector(
+                setup_fake_direct_connector().await,
+            ))
             .expect("set_behavior");
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
