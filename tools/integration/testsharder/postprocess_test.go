@@ -341,7 +341,7 @@ func TestSplitOutMultipliers(t *testing.T) {
 		{
 			name: "fill up multiple tests in max shards",
 			shards: []*Shard{
-				shard(env1, "fuchsia", 1, 2, 3, 4, 5),
+				shard(env1, "fuchsia", 1, 2, 3, 4, 5, 6),
 			},
 			multipliers: []ModifierMatch{
 				makeModifierMatch(1, env1, 0),
@@ -349,6 +349,7 @@ func TestSplitOutMultipliers(t *testing.T) {
 				makeModifierMatch(3, env1, 0),
 				makeModifierMatch(4, env1, 0),
 				makeModifierMatch(5, env1, 0),
+				makeModifierMatch(6, env1, 0),
 			},
 			testDurations: TestDurationsMap{
 				"*": {MedianDuration: 1 * time.Second},
@@ -356,8 +357,10 @@ func TestSplitOutMultipliers(t *testing.T) {
 			targetDuration: 10 * time.Second,
 			expected: []*Shard{
 				multShardWithIndex(env1, "fuchsia", 10, 10, 1, 1),
-				multShardWithIndex(env1, "fuchsia", 5, 10, 2, 4, 2),
-				multShardWithIndex(env1, "fuchsia", 5, 10, 3, 5, 3),
+				multShardWithIndex(env1, "fuchsia", 10, 10, 2, 2),
+				multShardWithIndex(env1, "fuchsia", 10, 10, 3, 3),
+				multShardWithIndex(env1, "fuchsia", 5, 10, 4, 4, 6),
+				multShardWithIndex(env1, "fuchsia", 10, 10, 5, 5),
 			},
 		},
 		{
@@ -463,7 +466,7 @@ func TestSplitOutMultipliers(t *testing.T) {
 		{
 			name: "run all total runs regardless of target duration",
 			shards: []*Shard{
-				shard(env1, "fuchsia", 1, 2, 3, 4, 5, 6),
+				shard(env1, "fuchsia", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
 			},
 			multipliers: []ModifierMatch{
 				makeModifierMatch(1, env1, 500),
@@ -472,6 +475,10 @@ func TestSplitOutMultipliers(t *testing.T) {
 				makeModifierMatch(4, env1, 500),
 				makeModifierMatch(5, env1, 500),
 				makeModifierMatch(6, env1, 500),
+				makeModifierMatch(7, env1, 500),
+				makeModifierMatch(8, env1, 500),
+				makeModifierMatch(9, env1, 500),
+				makeModifierMatch(10, env1, 500),
 			},
 			testDurations: TestDurationsMap{
 				"*": {MedianDuration: 1 * time.Second},
@@ -479,15 +486,23 @@ func TestSplitOutMultipliers(t *testing.T) {
 			targetDuration: 10 * time.Second,
 			expected: []*Shard{
 				withStopRepeatingAfterSecs(
-					multShardWithIndex(env1, "fuchsia", 500, 1000, 1, 6, 1),
+					multShardWithIndex(env1, "fuchsia", 500, 1000, 1, 8, 1),
 					map[int]int{0: 0, 1: 0},
 				),
 				withStopRepeatingAfterSecs(
-					multShardWithIndex(env1, "fuchsia", 500, 1000, 2, 4, 2),
+					multShardWithIndex(env1, "fuchsia", 500, 1000, 2, 10, 7),
 					map[int]int{0: 0, 1: 0},
 				),
 				withStopRepeatingAfterSecs(
-					multShardWithIndex(env1, "fuchsia", 500, 1000, 3, 5, 3),
+					multShardWithIndex(env1, "fuchsia", 500, 1000, 3, 9, 2),
+					map[int]int{0: 0, 1: 0},
+				),
+				withStopRepeatingAfterSecs(
+					multShardWithIndex(env1, "fuchsia", 500, 1000, 4, 5, 3),
+					map[int]int{0: 0, 1: 0},
+				),
+				withStopRepeatingAfterSecs(
+					multShardWithIndex(env1, "fuchsia", 500, 1000, 5, 4, 6),
 					map[int]int{0: 0, 1: 0},
 				),
 			},

@@ -34,7 +34,7 @@ const (
 	MaxMultipliedRunsPerShard = 1000
 
 	// The maximum number of multiplied shards allowed per environment.
-	maxMultipliedShardsPerEnv = 3
+	maxMultipliedShardsPerEnv = 5
 
 	// The maximum number of multiplied shards to run per isolated test (1 run per shard).
 	// This applies if the number of runs are not specified or if -ignore-mulitply-limit
