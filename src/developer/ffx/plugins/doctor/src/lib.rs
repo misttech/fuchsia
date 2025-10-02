@@ -370,7 +370,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     };
 
     if cmd.repair_keys {
-        let keys = SshKeyFiles::load(Some(&context)).await?;
+        let keys = SshKeyFiles::load(&context).await?;
         let message = keys.check_keys(true)?;
         writeln!(&mut writer, "{message}")?;
     }
@@ -984,7 +984,7 @@ async fn check_env_context<W: Write>(
     };
     ledger.set_outcome(build_dir_node, LedgerOutcome::Success)?;
     check_lock_files(ledger, env_context).await?;
-    check_ssh_keys(ledger).await?;
+    check_ssh_keys(env_context, ledger).await?;
     ledger.close(env_node)?;
     Ok(())
 }
@@ -1040,9 +1040,12 @@ async fn check_lock_files<W: Write>(
     Ok(())
 }
 
-async fn check_ssh_keys<W: Write>(ledger: &mut DoctorLedger<W>) -> Result<()> {
+async fn check_ssh_keys<W: Write>(
+    ctx: &EnvironmentContext,
+    ledger: &mut DoctorLedger<W>,
+) -> Result<()> {
     let ssh_node: usize;
-    match SshKeyFiles::load(None).await {
+    match SshKeyFiles::load(ctx).await {
         Ok(ssh_files) => {
             let (description, outcome) = match ssh_files.check_keys(false) {
                 Ok(_) => (
@@ -2637,7 +2640,7 @@ mod test {
             .query("ssh.priv")
             .level(Some(ConfigLevel::User))
             .set(json!([&priv_key]))?;
-        let keys = SshKeyFiles::load(Some(&test_env.context)).await?;
+        let keys = SshKeyFiles::load(&test_env.context).await?;
         keys.create_keys_if_needed(false)?;
         Ok(())
     }

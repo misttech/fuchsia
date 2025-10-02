@@ -1,11 +1,11 @@
-// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use base64::display::Base64Display;
 use base64::prelude::{BASE64_STANDARD, Engine as _};
+use ffx_config::EnvironmentContext;
 use ffx_config::api::ConfigError;
-use ffx_config::{ConfigQuery, EnvironmentContext, query};
 use ring::rand::{self, SystemRandom};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::Serialize;
@@ -128,11 +128,10 @@ impl SshKeyFiles {
     /// loads the file paths from the config properties `ssh.pub` and `ssh.priv`.
     /// If none of the paths configured are to files that exist, the paths will
     ///  be set to the default locations, which is the first element in the config settings.
-    pub async fn load(ctx: Option<&EnvironmentContext>) -> Result<Self, SshKeyError> {
+    pub async fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
         // initialize to the first path in the list, then iterate through the list to select
         // the first file that exists.
-        let authorized_keys_files: Vec<PathBuf> =
-            query(ConfigQuery { name: Some("ssh.pub"), ctx, ..Default::default() }).get()?;
+        let authorized_keys_files: Vec<PathBuf> = ctx.query("ssh.pub").get()?;
         if authorized_keys_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -147,8 +146,7 @@ impl SshKeyFiles {
             }
         }
 
-        let key_files: Vec<PathBuf> =
-            query(ConfigQuery { name: Some("ssh.priv"), ctx, ..Default::default() }).get()?;
+        let key_files: Vec<PathBuf> = ctx.query("ssh.priv").get()?;
         if key_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -681,7 +679,7 @@ mod test {
 
         // set the config
 
-        let ssh_files = match SshKeyFiles::load(Some(&env.context)).await {
+        let ssh_files = match SshKeyFiles::load(&env.context).await {
             Ok(ssh) => ssh,
             Err(e) => panic!("load failed: {e:?}"),
         };

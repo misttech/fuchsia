@@ -235,7 +235,7 @@ async fn preprocess_flash_cmd(
                 if cmd.skip_authorized_keys {
                     log::warn!("Skipping uploading authorized keys");
                 } else {
-                    let ssh_keys = SshKeyFiles::load(None)
+                    let ssh_keys = SshKeyFiles::load(ctx)
                         .await
                         .context("finding ssh authorized_keys file.")?;
                     ssh_keys.create_keys_if_needed(false).context("creating ssh keys if needed")?;

@@ -242,7 +242,7 @@ async fn exec_check_ssh_keys(
     _check_ssh_command: &SshKeyCommand,
     writer: &mut VerifiedMachineWriter<ConfigToolMessage>,
 ) -> Result<()> {
-    match SshKeyFiles::load(Some(&ctx)).await {
+    match SshKeyFiles::load(&ctx).await {
         Ok(ssh_files) => {
             match ssh_files.check_keys(true) {
                 Ok(message) => {
@@ -679,7 +679,7 @@ mod test {
             ]))
             .expect("set ssh.priv");
 
-        let keys = SshKeyFiles::load(Some(&test_env.context)).await.expect("new ssh keys");
+        let keys = SshKeyFiles::load(&test_env.context).await.expect("new ssh keys");
 
         keys.create_keys_if_needed(false).expect("Initializing keys");
 
@@ -734,7 +734,7 @@ mod test {
             ]))
             .expect("set ssh.priv");
 
-        let keys = SshKeyFiles::load(Some(&test_env.context)).await.expect("new ssh keys");
+        let keys = SshKeyFiles::load(&test_env.context).await.expect("new ssh keys");
 
         assert_eq!(
             keys.authorized_keys.display().to_string(),

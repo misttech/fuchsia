@@ -416,7 +416,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
     ) -> Result<()> {
         let zbi_tool = get_host_tool(ctx, config::ZBI_HOST_TOOL)
             .map_err(|e| bug!("ZBI tool is missing: {e}"))?;
-        let ssh_keys = SshKeyFiles::load(Some(ctx))
+        let ssh_keys = SshKeyFiles::load(ctx)
             .await
             .map_err(|e| bug!("Error finding ssh authorized_keys file: {e}"))?;
         ssh_keys
