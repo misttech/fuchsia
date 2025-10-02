@@ -160,7 +160,9 @@ class Report:
 
     structured: MutableSequence[TestCaseResult]
     """Named single-value (or list-of-values) metrics."""
-    freeform: MutableMapping[str, JSON]
+    freeform: MutableMapping[str, JSON] = dataclasses.field(
+        default_factory=dict
+    )
     """Mapping of strings to arbitrary JSON data."""
     metrics_processors: list[MetricsProcessorDescription] = dataclasses.field(
         default_factory=list
