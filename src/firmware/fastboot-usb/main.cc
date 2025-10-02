@@ -73,28 +73,34 @@ int main(int argc, const char **argv) {
     // Note: fastboot.remaining_download_size() returns 0 in command stage.
     size_t request_size =
         std::min(fastboot.remaining_download_size(), static_cast<size_t>(512 * 1024));
-    auto packet_res = device->Receive(request_size);
-    if (packet_res->is_error()) {
-      FX_LOGS(ERROR) << "Failed while receiving packet " << packet_res.status_string();
+
+    auto response = device->Receive(request_size);
+    if (response.status() != ZX_OK) {
+      FX_LOGS(ERROR) << "Failed to receive packet (transport error): " << response.status_string();
+      continue;
+    }
+    if (response->is_error()) {
+      FX_LOGS(ERROR) << "Failed while receiving packet "
+                     << zx_status_get_string(response->error_value());
       continue;
     }
 
+    const auto &packet = *response;
     fzl::VmoMapper mapper;
-    zx_status_t status = mapper.Map(packet_res.value()->data);
+    zx_status_t status = mapper.Map(packet->data);
     if (status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to map packet vmo" << zx_status_get_string(status);
       continue;
     }
 
     size_t packet_size = 0;
-    if (zx_status_t status = packet_res.value()->data.get_prop_content_size(&packet_size);
-        status != ZX_OK) {
+    if (zx_status_t status = packet->data.get_prop_content_size(&packet_size); status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to get content size " << zx_status_get_string(status);
       continue;
     }
 
-    UsbPacketTransport transport(
-        device, std::string_view{reinterpret_cast<const char *>(mapper.start()), packet_size});
+    std::string_view data{reinterpret_cast<const char *>(mapper.start()), packet_size};
+    UsbPacketTransport transport(device, data);
     auto fastboot_res = fastboot.ProcessPacket(&transport);
     if (fastboot_res.is_error()) {
       FX_LOGS(ERROR) << "Failed to process fastboot packet " << fastboot_res.status_string();
