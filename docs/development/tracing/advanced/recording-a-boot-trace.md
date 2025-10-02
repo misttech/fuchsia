@@ -59,10 +59,17 @@ values from
 The default is 0x000, which disables all trace categories (or groups in
 ktrace parlance).
 
-Set the boot option as a GN variable via your `fx set` command:
+The kernel command line arguments are changed locally in your build by
+[setting local kernel options][kernel-options]
 
-```posix-terminal
-fx set ... --args='dev_kernel_cmdline=["ktrace.grpmask=0xFFF"]'
+Example:
+
+```gn
+assembly_developer_overrides("custom_kernel_args") {
+  kernel = {
+    command_line_args = [ "ktrace.grpmask=0xFFF", "ktrace.bufsize=32" ]
+  }
+}
 ```
 
 You'll then need to rebuild and redeploy.
@@ -103,3 +110,5 @@ to hold the contents of the kernel's trace buffer.
 The third important thing to note is that in this example we just want
 to grab the current contents of the trace buffer, and aren't interested
 in tracing anything more. That is why a duration of one second is used.
+
+[kernel-options]: /docs/development/kernel/build.md#options
