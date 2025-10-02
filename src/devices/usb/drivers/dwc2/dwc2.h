@@ -49,7 +49,7 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   Dwc2& operator=(Dwc2&&) = delete;
   Dwc2& operator=(const Dwc2&) = delete;
 
-  zx_status_t Init(const dwc2_config::Config& config);
+  zx_status_t Init(const dwc2_config::Config& config) __TA_EXCLUDES(lock_);
   int IrqThread();
 
   // fuchsia_hardware_usb_dci::UsbDci protocol implementation.
@@ -155,24 +155,29 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
     uint16_t max_packet_size = 0;
     bool enabled = false;
 
+   protected:
+    void OnUnbound(fidl::UnbindInfo info,
+                   fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) override;
+
    private:
     async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
 
     Dwc2* dwc2_;
   };
 
-  void FlushTxFifo(uint32_t fifo_num);
-  void FlushRxFifo();
-  void FlushTxFifoRetryIndefinite(uint32_t fifo_num);
-  void FlushRxFifoRetryIndefinite();
-  zx_status_t InitController();
+  zx::result<> ResetCore() __TA_REQUIRES(lock_);
+  void FlushTxFifo(uint32_t fifo_num) __TA_REQUIRES(lock_);
+  void FlushRxFifo() __TA_REQUIRES(lock_);
+  void FlushTxFifoRetryIndefinite(uint32_t fifo_num) __TA_REQUIRES(lock_);
+  void FlushRxFifoRetryIndefinite() __TA_REQUIRES(lock_);
+  zx::result<> InitController() __TA_REQUIRES(lock_);
   void SetConnected(bool connected);
   void StartEp0();
   void StartEndpoints();
   void HandleEp0Setup();
   void HandleEp0Status(bool is_in);
-  void HandleEp0TimeoutRecovery();
-  void HandleEp0TransferComplete(bool is_in);
+  void HandleEp0TimeoutRecovery() __TA_EXCLUDES(lock_);
+  void HandleEp0TransferComplete(bool is_in) __TA_EXCLUDES(lock_);
   void HandleTransferComplete(uint8_t ep_num);
   void EnableEp(uint8_t ep_num, bool enable);
   void QueueNextRequest(Endpoint* ep) __TA_REQUIRES(ep->lock);
@@ -181,14 +186,27 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   uint32_t ReadTransfered(Endpoint* ep);
 
   // Interrupt handlers
-  void HandleReset();
-  void HandleSuspend();
-  void HandleEnumDone();
-  void HandleInEpInterrupt();
-  void HandleOutEpInterrupt();
+  void HandleReset() __TA_EXCLUDES(lock_);
+  void HandleSuspend() __TA_EXCLUDES(lock_);
+  void HandleEnumDone() __TA_EXCLUDES(lock_);
+  void HandleInEpInterrupt() __TA_EXCLUDES(lock_);
+  void HandleOutEpInterrupt() __TA_EXCLUDES(lock_);
 
   zx_status_t HandleSetupRequest(size_t* out_actual);
   void SetAddress(uint8_t address);
+
+  // Wait up to 100 mSec for a specified register to satisfy a user's predicate
+  // and then return true, otherwise returns false.
+  template <typename Predicate>
+  bool WaitForRegisterPredicate(auto reg, Predicate predicate) __TA_REQUIRES(lock_) {
+    for (uint32_t i = 0; !predicate(reg.ReadFrom(get_mmio())); ++i) {
+      if (i >= 1000) {
+        return false;
+      }
+      zx::nanosleep(zx::deadline_after(zx::usec(100)));
+    }
+    return true;
+  }
 
   inline fdf::MmioBuffer* get_mmio() { return &*mmio_; }
 
@@ -216,6 +234,9 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
 
   std::optional<fdf::MmioBuffer> mmio_;
+  GSNPSID cached_gsnpsid_;
+  GHWCFG2 cached_ghwcfg2_;
+  GHWCFG4 cached_ghwcfg4_;
 
   zx::interrupt irq_;
 

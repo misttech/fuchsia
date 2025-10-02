@@ -137,6 +137,70 @@ void Dwc2::PrepareStop(fdf::PrepareStopCompleter completer) {
   irq_dispatcher_.ShutdownAsync();
   irq_thread_stopped_.Wait();
   completer(zx::ok());
+
+  {
+    std::lock_guard<std::mutex> guard(lock_);
+    const zx::result result = ResetCore();
+    ZX_ASSERT_MSG(
+        result.is_ok(),
+        "Failed to reset DWC2 core during PrepareStop (%s), self terminating to avoid runaway DMA\n",
+        result.status_string());
+  }
+}
+
+zx::result<> Dwc2::ResetCore() {
+  // "DesignWare Cores USB 2.0 Hi-Speed On-The-Go (OTG) v. 4.30a" Table 7-10's
+  // description of GRSTCTL.CSftRst describes the reset sequence for silicon
+  // revisions >= 4.20a.  It says:
+  //
+  // ```
+  // The application can write to this bit any time it wants to reset the core.
+  // The application must clear this bit after checking the bit 29 of this
+  // register (Core Soft Reset Done). Software must also must check that bit 31
+  // of this register is 1 (AHB Master is IDLE) before starting any operation.
+  // ```
+  //
+  // Additionally, details in GRSTCTL.CSftRstDone say:
+  //
+  // ```
+  // The core sets this bit when all the necessary logic is reset in the
+  // core.  This bit is cleared by the application along with GRSTCTL.CSftRst
+  // (bit 0)
+  // ```
+  //
+  // Prior to 4.20a, instead of waiting for CSftRstDone becoming asserted, we
+  // are supposed to wait for the HW to clear CSftRst for us instead.
+  //
+  // Either way, afterwards we need to wait for AHBIdle to be asserted.
+  //
+
+  // Set the main reset bit.
+  GRSTCTL::Get().ReadFrom(get_mmio()).set_csftrst(1).WriteTo(get_mmio());
+
+  if (cached_gsnpsid_.version() < 0x420a) {
+    // Old Silicon, wait for CSftRst to be cleared.
+    if (WaitForRegisterPredicate(GRSTCTL::Get(), [](GRSTCTL reg) { return reg.csftrst() == 0; }) ==
+        false) {
+      return zx::error{ZX_ERR_TIMED_OUT};
+    }
+  } else {
+    // New Silicon, wait for CSftRstDone to be set
+    if (WaitForRegisterPredicate(GRSTCTL::Get(),
+                                 [](GRSTCTL reg) { return reg.csftrstdone() == 1; }) == false) {
+      return zx::error{ZX_ERR_TIMED_OUT};
+    }
+
+    // Now clear CSftReset (R/W) as well as CSftRstDone (R/W1C)
+    GRSTCTL::Get().ReadFrom(get_mmio()).set_csftrst(0).set_csftrstdone(1).WriteTo(get_mmio());
+  }
+
+  // Wait for AHBIdle
+  if (WaitForRegisterPredicate(GRSTCTL::Get(), [](GRSTCTL reg) { return reg.ahbidle() == 1; }) ==
+      false) {
+    return zx::error{ZX_ERR_TIMED_OUT};
+  }
+
+  return zx::ok();
 }
 
 void Dwc2::DispatcherShutdownHandler(fdf_dispatcher_t* dispatcher) { irq_thread_stopped_.Signal(); }
@@ -168,14 +232,17 @@ void Dwc2::HandleReset() {
     DEPCTL::Get(i + DWC_EP_OUT_SHIFT).ReadFrom(mmio).set_snak(1).WriteTo(mmio);
   }
 
-  // Flush endpoint zero TX FIFO
-  FlushTxFifo(0);
+  {
+    std::lock_guard<std::mutex> guard(lock_);
+    // Flush endpoint zero TX FIFO
+    FlushTxFifo(0);
 
-  // Flush All other endpoint TX FIFOs.
-  FlushTxFifo(0x10);
+    // Flush All other endpoint TX FIFOs.
+    FlushTxFifo(0x10);
 
-  // Flush the learning queue
-  GRSTCTL::Get().FromValue(0).set_intknqflsh(1).WriteTo(mmio);
+    // Flush the learning queue
+    GRSTCTL::Get().FromValue(0).set_intknqflsh(1).WriteTo(mmio);
+  }
 
   // Enable interrupts for only EPO IN and OUT
   DAINTMSK::Get().FromValue((1 << DWC_EP0_IN) | (1 << DWC_EP0_OUT)).WriteTo(mmio);
@@ -782,12 +849,13 @@ void Dwc2::SoftDisconnect() {
 
   FDF_LOG(WARNING, "executing USB port soft-disconnect and controller reset");
   DCTL::Get().ReadFrom(mmio).set_sftdiscon(1).WriteTo(mmio);
-  auto grstctl = GRSTCTL::Get();
-  grstctl.ReadFrom(mmio).set_csftrst(1).WriteTo(mmio);
-  while (grstctl.ReadFrom(mmio).csftrst()) {
-    zx::nanosleep(zx::deadline_after(zx::msec(1)));
-  }
   zx::nanosleep(zx::deadline_after(zx::msec(5)));
+
+  const zx::result result = ResetCore();
+  ZX_ASSERT_MSG(
+      result.is_ok(),
+      "Failed to reset DWC2 core during SoftDisconnect (%s), self terminating to avoid runaway DMA\n",
+      result.status_string());
 }
 
 // Handles the case where the core experiences a timeout due to lost data or ACK. For the time
@@ -799,7 +867,12 @@ void Dwc2::HandleEp0TimeoutRecovery() {
   SoftDisconnect();
   ep0_state_ = Ep0State::DISCONNECTED;
   zx::nanosleep(zx::deadline_after(zx::msec(50)));
-  InitController();  // Clears the GRSTCTRL.sftdiscon condition.
+
+  const zx::result result = InitController();  // Clears the GRSTCTRL.sftdiscon condition.
+  if (result.is_error()) {
+    FDF_LOG(WARNING, "DWC2 core failed InitController (%s) during %s\n", result.status_string(),
+            __PRETTY_FUNCTION__);
+  }
   FDF_LOG(INFO, "USB port soft-disconnect and controller reset sequence complete");
 }
 
@@ -831,49 +904,24 @@ void Dwc2::HandleTransferComplete(uint8_t ep_num) {
   ep->lock.unlock();
 }
 
-zx_status_t Dwc2::InitController() {
+zx::result<> Dwc2::InitController() {
   auto* mmio = get_mmio();
 
-  auto gsnpsid = GSNPSID::Get().ReadFrom(mmio).reg_value();
-  if (gsnpsid != 0x4f54400a && gsnpsid != 0x4f54330a) {
+  if ((cached_gsnpsid_.version() != 0x400a) && (cached_gsnpsid_.version() != 0x330a)) {
     FDF_LOG(WARNING,
             "DWC2 driver has not been tested with IP version 0x%08x. "
             "The IP has quirks, so things may not work as expected\n",
-            gsnpsid);
+            cached_gsnpsid_.reg_value());
   }
 
-  auto ghwcfg2 = GHWCFG2::Get().ReadFrom(mmio);
-  if (!ghwcfg2.dynamic_fifo()) {
-    FDF_LOG(ERROR, "DWC2 driver requires dynamic FIFO support");
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  auto ghwcfg4 = GHWCFG4::Get().ReadFrom(mmio);
-  if (!ghwcfg4.ded_fifo_en()) {
-    FDF_LOG(ERROR, "DWC2 driver requires dedicated FIFO support");
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  auto grstctl = GRSTCTL::Get();
-  while (grstctl.ReadFrom(mmio).ahbidle() == 0) {
-    zx::nanosleep(zx::deadline_after(zx::msec(1)));
-  }
+  // These should have been checked at init time
+  ZX_DEBUG_ASSERT(cached_ghwcfg2_.dynamic_fifo());
+  ZX_DEBUG_ASSERT(cached_ghwcfg4_.ded_fifo_en());
 
   // Reset the controller
-  grstctl.FromValue(0).set_csftrst(1).WriteTo(mmio);
-
-  // Wait for reset to complete
-  bool done = false;
-  for (int i = 0; i < 1000; i++) {
-    if (grstctl.ReadFrom(mmio).csftrst() == 0) {
-      zx::nanosleep(zx::deadline_after(zx::msec(10)));
-      done = true;
-      break;
-    }
-    zx::nanosleep(zx::deadline_after(zx::msec(1)));
-  }
-  if (!done) {
-    return ZX_ERR_TIMED_OUT;
+  if (const zx::result result = ResetCore(); result.is_error()) {
+    FDF_LOG(ERROR, "Failed to reset DWC2 core: %s", result.status_string());
+    return result;
   }
 
   zx::nanosleep(zx::deadline_after(zx::msec(10)));
@@ -958,7 +1006,7 @@ zx_status_t Dwc2::InitController() {
   // Enable global interrupts
   GAHBCFG::Get().ReadFrom(mmio).set_glblintrmsk(1).WriteTo(mmio);
 
-  return ZX_OK;
+  return zx::ok();
 }
 
 void Dwc2::SetConnected(bool connected) {
@@ -1015,12 +1063,64 @@ void Dwc2::SetConnected(bool connected) {
 }
 
 zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
+  std::lock_guard<std::mutex> _(lock_);
+
   zx::result pdev = incoming()->Connect<fpdev::Service::Device>("pdev");
   if (pdev.is_error()) {
     FDF_LOG(ERROR, "Connect(): %s", pdev.status_string());
     return pdev.status_value();
   }
   pdev_ = std::make_unique<fdf::PDev>(std::move(*pdev));
+
+  // First thing, map our registers and verify that this is the hardware we are
+  // looking for.
+  zx::result mmio = pdev_->MapMmio(0);
+  if (mmio.is_error()) {
+    FDF_LOG(ERROR, "Failed to map mmio: %s", mmio.status_string());
+    return mmio.status_value();
+  }
+  mmio_ = std::move(mmio.value());
+  cached_gsnpsid_ = GSNPSID::Get().ReadFrom(get_mmio());
+  cached_ghwcfg2_ = GHWCFG2::Get().ReadFrom(get_mmio());
+  cached_ghwcfg4_ = GHWCFG4::Get().ReadFrom(get_mmio());
+
+  // All revisions of the Synopsis DWC2 core ID should have 0x4f54 (ascii ==
+  // 'OT') in their upper bits.
+  if (cached_gsnpsid_.ot() != 0x4f54) {
+    FDF_LOG(ERROR, "Unrecognized Synopsis ID in DWC2 core: 0x%08x", cached_gsnpsid_.reg_value());
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  // Now explicitly reset our core so that we are in a known state and are
+  // certain that all DMA has been stopped.
+  if (const zx::result result = ResetCore(); result.is_error()) {
+    FDF_LOG(ERROR, "Failed to reset DWC2 core: %s", result.status_string());
+    return result.status_value();
+  }
+
+  // Now that the core has been reset, grab our BTI and release any quarantined
+  // pages.
+  zx::result bti = pdev_->GetBti(0);
+  if (bti.is_error()) {
+    FDF_LOG(ERROR, "Failed to get bti: %s", bti.status_string());
+    return bti.status_value();
+  }
+  bti_ = std::move(bti.value());
+  bti_.release_quarantine();
+
+  // If the HW was not instantiated with the specific silicon features this
+  // driver needs to operate, go no further.
+  if (!cached_ghwcfg2_.dynamic_fifo()) {
+    FDF_LOG(ERROR, "DWC2 driver requires dynamic FIFO support (GHWCFG2 = 0x%08x)",
+            cached_ghwcfg2_.reg_value());
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  if (!cached_ghwcfg4_.ded_fifo_en()) {
+    FDF_LOG(ERROR, "DWC2 driver requires dedicated FIFO support (GHWCFG4 = 0x%08x)",
+            cached_ghwcfg4_.reg_value());
+    return ZX_ERR_NOT_SUPPORTED;
+  }
 
   // Initialize mac address metadata server.
   if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
@@ -1064,13 +1164,6 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
   metadata_ = std::move(metadata.value());
 
-  zx::result mmio = pdev_->MapMmio(0);
-  if (mmio.is_error()) {
-    FDF_LOG(ERROR, "Failed to map mmio: %s", mmio.status_string());
-    return mmio.status_value();
-  }
-  mmio_ = std::move(mmio.value());
-
   // If suspend is enabled, set interrupt to wakeable.
   zx::result interrupt =
       pdev_->GetInterrupt(0, config.enable_suspend() ? ZX_INTERRUPT_WAKE_VECTOR : 0);
@@ -1079,13 +1172,6 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
     return interrupt.status_value();
   }
   irq_ = std::move(interrupt.value());
-
-  zx::result bti = pdev_->GetBti(0);
-  if (bti.is_error()) {
-    FDF_LOG(ERROR, "Failed to get bti: %s", bti.status_string());
-    return bti.status_value();
-  }
-  bti_ = std::move(bti.value());
 
   zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12,
                                                                            true, &ep0_buffer_);
@@ -1234,13 +1320,12 @@ void Dwc2::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Syn
 }
 
 void Dwc2::StartController(StartControllerCompleter::Sync& completer) {
-  auto status = InitController();
-  if (status != ZX_OK) {
-    completer.Reply(zx::error(status));
-    return;
-  }
+  const zx::result result = [this]() {
+    std::lock_guard<std::mutex> guard(lock_);
+    return InitController();
+  }();
 
-  completer.Reply(zx::ok());
+  completer.Reply(result);
 }
 
 void Dwc2::StopController(StopControllerCompleter::Sync& completer) {
@@ -1383,7 +1468,8 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
 void Dwc2::Endpoint::CancelAll() {
   std::queue<usb::RequestVariant> queue;
   {
-    std::lock_guard<std::mutex> _(lock);
+    std::lock_guard<std::mutex> ep_guard(lock);
+    std::lock_guard<std::mutex> dwc2_guard(dwc2_->lock_);
     if (DWC_EP_IS_OUT(ep_addr())) {
       dwc2_->FlushRxFifoRetryIndefinite();
     } else {
@@ -1401,6 +1487,26 @@ void Dwc2::Endpoint::CancelAll() {
     queue.pop();
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(req));
   }
+}
+
+void Dwc2::Endpoint::OnUnbound(
+    fidl::UnbindInfo info, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) {
+  // Deliberately do NOT call usb::EndpointServer::OnUnbound.  This will unpin
+  // any pinned memory which this endpoint is using.  In theory, we should be
+  // stopping the endpoint HW here, but that is far more complicated than it
+  // should be given the technical debt which has accumulated here (as well as
+  // the nature of the DWC2 core itself, which does not really seem to expect
+  // routinely resetting individual endpoints).
+  //
+  // So, instead, we just leak the memory instead.  It is not _technically_
+  // leaked, but instead it has been placed into quarantine (or, on a system
+  // with an IOMMU, simply returned to the pool after the while the HW's access
+  // rights have been revoked)
+  //
+  // The driver has also been updated to unconditionally reset the HW at early
+  // Init() time, and then release the quarantine once the HW has been
+  // explicitly placed in a safe state, so in the case of a restart, the memory
+  // will be recovered.
 }
 
 }  // namespace dwc2

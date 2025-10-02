@@ -12,10 +12,10 @@
 #define DUMP_REG_W_IDX(reg, idx, mmio) __DUMP_REG_W_IDX(reg, idx, mmio, false)
 #define DUMP_STARRED_REG(reg, mmio) __DUMP_REG(reg, mmio, true)
 #define DUMP_STARRED_REG_W_IDX(reg, idx, mmio) __DUMP_REG_W_IDX(reg, idx, mmio, true)
-#define __DUMP_REG(reg, mmio, starred)                        \
+#define __DUMP_REG(reg, mmio, starred)                         \
   FDF_LOG(INFO, "%s%s      : %x", (starred) ? "*" : " ", #reg, \
           reg::Get().ReadFrom(&mmio).reg_value());
-#define __DUMP_REG_W_IDX(reg, idx, mmio, starred)                   \
+#define __DUMP_REG_W_IDX(reg, idx, mmio, starred)                    \
   FDF_LOG(INFO, "%s%s[0x%2x]: %x", (starred) ? "*" : " ", #reg, idx, \
           reg::Get(idx).ReadFrom(&mmio).reg_value());
 
@@ -134,6 +134,7 @@ class GRSTCTL : public hwreg::RegisterBase<GRSTCTL, uint32_t> {
   DEF_BIT(4, rxfflsh);
   DEF_BIT(5, txfflsh);
   DEF_FIELD(10, 6, txfnum);
+  DEF_BIT(29, csftrstdone);
   DEF_BIT(30, dmareq);
   DEF_BIT(31, ahbidle);
   static auto Get() { return hwreg::RegisterAddr<GRSTCTL>(0x10); }
@@ -255,7 +256,8 @@ class GNPTXSTS : public hwreg::RegisterBase<GNPTXSTS, uint32_t> {
 // Synopsys ID register (RO)
 class GSNPSID : public hwreg::RegisterBase<GSNPSID, uint32_t> {
  public:
-  DEF_FIELD(31, 0, id);
+  DEF_FIELD(15, 0, version);
+  DEF_FIELD(31, 16, ot);
   static auto Get() { return hwreg::RegisterAddr<GSNPSID>(0x40); }
 };
 

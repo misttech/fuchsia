@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
+#include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 
 namespace dwc2 {
 
@@ -32,6 +33,21 @@ class Environment : public fdf_testing::Environment {
     cfg.mmios[0] = mmio_.GetMmioBuffer();
     cfg.use_fake_bti = true;
     cfg.use_fake_irq = true;
+
+    // Pretend to be a v3.30a DWC2 core; the same version used in AML smart
+    // display devices.
+    //
+    // All these tests care about is init/shutdown, not actually starting or
+    // operating the controller.  All we should need to do is emulate:
+    // 1) the SynopsisID register
+    // 2) HWCFG2 (which reports whether or not dynamic FIFOs are supported)
+    // 3) HWCFG4 (which reports whether or not IN endpoints use a shared FIFO or dedicated FIFOs)
+    // 4) and the global reset register (GRSTCTL).
+    mmio_[GSNPSID::Get().addr()].SetReadCallback([]() -> uint64_t { return 0x4f54330a; });
+    mmio_[GHWCFG2::Get().addr()].SetReadCallback([]() -> uint64_t { return 0x2288d854; });
+    mmio_[GHWCFG4::Get().addr()].SetReadCallback([]() -> uint64_t { return 0xd6028030; });
+    mmio_[GRSTCTL::Get().addr()].SetReadCallback([this]() { return fake_grstctl_.Read(); });
+    mmio_[GRSTCTL::Get().addr()].SetWriteCallback([this](uint64_t v) { fake_grstctl_.Write(v); });
 
     pdev_.SetConfig(std::move(cfg));
   }
@@ -56,8 +72,71 @@ class Environment : public fdf_testing::Environment {
   }
 
  private:
+  // A class which manages a poor emulation of the global reset register (for
+  // core silicon versions < 4.20a).  The only thing this emulation does is look
+  // for writes to the Soft Reset bit, after which it will pretend to be
+  // resetting for 3 read-cycles, and report that the AHB is busy for 6
+  // read-cycles.
+  class FakeGRSTCTL {
+   public:
+    FakeGRSTCTL() { Reset(); }
+
+    void Reset() {
+      val_ = GRSTCTL::Get().FromValue(0).set_ahbidle(1).reg_value();
+      reset_in_progress_cycles_ = 0;
+    }
+
+    uint64_t Read() {
+      GRSTCTL new_val = GRSTCTL::Get().FromValue(val_);
+
+      if (reset_in_progress_cycles_ <= kSoftResetBitCycleThresh) {
+        new_val.set_csftrst(0);
+      }
+
+      if (reset_in_progress_cycles_ <= kAHBIdleCycleThresh) {
+        new_val.set_ahbidle(1);
+      }
+
+      if (reset_in_progress_cycles_) {
+        --reset_in_progress_cycles_;
+      }
+
+      return val_ = new_val.reg_value();
+    }
+
+    void Write(uint64_t val64) {
+      // We don't expect the DUT to be doing anything but reading the existing
+      // value and attempting to set the csftrst bit.  If it tries to set any
+      // other bit, fail the test so that someone can come back here and update
+      // the test.
+      ASSERT_EQ(uint64_t{0}, val64 & 0xFFFF'FFFF'0000'0000);
+      const uint32_t val = static_cast<uint32_t>(val64);
+      const uint32_t disallow_mask =
+          ~GRSTCTL::Get().FromValue(0).set_csftrst(1).set_ahbidle(1).reg_value();
+      EXPECT_EQ(0u, val & disallow_mask);
+
+      // If the user is setting the Soft Reset bit, set the bit in our state as
+      // well as clearing the AHBIdle state, and set the reset-cycle countdown
+      // so that these bits will clear over time as the register is read.
+      GRSTCTL set_val = GRSTCTL::Get().FromValue(val);
+      if (set_val.csftrst()) {
+        val_ = GRSTCTL::Get().FromValue(val_).set_csftrst(1).set_ahbidle(0).reg_value();
+        reset_in_progress_cycles_ = kTotalResetCycles;
+      }
+    }
+
+   private:
+    uint32_t kTotalResetCycles = 6;
+    uint32_t kSoftResetBitCycleThresh = 3;
+    uint32_t kAHBIdleCycleThresh = 0;
+
+    uint32_t val_;
+    uint32_t reset_in_progress_cycles_;
+  };
+
   fdf_fake::FakePDev pdev_;
   fake_mmio::FakeMmioRegRegion mmio_{sizeof(uint32_t), 4096};
+  FakeGRSTCTL fake_grstctl_;
 };
 
 class Config {
