@@ -149,6 +149,11 @@ impl ParsedPolicy {
         let mut computed_audit_allow = AccessVector::NONE;
         let mut computed_audit_deny = AccessVector::ALL;
 
+        let source_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(source_type.0.get() - 1) as usize];
+        let target_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(target_type.0.get() - 1) as usize];
+
         for access_vector_rule in self.access_vector_rules() {
             let metadata = &access_vector_rule.metadata;
 
@@ -175,16 +180,12 @@ impl ParsedPolicy {
 
             // Concern ourselves only with `allow [source-type] [...];` policy statements where
             // `[source-type]` is associated with `source_type_id`.
-            let source_attribute_bitmap: &ExtensibleBitmap =
-                &self.attribute_maps[(source_type.0.get() - 1) as usize];
             if !source_attribute_bitmap.is_set(metadata.source_type().0.get() - 1) {
                 continue;
             }
 
             // Concern ourselves only with `allow [source-type] [target-type][...];` policy
             // statements where `[target-type]` is associated with `target_type_id`.
-            let target_attribute_bitmap: &ExtensibleBitmap =
-                &self.attribute_maps[(target_type.0.get() - 1) as usize];
             if !target_attribute_bitmap.is_set(metadata.target_type().0.get() - 1) {
                 continue;
             }
@@ -282,6 +283,11 @@ impl ParsedPolicy {
                 }
             };
 
+        let source_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(source_context.type_().0.get() - 1) as usize];
+        let target_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(target_context.type_().0.get() - 1) as usize];
+
         for access_vector_rule in self.access_vector_rules() {
             let metadata = &access_vector_rule.metadata;
 
@@ -294,13 +300,9 @@ impl ParsedPolicy {
             if metadata.target_class() != target_class_id {
                 continue;
             }
-            let source_attribute_bitmap: &ExtensibleBitmap =
-                &self.attribute_maps[(source_context.type_().0.get() - 1) as usize];
             if !source_attribute_bitmap.is_set(metadata.source_type().0.get() - 1) {
                 continue;
             }
-            let target_attribute_bitmap: &ExtensibleBitmap =
-                &self.attribute_maps[(target_context.type_().0.get() - 1) as usize];
             if !target_attribute_bitmap.is_set(metadata.target_type().0.get() - 1) {
                 continue;
             }
