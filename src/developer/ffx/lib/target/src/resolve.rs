@@ -297,7 +297,7 @@ fn build_discovery(
         builder = builder.with_cache_dir(get_discovery_cache_dir(&ctx));
     }
 
-    builder.build()
+    builder.build(&ctx)
 }
 /// Directory containing the discovery cache file
 pub fn get_discovery_cache_dir(context: &EnvironmentContext) -> Option<PathBuf> {
@@ -594,7 +594,7 @@ impl TargetResolver for DefaultTargetResolver {
     ) -> Result<Option<Resolution>> {
         // This is something that is often mocked for testing. An improvement here would be to use the
         // environment context for locating manual targets.
-        let finder = manual_targets::Config::default();
+        let finder = manual_targets::Config::new_from_context(ctx);
         let ssh_timeout: u64 = ctx.get(CONFIG_TARGET_SSH_TIMEOUT).unwrap_or(DEFAULT_SSH_TIMEOUT_MS);
         let ssh_timeout = Duration::from_millis(ssh_timeout);
         let mut res = None;

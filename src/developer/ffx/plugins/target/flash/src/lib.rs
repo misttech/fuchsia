@@ -317,7 +317,7 @@ async fn rediscover_target(
         .with_emulator_instance_root(Some(emulator_instance_root))
         .with_fastboot_devices_file_path(Some(fastboot_file_path))
         .with_timeout_msecs(Some(100000))
-        .build();
+        .build(&ctx);
 
     let query = serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
 
@@ -457,6 +457,7 @@ Reboot the Target to the bootloader and re-run this command."
                         let fastboot_device_file_path: Option<PathBuf> =
                             self.ctx.get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = udp_proxy(
+                            &self.ctx,
                             target_name.clone(),
                             fastboot_device_file_path,
                             &socket_addr,
@@ -498,6 +499,7 @@ Reboot the Target to the bootloader and re-run this command."
                         let fastboot_device_file_path: Option<PathBuf> =
                             self.ctx.get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = tcp_proxy(
+                            &self.ctx,
                             target_name.clone(),
                             fastboot_device_file_path,
                             &socket_addr,

@@ -5,10 +5,12 @@
 use discovery::{
     DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetHandle, TargetState,
 };
+use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::interface_factory::InterfaceFactoryError;
 use std::path::PathBuf;
 
 pub(crate) async fn rediscover_helper<F, U>(
+    context: &EnvironmentContext,
     fastboot_file_path: &Option<PathBuf>,
     target_name: &String,
     mut filter: F,
@@ -23,7 +25,7 @@ where
             DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::FASTBOOT_FILE,
         )
         .with_fastboot_devices_file_path(fastboot_file_path.clone())
-        .build();
+        .build(context);
     let query = discovery::query::TargetInfoQuery::NodenameOrSerial(target_name.clone());
     let targets = discovery.discover_devices(query).await.map_err(anyhow::Error::from)?;
 

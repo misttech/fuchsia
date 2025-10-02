@@ -146,7 +146,7 @@ Reboot the Target to the bootloader and re-run this command."
                     .with_emulator_instance_root(Some(emulator_instance_root))
                     .with_fastboot_devices_file_path(Some(fastboot_file_path))
                     .with_timeout_msecs(Some(100000))
-                    .build();
+                    .build(&self.ctx);
 
                 let query = info
                     .serial_number
@@ -207,6 +207,7 @@ Reboot the Target to the bootloader and re-run this command."
                             let fastboot_device_file_path: Option<PathBuf> =
                                 self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = tcp_proxy(
+                                &self.ctx,
                                 target_name.to_string(),
                                 fastboot_device_file_path,
                                 &socket_addr,
@@ -240,6 +241,7 @@ Reboot the Target to the bootloader and re-run this command."
                             let fastboot_device_file_path: Option<PathBuf> =
                                 self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = udp_proxy(
+                                &self.ctx,
                                 target_name,
                                 fastboot_device_file_path,
                                 &socket_addr,

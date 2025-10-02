@@ -12,6 +12,7 @@ use crate::fastboot_file_watcher::FastbootWatcher;
 use crate::query::TargetInfoQuery;
 use crate::usb_vsock_watcher::UsbVsockWatcher;
 use bitflags::bitflags;
+use ffx_config::EnvironmentContext;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::{FutureExt, Stream, StreamExt};
 use manual_targets::watcher::{
@@ -145,6 +146,7 @@ impl TargetStream {
     /// Constructs a new target stream using the config, with each watcher defaulting to the
     /// recommended one.
     pub fn new<M, F, Man>(
+        context: &EnvironmentContext,
         config: TargetStreamConfig<M, F, Man>,
         queue: UnboundedReceiver<TargetEvent>,
     ) -> Self
@@ -158,7 +160,7 @@ impl TargetStream {
             fastboot_usb_watcher: config.fastboot_event_handler.map(|e| fastboot_watcher(e)),
             manual_targets_watcher: config
                 .manual_targets_event_handler
-                .map(|e| manual_recommended_watcher(e)),
+                .map(|e| manual_recommended_watcher(context, e)),
             emulator_watcher: config.emulator_watcher,
             usb_vsock_watcher: config.usb_vsock_watcher,
             fastboot_file_watcher: config.fastboot_file_watcher,
@@ -238,7 +240,7 @@ impl DiscoveryBuilder {
         self
     }
 
-    pub fn build(self) -> Discovery {
+    pub fn build(self, context: &EnvironmentContext) -> Discovery {
         let cache_file = self.cache_dir.map(|ref dir| {
             let mut p = dir.clone();
             p.push(CACHE_FILE_NAME);
@@ -252,6 +254,7 @@ impl DiscoveryBuilder {
             timeout: self.timeout,
             cache_file,
             stream: Mutex::new(None),
+            context: context.clone(),
         }
     }
 
@@ -262,11 +265,11 @@ impl DiscoveryBuilder {
     /// -- emulator_instance_root
     /// -- fastboot_devices_file_path
     /// -- sources
-    pub fn build_with_stream<S>(self, stream: S) -> Discovery
+    pub fn build_with_stream<S>(self, context: &EnvironmentContext, stream: S) -> Discovery
     where
         S: Stream<Item = TargetEvent> + Unpin + 'static,
     {
-        let res = self.build();
+        let res = self.build(context);
         let inner_stream: Box<dyn Stream<Item = TargetEvent> + Unpin> = if let Some(t) = res.timeout
         {
             Box::new(stream.take_until(fuchsia_async::Timer::new(t)))
@@ -302,6 +305,7 @@ pub struct Discovery {
     // For example, in the testing module `setup_test()` uses this to store
     // a `Vec<_>` stream iterator.
     stream: Mutex<Option<Box<dyn Stream<Item = TargetEvent> + Unpin>>>,
+    context: EnvironmentContext,
 }
 
 impl Discovery {
@@ -312,6 +316,7 @@ impl Discovery {
             return Ok(Box::pin(stream));
         }
         let stream = wait_for_devices(
+            &self.context,
             self.emulator_instance_root.clone(),
             self.fastboot_devices_file_path.clone(),
             self.usb_vsock_driver_socket_path.clone(),
@@ -455,6 +460,7 @@ impl Default for DiscoverySources {
 }
 
 fn wait_for_devices(
+    context: &EnvironmentContext,
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
@@ -514,7 +520,7 @@ fn wait_for_devices(
         }
     }
 
-    Ok(TargetStream::new(config, queue))
+    Ok(TargetStream::new(context, config, queue))
 }
 
 impl Stream for TargetStream {
@@ -537,7 +543,7 @@ pub mod test {
     use std::str::FromStr;
     use tempfile::tempdir;
 
-    fn setup_test() -> (Discovery, TargetHandle, TargetHandle) {
+    fn setup_test(context: &EnvironmentContext) -> (Discovery, TargetHandle, TargetHandle) {
         let handle1 = TargetHandle {
             node_name: Some("test-target-1".to_string()),
             state: TargetState::Unknown,
@@ -550,7 +556,7 @@ pub mod test {
         };
         let events = vec![TargetEvent::Added(handle1.clone()), TargetEvent::Added(handle2.clone())];
         let stream = Box::new(futures::stream::iter(events));
-        let discovery = DiscoveryBuilder::default().build_with_stream(stream);
+        let discovery = DiscoveryBuilder::default().build_with_stream(context, stream);
         (discovery, handle1, handle2)
     }
 
@@ -560,31 +566,34 @@ pub mod test {
 
     #[test]
     fn test_discovery_builder_default() {
-        let discovery = DiscoveryBuilder::default().build();
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let discovery = DiscoveryBuilder::default().build(&env.context);
         assert_eq!(discovery.sources, DiscoverySources::all());
         assert!(discovery.emulator_instance_root.is_none());
     }
 
     #[test]
     fn test_discovery_builder_changes() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let discovery = DiscoveryBuilder::default()
             .set_source(DiscoverySources::MANUAL)
             .with_source(DiscoverySources::EMULATOR)
             .set_source(DiscoverySources::MDNS)
             .with_source(DiscoverySources::USB_FASTBOOT)
-            .build();
+            .build(&env.context);
         assert_eq!(discovery.sources, DiscoverySources::USB_FASTBOOT | DiscoverySources::MDNS);
         assert!(discovery.emulator_instance_root.is_none());
     }
 
     #[test]
     fn test_discovery_builder_with_root() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let discovery = DiscoveryBuilder::default()
             .set_source(DiscoverySources::MANUAL)
             .with_emulator_instance_root(Some(
                 PathBuf::from_str("/tmp").expect("tmp is a valid path"),
             ))
-            .build();
+            .build(&env.context);
 
         assert_eq!(discovery.sources, DiscoverySources::MANUAL | DiscoverySources::EMULATOR);
         assert_eq!(
@@ -649,6 +658,7 @@ pub mod test {
 
     #[fuchsia::test]
     async fn test_discover_devices() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let handle = TargetHandle {
             node_name: Some("test-target".to_string()),
             state: TargetState::Unknown,
@@ -656,7 +666,7 @@ pub mod test {
         };
         let events = vec![TargetEvent::Added(handle.clone())];
         let stream = Box::new(futures::stream::iter(events));
-        let discovery = DiscoveryBuilder::default().build_with_stream(stream);
+        let discovery = DiscoveryBuilder::default().build_with_stream(&env.context, stream);
         let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], handle);
@@ -664,7 +674,8 @@ pub mod test {
 
     #[fuchsia::test]
     async fn test_devices_filtered_short_circuits() {
-        let (discovery, handle1, _) = setup_test();
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let (discovery, handle1, _) = setup_test(&env.context);
         let mut stream = discovery
             .discovery_stream(TargetInfoQuery::NodenameOrSerial("test-target-1".to_string()))
             .unwrap();
@@ -676,7 +687,8 @@ pub mod test {
 
     #[fuchsia::test]
     async fn test_devices_filtered_first_query() {
-        let (discovery, handle1, handle2) = setup_test();
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let (discovery, handle1, handle2) = setup_test(&env.context);
         let mut stream = discovery.discovery_stream(TargetInfoQuery::First).unwrap();
 
         // We should get both handles.
@@ -687,6 +699,7 @@ pub mod test {
 
     #[fuchsia::test]
     async fn test_discover_devices_uses_cache() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let dir = tempdir().unwrap();
         let cache_path = dir.path().to_path_buf();
         let handle = TargetHandle {
@@ -703,7 +716,7 @@ pub mod test {
             .with_cache_dir(Some(cache_path.clone()))
             // Don't use any real discovery sources
             .set_source(DiscoverySources::empty())
-            .build_with_stream(stream);
+            .build_with_stream(&env.context, stream);
         let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], handle);
@@ -711,6 +724,7 @@ pub mod test {
 
     #[fuchsia::test]
     async fn test_discover_devices_ignores_expired_cache() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let dir = tempdir().unwrap();
         let cache_path = dir.path().to_path_buf();
         let cached_handle = TargetHandle {
@@ -733,7 +747,7 @@ pub mod test {
         let discovery = DiscoveryBuilder::default()
             .with_cache_dir(Some(cache_path.clone()))
             .set_source(DiscoverySources::empty())
-            .build_with_stream(stream);
+            .build_with_stream(&env.context, stream);
         let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], discovered_handle);
@@ -741,6 +755,7 @@ pub mod test {
 
     #[fuchsia::test]
     async fn test_create_cache() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
         let dir = tempdir().unwrap();
         let cache_path = dir.path().join(CACHE_FILE_NAME);
         let handle = TargetHandle {
@@ -757,7 +772,7 @@ pub mod test {
             .with_cache_dir(Some(dir.path().to_path_buf()))
             // Don't use any real discovery sources
             .set_source(DiscoverySources::empty())
-            .build_with_stream(stream);
+            .build_with_stream(&env.context, stream);
 
         let devices = discovery.create_cache().await.unwrap();
         assert_eq!(devices.len(), 1);
@@ -804,8 +819,7 @@ pub mod test {
     #[fuchsia::test]
     async fn test_target_stream_produces_emulator() {
         use tempfile::tempdir;
-
-        let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let env = ffx_config::test_init().await.expect("Failed to initialize test env");
 
         // Create the emulator instance dir
         let temp = tempdir().expect("cannot get tempdir");
@@ -822,9 +836,14 @@ pub mod test {
         assert_eq!(existing.len(), 1);
 
         // Start watching the directory
-        let mut stream =
-            wait_for_devices(Some(instance_dir.clone()), None, None, DiscoverySources::EMULATOR)
-                .unwrap();
+        let mut stream = wait_for_devices(
+            &env.context,
+            Some(instance_dir.clone()),
+            None,
+            None,
+            DiscoverySources::EMULATOR,
+        )
+        .unwrap();
 
         // Assert that the existing emulator is discovered
         let next =

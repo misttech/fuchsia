@@ -44,7 +44,14 @@ impl FfxMain for RemoveTool {
                 ffx_error!("You cannot remove a target when using direct-connection mode").into()
             );
         }
-        match Self::remove_impl(self.target_collection_proxy.await?, self.cmd, &mut writer).await {
+        match Self::remove_impl(
+            &self.context,
+            self.target_collection_proxy.await?,
+            self.cmd,
+            &mut writer,
+        )
+        .await
+        {
             Ok(message) => {
                 if writer.is_machine() {
                     writer.machine(&CommandStatus::Ok { message: Some(message) })?;
@@ -68,12 +75,13 @@ impl FfxMain for RemoveTool {
 
 impl RemoveTool {
     async fn remove_impl(
+        context: &EnvironmentContext,
         target_collection: ffx::TargetCollectionProxy,
         cmd: RemoveCommand,
         writer: &mut <Self as FfxMain>::Writer,
     ) -> Result<String> {
         if cmd.all {
-            let cfg = Config();
+            let cfg = Config::new_from_context(context);
             Self::remove_all_targets(writer, &target_collection, &cfg).await
         } else if let Some(name_or_addr) = cmd.name_or_addr {
             if target_collection

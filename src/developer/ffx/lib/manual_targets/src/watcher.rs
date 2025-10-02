@@ -6,6 +6,7 @@ use crate::{Config, ManualTargets};
 
 use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
+use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::Fastboot;
 use ffx_fastboot_interface::fastboot_proxy::FastbootProxy;
 use ffx_fastboot_interface::interface_factory::{
@@ -91,13 +92,13 @@ impl ManualTargetTester for TcpOpenManualTargetTester {
     }
 }
 
-pub fn recommended_watcher<F>(event_handler: F) -> ManualTargetWatcher
+pub fn recommended_watcher<F>(context: &EnvironmentContext, event_handler: F) -> ManualTargetWatcher
 where
     F: ManualTargetEventHandler,
 {
     ManualTargetWatcher::new(
         event_handler,
-        Config::default(),
+        Config::new_from_context(context),
         TcpOpenManualTargetTester {},
         Duration::from_secs(1),
     )

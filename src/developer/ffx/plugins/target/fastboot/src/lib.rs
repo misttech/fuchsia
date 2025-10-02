@@ -248,7 +248,7 @@ async fn cmd_impl(
                 let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
                     gather_connection_info(ctx, info, addrs)?;
                 let mut proxy =
-                    udp_proxy(target_name, fastboot_device_file_path, &addr, config).await?;
+                    udp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
                 fastboot_impl(writer, command, &mut proxy).await
             }
             FastbootConnectionState::Tcp(addrs) => {
@@ -256,7 +256,7 @@ async fn cmd_impl(
                 let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
                     gather_connection_info(ctx, info, addrs)?;
                 let mut proxy =
-                    tcp_proxy(target_name, fastboot_device_file_path, &addr, config).await?;
+                    tcp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
                 fastboot_impl(writer, command, &mut proxy).await
             }
         },

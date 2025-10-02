@@ -97,7 +97,7 @@ impl DiscoveryRunner for RealDiscoveryRunner {
             .with_fastboot_devices_file_path(fastboot_file_path)
             .with_emulator_instance_root(emu_instance_root)
             .with_cache_dir(Some(self.cache_dir.clone()))
-            .build();
+            .build(&self.context);
         let devices = discovery.create_cache().await.context("Could not create cache")?;
         if matches!(self.output_mode, Output::All) {
             for h in devices {

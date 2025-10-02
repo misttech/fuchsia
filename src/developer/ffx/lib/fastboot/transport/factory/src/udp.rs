@@ -6,6 +6,7 @@ use crate::helpers::rediscover_helper;
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetHandle, TargetState};
+use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
@@ -26,17 +27,26 @@ pub struct UdpFactory {
     addr: SocketAddr,
     open_retries: u64,
     retry_wait_seconds: u64,
+    context: EnvironmentContext,
 }
 
 impl UdpFactory {
     pub fn new(
+        context: &EnvironmentContext,
         target_name: String,
         fastboot_devices_file_path: Option<PathBuf>,
         addr: SocketAddr,
         open_retries: u64,
         retry_wait_seconds: u64,
     ) -> Self {
-        Self { target_name, fastboot_devices_file_path, addr, open_retries, retry_wait_seconds }
+        Self {
+            context: context.clone(),
+            target_name,
+            fastboot_devices_file_path,
+            addr,
+            open_retries,
+            retry_wait_seconds,
+        }
     }
 }
 
@@ -75,6 +85,7 @@ impl InterfaceFactoryBase<UdpNetworkInterface> for UdpFactory {
 
     async fn rediscover(&mut self) -> Result<(), InterfaceFactoryError> {
         rediscover_helper(
+            &self.context,
             &self.fastboot_devices_file_path,
             &self.target_name,
             filter_target,

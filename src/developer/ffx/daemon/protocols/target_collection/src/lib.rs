@@ -24,6 +24,7 @@ use fuchsia_async::{DurationExt, TimeoutExt};
 #[cfg(test)]
 use futures::channel::oneshot::Sender;
 use futures::{FutureExt, StreamExt, TryStreamExt};
+use manual_targets::Config;
 use protocols::prelude::*;
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::path::PathBuf;
@@ -39,14 +40,12 @@ mod target_handle;
 #[ffx_protocol(ffx::MdnsMarker, ffx::FastbootTargetStreamMarker)]
 pub struct TargetCollectionProtocol {
     tasks: TaskManager,
-
     // An online cache of configured target entries (the non-discoverable targets represented in the
     // ffx configuration).
     // The cache can be updated by calls to AddTarget and RemoveTarget.
     // With manual_targets, we have access to the targets.manual field of the configuration (a
     // vector of strings). Each target is defined by an IP address and a port.
-    manual_targets: Rc<dyn manual_targets::ManualTargets>,
-
+    manual_targets: Option<Rc<dyn manual_targets::ManualTargets>>,
     // Only used in tests.
     // If is Some, will send signal after manual targets have been successfully loaded
     #[cfg(test)]
@@ -55,14 +54,9 @@ pub struct TargetCollectionProtocol {
 
 impl Default for TargetCollectionProtocol {
     fn default() -> Self {
-        #[cfg(not(test))]
-        let manual_targets = manual_targets::Config::default();
-        #[cfg(test)]
-        let manual_targets = manual_targets::Mock::default();
-
         Self {
             tasks: Default::default(),
-            manual_targets: Rc::new(manual_targets),
+            manual_targets: None,
             #[cfg(test)]
             manual_targets_loaded_signal: None,
         }
@@ -291,6 +285,18 @@ impl FidlProtocol for TargetCollectionProtocol {
     async fn handle(&self, cx: &Context, req: ffx::TargetCollectionRequest) -> Result<()> {
         log::debug!("handling request {req:?}");
         let target_collection = cx.get_target_collection().await?;
+
+        if self.manual_targets.is_none() {
+            log::warn!(
+                "In handle manual_targets was not initialized. This should have happened in start"
+            );
+            return Err(anyhow!("Manual targets not initialized before calling handle"));
+        }
+        let manual_targets = match &self.manual_targets {
+            None => unreachable!(),
+            Some(mt) => mt.clone(),
+        };
+
         match req {
             ffx::TargetCollectionRequest::ListTargets { reader, query, .. } => {
                 let reader = reader.into_proxy();
@@ -398,9 +404,8 @@ impl FidlProtocol for TargetCollectionProtocol {
                 };
                 let addr = target_addr_info_to_socketaddr(ip);
                 let node = cx.overnet_node()?;
-                let do_add_target = || {
-                    add_manual_target(self.manual_targets.clone(), &target_collection, addr, &node)
-                };
+                let do_add_target =
+                    || add_manual_target(manual_targets.clone(), &target_collection, addr, &node);
                 match config.verify_connection {
                     Some(true) => {}
                     _ => {
@@ -431,7 +436,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     }
                 }
                 let mut drop_guard = DropGuard(Some((
-                    self.manual_targets.clone(),
+                    manual_targets.clone(),
                     target_collection.clone(),
                     addr.clone(),
                 )));
@@ -480,7 +485,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     Err(e) => {
                         let logs = target.host_pipe_log_buffer().lines();
                         let _ = remove_manual_target(
-                            self.manual_targets.clone(),
+                            manual_targets.clone(),
                             &target_collection,
                             addr.to_string(),
                         )
@@ -498,12 +503,9 @@ impl FidlProtocol for TargetCollectionProtocol {
                 add_target_responder.success().map_err(Into::into)
             }
             ffx::TargetCollectionRequest::RemoveTarget { target_id, responder } => {
-                let result = remove_manual_target(
-                    self.manual_targets.clone(),
-                    &target_collection,
-                    target_id,
-                )
-                .await;
+                let result =
+                    remove_manual_target(manual_targets.clone(), &target_collection, target_id)
+                        .await;
                 responder.send(result).map_err(Into::into)
             }
         }
@@ -530,13 +532,21 @@ impl FidlProtocol for TargetCollectionProtocol {
     async fn start(&mut self, cx: &Context) -> Result<()> {
         let node = cx.overnet_node()?;
         let load_manual_cx = cx.clone();
-        let manual_targets_collection = self.manual_targets.clone();
+        if self.manual_targets.is_none() {
+            self.manual_targets = Some(Rc::new(Config::new_from_context(&cx.environment())));
+        }
+        let manual_targets_collection = match &self.manual_targets {
+            None => unreachable!(),
+            Some(mt) => mt.clone(),
+        };
+
         #[cfg(test)]
         let signal = if self.manual_targets_loaded_signal.is_some() {
             Some(self.manual_targets_loaded_signal.take().unwrap())
         } else {
             None
         };
+
         self.tasks.spawn(async move {
             log::debug!("Loading previously configured manual targets");
             if let Err(e) = TargetCollectionProtocol::load_manual_targets(
@@ -995,7 +1005,8 @@ mod tests {
     }
 
     async fn init_test_config(env: &ffx_config::TestEnv<'_>, temp_dir: &Path) {
-        env.context.query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
+        env.context
+            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_dir.display().to_string()))
             .unwrap();
@@ -1232,18 +1243,25 @@ mod tests {
     #[fuchsia::test]
     async fn test_persisted_manual_target_remove() {
         let env = ffx_config::test_init().await.unwrap();
+        let mut map = Map::<String, Value>::new();
+        map.insert("127.0.0.1:8022".to_string(), Value::Null);
+        env.context
+            .query("targets.manual")
+            .level(Some(ConfigLevel::User))
+            .set(json!(map))
+            .expect("Setting manual targets");
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
         let (manual_targets_loaded_sender, manual_targets_loaded_receiver) = channel::<()>();
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
         tc_impl.borrow_mut().manual_targets_loaded_signal.replace(manual_targets_loaded_sender);
+
         let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
             .register_fidl_protocol::<FakeFastboot>()
             .inject_fidl_protocol(tc_impl.clone())
             .build();
-        tc_impl.borrow().manual_targets.add("127.0.0.1:8022".to_string()).await.unwrap();
 
         let proxy = fake_daemon.open_proxy::<ffx::TargetCollectionMarker>().await;
         let res = list_targets(None, &proxy).await;
@@ -1259,7 +1277,13 @@ mod tests {
         assert!(proxy.remove_target("127.0.0.1:8022").await.unwrap());
         assert_eq!(0, list_targets(None, &proxy).await.len());
         assert_eq!(
-            tc_impl.borrow().manual_targets.get_or_default().await,
+            tc_impl
+                .borrow()
+                .manual_targets
+                .clone()
+                .expect("Should be initialzied")
+                .get_or_default()
+                .await,
             Map::<String, Value>::new()
         );
     }
@@ -1355,12 +1379,19 @@ mod tests {
         assert_eq!(1, target_collection.targets(None).len());
         let mut map = Map::<String, Value>::new();
         map.insert("[fe80::1%1]:8022".to_string(), Value::Null);
-        assert_eq!(tc_impl.borrow().manual_targets.get().await.unwrap(), json!(map));
+        assert_eq!(env.context.query("targets.manual").get::<Value>().unwrap(), json!(map));
     }
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_load() {
         let env = ffx_config::test_init().await.unwrap();
+        let mut map = Map::<String, Value>::new();
+        map.insert("127.0.0.1:8022".to_string(), Value::Null);
+        env.context
+            .query("targets.manual")
+            .level(Some(ConfigLevel::User))
+            .set(json!(map))
+            .expect("Setting manual targets");
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
@@ -1370,13 +1401,12 @@ mod tests {
             .register_fidl_protocol::<FakeFastboot>()
             .inject_fidl_protocol(tc_impl.clone())
             .build();
-        tc_impl.borrow().manual_targets.add("127.0.0.1:8022".to_string()).await.unwrap();
 
         let cx = Context::new(fake_daemon, env.context.clone());
         let target_collection = cx.get_target_collection().await.unwrap();
         // This happens in FidlProtocol::start(), but we want to avoid binding the
         // network sockets in unit tests, thus not calling start.
-        let manual_targets_collection = tc_impl.borrow().manual_targets.clone();
+        let manual_targets_collection = Rc::new(Config::new_from_context(&env.context));
         TargetCollectionProtocol::load_manual_targets(&cx, manual_targets_collection)
             .await
             .expect("Problem loading manual targets");

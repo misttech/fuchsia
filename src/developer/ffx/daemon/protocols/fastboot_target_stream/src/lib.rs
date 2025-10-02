@@ -66,7 +66,7 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
                 let discovery = DiscoveryBuilder::default()
                     .with_fastboot_devices_file_path(fastboot_file_path)
                     .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
-                    .build();
+                    .build(&environment);
                 let devices  = discovery.discover_devices(TargetInfoQuery::First).await.map_err(anyhow::Error::from)?;
                 for device in devices {
                            match device.state {

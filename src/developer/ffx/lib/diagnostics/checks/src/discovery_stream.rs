@@ -60,7 +60,7 @@ impl DiagnosticsResolver for SingleTargetResolver {
         ctx: &EnvironmentContext,
     ) -> Result<Vec<TargetHandle>> {
         let stream = build_discovery_stream(&ctx, self.sources, self.notifier_sender.clone())?;
-        let discoverer = DiscoveryBuilder::default().build_with_stream(stream);
+        let discoverer = DiscoveryBuilder::default().build_with_stream(ctx, stream);
         discoverer
             .discover_devices(query.clone())
             .await
@@ -137,5 +137,5 @@ pub(crate) fn build_discovery_stream(
         }
     }
 
-    Ok(TargetStream::new(config, queue))
+    Ok(TargetStream::new(ctx, config, queue))
 }

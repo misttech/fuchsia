@@ -58,7 +58,8 @@ impl FastbootConnectionFactory for ConnectionFactory {
                 let fastboot_device_file_path: Option<PathBuf> =
                     self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
-                    tcp_proxy(target_name, fastboot_device_file_path, &addr, config).await?,
+                    tcp_proxy(&self.context, target_name, fastboot_device_file_path, &addr, config)
+                        .await?,
                 ))
             }
             FastbootConnectionKind::Udp(target_name, addr) => {
@@ -66,7 +67,8 @@ impl FastbootConnectionFactory for ConnectionFactory {
                 let fastboot_device_file_path: Option<PathBuf> =
                     self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
-                    udp_proxy(target_name, fastboot_device_file_path, &addr, config).await?,
+                    udp_proxy(&self.context, target_name, fastboot_device_file_path, &addr, config)
+                        .await?,
                 ))
             }
         }
@@ -147,12 +149,14 @@ pub async fn usb_proxy(serial_number: String) -> Result<FastbootProxy<AsyncInter
 
 /// Creates a FastbootProxy over TCP for a device at the given SocketAddr
 pub async fn tcp_proxy(
+    context: &EnvironmentContext,
     target_name: String,
     fastboot_device_file_path: Option<PathBuf>,
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
 ) -> Result<FastbootProxy<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>>> {
     let mut factory = TcpFactory::new(
+        context,
         target_name,
         fastboot_device_file_path,
         *addr,
@@ -176,12 +180,14 @@ pub async fn tcp_proxy(
 
 /// Creates a FastbootProxy over TCP for a device at the given SocketAddr
 pub async fn udp_proxy(
+    context: &EnvironmentContext,
     target_name: String,
     fastboot_device_file_path: Option<PathBuf>,
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
 ) -> Result<FastbootProxy<UdpNetworkInterface>> {
     let mut factory = UdpFactory::new(
+        context,
         target_name,
         fastboot_device_file_path,
         *addr,

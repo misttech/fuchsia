@@ -17,6 +17,8 @@ use discovery::query::TargetInfoQuery;
 use discovery::{
     DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetEvent, TargetState,
 };
+use ffx_config::environment::ExecutableKind;
+use ffx_config::{ConfigMap, EnvironmentContext};
 use futures::{Stream, StreamExt};
 use log::LevelFilter;
 use signal_hook::consts::signal::*;
@@ -159,15 +161,18 @@ async fn main() -> Result<()> {
     let command_name = args.nested.command_name();
     let metrics_service = metrics::GaMetricsService::new("0.1".to_string()).await?;
 
+    let ctx =
+        EnvironmentContext::no_context(ExecutableKind::Subtool, ConfigMap::default(), None, false);
+
     let res = match args.nested {
-        FunnelSubcommands::Host(host_command) => funnel_main(host_command).await,
+        FunnelSubcommands::Host(host_command) => funnel_main(&ctx, host_command).await,
         #[cfg(feature = "update")]
         FunnelSubcommands::Update(update_command) => update_main(update_command).await,
         FunnelSubcommands::Cleanup(cleanup_command) => cleanup_main(cleanup_command).await,
         FunnelSubcommands::CloseLocalTunnel(close_existing_tunnel) => {
             close_existing_tunnel_main(close_existing_tunnel).await
         }
-        FunnelSubcommands::ListTargets(list_targets) => list_targets_main(list_targets).await,
+        FunnelSubcommands::ListTargets(list_targets) => list_targets_main(&ctx, list_targets).await,
     };
 
     let (exit_code, error_message) = match res {
@@ -206,12 +211,15 @@ async fn update_main(_args: SubCommandUpdate) -> Result<(), FunnelError> {
     update::self_update(exe_path_buf).await.map_err(FunnelError::from)
 }
 
-async fn list_targets_main(args: SubCommandListTargets) -> Result<(), FunnelError> {
+async fn list_targets_main(
+    ctx: &EnvironmentContext,
+    args: SubCommandListTargets,
+) -> Result<(), FunnelError> {
     // Only want added events
     let discovery = DiscoveryBuilder::default()
         .set_source(DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT)
         .with_timeout_msecs(None)
-        .build();
+        .build(ctx);
     let mut device_stream =
         discovery.discovery_stream(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
 
@@ -234,14 +242,14 @@ async fn list_targets_main(args: SubCommandListTargets) -> Result<(), FunnelErro
     Ok(())
 }
 
-async fn funnel_main(args: SubCommandHost) -> Result<(), FunnelError> {
+async fn funnel_main(ctx: &EnvironmentContext, args: SubCommandHost) -> Result<(), FunnelError> {
     log::trace!("Discoving targets...");
     let wait_duration = Duration::from_secs(args.wait_for_target_time);
 
     // Only want added events
     let discovery = DiscoveryBuilder::default()
         .set_source(DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT)
-        .build();
+        .build(ctx);
     let device_stream =
         discovery.discovery_stream(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
 
