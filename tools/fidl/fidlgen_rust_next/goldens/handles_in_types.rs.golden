@@ -73,6 +73,8 @@ impl ::fidl_next::IntoNatural for WireEmptyResourceStruct {
 pub struct WireEmptyResourceStruct {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireEmptyResourceStruct>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireEmptyResourceStruct>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireEmptyResourceStruct {
     type Decoded<'de> = WireEmptyResourceStruct;
@@ -1146,6 +1148,32 @@ pub struct WireHandlesInTypes<'de> {
 
     pub union_with_handle: crate::WireUnionWithHandle<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireHandlesInTypes<'_>>(), 96);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireHandlesInTypes<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandlesInTypes<'_>, normal_handle), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandlesInTypes<'_>, handle_in_vec), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandlesInTypes<'_>, handle_in_array),
+    24
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandlesInTypes<'_>, handle_in_mixed_vec_array),
+    48
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandlesInTypes<'_>, table_with_handle),
+    64
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandlesInTypes<'_>, union_with_handle),
+    80
+);
 
 unsafe impl ::fidl_next::Wire for WireHandlesInTypes<'static> {
     type Decoded<'de> = WireHandlesInTypes<'de>;

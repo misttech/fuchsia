@@ -224,6 +224,12 @@ pub struct {{ wire_name }}{{ de }} {
         pub {{ member.name|snake }}: {{ self.wire_type(member.ty) }},
     {% endfor %}
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<{{ wire_name }}{{ infer }}>(), {{ strct.shape.inline_size }});
+static_assertions::const_assert_eq!(std::mem::align_of::<{{ wire_name }}{{ infer }}>(), {{ strct.shape.alignment }});
+{% for member in strct.members %}
+    static_assertions::const_assert_eq!(std::mem::offset_of!({{ wire_name }}{{ infer }}, {{ member.name|snake }}), {{ member.field_shape.offset }});
+{% endfor %}
+
 
 unsafe impl ::fidl_next::Wire for {{ wire_name }}{{ static_ }} {
     type Decoded<'de> = {{ wire_name }}{{ de }};

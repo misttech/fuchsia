@@ -124,6 +124,8 @@ impl ::fidl_next::FromWireRef<WireSerializableStruct> for SerializableStruct {
 pub struct WireSerializableStruct {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireSerializableStruct>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireSerializableStruct>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireSerializableStruct {
     type Decoded<'de> = WireSerializableStruct;

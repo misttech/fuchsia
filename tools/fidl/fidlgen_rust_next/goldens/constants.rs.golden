@@ -718,6 +718,18 @@ pub struct WireStruct<'de> {
 
     pub bits_with_default: crate::WireBits,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStruct<'_>>(), 40);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStruct<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct<'_>, int64_with_default), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct<'_>, string_with_default), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct<'_>, bool_with_default), 24);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct<'_>, enum_with_default), 28);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct<'_>, bits_with_default), 32);
 
 unsafe impl ::fidl_next::Wire for WireStruct<'static> {
     type Decoded<'de> = WireStruct<'de>;

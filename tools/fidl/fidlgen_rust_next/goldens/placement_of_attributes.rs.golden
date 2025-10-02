@@ -404,6 +404,10 @@ impl ::fidl_next::FromWireRef<WireExampleProtocolMethodRequest> for ExampleProto
 pub struct WireExampleProtocolMethodRequest {
     pub arg: ::fidl_next_test_exampleusing::WireEmpty,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleProtocolMethodRequest>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleProtocolMethodRequest>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireExampleProtocolMethodRequest, arg), 0);
 
 unsafe impl ::fidl_next::Wire for WireExampleProtocolMethodRequest {
     type Decoded<'de> = WireExampleProtocolMethodRequest;
@@ -784,6 +788,10 @@ impl ::fidl_next::FromWireRef<WireExampleStruct> for ExampleStruct {
 pub struct WireExampleStruct {
     pub member: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleStruct>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleStruct>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireExampleStruct, member), 0);
 
 unsafe impl ::fidl_next::Wire for WireExampleStruct {
     type Decoded<'de> = WireExampleStruct;

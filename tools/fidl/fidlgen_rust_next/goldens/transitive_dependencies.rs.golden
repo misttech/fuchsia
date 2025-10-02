@@ -147,6 +147,10 @@ impl ::fidl_next::FromWireRef<WireBaz> for Baz {
 pub struct WireBaz {
     pub g: ::fidl_next_test_middle::WireBar,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireBaz>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireBaz>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBaz, g), 0);
 
 unsafe impl ::fidl_next::Wire for WireBaz {
     type Decoded<'de> = WireBaz;

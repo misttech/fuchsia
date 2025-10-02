@@ -148,6 +148,10 @@ impl ::fidl_next::FromWireRef<WireStructLargeArray> for StructLargeArray {
 pub struct WireStructLargeArray {
     pub a: [::fidl_next::WireU32; 100],
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructLargeArray>(), 400);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructLargeArray>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructLargeArray, a), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructLargeArray {
     type Decoded<'de> = WireStructLargeArray;
@@ -334,6 +338,10 @@ impl ::fidl_next::FromWireRef<WireStructSmallArray> for StructSmallArray {
 pub struct WireStructSmallArray {
     pub a: [::fidl_next::WireU32; 2],
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructSmallArray>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructSmallArray>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructSmallArray, a), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructSmallArray {
     type Decoded<'de> = WireStructSmallArray;

@@ -417,6 +417,14 @@ pub struct WireOverrideTest<'de> {
 
     pub right: crate::WireOptionalExpression<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireOverrideTest<'_>>(), 40);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireOverrideTest<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireOverrideTest<'_>, op), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireOverrideTest<'_>, left), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireOverrideTest<'_>, right), 24);
 
 unsafe impl ::fidl_next::Wire for WireOverrideTest<'static> {
     type Decoded<'de> = WireOverrideTest<'de>;
@@ -1838,6 +1846,10 @@ impl ::fidl_next::FromWireRef<WireTableData> for TableData {
 pub struct WireTableData {
     pub data: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireTableData>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireTableData>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTableData, data), 0);
 
 unsafe impl ::fidl_next::Wire for WireTableData {
     type Decoded<'de> = WireTableData;
@@ -2259,6 +2271,24 @@ pub struct WireSomeProtocolSomeMethodRequest<'de> {
 
     pub table_member: crate::WireTableMember<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireSomeProtocolSomeMethodRequest<'_>>(),
+    32
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireSomeProtocolSomeMethodRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSomeProtocolSomeMethodRequest<'_>, union_member),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSomeProtocolSomeMethodRequest<'_>, table_member),
+    16
+);
 
 unsafe impl ::fidl_next::Wire for WireSomeProtocolSomeMethodRequest<'static> {
     type Decoded<'de> = WireSomeProtocolSomeMethodRequest<'de>;
@@ -2460,6 +2490,13 @@ impl ::fidl_next::FromWireRef<WireSomeProtocolSomeMethodResponse>
 pub struct WireSomeProtocolSomeMethodResponse {
     pub bits_member: crate::WireBitsMember,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireSomeProtocolSomeMethodResponse>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireSomeProtocolSomeMethodResponse>(), 4);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSomeProtocolSomeMethodResponse, bits_member),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireSomeProtocolSomeMethodResponse {
     type Decoded<'de> = WireSomeProtocolSomeMethodResponse;

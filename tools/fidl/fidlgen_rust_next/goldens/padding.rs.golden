@@ -148,6 +148,12 @@ pub struct WirePadding1ByteEnd {
 
     pub b: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding1ByteEnd>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding1ByteEnd>(), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding1ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding1ByteEnd, b), 2);
 
 unsafe impl ::fidl_next::Wire for WirePadding1ByteEnd {
     type Decoded<'de> = WirePadding1ByteEnd;
@@ -344,6 +350,12 @@ pub struct WirePadding1ByteMiddle {
 
     pub b: ::fidl_next::WireU16,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding1ByteMiddle>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding1ByteMiddle>(), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding1ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding1ByteMiddle, b), 2);
 
 unsafe impl ::fidl_next::Wire for WirePadding1ByteMiddle {
     type Decoded<'de> = WirePadding1ByteMiddle;
@@ -554,6 +566,14 @@ pub struct WirePadding2ByteAlignmentLength6 {
 
     pub c: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding2ByteAlignmentLength6>(), 6);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding2ByteAlignmentLength6>(), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteAlignmentLength6, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteAlignmentLength6, b), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteAlignmentLength6, c), 4);
 
 unsafe impl ::fidl_next::Wire for WirePadding2ByteAlignmentLength6 {
     type Decoded<'de> = WirePadding2ByteAlignmentLength6;
@@ -760,6 +780,12 @@ pub struct WirePadding2ByteEnd {
 
     pub b: ::fidl_next::WireU16,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding2ByteEnd>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding2ByteEnd>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteEnd, b), 4);
 
 unsafe impl ::fidl_next::Wire for WirePadding2ByteEnd {
     type Decoded<'de> = WirePadding2ByteEnd;
@@ -956,6 +982,12 @@ pub struct WirePadding2ByteMiddle {
 
     pub b: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding2ByteMiddle>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding2ByteMiddle>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding2ByteMiddle, b), 4);
 
 unsafe impl ::fidl_next::Wire for WirePadding2ByteMiddle {
     type Decoded<'de> = WirePadding2ByteMiddle;
@@ -1152,6 +1184,12 @@ pub struct WirePadding3ByteEnd {
 
     pub b: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding3ByteEnd>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding3ByteEnd>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding3ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding3ByteEnd, b), 4);
 
 unsafe impl ::fidl_next::Wire for WirePadding3ByteEnd {
     type Decoded<'de> = WirePadding3ByteEnd;
@@ -1348,6 +1386,12 @@ pub struct WirePadding3ByteMiddle {
 
     pub b: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding3ByteMiddle>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding3ByteMiddle>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding3ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding3ByteMiddle, b), 4);
 
 unsafe impl ::fidl_next::Wire for WirePadding3ByteMiddle {
     type Decoded<'de> = WirePadding3ByteMiddle;
@@ -1572,6 +1616,16 @@ pub struct WirePadding4ByteAlignmentLength12 {
 
     pub d: ::fidl_next::WireU16,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding4ByteAlignmentLength12>(), 12);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding4ByteAlignmentLength12>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteAlignmentLength12, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteAlignmentLength12, b), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteAlignmentLength12, c), 6);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteAlignmentLength12, d), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding4ByteAlignmentLength12 {
     type Decoded<'de> = WirePadding4ByteAlignmentLength12;
@@ -1784,6 +1838,12 @@ pub struct WirePadding4ByteEnd {
 
     pub b: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding4ByteEnd>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding4ByteEnd>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteEnd, b), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding4ByteEnd {
     type Decoded<'de> = WirePadding4ByteEnd;
@@ -1980,6 +2040,12 @@ pub struct WirePadding4ByteMiddle {
 
     pub b: ::fidl_next::WireU64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding4ByteMiddle>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding4ByteMiddle>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding4ByteMiddle, b), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding4ByteMiddle {
     type Decoded<'de> = WirePadding4ByteMiddle;
@@ -2190,6 +2256,14 @@ pub struct WirePadding5ByteEnd {
 
     pub c: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding5ByteEnd>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding5ByteEnd>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding5ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding5ByteEnd, b), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding5ByteEnd, c), 10);
 
 unsafe impl ::fidl_next::Wire for WirePadding5ByteEnd {
     type Decoded<'de> = WirePadding5ByteEnd;
@@ -2406,6 +2480,14 @@ pub struct WirePadding5ByteMiddle {
 
     pub c: ::fidl_next::WireU64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding5ByteMiddle>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding5ByteMiddle>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding5ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding5ByteMiddle, b), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding5ByteMiddle, c), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding5ByteMiddle {
     type Decoded<'de> = WirePadding5ByteMiddle;
@@ -2608,6 +2690,12 @@ pub struct WirePadding6ByteEnd {
 
     pub b: ::fidl_next::WireU16,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding6ByteEnd>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding6ByteEnd>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding6ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding6ByteEnd, b), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding6ByteEnd {
     type Decoded<'de> = WirePadding6ByteEnd;
@@ -2804,6 +2892,12 @@ pub struct WirePadding6ByteMiddle {
 
     pub b: ::fidl_next::WireU64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding6ByteMiddle>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding6ByteMiddle>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding6ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding6ByteMiddle, b), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding6ByteMiddle {
     type Decoded<'de> = WirePadding6ByteMiddle;
@@ -3000,6 +3094,12 @@ pub struct WirePadding7ByteEnd {
 
     pub b: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding7ByteEnd>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding7ByteEnd>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding7ByteEnd, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding7ByteEnd, b), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding7ByteEnd {
     type Decoded<'de> = WirePadding7ByteEnd;
@@ -3196,6 +3296,12 @@ pub struct WirePadding7ByteMiddle {
 
     pub b: ::fidl_next::WireU64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePadding7ByteMiddle>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePadding7ByteMiddle>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding7ByteMiddle, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePadding7ByteMiddle, b), 8);
 
 unsafe impl ::fidl_next::Wire for WirePadding7ByteMiddle {
     type Decoded<'de> = WirePadding7ByteMiddle;

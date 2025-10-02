@@ -1557,6 +1557,10 @@ impl ::fidl_next::FromWireRef<WireStruct> for Struct {
 pub struct WireStruct {
     pub field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStruct>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStruct>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct, field), 0);
 
 unsafe impl ::fidl_next::Wire for WireStruct {
     type Decoded<'de> = WireStruct;

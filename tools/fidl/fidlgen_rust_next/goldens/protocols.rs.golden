@@ -281,6 +281,12 @@ pub struct WireChannelProtocolMethodARequest {
 
     pub b: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireChannelProtocolMethodARequest>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireChannelProtocolMethodARequest>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChannelProtocolMethodARequest, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChannelProtocolMethodARequest, b), 8);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolMethodARequest {
     type Decoded<'de> = WireChannelProtocolMethodARequest;
@@ -490,6 +496,12 @@ pub struct WireChannelProtocolEventARequest {
 
     pub b: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireChannelProtocolEventARequest>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireChannelProtocolEventARequest>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChannelProtocolEventARequest, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChannelProtocolEventARequest, b), 8);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolEventARequest {
     type Decoded<'de> = WireChannelProtocolEventARequest;
@@ -705,6 +717,12 @@ pub struct WireChannelProtocolMethodBRequest {
 
     pub b: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireChannelProtocolMethodBRequest>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireChannelProtocolMethodBRequest>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChannelProtocolMethodBRequest, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChannelProtocolMethodBRequest, b), 8);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolMethodBRequest {
     type Decoded<'de> = WireChannelProtocolMethodBRequest;
@@ -901,6 +919,13 @@ impl ::fidl_next::FromWireRef<WireChannelProtocolMethodBResponse>
 pub struct WireChannelProtocolMethodBResponse {
     pub result: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireChannelProtocolMethodBResponse>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireChannelProtocolMethodBResponse>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireChannelProtocolMethodBResponse, result),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolMethodBResponse {
     type Decoded<'de> = WireChannelProtocolMethodBResponse;
@@ -1042,6 +1067,16 @@ impl ::fidl_next::IntoNatural for WireChannelProtocolTakeHandleRequest {
 pub struct WireChannelProtocolTakeHandleRequest {
     pub h: ::fidl_next::fuchsia::WireHandle,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireChannelProtocolTakeHandleRequest>(), 4);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireChannelProtocolTakeHandleRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireChannelProtocolTakeHandleRequest, h),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolTakeHandleRequest {
     type Decoded<'de> = WireChannelProtocolTakeHandleRequest;
@@ -1184,6 +1219,19 @@ impl ::fidl_next::IntoNatural for WireChannelProtocolMutateSocketRequest {
 pub struct WireChannelProtocolMutateSocketRequest {
     pub a: ::fidl_next::fuchsia::WireSocket,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireChannelProtocolMutateSocketRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireChannelProtocolMutateSocketRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireChannelProtocolMutateSocketRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolMutateSocketRequest {
     type Decoded<'de> = WireChannelProtocolMutateSocketRequest;
@@ -1326,6 +1374,19 @@ impl ::fidl_next::IntoNatural for WireChannelProtocolMutateSocketResponse {
 pub struct WireChannelProtocolMutateSocketResponse {
     pub b: ::fidl_next::fuchsia::WireSocket,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireChannelProtocolMutateSocketResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireChannelProtocolMutateSocketResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireChannelProtocolMutateSocketResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireChannelProtocolMutateSocketResponse {
     type Decoded<'de> = WireChannelProtocolMutateSocketResponse;
@@ -2380,6 +2441,19 @@ impl ::fidl_next::IntoNatural for WireHandleRightsProtocolNoResponseMethodReques
 pub struct WireHandleRightsProtocolNoResponseMethodRequest {
     pub h: ::fidl_next::fuchsia::WireSocket,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireHandleRightsProtocolNoResponseMethodRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireHandleRightsProtocolNoResponseMethodRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandleRightsProtocolNoResponseMethodRequest, h),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolNoResponseMethodRequest {
     type Decoded<'de> = WireHandleRightsProtocolNoResponseMethodRequest;
@@ -2523,6 +2597,19 @@ impl ::fidl_next::IntoNatural for WireHandleRightsProtocolResponseMethodRequest 
 pub struct WireHandleRightsProtocolResponseMethodRequest {
     pub h: ::fidl_next::fuchsia::WireSocket,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireHandleRightsProtocolResponseMethodRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireHandleRightsProtocolResponseMethodRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandleRightsProtocolResponseMethodRequest, h),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolResponseMethodRequest {
     type Decoded<'de> = WireHandleRightsProtocolResponseMethodRequest;
@@ -2666,6 +2753,19 @@ impl ::fidl_next::IntoNatural for WireHandleRightsProtocolResponseMethodResponse
 pub struct WireHandleRightsProtocolResponseMethodResponse {
     pub h: ::fidl_next::fuchsia::WireSocket,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireHandleRightsProtocolResponseMethodResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireHandleRightsProtocolResponseMethodResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandleRightsProtocolResponseMethodResponse, h),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolResponseMethodResponse {
     type Decoded<'de> = WireHandleRightsProtocolResponseMethodResponse;
@@ -2808,6 +2908,19 @@ impl ::fidl_next::IntoNatural for WireHandleRightsProtocolAnEventRequest {
 pub struct WireHandleRightsProtocolAnEventRequest {
     pub h: ::fidl_next::fuchsia::WireSocket,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireHandleRightsProtocolAnEventRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireHandleRightsProtocolAnEventRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandleRightsProtocolAnEventRequest, h),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireHandleRightsProtocolAnEventRequest {
     type Decoded<'de> = WireHandleRightsProtocolAnEventRequest;
@@ -3619,6 +3732,53 @@ pub struct WireManyParametersFifteenRequest {
 
     pub p15: bool,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireManyParametersFifteenRequest>(), 15);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireManyParametersFifteenRequest>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p1), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p2), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p3), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p4), 3);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p5), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p6), 5);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p7), 6);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p8), 7);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p9), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireManyParametersFifteenRequest, p10), 9);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireManyParametersFifteenRequest, p11),
+    10
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireManyParametersFifteenRequest, p12),
+    11
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireManyParametersFifteenRequest, p13),
+    12
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireManyParametersFifteenRequest, p14),
+    13
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireManyParametersFifteenRequest, p15),
+    14
+);
 
 unsafe impl ::fidl_next::Wire for WireManyParametersFifteenRequest {
     type Decoded<'de> = WireManyParametersFifteenRequest;
@@ -4602,6 +4762,19 @@ impl<'de> ::fidl_next::FromWireRef<WireMethodWithUnionUnionMethodRequest<'de>>
 pub struct WireMethodWithUnionUnionMethodRequest<'de> {
     pub u: crate::WireTheUnion<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireMethodWithUnionUnionMethodRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireMethodWithUnionUnionMethodRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireMethodWithUnionUnionMethodRequest<'_>, u),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireMethodWithUnionUnionMethodRequest<'static> {
     type Decoded<'de> = WireMethodWithUnionUnionMethodRequest<'de>;
@@ -4778,6 +4951,19 @@ impl<'de> ::fidl_next::FromWireRef<WireMethodWithUnionUnionMethodResponse<'de>>
 pub struct WireMethodWithUnionUnionMethodResponse<'de> {
     pub u: crate::WireOptionalTheUnion<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireMethodWithUnionUnionMethodResponse<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireMethodWithUnionUnionMethodResponse<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireMethodWithUnionUnionMethodResponse<'_>, u),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireMethodWithUnionUnionMethodResponse<'static> {
     type Decoded<'de> = WireMethodWithUnionUnionMethodResponse<'de>;
@@ -5339,6 +5525,16 @@ pub struct WireProtocolEnds {
         ::fidl_next::fuchsia::WireOptionalChannel,
     >,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireProtocolEnds>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireProtocolEnds>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireProtocolEnds, client), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireProtocolEnds, server), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireProtocolEnds, client_opt), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireProtocolEnds, server_opt), 12);
 
 unsafe impl ::fidl_next::Wire for WireProtocolEnds {
     type Decoded<'de> = WireProtocolEnds;
@@ -5546,6 +5742,19 @@ impl<'de>
 pub struct WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'de> {
     pub ret: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'_>, ret),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireWithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>
@@ -5736,6 +5945,19 @@ impl<'de>
 pub struct WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'de> {
     pub arg: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'_>, arg),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireWithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>
@@ -5929,6 +6151,19 @@ impl<'de>
 pub struct WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'de> {
     pub arg: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'_>, arg),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireWithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'static>
@@ -6122,6 +6357,19 @@ impl<'de>
 pub struct WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'de> {
     pub arg: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'_>, arg),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireWithAndWithoutRequestResponseWithRequestWithResponseRequest<'static>
@@ -6315,6 +6563,19 @@ impl<'de>
 pub struct WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'de> {
     pub ret: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'_>, ret),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireWithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>
@@ -6499,6 +6760,19 @@ impl<'de> ::fidl_next::FromWireRef<WireWithAndWithoutRequestResponseOnWithRespon
 pub struct WireWithAndWithoutRequestResponseOnWithResponseRequest<'de> {
     pub ret: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithAndWithoutRequestResponseOnWithResponseRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithAndWithoutRequestResponseOnWithResponseRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithAndWithoutRequestResponseOnWithResponseRequest<'_>, ret),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithAndWithoutRequestResponseOnWithResponseRequest<'static> {
     type Decoded<'de> = WireWithAndWithoutRequestResponseOnWithResponseRequest<'de>;
@@ -7392,6 +7666,29 @@ pub struct WireWithErrorSyntaxResponseAsStructResponse {
 
     pub c: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithErrorSyntaxResponseAsStructResponse>(),
+    24
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithErrorSyntaxResponseAsStructResponse>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithErrorSyntaxResponseAsStructResponse, a),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithErrorSyntaxResponseAsStructResponse, b),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithErrorSyntaxResponseAsStructResponse, c),
+    16
+);
 
 unsafe impl ::fidl_next::Wire for WireWithErrorSyntaxResponseAsStructResponse {
     type Decoded<'de> = WireWithErrorSyntaxResponseAsStructResponse;
@@ -7555,6 +7852,19 @@ impl ::fidl_next::IntoNatural for WireWithErrorSyntaxHandleInResultResponse {
 pub struct WireWithErrorSyntaxHandleInResultResponse {
     pub h: ::fidl_next::fuchsia::WireHandle,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithErrorSyntaxHandleInResultResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithErrorSyntaxHandleInResultResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithErrorSyntaxHandleInResultResponse, h),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithErrorSyntaxHandleInResultResponse {
     type Decoded<'de> = WireWithErrorSyntaxHandleInResultResponse;
@@ -7974,6 +8284,19 @@ impl ::fidl_next::IntoNatural for WireWithProtocolEndsClientEndsRequest {
 pub struct WireWithProtocolEndsClientEndsRequest {
     pub in_: ::fidl_next::ClientEnd<crate::DiscoverableProtocol, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithProtocolEndsClientEndsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithProtocolEndsClientEndsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithProtocolEndsClientEndsRequest, in_),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithProtocolEndsClientEndsRequest {
     type Decoded<'de> = WireWithProtocolEndsClientEndsRequest;
@@ -8134,6 +8457,19 @@ pub struct WireWithProtocolEndsClientEndsResponse {
         ::fidl_next::fuchsia::WireOptionalChannel,
     >,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithProtocolEndsClientEndsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithProtocolEndsClientEndsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithProtocolEndsClientEndsResponse, out),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithProtocolEndsClientEndsResponse {
     type Decoded<'de> = WireWithProtocolEndsClientEndsResponse;
@@ -8294,6 +8630,19 @@ pub struct WireWithProtocolEndsServerEndsRequest {
         ::fidl_next::fuchsia::WireOptionalChannel,
     >,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithProtocolEndsServerEndsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithProtocolEndsServerEndsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithProtocolEndsServerEndsRequest, in_),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithProtocolEndsServerEndsRequest {
     type Decoded<'de> = WireWithProtocolEndsServerEndsRequest;
@@ -8445,6 +8794,19 @@ impl ::fidl_next::IntoNatural for WireWithProtocolEndsServerEndsResponse {
 pub struct WireWithProtocolEndsServerEndsResponse {
     pub out: ::fidl_next::ServerEnd<crate::DiscoverableProtocol, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithProtocolEndsServerEndsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithProtocolEndsServerEndsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithProtocolEndsServerEndsResponse, out),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithProtocolEndsServerEndsResponse {
     type Decoded<'de> = WireWithProtocolEndsServerEndsResponse;
@@ -8589,6 +8951,19 @@ impl ::fidl_next::IntoNatural for WireWithProtocolEndsStructContainingEndsReques
 pub struct WireWithProtocolEndsStructContainingEndsRequest {
     pub in_: crate::WireProtocolEnds,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithProtocolEndsStructContainingEndsRequest>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithProtocolEndsStructContainingEndsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithProtocolEndsStructContainingEndsRequest, in_),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithProtocolEndsStructContainingEndsRequest {
     type Decoded<'de> = WireWithProtocolEndsStructContainingEndsRequest;
@@ -8733,6 +9108,19 @@ impl ::fidl_next::IntoNatural for WireWithProtocolEndsStructContainingEndsRespon
 pub struct WireWithProtocolEndsStructContainingEndsResponse {
     pub out: crate::WireProtocolEnds,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireWithProtocolEndsStructContainingEndsResponse>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireWithProtocolEndsStructContainingEndsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireWithProtocolEndsStructContainingEndsResponse, out),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireWithProtocolEndsStructContainingEndsResponse {
     type Decoded<'de> = WireWithProtocolEndsStructContainingEndsResponse;

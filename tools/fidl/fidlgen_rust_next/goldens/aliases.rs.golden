@@ -346,6 +346,48 @@ pub struct WireExampleOfUseOfAliases<'de> {
 
     pub field_of_nullable_client_end: ::fidl_next::fuchsia::WireOptionalChannel,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleOfUseOfAliases<'_>>(), 88);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleOfUseOfAliases<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_u32),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_strings),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_strings_at_most_nine),
+    24
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_strings_at_most_5),
+    40
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_ref_me_at_most_5),
+    56
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_channel),
+    72
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_client_end),
+    76
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_nullable_client_end),
+    80
+);
 
 unsafe impl ::fidl_next::Wire for WireExampleOfUseOfAliases<'static> {
     type Decoded<'de> = WireExampleOfUseOfAliases<'de>;

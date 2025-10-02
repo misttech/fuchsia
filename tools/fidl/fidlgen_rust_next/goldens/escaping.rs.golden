@@ -131,6 +131,8 @@ impl ::fidl_next::FromWireRef<WireDocCommentWithQuotes> for DocCommentWithQuotes
 pub struct WireDocCommentWithQuotes {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireDocCommentWithQuotes>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireDocCommentWithQuotes>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireDocCommentWithQuotes {
     type Decoded<'de> = WireDocCommentWithQuotes;

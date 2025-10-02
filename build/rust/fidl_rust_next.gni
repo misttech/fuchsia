@@ -163,7 +163,10 @@ template("fidl_rust_next") {
       edition = "2018"
       disable_clippy = true
 
-      deps = [ "//src/lib/fidl/rust_next/fidl_next" ]
+      deps = [
+        "//src/lib/fidl/rust_next/fidl_next",
+        "//third_party/rust_crates:static_assertions",
+      ]
       if (defined(invoker.deps)) {
         deps += invoker.deps
       }

@@ -169,6 +169,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarDriverProtocolStrictTwo
 pub struct WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse
@@ -1019,6 +1035,22 @@ impl
 pub struct WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse
@@ -2435,6 +2467,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayFie
 pub struct WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
@@ -3257,6 +3302,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictTwoWayFie
 pub struct WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse {
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse;
@@ -4081,6 +4142,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolStrictEventFiel
 pub struct WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest {
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolStrictEventFieldsRequest;
@@ -4894,6 +4968,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsAjarProtocolFlexibleEventFi
 pub struct WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
     type Decoded<'de> = WireUnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
@@ -6639,6 +6726,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedDriverProtocolStrictT
 pub struct WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse
@@ -7492,6 +7595,23 @@ impl
 pub struct WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse>(
+    ),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse
@@ -8866,6 +8986,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayF
 pub struct WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
     type Decoded<'de> = WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
@@ -9700,6 +9836,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictTwoWayF
 pub struct WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse
@@ -10533,6 +10685,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsClosedProtocolStrictEventFi
 pub struct WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest {
     type Decoded<'de> = WireUnknownInteractionsClosedProtocolStrictEventFieldsRequest;
@@ -12020,6 +12185,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayF
 pub struct WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
     type Decoded<'de> = WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
@@ -12854,6 +13035,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolStrictTwoWayF
 pub struct WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse
@@ -13698,6 +13895,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWa
 pub struct WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse
@@ -14540,6 +14753,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsDriverProtocolFlexibleTwoWa
 pub struct WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireUnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse
@@ -16343,6 +16572,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayFieldsR
 pub struct WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse {
     type Decoded<'de> = WireUnknownInteractionsProtocolStrictTwoWayFieldsResponse;
@@ -17151,6 +17393,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictTwoWayFieldsE
 pub struct WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse {
     type Decoded<'de> = WireUnknownInteractionsProtocolStrictTwoWayFieldsErrResponse;
@@ -17967,6 +18222,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayField
 pub struct WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
     type Decoded<'de> = WireUnknownInteractionsProtocolFlexibleTwoWayFieldsResponse;
@@ -18787,6 +19055,22 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleTwoWayField
 pub struct WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse,
+        some_field
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
     type Decoded<'de> = WireUnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse;
@@ -19606,6 +19890,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolStrictEventFieldsRe
 pub struct WireUnknownInteractionsProtocolStrictEventFieldsRequest {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsProtocolStrictEventFieldsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsProtocolStrictEventFieldsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsProtocolStrictEventFieldsRequest, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolStrictEventFieldsRequest {
     type Decoded<'de> = WireUnknownInteractionsProtocolStrictEventFieldsRequest;
@@ -20398,6 +20695,19 @@ impl ::fidl_next::FromWireRef<WireUnknownInteractionsProtocolFlexibleEventFields
 pub struct WireUnknownInteractionsProtocolFlexibleEventFieldsRequest {
     pub some_field: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireUnknownInteractionsProtocolFlexibleEventFieldsRequest>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireUnknownInteractionsProtocolFlexibleEventFieldsRequest>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireUnknownInteractionsProtocolFlexibleEventFieldsRequest, some_field),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireUnknownInteractionsProtocolFlexibleEventFieldsRequest {
     type Decoded<'de> = WireUnknownInteractionsProtocolFlexibleEventFieldsRequest;

@@ -124,6 +124,8 @@ impl ::fidl_next::FromWireRef<WireEmpty> for Empty {
 pub struct WireEmpty {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireEmpty>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireEmpty>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireEmpty {
     type Decoded<'de> = WireEmpty;
@@ -1326,6 +1328,10 @@ impl<'de> ::fidl_next::FromWireRef<WirePizza<'de>> for Pizza {
 pub struct WirePizza<'de> {
     pub toppings: ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePizza<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePizza<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePizza<'_>, toppings), 0);
 
 unsafe impl ::fidl_next::Wire for WirePizza<'static> {
     type Decoded<'de> = WirePizza<'de>;
@@ -1497,6 +1503,10 @@ impl<'de> ::fidl_next::FromWireRef<WirePasta<'de>> for Pasta {
 pub struct WirePasta<'de> {
     pub sauce: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePasta<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePasta<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePasta<'_>, sauce), 0);
 
 unsafe impl ::fidl_next::Wire for WirePasta<'static> {
     type Decoded<'de> = WirePasta<'de>;
@@ -4689,6 +4699,13 @@ impl<'de> ::fidl_next::FromWireRef<WireNullableUnionStruct<'de>> for NullableUni
 pub struct WireNullableUnionStruct<'de> {
     pub the_union: crate::WireOptionalUnion<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireNullableUnionStruct<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireNullableUnionStruct<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireNullableUnionStruct<'_>, the_union),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireNullableUnionStruct<'static> {
     type Decoded<'de> = WireNullableUnionStruct<'de>;
@@ -7819,6 +7836,10 @@ impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableUnion<'de>> for StructW
 pub struct WireStructWithNullableUnion<'de> {
     pub x1: crate::WireOptionalOlderSimpleUnion<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableUnion<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableUnion<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableUnion<'_>, x1), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableUnion<'static> {
     type Decoded<'de> = WireStructWithNullableUnion<'de>;
@@ -8012,6 +8033,22 @@ impl<'de>
 pub struct WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'de> {
     pub xu: crate::WireStrictBoundedUnion<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'_>,
+        xu
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireTestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'static>
@@ -8209,6 +8246,24 @@ impl<'de>
 pub struct WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'de> {
     pub xu: crate::WireOlderSimpleUnion<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'_>>(
+    ),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'_>>(
+    ),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'_>,
+        xu
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire
     for WireTestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'static>
@@ -9366,6 +9421,14 @@ pub struct WireUnionSandwich<'de> {
 
     pub b: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireUnionSandwich<'_>>(), 32);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireUnionSandwich<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireUnionSandwich<'_>, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireUnionSandwich<'_>, u), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireUnionSandwich<'_>, b), 24);
 
 unsafe impl ::fidl_next::Wire for WireUnionSandwich<'static> {
     type Decoded<'de> = WireUnionSandwich<'de>;

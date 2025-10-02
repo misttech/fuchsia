@@ -143,6 +143,10 @@ impl ::fidl_next::FromWireRef<WireByteAndBytes> for ByteAndBytes {
 pub struct WireByteAndBytes {
     pub single_byte: u8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireByteAndBytes>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireByteAndBytes>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireByteAndBytes, single_byte), 0);
 
 unsafe impl ::fidl_next::Wire for WireByteAndBytes {
     type Decoded<'de> = WireByteAndBytes;

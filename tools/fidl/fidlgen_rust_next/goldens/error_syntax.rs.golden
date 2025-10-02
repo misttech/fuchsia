@@ -138,6 +138,19 @@ impl<'de> ::fidl_next::FromWireRef<WireExampleUseOfErrorSyntaxCallWhichMayFailRe
 pub struct WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de> {
     pub s: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'_>, s),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static> {
     type Decoded<'de> = WireExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>;
@@ -335,6 +348,19 @@ impl ::fidl_next::FromWireRef<WireExampleUseOfErrorSyntaxCallWhichMayFailRespons
 pub struct WireExampleUseOfErrorSyntaxCallWhichMayFailResponse {
     pub value: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireExampleUseOfErrorSyntaxCallWhichMayFailResponse>(),
+    8
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireExampleUseOfErrorSyntaxCallWhichMayFailResponse>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleUseOfErrorSyntaxCallWhichMayFailResponse, value),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireExampleUseOfErrorSyntaxCallWhichMayFailResponse {
     type Decoded<'de> = WireExampleUseOfErrorSyntaxCallWhichMayFailResponse;

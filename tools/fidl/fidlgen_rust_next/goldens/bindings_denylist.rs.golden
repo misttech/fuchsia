@@ -153,6 +153,10 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding4>
 pub struct WireShouldNeverAppearInAnyBinding4 {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireShouldNeverAppearInAnyBinding4>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireShouldNeverAppearInAnyBinding4>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireShouldNeverAppearInAnyBinding4, a), 0);
 
 unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding4 {
     type Decoded<'de> = WireShouldNeverAppearInAnyBinding4;
@@ -949,6 +953,23 @@ pub struct WireAllowedDeniedResponse<'de> {
 
     pub should_never_appear_in_any_binding_6: crate::WireShouldNeverAppearInAnyBinding6<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireAllowedDeniedResponse<'_>>(), 40);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireAllowedDeniedResponse<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireAllowedDeniedResponse<'_>, should_never_appear_in_any_binding_4),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireAllowedDeniedResponse<'_>, should_never_appear_in_any_binding_5),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireAllowedDeniedResponse<'_>, should_never_appear_in_any_binding_6),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireAllowedDeniedResponse<'static> {
     type Decoded<'de> = WireAllowedDeniedResponse<'de>;
@@ -1404,6 +1425,10 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding1>
 pub struct WireShouldNeverAppearInAnyBinding1 {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireShouldNeverAppearInAnyBinding1>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireShouldNeverAppearInAnyBinding1>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireShouldNeverAppearInAnyBinding1, a), 0);
 
 unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding1 {
     type Decoded<'de> = WireShouldNeverAppearInAnyBinding1;
@@ -2205,6 +2230,38 @@ pub struct WireDeniedShouldNeverAppearInAnyBindingRequest<'de> {
 
     pub should_never_appear_in_any_binding_3: crate::WireShouldNeverAppearInAnyBinding3<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDeniedShouldNeverAppearInAnyBindingRequest<'_>>(),
+    40
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDeniedShouldNeverAppearInAnyBindingRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireDeniedShouldNeverAppearInAnyBindingRequest<'_>,
+        should_never_appear_in_any_binding_1
+    ),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireDeniedShouldNeverAppearInAnyBindingRequest<'_>,
+        should_never_appear_in_any_binding_2
+    ),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireDeniedShouldNeverAppearInAnyBindingRequest<'_>,
+        should_never_appear_in_any_binding_3
+    ),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireDeniedShouldNeverAppearInAnyBindingRequest<'static> {
     type Decoded<'de> = WireDeniedShouldNeverAppearInAnyBindingRequest<'de>;
@@ -2661,6 +2718,10 @@ impl ::fidl_next::FromWireRef<WireShouldNeverAppearInAnyBinding7>
 pub struct WireShouldNeverAppearInAnyBinding7 {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireShouldNeverAppearInAnyBinding7>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireShouldNeverAppearInAnyBinding7>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireShouldNeverAppearInAnyBinding7, a), 0);
 
 unsafe impl ::fidl_next::Wire for WireShouldNeverAppearInAnyBinding7 {
     type Decoded<'de> = WireShouldNeverAppearInAnyBinding7;
@@ -3457,6 +3518,23 @@ pub struct WireDeniedAnonymous<'de> {
 
     pub should_never_appear_in_any_binding_9: crate::WireShouldNeverAppearInAnyBinding9<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireDeniedAnonymous<'_>>(), 40);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireDeniedAnonymous<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDeniedAnonymous<'_>, should_never_appear_in_any_binding_7),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDeniedAnonymous<'_>, should_never_appear_in_any_binding_8),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDeniedAnonymous<'_>, should_never_appear_in_any_binding_9),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireDeniedAnonymous<'static> {
     type Decoded<'de> = WireDeniedAnonymous<'de>;
@@ -3665,6 +3743,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyCppRequest>
 pub struct WireDenyEachBindingOnlyDenyCppRequest {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyCppRequest>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyCppRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyCppRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyCppRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyCppRequest;
@@ -3857,6 +3948,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyCppResponse>
 pub struct WireDenyEachBindingOnlyDenyCppResponse {
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyCppResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyCppResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyCppResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyCppResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyCppResponse;
@@ -4048,6 +4152,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyDartRequest>
 pub struct WireDenyEachBindingOnlyDenyDartRequest {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyDartRequest>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyDartRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyDartRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyDartRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyDartRequest;
@@ -4240,6 +4357,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyDartResponse>
 pub struct WireDenyEachBindingOnlyDenyDartResponse {
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyDartResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyDartResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyDartResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyDartResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyDartResponse;
@@ -4431,6 +4561,16 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyGoRequest>
 pub struct WireDenyEachBindingOnlyDenyGoRequest {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireDenyEachBindingOnlyDenyGoRequest>(), 1);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyGoRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyGoRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyGoRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyGoRequest;
@@ -4623,6 +4763,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyGoResponse>
 pub struct WireDenyEachBindingOnlyDenyGoResponse {
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyGoResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyGoResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyGoResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyGoResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyGoResponse;
@@ -4814,6 +4967,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyPythonRequest>
 pub struct WireDenyEachBindingOnlyDenyPythonRequest {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyPythonRequest>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyPythonRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyPythonRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyPythonRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyPythonRequest;
@@ -5006,6 +5172,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyPythonResponse>
 pub struct WireDenyEachBindingOnlyDenyPythonResponse {
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyPythonResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyPythonResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyPythonResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyPythonResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyPythonResponse;
@@ -5197,6 +5376,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyRustRequest>
 pub struct WireDenyEachBindingOnlyDenyRustRequest {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyRustRequest>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyRustRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyRustRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyRustRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyRustRequest;
@@ -5389,6 +5581,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenyRustResponse>
 pub struct WireDenyEachBindingOnlyDenyRustResponse {
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenyRustResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenyRustResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenyRustResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenyRustResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenyRustResponse;
@@ -5580,6 +5785,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenySyzkallerRequest>
 pub struct WireDenyEachBindingOnlyDenySyzkallerRequest {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenySyzkallerRequest>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenySyzkallerRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenySyzkallerRequest, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenySyzkallerRequest {
     type Decoded<'de> = WireDenyEachBindingOnlyDenySyzkallerRequest;
@@ -5773,6 +5991,19 @@ impl ::fidl_next::FromWireRef<WireDenyEachBindingOnlyDenySyzkallerResponse>
 pub struct WireDenyEachBindingOnlyDenySyzkallerResponse {
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireDenyEachBindingOnlyDenySyzkallerResponse>(),
+    4
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireDenyEachBindingOnlyDenySyzkallerResponse>(),
+    4
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireDenyEachBindingOnlyDenySyzkallerResponse, b),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireDenyEachBindingOnlyDenySyzkallerResponse {
     type Decoded<'de> = WireDenyEachBindingOnlyDenySyzkallerResponse;
@@ -6968,6 +7199,19 @@ impl ::fidl_next::FromWireRef<WireMemberOnlyAppearsInImportingLibrary>
 pub struct WireMemberOnlyAppearsInImportingLibrary {
     pub a: bool,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireMemberOnlyAppearsInImportingLibrary>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireMemberOnlyAppearsInImportingLibrary>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireMemberOnlyAppearsInImportingLibrary, a),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireMemberOnlyAppearsInImportingLibrary {
     type Decoded<'de> = WireMemberOnlyAppearsInImportingLibrary;
@@ -7179,6 +7423,16 @@ impl ::fidl_next::FromWireRef<WireOnlyAppearsInImportingLibrary> for OnlyAppears
 pub struct WireOnlyAppearsInImportingLibrary {
     pub member_only_appears_in_importing_library: crate::WireMemberOnlyAppearsInImportingLibrary,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireOnlyAppearsInImportingLibrary>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireOnlyAppearsInImportingLibrary>(), 1);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(
+        WireOnlyAppearsInImportingLibrary,
+        member_only_appears_in_importing_library
+    ),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireOnlyAppearsInImportingLibrary {
     type Decoded<'de> = WireOnlyAppearsInImportingLibrary;
@@ -7577,6 +7831,8 @@ impl ::fidl_next::FromWireRef<WireOnlyGo> for OnlyGo {
 pub struct WireOnlyGo {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireOnlyGo>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireOnlyGo>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireOnlyGo {
     type Decoded<'de> = WireOnlyGo;

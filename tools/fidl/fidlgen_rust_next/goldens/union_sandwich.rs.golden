@@ -495,6 +495,29 @@ pub struct WireSandwichUnionSize12Alignment4<'de> {
 
     pub after: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireSandwichUnionSize12Alignment4<'_>>(),
+    32
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireSandwichUnionSize12Alignment4<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize12Alignment4<'_>, before),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize12Alignment4<'_>, union),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize12Alignment4<'_>, after),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireSandwichUnionSize12Alignment4<'static> {
     type Decoded<'de> = WireSandwichUnionSize12Alignment4<'de>;
@@ -719,6 +742,12 @@ pub struct WireStructSize16Alignment8 {
 
     pub f2: ::fidl_next::WireU64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructSize16Alignment8>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructSize16Alignment8>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructSize16Alignment8, f1), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructSize16Alignment8, f2), 8);
 
 unsafe impl ::fidl_next::Wire for WireStructSize16Alignment8 {
     type Decoded<'de> = WireStructSize16Alignment8;
@@ -1267,6 +1296,29 @@ pub struct WireSandwichUnionSize24Alignment8<'de> {
 
     pub after: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireSandwichUnionSize24Alignment8<'_>>(),
+    32
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireSandwichUnionSize24Alignment8<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize24Alignment8<'_>, before),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize24Alignment8<'_>, union),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize24Alignment8<'_>, after),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireSandwichUnionSize24Alignment8<'static> {
     type Decoded<'de> = WireSandwichUnionSize24Alignment8<'de>;
@@ -1821,6 +1873,29 @@ pub struct WireSandwichUnionSize36Alignment4<'de> {
 
     pub after: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireSandwichUnionSize36Alignment4<'_>>(),
+    32
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireSandwichUnionSize36Alignment4<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize36Alignment4<'_>, before),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize36Alignment4<'_>, union),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize36Alignment4<'_>, after),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireSandwichUnionSize36Alignment4<'static> {
     type Decoded<'de> = WireSandwichUnionSize36Alignment4<'de>;
@@ -2393,6 +2468,23 @@ pub struct WireSandwichUnionSize8Alignment4 {
 
     pub after: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireSandwichUnionSize8Alignment4>(), 32);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireSandwichUnionSize8Alignment4>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize8Alignment4, before),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize8Alignment4, union),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireSandwichUnionSize8Alignment4, after),
+    24
+);
 
 unsafe impl ::fidl_next::Wire for WireSandwichUnionSize8Alignment4 {
     type Decoded<'de> = WireSandwichUnionSize8Alignment4;

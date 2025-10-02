@@ -656,6 +656,10 @@ impl ::fidl_next::IntoNatural for WireStruct {
 pub struct WireStruct {
     pub x: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStruct>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStruct>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStruct, x), 0);
 
 unsafe impl ::fidl_next::Wire for WireStruct {
     type Decoded<'de> = WireStruct;

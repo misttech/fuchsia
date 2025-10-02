@@ -132,6 +132,10 @@ impl<'de> ::fidl_next::FromWireRef<WireExampleFooRequest<'de>> for ExampleFooReq
 pub struct WireExampleFooRequest<'de> {
     pub s: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleFooRequest<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleFooRequest<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireExampleFooRequest<'_>, s), 0);
 
 unsafe impl ::fidl_next::Wire for WireExampleFooRequest<'static> {
     type Decoded<'de> = WireExampleFooRequest<'de>;
@@ -315,6 +319,10 @@ impl ::fidl_next::FromWireRef<WireExampleFooResponse> for ExampleFooResponse {
 pub struct WireExampleFooResponse {
     pub y: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleFooResponse>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleFooResponse>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireExampleFooResponse, y), 0);
 
 unsafe impl ::fidl_next::Wire for WireExampleFooResponse {
     type Decoded<'de> = WireExampleFooResponse;

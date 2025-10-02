@@ -148,6 +148,12 @@ pub struct WireInt16Int8 {
 
     pub b: i8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireInt16Int8>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireInt16Int8>(), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireInt16Int8, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireInt16Int8, b), 2);
 
 unsafe impl ::fidl_next::Wire for WireInt16Int8 {
     type Decoded<'de> = WireInt16Int8;
@@ -326,6 +332,10 @@ impl ::fidl_next::FromWireRef<WireArrayInt16Int8> for ArrayInt16Int8 {
 pub struct WireArrayInt16Int8 {
     pub arr: [crate::WireInt16Int8; 3],
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireArrayInt16Int8>(), 12);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireArrayInt16Int8>(), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayInt16Int8, arr), 0);
 
 unsafe impl ::fidl_next::Wire for WireArrayInt16Int8 {
     type Decoded<'de> = WireArrayInt16Int8;
@@ -512,6 +522,12 @@ pub struct WireInt8Int32 {
 
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireInt8Int32>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireInt8Int32>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireInt8Int32, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireInt8Int32, b), 4);
 
 unsafe impl ::fidl_next::Wire for WireInt8Int32 {
     type Decoded<'de> = WireInt8Int32;
@@ -650,6 +666,15 @@ pub struct WireNonInlineStructTestStruct<'de> {
 
     pub h: ::fidl_next::fuchsia::WireHandle,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireNonInlineStructTestStruct<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireNonInlineStructTestStruct<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireNonInlineStructTestStruct<'_>, element),
+    0
+);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireNonInlineStructTestStruct<'_>, h), 8);
 
 unsafe impl ::fidl_next::Wire for WireNonInlineStructTestStruct<'static> {
     type Decoded<'de> = WireNonInlineStructTestStruct<'de>;
@@ -862,6 +887,14 @@ pub struct WireStructPaddingTestStruct {
 
     pub array: crate::WireArrayInt16Int8,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructPaddingTestStruct>(), 24);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructPaddingTestStruct>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructPaddingTestStruct, trailing), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructPaddingTestStruct, inner), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructPaddingTestStruct, array), 12);
 
 unsafe impl ::fidl_next::Wire for WireStructPaddingTestStruct {
     type Decoded<'de> = WireStructPaddingTestStruct;
@@ -1002,6 +1035,12 @@ pub struct WireTopLevelStruct<'de> {
 
     pub b: crate::WireNonInlineStructTestStruct<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireTopLevelStruct<'_>>(), 40);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireTopLevelStruct<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTopLevelStruct<'_>, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTopLevelStruct<'_>, b), 24);
 
 unsafe impl ::fidl_next::Wire for WireTopLevelStruct<'static> {
     type Decoded<'de> = WireTopLevelStruct<'de>;

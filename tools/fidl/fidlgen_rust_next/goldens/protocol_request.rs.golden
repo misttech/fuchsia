@@ -204,6 +204,10 @@ impl ::fidl_next::IntoNatural for WireParentGetChildResponse {
 pub struct WireParentGetChildResponse {
     pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireParentGetChildResponse>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireParentGetChildResponse>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireParentGetChildResponse, c), 0);
 
 unsafe impl ::fidl_next::Wire for WireParentGetChildResponse {
     type Decoded<'de> = WireParentGetChildResponse;
@@ -350,6 +354,10 @@ impl ::fidl_next::IntoNatural for WireParentGetChildRequestResponse {
 pub struct WireParentGetChildRequestResponse {
     pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireParentGetChildRequestResponse>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireParentGetChildRequestResponse>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireParentGetChildRequestResponse, r), 0);
 
 unsafe impl ::fidl_next::Wire for WireParentGetChildRequestResponse {
     type Decoded<'de> = WireParentGetChildRequestResponse;
@@ -490,6 +498,10 @@ impl ::fidl_next::IntoNatural for WireParentTakeChildRequest {
 pub struct WireParentTakeChildRequest {
     pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireParentTakeChildRequest>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireParentTakeChildRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireParentTakeChildRequest, c), 0);
 
 unsafe impl ::fidl_next::Wire for WireParentTakeChildRequest {
     type Decoded<'de> = WireParentTakeChildRequest;
@@ -636,6 +648,10 @@ impl ::fidl_next::IntoNatural for WireParentTakeChildRequestRequest {
 pub struct WireParentTakeChildRequestRequest {
     pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireParentTakeChildRequestRequest>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireParentTakeChildRequestRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireParentTakeChildRequestRequest, r), 0);
 
 unsafe impl ::fidl_next::Wire for WireParentTakeChildRequestRequest {
     type Decoded<'de> = WireParentTakeChildRequestRequest;

@@ -290,6 +290,35 @@ pub struct WireArrayBasic<'de> {
 
     pub array_opt_string: [::fidl_next::WireOptionalString<'de>; 5],
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireArrayBasic<'_>>(), 384);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireArrayBasic<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_uint8), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_uint16), 6);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_uint32), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_uint64), 40);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_int8), 80);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_int16), 86);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_int32), 96);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_int64), 120);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_float32), 160);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_float64), 184);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayBasic<'_>, array_string), 224);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayBasic<'_>, array_opt_string),
+    304
+);
 
 unsafe impl ::fidl_next::Wire for WireArrayBasic<'static> {
     type Decoded<'de> = WireArrayBasic<'de>;
@@ -771,6 +800,8 @@ impl ::fidl_next::FromWireRef<WireStruct> for Struct {
 pub struct WireStruct {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStruct>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStruct>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireStruct {
     type Decoded<'de> = WireStruct;
@@ -1504,6 +1535,28 @@ pub struct WireArrayCompound<'de> {
 
     pub array_opt_union: [crate::WireOptionalUnion<'de>; 5],
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireArrayCompound<'_>>(), 328);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireArrayCompound<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayCompound<'_>, array_bits), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayCompound<'_>, array_enum), 20);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayCompound<'_>, array_struct), 40);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayCompound<'_>, array_table), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireArrayCompound<'_>, array_union), 128);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayCompound<'_>, array_opt_struct),
+    208
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayCompound<'_>, array_opt_union),
+    248
+);
 
 unsafe impl ::fidl_next::Wire for WireArrayCompound<'static> {
     type Decoded<'de> = WireArrayCompound<'de>;
@@ -1765,6 +1818,28 @@ pub struct WireArrayVectorNested<'de> {
 
     pub vector_vector_uint8: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, u8>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireArrayVectorNested<'_>>(), 144);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireArrayVectorNested<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayVectorNested<'_>, array_array_uint8),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayVectorNested<'_>, array_vector_uint8),
+    32
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayVectorNested<'_>, vector_array_uint8),
+    112
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireArrayVectorNested<'_>, vector_vector_uint8),
+    128
+);
 
 unsafe impl ::fidl_next::Wire for WireArrayVectorNested<'static> {
     type Decoded<'de> = WireArrayVectorNested<'de>;
@@ -2116,6 +2191,32 @@ pub struct WireBasic<'de> {
 
     pub opt_string: ::fidl_next::WireOptionalString<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireBasic<'_>>(), 80);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireBasic<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, uint8), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, uint16), 2);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, uint32), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, uint64), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, int8), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, int16), 18);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, int32), 20);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, int64), 24);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, float32), 32);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, float64), 40);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, string), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasic<'_>, opt_string), 64);
 
 unsafe impl ::fidl_next::Wire for WireBasic<'static> {
     type Decoded<'de> = WireBasic<'de>;
@@ -2453,6 +2554,22 @@ pub struct WireCompound<'de> {
 
     pub opt_union: crate::WireOptionalUnion<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireCompound<'_>>(), 72);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireCompound<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, bits), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, enum_), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, struct_), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, table), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, union), 32);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, opt_struct), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireCompound<'_>, opt_union), 56);
 
 unsafe impl ::fidl_next::Wire for WireCompound<'static> {
     type Decoded<'de> = WireCompound<'de>;
@@ -2822,6 +2939,35 @@ pub struct WireVectorBasic<'de> {
 
     pub vector_opt_string: ::fidl_next::WireVector<'de, ::fidl_next::WireOptionalString<'de>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireVectorBasic<'_>>(), 192);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireVectorBasic<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_uint8), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_uint16), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_uint32), 32);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_uint64), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_int8), 64);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_int16), 80);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_int32), 96);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_int64), 112);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_float32), 128);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_float64), 144);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorBasic<'_>, vector_string), 160);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorBasic<'_>, vector_opt_string),
+    176
+);
 
 unsafe impl ::fidl_next::Wire for WireVectorBasic<'static> {
     type Decoded<'de> = WireVectorBasic<'de>;
@@ -3149,6 +3295,31 @@ pub struct WireVectorCompound<'de> {
 
     pub vector_opt_union: ::fidl_next::WireVector<'de, crate::WireOptionalUnion<'de>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireVectorCompound<'_>>(), 112);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireVectorCompound<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorCompound<'_>, vector_bits), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorCompound<'_>, vector_enum), 16);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorCompound<'_>, vector_struct),
+    32
+);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorCompound<'_>, vector_table), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireVectorCompound<'_>, vector_union), 64);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorCompound<'_>, vector_opt_struct),
+    80
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorCompound<'_>, vector_opt_union),
+    96
+);
 
 unsafe impl ::fidl_next::Wire for WireVectorCompound<'static> {
     type Decoded<'de> = WireVectorCompound<'de>;
@@ -3411,6 +3582,28 @@ pub struct WireVectorOptional<'de> {
     pub opt_vector_opt_struct:
         ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireBox<'de, crate::WireStruct>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireVectorOptional<'_>>(), 64);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireVectorOptional<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorOptional<'_>, opt_vector_uint8),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorOptional<'_>, opt_vector_string),
+    16
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorOptional<'_>, opt_vector_struct),
+    32
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireVectorOptional<'_>, opt_vector_opt_struct),
+    48
+);
 
 unsafe impl ::fidl_next::Wire for WireVectorOptional<'static> {
     type Decoded<'de> = WireVectorOptional<'de>;
@@ -3541,6 +3734,8 @@ impl ::fidl_next::IntoNatural for WireResourceStruct {
 pub struct WireResourceStruct {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireResourceStruct>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireResourceStruct>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireResourceStruct {
     type Decoded<'de> = WireResourceStruct;
@@ -4277,6 +4472,62 @@ pub struct WireResource<'de> {
 
     pub vector_union: ::fidl_next::WireVector<'de, crate::WireResourceUnion<'de>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireResource<'_>>(), 456);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireResource<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, handle), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vmo), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, client_end), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, server_end), 12);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, struct_), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, table), 24);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, union), 40);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, opt_handle), 56);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, opt_vmo), 60);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, opt_client_end), 64);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, opt_server_end), 68);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, opt_struct), 72);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, opt_union), 80);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_handle), 96);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_vmo), 116);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_client_end), 136);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_server_end), 156);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_struct), 176);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_table), 184);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, array_union), 264);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_handle), 344);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_vmo), 360);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_client_end), 376);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_server_end), 392);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_struct), 408);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_table), 424);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireResource<'_>, vector_union), 440);
 
 unsafe impl ::fidl_next::Wire for WireResource<'static> {
     type Decoded<'de> = WireResource<'de>;

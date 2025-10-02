@@ -853,6 +853,19 @@ impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestStrictResponseFlexibleRequ
 pub struct WireProtocolRequestStrictResponseFlexibleRequest<'de> {
     pub s: crate::WireStrictFoo<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireProtocolRequestStrictResponseFlexibleRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireProtocolRequestStrictResponseFlexibleRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireProtocolRequestStrictResponseFlexibleRequest<'_>, s),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireProtocolRequestStrictResponseFlexibleRequest<'static> {
     type Decoded<'de> = WireProtocolRequestStrictResponseFlexibleRequest<'de>;
@@ -1031,6 +1044,19 @@ impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestStrictResponseFlexibleResp
 pub struct WireProtocolRequestStrictResponseFlexibleResponse<'de> {
     pub f: crate::WireFlexibleFoo<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireProtocolRequestStrictResponseFlexibleResponse<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireProtocolRequestStrictResponseFlexibleResponse<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireProtocolRequestStrictResponseFlexibleResponse<'_>, f),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireProtocolRequestStrictResponseFlexibleResponse<'static> {
     type Decoded<'de> = WireProtocolRequestStrictResponseFlexibleResponse<'de>;
@@ -1209,6 +1235,19 @@ impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestFlexibleResponseStrictRequ
 pub struct WireProtocolRequestFlexibleResponseStrictRequest<'de> {
     pub s: crate::WireFlexibleFoo<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireProtocolRequestFlexibleResponseStrictRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireProtocolRequestFlexibleResponseStrictRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireProtocolRequestFlexibleResponseStrictRequest<'_>, s),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireProtocolRequestFlexibleResponseStrictRequest<'static> {
     type Decoded<'de> = WireProtocolRequestFlexibleResponseStrictRequest<'de>;
@@ -1387,6 +1426,19 @@ impl<'de> ::fidl_next::FromWireRef<WireProtocolRequestFlexibleResponseStrictResp
 pub struct WireProtocolRequestFlexibleResponseStrictResponse<'de> {
     pub f: crate::WireStrictFoo<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireProtocolRequestFlexibleResponseStrictResponse<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireProtocolRequestFlexibleResponseStrictResponse<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireProtocolRequestFlexibleResponseStrictResponse<'_>, f),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireProtocolRequestFlexibleResponseStrictResponse<'static> {
     type Decoded<'de> = WireProtocolRequestFlexibleResponseStrictResponse<'de>;

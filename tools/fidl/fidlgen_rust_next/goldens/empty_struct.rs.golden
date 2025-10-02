@@ -124,6 +124,8 @@ impl ::fidl_next::FromWireRef<WireEmpty> for Empty {
 pub struct WireEmpty {
     _empty: fidl_next::WireEmptyStructPlaceholder,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireEmpty>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireEmpty>(), 1);
 
 unsafe impl ::fidl_next::Wire for WireEmpty {
     type Decoded<'de> = WireEmpty;
@@ -304,6 +306,10 @@ impl ::fidl_next::FromWireRef<WireEmptyProtocolSendRequest> for EmptyProtocolSen
 pub struct WireEmptyProtocolSendRequest {
     pub e: crate::WireEmpty,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireEmptyProtocolSendRequest>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireEmptyProtocolSendRequest>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireEmptyProtocolSendRequest, e), 0);
 
 unsafe impl ::fidl_next::Wire for WireEmptyProtocolSendRequest {
     type Decoded<'de> = WireEmptyProtocolSendRequest;
@@ -486,6 +492,10 @@ impl ::fidl_next::FromWireRef<WireEmptyProtocolReceiveRequest> for EmptyProtocol
 pub struct WireEmptyProtocolReceiveRequest {
     pub e: crate::WireEmpty,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireEmptyProtocolReceiveRequest>(), 1);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireEmptyProtocolReceiveRequest>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireEmptyProtocolReceiveRequest, e), 0);
 
 unsafe impl ::fidl_next::Wire for WireEmptyProtocolReceiveRequest {
     type Decoded<'de> = WireEmptyProtocolReceiveRequest;
@@ -678,6 +688,19 @@ impl ::fidl_next::FromWireRef<WireEmptyProtocolSendAndReceiveRequest>
 pub struct WireEmptyProtocolSendAndReceiveRequest {
     pub e: crate::WireEmpty,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireEmptyProtocolSendAndReceiveRequest>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireEmptyProtocolSendAndReceiveRequest>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireEmptyProtocolSendAndReceiveRequest, e),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireEmptyProtocolSendAndReceiveRequest {
     type Decoded<'de> = WireEmptyProtocolSendAndReceiveRequest;
@@ -870,6 +893,19 @@ impl ::fidl_next::FromWireRef<WireEmptyProtocolSendAndReceiveResponse>
 pub struct WireEmptyProtocolSendAndReceiveResponse {
     pub e: crate::WireEmpty,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireEmptyProtocolSendAndReceiveResponse>(),
+    1
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireEmptyProtocolSendAndReceiveResponse>(),
+    1
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireEmptyProtocolSendAndReceiveResponse, e),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireEmptyProtocolSendAndReceiveResponse {
     type Decoded<'de> = WireEmptyProtocolSendAndReceiveResponse;

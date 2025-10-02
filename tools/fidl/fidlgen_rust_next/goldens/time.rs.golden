@@ -199,6 +199,16 @@ pub struct WireAllInstants {
 
     pub boot_ticks: ::fidl_next::WireI64,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireAllInstants>(), 32);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireAllInstants>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireAllInstants, monotonic), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireAllInstants, boot), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireAllInstants, monotonic_ticks), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireAllInstants, boot_ticks), 24);
 
 unsafe impl ::fidl_next::Wire for WireAllInstants {
     type Decoded<'de> = WireAllInstants;

@@ -101,6 +101,10 @@ impl ::fidl_next::IntoNatural for WireClientEndWrapper {
 pub struct WireClientEndWrapper {
     pub value: ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireClientEndWrapper>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireClientEndWrapper>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireClientEndWrapper, value), 0);
 
 unsafe impl ::fidl_next::Wire for WireClientEndWrapper {
     type Decoded<'de> = WireClientEndWrapper;
@@ -545,6 +549,19 @@ impl<'de> ::fidl_next::IntoNatural for WireHandlesInProtocolSendHandlesRequest<'
 pub struct WireHandlesInProtocolSendHandlesRequest<'de> {
     pub t: crate::WireT<'de>,
 }
+static_assertions::const_assert_eq!(
+    std::mem::size_of::<WireHandlesInProtocolSendHandlesRequest<'_>>(),
+    16
+);
+static_assertions::const_assert_eq!(
+    std::mem::align_of::<WireHandlesInProtocolSendHandlesRequest<'_>>(),
+    8
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandlesInProtocolSendHandlesRequest<'_>, t),
+    0
+);
 
 unsafe impl ::fidl_next::Wire for WireHandlesInProtocolSendHandlesRequest<'static> {
     type Decoded<'de> = WireHandlesInProtocolSendHandlesRequest<'de>;
@@ -891,6 +908,10 @@ impl ::fidl_next::IntoNatural for WireServerEndWrapper {
 pub struct WireServerEndWrapper {
     pub value: ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireServerEndWrapper>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireServerEndWrapper>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireServerEndWrapper, value), 0);
 
 unsafe impl ::fidl_next::Wire for WireServerEndWrapper {
     type Decoded<'de> = WireServerEndWrapper;

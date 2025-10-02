@@ -150,6 +150,12 @@ pub struct WireBasicStruct<'de> {
 
     pub y: ::fidl_next::WireString<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireBasicStruct<'_>>(), 24);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireBasicStruct<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasicStruct<'_>, x), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireBasicStruct<'_>, y), 8);
 
 unsafe impl ::fidl_next::Wire for WireBasicStruct<'static> {
     type Decoded<'de> = WireBasicStruct<'de>;
@@ -362,6 +368,12 @@ pub struct WireSimple {
 
     pub f2: bool,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireSimple>(), 2);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireSimple>(), 1);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireSimple, f1), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireSimple, f2), 1);
 
 unsafe impl ::fidl_next::Wire for WireSimple {
     type Decoded<'de> = WireSimple;

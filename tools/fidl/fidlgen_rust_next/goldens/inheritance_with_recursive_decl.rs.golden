@@ -101,6 +101,10 @@ impl ::fidl_next::IntoNatural for WireParentFirstRequest {
 pub struct WireParentFirstRequest {
     pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireParentFirstRequest>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireParentFirstRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireParentFirstRequest, request), 0);
 
 unsafe impl ::fidl_next::Wire for WireParentFirstRequest {
     type Decoded<'de> = WireParentFirstRequest;
@@ -452,6 +456,10 @@ impl ::fidl_next::IntoNatural for WireChildSecondRequest {
 pub struct WireChildSecondRequest {
     pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireChildSecondRequest>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireChildSecondRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireChildSecondRequest, request), 0);
 
 unsafe impl ::fidl_next::Wire for WireChildSecondRequest {
     type Decoded<'de> = WireChildSecondRequest;

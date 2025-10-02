@@ -144,6 +144,10 @@ impl ::fidl_next::FromWireRef<WireInt32Wrapper> for Int32Wrapper {
 pub struct WireInt32Wrapper {
     pub val: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireInt32Wrapper>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireInt32Wrapper>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireInt32Wrapper, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireInt32Wrapper {
     type Decoded<'de> = WireInt32Wrapper;
@@ -347,6 +351,12 @@ pub struct WireSimpleProtocolAddRequest {
 
     pub b: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireSimpleProtocolAddRequest>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireSimpleProtocolAddRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireSimpleProtocolAddRequest, a), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireSimpleProtocolAddRequest, b), 4);
 
 unsafe impl ::fidl_next::Wire for WireSimpleProtocolAddRequest {
     type Decoded<'de> = WireSimpleProtocolAddRequest;
@@ -535,6 +545,10 @@ impl ::fidl_next::FromWireRef<WireSimpleProtocolAddResponse> for SimpleProtocolA
 pub struct WireSimpleProtocolAddResponse {
     pub sum: ::fidl_next::WireI32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireSimpleProtocolAddResponse>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireSimpleProtocolAddResponse>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireSimpleProtocolAddResponse, sum), 0);
 
 unsafe impl ::fidl_next::Wire for WireSimpleProtocolAddResponse {
     type Decoded<'de> = WireSimpleProtocolAddResponse;
@@ -1291,6 +1305,10 @@ impl ::fidl_next::IntoNatural for WireStructWithNullableHandle {
 pub struct WireStructWithNullableHandle {
     pub val: ::fidl_next::fuchsia::WireOptionalVmo,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableHandle>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableHandle>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableHandle, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableHandle {
     type Decoded<'de> = WireStructWithNullableHandle;
@@ -1435,6 +1453,10 @@ pub struct WireStructWithNullableProtocol {
     pub val:
         ::fidl_next::ClientEnd<crate::SimpleProtocol, ::fidl_next::fuchsia::WireOptionalChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableProtocol>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableProtocol>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableProtocol, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableProtocol {
     type Decoded<'de> = WireStructWithNullableProtocol;
@@ -1579,6 +1601,10 @@ pub struct WireStructWithNullableRequest {
     pub val:
         ::fidl_next::ServerEnd<crate::SimpleProtocol, ::fidl_next::fuchsia::WireOptionalChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableRequest>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableRequest, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableRequest {
     type Decoded<'de> = WireStructWithNullableRequest;
@@ -1750,6 +1776,10 @@ impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableString<'de>> for Struct
 pub struct WireStructWithNullableString<'de> {
     pub val: ::fidl_next::WireOptionalString<'de>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableString<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableString<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableString<'_>, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableString<'static> {
     type Decoded<'de> = WireStructWithNullableString<'de>;
@@ -1921,6 +1951,10 @@ impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableStruct<'de>> for Struct
 pub struct WireStructWithNullableStruct<'de> {
     pub val: ::fidl_next::WireBox<'de, crate::WireInt32Wrapper>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableStruct<'_>>(), 8);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableStruct<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableStruct<'_>, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableStruct<'static> {
     type Decoded<'de> = WireStructWithNullableStruct<'de>;
@@ -2113,6 +2147,10 @@ impl ::fidl_next::FromWireRef<WireStructWithNullableUnion> for StructWithNullabl
 pub struct WireStructWithNullableUnion {
     pub val: crate::WireOptionalSimpleUnion,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableUnion>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableUnion>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableUnion, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableUnion {
     type Decoded<'de> = WireStructWithNullableUnion;
@@ -2283,6 +2321,10 @@ impl<'de> ::fidl_next::FromWireRef<WireStructWithNullableVector<'de>> for Struct
 pub struct WireStructWithNullableVector<'de> {
     pub val: ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireI32>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireStructWithNullableVector<'_>>(), 16);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireStructWithNullableVector<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireStructWithNullableVector<'_>, val), 0);
 
 unsafe impl ::fidl_next::Wire for WireStructWithNullableVector<'static> {
     type Decoded<'de> = WireStructWithNullableVector<'de>;

@@ -245,6 +245,14 @@ pub struct WireFdfHandles {
     pub server_end_driver:
         ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireFdfHandles>(), 12);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireFdfHandles>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireFdfHandles, fdf_channel_handle), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireFdfHandles, client_end_driver), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireFdfHandles, server_end_driver), 8);
 
 unsafe impl ::fidl_next::Wire for WireFdfHandles {
     type Decoded<'de> = WireFdfHandles;
@@ -1014,6 +1022,87 @@ pub struct WireHandles {
     pub request_some_protocol:
         ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireHandles>(), 140);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireHandles>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, plain_handle), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, bti_handle), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, channel_handle), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, clock_handle), 12);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, debuglog_handle), 16);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, event_handle), 20);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, eventpair_handle), 24);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, exception_handle), 28);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, fifo_handle), 32);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, guest_handle), 36);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, interrupt_handle), 40);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, iob_handle), 44);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, iommu_handle), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, job_handle), 52);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, msi_handle), 56);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, pager_handle), 60);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, pmt_handle), 64);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, port_handle), 68);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, process_handle), 72);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, profile_handle), 76);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, resource_handle), 80);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, socket_handle), 84);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, stream_handle), 88);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, suspendtoken_handle), 92);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, thread_handle), 96);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, timer_handle), 100);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, vcpu_handle), 104);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, vmar_handle), 108);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, vmo_handle), 112);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, rights_handle), 116);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandles, aliased_plain_handle_field),
+    120
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandles, aliased_subtype_handle_field),
+    124
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireHandles, aliased_rights_handle_field),
+    128
+);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, some_protocol), 132);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, request_some_protocol), 136);
 
 unsafe impl ::fidl_next::Wire for WireHandles {
     type Decoded<'de> = WireHandles;

@@ -486,6 +486,64 @@ pub struct WireTesting<'de> {
 
     pub aa3: [[::fidl_next::WireU64; 2]; 3],
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireTesting<'_>>(), 704);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireTesting<'_>>(), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u1), 0);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u2), 8);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u3), 24);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u4), 32);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u5), 48);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u6), 64);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u7), 128);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, v1), 160);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, v2), 176);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, v3), 192);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, a1), 256);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, a2), 264);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, a3), 280);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, r1), 312);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, r2), 320);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, r3), 336);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, b1), 352);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, b2), 368);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, b3), 384);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, s1), 448);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, s2), 464);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, s3), 480);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, vv1), 544);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, vv2), 560);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, vv3), 576);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, aa1), 624);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, aa2), 640);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, aa3), 656);
 
 unsafe impl ::fidl_next::Wire for WireTesting<'static> {
     type Decoded<'de> = WireTesting<'de>;

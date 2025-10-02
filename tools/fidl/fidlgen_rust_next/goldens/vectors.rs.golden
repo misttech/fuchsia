@@ -162,6 +162,18 @@ pub struct WireExampleUseOfVectors<'de> {
 
     pub vector_of_vector_of_bool: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, bool>>,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleUseOfVectors<'_>>(), 32);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleUseOfVectors<'_>>(), 8);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleUseOfVectors<'_>, vector_of_uint8),
+    0
+);
+
+static_assertions::const_assert_eq!(
+    std::mem::offset_of!(WireExampleUseOfVectors<'_>, vector_of_vector_of_bool),
+    16
+);
 
 unsafe impl ::fidl_next::Wire for WireExampleUseOfVectors<'static> {
     type Decoded<'de> = WireExampleUseOfVectors<'de>;

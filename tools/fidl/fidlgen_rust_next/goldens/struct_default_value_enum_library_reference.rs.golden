@@ -151,6 +151,10 @@ impl ::fidl_next::FromWireRef<WireFoo> for Foo {
 pub struct WireFoo {
     pub field: ::fidl_next_test_dependent::WireMyEnum,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireFoo>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireFoo>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireFoo, field), 0);
 
 unsafe impl ::fidl_next::Wire for WireFoo {
     type Decoded<'de> = WireFoo;

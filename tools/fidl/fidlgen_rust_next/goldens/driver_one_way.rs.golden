@@ -144,6 +144,10 @@ impl ::fidl_next::FromWireRef<WirePayload> for Payload {
 pub struct WirePayload {
     pub value: ::fidl_next::WireU32,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WirePayload>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WirePayload>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WirePayload, value), 0);
 
 unsafe impl ::fidl_next::Wire for WirePayload {
     type Decoded<'de> = WirePayload;
@@ -327,6 +331,10 @@ impl ::fidl_next::FromWireRef<WireOneWaySendRequest> for OneWaySendRequest {
 pub struct WireOneWaySendRequest {
     pub payload: crate::WirePayload,
 }
+static_assertions::const_assert_eq!(std::mem::size_of::<WireOneWaySendRequest>(), 4);
+static_assertions::const_assert_eq!(std::mem::align_of::<WireOneWaySendRequest>(), 4);
+
+static_assertions::const_assert_eq!(std::mem::offset_of!(WireOneWaySendRequest, payload), 0);
 
 unsafe impl ::fidl_next::Wire for WireOneWaySendRequest {
     type Decoded<'de> = WireOneWaySendRequest;
