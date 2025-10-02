@@ -282,6 +282,12 @@ where
             } = slot_;
         }
 
+        {% if is_empty %}
+            if _empty.as_bytes() != &[0u8] {
+                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
+            }
+        {% endif %}
+
         {% for member in strct.members %}
             {% let member_name = filters::escape_snake(member.name) %}
             ::fidl_next::Decode::decode({{ member_name }}.as_mut(), decoder_)?;

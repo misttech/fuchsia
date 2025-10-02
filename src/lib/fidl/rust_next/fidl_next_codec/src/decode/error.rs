@@ -144,4 +144,8 @@ pub enum DecodeError {
         /// The number of handles left over after decoding finished
         num_extra: usize,
     },
+
+    /// Invalid empty struct
+    #[error("invalid empty struct")]
+    InvalidEmptyStruct,
 }

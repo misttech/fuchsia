@@ -160,6 +160,10 @@ where
             } = slot_;
         }
 
+        if _empty.as_bytes() != &[0u8] {
+            return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
+        }
+
         Ok(())
     }
 }
