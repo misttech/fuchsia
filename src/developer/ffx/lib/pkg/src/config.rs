@@ -79,7 +79,6 @@ pub async fn get_default_repository(context: &EnvironmentContext) -> Result<Opti
 
 /// Sets the default repository from the config.
 pub async fn set_default_repository(context: &EnvironmentContext, repo_name: &str) -> Result<()> {
-    ffx_config::invalidate_global_cache(); // Necessary when the daemon does some writes and the CLI does others
     context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
