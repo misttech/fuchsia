@@ -165,10 +165,9 @@ async fn implementation(
         )));
     }
 
-    let (socket_path, found_config) = ffx_config::build()
-        .context(Some(&ctx))
+    let (socket_path, found_config) = &ctx
+        .query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
         .level(Some(ffx_config::ConfigLevel::Runtime))
-        .name(Some(usb_driver_api::CONFIG_USB_SOCKET_PATH))
         .get::<PathBuf>()
         .map(|x| (x, true))
         .or_else(|_| -> fho::Result<_> {
@@ -177,13 +176,7 @@ async fn implementation(
                 .map_err(|e| fho::Error::Unexpected(e.into()))
         })?;
 
-    if !found_config
-        && ffx_config::build()
-            .context(Some(&ctx))
-            .name(Some(usb_driver_api::CONFIG_USB_SOCKET_PATH))
-            .get::<String>()
-            .is_ok()
-    {
+    if !found_config && ctx.query(usb_driver_api::CONFIG_USB_SOCKET_PATH).get::<String>().is_ok() {
         return Err(fho::Error::User(anyhow::anyhow!(
             "{} must be set on the command line",
             usb_driver_api::CONFIG_USB_SOCKET_PATH
@@ -211,6 +204,6 @@ async fn implementation(
     if let Some(serial) = &command.serial {
         log::info!("Only interacting with devices with serial {serial}");
     }
-    usb_driver_impl::HostDriver::run(socket_path, log_path, command.serial).await;
+    usb_driver_impl::HostDriver::run(socket_path.to_path_buf(), log_path, command.serial).await;
     Ok(ExitStatus::from_raw(0))
 }
