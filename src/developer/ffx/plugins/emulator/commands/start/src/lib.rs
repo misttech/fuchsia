@@ -2039,22 +2039,24 @@ mod tests {
         let pb = ProductBundle::V2(pb);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
 
-        ffx_config::query(ConfigQuery {
-            name: Some("emu.vbmeta.key"),
-            ctx: Some(&env.context),
-            level: Some(ConfigLevel::User),
-            ..Default::default()
-        })
-        .set("/some/vbmeta/key".into())
-        .unwrap();
-        ffx_config::query(ConfigQuery {
-            name: Some("emu.vbmeta.metadata"),
-            ctx: Some(&env.context),
-            level: Some(ConfigLevel::User),
-            ..Default::default()
-        })
-        .set("/some/vbmeta/metadata".into())
-        .unwrap();
+        env.context
+            .query(ConfigQuery {
+                name: Some("emu.vbmeta.key"),
+                ctx: Some(&env.context),
+                level: Some(ConfigLevel::User),
+                ..Default::default()
+            })
+            .set("/some/vbmeta/key".into())
+            .unwrap();
+        env.context
+            .query(ConfigQuery {
+                name: Some("emu.vbmeta.metadata"),
+                ctx: Some(&env.context),
+                level: Some(ConfigLevel::User),
+                ..Default::default()
+            })
+            .set("/some/vbmeta/metadata".into())
+            .unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let tmpfile = tmp.path().display().to_string();
@@ -2105,22 +2107,24 @@ mod tests {
         let pb = ProductBundle::V2(pb);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
 
-        ffx_config::query(ConfigQuery {
-            name: Some("emu.vbmeta.key"),
-            ctx: Some(&env.context),
-            level: Some(ConfigLevel::User),
-            ..Default::default()
-        })
-        .set("/some/vbmeta/key".into())
-        .unwrap();
-        ffx_config::query(ConfigQuery {
-            name: Some("emu.vbmeta.metadata"),
-            ctx: Some(&env.context),
-            level: Some(ConfigLevel::User),
-            ..Default::default()
-        })
-        .set("/some/vbmeta/metadata".into())
-        .unwrap();
+        env.context
+            .query(ConfigQuery {
+                name: Some("emu.vbmeta.key"),
+                ctx: Some(&env.context),
+                level: Some(ConfigLevel::User),
+                ..Default::default()
+            })
+            .set("/some/vbmeta/key".into())
+            .unwrap();
+        env.context
+            .query(ConfigQuery {
+                name: Some("emu.vbmeta.metadata"),
+                ctx: Some(&env.context),
+                level: Some(ConfigLevel::User),
+                ..Default::default()
+            })
+            .set("/some/vbmeta/metadata".into())
+            .unwrap();
 
         let cmd = StartCommand {
             uefi: true,
