@@ -40,6 +40,6 @@ pub mod macro_deps {
     pub use ffx_command::{
         Ffx, ToolRunner, bug, check_strict_constraints, return_bug, return_user_error,
     };
-    pub use ffx_config::{EnvironmentContext, global_env_context};
+    pub use ffx_config::EnvironmentContext;
     pub use {crate as fho, anyhow, argh, async_lock, futures, serde, writer};
 }

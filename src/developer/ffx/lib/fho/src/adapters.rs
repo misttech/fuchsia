@@ -17,7 +17,7 @@ macro_rules! embedded_plugin {
             use $crate::FfxMain as _;
             #[allow(unused_imports)]
             use $crate::macro_deps::{
-                argh, bug, check_strict_constraints, global_env_context, return_bug,
+                argh, bug, check_strict_constraints, return_bug,
                 writer::{Format, ToolIO},
             };
 
