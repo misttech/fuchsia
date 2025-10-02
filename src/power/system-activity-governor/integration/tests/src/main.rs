@@ -166,7 +166,9 @@ macro_rules! block_until_inspect_matches {
                     }
                     if  i >= $loop_iter {  // upper bound, so test terminates on mismatch
                         // Print the actual, so we know why the match failed if it does.
-                        return Err(anyhow::anyhow!("err: {}: last observed:\n{}", error, serde_json::to_string_pretty(&data).unwrap()));
+                        let mut sorted = data.clone();
+                        sorted.sort();
+                        return Err(anyhow::anyhow!("err: {}: last observed:\n{}", error, serde_json::to_string_pretty(&sorted).unwrap()));
                     }
                 }
             }
