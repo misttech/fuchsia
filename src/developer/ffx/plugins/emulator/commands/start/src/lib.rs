@@ -129,6 +129,7 @@ pub struct EmuStartTool<T: EngineOperations> {
     #[command]
     cmd: StartCommand,
     engine_operations: T,
+    context: EnvironmentContext
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -201,7 +202,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
         emulator_configuration.guest.is_gpt = self.cmd.uefi;
         emulator_configuration.guest.product_bundle_path = product_bundle_path;
         let engine_type =
-            EngineType::from_str(&self.cmd.engine().unwrap_or_else(|_| "femu".to_string()))
+            EngineType::from_str(&self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()))
                 .context("Reading engine type from ffx config.")?;
 
         // Get the staged instance, if any
@@ -375,7 +376,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
     ) -> Result<Option<LoadedProductBundle>> {
         // name is important to not be empty since it is used to
         // create a directory path.
-        let mut name = self.cmd.name()?;
+        let mut name = self.cmd.name(&self.context)?;
         if self.cmd.name.is_none() || name == "" {
             if name == "" {
                 name = DEFAULT_NAME.into();
@@ -408,17 +409,17 @@ impl<T: EngineOperations> EmuStartTool<T> {
                 return Ok(Some(loaded_product_bundle));
             }
 
-            let gpu = self.cmd.gpu()?;
+            let gpu = self.cmd.gpu(&self.context)?;
             if self.cmd.gpu.is_none() && gpu != "" {
                 self.cmd.gpu = Some(gpu);
             }
 
-            let net = self.cmd.net()?;
+            let net = self.cmd.net(&self.context)?;
             if self.cmd.net.is_none() && net != "" {
                 self.cmd.net = Some(net);
             }
 
-            let startup_timeout = self.cmd.startup_timeout()?;
+            let startup_timeout = self.cmd.startup_timeout(&self.context)?;
             if self.cmd.startup_timeout.is_none() && startup_timeout > 0 {
                 self.cmd.startup_timeout = Some(startup_timeout);
             }
@@ -435,7 +436,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
                     )
                 }
                 // Virtual device spec name
-                if let Some(device_name) = self.cmd.device()? {
+                if let Some(device_name) = self.cmd.device(&self.context)? {
                     if self.cmd.device.is_none() && device_name != "" {
                         self.cmd.device = Some(device_name);
                     } else {
@@ -476,7 +477,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
         writer: &mut <EmuStartTool<T> as fho::FfxMain>::Writer,
         target_arch: CpuArchitecture,
     ) -> Result<String> {
-        let config_default_engine = self.cmd.engine()?;
+        let config_default_engine = self.cmd.engine(&self.context)?;
         let is_uefi = self.cmd.uefi;
 
         // The android emulator (femu) doesn't support cross-cpu virtualization,
@@ -550,7 +551,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
             return Ok((true, engine));
         } else {
             let engine_type =
-                EngineType::from_str(&self.cmd.engine().unwrap_or_else(|_| "femu".to_string()))
+                EngineType::from_str(&self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()))
                     .context("Reading engine type from ffx config.")?;
             engine = self.engine_operations.new_engine(&new_config, engine_type).await?;
             let config = engine.emu_config_mut();
@@ -745,8 +746,8 @@ mod tests {
         })
     }
 
-    async fn make_test_emu_start_tool(cmd: StartCommand) -> EmuStartTool<MockEngineOperations> {
-        EmuStartTool { cmd, engine_operations: MockEngineOperations::new() }
+    async fn make_test_emu_start_tool(context: &EnvironmentContext, cmd: StartCommand) -> EmuStartTool<MockEngineOperations> {
+        EmuStartTool {context: context.clone(), cmd, engine_operations: MockEngineOperations::new() }
     }
 
     async fn make_fake_sdk(env: &TestEnv<'_>) {
@@ -788,7 +789,7 @@ mod tests {
         make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_get_engine_by_name()
@@ -830,7 +831,7 @@ mod tests {
         make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations.expect_get_emu_instances().times(0);
         tool.engine_operations
@@ -884,7 +885,7 @@ mod tests {
         make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_new_engine()
@@ -932,7 +933,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_new_engine()
@@ -983,7 +984,7 @@ mod tests {
 
         let cmd = StartCommand { reuse: true, net: Some("user".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let reused_config = make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
             .await
@@ -1030,7 +1031,7 @@ mod tests {
 
         let cmd = StartCommand { reuse: true, net: Some("user".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_new_engine()
@@ -1081,7 +1082,7 @@ mod tests {
         let pb = ProductBundle::V2(make_test_product_bundle(env.isolate_root.path())?);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let reused_config = make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
             .await
@@ -1131,7 +1132,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_new_engine()
@@ -1174,7 +1175,7 @@ mod tests {
 
         let cmd = StartCommand { stage: true, net: Some("user".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_new_engine()
@@ -1216,7 +1217,7 @@ mod tests {
 
         let cmd = StartCommand::default();
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
         tool.engine_operations
             .expect_new_engine()
             .returning(|_, _| {
@@ -1262,7 +1263,7 @@ mod tests {
 
         let cmd = StartCommand { reuse: true, net: Some("user".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let reused_config = make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
             .await
@@ -1304,7 +1305,7 @@ mod tests {
 
         let cmd = StartCommand { config: Some("filename".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations.expect_get_engine_by_name().returning(|_| Ok(None)).times(1);
 
@@ -1340,7 +1341,7 @@ mod tests {
 
         let cmd = StartCommand { edit: true, ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_new_engine()
@@ -1398,7 +1399,7 @@ mod tests {
 
         let cmd = StartCommand::default();
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations.expect_context().returning(move || env_context.clone()).times(2);
         tool.engine_operations
@@ -1462,7 +1463,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         // Only load the product bundle once.
         tool.engine_operations
@@ -1520,7 +1521,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let mut matching_config =
             make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
@@ -1612,7 +1613,7 @@ mod tests {
 
         // Make the test instance of the tool, this uses mocks for the engine_operations
         // object.
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         // Create the configuration that is based on the command line and the product bundle.
         let mut emulator_configuration =
@@ -1652,7 +1653,7 @@ mod tests {
 
         let cmd = StartCommand { name: Some("test-instance-name".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1680,7 +1681,7 @@ mod tests {
 
         let cmd = StartCommand { uefi: true, ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1717,7 +1718,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1753,7 +1754,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1789,7 +1790,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1821,7 +1822,7 @@ mod tests {
 
         let cmd = StartCommand::default();
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1857,7 +1858,7 @@ mod tests {
 
         let cmd = StartCommand::default();
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1894,7 +1895,7 @@ mod tests {
 
         let cmd = StartCommand { engine: Some("femu".into()), ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1924,7 +1925,7 @@ mod tests {
 
         let cmd = StartCommand { name: None, ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -1951,7 +1952,7 @@ mod tests {
 
         let cmd = StartCommand { device: None, ..Default::default() };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         tool.engine_operations
             .expect_load_product_bundle()
@@ -2001,7 +2002,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let emu_config = make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
             .await
@@ -2069,7 +2070,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let emu_config = make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
             .await
@@ -2132,7 +2133,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut tool = make_test_emu_start_tool(cmd).await;
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
 
         let emu_config = make_configs(&env.context, &tool.cmd, Some(pb.clone()), &emu_instances)
             .await

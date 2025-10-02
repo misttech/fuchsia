@@ -90,7 +90,7 @@ impl UpdateTool {
         let package_server_task = if cmd.product_bundle {
             let product_path =
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
-            let repo_port: u16 = cmd.product_bundle_port()?.try_into().unwrap();
+            let repo_port: u16 = cmd.product_bundle_port(&self.context)?.try_into().unwrap();
             Box::pin(server::package_server_task(
                 self.target_spec,
                 self.rcs_proxy_connector.clone(),
@@ -201,7 +201,7 @@ impl UpdateTool {
             let product_path =
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
 
-            let repo_port: u16 = cmd.product_bundle_port()?.try_into().unwrap();
+            let repo_port: u16 = cmd.product_bundle_port(&self.context)?.try_into().unwrap();
             Box::pin(server::package_server_task(
                 self.target_spec,
                 self.rcs_proxy_connector.clone(),

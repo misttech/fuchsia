@@ -4,7 +4,7 @@
 
 //! Utilities for Product Bundle Metadata (PBM).
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use emulator_instance::{
     AccelerationMode, ConsoleType, EmulatorConfiguration, EmulatorInstances, GpuType, LogLevel,
     NetworkingMode, OperatingSystem,
@@ -19,8 +19,8 @@ use fho::{bug, user_error};
 use pbms::ProductBundle;
 use regex::Regex;
 use sdk_metadata::{CpuArchitecture, VirtualDeviceManifest};
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::hash::Hasher;
@@ -49,7 +49,7 @@ pub(crate) async fn make_configs(
     } else {
         let pb = product_bundle.ok_or_else(|| user_error!("Product bundle required for configuring the emulator instance."))?;
         // Apply the values from the manifest to an emulation configuration.
-        let mut emu_config = convert_bundle_to_configs(&pb, cmd.device()?, cmd.uefi)
+        let mut emu_config = convert_bundle_to_configs(&pb, cmd.device(ctx)?, cmd.uefi)
             .await.context("problem with convert_bundle_to_configs")?;
         // Set OVMF references for non riscv guests (at this time we have no efi support for riscv).
         if emu_config.device.cpu.architecture != CpuArchitecture::Riscv64 {
@@ -91,7 +91,7 @@ pub(crate) async fn make_configs(
             emu_config.guest.ovmf_vars = vars;
 
             // If provided, pass the vbmeta signing key and metadata to the emulator config
-            let vbmeta_key_filename = cmd.vbmeta_key()?.unwrap_or_default();
+            let vbmeta_key_filename = cmd.vbmeta_key(ctx)?.unwrap_or_default();
             if !vbmeta_key_filename.is_empty() {
                 let p = PathBuf::from(vbmeta_key_filename);
                 if p.exists() {
@@ -100,7 +100,7 @@ pub(crate) async fn make_configs(
                     log::warn!("cannot find PEM file at {p:?}");
                 }
             }
-            let vbmeta_metadata_filename = cmd.vbmeta_key_metadata()?.unwrap_or_default();
+            let vbmeta_metadata_filename = cmd.vbmeta_key_metadata(ctx)?.unwrap_or_default();
             if !vbmeta_metadata_filename.is_empty() {
                 let p = PathBuf::from(vbmeta_metadata_filename);
                 if p.exists() {
@@ -137,8 +137,8 @@ async fn apply_command_line_options(
     emu_config.host.acceleration = cmd.accel.clone();
 
     // Process any values that are Options, have Auto values, or need any transformation.
-    emu_config.host.gpu = GpuType::from_str(&cmd.gpu()?)?;
-    emu_config.host.networking = NetworkingMode::from_str(&cmd.net()?)?;
+    emu_config.host.gpu = GpuType::from_str(&cmd.gpu(ctx)?)?;
+    emu_config.host.networking = NetworkingMode::from_str(&cmd.net(ctx)?)?;
 
     if let Some(log) = &cmd.log {
         // It'd be nice to canonicalize this path, to clean up relative bits like "..", but the
@@ -147,7 +147,7 @@ async fn apply_command_line_options(
         emu_config.host.log = PathBuf::from(env::current_dir()?).join(log);
     } else {
         // TODO(https://fxbug.dev/42067481): Move logs to ffx log dir so `ffx doctor` collects them.
-        let instance = emu_instances.get_instance_dir(&cmd.name()?, false)?;
+        let instance = emu_instances.get_instance_dir(&cmd.name(ctx)?, false)?;
         emu_config.host.log = instance.join("emulator.log");
     }
 
@@ -233,10 +233,10 @@ async fn apply_command_line_options(
     // RuntimeConfig options, starting with simple copies.
     emu_config.runtime.debugger = cmd.debugger;
     emu_config.runtime.headless = cmd.headless;
-    emu_config.runtime.startup_timeout = Duration::from_secs(cmd.startup_timeout()?);
+    emu_config.runtime.startup_timeout = Duration::from_secs(cmd.startup_timeout(ctx)?);
     emu_config.runtime.hidpi_scaling = cmd.hidpi_scaling;
     emu_config.runtime.addl_kernel_args = cmd.kernel_args.clone();
-    emu_config.runtime.name = cmd.name()?;
+    emu_config.runtime.name = cmd.name(ctx)?;
     emu_config.runtime.instance_directory =
         emu_instances.get_instance_dir(&emu_config.runtime.name, true)?;
     emu_config.runtime.reuse = cmd.reuse;
@@ -266,7 +266,7 @@ async fn apply_command_line_options(
     }
 
     // Any generated values or values from ffx_config.
-    emu_config.runtime.mac_address = generate_mac_address(&cmd.name()?);
+    emu_config.runtime.mac_address = generate_mac_address(&cmd.name(ctx)?);
     let upscript: String =
         ctx.get(EMU_UPSCRIPT_FILE).context("Getting upscript path from ffx config")?;
     if !upscript.is_empty() {
@@ -552,10 +552,10 @@ mod tests {
 
         let emu_instances = EmulatorInstances::new(PathBuf::new());
 
-        assert_eq!(cmd.device().unwrap(), Some(String::from("")));
-        assert_eq!(cmd.engine().unwrap(), "femu");
-        assert_eq!(cmd.gpu().unwrap(), "swiftshader_indirect");
-        assert_eq!(cmd.startup_timeout().unwrap(), 60);
+        assert_eq!(cmd.device(&env.context).unwrap(), Some(String::from("")));
+        assert_eq!(cmd.engine(&env.context).unwrap(), "femu");
+        assert_eq!(cmd.gpu(&env.context).unwrap(), "swiftshader_indirect");
+        assert_eq!(cmd.startup_timeout(&env.context).unwrap(), 60);
 
         let result =
             apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env.context)
@@ -572,10 +572,10 @@ mod tests {
         env.context.query(EMU_DEFAULT_GPU).level(Some(ConfigLevel::User)).set(json!("host"))?;
         env.context.query(EMU_START_TIMEOUT).level(Some(ConfigLevel::User)).set(json!(120))?;
 
-        assert_eq!(cmd.device().unwrap(), Some(String::from("my_device")));
-        assert_eq!(cmd.engine().unwrap(), "qemu");
-        assert_eq!(cmd.gpu().unwrap(), "host");
-        assert_eq!(cmd.startup_timeout().unwrap(), 120);
+        assert_eq!(cmd.device(&env.context).unwrap(), Some(String::from("my_device")));
+        assert_eq!(cmd.engine(&env.context).unwrap(), "qemu");
+        assert_eq!(cmd.gpu(&env.context).unwrap(), "host");
+        assert_eq!(cmd.startup_timeout(&env.context).unwrap(), 120);
 
         let result =
             apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env.context)
@@ -586,7 +586,7 @@ mod tests {
 
         cmd.gpu = Some(String::from("swiftshader_indirect"));
 
-        assert_eq!(cmd.gpu().unwrap(), "swiftshader_indirect");
+        assert_eq!(cmd.gpu(&env.context).unwrap(), "swiftshader_indirect");
         let result =
             apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env.context)
                 .await;
@@ -607,9 +607,11 @@ mod tests {
         let file = File::create(&file_path).expect("Create temp file");
         let mut perms = file.metadata().expect("Get file metadata").permissions();
 
-        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).set(json!(
-            file_path.as_path().to_str().expect("Couldn't convert file_path to str").to_string()
-        ))?;
+        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).set(json!(file_path
+            .as_path()
+            .to_str()
+            .expect("Couldn't convert file_path to str")
+            .to_string()))?;
         let emu_instances = EmulatorInstances::new(temp_path.clone());
 
         // Set up some test data to be applied.

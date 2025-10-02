@@ -6,7 +6,7 @@ use crate::api::value::{ConfigValue, ValueStrategy};
 use ::errors::ffx_bail;
 use analytics::metrics_state::MetricsStatus;
 use analytics::{set_new_opt_in_status, show_status_message};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use api::value::TryConvert;
 use core::fmt;
 use futures::future::LocalBoxFuture;
@@ -32,11 +32,11 @@ pub use aliases::{
     is_analytics_disabled, is_mdns_autoconnect_disabled, is_mdns_discovery_disabled,
     is_usb_discovery_disabled,
 };
-pub use api::ConfigError;
 pub use api::query::{ConfigQuery, SelectMode};
+pub use api::ConfigError;
 pub use config_macros::FfxConfigBacked;
 
-pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_init};
+pub use environment::{test_env, test_init, Environment, EnvironmentContext, TestEnv};
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
 pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
@@ -291,7 +291,8 @@ mod test {
     // This is to get the FfxConfigBacked derive to compile, as it
     // creates a token stream referencing `ffx_config` on the inside.
     use crate::{self as ffx_config};
-    use serde_json::{Value, json};
+    use api::value::TryConvert;
+    use serde_json::{json, Value};
     use std::collections::HashSet;
     use std::fs;
 
@@ -476,9 +477,9 @@ mod test {
         let env = ffx_config::test_init().await.expect("create test config");
         let mut empty_config_struct = TestConfigBackedStruct::default();
         assert!(empty_config_struct.value.is_none());
-        assert_eq!(empty_config_struct.value().unwrap(), "thing");
+        assert_eq!(empty_config_struct.value(&env.context).unwrap(), "thing");
         assert!(empty_config_struct.reverse_value.is_none());
-        assert_eq!(empty_config_struct.reverse_value().unwrap(), "what");
+        assert_eq!(empty_config_struct.reverse_value(&env.context).unwrap(), "what");
 
         env.context
             .query("test.test.thing")
@@ -493,10 +494,10 @@ mod test {
 
         // If this is set, this should pop up before the config values.
         empty_config_struct.value = Some("wat".to_owned());
-        assert_eq!(empty_config_struct.value().unwrap(), "wat");
+        assert_eq!(empty_config_struct.value(&env.context).unwrap(), "wat");
         empty_config_struct.value = None;
-        assert_eq!(empty_config_struct.value().unwrap(), "config_value_thingy");
-        assert_eq!(empty_config_struct.other_value().unwrap().unwrap(), 2f64);
+        assert_eq!(empty_config_struct.value(&env.context).unwrap(), "config_value_thingy");
+        assert_eq!(empty_config_struct.other_value(&env.context).unwrap().unwrap(), 2f64);
         env.context
             .query("other.test.thing")
             .level(Some(ConfigLevel::User))

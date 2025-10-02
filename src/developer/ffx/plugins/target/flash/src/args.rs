@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use ffx_config::FfxConfigBacked;
+use ffx_config::{EnvironmentContext, FfxConfigBacked};
 use ffx_core::ffx_command;
 use ffx_flash_manifest::{Command, ManifestParams, OemFile};
 use std::default::Default;
@@ -104,14 +104,14 @@ pub struct FlashCommand {
     pub skip_authorized_keys: bool,
 }
 
-impl Into<ManifestParams> for FlashCommand {
-    fn into(self) -> ManifestParams {
-        let flash_min_timeout_seconds = self.min_timeout_secs().ok().unwrap();
-        let flash_timeout_rate_mb_per_second = self.timeout_rate().ok().unwrap();
+impl FlashCommand {
+    pub fn to_manifest(self, context: &EnvironmentContext) -> ManifestParams {
+        let flash_min_timeout_seconds = self.min_timeout_secs(context).ok().unwrap();
+        let flash_timeout_rate_mb_per_second = self.timeout_rate(context).ok().unwrap();
         let manifest = self.manifest.or(self.manifest_path);
         ManifestParams {
             manifest,
-            product: self.product,
+            product: self.product.clone(),
             product_bundle: self.product_bundle,
             oem_stage: self.oem_stage,
             skip_verify: self.skip_verify,
@@ -164,6 +164,7 @@ mod test {
 
     #[test]
     fn test_oem_staged_files_are_in_manifest_params() -> Result<()> {
+        let env = ffx_config::test_env().build()?;
         let test_oem_cmd = "test-oem-cmd";
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
@@ -182,7 +183,7 @@ mod test {
             skip_authorized_keys: false,
         };
 
-        let params: ManifestParams = cmd.into();
+        let params: ManifestParams = cmd.to_manifest(&env.context);
         assert_eq!(params.oem_stage[0].file(), tmp_file_name);
         assert_eq!(params.oem_stage[0].command(), test_oem_cmd);
         Ok(())
