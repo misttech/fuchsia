@@ -3,6 +3,6 @@
   "pkg/driver_runtime_cpp/include/lib/fdf/cpp/channel.h": "c87f67669e26e94e7f068a52c6606cf2",
   "pkg/driver_runtime_cpp/include/lib/fdf/cpp/channel_read.h": "eb882923c3df32bf435c435b898a7a42",
   "pkg/driver_runtime_cpp/include/lib/fdf/cpp/dispatcher.h": "0afe60a658dca8b089f85017a9127785",
-  "pkg/driver_runtime_cpp/include/lib/fdf/cpp/protocol.h": "dabd154c00b3f80f999c9cf22f919752",
+  "pkg/driver_runtime_cpp/include/lib/fdf/cpp/protocol.h": "8a9351b52e1cf22e56788680f30571c8",
   "pkg/driver_runtime_cpp/include/lib/fdf/cpp/unowned.h": "b2cf50b14e9dd4103fbed76cd7e74550"
 }

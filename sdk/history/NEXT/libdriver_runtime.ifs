@@ -49,6 +49,7 @@ Symbols:
   - { Name: fdf_testing_run, Type: Func }
   - { Name: fdf_testing_run_until_idle, Type: Func }
   - { Name: fdf_testing_set_default_dispatcher, Type: Func }
+  - { Name: fdf_token_receive, Type: Func }
   - { Name: fdf_token_register, Type: Func }
   - { Name: fdf_token_transfer, Type: Func }
 ...

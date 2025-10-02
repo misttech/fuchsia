@@ -84,6 +84,18 @@ class Protocol final : public fdf_token_t {
 // ZX_ERR_BAD_STATE: The dispatcher is shutting down.
 zx_status_t ProtocolConnect(zx::channel token, fdf::Channel channel);
 
+// Receives a driver channel that has been previously connected to with |token|'s pair
+// synchronously.
+//
+// Transfers ownership of |token| to the runtime.
+//
+// # Errors:
+//
+// ZX_ERR_BAD_HANDLE: |token| is not a valid channel handle.
+//
+// ZX_ERR_NOT_FOUND: |ProtocolConnect| has not been called on |token|'s pair.
+zx::result<fdf::Channel> ProtocolReceive(zx::channel token) ZX_AVAILABLE_SINCE(HEAD);
+
 }  // namespace fdf
 
 #endif  // LIB_FDF_CPP_PROTOCOL_H_

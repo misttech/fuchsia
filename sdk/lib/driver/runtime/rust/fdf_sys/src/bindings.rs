@@ -889,6 +889,9 @@ unsafe extern "C" {
     ) -> zx_status_t;
 }
 unsafe extern "C" {
+    pub fn fdf_token_receive(token: zx_handle_t, handle: *mut fdf_handle_t) -> zx_status_t;
+}
+unsafe extern "C" {
     pub fn fdf_token_transfer(token: zx_handle_t, handle: fdf_handle_t) -> zx_status_t;
 }
 #[repr(C)]

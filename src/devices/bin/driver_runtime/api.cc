@@ -180,6 +180,12 @@ __EXPORT zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dis
   return driver_runtime::DispatcherCoordinator::TokenRegister(token, dispatcher, handler);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+__EXPORT zx_status_t fdf_token_receive(zx_handle_t token, fdf_handle_t* handle) {
+  return driver_runtime::DispatcherCoordinator::TokenReceive(token, handle);
+}
+#endif
+
 __EXPORT zx_status_t fdf_token_transfer(zx_handle_t token, fdf_handle_t handle) {
   return driver_runtime::DispatcherCoordinator::TokenTransfer(token, handle);
 }

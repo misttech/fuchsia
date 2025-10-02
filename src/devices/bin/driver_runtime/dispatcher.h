@@ -869,9 +869,10 @@ class DispatcherCoordinator {
   static zx_status_t ShutdownDispatchersAsync(const void* driver,
                                               fdf_env_driver_shutdown_observer_t* observer);
 
-  // Implementation of fdf_protocol_*.
+  // Implementation of fdf_token_*.
   static zx_status_t TokenRegister(zx_handle_t token, fdf_dispatcher_t* dispatcher,
                                    fdf_token_t* handler);
+  static zx_status_t TokenReceive(zx_handle_t token, fdf_handle_t* handle);
   static zx_status_t TokenTransfer(zx_handle_t token, fdf_handle_t channel);
 
   // Implementation of fdf_env_*.

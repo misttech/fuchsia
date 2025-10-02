@@ -6,6 +6,7 @@
 #define LIB_FDF_TOKEN_H_
 
 #include <lib/fdf/dispatcher.h>
+#include <zircon/availability.h>
 #include <zircon/types.h>
 
 __BEGIN_CDECLS
@@ -94,6 +95,26 @@ struct fdf_token {
 // has already been registered.
 zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dispatcher,
                                fdf_token_t* handler);
+
+// Receives the corresponding driver handle for |token| if it has been transferred.
+//
+// If |fdf_token_transfer| has been called on |token|'s pair, this will receive the
+// driver handle that was passed to it and store it in the address pointed to by
+// |handle|.
+//
+// Transfers ownership of |token| to the runtime.
+//
+// The |token| handle is consumed and is no longer available to the caller, on success or failure.
+//
+// # Errors
+//
+// ZX_ERR_BAD_HANDLE: |token| is not a valid channel handle.
+//
+// ZX_ERR_INVALID_ARGS: |handle| is NULL.
+//
+// ZX_ERR_NOT_FOUND: The |token|'s pair has not been transferred before this
+// call.
+zx_status_t fdf_token_receive(zx_handle_t token, fdf_handle_t* handle) ZX_AVAILABLE_SINCE(NEXT);
 
 // Transfers the fdf handle to the owner of the channel peer of |token|.
 //

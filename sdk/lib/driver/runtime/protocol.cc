@@ -38,4 +38,15 @@ zx_status_t ProtocolConnect(zx::channel token, fdf::Channel channel) {
   return fdf_token_transfer(token.release(), channel.release());
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+zx::result<fdf::Channel> ProtocolReceive(zx::channel token) {
+  fdf_handle_t handle;
+  zx_status_t res = fdf_token_receive(token.release(), &handle);
+  if (res != ZX_OK) {
+    return zx::error(res);
+  }
+  return zx::success(fdf::Channel(handle));
+}
+#endif
+
 }  // namespace fdf

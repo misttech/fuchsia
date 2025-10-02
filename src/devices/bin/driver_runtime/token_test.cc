@@ -150,6 +150,20 @@ TEST_F(ProtocolTest, ConnectThenRegister) {
   callback_received.Wait();
 }
 
+// Tests that trying to synchronously receive a client that has not connected returns
+// ZX_ERR_NOT_FOUND
+TEST_F(ProtocolTest, ReceiveWithoutConnect) {
+  zx::result<fdf::Channel> res = fdf::ProtocolReceive(std::move(token_remote_));
+  ASSERT_TRUE(res.is_error());
+  ASSERT_EQ(res.error_value(), ZX_ERR_NOT_FOUND);
+}
+
+// Tests receiving a client connect synchronously
+TEST_F(ProtocolTest, ConnectThenReceive) {
+  ASSERT_OK(fdf::ProtocolConnect(std::move(token_local_), std::move(fdf_remote_)));
+  ASSERT_OK(fdf::ProtocolReceive(std::move(token_remote_)));
+}
+
 struct Conn {
   zx::channel token_local;
   zx::channel token_remote;
@@ -369,6 +383,14 @@ TEST_F(ProtocolTest, RegisterWrongTokenType) {
   fdf_token_t protocol{NotCalledHandler};
   ASSERT_EQ(ZX_ERR_BAD_HANDLE,
             fdf_token_register(bad_token_remote.release(), dispatcher_remote_.get(), &protocol));
+}
+
+TEST_F(ProtocolTest, ReceiveWrongTokenType) {
+  zx::eventpair bad_token_local, bad_token_remote;
+  ASSERT_OK(zx::eventpair::create(0, &bad_token_local, &bad_token_remote));
+
+  fdf_handle_t handle;
+  ASSERT_EQ(ZX_ERR_BAD_HANDLE, fdf_token_receive(bad_token_remote.release(), &handle));
 }
 
 TEST_F(ProtocolTest, ConnectBadFdfHandle) {

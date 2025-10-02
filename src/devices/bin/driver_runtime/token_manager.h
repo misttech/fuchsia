@@ -26,6 +26,7 @@ class TokenManager {
 
   // Implementation of fdf_token_*.
   zx_status_t Register(zx_handle_t token, fdf_dispatcher_t* dispatcher, fdf_token_t* fdf_token);
+  zx_status_t Receive(zx_handle_t token, fdf_handle_t* handle);
   zx_status_t Transfer(zx_handle_t token, fdf_handle_t handle);
 
   void SetGlobalDispatcher(async_dispatcher_t* dispatcher) {
@@ -62,6 +63,8 @@ class TokenManager {
     // Called when a driver registers a token transfer callback.
     virtual zx_status_t OnCallbackRegister(fdf_dispatcher_t* dispatcher,
                                            fdf_token_t* fdf_token) = 0;
+    // Called when a driver tries to receive the corresponding handle synchronously.
+    virtual zx_status_t OnTransferReceive(fdf_handle_t* handle) = 0;
     // Called when a driver requests a token transfer for |channel|.
     virtual zx_status_t OnTransferRequest(fdf::Channel channel) = 0;
     // Called when the peer channel handle of |token_| is closed.
@@ -112,6 +115,10 @@ class TokenManager {
       // This should not be called twice for the same token.
       return ZX_ERR_BAD_STATE;
     }
+    zx_status_t OnTransferReceive(fdf_handle_t* handle) override {
+      // This should not be called when a callback has been registered.
+      return ZX_ERR_BAD_STATE;
+    }
     zx_status_t OnTransferRequest(fdf::Channel channel) override;
     void OnPeerClosed() override;
     fdf_dispatcher_t* dispatcher() override { return dispatcher_; }
@@ -131,6 +138,7 @@ class TokenManager {
 
     // |PendingTokenInfo| implementation.
     zx_status_t OnCallbackRegister(fdf_dispatcher_t* dispatcher, fdf_token_t* fdf_token) override;
+    zx_status_t OnTransferReceive(fdf_handle_t* handle) override;
     zx_status_t OnTransferRequest(fdf::Channel channel) override {
       // This should not be called twice for the same token.
       return ZX_ERR_BAD_STATE;
@@ -143,7 +151,8 @@ class TokenManager {
     }
 
    private:
-    // TODO(https://fxbug.dev/42056822): replace fdf::Channel with a generic C++ handle type when available.
+    // TODO(https://fxbug.dev/42056822): replace fdf::Channel with a generic C++ handle type when
+    // available.
     fdf::Channel channel_;
   };
 

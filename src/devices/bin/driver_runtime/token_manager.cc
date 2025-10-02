@@ -79,6 +79,35 @@ zx_status_t TokenManager::Register(zx_handle_t token, fdf_dispatcher_t* dispatch
   return ZX_OK;
 }
 
+zx_status_t TokenManager::Receive(zx_handle_t token, fdf_handle_t* handle) {
+  auto validate_status = ValidateToken(token, true /* use_primary_koid */);
+  if (!validate_status.is_ok()) {
+    zx_handle_close(token);
+    return validate_status.status_value();
+  }
+  TokenId token_id = *validate_status;
+  zx::channel validated_token(token);
+
+  if (!handle) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  fbl::AutoLock lock(&lock_);
+
+  auto request = pending_tokens_.find(token_id);
+
+  if (!request.IsValid()) {
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  // A transfer request matching our |token_id| was previously requested.
+  auto pending_token_info = pending_tokens_.erase(request);
+  ZX_ASSERT(pending_token_info);
+  ZX_ASSERT(pending_token_info->state() == PendingTokenInfo::State::kTransferRequested);
+
+  return pending_token_info->OnTransferReceive(handle);
+}
+
 zx_status_t TokenManager::Transfer(zx_handle_t token, fdf_handle_t handle) {
   // Retrieve the token id using the koid of the channel peer, so we can locate the
   // corresponding registered protocol.
@@ -93,12 +122,14 @@ zx_status_t TokenManager::Transfer(zx_handle_t token, fdf_handle_t handle) {
 
   fbl::AutoLock lock(&lock_);
 
-  // TODO(https://fxbug.dev/42167305): we should also check the correct driver owns the handle once possible.
+  // TODO(https://fxbug.dev/42167305): we should also check the correct driver owns the handle once
+  // possible.
   if (!Handle::HandleExists(handle)) {
     return ZX_ERR_BAD_HANDLE;
   }
 
-  // TODO(https://fxbug.dev/42056822): replace fdf::Channel with a generic C++ handle type when available.
+  // TODO(https://fxbug.dev/42056822): replace fdf::Channel with a generic C++ handle type when
+  // available.
   fdf::Channel validated_fdf_channel = fdf::Channel(handle);
 
   auto registered_callback = pending_tokens_.find(token_id);
@@ -175,4 +206,11 @@ zx_status_t TokenManager::TransferRequest::OnCallbackRegister(fdf_dispatcher_t* 
   return dispatcher->ScheduleTokenCallback(fdf_token, ZX_OK, std::move(channel_));
 }
 
+zx_status_t TokenManager::TransferRequest::OnTransferReceive(fdf_handle_t* handle) {
+  ZX_ASSERT(channel_.is_valid());
+  ZX_ASSERT(handle != nullptr);
+
+  *handle = channel_.release();
+  return ZX_OK;
+}
 }  // namespace driver_runtime
