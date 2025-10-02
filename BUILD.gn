@@ -2447,10 +2447,6 @@ group("root_targets") {
     # The IDK generated for the in-tree @fuchsia_sdk Bazel workspace, and associated tests.
     "//sdk:bazel_in_tree_idk_tests",
 
-    # A subset of the the Fuchsia Bazel SDK that only supports `HEAD` on the
-    # `target_cpu` architecture.
-    "//sdk:final_fuchsia_sdk_head_only",
-
     # This target is listed explicitly by multiple CI bot build configurations.
     # See https://fxbug.dev/42162374 for context.
     "//build/images:record_filesystem_sizes",

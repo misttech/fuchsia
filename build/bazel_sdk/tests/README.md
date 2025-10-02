@@ -93,17 +93,7 @@ scripts/bazel_test.py \
 
 ### Running against a local Bazel SDK directory (not `@fuchsia_sdk`):
 
-Run against a minimal Fuchsia Bazel SDK:
-```
-# Generate the final Fuchsia in-tree SDK
-fx build //sdk:final_fuchsia_sdk_head_only
-LOCAL_SDK="$(fx get-build-dir)/obj/sdk/final_fuchsia_sdk_head_only"
-
-# Run the full test suite
-scripts/bazel_test.py --fuchsia_sdk_directory="${LOCAL_SDK}"
-```
-
-Alternatively, run against the full Fuchsia Bazel SDK:
+Run against the full Fuchsia Bazel SDK:
 ```
 # Generate the Fuchsia Bazel SDK (beware: this takes > 20minutes)
 fx build //sdk:final_fuchsia_sdk
