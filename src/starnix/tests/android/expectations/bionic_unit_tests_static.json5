@@ -115,12 +115,6 @@
                 // This test is passing in some configurations.
                 "android_mallopt.set_allocation_limit_multiple_threads",
 
-                // This test writes 2GB of zero bytes to /dev/null, which we currently try to log.
-                "*.fwrite_int_overflow",
-
-                // This test tries to determine if the system has >=4GB of total memory which is not true in all test environments.
-                "*.fread_int_overflow",
-
                 // This test tries to determine if the system has >=4GB of total memory which is not true in all test environments.
                 // It also writes 2GB of zero bytes to /dev/null, which we currently try to log.
                 "*.fread_fwrite_int_overflow",
