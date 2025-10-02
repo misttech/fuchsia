@@ -4,21 +4,18 @@
 
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
-use assembly_config_schema::platform_settings::usb_config::*;
+use assembly_config_schema::platform_settings::usb_config::UsbConfig;
 
-pub(crate) struct UsbSubsystemConfig;
+pub(crate) struct UsbSubsystem;
 
-impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystemConfig {
+impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
     fn define_configuration(
         context: &ConfigurationContext<'_>,
         usb: &UsbConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        let usb_peripheral_functions = match &usb.peripheral.functions {
-            Some(functions) => functions.iter().map(ToString::to_string).collect::<Vec<String>>(),
-            // Setting CDC as the default function if none is configured.
-            None => vec![UsbPeripheralFunction::Cdc.to_string()],
-        };
+        let usb_peripheral_functions: Vec<String> =
+            usb.peripheral.functions().iter().map(|x| x.to_string()).collect();
 
         builder.set_config_capability(
             "fuchsia.usb.PeripheralConfig.Functions",

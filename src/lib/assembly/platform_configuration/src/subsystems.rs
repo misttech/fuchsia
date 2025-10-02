@@ -520,7 +520,7 @@ fn configure_subsystems(
     )
     .context("Configuring the 'trusted_apps' subsystem")?;
 
-    usb::UsbSubsystemConfig::define_configuration(
+    usb::UsbSubsystem::define_configuration(
         &context_base.for_subsystem("usb"),
         &platform.usb,
         builder,

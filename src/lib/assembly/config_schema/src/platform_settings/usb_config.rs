@@ -25,6 +25,14 @@ pub struct UsbPeripheralConfig {
     pub functions: Option<Vec<UsbPeripheralFunction>>,
 }
 
+static DEFAULT_PERIPHERAL_FUNCTIONS: &[UsbPeripheralFunction] = &[UsbPeripheralFunction::Cdc];
+
+impl UsbPeripheralConfig {
+    pub fn functions(&self) -> &[UsbPeripheralFunction] {
+        self.functions.as_deref().unwrap_or(DEFAULT_PERIPHERAL_FUNCTIONS)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum UsbPeripheralFunction {
