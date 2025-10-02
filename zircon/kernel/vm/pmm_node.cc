@@ -241,14 +241,20 @@ void PmmNode::CheckAllFreePages() {
   uint64_t free_page_count = 0;
   uint64_t free_loaned_page_count = 0;
   vm_page* page;
+
+  dprintf(INFO, "PMM: checking free list...\n");
   list_for_every_entry (&free_list_, page, vm_page, queue_node) {
     checker_.AssertPattern(page);
     ++free_page_count;
   }
+  dprintf(INFO, "PMM: done checking free list\n");
+
+  dprintf(INFO, "PMM: checking free loaned list...\n");
   list_for_every_entry (&free_loaned_list_, page, vm_page, queue_node) {
     checker_.AssertPattern(page);
     ++free_loaned_page_count;
   }
+  dprintf(INFO, "PMM: done checking free loaned list\n");
 
   ASSERT(free_page_count == free_count_.load(ktl::memory_order_relaxed));
   ASSERT(free_loaned_page_count == free_loaned_count_.load(ktl::memory_order_relaxed));

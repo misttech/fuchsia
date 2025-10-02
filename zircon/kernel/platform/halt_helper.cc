@@ -11,6 +11,7 @@
 #include <kernel/mp.h>
 #include <platform/halt_helper.h>
 #include <platform/halt_token.h>
+#include <vm/pmm.h>
 
 // Storage for the global halt token singleton
 HaltToken HaltToken::g_instance;
@@ -34,6 +35,11 @@ void platform_graceful_halt_helper(platform_halt_action action, zircon_crash_rea
   zx_status_t status = platform_halt_secondary_cpus(panic_deadline);
   ASSERT_MSG(status == ZX_OK, "platform_halt_secondary_cpus failed: %d\n", status);
   printf("platform_graceful_halt_helper: Halted secondary CPUs.\n");
+
+  // If we're in a debug build, check the PMM's free list for any latent corruption.
+  if constexpr (LK_DEBUGLEVEL > 0) {
+    pmm_checker_check_all_free_pages();
+  }
 
   // Delay shutdown of debuglog to ensure log messages emitted by above calls will be written.
   printf("platform_graceful_halt_helper: Shutting down dlog.\n");
