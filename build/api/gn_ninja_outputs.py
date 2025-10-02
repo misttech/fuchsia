@@ -9,8 +9,8 @@ import argparse
 import difflib
 import json
 import sys
+import typing as T
 from pathlib import Path
-from typing import Dict, List, Sequence
 
 
 def levenshtein_distance(str1: str, str2: str) -> int:
@@ -29,7 +29,7 @@ def levenshtein_distance(str1: str, str2: str) -> int:
 
 
 def closest_match(
-    input: str, references: Sequence[str], max_distance: int
+    input: str, references: T.Sequence[str], max_distance: int
 ) -> str:
     """Find the closest match between an input string and a sequence of references.
 
@@ -44,7 +44,7 @@ def closest_match(
     result = ""
     best_score = max_distance + 1
     for ref in references:
-        if abs(len(ref) - len(input)) >= best_scope:
+        if abs(len(ref) - len(input)) >= best_score:
             continue
         score = levenshtein_distance(ref, input)
         if score < best_score:
@@ -59,7 +59,7 @@ def closest_match(
 class NinjaOutputsBase(object):
     """Base class for all implementations."""
 
-    def load_from_json(self, input_path: Path):
+    def load_from_json(self, input_path: Path) -> None:
         """Load original ninja_inputs.json file into in-memory database.
 
         Args:
@@ -67,31 +67,34 @@ class NinjaOutputsBase(object):
         """
         raise NotImplementedError
 
-    def load_from_file(self, input_path: Path):
+    def load_from_file(self, input_path: Path) -> bool:
         """Load the database saved to a file through a previous save_to_file() call."""
         raise NotImplementedError
+        return False
 
-    def save_to_file(self, output_path: Path):
+    def save_to_file(self, output_path: Path) -> None:
         """Save database to a given file."""
         raise NotImplementedError
 
-    def __enter__(self):
+    def __enter__(self) -> "NinjaOutputsBase":
         return self
 
-    def __exit__(self, exc_type, exc_value, exc_tb):
+    def __exit__(
+        self, exc_type: T.Any, exc_value: T.Any, exc_tb: T.Any
+    ) -> T.Literal[False]:
         return False
 
-    def get_labels(self, sort_result=True) -> List[str]:
+    def get_labels(self, sort_result: bool = True) -> list[str]:
         """Return the list of all GN labels in the database."""
         result = self.get_labels_internal()
         return sorted(result) if sort_result else result
 
-    def get_paths(self, sort_result=True) -> List[str]:
+    def get_paths(self, sort_result: bool = True) -> list[str]:
         """Return the list of all Ninja output paths in the database."""
         result = self.get_paths_internal()
         return sorted(result) if sort_result else result
 
-    def gn_label_to_paths(self, label: str) -> List[str]:
+    def gn_label_to_paths(self, label: str) -> list[str]:
         """Return the list of output paths for a given GN label.
 
         Args:
@@ -128,7 +131,7 @@ class NinjaOutputsBase(object):
         """
         return all(target.find(ch) < 0 for ch in "@/:\\")
 
-    def target_name_to_gn_labels(self, target: str) -> List[str]:
+    def target_name_to_gn_labels(self, target: str) -> list[str]:
         """Return the GN labels that matches a given target name if possible.
 
         This operation is slow and should only be performed as a fallback.
@@ -143,13 +146,13 @@ class NinjaOutputsBase(object):
             raise ValueError(f"Malformed target name: {target}")
         return self.get_target_labels_internal(target)
 
-    def get_labels_internal(self) -> List[str]:
+    def get_labels_internal(self) -> list[str]:
         return []
 
-    def get_paths_internal(self) -> List[str]:
+    def get_paths_internal(self) -> list[str]:
         return []
 
-    def get_target_labels_internal(self, target: str) -> List[str]:
+    def get_target_labels_internal(self, target: str) -> list[str]:
         return []
 
 
@@ -162,44 +165,45 @@ class NinjaOutputsJSON(NinjaOutputsBase):
     The generated file is about 45 MiB for a 47 MiB input file.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self._label_to_paths: Dict[str, List[str]] = {}
-        self._path_to_label: Dict[str, str] = {}
+        self._label_to_paths: dict[str, list[str]] = {}
+        self._path_to_label: dict[str, str] = {}
 
-    def load_from_json(self, input_path: Path):
+    def load_from_json(self, input_path: Path) -> None:
         with input_path.open() as f:
             self._label_to_paths = json.load(f)
         self._compute_path_map()
 
-    def save_to_file(self, output_path: Path):
+    def save_to_file(self, output_path: Path) -> None:
         with output_path.open("w") as f:
             json.dump(self._label_to_paths, f)
 
-    def load_from_file(self, input_path: Path):
+    def load_from_file(self, input_path: Path) -> bool:
         with input_path.open() as f:
             self._label_to_paths = json.load(f)
         self._compute_path_map()
+        return True
 
-    def _compute_path_map(self):
+    def _compute_path_map(self) -> None:
         self._path_to_label = {}
         for label, paths in self._label_to_paths.items():
             for path in paths:
                 self._path_to_label[path] = label
 
-    def get_labels_internal(self) -> List[str]:
-        return self._label_to_paths.keys()
+    def get_labels_internal(self) -> list[str]:
+        return list(self._label_to_paths.keys())
 
-    def get_paths_internal(self) -> List[str]:
-        return self._path_to_label.keys()
+    def get_paths_internal(self) -> list[str]:
+        return list(self._path_to_label.keys())
 
-    def gn_label_to_paths(self, label: str) -> List[str]:
+    def gn_label_to_paths(self, label: str) -> list[str]:
         return self._label_to_paths.get(label, [])
 
     def path_to_gn_label(self, path: str) -> str:
         return self._path_to_label.get(path, "")
 
-    def get_target_labels_internal(self, target: str) -> List[str]:
+    def get_target_labels_internal(self, target: str) -> list[str]:
         candidate_paths = [
             p
             for p in self._path_to_label.keys()
@@ -225,13 +229,13 @@ class NinjaOutputsTabular(NinjaOutputsBase):
     #
     # Where <label> is a GN label, and <path1>, <path2>, ... are corresponding output
     # file paths. The final row always includes a trailing newline.
-    INDEX_MAGIC: str = b"\x08IDX"
+    INDEX_MAGIC: bytes = b"\x08IDX"
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._content = b""
 
-    def load_from_json(self, input_path: Path):
+    def load_from_json(self, input_path: Path) -> None:
         with input_path.open() as f:
             input_json = json.load(f)
         # NOTE: Optimized for speed, modify with caution!
@@ -242,7 +246,7 @@ class NinjaOutputsTabular(NinjaOutputsBase):
         content += "\n"
         self._content = content.encode("latin1")
 
-    def load_from_file(self, input_path: Path):
+    def load_from_file(self, input_path: Path) -> bool:
         with input_path.open("rb") as f:
             magic = f.read(4)
             if magic != self.INDEX_MAGIC:
@@ -250,17 +254,19 @@ class NinjaOutputsTabular(NinjaOutputsBase):
             self._content = f.read()
         return True
 
-    def save_to_file(self, output_path: Path):
+    def save_to_file(self, output_path: Path) -> None:
         with output_path.open("wb") as f:
             f.write(self.INDEX_MAGIC)
             f.write(self._content)
 
-    def gn_label_to_paths(self, label: str) -> List[str]:
+    def gn_label_to_paths(self, label: str) -> list[str]:
         paths = []
         line = self._find_row_starting_with(label.encode())
         if line:
             items = line.split(b"\t")
-            assert len(items) >= 2, f"Invalid input file format, line: [{line}]"
+            assert (
+                len(items) >= 2
+            ), f"Invalid input file format, line: [{line.decode()}]"
             paths = [p.decode() for p in items[1:]]
 
         return paths
@@ -269,12 +275,14 @@ class NinjaOutputsTabular(NinjaOutputsBase):
         lines = self._find_rows_containing_value(path.encode())
         for line in lines:
             items = line.split(b"\t")
-            assert len(items) >= 2, f"Invalid input file format, line [{line}]"
+            assert (
+                len(items) >= 2
+            ), f"Invalid input file format, line [{line.decode()}]"
             return items[0].decode()
 
         return ""
 
-    def get_target_labels_internal(self, target: str) -> List[str]:
+    def get_target_labels_internal(self, target: str) -> list[str]:
         labels = set()
         for line in self._find_rows_containing_target(target.encode()):
             items = line.split(b"\t")
@@ -285,14 +293,14 @@ class NinjaOutputsTabular(NinjaOutputsBase):
 
         return sorted(labels)
 
-    def get_labels_internal(self) -> List[str]:
+    def get_labels_internal(self) -> list[str]:
         result = []
         for row in self._parse_rows():
             tab_pos = row.find(9)
             result.append(row[0:tab_pos].decode())
         return result
 
-    def get_paths_internal(self) -> List[str]:
+    def get_paths_internal(self) -> list[str]:
         result = []
         content = self._content
         for row_start, row_end in self._parse_row_bounds():
@@ -306,7 +314,7 @@ class NinjaOutputsTabular(NinjaOutputsBase):
                 pos = tab_pos + 1
         return result
 
-    def _parse_rows(self):
+    def _parse_rows(self) -> T.Generator[bytes, None, None]:
         content = self._content
         content_len = len(content)
         line_start = 0
@@ -316,7 +324,7 @@ class NinjaOutputsTabular(NinjaOutputsBase):
             yield content[line_start:line_end]
             line_start = line_end + 1
 
-    def _parse_row_bounds(self):
+    def _parse_row_bounds(self) -> T.Generator[tuple[int, int], None, None]:
         content = self._content
         content_len = len(content)
         line_start = 0
@@ -389,7 +397,7 @@ class NinjaOutputsTabular(NinjaOutputsBase):
 
         return b""
 
-    def _find_rows_containing_value(self, value: bytes) -> List[bytes]:
+    def _find_rows_containing_value(self, value: bytes) -> list[bytes]:
         """Find all rows in a index file which contain a given value.
 
         Args:
@@ -435,7 +443,7 @@ class NinjaOutputsTabular(NinjaOutputsBase):
 
         return result
 
-    def _find_rows_containing_target(self, target: bytes) -> List[bytes]:
+    def _find_rows_containing_target(self, target: bytes) -> list[bytes]:
         content = self._content
         result = []
         target_len = len(target)
@@ -480,15 +488,15 @@ _FORMAT_TO_CLASS_MAP = {
 _VALID_FORMATS = ["auto"] + list(_FORMAT_TO_CLASS_MAP.keys())
 
 
-def _autodetect_format(path: Path):
+def _autodetect_format(path: Path) -> str:
     name = path.name
     for f in _FORMAT_TO_CLASS_MAP.keys():
         if name.endswith("." + f):
             return f
-    return None
+    return ""
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input_file", type=Path, help="Input JSON file.")
     parser.add_argument(

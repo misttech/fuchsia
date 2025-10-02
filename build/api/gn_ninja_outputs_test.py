@@ -6,10 +6,11 @@
 import json
 import sys
 import tempfile
+import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, Path(__file__).parent)
+sys.path.insert(0, str(Path(__file__).parent))
 import gn_ninja_outputs
 
 _NINJA_OUTPUTS = {
@@ -30,7 +31,7 @@ _NINJA_OUTPUTS = {
 
 
 class TestNinjaOutputsDatabase(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._inputs_json_file = tempfile.NamedTemporaryFile(
             mode="wt", suffix=".json"
         )
@@ -38,7 +39,7 @@ class TestNinjaOutputsDatabase(unittest.TestCase):
         json.dump(_NINJA_OUTPUTS, self._inputs_json_file)
         self._inputs_json_file.flush()
 
-    def run_tests(self, db):
+    def run_tests(self, db: gn_ninja_outputs.NinjaOutputsBase) -> None:
         self.assertEqual([], db.gn_label_to_paths("//:unknown"))
         for label, paths in _NINJA_OUTPUTS.items():
             self.assertListEqual(
@@ -72,7 +73,9 @@ class TestNinjaOutputsDatabase(unittest.TestCase):
         )
         self.assertListEqual(expected_paths, db.get_paths())
 
-    def run_tests_for_class(self, db_class):
+    def run_tests_for_class(
+        self, db_class: T.Type[gn_ninja_outputs.NinjaOutputsBase]
+    ) -> None:
         db = db_class()
         db.load_from_json(self.inputs_json)
         self.run_tests(db)
@@ -85,10 +88,10 @@ class TestNinjaOutputsDatabase(unittest.TestCase):
         db.load_from_file(database_path)
         self.run_tests(db)
 
-    def test_json_database(self):
+    def test_json_database(self) -> None:
         self.run_tests_for_class(gn_ninja_outputs.NinjaOutputsJSON)
 
-    def test_tabular_database(self):
+    def test_tabular_database(self) -> None:
         self.run_tests_for_class(gn_ninja_outputs.NinjaOutputsTabular)
 
 
