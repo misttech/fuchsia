@@ -64,7 +64,8 @@ import argparse
 import pathlib
 import sys
 
-from trace_processing import trace_importing, trace_metrics, trace_model
+from reporting import metrics
+from trace_processing import trace_importing, trace_model
 from trace_processing.metrics import scenic
 
 
@@ -94,7 +95,7 @@ def main() -> None:
     )
     trace_results = scenic.ScenicMetricsProcessor().process_metrics(model)
 
-    trace_metrics.TestCaseResult.write_fuchsiaperf_json(
+    metrics.TestCaseResult.write_fuchsiaperf_json(
         results=trace_results,
         test_suite="Manual",
         output_path=pathlib.Path(args.output_path),

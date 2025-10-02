@@ -8,6 +8,7 @@ import logging
 import statistics
 from typing import Iterable, Iterator, MutableSequence
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger("AppRenderLatencyMetricsProcessor")
@@ -45,7 +46,7 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         # This method looks for a possible race between trace event start in Scenic and magma.
         # We can safely skip these events. See https://fxbug.dev/322849857 for more details.
         model = trace_utils.adjust_to_common_process_start(
@@ -117,20 +118,20 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
             return trace_utils.standard_metrics_set(
                 values=present_latencies,
                 label_prefix="AppRenderVsyncLatency",
-                unit=trace_metrics.Unit.milliseconds,
+                unit=metrics.Unit.milliseconds,
             ) + trace_utils.standard_metrics_set(
                 values=fps_values,
                 label_prefix="AppFps",
-                unit=trace_metrics.Unit.framesPerSecond,
+                unit=metrics.Unit.framesPerSecond,
             )
         else:
             return [
-                trace_metrics.TestCaseResult(
+                metrics.TestCaseResult(
                     "AppRenderVsyncLatency",
-                    trace_metrics.Unit.milliseconds,
+                    metrics.Unit.milliseconds,
                     present_latencies,
                 ),
-                trace_metrics.TestCaseResult(
-                    "AppFps", trace_metrics.Unit.framesPerSecond, fps_values
+                metrics.TestCaseResult(
+                    "AppFps", metrics.Unit.framesPerSecond, fps_values
                 ),
             ]

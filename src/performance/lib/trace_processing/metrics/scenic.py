@@ -8,6 +8,7 @@ import logging
 import statistics
 from typing import MutableSequence, Tuple
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger("ScenicMetricsProcessor")
@@ -71,7 +72,7 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         # This method looks for a possible race between trace event start in Scenic and magma.
         # We can safely skip these events. See https://fxbug.dev/322849857 for more details.
         model = trace_utils.adjust_to_common_process_start(
@@ -153,20 +154,20 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
             ("RenderTotal", total_render_times),
         ]
 
-        test_case_results: list[trace_metrics.TestCaseResult] = []
+        test_case_results: list[metrics.TestCaseResult] = []
         for name, values in metrics_list:
             if self.aggregates_only:
                 test_case_results.extend(
                     trace_utils.standard_metrics_set(
                         values=values,
                         label_prefix=name,
-                        unit=trace_metrics.Unit.milliseconds,
+                        unit=metrics.Unit.milliseconds,
                     )
                 )
             else:
                 test_case_results.append(
-                    trace_metrics.TestCaseResult(
-                        name, trace_metrics.Unit.milliseconds, values
+                    metrics.TestCaseResult(
+                        name, metrics.Unit.milliseconds, values
                     )
                 )
 

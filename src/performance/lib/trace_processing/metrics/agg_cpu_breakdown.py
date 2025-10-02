@@ -5,7 +5,7 @@
 
 from typing import Any, TypedDict
 
-from trace_processing import trace_metrics
+from reporting import metrics
 from trace_processing.metrics import cpu
 
 # Default cut-off for the percentage CPU. Any process that has CPU below this
@@ -29,7 +29,7 @@ class AggregateRecord(TypedDict):
     percent: float
 
 
-def record_from_dict(t: dict[str, trace_metrics.JSON]) -> Record:
+def record_from_dict(t: dict[str, metrics.JSON]) -> Record:
     record: dict[str, Any] = {}
     for key, key_type in Record.__annotations__.items():
         assert key in t and isinstance(

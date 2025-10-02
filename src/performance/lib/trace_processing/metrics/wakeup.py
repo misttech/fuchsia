@@ -5,6 +5,7 @@
 
 from typing import MutableSequence
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time
 
 
@@ -40,7 +41,7 @@ class WakeupMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         """Calculate Wakeup metrics.
 
         Args:
@@ -100,9 +101,9 @@ class WakeupMetricsProcessor(trace_metrics.MetricsProcessor):
 
         return (
             [
-                trace_metrics.TestCaseResult(
+                metrics.TestCaseResult(
                     label=self._label,
-                    unit=trace_metrics.Unit.nanoseconds,
+                    unit=metrics.Unit.nanoseconds,
                     values=wakeup_durations,
                 )
             ]

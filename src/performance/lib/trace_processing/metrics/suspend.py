@@ -7,6 +7,7 @@ import itertools
 import logging
 from typing import Iterator, MutableSequence, Optional, Tuple
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         """Calculate suspend/resume metrics.
 
         Args:
@@ -118,19 +119,19 @@ class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
         running_time = total_time - suspend_time
 
         result = [
-            trace_metrics.TestCaseResult(
+            metrics.TestCaseResult(
                 label="UnsuspendedTime",
-                unit=trace_metrics.Unit.nanoseconds,
+                unit=metrics.Unit.nanoseconds,
                 values=[running_time.to_nanoseconds()],
             ),
-            trace_metrics.TestCaseResult(
+            metrics.TestCaseResult(
                 label="SuspendTime",
-                unit=trace_metrics.Unit.nanoseconds,
+                unit=metrics.Unit.nanoseconds,
                 values=[suspend_time.to_nanoseconds()],
             ),
-            trace_metrics.TestCaseResult(
+            metrics.TestCaseResult(
                 label="SuspendPercentage",
-                unit=trace_metrics.Unit.percent,
+                unit=metrics.Unit.percent,
                 values=[(suspend_time / total_time) * 100],
             ),
         ]
@@ -138,65 +139,65 @@ class SuspendMetricsProcessor(trace_metrics.MetricsProcessor):
         if suspend_cnt > 0:
             result.extend(
                 [
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Suspend.sysfs_to_starnix_kernel",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[0].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Suspend.sysfs_to_sag",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[1].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Suspend.sysfs_to_suspend_driver",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[2].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Suspend.sysfs_to_cpu_idle",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[3].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Resume.cpu_idle_to_suspend_driver",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[4].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Resume.cpu_idle_to_sag",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[5].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Resume.cpu_idle_to_starnix_kernel",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[6].to_nanoseconds()
                             / suspend_cnt
                         ],
                     ),
-                    trace_metrics.TestCaseResult(
+                    metrics.TestCaseResult(
                         label="Resume.cpu_idle_to_sysfs",
-                        unit=trace_metrics.Unit.nanoseconds,
+                        unit=metrics.Unit.nanoseconds,
                         values=[
                             suspend_resume_steps_sum[7].to_nanoseconds()
                             / suspend_cnt

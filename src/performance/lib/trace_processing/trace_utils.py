@@ -17,7 +17,8 @@ from typing import (
     TypeVar,
 )
 
-from trace_processing import trace_metrics, trace_model, trace_time
+from reporting import metrics
+from trace_processing import trace_model, trace_time
 
 
 # Compute the linear interpolated [percentile]th percentile
@@ -301,11 +302,11 @@ def adjust_to_common_process_start(
 def standard_metrics_set(
     values: List[int | float],
     label_prefix: str,
-    unit: trace_metrics.Unit,
+    unit: metrics.Unit,
     percentiles: tuple[int, int, int, int, int] = (5, 25, 50, 75, 95),
     durations: List[float] | None = None,
     doc_prefix: str | None = None,
-) -> list[trace_metrics.TestCaseResult]:
+) -> list[metrics.TestCaseResult]:
     """Generates min, max, average and percentiles metrics for the given values.
 
     Args:
@@ -331,7 +332,7 @@ def standard_metrics_set(
     doc_prefix = doc_prefix if doc_prefix else label_prefix
 
     results = [
-        trace_metrics.TestCaseResult(
+        metrics.TestCaseResult(
             f"{label_prefix}P{p}",
             unit,
             [percentile(values, p)],
@@ -341,13 +342,13 @@ def standard_metrics_set(
     ]
 
     results += [
-        trace_metrics.TestCaseResult(
+        metrics.TestCaseResult(
             f"{label_prefix}Min",
             unit,
             [min(values)],
             f"{doc_prefix}, minimum",
         ),
-        trace_metrics.TestCaseResult(
+        metrics.TestCaseResult(
             f"{label_prefix}Max",
             unit,
             [max(values)],
@@ -367,7 +368,7 @@ def standard_metrics_set(
     else:
         average = statistics.mean(values)
     results += [
-        trace_metrics.TestCaseResult(
+        metrics.TestCaseResult(
             f"{label_prefix}Average",
             unit,
             [average],

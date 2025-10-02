@@ -8,6 +8,7 @@ import logging
 import statistics
 from typing import Any, Iterable, Iterator, MutableSequence
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger("InputLatencyMetricsProcessor")
@@ -20,7 +21,7 @@ _DISPLAY_VSYNC_EVENT_NAME: str = "Flatland::DisplayCompositor::OnVsync"
 
 def metrics_processor(
     model: trace_model.Model, extra_args: dict[str, Any]
-) -> MutableSequence[trace_metrics.TestCaseResult]:
+) -> MutableSequence[metrics.TestCaseResult]:
     """Computes latency from input reach to input pipeline to vsync.
 
     Args:
@@ -62,7 +63,7 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         all_events: Iterator[trace_model.Event] = model.all_events()
         input_events: Iterable[trace_model.Event] = trace_utils.filter_events(
             all_events,
@@ -91,12 +92,12 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
             return trace_utils.standard_metrics_set(
                 values=latencies,
                 label_prefix="InputLatency",
-                unit=trace_metrics.Unit.milliseconds,
+                unit=metrics.Unit.milliseconds,
             )
         return [
-            trace_metrics.TestCaseResult(
+            metrics.TestCaseResult(
                 "total_input_latency",
-                trace_metrics.Unit.milliseconds,
+                metrics.Unit.milliseconds,
                 latencies,
             ),
         ]

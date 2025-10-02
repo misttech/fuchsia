@@ -6,6 +6,7 @@
 
 import collections
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 MEMORY_SYSTEM_CATEGORY = "memory:kernel"
@@ -35,7 +36,7 @@ def safe_divide(numerator: float, denominator: float) -> float | None:
 
 def cumulative_metrics_json(
     values: list[tuple[trace_time.TimePoint, int | float]]
-) -> trace_metrics.JSON:
+) -> metrics.JSON:
     """Returns a JSON object holding the change and the rate for the specified cumulative metric."""
     (t0, v0), (t1, v1) = values[0], values[-1]
     return {
@@ -46,14 +47,14 @@ def cumulative_metrics_json(
 
 def gauges_metrics_json(
     values: list[tuple[trace_time.TimePoint, int | float]]
-) -> trace_metrics.JSON:
+) -> metrics.JSON:
     """Returns a JSON object holding the standard metric value keyed by metric name."""
-    metrics = trace_utils.standard_metrics_set(
+    results = trace_utils.standard_metrics_set(
         values=list(v[1] for v in values),
         label_prefix="",
-        unit=trace_metrics.Unit.bytes,
+        unit=metrics.Unit.bytes,
     )
-    return {metric.label: metric.values[0] for metric in metrics}
+    return {result.label: result.values[0] for result in results}
 
 
 class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
@@ -93,7 +94,7 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_freeform_metrics(
         self, model: trace_model.Model
-    ) -> tuple[str, trace_metrics.JSON]:
+    ) -> tuple[str, metrics.JSON]:
         series_by_name = collections.defaultdict(list)
         for event in trace_utils.filter_events(
             model.all_events(),

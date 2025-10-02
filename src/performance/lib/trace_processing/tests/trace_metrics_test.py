@@ -17,6 +17,7 @@ import trace_processing.metrics.fps as fps_metrics
 import trace_processing.metrics.input_latency as input_latency_metrics
 import trace_processing.metrics.scenic as scenic_metrics
 from parameterized import param, parameterized
+from reporting import metrics
 from trace_processing import (
     trace_importing,
     trace_metrics,
@@ -25,8 +26,8 @@ from trace_processing import (
 )
 
 # Boilerplate-busting constants:
-U = trace_metrics.Unit
-TCR = trace_metrics.TestCaseResult
+U = metrics.Unit
+TCR = metrics.TestCaseResult
 
 _EMPTY_MODEL = trace_model.Model()
 
@@ -65,7 +66,7 @@ class TestCaseResultTest(unittest.TestCase):
                 pathlib.Path(tmpdir) / "actual_output.fuchsiaperf.json"
             )
 
-            trace_metrics.TestCaseResult.write_fuchsiaperf_json(
+            metrics.TestCaseResult.write_fuchsiaperf_json(
                 results,
                 test_suite=test_suite,
                 output_path=actual_output_path,

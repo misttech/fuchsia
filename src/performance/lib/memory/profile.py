@@ -9,8 +9,6 @@ from typing import Any, Mapping, cast
 
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from reporting import metrics
-from trace_processing import trace_metrics
-from trace_processing.trace_metrics import JSON
 
 _DESCRIPTION_BASE = "Total populated bytes for private uncompressed memory VMOs"
 
@@ -58,7 +56,7 @@ def capture(
             "memory_profile": _simplify_digest(component_profile),
         },
         [
-            trace_metrics.MetricsProcessorDescription(
+            metrics.MetricsProcessorDescription(
                 doc=description["doc"],
                 code_path=description["code_path"],
                 line_no=description["line_no"],
@@ -70,8 +68,8 @@ def capture(
 
 def process_component_profile(
     principal_groups: Mapping[str, str], component_profile: Any
-) -> list[trace_metrics.TestCaseResult]:
-    metrics: list[trace_metrics.TestCaseResult] = []
+) -> list[metrics.TestCaseResult]:
+    results: list[metrics.TestCaseResult] = []
     for group_name, pattern in principal_groups.items():
         digest = component_profile["ComponentDigest"]
         private_populated = sum(
@@ -79,18 +77,20 @@ def process_component_profile(
             for principal in digest["principals"]
             if fnmatch.fnmatch(principal["name"], pattern)
         )
-        metrics.append(
-            trace_metrics.TestCaseResult(
+        results.append(
+            metrics.TestCaseResult(
                 label=f"Memory/Principal/{group_name}/PrivatePopulated",
-                unit=trace_metrics.Unit.bytes,
+                unit=metrics.Unit.bytes,
                 values=[private_populated],
                 doc=f"{_DESCRIPTION_BASE}: {group_name}",
             )
         )
-    return metrics
+    return results
 
 
-def _simplify_name_to_vmo_memory(name_to_vmo_memory: JSON) -> list[JSON]:
+def _simplify_name_to_vmo_memory(
+    name_to_vmo_memory: metrics.JSON,
+) -> list[metrics.JSON]:
     """Prepares `ffx profile memory` JSON data for BigQuery.
 
     Input sample:
@@ -123,26 +123,26 @@ def _simplify_name_to_vmo_memory(name_to_vmo_memory: JSON) -> list[JSON]:
     if not isinstance(name_to_vmo_memory, dict):
         raise ValueError
     return [
-        dict(name=cast(JSON, k)) | _with_vmos_removed(v)
+        dict(name=cast(metrics.JSON, k)) | _with_vmos_removed(v)
         for k, v in name_to_vmo_memory.items()
     ]
 
 
-def _with_vmos_removed(metrics_dict: JSON) -> dict[str, JSON]:
+def _with_vmos_removed(metrics_dict: metrics.JSON) -> dict[str, metrics.JSON]:
     """Returns a copy of the specified directory without the "vmos" key."""
     if not isinstance(metrics_dict, dict):
         raise ValueError
     return {k: v for k, v in metrics_dict.items() if k != "vmos"}
 
 
-def _simplify_principal(principal: JSON) -> dict[str, JSON]:
+def _simplify_principal(principal: metrics.JSON) -> dict[str, metrics.JSON]:
     """Prepares `ffx profile memory component` JSON data for BigQuery."""
     if not isinstance(principal, dict):
         raise ValueError
     return principal | {"vmos": _simplify_name_to_vmo_memory(principal["vmos"])}
 
 
-def _simplify_principals(principals: JSON) -> list[JSON]:
+def _simplify_principals(principals: metrics.JSON) -> list[metrics.JSON]:
     """Prepares `ffx profile memory` JSON data for BigQuery.
 
     Turns a list of principals into a list of simplified processes.
@@ -152,7 +152,7 @@ def _simplify_principals(principals: JSON) -> list[JSON]:
     return [_simplify_principal(b) for b in principals]
 
 
-def _simplify_digest(component_profile: JSON) -> JSON:
+def _simplify_digest(component_profile: metrics.JSON) -> metrics.JSON:
     result = {}
 
     if isinstance(component_profile, dict):

@@ -8,12 +8,13 @@ import collections.abc
 import unittest
 from typing import Any, Iterable, Sequence
 
-from trace_processing import trace_metrics, trace_model, trace_time
+from reporting import metrics
+from trace_processing import trace_model, trace_time
 from trace_processing.metrics import power, suspend
 
 # Boilerplate-busting constants:
-U = trace_metrics.Unit
-TestCaseResult = trace_metrics.TestCaseResult
+U = metrics.Unit
+TestCaseResult = metrics.TestCaseResult
 
 
 class PowerMetricsTest(unittest.TestCase):

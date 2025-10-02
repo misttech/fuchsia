@@ -9,6 +9,7 @@ import itertools
 import logging
 from typing import Callable, MutableSequence, Sequence
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 from trace_processing.metrics import suspend as suspend_metrics
 
@@ -99,7 +100,7 @@ class _AggregateMetrics:
 
     def to_fuchsiaperf_results(
         self, tag: str, condition: str
-    ) -> list[trace_metrics.TestCaseResult]:
+    ) -> list[metrics.TestCaseResult]:
         """Converts Power metrics to fuchsiaperf JSON object.
 
         Args:
@@ -112,23 +113,23 @@ class _AggregateMetrics:
         """
         assert self.min_power is not None and self.max_power is not None
         suffix = f"_{tag}" if tag else ""
-        results: list[trace_metrics.TestCaseResult] = [
-            trace_metrics.TestCaseResult(
+        results: list[metrics.TestCaseResult] = [
+            metrics.TestCaseResult(
                 label="MinPower" + suffix,
-                unit=trace_metrics.Unit.watts,
+                unit=metrics.Unit.watts,
                 values=[self.min_power],
                 doc=self._build_expl(condition, "minimum"),
             ),
             # TODO(cmasone): Add MedianPower metrics
-            trace_metrics.TestCaseResult(
+            metrics.TestCaseResult(
                 label="MeanPower" + suffix,
-                unit=trace_metrics.Unit.watts,
+                unit=metrics.Unit.watts,
                 values=[self.mean_power],
                 doc=self._build_expl(condition, "mean"),
             ),
-            trace_metrics.TestCaseResult(
+            metrics.TestCaseResult(
                 label="MaxPower" + suffix,
-                unit=trace_metrics.Unit.watts,
+                unit=metrics.Unit.watts,
                 values=[self.max_power],
                 doc=self._build_expl(condition, "maximum"),
             ),
@@ -163,7 +164,7 @@ class PowerMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         """Calculate power metrics, excluding power/trace sync signals.
 
         In order to sync power measurements with a system trace, our test harness

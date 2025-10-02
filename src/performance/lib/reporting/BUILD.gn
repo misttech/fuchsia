@@ -11,5 +11,4 @@ python_library("reporting") {
     "__init__.py",
     "metrics.py",
   ]
-  library_deps = [ "//src/performance/lib/trace_processing" ]
 }

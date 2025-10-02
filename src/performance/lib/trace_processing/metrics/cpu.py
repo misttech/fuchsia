@@ -8,6 +8,7 @@ import logging
 import sys
 from typing import Any, Iterable, Iterator, MutableSequence, Self, TypeAlias
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ _CPU_USAGE_EVENT_NAME = "cpu_usage"
 _DEFAULT_PERCENT_CUTOFF = 0.0
 _ONE_S_IN_NS = 1000000000
 
-Breakdown: TypeAlias = list[dict[str, trace_metrics.JSON]]
+Breakdown: TypeAlias = list[dict[str, metrics.JSON]]
 
 
 class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
@@ -57,7 +58,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         all_events: Iterator[trace_model.Event] = model.all_events()
         cpu_usage_events: Iterable[
             trace_model.CounterEvent
@@ -101,12 +102,12 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             return trace_utils.standard_metrics_set(
                 values=cpu_percentages,
                 label_prefix="Cpu",
-                unit=trace_metrics.Unit.percent,
+                unit=metrics.Unit.percent,
                 durations=cpu_durations,
             )
         return [
-            trace_metrics.TestCaseResult(
-                "CpuLoad", trace_metrics.Unit.percent, cpu_percentages
+            metrics.TestCaseResult(
+                "CpuLoad", metrics.Unit.percent, cpu_percentages
             )
         ]
 
@@ -159,7 +160,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
         # compared to the total CPU duration.
         # If the percent spent is at or above our cutoff, add metric to
         # breakdown.
-        full_breakdown: list[dict[str, trace_metrics.JSON]] = []
+        full_breakdown: list[dict[str, metrics.JSON]] = []
         for tid, breakdown in durations.tid_to_durations.items():
             if tid in tid_to_thread_name:
                 for cpu, duration in breakdown.items():
@@ -167,7 +168,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                         duration / durations.cpu_to_total_duration[cpu] * 100
                     )
                     if percent >= self._percent_cutoff:
-                        metric: dict[str, trace_metrics.JSON] = {
+                        metric: dict[str, metrics.JSON] = {
                             "process_name": tid_to_process_name[tid],
                             "thread_name": tid_to_thread_name[tid],
                             "tid": tid,

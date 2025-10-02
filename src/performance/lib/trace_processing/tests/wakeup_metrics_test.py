@@ -8,7 +8,8 @@ import logging
 import os
 import unittest
 
-from trace_processing import trace_importing, trace_metrics, trace_model
+from reporting import metrics
+from trace_processing import trace_importing, trace_model
 from trace_processing.metrics import wakeup
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -16,8 +17,8 @@ _LABEL = "WakeupTime"
 _EVENTS = ["WakeupEvent1", "WakeupEvent2", "WakeupEvent3"]
 
 # Boilerplate-busting constants:
-U = trace_metrics.Unit
-TCR = trace_metrics.TestCaseResult
+U = metrics.Unit
+TCR = metrics.TestCaseResult
 
 
 class WakeupMetricsTest(unittest.TestCase):

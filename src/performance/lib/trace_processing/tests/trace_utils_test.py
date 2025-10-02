@@ -8,11 +8,12 @@ import unittest
 from typing import List
 
 import test_utils
-from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
+from reporting import metrics
+from trace_processing import trace_model, trace_time, trace_utils
 
 # Boilerplate-busting constants:
-U = trace_metrics.Unit
-TCR = trace_metrics.TestCaseResult
+U = metrics.Unit
+TCR = metrics.TestCaseResult
 
 
 class TraceUtilsTest(unittest.TestCase):

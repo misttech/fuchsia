@@ -7,6 +7,7 @@ import itertools
 import logging
 from typing import Iterable, Iterator, MutableSequence
 
+from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class GpuMetricsProcessor(trace_metrics.MetricsProcessor):
 
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[trace_metrics.TestCaseResult]:
+    ) -> MutableSequence[metrics.TestCaseResult]:
         all_events: Iterator[trace_model.Event] = model.all_events()
         gpu_usage_events: Iterable[
             trace_model.CounterEvent
@@ -80,11 +81,11 @@ class GpuMetricsProcessor(trace_metrics.MetricsProcessor):
             return trace_utils.standard_metrics_set(
                 values=gpu_percentages,
                 label_prefix="Gpu",
-                unit=trace_metrics.Unit.percent,
+                unit=metrics.Unit.percent,
                 durations=gpu_durations,
             )
         return [
-            trace_metrics.TestCaseResult(
-                "GpuUtilization", trace_metrics.Unit.percent, gpu_percentages
+            metrics.TestCaseResult(
+                "GpuUtilization", metrics.Unit.percent, gpu_percentages
             )
         ]
