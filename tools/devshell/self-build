@@ -21,4 +21,4 @@ if [[ $# -ne 0 ]]; then
   exit 0
 fi
 
-fx-command-exec build :host
+fx-command-exec build //:host
