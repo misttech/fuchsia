@@ -102,7 +102,9 @@ impl UtcWaiter {
     fn on_wake_internal(&self) {
         self.send
             .unbounded_send(())
-            .inspect_err(|err| log_error!("UtcWaiter::on_wake: {err:?}"))
+            // This is a common occurrence if the timer has been destroyed
+            // before we get to `unbounded_send` for it.
+            .inspect_err(|err| log_warn!("UtcWaiter::on_wake: {err:?}"))
             .unwrap_or(());
     }
 
