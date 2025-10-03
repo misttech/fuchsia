@@ -82,6 +82,7 @@ pub(super) enum RawProfilerRecordType<'a> {
 pub(super) struct RawModuleRecord<'a> {
     ticks: Ticks,
     process: ProcessRef,
+    thread: ThreadRef,
     module_id: u16,
     name: &'a str,
     build_id: &'a [u8],
@@ -93,13 +94,14 @@ impl<'a> RawModuleRecord<'a> {
         let (rem, payload) = header.take_payload(buf)?;
         let (payload, ticks) = Ticks::parse(payload)?;
         let (payload, process) = ProcessRef::parse(header.thread_ref(), payload)?;
+        let (payload, thread) = ThreadRef::parse(header.thread_ref(), payload)?;
         let (payload, name) = parse_padded_string(header.name_length() as usize, payload)?;
         let (empty, build_id) =
             all_consuming(|p| take_n_padded(header.build_id_length() as usize, p))
                 .parse(payload)?;
         assert!(empty.is_empty(), "all_consuming must not return any remaining buffer");
 
-        Ok((rem, Self { ticks, process, module_id: header.module_id(), name, build_id }))
+        Ok((rem, Self { ticks, process, thread, module_id: header.module_id(), name, build_id }))
     }
 }
 
@@ -107,6 +109,7 @@ impl<'a> RawModuleRecord<'a> {
 pub(super) struct RawMappingRecord {
     ticks: Ticks,
     process: ProcessRef,
+    thread: ThreadRef,
     module_id: u16,
     start_addr: u64,
     range: u64,
@@ -120,6 +123,7 @@ impl RawMappingRecord {
         let (rem, payload) = header.take_payload(buf)?;
         let (payload, ticks) = Ticks::parse(payload)?;
         let (payload, process) = ProcessRef::parse(header.thread_ref(), payload)?;
+        let (payload, thread) = ThreadRef::parse(header.thread_ref(), payload)?;
         let (payload, start_addr) = le_u64(payload)?;
         let (payload, range) = le_u64(payload)?;
         let (empty, vaddr) = le_u64(payload)?;
@@ -129,6 +133,7 @@ impl RawMappingRecord {
             Self {
                 ticks,
                 process,
+                thread,
                 module_id: header.module_id(),
                 start_addr,
                 range,
@@ -215,6 +220,7 @@ impl ProfilerRecord {
 pub struct ModuleRecord {
     pub timestamp: i64,
     pub process: ProcessKoid,
+    pub thread: ThreadKoid,
     pub module_id: u16,
     pub name: FlyStr,
     pub build_id: Vec<u8>,
@@ -225,6 +231,7 @@ impl ModuleRecord {
         Self {
             timestamp: ctx.resolve_ticks(raw.ticks),
             process: ctx.resolve_process(raw.process),
+            thread: ctx.resolve_thread(raw.thread),
             module_id: raw.module_id,
             name: raw.name.into(),
             build_id: raw.build_id.to_vec(),
@@ -236,6 +243,7 @@ impl ModuleRecord {
 pub struct MappingRecord {
     pub timestamp: i64,
     pub process: ProcessKoid,
+    pub thread: ThreadKoid,
     pub module_id: u16,
     pub start_addr: u64,
     pub range: u64,
@@ -248,6 +256,7 @@ impl MappingRecord {
         Self {
             timestamp: ctx.resolve_ticks(raw.ticks),
             process: ctx.resolve_process(raw.process),
+            thread: ctx.resolve_thread(raw.thread),
             module_id: raw.module_id,
             start_addr: raw.start_addr,
             range: raw.range,
@@ -292,7 +301,7 @@ mod tests {
         let module_id: u64 = 99;
         let name_len: u64 = 14; // "test_module.so"
         let build_id_len: u64 = 20;
-        let size_words: u64 = 8; // (Header + 56 payload bytes) / 8
+        let size_words: u64 = 9; // (Header + 64 payload bytes) / 8
 
         let header_val: u64 = (build_id_len << 52)
             | (name_len << 44)
@@ -305,6 +314,7 @@ mod tests {
         buffer.extend_from_slice(&header_val.to_le_bytes());
         buffer.extend_from_slice(&[0x88, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // Ticks(5000)
         buffer.extend_from_slice(&[0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // ProcessKoid(123)
+        buffer.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // ThreadKoid(0)
         buffer.extend_from_slice(&[
             // "test_module.so" (14 bytes) + 2 padding
             0x74, 0x65, 0x73, 0x74, 0x5f, 0x6d, 0x6f, 0x64, 0x75, 0x6c, 0x65, 0x2e, 0x73, 0x6f,
@@ -326,6 +336,7 @@ mod tests {
         let expected = ProfilerRecord::Module(ModuleRecord {
             timestamp: ctx.resolve_ticks(Ticks(5000)),
             process: ProcessKoid::from(123u64),
+            thread: ThreadKoid::from(0u64),
             module_id: 99,
             name: "test_module.so".into(),
             build_id: vec![
@@ -345,7 +356,7 @@ mod tests {
         let thread_ref: u64 = 0; // Inline process koid
         let module_id: u64 = 101;
         let flags: u64 = 1;
-        let size_words: u64 = 6; // (Header + 40 payload bytes) / 8
+        let size_words: u64 = 7; // (Header + 48 payload bytes) / 8
 
         let header_val: u64 = (flags << 44)
             | (module_id << 28)
@@ -357,6 +368,7 @@ mod tests {
         buffer.extend_from_slice(&header_val.to_le_bytes());
         buffer.extend_from_slice(&[0x70, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // Ticks(6000)
         buffer.extend_from_slice(&[0xc8, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // ProcessKoid(456)
+        buffer.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // ThreadKoid(0)
         buffer.extend_from_slice(&[0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // Start Address(0x1000)
         buffer.extend_from_slice(&[0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // Addr Range(0x2000)
         buffer.extend_from_slice(&[0x00, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // Vaddr(0x3000)
@@ -370,6 +382,7 @@ mod tests {
         let expected = ProfilerRecord::Mapping(MappingRecord {
             timestamp: ctx.resolve_ticks(Ticks(6000)),
             process: ProcessKoid::from(456u64),
+            thread: ThreadKoid::from(0u64),
             module_id: 101,
             start_addr: 0x1000,
             range: 0x2000,
