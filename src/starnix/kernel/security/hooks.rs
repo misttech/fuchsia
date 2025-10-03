@@ -223,7 +223,7 @@ pub fn binder_transaction(
 /// Checks whether the given `current_task` can transfer Binder objects to `target_task`.
 /// Corresponds to the `binder_transfer_binder` hook.
 pub fn binder_transfer_binder(current_task: &CurrentTask, target_task: &Task) -> Result<(), Errno> {
-    track_hook_duration!(c"security.hooks.binder_transfer");
+    track_hook_duration!(c"security.hooks.binder_transfer_binder");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::binder::binder_transfer_binder(security_server, current_task, target_task)
     })
