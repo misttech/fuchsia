@@ -27,7 +27,7 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::INPUT_MAJOR;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::UserRef;
+use starnix_uapi::user_address::{ArchSpecific, UserRef};
 use starnix_uapi::{device_type, errno, error, uapi};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -513,12 +513,18 @@ impl FileOps for UinputDeviceFile {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _file: &vfs::FileObject,
-        _current_task: &starnix_core::task::CurrentTask,
+        current_task: &starnix_core::task::CurrentTask,
         _offset: usize,
         data: &mut dyn vfs::buffers::InputBuffer,
     ) -> Result<usize, Errno> {
         let content = data.read_all()?;
-        let event = uapi::input_event::read_from_bytes(&content).map_err(|_| errno!(EINVAL))?;
+        let event = if current_task.is_arch32() {
+            uapi::input_event::read_from_bytes(&content).map_err(|_| errno!(EINVAL))?
+        } else {
+            uapi::input_event::from(
+                uapi::arch32::input_event::read_from_bytes(&content).map_err(|_| errno!(EINVAL))?,
+            )
+        };
 
         let mut inner = self.inner.lock();
 
