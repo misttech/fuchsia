@@ -5,6 +5,7 @@
 #ifndef LIB_FZL_VMAR_MANAGER_H_
 #define LIB_FZL_VMAR_MANAGER_H_
 
+#include <lib/zx/result.h>
 #include <lib/zx/vmar.h>
 
 #include <fbl/macros.h>
@@ -30,13 +31,24 @@ class VmarManager : public fbl::RefCounted<VmarManager> {
   // Create a new VmarManager (creating the underlying VMAR object in the
   // process)
   //
-  // size   : the size of the VMAR region to create.
-  // parent : the parent of this VMAR, or nullptr to use the root VMAR.
-  // flags  : creation flags to pass to vmar_allocate
+  // size    : the size of the VMAR region to create.
+  // parent  : the parent of this VMAR, or nullptr to use the root VMAR.
+  // options : creation options to pass to vmar_allocate
   static fbl::RefPtr<VmarManager> Create(size_t size, fbl::RefPtr<VmarManager> parent = nullptr,
                                          zx_vm_option_t options = ZX_VM_COMPACT |
                                                                   ZX_VM_CAN_MAP_READ |
                                                                   ZX_VM_CAN_MAP_WRITE);
+
+  // Create a new VmarManager that wraps an existing vmar, without making a child vmar inside
+  // of it. This is meant to facilitate the use of a non-root vmars, that like a root vmar, are
+  // guaranteed to never be destroyed while the process is running. An example of this is the
+  // vmar provided to drivers by the driver framework.
+  //
+  // WARNING: This vmar must NOT be destroyed while this VmarManager, or any children of it,
+  // are alive inside the process.
+  //
+  // vmar  : the VMAR to use
+  static zx::result<fbl::RefPtr<VmarManager>> Use(const zx::unowned_vmar& vmar);
 
   const zx::vmar& vmar() const { return vmar_; }
   void* start() const { return start_; }
@@ -48,7 +60,7 @@ class VmarManager : public fbl::RefCounted<VmarManager> {
 
   VmarManager() = default;
   ~VmarManager() {
-    if (vmar_.is_valid()) {
+    if (vmar_.is_valid() && !unowned_vmar_) {
       vmar_.destroy();
     }
   }
@@ -60,6 +72,7 @@ class VmarManager : public fbl::RefCounted<VmarManager> {
   void* start_ = nullptr;
   uint64_t size_ = 0;
   fbl::RefPtr<VmarManager> parent_;
+  bool unowned_vmar_ = false;
 };
 
 }  // namespace fzl

@@ -35,8 +35,58 @@ fbl::RefPtr<VmarManager> VmarManager::Create(size_t size, fbl::RefPtr<VmarManage
   ret->parent_ = std::move(parent);
   ret->start_ = reinterpret_cast<void*>(child_addr);
   ret->size_ = size;
+  ret->unowned_vmar_ = false;
 
   return ret;
+}
+
+zx::result<fbl::RefPtr<VmarManager>> VmarManager::Use(const zx::unowned_vmar& vmar) {
+  fbl::AllocChecker ac;
+  fbl::RefPtr<VmarManager> ret = fbl::AdoptRef(new (&ac) VmarManager());
+
+  if (!ac.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+
+  if (!vmar->is_valid()) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  zx_info_vmar_t info;
+  zx_status_t status = vmar->get_info(ZX_INFO_VMAR, &info, sizeof(info), nullptr, nullptr);
+  if (status != ZX_OK) [[unlikely]] {
+    return zx::error(status);
+  }
+
+  zx_info_handle_basic_t basic_info;
+  status = vmar->get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr);
+  if (status != ZX_OK) [[unlikely]] {
+    return zx::error(status);
+  }
+
+  zx_info_handle_basic_t root_basic_info;
+  status = zx::vmar::root_self()->get_info(ZX_INFO_HANDLE_BASIC, &root_basic_info,
+                                           sizeof(root_basic_info), nullptr, nullptr);
+  if (status != ZX_OK) [[unlikely]] {
+    return zx::error(status);
+  }
+
+  if (basic_info.koid == root_basic_info.koid) {
+    // The nullptr is the sentinel for the root vmar.
+    return zx::ok(nullptr);
+  }
+
+  status = vmar->duplicate(ZX_RIGHT_SAME_RIGHTS, &ret->vmar_);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  ret->parent_ = nullptr;
+  ret->start_ = reinterpret_cast<void*>(info.base);
+  ret->size_ = info.len;
+  ret->unowned_vmar_ = true;
+
+  return zx::ok(std::move(ret));
 }
 
 }  // namespace fzl
