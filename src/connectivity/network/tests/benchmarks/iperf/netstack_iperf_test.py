@@ -22,7 +22,8 @@ from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 from perf_publish import publish
-from trace_processing import trace_importing, trace_metrics
+from reporting import metrics
+from trace_processing import trace_importing
 from trace_processing.metrics import cpu
 
 # The TCP/UDP port number that the Fuchsia side will listen on.
@@ -394,7 +395,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def _get_cpu_results(
         self, path: str | os.PathLike[str]
-    ) -> list[trace_metrics.TestCaseResult]:
+    ) -> list[metrics.TestCaseResult]:
         processor = cpu.CpuMetricsProcessor(aggregates_only=False)
         model = trace_importing.create_model_from_trace_file_path(
             path, patterns=processor.event_patterns

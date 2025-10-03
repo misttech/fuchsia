@@ -81,6 +81,7 @@ foreach(test_config, _test_configs) {
     libraries = [
       "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
       "//src/performance/lib/perf_publish",
+      "//src/performance/lib/reporting",
       "//src/performance/lib/trace_processing",
     ]
 
