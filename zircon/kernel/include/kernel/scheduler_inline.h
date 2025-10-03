@@ -52,29 +52,40 @@ inline void Scheduler::UpdateTotalExpectedRuntime(SchedDuration delta_ns) {
   LOCAL_KTRACE_COUNTER(COUNTER, "Estimated Runtime", this_cpu(), ("CPU", scaled_ns.raw_value()));
 }
 
-// Updates the total deadline utilization estimator with the given delta. The
-// exported value is scaled by the relative performance factor of the CPU to
-// account for performance differences in the estimate.
-inline void Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
-  const SchedUtilization utilization = power_level_control_.UpdateNormalizedUtilization(delta);
-  DEBUG_ASSERT(utilization >= 0);
-  exported_deadline_utilization_ = utilization;
-  LOCAL_KTRACE_COUNTER(COUNTER, "Utilization", this_cpu(),
-                       ("CPU", ffl::Round<uint64_t>(utilization * 1000)));
+// Updates the total deadline utilization estimator with the given delta.
+//
+// Returns the current deadline utilization of the processor after the update.
+inline SchedUtilization Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
+  // Avoid unnecessary trace counter and atomic variable updates.
+  if (delta != 0) {
+    const SchedUtilization utilization = power_level_control_.UpdateNormalizedUtilization(delta);
+    DEBUG_ASSERT_MSG(utilization >= 0, "utilization=%s delta=%s", Format(utilization).c_str(),
+                     Format(delta).c_str());
+    exported_deadline_utilization_ = utilization;
 
-  if (const ktl::optional<uint32_t> domain_id = power_level_control_.domain_id()) {
-    const SchedUtilization domain_utilization = power_level_control_.total_normalized_utilization();
-    LOCAL_KTRACE_COUNTER(COUNTER, "Utilization", domain_id.value(),
-                         ("Domain", ffl::Round<uint64_t>(domain_utilization * 1000)));
+    auto latched_timestamp = KTrace::LatchedTimestamp();
+    LOCAL_KTRACE_COUNTER_TIMESTAMP(COMMON, "Utilization", latched_timestamp(), this_cpu(),
+                                   ("CPU", ffl::Round<uint64_t>(utilization * 1000)));
+
+    if (const ktl::optional<uint32_t> domain_id = power_level_control_.domain_id()) {
+      const SchedUtilization domain_utilization =
+          power_level_control_.total_normalized_utilization();
+      LOCAL_KTRACE_COUNTER_TIMESTAMP(COMMON, "Utilization", latched_timestamp(), domain_id.value(),
+                                     ("Domain", ffl::Round<uint64_t>(domain_utilization * 1000)));
+    }
+
+    return utilization;
   }
+
+  return power_level_control_.normalized_utilization();
 }
 
-inline bool Scheduler::UpdateProcessingRate() {
+inline bool Scheduler::UpdateProcessingRate(zx_instant_boot_ticks_t boot_ticks) {
   if (power_level_control_.is_processing_rate_update_pending()) {
     const SchedProcessingRate processing_rate = power_level_control_.UpdateProcessingRate();
     exported_processing_rate_ = processing_rate;
-    LOCAL_KTRACE_COUNTER(COUNTER, "Processing Rate", this_cpu(),
-                         ("CPU", ffl::Round<uint64_t>(processing_rate * 1000)));
+    LOCAL_KTRACE_COUNTER_TIMESTAMP(COMMON, "Processing Rate", boot_ticks, this_cpu(),
+                                   ("CPU", ffl::Round<uint64_t>(processing_rate * 1000)));
     return true;
   }
   return false;

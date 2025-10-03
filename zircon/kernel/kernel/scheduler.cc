@@ -1308,9 +1308,27 @@ class Scheduler::CandidatePlacement {
  public:
   CandidatePlacement() = default;
 
+  enum class FinishTimeExpired : bool {
+    No,
+    Yes,
+  };
+  static constexpr FinishTimeExpired ToFinishTimeExpired(bool expired) {
+    return expired ? FinishTimeExpired::Yes : FinishTimeExpired::No;
+  }
+
+  enum class PowerLevelControl : bool {
+    Disabled,
+    Enabled,
+  };
+  static constexpr PowerLevelControl ToPowerLevelControl(bool enabled) {
+    return enabled ? PowerLevelControl::Enabled : PowerLevelControl::Disabled;
+  }
+
   // Latches key values from the given CPU, thread, and power domain set.
   static CandidatePlacement Evaluate(cpu_num_t cpu_num, const Thread* thread,
-                                     const PowerDomainSet& power_domain_set)
+                                     const PowerDomainSet& power_domain_set,
+                                     FinishTimeExpired finish_time_expired,
+                                     PowerLevelControl power_level_control)
       TA_REQ_SHARED(thread->get_lock()) {
     const Scheduler* scheduler = Scheduler::Get(cpu_num);
     const SchedDuration cpu_queue_time_ns = scheduler->exported_queue_time_ns();
@@ -1329,16 +1347,28 @@ class Scheduler::CandidatePlacement {
 
     // Add requirements for deadline threads.
     if (IsDeadlineThread(thread)) {
-      const SchedUtilization thread_deadline_utilization =
-          thread->scheduler_state().effective_profile().deadline().utilization;
-      new_required_processing_rate += thread_deadline_utilization;
+      // If the finish time of the deadline thread has not expired and power
+      // level control is enabled, its demand is likely to be in the bandwidth
+      // reservation cache of the last CPU it ran on and already accounted for
+      // in the current required processing rate. Avoid double counting the
+      // demand in the required processing rate of that candidate.
+      if (power_level_control == PowerLevelControl::Disabled ||
+          cpu_num != thread->scheduler_state().last_cpu() ||
+          finish_time_expired == FinishTimeExpired::Yes) {
+        new_required_processing_rate +=
+            thread->scheduler_state().effective_profile().deadline().utilization;
+      }
     }
 
     // Estimated energy cost comparisons are only necessary in heterogeneous /
     // multi-domain systems. In strict SMP systems, where all CPUs have the same
     // power / performance characteristics and operating point changes affect
     // all CPUs simultaneously, only demand and processing rate requirements
-    // need to be considered for task placement and admission control.
+    // need to be considered for task placement and admission control. However,
+    // this condition may change to track and maintain deeper idle states in the
+    // future.
+    // TODO(eieio): Account for deeper idle states when making task placement
+    // decisions.
     if (power_domain_set.count() > 1u) {
       // Compute the power delta if there is a change in the required processing
       // rate. The addition of deadline / constant bandwidth demand will always
@@ -1497,6 +1527,11 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
   const cpu_num_t starting_cpu = last_cpu != INVALID_CPU ? last_cpu : current_cpu;
   const CpuSearchSet& search_set = percpu::Get(starting_cpu).search_set;
 
+  // A thread with an expired finish time is guaranteed to not have a cached
+  // bandwidth reservation on the last CPU it ran on.
+  const auto finish_time_expired =
+      CandidatePlacement::ToFinishTimeExpired(thread_state.finish_time() <= CurrentTime());
+
   // Loop over the search set for CPU the task last ran on to find a suitable
   // target.
   cpu_num_t target_cpu = INVALID_CPU;
@@ -1510,14 +1545,16 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
     // the need for locking or snapshotting.
     Guard<MonitoredSpinLock, NoIrqSave> guard{&Get()->queue_lock_, SOURCE_TAG};
     const PowerDomainSet& power_domain_set = Get()->power_level_control_.power_domain_set();
+    const auto power_level_control =
+        CandidatePlacement::ToPowerLevelControl(Get()->power_level_control_.is_enabled());
 
     for (const auto& entry : search_set.const_iterator()) {
       const cpu_num_t candidate_cpu = entry.cpu;
       const bool candidate_available = available_mask & cpu_num_to_mask(candidate_cpu);
 
       if (candidate_available) {
-        const CandidatePlacement candidate_queue =
-            CandidatePlacement::Evaluate(candidate_cpu, thread, power_domain_set);
+        const CandidatePlacement candidate_queue = CandidatePlacement::Evaluate(
+            candidate_cpu, thread, power_domain_set, finish_time_expired, power_level_control);
 
         if (!target_queue || candidate_queue.IsBetterThan(target_queue)) {
           target_cpu = candidate_cpu;
@@ -2071,6 +2108,34 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     }
   }
 
+  if (power_level_control_.is_enabled()) {
+    // After the current thread has been potentially removed from this
+    // scheduler, clear or prune the bandwidth demand cache and re-evaluate the
+    // current power level.
+    const bool clear_cache = next_thread->IsIdle() && deadline_run_queue_.is_empty();
+    const SchedUtilization utilization_to_remove = clear_cache
+                                                       ? bandwidth_reservation_cache_.Clear()
+                                                       : bandwidth_reservation_cache_.Prune(now);
+    if (utilization_to_remove > 0) {
+      LOCAL_KTRACE_INSTANT(
+          COMMON, "clear/prune",
+          ("utilization_to_remove", Round<uint64_t>(utilization_to_remove * 1000)));
+
+      // Evaluate reducing the processing rate when the required utilization
+      // decreases below the lower bound of the current power level. All of the
+      // processors in the same domain must be re-evaluated to determine whether
+      // an actual rate change should occur.
+      const SchedUtilization total_utilization =
+          UpdateTotalDeadlineUtilization(-utilization_to_remove);
+      if (total_utilization <= power_level_control_.preceding_processing_rate()) {
+        power_level_control_.ReevaluateCurrentPowerLevel();
+      }
+    }
+
+    // Send a pending power level request before updating the processing rate.
+    power_level_control_.SendPendingPowerLevelRequest(queue_guard);
+  }
+
   // Update the current processing rate only after any uses in the reschedule
   // path above to ensure the scale is applied consistently over the interval
   // between reschedules (i.e. not earlier than the requested update).
@@ -2079,10 +2144,7 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   // time below when the current thread is deadline scheduled.
   //
   // TODO(eieio): Shed load when total utilization is above the processing rate.
-  const bool processing_rate_updated = UpdateProcessingRate();
-
-  // Send any pending power level request.
-  power_level_control_.SendPendingPowerLevelRequest();
+  const bool processing_rate_updated = UpdateProcessingRate(mono_and_boot_now.boot_ticks);
 
   SetIdle(next_thread->IsIdle());
 
@@ -2090,97 +2152,109 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     percpu::Get(current_cpu).stats.idle_time += actual_runtime_ns;
   }
 
-  if (next_thread->IsIdle()) {
-    ktrace::Scope trace_stop_preemption = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "idle");
-    next_state->last_started_running_ = now;
+  {
+    // Each path below must set the preemption time.
+    // TODO(eieio): Debug assert that the value set is >= now.
+    SchedTime preemption_time_ns = SchedTime::Min();
 
-    // If there are no tasks to run in the future or there is idle/power work to
-    // perform, disable the preemption timer.  Otherwise, set the preemption
-    // time to the earliest eligible time.
-    target_preemption_time_ns_ = percpu::Get(this_cpu_).idle_power_thread.pending_power_work()
-                                     ? SchedTime(ZX_TIME_INFINITE)
-                                     : GetNextEligibleTime();
-    PreemptReset(current_cpu, now.raw_value(), target_preemption_time_ns_.raw_value());
-  } else if (timeslice_expired || current_thread != next_thread) {
-    ktrace::Scope trace_start_preemption = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "next_slice");
+    if (next_thread->IsIdle()) {
+      ktrace::Scope trace_stop_preemption = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "idle");
+      next_state->last_started_running_ = now;
 
-    // Re-compute the time slice and ideal preemption time for the new thread
-    // based on the latest state.
-    target_preemption_time_ns_ = NextThreadTimeslice(next_thread, now);
+      // If there are no tasks to run in the future or there is idle/power work to
+      // perform, disable the preemption timer.  Otherwise, set the preemption
+      // time to the earliest eligible time.
+      preemption_time_ns = target_preemption_time_ns_ =
+          percpu::Get(this_cpu_).idle_power_thread.pending_power_work()
+              ? SchedTime(ZX_TIME_INFINITE)
+              : GetNextEligibleTime();
+    } else if (timeslice_expired || current_thread != next_thread) {
+      ktrace::Scope trace_start_preemption = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "next_slice");
 
-    // Update the thread's runtime stats to record the amount of time that it spent in the run
-    // queue.
-    next_thread->UpdateRuntimeStats(next_thread->state());
-
-    next_state->last_started_running_ = now;
-    start_of_current_time_slice_ns_ = now;
-    scheduled_weight_total_ = weight_total_;
-
-    // Adjust the preemption time to account for a deadline thread becoming
-    // eligible before the current time slice expires.
-    const SchedTime preemption_time_ns =
-        IsFairThread(next_thread)
-            ? ClampToDeadline(target_preemption_time_ns_)
-            : ClampToEarlierDeadline(target_preemption_time_ns_, next_state->finish_time_);
-    DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
-
-    PreemptReset(current_cpu, now.raw_value(), preemption_time_ns.raw_value());
-    trace_start_preemption =
-        KTRACE_END_SCOPE(("preemption_time", preemption_time_ns),
-                         ("target preemption time", target_preemption_time_ns_));
-
-    // Emit a flow end event to match the flow begin event emitted when the
-    // thread was enqueued. Emitting in this scope ensures that thread just
-    // came from the run queue (and is not the idle thread).
-    LOCAL_KTRACE_FLOW_END(FLOW, "sched_latency", next_state->flow_id(),
-                          ("tid", next_thread->tid()));
-  } else {
-    ktrace::Scope trace_continue = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "continue");
-    DEBUG_ASSERT(current_thread == next_thread);
-
-    // Update the target preemption time for consistency with the updated CPU
-    // processing rate.
-    if (processing_rate_updated && IsDeadlineThread(next_thread)) {
+      // Re-compute the time slice and ideal preemption time for the new thread
+      // based on the latest state.
       target_preemption_time_ns_ = NextThreadTimeslice(next_thread, now);
+
+      // Update the thread's runtime stats to record the amount of time that it spent in the run
+      // queue.
+      next_thread->UpdateRuntimeStats(next_thread->state());
+
+      next_state->last_started_running_ = now;
+      start_of_current_time_slice_ns_ = now;
+      scheduled_weight_total_ = weight_total_;
+
+      // Adjust the preemption time to account for a deadline thread becoming
+      // eligible before the current time slice expires.
+      preemption_time_ns =
+          IsFairThread(next_thread)
+              ? ClampToDeadline(target_preemption_time_ns_)
+              : ClampToEarlierDeadline(target_preemption_time_ns_, next_state->finish_time_);
+      DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
+
+      trace_start_preemption =
+          KTRACE_END_SCOPE(("preemption_time", preemption_time_ns),
+                           ("target preemption time", target_preemption_time_ns_));
+
+      // Emit a flow end event to match the flow begin event emitted when the
+      // thread was enqueued. Emitting in this scope ensures that thread just
+      // came from the run queue (and is not the idle thread).
+      LOCAL_KTRACE_FLOW_END(FLOW, "sched_latency", next_state->flow_id(),
+                            ("tid", next_thread->tid()));
+    } else {
+      ktrace::Scope trace_continue = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "continue");
+      DEBUG_ASSERT(current_thread == next_thread);
+
+      // Update the target preemption time for consistency with the updated CPU
+      // processing rate.
+      // TODO(eieio): Eventually update the effective bandwidth for all threads.
+      if (processing_rate_updated && IsDeadlineThread(next_thread)) {
+        target_preemption_time_ns_ = NextThreadTimeslice(next_thread, now);
+      }
+
+      // The current thread should continue to run. A throttled deadline thread
+      // might become eligible before the current time slice expires. Figure out
+      // whether to set the preemption time earlier to switch to the newly
+      // eligible thread.
+      //
+      // The preemption time should be set earlier when either:
+      //   * Current is a fair thread and a deadline thread will become eligible
+      //     before its time slice expires.
+      //   * Current is a deadline thread and a deadline thread with an earlier
+      //     deadline will become eligible before its time slice expires.
+      //
+      // Note that the target preemption time remains set to the ideal
+      // preemption time for the current task, even if the preemption timer is set
+      // earlier. If a task that becomes eligible is stolen before the early
+      // preemption is handled, this logic will reset to the original target
+      // preemption time.
+      preemption_time_ns =
+          IsFairThread(next_thread)
+              ? ClampToDeadline(target_preemption_time_ns_)
+              : ClampToEarlierDeadline(target_preemption_time_ns_, next_state->finish_time_);
+      DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
+
+      trace_continue = KTRACE_END_SCOPE(("preemption_time", preemption_time_ns),
+                                        ("target preemption time", target_preemption_time_ns_));
     }
 
-    // The current thread should continue to run. A throttled deadline thread
-    // might become eligible before the current time slice expires. Figure out
-    // whether to set the preemption time earlier to switch to the newly
-    // eligible thread.
-    //
-    // The preemption time should be set earlier when either:
-    //   * Current is a fair thread and a deadline thread will become eligible
-    //     before its time slice expires.
-    //   * Current is a deadline thread and a deadline thread with an earlier
-    //     deadline will become eligible before its time slice expires.
-    //
-    // Note that the target preemption time remains set to the ideal
-    // preemption time for the current task, even if the preemption timer is set
-    // earlier. If a task that becomes eligible is stolen before the early
-    // preemption is handled, this logic will reset to the original target
-    // preemption time.
-    const SchedTime preemption_time_ns =
-        IsFairThread(next_thread)
-            ? ClampToDeadline(target_preemption_time_ns_)
-            : ClampToEarlierDeadline(target_preemption_time_ns_, next_state->finish_time_);
-    DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
+    // Make sure the bandwidth demand cache will get pruned if there are
+    // remaining valid entries.
+    if (power_level_control_.is_enabled()) {
+      preemption_time_ns = bandwidth_reservation_cache_.ClampToNextFinishTime(preemption_time_ns);
+    }
 
+    DEBUG_ASSERT(preemption_time_ns != SchedTime::Min());
     PreemptReset(current_cpu, now.raw_value(), preemption_time_ns.raw_value());
-    trace_continue = KTRACE_END_SCOPE(("preemption_time", preemption_time_ns),
-                                      ("target preemption time", target_preemption_time_ns_));
-  }
 
-  // Assert that there is no path beside running the idle thread can leave the
-  // preemption timer unarmed. However, the preemption timer may or may not be
-  // armed when running the idle thread.
-  // TODO(eieio): In the future, the preemption timer may be canceled when there
-  // is only one task available to run. Revisit this assertion at that time.
-  DEBUG_ASSERT(next_thread->IsIdle() || percpu::Get(current_cpu).timer_queue.PreemptArmed());
+    // Assert that there is no path beside running the idle thread can leave the
+    // preemption timer unarmed. However, the preemption timer may or may not be
+    // armed when running the idle thread.
+    DEBUG_ASSERT(next_thread->IsIdle() || percpu::Get(current_cpu).timer_queue.PreemptArmed());
+  }
 
   // Almost done, we need to handle the actual context switch (if any).
   if (current_thread != next_thread) {
-    LOCAL_KTRACE(
+    LOCAL_KTRACE_INSTANT(
         DETAILED, "switch_threads", ("total threads", runnable_task_count()),
         ("total weight", weight_total_.raw_value()),
         ("current thread time slice", current_thread->scheduler_state().remaining_time_slice_ns()),
@@ -2825,7 +2899,25 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
         }
       }
     } else {
-      UpdateTotalDeadlineUtilization(ep.deadline().utilization);
+      // Remove the thread from the bandwidth demand cache, if present, and
+      // subtract the any cached utilization that is still reflected in the
+      // total demand. This value may be different than the thread's current
+      // bandwidth demand due to bandwidth inheritance or a profile change since
+      // last blocking.
+      // TODO(eieio): Optimize based on placement type?
+      const SchedUtilization utilization_to_remove =
+          power_level_control_.is_enabled() ? bandwidth_reservation_cache_.Remove(thread->tid())
+                                            : SchedUtilization{0};
+
+      const SchedUtilization total_utilization =
+          UpdateTotalDeadlineUtilization(ep.deadline().utilization - utilization_to_remove);
+
+      // Increase the processing rate when the required utilization increases
+      // beyond the current rate.
+      if (power_level_control_.is_enabled() &&
+          total_utilization > power_level_control_.processing_rate()) {
+        power_level_control_.PendPowerLevelRequestForRate(total_utilization);
+      }
     }
     runnable_task_count_++;
     DEBUG_ASSERT(runnable_task_count_ > 0);
@@ -2881,7 +2973,17 @@ void Scheduler::Remove(SchedTime now, Thread* thread, cpu_num_t stolen_by) {
       DEBUG_ASSERT(weight_total_ >= 0);
       UpdateFairBandwidthPeriod(now);
     } else {
-      UpdateTotalDeadlineUtilization(-effective_profile.deadline().utilization);
+      // Add the thread to the bandwidth demand cache and adjust the total
+      // demand if there was an eviction of another active entry. If the thread
+      // is being stolen, simply remove its demand from the total demand, since
+      // its influence is migrating to another CPU.
+      SchedUtilization utilization_to_remove = effective_profile.deadline().utilization;
+      if (power_level_control_.is_enabled() && stolen_by == INVALID_CPU) {
+        utilization_to_remove = bandwidth_reservation_cache_.Add(thread->tid(), state.finish_time(),
+                                                                 utilization_to_remove);
+      }
+
+      UpdateTotalDeadlineUtilization(-utilization_to_remove);
     }
     DEBUG_ASSERT(runnable_task_count_ > 0);
     runnable_task_count_--;
@@ -3047,6 +3149,7 @@ void Scheduler::Unblock(Thread* thread) {
 
   const SchedTime now = CurrentTime();
   cpu_num_t target_cpu = INVALID_CPU;
+  cpu_mask_t additional_cpus_to_reschedule = 0;
   while (true) {
     // TODO(rudymathu): This target_cpu should be stashed in the thread prior to
     // adding it to the save_state_list_, as that would allow us to bypass CPU
@@ -3072,6 +3175,13 @@ void Scheduler::Unblock(Thread* thread) {
         thread->scheduler_state().curr_cpu_ = target_cpu;
         target->AssertInScheduler(*thread);
         target->Insert(now, thread);
+
+        // If a power level change was requested during insertion, attempt to
+        // handle it immediately with the fast path and update any affected
+        // CPUs. If the fast path is not supported, the request will be left
+        // pending on the target CPU and flushed during its reschedule.
+        additional_cpus_to_reschedule =
+            target->power_level_control_.SendPendingPowerLevelRequestFastPath(target_queue_guard);
       }
       break;
     }
@@ -3081,7 +3191,7 @@ void Scheduler::Unblock(Thread* thread) {
 
   trace.End();
   thread->get_lock().Release();
-  RescheduleMask(cpu_num_to_mask(target_cpu));
+  RescheduleMask(cpu_num_to_mask(target_cpu) | additional_cpus_to_reschedule);
 }
 
 void Scheduler::Unblock(Thread::UnblockList list) {
@@ -3124,6 +3234,13 @@ void Scheduler::Unblock(Thread::UnblockList list) {
           thread->scheduler_state().curr_cpu_ = target_cpu;
           target->AssertInScheduler(*thread);
           target->Insert(now, thread);
+
+          // If a power level change was requested during insertion, attempt to
+          // handle it immediately with the fast path and update any affected
+          // CPUs. If the fast path is not supported, the request will be left
+          // pending on the target CPU and flushed during its reschedule.
+          cpus_to_reschedule_mask |=
+              target->power_level_control_.SendPendingPowerLevelRequestFastPath(target_queue_guard);
         }
         break;
       }
@@ -3684,7 +3801,7 @@ bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
   {
     Guard<MonitoredSpinLock, NoIrqSave> guard{&queue_lock_, SOURCE_TAG};
     need_reschedule = power_level_control_.IsValidActivePowerLevel(power_level) &&
-                      power_level_control_.RequestPowerLevel(power_level);
+                      power_level_control_.PendPowerLevelRequest(power_level);
   }
   if (need_reschedule) {
     RescheduleMask(cpu_num_to_mask(this_cpu()));
@@ -3692,12 +3809,107 @@ bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
   return need_reschedule;
 }
 
-bool Scheduler::PowerLevelControl::RequestPowerLevel(uint8_t power_level) {
+bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_req_power_level", ("cpu", cpu()),
+                                                 ("power_level", power_level));
+
   // If there is already a pending request, it can be updated without issuing a reschedule,
   // since this update raced with dispatch of the previous request and won.
   const bool had_pending_request = pending_update_request_.has_value();
   pending_update_request_ = power_state_.RequestTransition(cpu(), power_level);
   return !had_pending_request && pending_update_request_.has_value();
+}
+
+bool Scheduler::PowerLevelControl::PendPowerLevelRequestForRate(
+    SchedProcessingRate processing_rate) {
+  if (ktl::optional<uint8_t> power_level =
+          power_state_.power_domain_set().LookupPowerLevel(cpu(), processing_rate)) {
+    return PendPowerLevelRequest(*power_level);
+  }
+  return false;
+}
+
+void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
+  SchedUtilization max_utilization{0};
+  percpu::ForEach([&](cpu_num_t cpu_num, percpu* percpu) {
+    const size_t bit_num = cpu_num % ZX_CPU_SET_BITS_PER_WORD;
+    const size_t index = cpu_num / ZX_CPU_SET_BITS_PER_WORD;
+    DEBUG_ASSERT(index < ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD);
+
+    if (domain() && domain()->cpus().mask[index] & uint64_t{1} << bit_num) {
+      max_utilization =
+          ktl::max(max_utilization, percpu->scheduler.exported_deadline_utilization());
+    }
+  });
+
+  LOCAL_KTRACE_INSTANT(COMMON, "ReevaluateCurrentPowerLevel",
+                       ("max_utilization", Round<int32_t>(1000 * max_utilization)),
+                       ("processing_rate", Round<int32_t>(1000 * processing_rate())));
+
+  SchedProcessingRate max_required_processing_rate{max_utilization};
+  if (max_required_processing_rate < processing_rate()) {
+    PendPowerLevelRequestForRate(max_required_processing_rate);
+  }
+}
+
+cpu_mask_t Scheduler::PowerLevelControl::SendPendingPowerLevelRequestFastPath(
+    Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
+  // If there is a fast path, handle posting the request directly.
+  if (power_state_.fast_path_controller() && pending_update_request_.has_value() &&
+      power_state_.is_serving()) {
+    // Use swap to move the pending request into the local optional, leaving the
+    // member optional empty. Using ktl::move is insufficient, since moving from
+    // an optional does not leave it empty, it just leaves the underlying value
+    // in the post-moved state which is a no-op for a POD structure.
+    ktl::optional<power_management::PowerLevelUpdateRequest> request;
+    request.swap(pending_update_request_);
+
+    cpu_mask_t cpus_to_reschedule_mask = 0;
+    if (request.has_value()) {
+      ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(
+          COMMON, "sched_opp_request_fast", ("domain_id", request->domain_id),
+          ("control_argument", request->control_argument));
+
+      queue_guard.CallUnlocked([&] {
+        if (const zx::result<cpu_mask_t> result =
+                power_state_.fast_path_controller()->Post(*request);
+            result.is_ok()) {
+          cpus_to_reschedule_mask = result.value();
+        } else {
+          KERNEL_OOPS("Failed to set OPP with fast path: domain_id=%" PRIu32
+                      " control_argument=%" PRIu64 ": %d\n",
+                      request->domain_id, request->control_argument, result.status_value());
+        }
+      });
+
+      trace = KTRACE_END_SCOPE(("cpus_to_reschedule_mask", cpus_to_reschedule_mask));
+    }
+
+    return cpus_to_reschedule_mask;
+  }
+
+  return 0;
+}
+
+void Scheduler::PowerLevelControl::SendPendingPowerLevelRequest(
+    Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
+  // Try the fast path first before deferring to the timer/dpc slow path.
+  if (const cpu_mask_t reschedule_mask = SendPendingPowerLevelRequestFastPath(queue_guard)) {
+    // Reschedule any CPUs affected by the power level request. If the local CPU
+    // is affected, it will be handled later in RescheduleCommon after this
+    // method returns.
+    // TODO(eieio): See if this can be replaced with a call to Scheduler::RescheduleMask.
+    mp_reschedule(reschedule_mask, 0);
+  }
+
+  if (pending_update_request_.has_value() && power_state_.is_serving()) {
+    ktrace::Scope trace = KTRACE_CPU_BEGIN_SCOPE(
+        "kernel:sched", "sched_opp_request_slow", ("domain_id", pending_update_request_->domain_id),
+        ("control_argument", pending_update_request_->control_argument));
+
+    request_timer_.Cancel();
+    request_timer_.Set(Deadline::infinite_past(), TimerHandler, this);
+  }
 }
 
 void Scheduler::PowerLevelControl::TimerHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
@@ -3722,6 +3934,9 @@ void Scheduler::PowerLevelControl::DpcHandler(Dpc* dpc) {
   }
 
   if (domain && domain->controller()->is_serving() && request.has_value()) {
+    ktrace::Scope trace =
+        KTRACE_BEGIN_SCOPE("kernel:sched", "sched_opp_request", ("domain_id", request->domain_id),
+                           ("control_argument", request->control_argument));
     const zx::result result = domain->controller()->Post(*request);
     ASSERT(result.status_value() != ZX_ERR_SHOULD_WAIT);
   }

@@ -9,8 +9,10 @@
 #include <lib/fit/function.h>
 #include <lib/fxt/interned_string.h>
 #include <lib/fxt/string_ref.h>
+#include <lib/power-management/bandwidth-reservation-cache.h>
 #include <lib/power-management/energy-model.h>
 #include <lib/power-management/power-state.h>
+#include <lib/power-management/types.h>
 #include <lib/relaxed_atomic.h>
 #include <lib/sched/affine.h>
 #include <lib/zircon-internal/macros.h>
@@ -28,6 +30,7 @@
 #include <kernel/mp.h>
 #include <kernel/owned_wait_queue.h>
 #include <kernel/scheduler_state.h>
+#include <kernel/scheduler_tracing.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
 #include <kernel/wait.h>
@@ -985,12 +988,13 @@ class Scheduler {
   inline void UpdateTotalExpectedRuntime(SchedDuration delta_ns) TA_REQ(queue_lock_);
 
   // Updates to total deadline utilization estimator and exports the atomic
-  // shadow variable for cross-CPU readers.
-  inline void UpdateTotalDeadlineUtilization(SchedUtilization delta_ns) TA_REQ(queue_lock_);
+  // shadow variable for cross-CPU readers. Returns the new total deadline utilization.
+  inline SchedUtilization UpdateTotalDeadlineUtilization(SchedUtilization delta_ns)
+      TA_REQ(queue_lock_);
 
   // Updates the processing rate and exports the atomic shadow variable for
   // cross-CPU readers.
-  inline bool UpdateProcessingRate() TA_REQ(queue_lock_);
+  inline bool UpdateProcessingRate(zx_instant_boot_ticks_t boot_ticks) TA_REQ(queue_lock_);
 
   // Computes the estimated energy consumed since the last reschedule and
   // updates the current thread and CPU energy accumulators.
@@ -1397,6 +1401,14 @@ class Scheduler {
   // placements when finding a target CPU for a waking or migrating thread.
   class CandidatePlacement;
 
+  // Track bandwidth reservations for up to 8 recently blocked threads.
+  static constexpr size_t kMaxBandwidthReservations = 8;
+  using BandwidthReservationCache =
+      power_management::BandwidthReservationCache<kMaxBandwidthReservations>;
+
+  TA_GUARDED(queue_lock_)
+  BandwidthReservationCache bandwidth_reservation_cache_;
+
   // PowerLevelControl encapsulates the CPU energy model and power level control interface for
   // energy aware scheduling.
   //
@@ -1413,11 +1425,18 @@ class Scheduler {
       // request intended for the previous domain and the new domain ref pointer together.
       pending_update_request_.reset();
 
-      // Set the processing rate back to default. If domain is empty, the energy model has been
-      // cleared by userspace and the actual processing rate is unclear. If the domain is being
-      // replaced/updated, userspace is expected to send an update to set the active power level,
-      // which will also update the processing rate.
-      updated_processing_rate_ = default_processing_rate_;
+      // Reset the processing rate using either the current rate for the domain or the default. If
+      // domain is empty, the energy model has been cleared by userspace and the actual processing
+      // rate is unclear. If the domain is being replaced/updated, either the current active power
+      // level is known, or an update will be sent later.
+      if (const SchedProcessingRate rate = power_state_.active_processing_rate(); rate > 0) {
+        updated_processing_rate_ = rate;
+      } else {
+        updated_processing_rate_ = default_processing_rate_;
+      }
+
+      // Set the active power coefficient from the power state config.
+      active_power_coefficient_nw_ = power_state_.active_power_coefficient_nw();
 
       // Set the max processing rate for admission control comparisons.
       max_processing_rate_ =
@@ -1430,10 +1449,18 @@ class Scheduler {
     // kernel power level control interface) for the domain associated with this scheduler to
     // acknowledge that a power level request has been completed.
     zx::result<> UpdateActivePowerLevel(uint8_t power_level) {
+      ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "UpdateActivePowerLevel",
+                                                     ("cpu", cpu()), ("power_level", power_level));
+
       const zx::result result = power_state_.UpdateActivePowerLevel(power_level);
       if (result.is_ok()) {
         updated_processing_rate_ = power_state_.active_processing_rate();
       }
+
+      trace = KTRACE_END_SCOPE(
+          ("processing_rate", Round<uint32_t>(1000 * processing_rate_)),
+          ("updated_processing_rate", Round<uint32_t>(1000 * updated_processing_rate_)));
+
       return result;
     }
 
@@ -1461,13 +1488,14 @@ class Scheduler {
       return power_state_.IsValidActivePowerLevel(power_level);
     }
 
-    // Updates the current processing rate and reciprocal to the updated value and returns the new
-    // processing rate. Called by RescheduleCommon after accounting is performed for the time spent
-    // at the previous rate.
+    // Updates the current processing rate, reciprocal, and active power coefficient to the updated
+    // values and returns the new processing rate. Called by RescheduleCommon after accounting is
+    // performed for the time spent at the previous rate.
     SchedProcessingRate UpdateProcessingRate() {
       if (is_processing_rate_update_pending()) {
         processing_rate_ = updated_processing_rate_;
         processing_rate_reciprocal_ = 1 / processing_rate_;
+        active_power_coefficient_nw_ = power_state_.active_power_coefficient_nw();
       }
       return processing_rate_;
     }
@@ -1479,18 +1507,41 @@ class Scheduler {
       return power_state_.UpdateUtilization(delta);
     }
 
-    // Called by the scheduler to request a power level change for the domain associated with this
-    // scheduler.
-    [[nodiscard("A reschedule is required when true")]] bool RequestPowerLevel(uint8_t power_level);
+    // Pends a power level request that will later be flushed by
+    // SendPendingPowerLevelRequest*.
+    bool PendPowerLevelRequest(uint8_t power_level);
 
-    // Called by RescheduleCommon to send any pending request to the registered power level
-    // controller.
-    void SendPendingPowerLevelRequest() {
-      if (power_state_.is_serving() && pending_update_request_.has_value()) {
-        request_timer_.Cancel();
-        request_timer_.Set(Deadline::infinite_past(), TimerHandler, this);
-      }
-    }
+    // Pends a power level request compatible with the given rate that will
+    // later be flushed by SendPendingPowerLevelRequest*.
+    bool PendPowerLevelRequestForRate(SchedProcessingRate processing_rate);
+
+    // Re-evaluates the power level requirements for processors in the same
+    // domain and pends a power level request if the processing rate should be
+    // adjusted.
+    void ReevaluateCurrentPowerLevel();
+
+    // Sends a pending power level request immediately using the fast path power
+    // level controller, if supported.
+    //
+    // Because this operation needs to update bookkeeping on other CPUs that are
+    // currently protected by their respective queue locks, the local CPU's
+    // queue lock must be temporarily released, which could result in an
+    // incomplete critical section if local invariants are changed by a remote
+    // processor. Care must be taken to ensure the caller's invariants are
+    // either maintained or re-validated across this operation.
+    cpu_mask_t SendPendingPowerLevelRequestFastPath(
+        Guard<MonitoredSpinLock, NoIrqSave>& queue_guard);
+
+    // Called by RescheduleCommon to send a pending request to the registered
+    // power level controller.
+    //
+    // Because this operation needs to update bookkeeping on other CPUs that are
+    // currently protected by their respective queue locks, the local CPU's
+    // queue lock must be temporarily released, which could result in an
+    // incomplete critical section if local invariants are changed by a remote
+    // processor. Care must be taken to ensure the caller's invariants are
+    // either maintained or re-validated across this operation.
+    void SendPendingPowerLevelRequest(Guard<MonitoredSpinLock, NoIrqSave>& queue_guard);
 
     // Returns true if power control is enabled.
     bool is_enabled() const { return power_state_.is_enabled(); }
@@ -1508,9 +1559,7 @@ class Scheduler {
     ktl::optional<uint8_t> active_power_level() const { return power_state_.active_power_level(); }
 
     // Returns the power coefficient for the current active power level.
-    uint64_t active_power_coefficient_nw() const {
-      return power_state_.active_power_coefficient_nw();
-    }
+    uint64_t active_power_coefficient_nw() const { return active_power_coefficient_nw_; }
 
     // Returns the power coefficient of the maximum idle power level (e.g. clock gating).
     uint64_t max_idle_power_coefficient_nw() const {
@@ -1541,6 +1590,14 @@ class Scheduler {
     // data and updated whenever the energy model is set/updated by userspace.
     SchedProcessingRate max_processing_rate() const { return max_processing_rate_; }
 
+    // Returns the processing rate of the active power level immediately before
+    // the current power level. This rate is the lower bound of the performance
+    // capacity of the current active power level. Returns a rate of 0.0 when
+    // the current power level is the lowest possible active power level.
+    SchedProcessingRate preceding_processing_rate() const {
+      return power_state_.preceding_active_processing_rate();
+    }
+
     // Returns true if there is a pending update to the processing rate that has not yet been
     // processed by the scheduler. Checked by RescheduleCommon after accounting has been updated for
     // the runtime segment covering the previous processing rate.
@@ -1560,6 +1617,8 @@ class Scheduler {
     SchedProcessingRate updated_processing_rate_{1};
     SchedProcessingRate default_processing_rate_{1};
     SchedProcessingRate max_processing_rate_{1};
+
+    uint64_t active_power_coefficient_nw_{0};
 
     power_management::PowerState power_state_;
     ktl::optional<power_management::PowerLevelUpdateRequest> pending_update_request_;

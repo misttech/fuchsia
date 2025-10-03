@@ -27,9 +27,6 @@
 #define LOCAL_KTRACE_LEVEL_ENABLED(level) \
   ((LOCAL_KTRACE_LEVEL) >= FXT_CONCATENATE(KERNEL_SCHEDULER_TRACING_LEVEL_, level))
 
-#define LOCAL_KTRACE(level, string, args...) \
-  KTRACE_CPU_INSTANT_ENABLE(LOCAL_KTRACE_LEVEL_ENABLED(level), "kernel:probe", string, ##args)
-
 #define LOCAL_KTRACE_INSTANT(level, string, args...) \
   KTRACE_CPU_INSTANT_ENABLE(LOCAL_KTRACE_LEVEL_ENABLED(level), "kernel:sched", string, ##args)
 
