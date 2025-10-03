@@ -1,0 +1,78 @@
+{
+    metrics: [
+        {
+            event_codes: [],
+            metric_id: 5,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer:dropped_transfer_count",
+        },
+        {
+            event_codes: [],
+            metric_id: 6,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer:task_overrun_count",
+        },
+        {
+            event_codes: [],
+            metric_id: 7,
+            metric_type: "Occurrence",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer:task_underrun_count",
+        },
+        {
+            event_codes: [],
+            metric_id: 8,
+            metric_type: "Occurrence",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer:worst_overrun_frames",
+        },
+        {
+            event_codes: [],
+            metric_id: 9,
+            metric_type: "Occurrence",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer:worst_underrun_frames",
+        },
+        {
+            event_codes: [],
+            metric_id: 10,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:cpu_time_us",
+        },
+        {
+            event_codes: [],
+            metric_id: 11,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:kernel_lock_contention_time_us",
+        },
+        {
+            event_codes: [],
+            metric_id: 12,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:page_fault_time_us",
+        },
+        {
+            event_codes: [],
+            metric_id: 13,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:queue_time_us",
+        },
+        {
+            event_codes: [],
+            metric_id: 14,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:wall_time_us",
+        },
+        {
+            event_codes: [],
+            metric_id: 15,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:start_to_start_us",
+        },
+        {
+            event_codes: [],
+            metric_id: 16,
+            metric_type: "Integer",
+            selector: "bootstrap/*-drivers\\:*:[name=qcom-adsp]root/RingBuffers/bluetooth_hfp_outgoing_ring_buffer/max_task_records/max_metrics:end_to_end_us",
+        },
+    ],
+    poll_rate_sec: 600,
+    project_id: 14,
+}
