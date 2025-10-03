@@ -15,7 +15,8 @@ from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 from perf_publish import publish
-from trace_processing import trace_importing, trace_metrics
+from reporting import metrics
+from trace_processing import trace_importing
 from trace_processing.metrics import app_render, cpu
 
 TILE_URL = (
@@ -93,7 +94,7 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
             os.path.join(self.log_path, f"{TEST_NAME}.fuchsiaperf.json")
         )
 
-        trace_metrics.TestCaseResult.write_fuchsiaperf_json(
+        metrics.TestCaseResult.write_fuchsiaperf_json(
             results=itertools.chain.from_iterable(
                 (app_render_latency_results, cpu_results)
             ),
