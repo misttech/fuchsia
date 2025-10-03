@@ -271,6 +271,8 @@ void PageQueues::StartDebugCompressor() {
   zx_status_t status = dc->Init();
   ASSERT(status == ZX_OK);
   Guard<CriticalMutex> guard{&list_lock_};
+  // We should only be initializing the debug compressor once.
+  DEBUG_ASSERT(!debug_compressor_);
   debug_compressor_ = ktl::move(dc);
 #endif
 }
