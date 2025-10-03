@@ -764,7 +764,7 @@ bool MsdVsiDevice::HardwareReset() {
       reg.WriteTo(register_io());
     }
 
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
     clock_control.set_soft_reset(0);
     clock_control.WriteTo(register_io_.get());
